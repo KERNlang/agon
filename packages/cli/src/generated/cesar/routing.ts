@@ -61,7 +61,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   const taskClass = classifyTask(input);
   const inputTokens = Math.ceil(input.length / 4);
   const lower = input.toLowerCase();
-
+  
   let scopeFileCount = 0;
   let scopeDirSpread = 0;
   try {
@@ -71,10 +71,10 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
     const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
     scopeDirSpread = dirs.size;
   } catch { /* best-effort only */ }
-
+  
   const activeEngines = ctx.activeEngines();
   const explicitEngineMention = activeEngines.some((id: string) => lower.includes(id.toLowerCase()));
-
+  
   const REVIEW_RE = /\b(?:review|audit|regression|bug hunt|security review|code review|look for issues|find bugs)\b/i;
   const CHALLENGE_RE = /\b(?:double-?check|sanity check|poke holes|stress[-\s]?test|challenge this|am i missing|may be missing|maybe wrong|overconfident|edge case)\b/i;
   const TRADEOFF_RE = /\b(?:vs\.?|versus|trade-?off|worth it|should we|choose between|decision|architecture|architectur(?:e|al)|rest or graphql|sse or websockets)\b/i;
@@ -90,7 +90,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   const BIG_FEATURE_RE = /\b(?:big feature|end[-\s]?to[-\s]?end|e2e|workflow|full flow|spec flow|plan flow|harness|orchestrat|multi[-\s]?step|multi[-\s]?stage|onboarding|dashboard|system|platform|repo-wide|across|open beta|wider beta|npm publish|release)\b/i;
   const SPEC_RE = /\b(?:spec|requirements?|product|ux|flow|plan|roadmap|design|proposal|shape|beta|release|onboarding|how should|what is missing|what's missing|readiness)\b/i;
   const QUICK_FIX_RE = /\b(?:quick fix|small fix|tiny fix|one[-\s]?line|single file|just fix|simple bug|low risk)\b/i;
-
+  
   const reviewLikely = REVIEW_RE.test(input);
   const challengeLikely = CHALLENGE_RE.test(input);
   const tradeoffLikely = TRADEOFF_RE.test(input);
@@ -106,7 +106,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   const quickFixLikely = QUICK_FIX_RE.test(input) || tinyEditLikely;
   const bigFeatureLikely = BIG_FEATURE_RE.test(input)
     || (featureLikely && (fanoutLikely || inputTokens >= 70 || scopeDirSpread >= 4 || scopeFileCount >= 10));
-
+  
   let complexityHint = 'plain-chat';
   if (tinyEditLikely) {
     complexityHint = 'tiny-edit (stay local)';
@@ -116,7 +116,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   if (fanoutLikely) {
     complexityHint = 'multi-step-fanout (team breadth may help)';
   }
-
+  
   let uncertaintyFamily: CesarUncertaintyFamily = 'none';
   if (reviewLikely) uncertaintyFamily = 'review';
   else if (explicitEngineMention) uncertaintyFamily = 'specialist';
@@ -125,7 +125,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   else if (fuzzyLikely) uncertaintyFamily = 'fuzzy';
   else if (openLikely) uncertaintyFamily = 'open';
   else if (implementationLikely) uncertaintyFamily = 'implementation';
-
+  
   let escalationHint: CesarEscalationHint = 'self';
   switch (uncertaintyFamily) {
     case 'review': escalationHint = 'review'; break;
@@ -145,7 +145,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
     }
     default: escalationHint = 'self';
   }
-
+  
   const explicitTeamRequest = /\b(?:team|all engines|multiple engines|everyone|several models)\b/i.test(input);
   const teamForImplementation = implementationLikely && (
     scopeDirSpread >= 4
@@ -157,7 +157,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   const recommendedBreadth: CesarBreadthHint = (explicitTeamRequest || teamForImplementation || teamForReview || teamForDecisionWork)
     ? 'team'
     : 'solo';
-
+  
   let recommendedForgeScope: CesarForgeScopeHint = 'none';
   if (escalationHint === 'forge') {
     const fullForge = recommendedBreadth === 'team'
@@ -169,11 +169,11 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
       || (inputTokens >= 40 && inputTokens <= 180 && !fullForge);
     recommendedForgeScope = fullForge ? 'full' : (sliceForge ? 'slice' : 'none');
   }
-
+  
   let intakeKind: CesarIntakeKind = 'chat';
   let recommendedFlow: CesarFlowHint = 'answer';
   let flowReason = 'No mutation or orchestration signal; answer directly.';
-
+  
   if (reviewLikely) {
     intakeKind = 'review';
     recommendedFlow = 'review';
@@ -232,7 +232,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
         : 'Small feature/edit can stay live without plan overhead.';
     }
   }
-
+  
   // ── Cost estimation + ELO spread for speculation gating ──
   let estimatedStepCost: CostEstimate | undefined;
   let eloSpread: number | undefined;
@@ -253,7 +253,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
       }
     }
   } catch { /* ELO data is advisory */ }
-
+  
   return {
     taskClass,
     intakeKind,
@@ -281,7 +281,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
 // @kern-source: routing:255
 export function buildRoutingContext(input: string, ctx: HandlerContext): string {
   const parts: string[] = [];
-
+  
   const hints = deriveRoutingHints(input, ctx);
   const activeEngines = ctx.activeEngines();
   parts.push(`TASK CLASS: ${hints.taskClass}`);
@@ -294,7 +294,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
   } catch {
     parts.push(`SCOPE: unknown (not a git repo or no changes)`);
   }
-
+  
   parts.push(`COMPLEXITY HINT: ${hints.complexityHint}`);
   parts.push(`UNCERTAINTY FAMILY: ${hints.uncertaintyFamily}`);
   parts.push(`IF ESCALATING: prefer ${hints.escalationHint} (${hints.recommendedBreadth})`);
@@ -310,7 +310,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
   if (hints.recommendedForgeScope !== 'none') {
     parts.push(`FORGE SHAPE: prefer ${hints.recommendedForgeScope} ${hints.recommendedBreadth === 'team' ? 'with team breadth' : 'solo unless you need more diversity'}`);
   }
-
+  
   // ── Engine rankings for this task class (in-memory, O(n log n)) ──
   if (activeEngines.length > 1) {
     const rankings = rankByTaskClass(activeEngines, hints.taskClass);
@@ -335,7 +335,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
   } else {
     parts.push(`ENGINES: ${activeEngines[0] ?? 'none'} (solo — only 1 available)`);
   }
-
+  
   // ── Rating summary for this task class ──
   try {
     const ratings = getRatings();
@@ -350,7 +350,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
       }
     }
   } catch { /* no rating data yet */ }
-
+  
   // ── Cost + ELO spread for speculation gating ──
   if (hints.estimatedStepCost) {
     const soloCost = hints.estimatedStepCost.costUsd;
@@ -361,7 +361,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
     const spreadLabel = hints.eloSpread > 15 ? 'clear leader' : 'close race';
     parts.push(`ELO SPREAD: ${hints.eloSpread} (${spreadLabel})`);
   }
-
+  
   if ((ctx.config as any).sessionContinuity === true) {
     // ── ContextThread summary (session-wide memory for routing) ──
     // Inject a structured summary of recent session activity so Cesar's routing
@@ -385,19 +385,19 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
       }
     } catch { /* non-fatal — routing works without thread context */ }
   }
-
+  
   // ── Mode Rationale line (compact, human-readable) ──
   try {
     const rationale = buildModeRationale(hints, { confidence: undefined, engines: activeEngines, costUsd: hints.estimatedStepCost?.costUsd });
     parts.push(`RATIONALE: ${formatModeRationale(rationale)}`);
   } catch { /* rationale is advisory */ }
-
+  
   // ── Mode Rationale line (compact, human-readable) ──
   try {
     const rationale = buildModeRationale(hints, { confidence: undefined, engines: activeEngines, costUsd: hints.estimatedStepCost?.costUsd });
     parts.push(`RATIONALE: ${formatModeRationale(rationale)}`);
   } catch { /* rationale is advisory */ }
-
+  
   return parts.join('\n');
 }
 
@@ -420,7 +420,7 @@ export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean 
 export function shouldSpeculate(hints: CesarRoutingHints, config: Required<AgonConfig>): boolean {
   const threshold = (config as any).speculativeThresholdUsd ?? 0.50;
   const eloThreshold = (config as any).speculativeEloSpreadThreshold ?? 15;
-
+  
   const cost = hints.estimatedStepCost;
   if (!cost || cost.costUsd < threshold) return false; // too cheap to speculate
   if (hints.uncertaintyFamily === 'none') return false; // too sure

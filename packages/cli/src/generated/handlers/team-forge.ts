@@ -15,7 +15,7 @@ export async function handleTeamForge(task: string, fitnessCmd: string|null, dis
   const teamAbort = new AbortController();
   try {
     ensureAgonHome();
-
+    
     if (!task) {
       dispatch({ type: 'warning', message: 'Usage: /team-forge [2v2|3v3] <task> test with <cmd>' });
       return;
@@ -24,29 +24,29 @@ export async function handleTeamForge(task: string, fitnessCmd: string|null, dis
       dispatch({ type: 'warning', message: 'Team forge needs a fitness command. Usage: /team-forge <task> test with <cmd>' });
       return;
     }
-
+    
     const active = ctx.activeEngines();
     if (active.length < 2) {
       dispatch({ type: 'error', message: `Team forge needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });
       return;
     }
-
+    
     const size = membersPerSide ?? 2;
     const forgeDir = join(RUNS_DIR, `team-forge-${Date.now()}`);
     mkdirSync(forgeDir, { recursive: true });
-
+    
     const config = loadConfig(resolveWorkingDir());
     const cwd = resolveWorkingDir();
     const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat);
-
+    
     dispatch({ type: 'header', title: `Team Forge ${size}v${size}: ${task}` });
     dispatch({ type: 'info', message: `Engines: ${active.join(', ')}` });
     dispatch({ type: 'info', message: `Fitness: ${fitnessCmd}` });
-
+    
     dispatch({ type: 'spinner-start', message: `Composing teams and building...` });
-
+    
     ctx.setActiveAbort(teamAbort);
-
+    
     let result: any;
     try {
       result = await runTeamForge({
@@ -88,29 +88,29 @@ export async function handleTeamForge(task: string, fitnessCmd: string|null, dis
       dispatch({ type: 'spinner-stop' });
       throw err;
     }
-
+    
     if (teamAbort.signal.aborted) {
       dispatch({ type: 'spinner-stop' });
       return;
     }
-
+    
     dispatch({ type: 'spinner-stop', message: 'Team forge complete' });
-
+    
     const [teamA, teamB] = result.teams;
     const cardA = result.scorecards[teamA.teamId];
     const cardB = result.scorecards[teamB.teamId];
-
+    
     dispatch({ type: 'header', title: `Team Alpha — ${teamA.name}` });
     dispatch({ type: 'info', message: `${teamA.members.map((m: any) => `${m.engineId}(${m.role})`).join(' + ')} | Score: ${cardA?.score ?? '?'}` });
-
+    
     dispatch({ type: 'header', title: `Team Beta — ${teamB.name}` });
     dispatch({ type: 'info', message: `${teamB.members.map((m: any) => `${m.engineId}(${m.role})`).join(' + ')} | Score: ${cardB?.score ?? '?'}` });
-
+    
     if (result.winnerTeamId) {
       const winner = result.winnerTeamId === teamA.teamId ? teamA : teamB;
       const winnerCard = result.scorecards[result.winnerTeamId];
       dispatch({ type: 'header', title: `Winner: ${winner.name} — Score: ${winnerCard?.score}` });
-
+    
       // Emit patch-review so /apply works
       const winnerSub = result.submissions[result.winnerTeamId];
       const winnerOutput = winnerSub?.finalOutput as any;
@@ -128,10 +128,10 @@ export async function handleTeamForge(task: string, fitnessCmd: string|null, dis
     } else {
       dispatch({ type: 'header', title: 'Draw — no clear winner' });
     }
-
+    
     dispatch({ type: 'info', message: `Full results saved: ${forgeDir}` });
     dispatch({ type: 'info', message: `Result bundle: ${forgeDir}/result.json` });
-
+    
     appendMessage(ctx.chatSession, { role: 'user', content: `[team-forge:${size}v${size}] ${task}`, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, {
       role: 'engine', engineId: 'team-forge',

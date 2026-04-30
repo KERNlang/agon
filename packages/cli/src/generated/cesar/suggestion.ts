@@ -26,29 +26,29 @@ export function parseSuggestion(response: string): SuggestionResult {
   const searchArea = response.slice(0, 150);
   const match = searchArea.match(/\[(SUGGEST|DELEGATE):([\w-]+)\]/i);
   if (!match) return { action: null, rest: response };
-
+  
   const raw = match[2].toLowerCase();
   const idx = response.indexOf(match[0]);
   const rest = response.slice(idx + match[0].length).trim();
-
+  
   // Parse compound mode name into action + options
   let action = raw;
   let hardened = false;
   let tribunalMode: string | undefined;
   let team = false;
-
+  
   // Extract team prefix
   if (action.startsWith('team-')) {
     team = true;
     action = action.slice(5); // remove 'team-'
   }
-
+  
   // Extract -hardened suffix from forge
   if (action === 'forge-hardened') {
     action = 'forge';
     hardened = true;
   }
-
+  
   // Extract tribunal mode suffix
   const tribunalModes = ['adversarial', 'synthesis', 'steelman', 'socratic', 'red-team', 'postmortem'];
   for (const mode of tribunalModes) {
@@ -58,9 +58,9 @@ export function parseSuggestion(response: string): SuggestionResult {
       break;
     }
   }
-
+  
   // Reconstruct action with team prefix for routing
   if (team) action = `team-${action}`;
-
+  
   return { action, rest, hardened, tribunalMode, team };
 }

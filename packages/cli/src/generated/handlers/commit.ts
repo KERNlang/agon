@@ -2,7 +2,7 @@
 
 import { execSync, execFileSync } from 'node:child_process';
 
-import { loadConfig, resolveWorkingDir } from '@agon/core';
+import { loadConfig, resolveWorkingDir, configGet } from '@agon/core';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
@@ -29,9 +29,9 @@ function classifyChanges(diff: string): string {
 // @kern-source: commit:25
 export async function handleCommit(message: string|undefined, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   const cwd = resolveWorkingDir();
-
+  
   dispatch({ type: 'spinner-start', message: 'Analyzing changes...' });
-
+  
   // Step 1: Parallel git context (like Claude Code)
   const [status, diff, diffStat, log] = await Promise.all([
     Promise.resolve(gitExec('git status --short', cwd)),
@@ -39,19 +39,19 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
     Promise.resolve(gitExec('git diff --stat', cwd)),
     Promise.resolve(gitExec('git log --oneline -5', cwd)),
   ]);
-
+  
   dispatch({ type: 'spinner-stop' });
-
+  
   if (!status && !diff) {
     dispatch({ type: 'info', message: 'Nothing to commit — working tree clean.' });
     return;
   }
-
+  
   // Show what would be committed
   if (diffStat) {
     dispatch({ type: 'text', content: `**Changes:**\n\`\`\`\n${diffStat}\n\`\`\`` });
   }
-
+  
   // Step 2: Check if there are staged changes, if not stage all tracked
   const hasStaged = gitExec('git diff --cached --name-only', cwd);
   if (!hasStaged) {
@@ -70,9 +70,10 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
     }
     dispatch({ type: 'success', message: `Staged ${modifiedFiles.length} file(s)` });
   }
-
+  
   // Step 3: Generate or use provided commit message
   let commitMsg = message?.trim();
+  let agonGenerated = false;
   if (!commitMsg) {
     // Auto-classify from diff
     const changeType = classifyChanges(diff);
@@ -81,9 +82,10 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
     const shortSummary = fileList.length <= 3
       ? fileList.join(', ')
       : `${fileList.length} files`;
-
+  
     commitMsg = `${changeType}: ${shortSummary}`;
-
+    agonGenerated = true;
+  
     // Ask user to confirm/edit
     const answer = await ctx.askQuestion(`Commit message: "${commitMsg}" — ok? (y/edit/n)`);
     if (answer.toLowerCase() === 'n') {
@@ -92,12 +94,19 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
     }
     if (answer.toLowerCase() !== 'y' && answer.trim()) {
       commitMsg = answer.trim();
+      agonGenerated = false; // User edited → not purely Agon-generated
     }
   }
-
+  
+  // Append Co-authored-by trailer when Agon generated the message and user hasn't disabled it
+  const autoCredit = configGet('autoCredit', cwd) as boolean;
+  if (agonGenerated && autoCredit) {
+    commitMsg += '\n\nCo-authored-by: Agon AI <agon@local>';
+  }
+  
   // Step 4: Commit with HEREDOC (safe for special chars)
   dispatch({ type: 'spinner-start', message: 'Committing...' });
-
+  
   try {
     const result = execFileSync('git', ['commit', '-m', commitMsg],
       { cwd, encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] },
@@ -107,14 +116,14 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
   } catch (err: any) {
     dispatch({ type: 'spinner-stop' });
     const stderr = err.stderr?.trim() ?? '';
-
+  
     // Pre-commit hook failure: retry once (Claude Code pattern)
     if (stderr.includes('hook') || err.status === 1) {
       dispatch({ type: 'warning', message: `Pre-commit hook failed. Retrying...` });
-
+  
       // Re-stage (hooks may have modified files)
       gitExec('git add -u', cwd);
-
+  
       try {
         const retry = execFileSync('git', ['commit', '-m', commitMsg],
           { cwd, encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] },
@@ -125,10 +134,10 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
       }
       return;
     }
-
+  
     dispatch({ type: 'error', message: `Commit failed: ${stderr || err.message}` });
   }
-
+  
   // Step 5: Post-commit verification
   const postStatus = gitExec('git log --oneline -1', cwd);
   if (postStatus) {

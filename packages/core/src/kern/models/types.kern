@@ -230,6 +230,9 @@ config name=AgonConfig
     doc "Max estimated USD cost for a single plan step below which speculation (scout+parallel agents) is skipped. Tasks cheaper than this go solo."
   field name=speculativeEloSpreadThreshold type=number default=15
     doc "Min ELO spread between top two engines for a task class. Below this, engines are too close to call — speculation is worthwhile. Above it, the leader is clear enough to skip speculation."
+  field name=autoCredit type=boolean default=true
+    doc "When true, append 'Co-authored-by: Agon AI <agon@local>' to commits where Agon generated the commit message. Set to false to disable."
+
 
 interface name=ScoutBid
   field name=engineId type=string

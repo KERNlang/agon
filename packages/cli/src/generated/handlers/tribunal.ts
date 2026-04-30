@@ -21,49 +21,49 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
   const tribunalAbort = new AbortController();
   try {
     ensureAgonHome();
-
+    
     if (!question) {
       dispatch({ type: 'warning', message: 'No question provided. Usage: /tribunal [mode] <question>' });
       dispatch({ type: 'info', message: 'Modes: adversarial (default), socratic, red-team, steelman, synthesis, postmortem' });
       return;
     }
-
+    
     const active = ctx.activeEngines();
     if (active.length < 2) {
       dispatch({ type: 'error', message: `Tribunal needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });
       return;
     }
-
+    
     const engines = active.slice(0, 4);
     const mode = (tribunalMode ?? 'adversarial') as any;
     const outputDir = join(RUNS_DIR, `tribunal-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
-
+    
     const config = ctx.config;
     const tribunalCwd = resolveWorkingDir();
     const projectCtx = scanProjectContext(tribunalCwd, config.projectContext || undefined, config.contextFormat);
     const enrichedQuestion = projectCtx
       ? `${question}\n\n## PROJECT CONTEXT\n${projectCtx}`
       : question;
-
+    
     dispatch({ type: 'header', title: `Tribunal (${mode}): ${question}` });
     dispatch({ type: 'info', message: `Engines: ${engines.join(', ')}` });
     dispatch({ type: 'info', message: `Mode: ${mode}` });
     if (projectCtx) dispatch({ type: 'info', message: `Context: ${tribunalCwd}` });
-
+    
     ctx.setActiveAbort(tribunalAbort);
-
+    
     // ── Scoreboard + Checkpoint ──
     const runId = `tribunal-${Date.now()}`;
     const scoreboard = createScoreboard(runId, 'tribunal', engines);
     const preCp = buildCheckpoint(runId, 'pre-dispatch', 'tribunal', engines, { question, mode });
     recordCheckpoint(preCp);
-
+    
     // Track per-engine state for progress-update
     const engineState: Record<string, { status: string; done: boolean }> = {};
     for (const id of engines) engineState[id] = { status: 'waiting', done: false };
     const startTime = Date.now();
-
+    
     const emitProgress = () => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = engines.map((id: string) => ({
@@ -75,11 +75,11 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
       }));
       dispatch({ type: 'progress-update', engines: progress });
     };
-
+    
     // Emit initial progress + start interval
     emitProgress();
     const progressInterval = setInterval(emitProgress, 250);
-
+    
     let result: any;
     try {
       result = await runTribunal({
@@ -108,14 +108,14 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
       dispatch({ type: 'progress-clear' });
       throw err;
     }
-
+    
     clearInterval(progressInterval);
-
+    
     if (tribunalAbort.signal.aborted) {
       dispatch({ type: 'progress-clear' });
       return;
     }
-
+    
     // Finalize scoreboard + checkpoint
     for (const id of engines) {
       scoreboardFinishEngine(scoreboard, id, { result: engineState[id]?.status ?? 'done' });
@@ -123,12 +123,12 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
     dispatch({ type: 'info', message: renderScoreboard(scoreboard) });
     const postCp = buildCheckpoint(runId, 'post-dispatch', 'tribunal', engines, { question, mode });
     recordCheckpoint(postCp);
-
+    
     // Final progress with done state
     for (const id of engines) engineState[id] = { status: '\u2713 done', done: true };
     emitProgress();
     dispatch({ type: 'progress-clear' });
-
+    
     for (const round of result.rounds) {
       dispatch({ type: 'header', title: `Round ${round.round}` });
       for (const pos of round.positions) {
@@ -142,15 +142,15 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
         });
       }
     }
-
+    
     dispatch({ type: 'header', title: mode === 'socratic' ? 'Unresolved Questions' : mode === 'red-team' ? 'Risk Register' : mode === 'synthesis' ? 'Decision Matrix' : mode === 'postmortem' ? 'Postmortem Report' : 'Verdict' });
     dispatch({ type: 'verdict', summary: result.summary });
     dispatch({ type: 'info', message: `Full debate saved: ${outputDir}` });
-
+    
     // Save verdict to chat history for follow-ups
     appendMessage(ctx.chatSession, { role: 'user', content: `[tribunal:${mode}] ${question}`, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: 'tribunal', content: result.summary, timestamp: new Date().toISOString() });
-
+    
     sessionResultStore.add({
       type: 'tribunal',
       timestamp: new Date().toISOString(),
@@ -169,7 +169,7 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
         verdict: result.summary,
       },
     });
-
+    
     for (const round of result.rounds) {
       for (const pos of round.positions) {
         tracker.record(pos.engineId, { prompt: question, response: pos.arguments.join(' ') });

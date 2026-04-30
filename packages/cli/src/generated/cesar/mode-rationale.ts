@@ -20,7 +20,7 @@ export function buildModeRationale(hints: CesarRoutingHints, opts?: {confidence?
   const confidence = opts?.confidence ?? 85;
   const engines = opts?.engines ?? [];
   const costUsd = opts?.costUsd;
-
+  
   if (opts?.forced) {
     return {
       kind: 'auto-escalation',
@@ -31,10 +31,10 @@ export function buildModeRationale(hints: CesarRoutingHints, opts?: {confidence?
       costUsd,
     };
   }
-
+  
   let kind: ModeRationaleKind = 'auto-escalation';
   let reason = hints.flowReason;
-
+  
   if (hints.recommendedFlow === 'brainstorm' || hints.recommendedFlow === 'tribunal' || hints.recommendedFlow === 'campfire') {
     kind = 'breadth-choice';
     reason = `${hints.uncertaintyFamily} uncertainty → ${hints.recommendedFlow} (${hints.flowReason})`;
@@ -45,12 +45,12 @@ export function buildModeRationale(hints: CesarRoutingHints, opts?: {confidence?
     kind = 'scope-hint';
     reason = `Multi-step work — ${hints.flowReason}`;
   }
-
+  
   if (costUsd != null && costUsd > 1.0) {
     kind = 'cost-warning';
     reason = `${reason} (est. $${costUsd.toFixed(2)})`;
   }
-
+  
   return { kind, flow: hints.recommendedFlow, reason, confidence, engines, costUsd };
 }
 

@@ -240,7 +240,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     _thinkingBuffer.engineId = '';
     _thinkingBuffer.content = '';
   }
-
+  
   // Flush buffered tool-calls only when an event that actually emits a
   // transcript row arrives (or on /clear). Ephemeral UI updates like
   // spinner-*, progress-*, confidence-update, streaming-chunk, thinking-*
@@ -263,7 +263,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
   if (!_nonFlushing.has(event.type) && _pendingToolCalls.length > 0) {
     flushPendingToolCalls(actions);
   }
-
+  
   switch (event.type) {
     case 'spinner-start':
       actions.setChatStartTime(Date.now());

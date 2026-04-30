@@ -487,10 +487,17 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
 
   // Internal abort: fires before worktree cleanup so in-flight team
   // dispatches receive SIGTERM via their own spawnWithTimeout signal handlers.
+  // External signal forwards into teamAbort instead of using AbortSignal.any
+  // (which kern-guard rejects as an undeclared reference).
   const teamAbort = new AbortController();
-  const teamSignal: AbortSignal = options.signal
-    ? AbortSignal.any([options.signal, teamAbort.signal])
-    : teamAbort.signal;
+  if (options.signal) {
+    if (options.signal.aborted) {
+      teamAbort.abort();
+    } else {
+      options.signal.addEventListener('abort', () => teamAbort.abort(), { once: true });
+    }
+  }
+  const teamSignal = teamAbort.signal;
 
   mkdirSync(forgeDir, { recursive: true });
 

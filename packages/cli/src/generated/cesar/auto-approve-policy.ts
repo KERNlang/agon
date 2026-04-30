@@ -21,17 +21,17 @@ export const MUTATING_STEP_TYPES: Set<string> = new Set(['forge', 'teamforge', '
 export function applyAutoApprovePolicy(plan: CesarPlan, config: AgonConfig): AutoApproveDecision {
   const mode = (config as any).cesarAutoApproveMode ?? 'safe-only';
   const maxCostUsd = (config as any).cesarAutoApproveMaxCostUsd as number | undefined;
-
+  
   // Gate 0: global off switch
   if (mode === 'off') {
     return { approve: false, reason: 'autoApprove disabled (cesarAutoApproveMode=off)', adjustedCostUsd: plan.totalEstimatedCostUsd };
   }
-
+  
   // Gate 1: plan must opt in
   if (plan.autoApprove !== true) {
     return { approve: false, reason: 'plan did not request autoApprove', adjustedCostUsd: plan.totalEstimatedCostUsd };
   }
-
+  
   // Gate 2: whitelist floor — safe-only rejects any mutating step type
   const mutatingSteps = plan.steps.filter((s) => MUTATING_STEP_TYPES.has(s.type));
   if (mode === 'safe-only' && mutatingSteps.length > 0) {
@@ -42,7 +42,7 @@ export function applyAutoApprovePolicy(plan: CesarPlan, config: AgonConfig): Aut
       adjustedCostUsd: plan.totalEstimatedCostUsd,
     };
   }
-
+  
   // Gate 3: fitnessCmd interlock — shell commands need user inspect
   // unless the user explicitly opted into 'always'
   const fitnessSteps = plan.steps.filter((s) => s.fitnessCmd && s.fitnessCmd.trim().length > 0);
@@ -53,7 +53,7 @@ export function applyAutoApprovePolicy(plan: CesarPlan, config: AgonConfig): Aut
       adjustedCostUsd: plan.totalEstimatedCostUsd,
     };
   }
-
+  
   // Gate 4: cost ceiling, with review cycles folded in
   let adjustedCostUsd = plan.totalEstimatedCostUsd;
   const wantsReview = plan.selfReview !== false && mutatingSteps.length > 0;
@@ -61,7 +61,7 @@ export function applyAutoApprovePolicy(plan: CesarPlan, config: AgonConfig): Aut
     const reviewEstimate = planCostEstimator.estimate('review', []);
     adjustedCostUsd += 2 * reviewEstimate.costUsd;
   }
-
+  
   if ((mode === 'cost-bounded' || mode === 'always') && maxCostUsd != null) {
     if (adjustedCostUsd > maxCostUsd) {
       return {
@@ -71,7 +71,7 @@ export function applyAutoApprovePolicy(plan: CesarPlan, config: AgonConfig): Aut
       };
     }
   }
-
+  
   // cost-bounded with no ceiling configured = same as 'always' but explicit
   return {
     approve: true,

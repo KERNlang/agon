@@ -29,14 +29,14 @@ export function findInputChange(previous: string, next: string): {start:number, 
   while (start < previous.length && start < next.length && previous[start] === next[start]) {
     start++;
   }
-
+  
   let previousEnd = previous.length;
   let nextEnd = next.length;
   while (previousEnd > start && nextEnd > start && previous[previousEnd - 1] === next[nextEnd - 1]) {
     previousEnd--;
     nextEnd--;
   }
-
+  
   return {
     start,
     removed: previous.slice(start, previousEnd),
@@ -110,15 +110,15 @@ export function resolveEscapeAction(opts: {replState:string,inputValue:string,sl
   if (opts.slashPickerOpen) return { action: 'close-slash' };
   if (opts.enginePickerOpen) return { action: 'close-engine-picker' };
   if (opts.questionOpen) return { action: 'cancel-question' };
-
+  
   if (opts.replState !== 'idle') {
     return { action: 'interrupt' };
   }
-
+  
   if (opts.inputValue) {
     return { action: 'clear-input' };
   }
-
+  
   return { action: 'noop' };
 }
 

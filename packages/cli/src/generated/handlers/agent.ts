@@ -57,14 +57,14 @@ export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerConte
     const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob' };
     const agonTool = toolMap[tool.toLowerCase()] ?? tool;
     const perm = perms[agonTool];
-
+  
     if (ctx.explorationMode) {
       const WRITE_TOOLS = ['Edit', 'Write', 'Bash'];
       if (WRITE_TOOLS.includes(agonTool)) {
         return 'BLOCKED: Exploration mode is read-only. Use Read, Grep, Glob tools only.';
       }
     }
-
+  
     const activePlan = ctx.activePlan;
     if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
       const WRITE_TOOLS = ['Edit', 'Write'];
@@ -72,10 +72,10 @@ export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerConte
         return 'BLOCKED: Plan mode — no code changes allowed until the plan is approved.';
       }
     }
-
+  
     if (perm === 'deny' || mode === 'deny-all') return false;
     if (perm === 'allow' || mode === 'auto') return true;
-
+  
     // smart mode: auto-approve session allowlist, ask for user-sourced mutating ops
     if (mode === 'smart') {
       const sessionList = getSessionAllowList();
@@ -87,12 +87,12 @@ export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerConte
       // Delegated agent runs are orchestrator context — auto-approve
       return true;
     }
-
+  
     if (agonTool === 'Bash' && allowed.length > 0) {
       const cmdLower = command.toLowerCase();
       if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) return true;
     }
-
+  
     return new Promise<boolean>((resolve) => {
       dispatch({
         type: 'permission-ask',
@@ -123,10 +123,10 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
     dispatch({ type: 'error', message: 'No engines available for agent mode.' });
     return null;
   }
-
+  
   let engineId: string | null = null;
   let engine: any = null;
-
+  
   if (opts?.engineId) {
     // Caller explicitly picked an engine — use it, no search.
     if (!available.includes(opts.engineId)) {
@@ -167,7 +167,7 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
       return null;
     }
   }
-
+  
   // ── Build session config ───────────────────────────────────
   const budget: AgentBudget = {
     maxTurns: opts?.maxTurns ?? 10,
@@ -175,7 +175,7 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
     maxTokens: opts?.maxTokens,
   };
   const cwd = resolveWorkingDir();
-
+  
   // Optional ContextThread continuity. Disabled by default so new Agon
   // processes do not preload stale prior /agent runs.
   let agentThread: import('@agon/core').ContextThread | undefined;
@@ -186,14 +186,14 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
       console.warn(`[agon] context-thread: failed to load active thread (running without context): ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
     }
   }
-
+  
   // Resolve the engine's context window from its definition so history
   // budgeting matches the actual model capacity (fixes: 700k fallback
   // breaking Claude Sonnet 200k, GPT-4o 128k).
   const engineWindow = (engine.api as any)?.contextWindow
     ?? (engine as any).contextWindow
     ?? undefined;
-
+  
   const session = new AgentSession({
     engineId,
     api: engine.api,
@@ -207,13 +207,13 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
     toolPermissions: (ctx.config as any).toolPermissions ?? {},
     onPermissionAsk: buildAgentApprovalCallback(dispatch, ctx, engineId),
   });
-
+  
   // Gemini fix (a): build state BEFORE any listener / active-abort
   // registration. A throw here (or in any prior step) cannot leak
   // listeners or stale ctx.activeAbort because nothing has been
   // registered yet.
   let state: AgentState = createAgentState(engineId, budget, opts?.systemPrompt);
-
+  
   // Bridge the handler's KERN-generated abort to the session.
   // If abort fired before we got here, cancel immediately.
   if (abort.signal.aborted) {
@@ -221,7 +221,7 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
   }
   const onAbort = () => session.cancel();
   abort.signal.addEventListener('abort', onAbort);
-
+  
   // Codex P1: when called from a plan step, the caller passes an outer
   // parentSignal. Bridge it to our internal abort so plan-level Ctrl-C
   // reaches the session, and DO NOT touch ctx.setActiveAbort — the plan
@@ -239,9 +239,9 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
     // Standalone /agent path — register our abort with the CLI so Ctrl+C reaches it.
     ctx.setActiveAbort(abort);
   }
-
+  
   let followUp: AgentContinuationResult | null = null;
-
+  
   try {
     // Pre-step budget check — surface budget exhaustion before we
     // even spin up the inner loop, with a typed warning.
@@ -286,7 +286,7 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
         workspaceChangedInPlace: true,
       };
     }
-
+  
     // Transition idle → running and emit step-start with budget context
     // so the UI can render budget bars before the first turn-summary.
     state = beginTurn(state, input);
@@ -299,25 +299,25 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
       maxDurationMs: budget.maxDurationMs,
       maxTokens: budget.maxTokens ?? null,
     });
-
+  
     // Phase C: StreamBridge normalizes AgentEvent → OutputEvent with
     // engine-switch tracking. Replaces the inline onEvent callback.
     const bridge = createStreamBridge(dispatch as (event: Record<string,unknown>) => void, {
       initialEngineId: engineId,
     });
     const onEvent = bridge.makeOnEvent();
-
+  
     // ── The actual work ────────────────────────────────────────
     const stepResult = await session.step(input, { onEvent });
     state = completeTurn(state, input, stepResult, Date.now());
     session.complete();
-
+  
     // ── Emit step-end ─────────────────────────────────────────
     const outcome: 'completed'|'cancelled'|'failed' =
       stepResult.stopReason === 'completed' ? 'completed'
       : stepResult.stopReason === 'cancelled' ? 'cancelled'
       : 'failed';
-
+  
     dispatch({
       type: 'agent-step-end',
       engineId,
@@ -327,9 +327,9 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
       tokensUsed: stepResult.tokensUsed,
       stopReason: stepResult.stopReason,
     });
-
+  
     dispatch({ type: 'streaming-end', engineId });
-
+  
     // ── Emit turn summary ─────────────────────────────────────
     const stats = session.getStats();
     dispatch({
@@ -341,7 +341,7 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
       cumulativeToolCalls: stats.totalToolCalls,
       elapsedMs: stats.elapsedMs,
     });
-
+  
     // ── Budget warning when close to any limit ────────────────
     if (stats.turnsRemaining <= 1 && stats.turnsUsed > 0) {
       dispatch({
@@ -373,7 +373,7 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
         remaining: stats.durationRemainingMs,
       });
     }
-
+  
     const normalizedStatus = stepResult.stopReason === 'error' ? 'failed' : stepResult.stopReason;
     const responseExcerpt = clipAgentText(stepResult.response ?? '', 4000);
     const summaryLines = [
@@ -393,7 +393,7 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
         await agentThread.save();
       } catch { /* non-fatal */ }
     }
-
+  
     // ── Final disposition ─────────────────────────────────────
     if (stepResult.stopReason === 'completed') {
       if (stepResult.response) {
@@ -495,12 +495,12 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     dispatch({ type: 'error', message: 'No engines available for agent team mode.' });
     return null;
   }
-
+  
   // Pick engines: caller-specified or auto-select first 3 active API engines.
   const requestedEngines = opts?.engines ?? null;
   const memberEngineIds: string[] = [];
   const memberEngines: EngineDefinition[] = [];
-
+  
   if (requestedEngines && requestedEngines.length > 0) {
     for (const id of requestedEngines) {
       if (!available.includes(id)) {
@@ -542,7 +542,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
       return await runAgentMode(input, dispatch, ctx, { engineId: memberEngineIds[0], maxTurns: opts?.maxTurns, maxDurationMs: opts?.maxDurationMs, systemPrompt: opts?.systemPrompt, parentSignal: opts?.parentSignal });
     }
   }
-
+  
   // RT-22: complexity floor for auto-fanout. If the input is suspiciously
   // small for team mode, downgrade to solo. Cesar might over-fan-out via
   // the playbook; this is the runtime backstop.
@@ -552,7 +552,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     // the solo fallback. Previously the signal was dropped here.
     return await runAgentMode(input, dispatch, ctx, { maxTurns: opts?.maxTurns, maxDurationMs: opts?.maxDurationMs, systemPrompt: opts?.systemPrompt, parentSignal: opts?.parentSignal });
   }
-
+  
   // ── Build team config ─────────────────────────────────────
   const budget: AgentBudget = {
     maxTurns: opts?.maxTurns ?? 10,
@@ -561,7 +561,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
   const cwd = resolveWorkingDir();
   const taskKind: 'edit'|'investigate' = opts?.taskKind ?? 'edit';
   let followUp: AgentContinuationResult | null = null;
-
+  
   // Optional ContextThread continuity — shared across all team members only
   // when the user opts into cross-session memory.
   let teamThread: import('@agon/core').ContextThread | undefined;
@@ -572,14 +572,14 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
       console.warn(`[agon] context-thread: failed to load active thread for team (running without context): ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
     }
   }
-
+  
   const members: AgentTeamMemberConfig[] = memberEngines.map((eng, i) => ({
     engineId: memberEngineIds[i],
     api: eng.api!,
     systemPrompt: opts?.systemPrompt,
     contextWindowTokens: (eng.api as any)?.contextWindow ?? (eng as any).contextWindow,
   }));
-
+  
   // RT-12 cost guard: build a costFn that maps engineId → tokens → USD.
   const enginesById = new Map<string, EngineDefinition>(memberEngineIds.map((id, i) => [id, memberEngines[i]]));
   const costFn = (engineId: string, tokensUsed: number): number => {
@@ -587,7 +587,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     if (!eng) return 0;
     return estimatedTokensToCost(eng, tokensUsed);
   };
-
+  
   const teamConfig: AgentTeamConfig = {
     members,
     cwd,
@@ -606,7 +606,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     onPermissionAsk: (engineId: string, tool: string, command: string, reason: string) =>
       buildAgentApprovalCallback(dispatch, ctx, engineId)(tool, command, reason),
   };
-
+  
   // ── Wire abort BEFORE creating team — RT-11 fix ───────────
   // The original /agent had a race between the early abort.signal.aborted
   // check and addEventListener. Here we do the listener first, then the
@@ -618,7 +618,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     if (team) team.cancel();
   };
   abort.signal.addEventListener('abort', onAbort);
-
+  
   // Codex P1: when called from a plan step, the caller owns the active
   // abort. Bridge parentSignal → internal abort and DO NOT touch
   // ctx.setActiveAbort so the plan executor's controller stays intact.
@@ -634,7 +634,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
   } else {
     ctx.setActiveAbort(abort);
   }
-
+  
   if (abort.signal.aborted) {
     // Already cancelled before we even got here.
     if (!parentSignal) ctx.setActiveAbort(null);
@@ -656,12 +656,12 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
       workspaceChangedInPlace: false,
     };
   }
-
+  
   try {
     // ── Create + initialize team ──────────────────────────
     team = new AgentTeam(teamConfig);
     await team.initialize();
-
+  
     if (teamCancelled || abort.signal.aborted) {
       // OpenCode review fix #1: dispatch a user-visible event so the user
       // knows the cancel landed during initialize. Otherwise the run would
@@ -684,11 +684,11 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         workspaceChangedInPlace: false,
       };
     }
-
+  
     const teamId = team.getRunId();
     const shadowMode = opts?.shadowMode === true;
     const foregroundEngineId = opts?.foregroundEngineId ?? memberEngineIds[0];
-
+  
     // ── Emit team-start ───────────────────────────────────
     dispatch({
       type: 'agent-team-start',
@@ -697,7 +697,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
       task: input,
       taskKind,
     });
-
+  
     // Pre-emit step-start for each member so the UI shows N panels
     // immediately, before the first AgentEvent arrives.
     for (const id of memberEngineIds) {
@@ -713,7 +713,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         teamId,
       });
     }
-
+  
     // Phase C/D: StreamBridge + shadow-mode filtering.
     // In normal team mode, all engines' events reach the user.
     // In shadow mode (Phase D), only the foreground engine's events are
@@ -721,7 +721,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     // background worktrees and their output is suppressed until post-step
     // comparison. If a shadow wins, we emit engine-switch and surface the
     // winning patch through the normal review block.
-
+  
     // In shadow mode, suppress dispatch for non-foreground engines by
     // wrapping the dispatch function to drop events from shadow engines.
     const shadowFilteredDispatch = shadowMode
@@ -735,15 +735,15 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
           // Shadow engine events are silently dropped during the step.
         }
       : dispatch as (event: Record<string,unknown>) => void;
-
+  
     const teamBridge = createStreamBridge(shadowFilteredDispatch, {
       initialEngineId: foregroundEngineId,
     });
     const onEvent = teamBridge.makeOnEvent();
-
+  
     // ── Run the team ──────────────────────────────────────
     const teamResult = await team.step(input, { onEvent });
-
+  
     // Codex review fix (P1): post-step cancellation guard. If the user
     // cancelled mid-run (via Ctrl-C → onAbort → team.cancel()), the team
     // returns with whatever partial results it has. We must NOT proceed
@@ -799,7 +799,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         workspaceChangedInPlace: false,
       };
     }
-
+  
     // ── Emit step-end for each member ─────────────────────
     for (const m of teamResult.members) {
       if (shadowMode && m.engineId !== foregroundEngineId) continue;
@@ -819,7 +819,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
       });
       dispatch({ type: 'streaming-end', engineId: m.engineId });
     }
-
+  
     // ── Phase 3 scoring ──────────────────────────────────
     // RT-3 fix: typecheck-or-fail fitness gate before scoring.
     // Gemini code review fix #2: parallelize the fitness gate. Each member
@@ -864,10 +864,10 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         }
       }
     }
-
+  
     const scored: Map<string, EngineResult> = scoreAgentTeamResult(teamResult, cwd, taskKind, fitnessPassed);
     const winnerInfo = determineWinner(scored, 8);
-
+  
     // Phase D: in shadow mode, notify the user if a shadow engine beat the
     // foreground. Emit engine-switch so the StreamBridge + UI can show the
     // attribution transition ("claude → gemini (synthesis winner)").
@@ -884,7 +884,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         message: `Shadow worker ${winnerInfo.winner} beat foreground ${foregroundEngineId}; surfacing the shadow result.`,
       });
     }
-
+  
     // ── Pick winner's initial diff/response ──────────────
     let winnerDiff: string | null = null;
     let winnerAnalysis: string | null = null;
@@ -899,7 +899,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         winnerAnalysis = winnerMember.stepResult.response;
       }
     }
-
+  
     // ── RT-25 synthesis: winner-refines-with-elevated-loser-insights ──
     // Re-invoke the winner with full tool access against their worktree,
     // giving them the losers' diffs/reasoning framed so they look for
@@ -924,7 +924,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
       const winnerEngine = winnerIdx >= 0 ? memberEngines[winnerIdx] : null;
       const winnerApi = winnerEngine?.api ?? null;
       const winnerMember = teamResult.members.find((m) => m.engineId === winnerInfo.winner);
-
+  
       // OpenCode 8.1: explicit dispatch if winner is non-API.
       if (!winnerApi) {
         dispatch({
@@ -951,7 +951,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
             passedFitness: fitnessPassed.get(m.engineId) ?? false,
           });
         }
-
+  
         // OpenCode 8.2: explicit dispatch when all losers errored.
         if (losers.length === 0) {
           dispatch({
@@ -1145,7 +1145,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         }
       }
     }
-
+  
     // ── Persistent synthesis log (OpenCode #7) ───────────
     // Write a machine-parseable log of the synthesis outcome so users
     // can trace what happened post-mortem without relying on scrollback.
@@ -1178,7 +1178,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         console.warn(`[agon] failed to write synthesis log: ${logErr instanceof Error ? logErr.message : String(logErr)}`);
       }
     }
-
+  
     // ── Compute team cost ────────────────────────────────
     // Includes synthesis cost (Codex M4) so teamCostUsd in the event
     // reflects true spend.
@@ -1186,7 +1186,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     for (const m of teamResult.members) {
       teamCost += costFn(m.engineId, m.stepResult?.tokensUsed ?? 0);
     }
-
+  
     // ── Build member outcomes for the team-complete event ─
     const memberOutcomes = teamResult.members.map((m) => {
       const sr = scored.get(m.engineId);
@@ -1197,7 +1197,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         passedFitness: fitnessPassed.get(m.engineId) ?? false,
       };
     });
-
+  
     // ── Emit team-complete ───────────────────────────────
     dispatch({
       type: 'agent-team-complete',
@@ -1213,7 +1213,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
       synthesisCostUsd,
       synthesisFitnessRegressed,
     });
-
+  
     // Append winning team diff to the shared ContextThread so Cesar has
     // the full line-by-line trail of what the team built. teamThread is
     // the shared thread the team members were already writing into.
@@ -1243,9 +1243,9 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         await teamThread.save();
       } catch { /* non-fatal */ }
     }
-
+  
     let patchPath = '';
-
+  
     // ── Surface the result to the user ────────────────────
     if (winnerInfo.winner) {
       if (winnerDiff) {

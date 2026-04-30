@@ -31,6 +31,10 @@ const name=CORPUS_PATH type=string value={{ join(AGON_HOME, 'corpus.json') }}
 
 const name=SKILLS_DIR type=string value={{ join(AGON_HOME, 'skills') }}
 
+const name=RUN_PRUNE_KEEP_COUNT type=number value=100
+
+const name=RUN_PRUNE_MIN_AGE_MS type=number value={{ 24 * 60 * 60 * 1000 }}
+
 const name=LOCAL_CONFIG_NAME type=string value={{ '.agon.json' }}
 
 const name=LOCAL_PRIVATE_CONFIG_NAME type=string value={{ '.agon.local.json' }}
@@ -106,7 +110,7 @@ fn name=configSet params="key:keyof AgonConfig,value:AgonConfig[keyof AgonConfig
   >>>
 
 fn name=pruneRuns returns=void
-  doc "Remove old run directories beyond retention limit. Keeps the 100 most recent."
+  doc "Remove stale run directories beyond retention limit. Fresh dirs are protected so active forge/plan worktrees are never deleted mid-run."
   handler <<<
     // Review #10: dynamic runs dir via agonPath() — otherwise the frozen
     // RUNS_DIR const would prune the real ~/.agon/runs even in tests that
@@ -123,9 +127,12 @@ fn name=pruneRuns returns=void
         .filter((e: any): e is {name:string, mtime:number} => e !== null)
         .sort((a: {mtime:number}, b: {mtime:number}) => b.mtime - a.mtime);
 
-      if (entries.length <= 100) return;
+      if (entries.length <= RUN_PRUNE_KEEP_COUNT) return;
 
-      const toRemove = entries.slice(100);
+      const now = Date.now();
+      const toRemove = entries
+        .slice(RUN_PRUNE_KEEP_COUNT)
+        .filter((e: {mtime:number}) => now - e.mtime >= RUN_PRUNE_MIN_AGE_MS);
       for (const e of toRemove) {
         try { rmSync(join(runsDir, e.name), { recursive: true, force: true }); } catch { /* best effort */ }
       }

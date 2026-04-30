@@ -54,12 +54,18 @@ export const CORPUS_PATH: string = join(AGON_HOME, 'corpus.json');
 export const SKILLS_DIR: string = join(AGON_HOME, 'skills');
 
 // @kern-source: config:34
-export const LOCAL_CONFIG_NAME: string = '.agon.json';
+export const RUN_PRUNE_KEEP_COUNT: number = 100;
 
 // @kern-source: config:36
-export const LOCAL_PRIVATE_CONFIG_NAME: string = '.agon.local.json';
+export const RUN_PRUNE_MIN_AGE_MS: number = 24 * 60 * 60 * 1000;
 
 // @kern-source: config:38
+export const LOCAL_CONFIG_NAME: string = '.agon.json';
+
+// @kern-source: config:40
+export const LOCAL_PRIVATE_CONFIG_NAME: string = '.agon.local.json';
+
+// @kern-source: config:42
 export function loadConfig(cwd?: string): Required<AgonConfig> {
   function readJsonSafe<T>(path: string): T | null {
     try { return JSON.parse(readFileSync(path, 'utf-8')) as T; }
@@ -103,12 +109,12 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   return merged;
 }
 
-// @kern-source: config:82
+// @kern-source: config:86
 export function configGet(key: keyof AgonConfig, cwd?: string): Required<AgonConfig>[keyof AgonConfig] {
   return loadConfig(cwd)[key];
 }
 
-// @kern-source: config:84
+// @kern-source: config:88
 export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonConfig]): void {
   if (!(key in DEFAULT_AGON_CONFIG)) {
     throw new ConfigError(`Unknown config key: ${String(key)}`);
@@ -133,9 +139,9 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
 }
 
 /**
- * Remove old run directories beyond retention limit. Keeps the 100 most recent.
+ * Remove stale run directories beyond retention limit. Fresh dirs are protected so active forge/plan worktrees are never deleted mid-run.
  */
-// @kern-source: config:108
+// @kern-source: config:112
 export function pruneRuns(): void {
   // Review #10: dynamic runs dir via agonPath() — otherwise the frozen
   // RUNS_DIR const would prune the real ~/.agon/runs even in tests that
@@ -152,16 +158,19 @@ export function pruneRuns(): void {
       .filter((e: any): e is {name:string, mtime:number} => e !== null)
       .sort((a: {mtime:number}, b: {mtime:number}) => b.mtime - a.mtime);
 
-    if (entries.length <= 100) return;
+    if (entries.length <= RUN_PRUNE_KEEP_COUNT) return;
 
-    const toRemove = entries.slice(100);
+    const now = Date.now();
+    const toRemove = entries
+      .slice(RUN_PRUNE_KEEP_COUNT)
+      .filter((e: {mtime:number}) => now - e.mtime >= RUN_PRUNE_MIN_AGE_MS);
     for (const e of toRemove) {
       try { rmSync(join(runsDir, e.name), { recursive: true, force: true }); } catch { /* best effort */ }
     }
   } catch { /* dir doesn't exist yet — not critical */ }
 }
 
-// @kern-source: config:135
+// @kern-source: config:142
 export function ensureAgonHome(): void {
   mkdirSync(getAgonHome(), { recursive: true });
   mkdirSync(agonPath('runs'), { recursive: true });

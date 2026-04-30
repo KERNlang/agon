@@ -200,6 +200,8 @@ config name=AgonConfig
     doc "When true, plain chat turns run with Cesar autonomous mode enabled by default until the user disables it."
   field name=cesarAutoModePrompted type=boolean default=false
     doc "Tracks whether the CLI has asked the first-run question for enabling default Cesar autonomous mode."
+  field name=resumePausedPlanOnStartup type=boolean default=false
+    doc "When true, the CLI prompts to resume the freshest paused/running plan on startup. Default false — most users prefer to ask Cesar explicitly when they want to pick a plan back up. Set to true via config or `agon config set resumePausedPlanOnStartup true` to restore the auto-prompt."
   field name=cesarSelfTurnAutoApprove type=boolean default=true
     doc "When true, Cesar may auto-approve small Edit/Write operations during its own live turn if the target file is already known, inside the workspace, not sensitive, not stale, and under the diff token threshold."
   field name=cesarSelfTurnAutoApproveMaxDiffTokens type=number default=1200

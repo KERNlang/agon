@@ -11,9 +11,12 @@ fn name=git params="args:string[],cwd?:string" returns=string export=false
         stdio: ['pipe', 'pipe', 'pipe'],
       }).trim();
     } catch (err: unknown) {
-      const e = err as { status?: number; stderr?: string };
+      const e = err as { status?: number; stderr?: string|Buffer; stdout?: string|Buffer; message?: string };
+      const stderr = Buffer.isBuffer(e.stderr) ? e.stderr.toString('utf-8') : (e.stderr ?? '');
+      const stdout = Buffer.isBuffer(e.stdout) ? e.stdout.toString('utf-8') : (e.stdout ?? '');
+      const detail = stderr.trim() || stdout.trim() || e.message || 'unknown error';
       throw new GitError(
-        `git ${args[0]} failed: ${e.stderr?.trim() ?? 'unknown error'}`,
+        `git ${args[0]} failed: ${detail}`,
         e.status ?? 1,
       );
     }

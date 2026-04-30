@@ -400,6 +400,88 @@ describe('Forge E2E', () => {
     }
   });
 
+  it('clears engine pid when a stage2 dispatch throws after spawning', async () => {
+    const agonHome = setupTestAgonHome('forge-pid-clear-on-dispatch-error');
+    const repoDir = createRepo('pid-clear-on-dispatch-error');
+    const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const fakeNpx = createFakeNpx();
+    const events: any[] = [];
+
+    const adapter: EngineAdapter = {
+      dispatch: async (options: DispatchOptions): Promise<DispatchResult> => {
+        options.onSpawn?.(4242);
+        if (options.engine.id === 'broken') throw new Error('engine crashed after spawn');
+        writeFileSync(join(options.cwd, 'generated.ts'), 'export const value = "world";\n');
+        return { exitCode: 0, stdout: 'ok', stderr: '', durationMs: 1, timedOut: false };
+      },
+      isAvailable: async () => true,
+      getVersion: async () => 'test',
+    };
+
+    try {
+      vi.resetModules();
+      const { EngineRegistry } = await import('../../packages/core/src/index.js');
+      const { runForge } = await import('../../packages/forge/src/index.js');
+      const registry = new EngineRegistry();
+      registry.register(makeEngine('broken'));
+      registry.register(makeEngine('winner'));
+
+      const manifest = await runForge({
+        task: 'Create generated.ts that returns world',
+        fitnessCmd: `grep -q '"world"' generated.ts`,
+        cwd: repoDir,
+        forgeDir,
+        engines: ['broken', 'winner'],
+        starter: 'broken',
+      }, registry, adapter, (event) => events.push(event));
+
+      expect(manifest.winner).toBe('winner');
+      const pidIndex = events.findIndex((e) => e.type === 'engine:pid' && e.engineId === 'broken');
+      const clearIndex = events.findIndex((e) => e.type === 'engine:pid-clear' && e.engineId === 'broken');
+      expect(pidIndex).toBeGreaterThanOrEqual(0);
+      expect(clearIndex).toBeGreaterThan(pidIndex);
+      expect(events.some((e) => e.type === 'engine:failed' && e.engineId === 'broken')).toBe(true);
+    } finally {
+      cleanupTestAgonHome(agonHome);
+      process.env.PATH = fakeNpx.originalPath;
+      rmSync(fakeNpx.binDir, { recursive: true, force: true });
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a missing worktree as a clear fitness failure', async () => {
+    const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const missingWorktree = join(tmpdir(), `agon-missing-worktree-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(forgeDir, { recursive: true });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      vi.resetModules();
+      const { runFitness } = await import('../../packages/forge/src/index.js');
+      const result = await runFitness({
+        engineId: 'missing',
+        worktreePath: missingWorktree,
+        fitnessCmd: 'true',
+        timeout: 1,
+        forgeDir,
+      });
+
+      expect(result.pass).toBe(false);
+      expect(result.score).toBe(0);
+      expect(result.diffLines).toBe(0);
+      expect(result.filesChanged).toBe(0);
+      expect(result.patchPath).toBeTruthy();
+      expect(readFileSync(result.patchPath!, 'utf-8')).toBe('');
+      expect(result.fitnessLogPath).toBeTruthy();
+      expect(readFileSync(result.fitnessLogPath!, 'utf-8')).toContain('Worktree missing before fitness');
+    } finally {
+      warnSpy.mockRestore();
+      rmSync(forgeDir, { recursive: true, force: true });
+      rmSync(missingWorktree, { recursive: true, force: true });
+    }
+  });
+
   it('bases forge worktrees on dirty tracked changes', async () => {
     const agonHome = setupTestAgonHome('forge-dirty-base');
     const repoDir = createRepo('dirty-base');

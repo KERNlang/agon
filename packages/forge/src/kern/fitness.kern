@@ -1,4 +1,4 @@
-import from="node:fs" names="writeFileSync"
+import from="node:fs" names="existsSync,writeFileSync"
 import from="node:path" names="join"
 import from="@agon/core" names="FitnessResult,EngineResult" types=true
 import from="@agon/core" names="spawnWithTimeout,worktreeDiff,diffLineCount,diffFileCount,computeScore"
@@ -8,12 +8,23 @@ fn name=runFitness async=true params="opts:{engineId:string, worktreePath:string
   handler <<<
     const startTime = Date.now();
 
-    const fitnessResult = await spawnWithTimeout({
-      command: '/bin/sh',
-      args: ['-c', opts.fitnessCmd],
-      cwd: opts.worktreePath,
-      timeout: opts.timeout * 1000,
-    });
+    let fitnessResult: any;
+    if (existsSync(opts.worktreePath)) {
+      fitnessResult = await spawnWithTimeout({
+        command: '/bin/sh',
+        args: ['-c', opts.fitnessCmd],
+        cwd: opts.worktreePath,
+        timeout: opts.timeout * 1000,
+      });
+    } else {
+      fitnessResult = {
+        exitCode: 1,
+        stdout: '',
+        stderr: `Worktree missing before fitness: ${opts.worktreePath}`,
+        durationMs: 0,
+        timedOut: false,
+      };
+    }
 
     const durationSec = Math.round((Date.now() - startTime) / 1000);
     const pass = fitnessResult.exitCode === 0 && !fitnessResult.timedOut;
@@ -22,6 +33,9 @@ fn name=runFitness async=true params="opts:{engineId:string, worktreePath:string
     let diffLines: number;
     let filesChanged: number;
     try {
+      if (!existsSync(opts.worktreePath)) {
+        throw new Error(`worktree missing before diff: ${opts.worktreePath}`);
+      }
       // Capture after fitness: KERN compile, formatters, snapshots, and other
       // verification commands can intentionally generate files that must be in
       // the winning patch.
@@ -60,8 +74,9 @@ fn name=runFitness async=true params="opts:{engineId:string, worktreePath:string
       console.warn(`[agon] fitness: failed to write log for ${opts.engineId}: ${logErr instanceof Error ? logErr.message : String(logErr)}`);
     }
 
-    const lintWarnings = await runLint(opts.worktreePath);
-    const styleScore = await runStyleCheck(opts.worktreePath);
+    const worktreeExistsForQuality = existsSync(opts.worktreePath);
+    const lintWarnings = worktreeExistsForQuality ? await runLint(opts.worktreePath) : 0;
+    const styleScore = worktreeExistsForQuality ? await runStyleCheck(opts.worktreePath) : 0;
 
     const fitness: FitnessResult = {
       pass,

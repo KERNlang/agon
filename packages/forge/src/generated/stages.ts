@@ -73,6 +73,7 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
   opts.onEvent?.({ type: opts.eventType as any, engineId: opts.engineId, data: opts.eventData });
 
   const dispatchStart = Date.now();
+  let dispatchDurationMs = 0;
   let dispatchResult: any;
   // Forge is a code-changing workflow. API-only engines must run through
   // the tool-using agent loop; plain API chat can only return text and will
@@ -83,31 +84,34 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
     engineId: opts.engineId,
     data: { engineId: opts.engineId, pid, phase: opts.metricPhase },
   });
-  if (useAgent) {
-    dispatchResult = await opts.adapter.dispatchAgent!({
-      engine,
-      prompt: opts.prompt,
-      cwd: wtPath,
-      mode: 'agent',
-      timeout: opts.config.forgeTimeout,
-      outputDir: opts.forgeDir,
-      signal: opts.signal,
-      onSpawn,
-    });
-  } else {
-    dispatchResult = await opts.adapter.dispatch({
-      engine,
-      prompt: opts.prompt,
-      cwd: wtPath,
-      mode: opts.dispatchMode,
-      timeout: opts.config.forgeTimeout,
-      outputDir: opts.forgeDir,
-      signal: opts.signal,
-      onSpawn,
-    });
+  try {
+    if (useAgent) {
+      dispatchResult = await opts.adapter.dispatchAgent!({
+        engine,
+        prompt: opts.prompt,
+        cwd: wtPath,
+        mode: 'agent',
+        timeout: opts.config.forgeTimeout,
+        outputDir: opts.forgeDir,
+        signal: opts.signal,
+        onSpawn,
+      });
+    } else {
+      dispatchResult = await opts.adapter.dispatch({
+        engine,
+        prompt: opts.prompt,
+        cwd: wtPath,
+        mode: opts.dispatchMode,
+        timeout: opts.config.forgeTimeout,
+        outputDir: opts.forgeDir,
+        signal: opts.signal,
+        onSpawn,
+      });
+    }
+  } finally {
+    dispatchDurationMs = Date.now() - dispatchStart;
+    opts.onEvent?.({ type: 'engine:pid-clear' as any, engineId: opts.engineId, data: { engineId: opts.engineId, phase: opts.metricPhase } });
   }
-  const dispatchDurationMs = Date.now() - dispatchStart;
-  opts.onEvent?.({ type: 'engine:pid-clear' as any, engineId: opts.engineId, data: { engineId: opts.engineId, phase: opts.metricPhase } });
 
   const fitnessStart = Date.now();
   const result = await runFitness({
@@ -137,7 +141,7 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
   return { result, metric, dispatchResult, worktreePath: wtPath };
 }
 
-// @kern-source: stages:129
+// @kern-source: stages:133
 export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}): Promise<boolean> {
   opts.onEvent?.({ type: 'baseline:start' });
 
@@ -161,7 +165,7 @@ export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:
   }
 }
 
-// @kern-source: stages:153
+// @kern-source: stages:157
 export async function runStage1(opts: {starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, taskClass?:string, enginePrompts?:Map<string,string>}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
 
@@ -256,7 +260,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
   return { engineResults, accepted, winner: result?.pass ? result.engineId : null, metrics };
 }
 
-// @kern-source: stages:248
+// @kern-source: stages:252
 export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
@@ -354,7 +358,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:346
+// @kern-source: stages:350
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

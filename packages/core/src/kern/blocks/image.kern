@@ -3,8 +3,7 @@ import from="node:path" names="resolve,basename,extname"
 import from="node:os" names="homedir"
 import from="../models/types.js" names="ImageAttachment" types=true
 
-const name=IMAGE_EXTENSIONS type="Set<string>"
-  handler <<< new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp']) >>>
+const name=IMAGE_EXTENSIONS type="Set<string>" value={{ new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp']) }}
 
 const name=MIME_MAP type="Record<string,string>"
   handler <<<
@@ -19,11 +18,9 @@ const name=MIME_MAP type="Record<string,string>"
     })
   >>>
 
-const name=IMAGE_PATH_REGEX type=RegExp
-  handler <<< /(?:^|\s)((?:\/[\w.\-]+)+\.(?:png|jpe?g|gif|webp|svg|bmp)|~\/[\w.\-\/]+\.(?:png|jpe?g|gif|webp|svg|bmp)|\.{1,2}\/[\w.\-\/]+\.(?:png|jpe?g|gif|webp|svg|bmp))/gi >>>
+const name=IMAGE_PATH_REGEX type=RegExp value={{ /(?:^|\s)((?:\/[\w.\-]+)+\.(?:png|jpe?g|gif|webp|svg|bmp)|~\/[\w.\-\/]+\.(?:png|jpe?g|gif|webp|svg|bmp)|\.{1,2}\/[\w.\-\/]+\.(?:png|jpe?g|gif|webp|svg|bmp))/gi }}
 
-const name=IMG_CMD_REGEX type=RegExp
-  handler <<< /^\/img\s+(.+)$/i >>>
+const name=IMG_CMD_REGEX type=RegExp value={{ /^\/img\s+(.+)$/i }}
 
 fn name=isImagePath params="filePath:string" returns="boolean"
   handler <<<

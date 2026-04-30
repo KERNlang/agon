@@ -9,10 +9,7 @@ interface name=InlineSpan
   field name=text type=string
   field name=style type=InlineStyle
 
-const name=DEFAULT_STYLE type=InlineStyle
-  handler <<<
-    ({ bold: false, italic: false, code: false, dimColor: false, linkUrl: undefined })
-  >>>
+const name=DEFAULT_STYLE type=InlineStyle value={{ ({ bold: false, italic: false, code: false, dimColor: false, linkUrl: undefined }) }}
 
 interface name=RichLine
   field name=kind type="'plain'|'h1'|'h2'|'h3'|'bullet'|'ordered'|'blockquote'|'hr'|'blank'"
@@ -167,10 +164,7 @@ fn name=parseInlineSpans params="text:string" returns="InlineSpan[]"
     return merged.length > 0 ? merged : [{ text, style: DEFAULT_STYLE }];
   >>>
 
-fn name=visibleLength params="spans:InlineSpan[]" returns=number export=false
-  handler <<<
-    return spans.reduce((sum, s) => sum + s.text.length, 0);
-  >>>
+fn name=visibleLength params="spans:InlineSpan[]" returns=number export=false expr={{ return spans.reduce((sum, s) => sum + s.text.length, 0); }}
 
 fn name=richWrap params="spans:InlineSpan[], width:number" returns="InlineSpan[][]"
   handler <<<

@@ -16,8 +16,7 @@ import from="./plan-view.js" names="PlanProposalView,PlanExecutionView"
 
 // ── Brand Constants ─────────────────────────────────────────────────
 
-const name=BRAND type="readonly string[]"
-  handler <<< ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const >>>
+const name=BRAND type="readonly string[]" value={{ ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const }}
 
 const name=LOGO_LINES type="string[]"
   handler <<<
@@ -31,13 +30,9 @@ const name=LOGO_LINES type="string[]"
     ]
   >>>
 
-const name=VERSION type=string
-  handler <<< '0.1.0' >>>
+const name=VERSION type=string value={{ '0.1.0' }}
 
-fn name=shortToolPath params="filePath:string" returns=string
-  handler <<<
-    return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~');
-  >>>
+fn name=shortToolPath params="filePath:string" returns=string expr={{ return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~'); }}
 
 fn name=isCesarTelemetryLine params="message:string" returns=boolean
   handler <<<
@@ -169,7 +164,7 @@ screen name=EngineProgressView target=ink
         const s = engines[0]?.status ?? '';
         if (s.startsWith('drafting')) return 'brainstorm';
         if (s.startsWith('thinking')) return 'campfire';
-        if (['queued','building'].some(k => s.startsWith(k)) || s.startsWith('done (')) return 'forge';
+        if (['preparing','queued','building'].some(k => s.startsWith(k)) || s.startsWith('done (')) return 'forge';
         if (s.startsWith('R') || s.startsWith('waiting')) return 'tribunal';
         return 'default';
       })();

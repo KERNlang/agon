@@ -30,10 +30,7 @@ fn name=shellQuoteForDoctor params="value:string" returns=string export=true
     return `'${s.replace(/'/g, `'\\''`)}'`;
   >>>
 
-fn name=buildDoctorCleanupCommand params="repo:string,path:string" returns=string export=true
-  handler <<<
-    return `git -C ${shellQuoteForDoctor(repo)} worktree prune && rm -rf ${shellQuoteForDoctor(path)}`;
-  >>>
+fn name=buildDoctorCleanupCommand params="repo:string,path:string" returns=string export=true expr={{ return `git -C ${shellQuoteForDoctor(repo)} worktree prune && rm -rf ${shellQuoteForDoctor(path)}`; }}
 
 fn name=formatDoctorStatus params="status:'ok'|'warn'|'fail'" returns=string export=true
   handler <<<

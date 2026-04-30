@@ -71,11 +71,8 @@ interface name=RawSessionChunk
 
 // ── Constructors ──────────────────────────────────────────────────
 
-fn name=makeAssistantChunk params="engineId:string,text:string" returns=AgentEvent export=true
+fn name=makeAssistantChunk params="engineId:string,text:string" returns=AgentEvent export=true expr={{ return { kind: 'assistant_chunk', engineId, text }; }}
   doc "Build an assistant_chunk event — streaming text from the model."
-  handler <<<
-    return { kind: 'assistant_chunk', engineId, text };
-  >>>
 
 fn name=makeToolCall params="engineId:string,toolName:string,status:'running'|'ok'|'error'|'rejected',opts?:{toolCallId?:string,input?:Record<string,unknown>,output?:string,error?:string}" returns=AgentEvent export=true
   doc "Build a tool_call event. Status semantics: running=started, ok=completed successfully, error=tool threw, rejected=user or permission system blocked."
@@ -92,17 +89,11 @@ fn name=makeToolCall params="engineId:string,toolName:string,status:'running'|'o
     };
   >>>
 
-fn name=makeTurnComplete params="engineId:string,stopReason:string,usage?:AgentUsage|null" returns=AgentEvent export=true
+fn name=makeTurnComplete params="engineId:string,stopReason:string,usage?:AgentUsage|null" returns=AgentEvent export=true expr={{ return { kind: 'turn_complete', engineId, stopReason, usage: usage ?? null }; }}
   doc "Build a turn_complete event. Usage is null for CLI engines that don't report it, or an AgentUsage struct for API engines with SDK usage."
-  handler <<<
-    return { kind: 'turn_complete', engineId, stopReason, usage: usage ?? null };
-  >>>
 
-fn name=makeError params="engineId:string,message:string,recoverable?:boolean" returns=AgentEvent export=true
+fn name=makeError params="engineId:string,message:string,recoverable?:boolean" returns=AgentEvent export=true expr={{ return { kind: 'error', engineId, message, recoverable: recoverable ?? false }; }}
   doc "Build an error event. Recoverable=true for retryable errors (network blip), false for terminal failures."
-  handler <<<
-    return { kind: 'error', engineId, message, recoverable: recoverable ?? false };
-  >>>
 
 // ── Normalizer: SessionChunk → AgentEvent ──────────────────────────
 
@@ -210,11 +201,8 @@ fn name=buildApiTurnEvents params="engineId:string,response:string,toolCalls:num
 
 // ── Usage helpers ─────────────────────────────────────────────────
 
-fn name=unavailableUsage params="" returns=AgentUsage export=true
+fn name=unavailableUsage params="" returns=AgentUsage export=true expr={{ return { promptTokens: 0, completionTokens: 0, totalTokens: 0, source: 'unavailable' }; }}
   doc "Build a sentinel AgentUsage for CLI engines that report nothing. Use this in turn_complete events when source='unavailable' is semantically clearer than null."
-  handler <<<
-    return { promptTokens: 0, completionTokens: 0, totalTokens: 0, source: 'unavailable' };
-  >>>
 
 fn name=estimatedUsage params="promptText:string,responseText:string" returns=AgentUsage export=true
   doc "Build an estimated AgentUsage using the char/4 heuristic (matches TokenTracker.estimateTokens). Phase 1 AgentSession uses this for CLI engines until Phase 3 protocol parsers emit real usage."

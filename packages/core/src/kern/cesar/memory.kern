@@ -1,10 +1,7 @@
 // ── Cesar Memory — session only ──────────────────────────────────────
 // Ephemeral memory scoped to the current Agon session. New sessions start clean.
 
-const name=MAX_SESSION_ENTRIES type=number
-  handler <<<
-    50
-  >>>
+const name=MAX_SESSION_ENTRIES type=number value=50
 
 interface name=MemoryEntry
   field name=key type=string

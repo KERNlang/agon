@@ -41,11 +41,8 @@ interface name=CesarHarnessReplayResult export=true
   field name=rendered type=string
   field name=turns type="Array<Record<string,unknown>>"
 
-fn name=createCesarTurnId returns=string export=true
+fn name=createCesarTurnId returns=string export=true expr={{ return `cesar-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }}
   doc "Create a short stable-enough id for joining per-turn tool timeline and approval ledger records."
-  handler <<<
-    return `cesar-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  >>>
 
 fn name=looksSensitiveString params="value:string" returns=boolean export=false
   handler <<<

@@ -5,6 +5,7 @@ import {
   selectPromptViewport,
   shouldAdoptPromptValue,
   wrapPromptText,
+  isDelegatedCtrlShortcut,
 } from '../../packages/cli/src/generated/blocks/prompt-input.js';
 
 describe('prompt text input helpers', () => {
@@ -53,5 +54,9 @@ describe('prompt text input helpers', () => {
     expect(shouldAdoptPromptValue('', 'ab')).toBe(true);
     expect(shouldAdoptPromptValue('/history', 'ab')).toBe(true);
     expect(shouldAdoptPromptValue('ab', null)).toBe(true);
+  });
+
+  it('delegates ctrl+g so the composer can toggle the live rail', () => {
+    expect(isDelegatedCtrlShortcut('g')).toBe(true);
   });
 });

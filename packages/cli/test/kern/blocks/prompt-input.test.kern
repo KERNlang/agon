@@ -1,0 +1,14 @@
+test name="Prompt input block" target="../../../src/kern/blocks/prompt-input.kern"
+  it name="prompt input stays valid KERN"
+    expect no=schemaViolations
+    expect no=semanticViolations
+    expect no=codegenErrors
+
+  it name="wrapPromptText wraps by fixed terminal width"
+    expect fn=wrapPromptText args={{["abcd", 2]}} equals={{["ab", "cd"]}}
+    expect fn=wrapPromptText args={{["a\nbc", 2]}} equals={{["a", "bc"]}}
+    expect fn=wrapPromptText args={{["abc", 0]}} equals={{["a", "b", "c"]}}
+
+  it name="cursor and viewport helpers keep stable boundaries"
+    expect fn=locatePromptCursor args={{["abcd", 2, 2]}} equals={{ { line: 1, column: 0, synthetic: false } }}
+    expect fn=selectPromptViewport args={{[10, 7, 4]}} equals={{ { start: 6, end: 10, hiddenAbove: 6, hiddenBelow: 0 } }}

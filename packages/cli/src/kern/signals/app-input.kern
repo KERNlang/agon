@@ -4,17 +4,11 @@
 import from="./ghost-text.js" names="getGhostCompletion"
 import from="../../input-utils.js" names="stripBracketedPasteMarkers"
 
-fn name=cleanInputValue params="value:string" returns=string
+fn name=cleanInputValue params="value:string" returns=string expr={{ return stripBracketedPasteMarkers(value); }}
   doc "Strip bracketed paste escapes from input while preserving pasted content."
-  handler <<<
-    return stripBracketedPasteMarkers(value);
-  >>>
 
-fn name=cleanSubmitValue params="value:string" returns=string
+fn name=cleanSubmitValue params="value:string" returns=string expr={{ return stripBracketedPasteMarkers(value).trim(); }}
   doc "Strip paste escapes and trim for submission."
-  handler <<<
-    return stripBracketedPasteMarkers(value).trim();
-  >>>
 
 fn name=findInputChange params="previous:string, next:string" returns="{start:number, removed:string, inserted:string}"
   doc "Find the single contiguous edit between two input values."
@@ -104,11 +98,8 @@ fn name=resolveEscapeAction params="opts:{replState:string,inputValue:string,sla
     return { action: 'noop' };
   >>>
 
-fn name=tryGhostComplete params="inputValue:string, commands:any[], engineIds:string[]" returns="string|null"
+fn name=tryGhostComplete params="inputValue:string, commands:any[], engineIds:string[]" returns="string|null" expr={{ return getGhostCompletion(inputValue, commands, engineIds); }}
   doc "Get ghost text completion for current input."
-  handler <<<
-    return getGhostCompletion(inputValue, commands, engineIds);
-  >>>
 
 fn name=getSlashMatches params="filter:string, commands:any[]" returns="any[]"
   doc "Rank slash-command matches so prefix hits stay on top while substring hits remain reachable."

@@ -26,27 +26,17 @@ interface name=ChatSession
   field name=summary type=string optional=true
   field name=summarizedMessageCount type=number optional=true
 
-fn name=chatsDir returns="string"
-  handler <<<
-    return runtimeAgonPath('chats');
-  >>>
+fn name=chatsDir returns="string" expr={{ return runtimeAgonPath('chats'); }}
 
-fn name=ensureChatsDir returns="void"
-  handler <<<
-    mkdirSync(chatsDir(), { recursive: true });
-  >>>
+fn name=ensureChatsDir returns="void" expr={{ mkdirSync(chatsDir(), { recursive: true }); }}
 
-const name=CHAT_RETENTION type=number
-  handler <<< 50 >>>
+const name=CHAT_RETENTION type=number value=50
 
-const name=CHAT_SUMMARY_TAIL_MESSAGES type=number
-  handler <<< 12 >>>
+const name=CHAT_SUMMARY_TAIL_MESSAGES type=number value=12
 
-const name=CHAT_SUMMARY_MAX_CHARS type=number
-  handler <<< 5000 >>>
+const name=CHAT_SUMMARY_MAX_CHARS type=number value=5000
 
-const name=CHAT_SUMMARY_ENTRY_CHARS type=number
-  handler <<< 320 >>>
+const name=CHAT_SUMMARY_ENTRY_CHARS type=number value=320
 
 fn name=pruneChats returns="void"
   doc "Remove old chat files beyond the retention limit. Keeps the most recent CHAT_RETENTION sessions."
@@ -305,11 +295,8 @@ fn name=loadChatSession params="id:string" returns="ChatSession|null"
     }
   >>>
 
-fn name=resumeChatSession params="id:string" returns="ChatSession|null"
+fn name=resumeChatSession params="id:string" returns="ChatSession|null" expr={{ return loadChatSession(id); }}
   doc "Load an existing session for continued use. Returns null if not found."
-  handler <<<
-    return loadChatSession(id);
-  >>>
 
 fn name=listChatSessions params="limit:number" returns="ChatSession[]"
   handler <<<

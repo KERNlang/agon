@@ -1,29 +1,25 @@
 import from="node:child_process" names="execSync"
 
-const name=_linuxHelperCache type="{ cmd: string | null; probed: boolean }"
+const name=_linuxHelperCache type="{ cmd: string | null; probed: boolean }" value={{ { cmd: null, probed: false } }}
   doc "Cached result of Linux clipboard helper probe"
-  handler <<< { cmd: null, probed: false } >>>
 
-fn name=detectClipboardPath params="" returns="'native'|'tmux'|'osc52'"
+fn name=detectClipboardPath params="" returns="'native'|'tmux'|'osc52'" export=false
   doc "Detect the best clipboard write strategy for current environment."
-  export=false
   handler <<<
     if (process.env.TMUX) return 'tmux';
     if (process.env.SSH_CLIENT || process.env.SSH_TTY) return 'osc52';
     return 'native';
   >>>
 
-fn name=writeOsc52 params="text:string" returns=void
+fn name=writeOsc52 params="text:string" returns=void export=false
   doc "Write text to clipboard via OSC 52 escape sequence."
-  export=false
   handler <<<
     const b64 = Buffer.from(text).toString('base64');
     process.stdout.write(`\x1b]52;c;${b64}\x07`);
   >>>
 
-fn name=writeTmuxClipboard params="text:string" returns=void
+fn name=writeTmuxClipboard params="text:string" returns=void export=false
   doc "Write text to tmux paste buffer + OSC 52 via DCS passthrough."
-  export=false
   handler <<<
     // Load into tmux buffer
     try {
@@ -35,9 +31,8 @@ fn name=writeTmuxClipboard params="text:string" returns=void
     process.stdout.write(`\x1bPtmux;\x1b\x1b]52;c;${b64}\x07\x1b\\`);
   >>>
 
-fn name=probeLinuxHelper params="" returns="string|null"
+fn name=probeLinuxHelper params="" returns="string|null" export=false
   doc "Probe for available Linux clipboard helper. Caches result."
-  export=false
   handler <<<
     if (_linuxHelperCache.probed) return _linuxHelperCache.cmd;
     _linuxHelperCache.probed = true;

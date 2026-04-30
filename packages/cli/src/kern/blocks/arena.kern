@@ -1,5 +1,5 @@
-// ── Arena: themed ASCII progress displays for orchestration modes ──
-// Forge → gladiator arena with progress bars
+// ── Arena: compact progress displays for orchestration modes ──
+// Forge → factual per-engine state with progress bars only while building
 // Brainstorm → lightning storm with sparking engines
 // Campfire → flickering flames with gathered engines
 
@@ -9,19 +9,7 @@ import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="./rendering.js" names="engineColor"
 import from="../signals/icons.js" names="icons"
 
-// ── Forge: The Arena ────────────────────────────────────────────────
-
-const name=FORGE_BORDERS type="string[][]"
-  handler <<<
-    [
-      ['\u2694\u2550\u2550\u2550\u2550\u2550 T H E  F O R G E \u2550\u2550\u2550\u2550\u2550\u2694',
-       '\u2694\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2694'],
-      ['\u2694\u2550\u2550\u2726\u2550\u2550 T H E  F O R G E \u2550\u2550\u2726\u2550\u2550\u2694',
-       '\u2694\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2694'],
-      ['\u2694\u2550\u2550\u2550\u2550\u2550 T H E  F O R G E \u2550\u2550\u2550\u2550\u2550\u2694',
-       '\u2694\u2550\u2726\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2726\u2550\u2694'],
-    ]
-  >>>
+// ── Forge ───────────────────────────────────────────────────────────
 
 fn name=forgeBar params="pct:number, width:number" returns=string export=false
   handler <<<
@@ -30,30 +18,34 @@ fn name=forgeBar params="pct:number, width:number" returns=string export=false
     return '\u2588'.repeat(filled) + (half ? '\u2592' : '') + '\u2591'.repeat(Math.max(0, width - filled - half));
   >>>
 
-screen name=ForgeArena target=ink
-  prop name=engines type="EngineProgress[]"
-  render wrapper="<Box flexDirection=\"column\" paddingLeft={2}>"
-    local name=elapsed expr="engines[0]?.elapsed ?? 0"
-    local name=frame expr="elapsed % FORGE_BORDERS.length"
-    local name=borderPair type="string[]" expr="FORGE_BORDERS[frame]"
-    local name=maxElapsed expr="120"
-    local name=leader expr="engines.reduce((acc: { leaderId: string; bestPct: number }, e: EngineProgress) => { const pct = e.done ? 1 : Math.min(e.elapsed / maxElapsed, 0.95); return (pct > acc.bestPct || e.done) ? { leaderId: e.id, bestPct: pct } : acc; }, { leaderId: '', bestPct: -1 })"
-    handler <<<
-      <Text color="#f97316" bold>{borderPair[0]}</Text>
-    >>>
-    handler <<<
-      <Text color="#f97316">{'\u2551'}</Text>
-    >>>
-    each name=e in=engines key="e.id"
-      let name=pct expr="e.done ? 1 : Math.min(e.elapsed / maxElapsed, 0.95)"
-      let name=bar expr="forgeBar(pct, 12)"
-      let name=isLead expr="e.id === leader.leaderId && !e.failed"
-      let name=statusTxt expr="e.done ? (e.score ? `\u2605 ${e.score}` : '\u2713 done') : e.failed ? '\u2717 fail' : `${Math.round(pct * 100)}%`"
-      handler <<<
+fn name=forgeSummary params="engines:EngineProgress[]" returns=string export=false
+  handler <<<
+    const doneCount = engines.filter((e: EngineProgress) => e.done).length;
+    const failedCount = engines.filter((e: EngineProgress) => e.failed).length;
+    return ` ${doneCount}/${engines.length} done${failedCount ? ` · ${failedCount} failed` : ''}`;
+  >>>
+
+fn name=renderForgeRows params="engines:EngineProgress[]" returns="React.ReactNode" export=false
+  handler <<<
+    const maxElapsed = 120;
+    const leader = engines.reduce((acc: { leaderId: string; bestPct: number }, e: EngineProgress) => {
+      const status = String(e.status ?? '');
+      const active = !e.done && !e.failed && !status.startsWith('queued') && !status.startsWith('preparing') && !status.startsWith('waiting');
+      const pct = e.done ? 1 : active ? Math.min(e.elapsed / maxElapsed, 0.9) : 0;
+      return (pct > acc.bestPct || e.done) ? { leaderId: e.id, bestPct: pct } : acc;
+    }, { leaderId: '', bestPct: -1 });
+    return engines.map((e: EngineProgress) => {
+      const status = String(e.status ?? '');
+      const isWaiting = status.startsWith('queued') || status.startsWith('preparing') || status.startsWith('waiting');
+      const isActive = !e.done && !e.failed && !isWaiting;
+      const pct = e.done ? 1 : e.failed ? 0 : isActive ? Math.min(e.elapsed / maxElapsed, 0.9) : 0;
+      const bar = forgeBar(pct, 12);
+      const isLead = e.id === leader.leaderId && !e.failed;
+      const statusTxt = e.done ? (e.score ? `score ${e.score}` : 'done') : e.failed ? 'failed' : isWaiting ? status : `${status} ${Math.round(pct * 100)}%`;
+      return (
         <Box key={e.id}>
-          <Text color="#f97316">{'\u2551 '}</Text>
           <Text color={e.done ? 'green' : e.failed ? 'red' : 'yellow'}>
-            {e.done ? '\u2713' : e.failed ? '\u2717' : isLead ? '\u2694' : '\u00b7'}
+            {e.done ? '\u2713' : e.failed ? '\u2717' : isWaiting ? '\u25e6' : isLead ? '\u25b8' : '\u00b7'}
           </Text>
           <Text>{' '}</Text>
           <Box width={16}>
@@ -63,15 +55,23 @@ screen name=ForgeArena target=ink
           <Text color={e.done ? '#22c55e' : e.failed ? '#ef4444' : '#f97316'}>{bar}</Text>
           <Text>{' '}</Text>
           <Text dimColor>{statusTxt}</Text>
-          <Text color="#f97316">{' \u2551'}</Text>
         </Box>
+      );
+    });
+  >>>
+
+screen name=ForgeArena target=ink
+  prop name=engines type="EngineProgress[]"
+  render
+    handler <<<
+      <Box flexDirection="column" paddingLeft={2}>
+        <Text>
+          <Text color="#f97316" bold>{'Forge'}</Text>
+          <Text dimColor>{forgeSummary(engines)}</Text>
+        </Text>
+        {renderForgeRows(engines)}
+      </Box>
       >>>
-    handler <<<
-      <Text color="#f97316">{'\u2551'}</Text>
-    >>>
-    handler <<<
-      <Text color="#f97316" bold>{borderPair[1]}</Text>
-    >>>
 
 // ── Brainstorm: The Storm ───────────────────────────────────────────
 

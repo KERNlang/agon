@@ -65,7 +65,4 @@ fn name=cursorUpSequence params="count:number" returns="string"
     return `\x1b[${count}A`;
   >>>
 
-fn name=clearLineSequence params="" returns="string"
-  handler <<<
-    return '\r\x1b[2K';
-  >>>
+fn name=clearLineSequence params="" returns="string" expr={{ return '\r\x1b[2K'; }}

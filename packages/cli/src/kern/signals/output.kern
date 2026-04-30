@@ -59,18 +59,14 @@ interface name=OutputActions
   field name=clearAgentProgressByTeam type="(teamId:string) => void"
 
 // ── Thinking buffer — coalesces thinking-chunk events into a single block ────
-const name=_thinkingBuffer type="{engineId:string,content:string}"
-  handler <<< { engineId: '', content: '' } >>>
+const name=_thinkingBuffer type="{engineId:string,content:string}" value={{ { engineId: '', content: '' } }}
 
 // ── Permission queue — ensures prompts don't overwrite each other ────
-const name=_permissionQueue type="Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>"
-  handler <<< [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> >>>
+const name=_permissionQueue type="Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>" value={{ [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> }}
 
-const name=_sessionAllowList type="string[]"
-  handler <<< [] as string[] >>>
+const name=_sessionAllowList type="string[]" value={{ [] as string[] }}
 
-fn name=getSessionAllowList returns="string[]" export=true
-  handler <<< return _sessionAllowList; >>>
+fn name=getSessionAllowList returns="string[]" export=true expr={{ return _sessionAllowList; }}
 
 fn name=clearPermissionQueue returns=void
   doc "Reject all queued permissions and clear the queue. Called on interrupt/cancel."
@@ -94,14 +90,11 @@ fn name=clearThinkingBuffer returns=void
 // turns that end on a tool-call (e.g., /run) don't leave the final row
 // stranded. Only status=done/error events are buffered — the running
 // event only updates AgentProgressView live.
-const name=TOOL_CALL_GROUP_FLUSH_MS type=number
-  handler <<< 500 >>>
+const name=TOOL_CALL_GROUP_FLUSH_MS type=number value=500
 
-const name=_pendingToolCalls type="any[]"
-  handler <<< [] as any[] >>>
+const name=_pendingToolCalls type="any[]" value={{ [] as any[] }}
 
-const name=_pendingFlushTimer type="{ timer: any, actions: any }"
-  handler <<< ({ timer: null, actions: null }) as any >>>
+const name=_pendingFlushTimer type="{ timer: any, actions: any }" value={{ ({ timer: null, actions: null }) as any }}
 
 fn name=toolCallKey params="event:any" returns=string export=false
   handler <<<

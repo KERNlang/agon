@@ -7,8 +7,7 @@ import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="../cesar/brain.js" names="yieldToInk"
 
 // Module-level cwd cache — resolveWorkingDir reads disk, but workspace doesn't change mid-session
-const name=_cachedCwd type="{value:string|null}"
-  handler <<< { value: null } >>>
+const name=_cachedCwd type="{value:string|null}" value={{ { value: null } }}
 
 fn name=cachedCwd returns=string export=false
   handler <<<
@@ -18,11 +17,8 @@ fn name=cachedCwd returns=string export=false
     return _cachedCwd.value;
   >>>
 
-fn name=invalidateCwdCache returns=void
+fn name=invalidateCwdCache returns=void expr={{ _cachedCwd.value = null; }}
   doc "Call when workspace changes (e.g. /workspace switch)."
-  handler <<<
-    _cachedCwd.value = null;
-  >>>
 
 fn name=detectTargetEngine params="input:string, availableIds:string[]" returns="{engineId:string|null,message:string}" export=false
   handler <<<

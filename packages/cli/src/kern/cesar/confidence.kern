@@ -1,10 +1,7 @@
 // ── Cesar Confidence: parsing, display, tier thresholds ─────────────
 import from="../signals/icons.js" names="icons"
 
-const name=CONFIDENCE_TIERS type="{ direct: number; quickNero: number; nero: number; brainstorm: number; advisor: number }"
-  handler <<<
-    ({ direct: 96, quickNero: 93, nero: 88, brainstorm: 72, advisor: 72 })
-  >>>
+const name=CONFIDENCE_TIERS type="{ direct: number; quickNero: number; nero: number; brainstorm: number; advisor: number }" value={{ ({ direct: 96, quickNero: 93, nero: 88, brainstorm: 72, advisor: 72 }) }}
 
 fn name=parseConfidence params="response:string" returns="{ value: number | null; rest: string }"
   doc "Extract ~X% or Confidence: 0.X from the start of a response."

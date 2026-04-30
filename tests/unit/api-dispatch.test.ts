@@ -79,6 +79,7 @@ describe('api-dispatch — AI SDK message conversion', () => {
           function: { name: 'Read', arguments: '{"file_path":"/tmp/test.ts"}' },
         }],
       },
+      { role: 'tool', content: 'file contents here', tool_call_id: 'call_1' },
     ];
     const result = convertMessagesForSdk(messages);
     expect(result[1]).toEqual({
@@ -165,9 +166,72 @@ describe('api-dispatch — AI SDK message conversion', () => {
           function: { name: 'Grep', arguments: { pattern: 'foo', path: '/tmp' } },
         }],
       },
+      { role: 'tool', content: 'grep output', tool_call_id: 'call_1' },
     ];
     const result = convertMessagesForSdk(messages);
     expect(result[1].content[0].input).toEqual({ pattern: 'foo', path: '/tmp' });
+  });
+
+  it('recovers assistant tool calls whose matching tool result never arrived', () => {
+    const messages = [
+      { role: 'user', content: 'read package.json' },
+      {
+        role: 'assistant',
+        content: 'I will read it.',
+        tool_calls: [{
+          id: 'call_missing',
+          type: 'function',
+          function: { name: 'Read', arguments: '{"file_path":"package.json"}' },
+        }],
+      },
+    ];
+
+    const result = convertMessagesForSdk(messages);
+
+    expect(result).toEqual([
+      { role: 'user', content: 'read package.json' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'I will read it.' },
+          { type: 'text', text: '[Recovered incomplete tool call omitted from native tool channel: Read]' },
+        ],
+      },
+    ]);
+  });
+
+  it('keeps completed tool calls while recovering incomplete calls from the same assistant turn', () => {
+    const messages = [
+      { role: 'user', content: 'read both files' },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          { id: 'call_done', type: 'function', function: { name: 'Read', arguments: '{"file_path":"a.ts"}' } },
+          { id: 'call_missing', type: 'function', function: { name: 'Read', arguments: '{"file_path":"b.ts"}' } },
+        ],
+      },
+      { role: 'tool', content: 'contents of a', tool_call_id: 'call_done' },
+    ];
+
+    const result = convertMessagesForSdk(messages);
+
+    expect(result[1]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'tool-call', toolCallId: 'call_done', toolName: 'Read', input: { file_path: 'a.ts' } },
+        { type: 'text', text: '[Recovered incomplete tool call omitted from native tool channel: Read]' },
+      ],
+    });
+    expect(result[2]).toEqual({
+      role: 'tool',
+      content: [{
+        type: 'tool-result',
+        toolCallId: 'call_done',
+        toolName: 'Read',
+        output: { type: 'text', value: 'contents of a' },
+      }],
+    });
   });
 
   it('recovers orphan tool results as plain context instead of invalid tool messages', () => {

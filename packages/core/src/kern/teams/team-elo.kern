@@ -29,15 +29,9 @@ interface name=TeamEloRecord
   field name=byFormat type="Record<string, { compositions: Record<string, TeamCompositionRating>, roles: Record<string, TeamRoleRating> }>"
   field name=lastUpdated type=string
 
-fn name=defaultCompositionRating params="lineupKey:string" returns=TeamCompositionRating
-  handler <<<
-    return { lineupKey, rating: 1500, wins: 0, losses: 0, draws: 0, matches: 0 };
-  >>>
+fn name=defaultCompositionRating params="lineupKey:string" returns=TeamCompositionRating expr={{ return { lineupKey, rating: 1500, wins: 0, losses: 0, draws: 0, matches: 0 }; }}
 
-fn name=defaultRoleRating params="engineId:string, role:TeamRole" returns=TeamRoleRating
-  handler <<<
-    return { engineId, role, rating: 1500, wins: 0, losses: 0, matches: 0 };
-  >>>
+fn name=defaultRoleRating params="engineId:string, role:TeamRole" returns=TeamRoleRating expr={{ return { engineId, role, rating: 1500, wins: 0, losses: 0, matches: 0 }; }}
 
 fn name=loadTeamElo returns=TeamEloRecord
   handler <<<
@@ -60,15 +54,9 @@ fn name=saveTeamElo params="record:TeamEloRecord" returns=void
     renameSync(tmpPath, TEAM_ELO_PATH);
   >>>
 
-fn name=expectedScore params="rA:number, rB:number" returns=number
-  handler <<<
-    return 1 / (1 + 10 ** ((rB - rA) / 400));
-  >>>
+fn name=expectedScore params="rA:number, rB:number" returns=number expr={{ return 1 / (1 + 10 ** ((rB - rA) / 400)); }}
 
-fn name=getTeamElo returns=TeamEloRecord
-  handler <<<
-    return loadTeamElo();
-  >>>
+fn name=getTeamElo returns=TeamEloRecord expr={{ return loadTeamElo(); }}
 
 fn name=predictTeamRating params="members:TeamMember[], format:string" returns=number
   handler <<<

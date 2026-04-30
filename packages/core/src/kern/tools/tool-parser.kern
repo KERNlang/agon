@@ -34,15 +34,9 @@ fn name=repairJsonArgs params="raw:string" returns="Record<string,unknown>|null"
     return null;
   >>>
 
-const name=TOOL_OPEN_PATTERN type=RegExp
-  handler <<<
-    /<(?:tool|invoke)\s+name="([^"]+)">\s*/g
-  >>>
+const name=TOOL_OPEN_PATTERN type=RegExp value={{ /<(?:tool|invoke)\s+name="([^"]+)">\s*/g }}
 
-const name=TOOL_CLOSE_TAGS type="readonly string[]"
-  handler <<<
-    ['</tool>', '</invoke>', '</minimax:tool_call>', '</tool_call_tool>']
-  >>>
+const name=TOOL_CLOSE_TAGS type="readonly string[]" value={{ ['</tool>', '</invoke>', '</minimax:tool_call>', '</tool_call_tool>'] }}
 
 fn name=parseXmlParameters params="xml:string" returns="Record<string,unknown>" export=false
   doc "Parse <parameter name='x'>value</parameter> XML into a Record."

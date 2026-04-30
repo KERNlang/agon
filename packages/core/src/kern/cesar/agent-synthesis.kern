@@ -35,29 +35,17 @@ interface name=AgentSynthesisLoser
 
 // ── Size caps ─────────────────────────────────────────────────────
 
-const name=MAX_WINNER_DIFF_CHARS type=number
+const name=MAX_WINNER_DIFF_CHARS type=number value=12000
   doc "Max characters of the winner's diff to include in the synthesis prompt. Capped to prevent a runaway diff from blowing the context window."
-  handler <<<
-    12000
-  >>>
 
-const name=MAX_LOSER_DIFF_CHARS type=number
+const name=MAX_LOSER_DIFF_CHARS type=number value=8000
   doc "Max characters of a single loser's diff. Tighter than winner because we have N losers."
-  handler <<<
-    8000
-  >>>
 
-const name=MAX_LOSER_RESPONSE_CHARS type=number
+const name=MAX_LOSER_RESPONSE_CHARS type=number value=2000
   doc "Max characters of a single loser's text response (their reasoning)."
-  handler <<<
-    2000
-  >>>
 
-const name=MAX_TOTAL_PROMPT_CHARS type=number
+const name=MAX_TOTAL_PROMPT_CHARS type=number value=40000
   doc "Hard cap on the total synthesis prompt size. If the composed prompt (winner + all losers + template) exceeds this, loser context is progressively trimmed. Tuned to fit comfortably in a 200k-token context model with room for the agent's response + tool outputs."
-  handler <<<
-    40000
-  >>>
 
 // ── Synthesis options ────────────────────────────────────────────
 

@@ -14,9 +14,8 @@ import from="./telemetry.js" names="EngineVitals,EngineVitalState" types=true
 
 // ── Defaults ──────────────────────────────────────────────────────────
 
-const name=DEFAULT_POLL_INTERVAL_MS type=number export=true
+const name=DEFAULT_POLL_INTERVAL_MS type=number export=true value=5000
   doc "How often the poller probes every registered engine."
-  handler <<< 5000 >>>
 
 // ── Options shape ─────────────────────────────────────────────────────
 
@@ -266,11 +265,8 @@ service name=TelemetryPoller export=true
 
 // ── Factory ───────────────────────────────────────────────────────────
 
-fn name=createTelemetryPoller params="opts:TelemetryPollerOptions" returns=TelemetryPoller export=true
+fn name=createTelemetryPoller params="opts:TelemetryPollerOptions" returns=TelemetryPoller export=true expr={{ return new TelemetryPoller(opts); }}
   doc "Convenience constructor. Equivalent to `new TelemetryPoller(opts)`."
-  handler <<<
-    return new TelemetryPoller(opts);
-  >>>
 
 fn name=createMockStallProbe params="stallEngineId:string,stallMs:number=35000" returns="(engineId:string) => Promise<Partial<EngineVitals>>" export=true
   doc "Test fixture for telemetry fallback: selected engine hangs for stallMs, all others report healthy."

@@ -4,7 +4,7 @@
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,Static,render"
 import from="@kernlang/terminal/runtime" names="ScrollBox,AlternateScreen"
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,planCostEstimator,cancelCesarPlan,saveCesarPlan,listCesarPlans,loadCesarPlan"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,planCostEstimator,cancelCesarPlan,saveCesarPlan,listCesarPlans,loadCesarPlan,cesarPlanJsonPath"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
@@ -51,7 +51,8 @@ import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
 import from="../../generated/blocks/controls.js" names="ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
-import from="node:fs" names="readdirSync,readFileSync,writeFileSync,mkdirSync,unlinkSync"
+import from="node:fs" names="readdirSync,readFileSync,writeFileSync,mkdirSync,unlinkSync,statSync"
+import from="node:crypto" names="createHash"
 import from="node:os" names="tmpdir,totalmem,cpus"
 import from="node:child_process" names="spawnSync"
 import from="../models/session-results.js" names="sessionResultStore"
@@ -2577,6 +2578,12 @@ screen name=App target=ink
   ref name=activePlanClearTimerRef type="ReturnType<typeof setTimeout>|null" initial="null"
   ref name=planWatcherTimerRef type="ReturnType<typeof setInterval>|null" initial="null"
   ref name=planWatcherDebounceTimerRef type="ReturnType<typeof setTimeout>|null" initial="null"
+  // Plan watcher freshness signals — stat→hash→parse pyramid. Most ticks
+  // bail at stat (zero-allocation syscall). Only re-parse + diff when
+  // both mtime AND content actually changed. Prevents the JSON.stringify
+  // hot loop that caused UI shake after a few work cycles.
+  ref name=planWatcherStatMtimeRef type="number" initial=0
+  ref name=planWatcherBufferHashRef type="string|null" initial="null"
   ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
   ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
   ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
@@ -2892,35 +2899,66 @@ screen name=App target=ink
       if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
       if (!activePlan?.id) return;
       const planId = activePlan.id;
+      const planFilePath = (() => { try { return cesarPlanJsonPath(planId); } catch { return null; } })();
+      // Reset freshness cache when the watched plan changes — stale mtime/hash
+      // from a different plan would falsely bail on the new one's first tick.
+      planWatcherStatMtimeRef.current = 0;
+      planWatcherBufferHashRef.current = null;
+
+      // Stat→hash→parse pyramid. Each tier is cheaper than the next, and the
+      // common case (no on-disk change) bails after a single stat syscall.
+      // Replaces the old JSON.stringify-everything-every-tick hot loop, which
+      // compounded as the plan grew (steps, checkpoints, dispatch logs) and
+      // drove UI shake after a few work cycles. Buddies (codex+gemini)
+      // converged on this approach over the original A+B+C proposal.
       planWatcherTimerRef.current = setInterval(() => {
         try {
-          const loaded = loadCesarPlan(planId);
+          if (!planFilePath) return;
+
+          // Tier 1 — stat mtime. Free syscall, no allocation.
+          let mtimeMs: number;
+          try { mtimeMs = statSync(planFilePath).mtimeMs; }
+          catch { return; /* file gone or unreadable — wait for next tick */ }
+          if (mtimeMs === planWatcherStatMtimeRef.current) return;
+          planWatcherStatMtimeRef.current = mtimeMs;
+
+          // Tier 2 — raw buffer hash. Read bytes, hash via SHA-1 (built-in,
+          // microseconds for typical plan sizes). If hash matches, the file
+          // touched but content is identical — no parse, no update.
+          let raw: string;
+          try { raw = readFileSync(planFilePath, 'utf-8'); }
+          catch { return; }
+          const bufferHash = createHash('sha1').update(raw).digest('hex');
+          if (bufferHash === planWatcherBufferHashRef.current) return;
+          planWatcherBufferHashRef.current = bufferHash;
+
+          // Tier 3 — parse + Date.parse(updatedAt) compare. Only runs when
+          // we've already proven the buffer changed. updatedAt is a hint, not
+          // an invariant: if it's missing/invalid we still update because the
+          // hash already proved a real change on disk. This is the key
+          // safety property both buddies pushed back on in the original A.
+          let loaded: any;
+          try { loaded = JSON.parse(raw); }
+          catch { return; }
           if (!loaded) return;
           const current = activePlanRef.current;
           const loadedMs = Date.parse(String(loaded.updatedAt ?? ''));
           const currentMs = Date.parse(String(current?.updatedAt ?? ''));
-          const loadedValid = Number.isFinite(loadedMs);
-          const currentValid = Number.isFinite(currentMs);
-          if (loadedValid && currentValid) {
-            if (loadedMs <= currentMs) return;
-          } else if (loadedValid === currentValid) {
-            // Both missing/invalid — treat as unchanged unless structurally different
-            if (JSON.stringify(loaded) === JSON.stringify(current)) return;
+          if (Number.isFinite(loadedMs) && Number.isFinite(currentMs) && loadedMs <= currentMs) {
+            // Hash differed but updatedAt regressed — disk file is older than
+            // in-memory state (e.g. rollback). Don't clobber what's in memory.
+            return;
           }
+
           if (planWatcherDebounceTimerRef.current) clearTimeout(planWatcherDebounceTimerRef.current);
           planWatcherDebounceTimerRef.current = setTimeout(() => {
             const latest = activePlanRef.current;
             const latestMs = Date.parse(String(latest?.updatedAt ?? ''));
-            const latestValid = Number.isFinite(latestMs);
-            if (loadedValid && latestValid) {
-              if (loadedMs <= latestMs) return;
-            } else if (loadedValid === latestValid) {
-              if (JSON.stringify(loaded) === JSON.stringify(latest)) return;
-            }
+            if (Number.isFinite(loadedMs) && Number.isFinite(latestMs) && loadedMs <= latestMs) return;
             setActivePlanWrapped(loaded);
           }, 500);
         } catch {}
-      }, 2000);
+      }, 3000);
       return () => {
         if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
         if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }

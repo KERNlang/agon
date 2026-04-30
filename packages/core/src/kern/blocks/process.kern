@@ -24,11 +24,15 @@ fn name=spawnWithTimeout async=true params="opts:SpawnOptions" returns="Promise<
       let stdout = '';
       let stderr = '';
       let settled = false;
+      let forceKillTimer: ReturnType<typeof setTimeout> | null = null;
+      let forceFinishTimer: ReturnType<typeof setTimeout> | null = null;
 
       function finish(result: DispatchResult): void {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
+        if (forceFinishTimer) clearTimeout(forceFinishTimer);
         if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
         resolve(result);
       }
@@ -55,13 +59,37 @@ fn name=spawnWithTimeout async=true params="opts:SpawnOptions" returns="Promise<
       }
 
       function killChild(): void {
-        try {
-          if (child.pid) process.kill(-child.pid, 'SIGTERM');
-        } catch (err) {
-          console.warn(`[agon] failed to kill process group ${child.pid}: ${err instanceof Error ? err.message : String(err)}`);
-          try { child.kill('SIGKILL'); } catch (err2) {
-            console.warn(`[agon] fallback SIGKILL also failed: ${err2 instanceof Error ? err2.message : String(err2)}`);
+        const signalExit = aborted ? 130 : timedOut ? 124 : 1;
+        const signalErr = aborted ? 'Aborted' : timedOut ? 'Timed out' : 'Killed';
+        const sendSignal = (sig: NodeJS.Signals) => {
+          try {
+            if (child.pid) process.kill(-child.pid, sig);
+            else child.kill(sig);
+          } catch (err) {
+            if (sig === 'SIGTERM') {
+              console.warn(`[agon] failed to terminate process group ${child.pid}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+            try { child.kill(sig); } catch { /* already gone */ }
           }
+        };
+
+        sendSignal('SIGTERM');
+        if (!forceKillTimer) {
+          forceKillTimer = setTimeout(() => {
+            sendSignal('SIGKILL');
+            if (!forceFinishTimer) {
+              forceFinishTimer = setTimeout(() => {
+                finish({
+                  exitCode: signalExit,
+                  stdout,
+                  stderr: stderr || signalErr,
+                  durationMs: Date.now() - startTime,
+                  timedOut,
+                  pid: child.pid ?? null,
+                });
+              }, 750);
+            }
+          }, 750);
         }
       }
 
@@ -102,6 +130,8 @@ fn name=spawnStream generator=true async=true params="opts:SpawnOptions" returns
     let aborted = false;
     let stdout = '';
     let stderr = '';
+    let forceKillTimer: ReturnType<typeof setTimeout> | null = null;
+    let forceFinishTimer: ReturnType<typeof setTimeout> | null = null;
 
     const child = spawn(opts.command, opts.args, {
       cwd: opts.cwd,
@@ -124,21 +154,50 @@ fn name=spawnStream generator=true async=true params="opts:SpawnOptions" returns
       opts.signal.addEventListener('abort', onAbort, { once: true });
     }
 
-    function killChild(): void {
-      try {
-        if (child.pid) process.kill(-child.pid, 'SIGTERM');
-      } catch (err) {
-        console.warn(`[agon] failed to kill process group ${child.pid}: ${err instanceof Error ? err.message : String(err)}`);
-        try { child.kill('SIGKILL'); } catch (err2) {
-          console.warn(`[agon] fallback SIGKILL also failed: ${err2 instanceof Error ? err2.message : String(err2)}`);
-        }
-      }
-    }
-
     const chunks: string[] = [];
     let done = false;
     let resolveWait: (() => void) | null = null;
     let closeResult: DispatchResult | null = null;
+
+    function finishSynthetic(): void {
+      if (done) return;
+      clearTimeout(timer);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      if (forceFinishTimer) clearTimeout(forceFinishTimer);
+      if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
+      done = true;
+      closeResult = {
+        exitCode: aborted ? 130 : timedOut ? 124 : 1,
+        stdout,
+        stderr: stderr || (aborted ? 'Aborted' : timedOut ? 'Timed out' : 'Killed'),
+        durationMs: Date.now() - startTime,
+        timedOut,
+        pid: child.pid ?? null,
+      };
+      if (resolveWait) { resolveWait(); resolveWait = null; }
+    }
+
+    function killChild(): void {
+      const sendSignal = (sig: NodeJS.Signals) => {
+        try {
+          if (child.pid) process.kill(-child.pid, sig);
+          else child.kill(sig);
+        } catch (err) {
+          if (sig === 'SIGTERM') {
+            console.warn(`[agon] failed to terminate process group ${child.pid}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          try { child.kill(sig); } catch { /* already gone */ }
+        }
+      };
+
+      sendSignal('SIGTERM');
+      if (!forceKillTimer) {
+        forceKillTimer = setTimeout(() => {
+          sendSignal('SIGKILL');
+          if (!forceFinishTimer) forceFinishTimer = setTimeout(() => finishSynthetic(), 750);
+        }, 750);
+      }
+    }
 
     child.stdout?.on('data', (data) => {
       const chunk = String(data);
@@ -157,6 +216,8 @@ fn name=spawnStream generator=true async=true params="opts:SpawnOptions" returns
 
     child.on('close', (code: number | null) => {
       clearTimeout(timer);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      if (forceFinishTimer) clearTimeout(forceFinishTimer);
       if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
       done = true;
       closeResult = {
@@ -171,6 +232,8 @@ fn name=spawnStream generator=true async=true params="opts:SpawnOptions" returns
 
     child.on('error', (err: Error) => {
       clearTimeout(timer);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      if (forceFinishTimer) clearTimeout(forceFinishTimer);
       if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
       done = true;
       closeResult = {

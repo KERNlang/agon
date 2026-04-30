@@ -97,6 +97,14 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
           onSpawn,
         });
       }
+      const dispatchExitCode = typeof dispatchResult?.exitCode === 'number' ? dispatchResult.exitCode : 0;
+      if (dispatchResult?.timedOut || dispatchExitCode !== 0) {
+        const reason = dispatchResult?.timedOut
+          ? `dispatch timed out after ${opts.config.forgeTimeout}s`
+          : `dispatch exited with code ${dispatchExitCode}`;
+        const stderr = dispatchResult?.stderr ? `: ${String(dispatchResult.stderr).slice(0, 240).replace(/\s+/g, ' ').trim()}` : '';
+        throw new Error(`${reason}${stderr}`);
+      }
     } finally {
       dispatchDurationMs = Date.now() - dispatchStart;
       opts.onEvent?.({ type: 'engine:pid-clear' as any, engineId: opts.engineId, data: { engineId: opts.engineId, phase: opts.metricPhase } });

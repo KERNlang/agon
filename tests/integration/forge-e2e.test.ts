@@ -522,6 +522,44 @@ describe('Forge E2E', () => {
     }
   });
 
+  it('fails no-op forge candidates even when the fitness command passes', async () => {
+    const repoDir = createRepo('noop-fitness');
+    const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const fakeNpx = createFakeNpx();
+    mkdirSync(forgeDir, { recursive: true });
+
+    try {
+      vi.resetModules();
+      const { runFitness } = await import('../../packages/forge/src/index.js');
+      const candidate = await runFitness({
+        engineId: 'noop',
+        worktreePath: repoDir,
+        fitnessCmd: 'true',
+        timeout: 1,
+        forgeDir,
+      });
+      const baseline = await runFitness({
+        engineId: 'baseline',
+        worktreePath: repoDir,
+        fitnessCmd: 'true',
+        timeout: 1,
+        forgeDir,
+      });
+
+      expect(candidate.pass).toBe(false);
+      expect(candidate.score).toBe(0);
+      expect(candidate.diffLines).toBe(0);
+      expect(readFileSync(candidate.fitnessLogPath!, 'utf-8')).toContain('Diff gate: failed - no candidate changes');
+      expect(baseline.pass).toBe(true);
+      expect(readFileSync(baseline.fitnessLogPath!, 'utf-8')).toContain('Diff gate: not required for baseline');
+    } finally {
+      process.env.PATH = fakeNpx.originalPath;
+      rmSync(fakeNpx.binDir, { recursive: true, force: true });
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
+
   it('bases forge worktrees on dirty tracked changes', async () => {
     const agonHome = setupTestAgonHome('forge-dirty-base');
     const repoDir = createRepo('dirty-base');

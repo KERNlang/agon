@@ -157,8 +157,10 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       case 'stage1:score':
       case 'stage2:score':
         if (id) {
-          engineStatus[id] = 'done';
+          const passed = event.data?.pass !== false;
+          engineStatus[id] = passed ? 'done' : 'failed';
           engineStatus[`${id}:score`] = String(event.data?.score ?? '?');
+          if (!passed) engineStatus[`${id}:error`] = Number(event.data?.score ?? 0) === 0 ? 'no candidate changes or fitness failed' : 'fitness failed';
         }
         break;
       case 'winner:determined':

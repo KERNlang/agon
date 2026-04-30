@@ -102,7 +102,9 @@ screen name=PlanProposalView target=ink
               <Text color="#4ade80" bold>{'yes'}</Text>
               <Text dimColor>{', or '}</Text>
               <Text color="#4ade80" bold>{'/approve'}</Text>
-              <Text dimColor>{' to execute. Type feedback to revise.'}</Text>
+              <Text dimColor>{' to execute. Type '}</Text>
+              <Text color="#ef4444" bold>{'/cancel'}</Text>
+              <Text dimColor>{' to reject.'}</Text>
             </Box>
           </Box>
         );
@@ -230,7 +232,9 @@ screen name=PlanProposalView target=ink
             <Text color="#4ade80" bold>{'yes'}</Text>
             <Text dimColor>{', or '}</Text>
             <Text color="#4ade80" bold>{'/approve'}</Text>
-            <Text dimColor>{' to execute. Type feedback to revise.'}</Text>
+            <Text dimColor>{' to execute. Type '}</Text>
+            <Text color="#ef4444" bold>{'/cancel'}</Text>
+            <Text dimColor>{' to reject.'}</Text>
           </Box>
         </Box>
       );
@@ -240,59 +244,60 @@ screen name=PlanProposalView target=ink
 
 screen name=PlanExecutionView target=ink
   prop name=plan type=any
-  render wrapper="<Box flexDirection=\"column\" paddingLeft={2}>"
-    local name=steps type="any[]" expr="plan.steps ?? []"
-    local name=doneSteps expr="steps.filter((s: any) => s.state === 'done')"
-    local name=failedSteps expr="steps.filter((s: any) => s.state === 'failed')"
-    local name=runningSteps expr="steps.filter((s: any) => s.state === 'running')"
-    local name=pct expr="steps.length > 0 ? Math.round((doneSteps.length / steps.length) * 100) : 0"
-    local name=planColor expr="'#94a3b8'"
-    local name=barWidth expr="20"
-    local name=filled expr="Math.round((doneSteps.length / Math.max(steps.length, 1)) * barWidth)"
-    local name=progressBar expr="'\u2588'.repeat(filled) + '\u2591'.repeat(barWidth - filled)"
+  render
     handler <<<
-      <Box>
-        <Text color={planColor} bold>{'\u25b8 Plan: '}</Text>
-        <Text bold>{plan.intent}</Text>
-      </Box>
-    >>>
-    handler <<<
-      <Box>
-        <Text color={planColor}>{progressBar}</Text>
-        <Text dimColor>{' '}{String(pct)}{'% \u00b7 '}{String(doneSteps.length)}{'/'}{String(steps.length)}{' steps'}</Text>
-        {failedSteps.length > 0 && <Text color="red">{' \u00b7 '}{String(failedSteps.length)}{' failed'}</Text>}
-        {plan.totalActualCostUsd > 0 && <Text dimColor>{' \u00b7 $'}{plan.totalActualCostUsd.toFixed(4)}</Text>}
-      </Box>
-    >>>
-    handler <<<
-      <Text>{' '}</Text>
-    >>>
-    each name=s in=steps index=i key="s.id"
-      let name=cfg expr="(STEP_TYPE_CONFIG as any)[s.type] ?? { icon: '?', color: '#888', label: s.type }"
-      let name=stateInfo expr="(STEP_STATE_ICONS as any)[s.state ?? 'pending'] ?? STEP_STATE_ICONS.pending"
-      let name=result expr="s.result"
-      let name=elapsed expr="result?.durationMs ? `${(result.durationMs / 1000).toFixed(1)}s` : ''"
-      let name=cost expr="result?.actualCostUsd ? `$${result.actualCostUsd.toFixed(4)}` : ''"
-      handler <<<
-        <Box key={s.id}>
-          <Text color={stateInfo.color}>{stateInfo.icon}{' '}</Text>
-          <Box width={3}>
-            <Text bold color="white">{String(i + 1)}{'.'}</Text>
+      const steps: any[] = plan.steps ?? [];
+      const doneSteps = steps.filter((s: any) => s.state === 'done');
+      const failedSteps = steps.filter((s: any) => s.state === 'failed');
+      const runningSteps = steps.filter((s: any) => s.state === 'running');
+      const pct = steps.length > 0 ? Math.round((doneSteps.length / steps.length) * 100) : 0;
+      const planColor = '#94a3b8';
+      const barWidth = 20;
+      const filled = Math.round((doneSteps.length / Math.max(steps.length, 1)) * barWidth);
+      const progressBar = '\u2588'.repeat(filled) + '\u2591'.repeat(barWidth - filled);
+
+      return (
+        <Box flexDirection="column" paddingLeft={2}>
+          <Box>
+            <Text color={planColor} bold>{'\u25b8 Plan: '}</Text>
+            <Text bold>{plan.intent}</Text>
           </Box>
-          <Text color={cfg.color}>{cfg.icon}{' '}</Text>
-          <Text color={s.state === 'done' ? '#64748b' : s.state === 'running' ? 'white' : undefined}>{s.description.slice(0, 50)}{s.description.length > 50 ? '\u2026' : ''}</Text>
-          {(elapsed || cost) && (
-            <Text dimColor>{' ('}{elapsed}{elapsed && cost ? ', ' : ''}{cost}{')'}</Text>
-          )}
-          {result?.status === 'failure' && result?.error && (
-            <Text color="red">{' \u2014 '}{result.error.slice(0, 40)}</Text>
+          <Box>
+            <Text color={planColor}>{progressBar}</Text>
+            <Text dimColor>{' '}{String(pct)}{'% \u00b7 '}{String(doneSteps.length)}{'/'}{String(steps.length)}{' steps'}</Text>
+            {failedSteps.length > 0 && <Text color="red">{' \u00b7 '}{String(failedSteps.length)}{' failed'}</Text>}
+            {plan.totalActualCostUsd > 0 && <Text dimColor>{' \u00b7 $'}{plan.totalActualCostUsd.toFixed(4)}</Text>}
+          </Box>
+          <Text>{' '}</Text>
+          {steps.map((s: any, i: number) => {
+            const cfg = (STEP_TYPE_CONFIG as any)[s.type] ?? { icon: '?', color: '#888', label: s.type };
+            const stateInfo = (STEP_STATE_ICONS as any)[s.state ?? 'pending'] ?? STEP_STATE_ICONS.pending;
+            const result = s.result;
+            const elapsed = result?.durationMs ? `${(result.durationMs / 1000).toFixed(1)}s` : '';
+            const cost = result?.actualCostUsd ? `$${result.actualCostUsd.toFixed(4)}` : '';
+            return (
+              <Box key={s.id}>
+                <Text color={stateInfo.color}>{stateInfo.icon}{' '}</Text>
+                <Box width={3}>
+                  <Text bold color="white">{String(i + 1)}{'.'}</Text>
+                </Box>
+                <Text color={cfg.color}>{cfg.icon}{' '}</Text>
+                <Text color={s.state === 'done' ? '#64748b' : s.state === 'running' ? 'white' : undefined}>{s.description.slice(0, 50)}{s.description.length > 50 ? '\u2026' : ''}</Text>
+                {(elapsed || cost) && (
+                  <Text dimColor>{' ('}{elapsed}{elapsed && cost ? ', ' : ''}{cost}{')'}</Text>
+                )}
+                {result?.status === 'failure' && result?.error && (
+                  <Text color="red">{' \u2014 '}{result.error.slice(0, 40)}</Text>
+                )}
+              </Box>
+            );
+          })}
+          {runningSteps.length > 0 && (
+            <Box marginTop={1}>
+              <Text color="#fbbf24">{'\u25cf Running: '}</Text>
+              <Text>{runningSteps.map((s: any) => s.description).join(', ')}</Text>
+            </Box>
           )}
         </Box>
-      >>>
-    conditional if="runningSteps.length > 0"
-      handler <<<
-        <Box marginTop={1}>
-          <Text color="#fbbf24">{'\u25cf Running: '}</Text>
-          <Text>{runningSteps.map((s: any) => s.description).join(', ')}</Text>
-        </Box>
-      >>>
+      );
+    >>>

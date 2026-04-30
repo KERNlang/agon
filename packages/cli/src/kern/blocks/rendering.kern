@@ -13,8 +13,7 @@ import from="../signals/ansi-parse.js" names="AnsiSegment" types=true
 
 // ── Layout Constants ────────────────────────────────────────────────
 
-const name=CONTENT_WIDTH_OVERRIDE type="{value:number|null}"
-  handler <<< ({ value: null }) >>>
+const name=CONTENT_WIDTH_OVERRIDE type="{value:number|null}" value={{ ({ value: null }) }}
 
 fn name=contentWidth params="padding:number" returns=number
   handler <<<
@@ -66,37 +65,27 @@ fn name=engineColor params="id:string" returns=string
 
 // ── Code Block Constants ────────────────────────────────────────────
 
-const name=CODE_RAIL type=string
-  handler <<< '\u258c' >>>
+const name=CODE_RAIL type=string value={{ '\u258c' }}
 
-const name=CODE_RAIL_COLOR type=string
-  handler <<< '#585858' >>>
+const name=CODE_RAIL_COLOR type=string value={{ '#585858' }}
 
-const name=MAX_CODE_LINES type=number
-  handler <<< 60 >>>
+const name=MAX_CODE_LINES type=number value=60
 
 // ── Syntax Highlighting Constants ───────────────────────────────────
 
-const name=SYN_KEYWORD type=string
-  handler <<< '#c084fc' >>>
+const name=SYN_KEYWORD type=string value={{ '#c084fc' }}
 
-const name=SYN_STRING type=string
-  handler <<< '#4ade80' >>>
+const name=SYN_STRING type=string value={{ '#4ade80' }}
 
-const name=SYN_COMMENT type=string
-  handler <<< '#6b7280' >>>
+const name=SYN_COMMENT type=string value={{ '#6b7280' }}
 
-const name=SYN_NUMBER type=string
-  handler <<< '#fb923c' >>>
+const name=SYN_NUMBER type=string value={{ '#fb923c' }}
 
-const name=SYN_TYPE type=string
-  handler <<< '#38bdf8' >>>
+const name=SYN_TYPE type=string value={{ '#38bdf8' }}
 
-const name=SYN_PUNCT type=string
-  handler <<< '#94a3b8' >>>
+const name=SYN_PUNCT type=string value={{ '#94a3b8' }}
 
-const name=SYN_FN type=string
-  handler <<< '#fbbf24' >>>
+const name=SYN_FN type=string value={{ '#fbbf24' }}
 
 const name=KEYWORDS type="Set<string>"
   handler <<<

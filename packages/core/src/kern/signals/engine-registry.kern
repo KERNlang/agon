@@ -14,8 +14,7 @@ fn name=getAgonEnginesDir returns=string export=false
   >>>
 
 // One-time log guard so noisy configs don't spam on every load/reload.
-const name=_formatNormalizedSet type="Set<string>"
-  handler <<< new Set<string>() >>>
+const name=_formatNormalizedSet type="Set<string>" value={{ new Set<string>() }}
 
 // Hosts that are *known* to serve only OpenAI-shaped /chat/completions
 // despite being declared with format='anthropic' in the wild. A broader

@@ -232,14 +232,11 @@ fn name=buildValueLines params="value:string, width:number, opts:{cursorOffset:n
     return { lines, cursorLine };
   >>>
 
-fn name=lineLength params="line:PromptLine" returns=number export=false
-  handler <<< return line.tokens.length; >>>
+fn name=lineLength params="line:PromptLine" returns=number export=false expr={{ return line.tokens.length; }}
 
-fn name=pluralizeLines params="count:number" returns=string export=false
-  handler <<< return count === 1 ? 'line' : 'lines'; >>>
+fn name=pluralizeLines params="count:number" returns=string export=false expr={{ return count === 1 ? 'line' : 'lines'; }}
 
-fn name=isDelegatedCtrlShortcut params="input:string" returns=boolean export=true
-  handler <<< return ['b', 'c', 'e', 'i', 'j', 'l', 'r', 't', 'y'].includes(input); >>>
+fn name=isDelegatedCtrlShortcut params="input:string" returns=boolean export=true expr={{ return ['b', 'c', 'e', 'g', 'i', 'j', 'l', 'r', 't', 'y'].includes(input); }}
 
 fn name=shouldAdoptPromptValue params="originalValue:string, pendingEchoValue:string|null" returns=boolean export=true
   handler <<<
@@ -353,28 +350,29 @@ screen name=PromptTextInput target=ink memo=true export=named
         const isForwardDelete = deleteMode === 'forward';
         const isBackspace = deleteMode === 'backward';
         const extendedKey = key as typeof key & { home?: boolean; end?: boolean };
-        const normalizedCtrlInput = key.ctrl
-          ? ({
-              '\x01': 'a',
-              '\x03': 'c',
-              '\x05': 'e',
-              '\x09': 'i',
-              '\x0a': 'j',
-              '\x0b': 'k',
-              '\x0c': 'l',
-              '\x12': 'r',
-              '\x14': 't',
-              '\x19': 'y',
-              '\x15': 'u',
-              '\x17': 'w',
-              '\x02': 'b',
-            } as Record<string, string>)[input] ?? input
-          : input;
-        const isReservedCtrlShortcut = key.ctrl && isDelegatedCtrlShortcut(normalizedCtrlInput);
-        const isSupportedCtrlEditShortcut = key.ctrl && ['a', 'k', 'u', 'w'].includes(normalizedCtrlInput);
+        const keyName = typeof key.name === 'string' ? key.name.toLowerCase() : '';
+        const ctrlInputMap = {
+          '\x01': 'a',
+          '\x03': 'c',
+          '\x05': 'e',
+          '\x07': 'g',
+          '\x0b': 'k',
+          '\x0c': 'l',
+          '\x12': 'r',
+          '\x14': 't',
+          '\x19': 'y',
+          '\x15': 'u',
+          '\x17': 'w',
+          '\x02': 'b',
+          ...(key.ctrl ? { '\x09': 'i', '\x0a': 'j' } : {}),
+        } as Record<string, string>;
+        const normalizedCtrlInput = ctrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
+        const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0b', '\x0c', '\x12', '\x14', '\x15', '\x17', '\x19'].includes(input);
+        const isReservedCtrlShortcut = hasCtrlSignal && isDelegatedCtrlShortcut(normalizedCtrlInput);
+        const isSupportedCtrlEditShortcut = hasCtrlSignal && ['a', 'k', 'u', 'w'].includes(normalizedCtrlInput);
         const isWordLeft = (key.meta && (key.leftArrow || input === 'b')) || input === '\x1bb';
         const isWordRight = (key.meta && (key.rightArrow || input === 'f')) || input === '\x1bf';
-        const isDeleteWordBackward = (key.ctrl && normalizedCtrlInput === 'w') || (key.meta && isBackspace) || input === '\x1b\x7f';
+        const isDeleteWordBackward = (hasCtrlSignal && normalizedCtrlInput === 'w') || (key.meta && isBackspace) || input === '\x1b\x7f';
         const isShiftTab = (key.shift && key.tab) || input === '\x1b[Z';
         const hasSpecialKeySignal =
           isBackspace ||
@@ -402,7 +400,7 @@ screen name=PromptTextInput target=ink memo=true export=named
         }
 
         if (key.upArrow || key.downArrow || key.pageUp || key.pageDown || key.tab || isShiftTab) return;
-        if (key.ctrl && !isSupportedCtrlEditShortcut) return;
+        if (hasCtrlSignal && !isSupportedCtrlEditShortcut) return;
         if (key.meta && !isWordLeft && !isWordRight && !isDeleteWordBackward) return;
 
         if (key.return) {
@@ -417,7 +415,7 @@ screen name=PromptTextInput target=ink memo=true export=named
         let nextValue = currentValue;
         let nextCursorWidth = 0;
 
-        if (extendedKey.home || (key.ctrl && normalizedCtrlInput === 'a')) {
+        if (extendedKey.home || (hasCtrlSignal && normalizedCtrlInput === 'a')) {
           if (resolvedShowCursor) nextCursorOffset = findLineStart(currentValue, currentCursor.cursorOffset);
         } else if (extendedKey.end) {
           if (resolvedShowCursor) nextCursorOffset = findLineEnd(currentValue, currentCursor.cursorOffset);
@@ -435,11 +433,11 @@ screen name=PromptTextInput target=ink memo=true export=named
             nextValue = updated.value;
             nextCursorOffset = updated.cursorOffset;
           }
-        } else if (key.ctrl && normalizedCtrlInput === 'u') {
+        } else if (hasCtrlSignal && normalizedCtrlInput === 'u') {
           const lineStart = findLineStart(currentValue, currentCursor.cursorOffset);
           nextValue = currentValue.slice(0, lineStart) + currentValue.slice(currentCursor.cursorOffset);
           nextCursorOffset = lineStart;
-        } else if (key.ctrl && normalizedCtrlInput === 'k') {
+        } else if (hasCtrlSignal && normalizedCtrlInput === 'k') {
           const lineEnd = findLineEnd(currentValue, currentCursor.cursorOffset);
           nextValue = currentValue.slice(0, currentCursor.cursorOffset) + currentValue.slice(lineEnd);
         } else if (isBackspace) {

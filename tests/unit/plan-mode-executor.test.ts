@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync } from 'node:fs';
 
 const { handleCesarBrainMock, runDelegateMock, runForgeMock } = vi.hoisted(() => ({
   handleCesarBrainMock: vi.fn(),
@@ -97,7 +98,9 @@ describe('plan-mode self executor', () => {
     const events: any[] = [];
     runForgeMock.mockImplementation(async (options: any, _registry: any, _adapter: any, onEvent?: (event: any) => void) => {
       expect(options.engines).toEqual(['claude', 'gemini', 'kimi']);
+      expect(existsSync(options.forgeDir)).toBe(true);
       onEvent?.({ type: 'stage1:dispatch', engineId: 'gemini' });
+      onEvent?.({ type: 'engine:worktree', engineId: 'gemini', data: { engineId: 'gemini', worktreePath: `${options.forgeDir}/wt-gemini`, phase: 'stage1' } });
       onEvent?.({ type: 'stage1:score', engineId: 'gemini', data: { score: 91 } });
       return { winner: null, results: {} };
     });
@@ -114,6 +117,10 @@ describe('plan-mode self executor', () => {
     expect(runForgeMock).toHaveBeenCalledOnce();
     expect(result.result.status).toBe('failure');
     expect(events.some((event) => event.type === 'info' && String(event.message).includes('claude, gemini, kimi'))).toBe(true);
+    expect(events.some((event) => event.type === 'info' && String(event.message).includes('Forge run dir:'))).toBe(true);
+    expect(events.some((event) => event.type === 'info' && String(event.message).includes('Forge worktree gemini:'))).toBe(true);
+    const firstProgress = events.find((event) => event.type === 'progress-update');
+    expect(firstProgress?.engines.every((engine: any) => engine.status === 'preparing')).toBe(true);
     expect(events.some((event) => event.type === 'progress-update' && event.engines?.some((engine: any) => engine.id === 'gemini' && engine.done === true && engine.score === '91'))).toBe(true);
     expect(events.some((event) => event.type === 'progress-clear')).toBe(true);
   });

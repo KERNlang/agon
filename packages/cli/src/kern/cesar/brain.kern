@@ -16,8 +16,7 @@ import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval"
 import from="./tool-observability.js" names="createCesarTurnId,recordCesarApprovalDecision,recordCesarToolTimeline"
 
 // Yield a macrotask so Ink can paint — await Promise.resolve() is NOT enough
-const name=yieldToInk type="() => Promise<void>"
-  handler <<< () => new Promise<void>(resolve => setImmediate(resolve)) >>>
+const name=yieldToInk type="() => Promise<void>" value={{ () => new Promise<void>(resolve => setImmediate(resolve)) }}
 
 const name=splitBeforeToolMarkup type="(text:string) => { visible:string, hasToolMarkup:boolean }"
   handler <<<
@@ -34,8 +33,7 @@ const name=splitBeforeToolMarkup type="(text:string) => { visible:string, hasToo
     }
   >>>
 
-const name=XML_TOOL_MARKUP_HOLD_CHARS type=number
-  handler <<< 24 >>>
+const name=XML_TOOL_MARKUP_HOLD_CHARS type=number value=24
 
 fn name=detectNarratedToolStall params="text:string" returns=boolean export=true
   doc "Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling."
@@ -1117,6 +1115,18 @@ ${reviewFollowup.prompt}`;
                 ctx.cesar!.quickNeroRequested = true;
               } else if (signal.tool === 'ProposePlan') {
                 recordToolUse('ProposePlan', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
+                const activePlan = ctx.activePlan;
+                if (activePlan && ['running', 'paused'].includes(activePlan.state)) {
+                  dispatch({
+                    type: 'tool-call',
+                    engineId: cesarEngineId,
+                    tool: 'ProposePlan',
+                    input: JSON.stringify(signal.args ?? {}),
+                    status: 'error',
+                    output: 'A Cesar plan is already active; nested plans are blocked. Resume or cancel the current plan before proposing another.',
+                  } as any);
+                  continue;
+                }
                 const { handleProposePlan } = await import('../handlers/plan-mode.js');
                 const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
                 if (planDispatch) {
@@ -1267,8 +1277,11 @@ ${reviewFollowup.prompt}`;
                     return;
                   }
                   (ctx.cesar as any)._proposePlanArgs = inp;
+                  emitXmlToolEvent(name, inp, 'ok', 'Plan submitted for user approval.');
+                  delete _lastToolInputs[name];
                 }
               },
+              shouldStopAfterToolCall: (name: string) => name === 'ProposePlan',
               onToolResult: (name: string, result: any) => {
                 const out = result.result.ok ? result.result.content : result.result.error;
                 // Track if a mutation was deferred during investigation
@@ -1302,11 +1315,30 @@ ${reviewFollowup.prompt}`;
         const ppArgs = (ctx.cesar as any)._proposePlanArgs;
         delete (ctx.cesar as any)._proposePlanArgs;
         try {
-          const { handleProposePlan } = await import('../handlers/plan-mode.js');
-          const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
-          const plan = await handleProposePlan(ppArgs, planDispatch, ctx);
-          if (ctx.setActivePlan) ctx.setActivePlan(plan);
-          ctx.cesar!.proposedPlan = plan;
+          const activePlan = ctx.activePlan;
+          if (activePlan && ['running', 'paused'].includes(activePlan.state)) {
+            dispatch({
+              type: 'tool-call',
+              engineId: cesarEngineId,
+              tool: 'ProposePlan',
+              input: JSON.stringify(ppArgs ?? {}),
+              status: 'error',
+              output: 'A Cesar plan is already active; nested plans are blocked. Resume or cancel the current plan before proposing another.',
+            } as any);
+          } else {
+            const { handleProposePlan } = await import('../handlers/plan-mode.js');
+            const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
+            const plan = await handleProposePlan(ppArgs, planDispatch, ctx);
+            if (ctx.setActivePlan) ctx.setActivePlan(plan);
+            ctx.cesar!.proposedPlan = plan;
+            if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+            dispatch({ type: 'spinner-stop' });
+            if (response) {
+              appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+              appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+            }
+            return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
+          }
         } catch (err) {
           console.warn(`[agon] ProposePlan via tool loop failed: ${err instanceof Error ? err.message : String(err)}`);
         }

@@ -19,10 +19,7 @@ fn name=shellQuoteForTeamForge params="value:string" returns=string export=true
     return `'${s.replace(/'/g, `'\\''`)}'`;
   >>>
 
-fn name=buildTeamForgeCleanupCommand params="repoRootPath:string,forgeDir:string" returns=string export=true
-  handler <<<
-    return `git -C ${shellQuoteForTeamForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForTeamForge(forgeDir)}`;
-  >>>
+fn name=buildTeamForgeCleanupCommand params="repoRootPath:string,forgeDir:string" returns=string export=true expr={{ return `git -C ${shellQuoteForTeamForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForTeamForge(forgeDir)}`; }}
 
 fn name=writeTeamForgeResultBundle params="matchId:string, options:TeamForgeOptions, worktrees:WorktreeEntry[], repoRootPath:string, baseSha:string, sidechainPath:string, result?:TeamMatchResult|null, errorMessage?:string" returns=string export=true
   handler <<<
@@ -207,10 +204,12 @@ fn name=runTeamCoopForge async=true params="team:TeamSpec, task:string, fitnessC
       const implEngine = registry.get(impl.engineId);
       const implPrompt = `${forgePrompt}\n\n## YOUR ROLE: IMPLEMENTER\nYou are implementing code based on the architect's plan below. Write the actual code changes.\n\n## ARCHITECT'S PLAN:\n${plan}\n\nTask: ${task}`;
 
-      const hasAgent = !!implEngine.agent;
+      // Team implementers mutate isolated worktrees. API-only engines must use
+      // the same tool loop as agent engines; plain API dispatch only returns text.
+      const hasAgent = !!adapter.dispatchAgent && (!!implEngine.agent || !!implEngine.api);
       let implResult;
-      if (hasAgent && adapter.dispatchAgent) {
-        implResult = await adapter.dispatchAgent({
+      if (hasAgent) {
+        implResult = await adapter.dispatchAgent!({
           engine: implEngine,
           prompt: implPrompt,
           cwd: wt.path,
@@ -273,7 +272,7 @@ fn name=runTeamCoopForge async=true params="team:TeamSpec, task:string, fitnessC
             const fallbackPrompt = `${forgePrompt}\n\n## YOUR ROLE: IMPLEMENTER FALLBACK\nYou are replacing failed implementer ${failed.engineId}. Failure: ${error}\n\n## ARCHITECT'S PLAN:\n${plan}\n\nTask: ${task}`;
             const startFallback = Date.now();
             let fallbackResult: any;
-            if (fallbackEngine.agent && adapter.dispatchAgent) {
+            if (adapter.dispatchAgent && (fallbackEngine.agent || fallbackEngine.api)) {
               fallbackResult = await adapter.dispatchAgent({
                 engine: fallbackEngine,
                 prompt: fallbackPrompt,
@@ -397,7 +396,7 @@ fn name=runTeamCoopForge async=true params="team:TeamSpec, task:string, fitnessC
       const revisePrompt = `${forgePrompt}\n\n## REVISION REQUIRED\nThe reviewer found issues with your implementation. Fix them.\n\n## REVIEW FEEDBACK:\n${reviewText}\n\nTask: ${task}`;
 
       const reviseEngine = registry.get(bestImpl.engineId);
-      if (reviseEngine.agent && adapter.dispatchAgent) {
+      if (adapter.dispatchAgent && (reviseEngine.agent || reviseEngine.api)) {
         await adapter.dispatchAgent({
           engine: reviseEngine,
           prompt: revisePrompt,

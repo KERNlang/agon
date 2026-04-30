@@ -9,15 +9,9 @@ fn name=getFlowsDir returns=string export=false
     return join(home, 'flows');
   >>>
 
-const name=FLOWS_DIR type=string
-  handler <<<
-    getFlowsDir()
-  >>>
+const name=FLOWS_DIR type=string value={{ getFlowsDir() }}
 
-const name=FRICTION_TAGS type="readonly string[]"
-  handler <<<
-    ['slow', 'wrong-mode', 'engine-error', 'unclear-output', 'timeout', 'context-lost', 'other'] as const
-  >>>
+const name=FRICTION_TAGS type="readonly string[]" value={{ ['slow', 'wrong-mode', 'engine-error', 'unclear-output', 'timeout', 'context-lost', 'other'] as const }}
 
 interface name=FlowTelemetry
   field name=engines type="string[]"
@@ -56,10 +50,7 @@ interface name=FlowRecord
   field name=feedback type=FlowFeedback optional=true
   field name=modeMeta type=FlowModeMeta optional=true
 
-fn name=ensureFlowsDir params="" returns=void export=false
-  handler <<<
-    mkdirSync(getFlowsDir(), { recursive: true });
-  >>>
+fn name=ensureFlowsDir params="" returns=void export=false expr={{ mkdirSync(getFlowsDir(), { recursive: true }); }}
 
 fn name=logFlow params="record:FlowRecord" returns=string
   handler <<<

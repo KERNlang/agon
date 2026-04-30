@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, failedPlanStepIsFallbackRetryable, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, normalizeCesarActingFallbackMode, preparePlanFallbackRetry, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, failedPlanStepIsFallbackRetryable, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, handleProposedCesarPlan, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, normalizeCesarActingFallbackMode, preparePlanFallbackRetry, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -43,8 +43,10 @@ describe('Dispatch routing helpers', () => {
   it('recognizes resume and status phrases for active Cesar plans', () => {
     expect(isCesarPlanResumeInput('go wtf i said 3 times go')).toBe(true);
     expect(isCesarPlanResumeInput('continue')).toBe(true);
+    expect(isCesarPlanResumeInput('ok do last part')).toBe(true);
     expect(isCesarPlanResumeInput('done?')).toBe(false);
     expect(isCesarPlanStatusInput('done?')).toBe(true);
+    expect(isCesarPlanStatusInput('why stop?')).toBe(true);
     expect(isCesarPlanStatusInput('what yu do')).toBe(true);
     expect(isCesarPlanStatusInput('tell me a joke')).toBe(false);
   });
@@ -106,6 +108,7 @@ describe('Dispatch routing helpers', () => {
     expect(activePlan.steps[0].state).toBe('running');
     expect(events.some((event) => event.type === 'spinner-start' && event.message.includes('Step 1/2'))).toBe(true);
     const runningTool = events.find((event) => event.type === 'tool-call' && event.tool === 'PlanStep' && event.status === 'running');
+    if (!runningTool) throw new Error('expected running PlanStep tool event');
     expect(JSON.parse(runningTool.input)).toMatchObject({
       planId: 'cplan-live-tools',
       stepId: 's1',
@@ -118,6 +121,7 @@ describe('Dispatch routing helpers', () => {
 
     expect(events.some((event) => event.type === 'spinner-stop')).toBe(true);
     const doneTool = events.find((event) => event.type === 'tool-call' && event.tool === 'PlanStep' && event.status === 'done');
+    if (!doneTool) throw new Error('expected done PlanStep tool event');
     expect(doneTool.output).toBe('created poller');
   });
 
@@ -158,6 +162,35 @@ describe('Dispatch routing helpers', () => {
 
     event.resolve('1');
     await expect(promise).resolves.toBe('1');
+  });
+
+  it('leaves manual Cesar plan approval to the normal composer instead of blocking on a question', async () => {
+    const events: any[] = [];
+    let activePlan: any = null;
+    const proposed = {
+      id: 'cplan-manual',
+      state: 'awaiting_approval',
+      intent: 'manual plan',
+      steps: [
+        { id: 's1', type: 'self', description: 'Do the work', state: 'pending', estimatedTokens: 1000, estimatedCostUsd: 0.01 },
+      ],
+      totalEstimatedTokens: 1000,
+      totalEstimatedCostUsd: 0.01,
+      totalActualTokens: 0,
+      totalActualCostUsd: 0,
+      stepContext: {},
+      createdAt: new Date().toISOString(),
+    } as any;
+
+    await handleProposedCesarPlan(proposed, {
+      ctx: { config: {}, cesar: { proposedPlan: proposed } },
+      dispatch: (event: any) => events.push(event),
+      setActivePlan: (plan: any) => { activePlan = plan; },
+    } as any);
+
+    expect(activePlan).toBe(proposed);
+    expect(events.some((event) => event.type === 'question')).toBe(false);
+    expect(events.some((event) => event.type === 'info' && String(event.message).includes('Plan awaiting approval'))).toBe(true);
   });
 
   it('prepares one retryable failed plan step on the fallback engine', () => {

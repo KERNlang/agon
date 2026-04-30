@@ -100,7 +100,7 @@ fn name=buildStepExecutors params="ctx:HandlerContext, liveDispatch?:Dispatch" r
       if (!dispatch || !engines || engines.length === 0) return;
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = engines.map((id: string) => {
-        const status = engineStatus[id] ?? 'queued';
+        const status = engineStatus[id] ?? 'preparing';
         return {
           id,
           status: status === 'done' ? `done (${engineStatus[`${id}:score`] ?? '?'})` : status,
@@ -125,6 +125,16 @@ fn name=buildStepExecutors params="ctx:HandlerContext, liveDispatch?:Dispatch" r
         case 'stage1:dispatch':
         case 'stage2:dispatch':
           if (id) engineStatus[id] = 'building';
+          break;
+        case 'engine:worktree':
+          if (id) {
+            engineStatus[id] = 'building';
+            const worktreePath = String(event.data?.worktreePath ?? '');
+            if (worktreePath && engineStatus[`${id}:worktree`] !== worktreePath) {
+              engineStatus[`${id}:worktree`] = worktreePath;
+              dispatch?.({ type: 'info', message: `Forge worktree ${id}: ${worktreePath}` } as any);
+            }
+          }
           break;
         case 'engine:failed':
           if (id) {
@@ -249,9 +259,12 @@ fn name=buildStepExecutors params="ctx:HandlerContext, liveDispatch?:Dispatch" r
         const engineStatus: Record<string,string> = {};
         let progressInterval: any = null;
         try {
+          const stepForgeDir = join(outputDir, step.id);
+          mkdirSync(stepForgeDir, { recursive: true });
+          dispatch?.({ type: 'info', message: `Forge run dir: ${stepForgeDir}` } as any);
           progressInterval = startPlanForgeProgress(dispatch, engines, engineStatus, startTime);
           const manifest = await runForge(
-            { task, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: join(outputDir, step.id), engines, signal },
+            { task, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: stepForgeDir, engines, signal },
             ctx.registry, ctx.adapter,
             dispatch && engines ? (event: any) => notePlanForgeEvent(event, dispatch, engines, engineStatus, startTime) : undefined,
           );
@@ -297,9 +310,12 @@ fn name=buildStepExecutors params="ctx:HandlerContext, liveDispatch?:Dispatch" r
         const engineStatus: Record<string,string> = {};
         let progressInterval: any = null;
         try {
+          const stepForgeDir = join(outputDir, step.id);
+          mkdirSync(stepForgeDir, { recursive: true });
+          dispatch?.({ type: 'info', message: `Team forge run dir: ${stepForgeDir}` } as any);
           progressInterval = startPlanForgeProgress(dispatch, engines, engineStatus, startTime);
           const manifest = await runForge(
-            { task, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: join(outputDir, step.id), engines, hardened: true, signal },
+            { task, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: stepForgeDir, engines, hardened: true, signal },
             ctx.registry, ctx.adapter,
             dispatch && engines ? (event: any) => notePlanForgeEvent(event, dispatch, engines, engineStatus, startTime) : undefined,
           );

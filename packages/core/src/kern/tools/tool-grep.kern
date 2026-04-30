@@ -4,11 +4,9 @@
 import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolDefinition,PermissionDecision,ToolHandler" types=true
 import from="../blocks/process.js" names="spawnWithTimeout"
 
-const name=DEFAULT_HEAD_LIMIT type=number
-  handler <<< 250 >>>
+const name=DEFAULT_HEAD_LIMIT type=number value=250
 
-const name=GREP_TIMEOUT type=number
-  handler <<< 20000 >>>
+const name=GREP_TIMEOUT type=number value=20000
 
 fn name=applyHeadLimit params="text:string, limit:number" returns=string
   doc "Truncate output to the first N lines."

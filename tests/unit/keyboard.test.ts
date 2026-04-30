@@ -56,9 +56,25 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'retryFailedTool' });
   });
 
+  it('routes ctrl+g to the live execution rail as the advertised shortcut', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\x07',
+      key: { ctrl: true },
+      textInputActive: false,
+    }))).toEqual({ type: 'toggleExecutionRail' });
+  });
+
+  it('defers ctrl+g to the active text input', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\x07',
+      key: { ctrl: true },
+      textInputActive: true,
+    }))).toEqual({ type: 'none' });
+  });
+
   it('ignores unmapped ctrl shortcuts', () => {
     expect(resolveKeyboardInput(baseCtx({
-      input: '\x14',
+      input: '\x06',
       key: { ctrl: true },
       textInputActive: false,
     }))).toEqual({ type: 'none' });
@@ -76,6 +92,46 @@ describe('resolveKeyboardInput', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: '\t',
       key: { ctrl: true, tab: true },
+      textInputActive: false,
+    }))).toEqual({ type: 'toggleExecutionRail' });
+  });
+
+  it('routes raw ctrl+b to the file rail even when the terminal omits key.ctrl', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\x02',
+      key: {},
+      textInputActive: false,
+    }))).toEqual({ type: 'toggleFileRail' });
+  });
+
+  it('routes ctrl+b to the file rail when Ink reports only key.name', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '',
+      key: { ctrl: true, name: 'b' },
+      textInputActive: false,
+    }))).toEqual({ type: 'toggleFileRail' });
+  });
+
+  it('defers key.name ctrl+b to the active text input', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '',
+      key: { ctrl: true, name: 'b' },
+      textInputActive: true,
+    }))).toEqual({ type: 'none' });
+  });
+
+  it('keeps raw ctrl+t as a hidden live execution rail alias', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\x14',
+      key: {},
+      textInputActive: false,
+    }))).toEqual({ type: 'toggleExecutionRail' });
+  });
+
+  it('routes ctrl+i to the live rail when Ink reports key.name', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '',
+      key: { ctrl: true, name: 'i' },
       textInputActive: false,
     }))).toEqual({ type: 'toggleExecutionRail' });
   });

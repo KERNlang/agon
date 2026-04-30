@@ -16,10 +16,7 @@ interface name=SessionStats
   field name=byEngine type="Record<string,{promptTokens:number;responseTokens:number;totalTokens:number;costUsd:number;dispatches:number}>"
   field name=dispatches type=number
 
-fn name=estimateTokens params="text:string" returns=number
-  handler <<<
-    return Math.ceil(text.length / 4);
-  >>>
+fn name=estimateTokens params="text:string" returns=number expr={{ return Math.ceil(text.length / 4); }}
 
 fn name=estimateCost params="engineId:string, tokens:number, model?:string" returns=number
   handler <<<

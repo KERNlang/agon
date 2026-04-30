@@ -5,11 +5,9 @@ import from="../models/tool-types.js" names="FileState" types=true
 import from="node:child_process" names="execFileSync"
 import from="node:path" names="resolve"
 
-const name=MAX_CACHE_ENTRIES type=number
-  handler <<< 100 >>>
+const name=MAX_CACHE_ENTRIES type=number value=100
 
-const name=MAX_CACHE_BYTES type=number
-  handler <<< 25 * 1024 * 1024 >>>
+const name=MAX_CACHE_BYTES type=number value={{ 25 * 1024 * 1024 }}
 
 fn name=createTrackedFileStateMap params="owner:{totalBytes:number,accessOrder:string[]}" returns="Map<string, FileState>" export=false
   doc "Create the Map exposed through ToolContext.readFileState. Tool code intentionally receives a Map, so the Map itself must enforce FileStateCache LRU/byte limits when callers use map.set() directly."
@@ -146,18 +144,11 @@ service name=FileStateCache singleton=true
 // by mtime staleness checks, while branch/commit changes clear stale project
 // state without wiping the cache immediately after Cesar's own first edit.
 
-const name=_projectCaches type="Map<string,{cache:FileStateCache,fingerprint:string}>"
-  handler <<<
-    new Map<string, { cache: FileStateCache; fingerprint: string }>()
-  >>>
+const name=_projectCaches type="Map<string,{cache:FileStateCache,fingerprint:string}>" value={{ new Map<string, { cache: FileStateCache; fingerprint: string }>() }}
 
-const name=_projectFingerprintCache type="Map<string,{value:{key:string,fingerprint:string},expires:number}>"
-  handler <<<
-    new Map<string, { value: { key: string; fingerprint: string }; expires: number }>()
-  >>>
+const name=_projectFingerprintCache type="Map<string,{value:{key:string,fingerprint:string},expires:number}>" value={{ new Map<string, { value: { key: string; fingerprint: string }; expires: number }>() }}
 
-const name=PROJECT_FINGERPRINT_TTL_MS type=number
-  handler <<< 1000 >>>
+const name=PROJECT_FINGERPRINT_TTL_MS type=number value=1000
 
 fn name=projectCacheFingerprint params="cwd:string" returns="{key:string,fingerprint:string}" export=false
   handler <<<

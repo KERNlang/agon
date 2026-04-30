@@ -96,10 +96,7 @@ fn name=buildCommand params="engine:EngineDefinition, mode:EngineMode, prompt:st
     return { command: binaryPath, args };
   >>>
 
-fn name=supportsAgentMode params="engine:EngineDefinition" returns=boolean
-  handler <<<
-    return !!engine.agent;
-  >>>
+fn name=supportsAgentMode params="engine:EngineDefinition" returns=boolean expr={{ return !!engine.agent; }}
 
 fn name=resolveAgentArgs params="engine:EngineDefinition, permissionLevel:'full'|'plan'|'read-only'" returns="EngineModeConfig|null"
   handler <<<

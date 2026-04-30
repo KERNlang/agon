@@ -105,7 +105,9 @@ fn name=buildPlanPhaseGauge params="plan:any,width:number=12" returns=any export
     const failedIndex = steps.findIndex((s: any) => stepState(s) === 'failed');
     const nextIndex = steps.findIndex((s: any) => ['pending', 'blocked'].includes(stepState(s)));
     const completed = done + skipped;
-    const planState = String(plan.state ?? '');
+    const rawPlanState = String(plan.state ?? '');
+    const allComplete = total > 0 && completed === total && failed === 0 && runningIndex < 0 && nextIndex < 0;
+    const planState = rawPlanState === 'paused' && allComplete ? 'done' : rawPlanState;
 
     let currentIndex = runningIndex >= 0
       ? runningIndex
@@ -158,6 +160,8 @@ fn name=buildPlanPhaseGauge params="plan:any,width:number=12" returns=any export
       failed,
       current,
       color,
+      terminalComplete: planState === 'done',
+      rawPhase: rawPlanState,
     };
   >>>
 
@@ -308,7 +312,7 @@ screen name=StatusBar target=ink
             <Text color="#f59e0b">{'Ctrl+B'}</Text>
             <Text dimColor>{')'}</Text>
             <Text dimColor>{' \u00b7 live ('}</Text>
-            <Text color="#f59e0b">{'Ctrl+I'}</Text>
+            <Text color="#f59e0b">{'Ctrl+G'}</Text>
             <Text dimColor>{')'}</Text>
             <Text dimColor>{' \u00b7 '}</Text>
             {autoModeQueued ? <Text color="#f97316" bold>{'AUTO ON'}</Text> : <Text dimColor>{'auto'}</Text>}
@@ -592,7 +596,7 @@ screen name=ExecutionRailPanel target=ink memo=true export=named
       const fileCount = Math.max(0, Number(stats?.fileCount ?? 0));
       const changedFileCount = Math.max(0, Number(stats?.changedFileCount ?? 0));
       const queueCount = Math.max(0, Number(stats?.queueCount ?? 0));
-      const timelineBudget = Math.max(3, Math.min(8, safeRows - 8));
+      const timelineBudget = Math.max(2, Math.min(5, safeRows - 9));
       const timeline = buildExecutionRailTimeline(activePlan, lastTool, engines, recentFallbacks, timelineBudget);
       const borderColor = focused || isActive || planGauge.visible || spinner ? '#22d3ee' : '#374151';
 
@@ -600,7 +604,7 @@ screen name=ExecutionRailPanel target=ink memo=true export=named
         <Box flexDirection="column" flexShrink={0} width={safeWidth} height={safeRows + 2} paddingLeft={1} borderStyle="single" borderColor={borderColor} overflow="hidden">
           <Text>
             <Text color="#22d3ee" bold>{'LIVE'}</Text>
-            <Text dimColor>{' (Ctrl+I)'}</Text>
+            <Text dimColor>{' (Ctrl+G)'}</Text>
           </Text>
           <Text>
             <Text dimColor>{'phase '}</Text>
@@ -635,7 +639,7 @@ screen name=ExecutionRailPanel target=ink memo=true export=named
           {fallback ? (
             <Text color="#f97316">{clip(`fallback ${fallback.from} -> ${fallback.to}`, inner)}</Text>
           ) : null}
-          {timeline.length > 0 ? <Text dimColor>{'timeline'}</Text> : null}
+          {timeline.length > 0 ? <Text dimColor>{'recent'}</Text> : null}
           {timeline.map((row: any) => (
             <Text key={row.key}>
               <Text color={row.color}>{row.icon}</Text>
@@ -681,21 +685,23 @@ screen name=StatusLine target=ink
 
 screen name=BackgroundJobRail target=ink memo=true
   prop name=jobs type="Job[]"
-  render wrapper="<Box paddingX={1}>"
-    conditional if="jobs.length > 0"
-      handler <<<
-        <Text dimColor>{'jobs: '}</Text>
-      >>>
-    each name=job in=jobs index=i key="job.id"
-      handler <<<
-        <Text key={job.id}>
-          <Text color={job.state === 'running' ? 'yellow' : job.state === 'done' ? 'green' : 'red'}>
-            {'['}{job.id}{'] '}{job.type}{' '}
-            {job.state === 'running' ? '...' : job.state === 'done' ? 'done' : 'failed'}
-          </Text>
-          {i < jobs.length - 1 && <Text dimColor>{'  '}</Text>}
-        </Text>
-      >>>
+  render
+    handler <<<
+      return (
+        <Box paddingX={1}>
+          {jobs.length > 0 ? <Text dimColor>{'jobs: '}</Text> : null}
+          {jobs.map((job: Job, i: number) => (
+            <Text key={job.id}>
+              <Text color={job.state === 'running' ? 'yellow' : job.state === 'done' ? 'green' : 'red'}>
+                {'['}{job.id}{'] '}{job.type}{' '}
+                {job.state === 'running' ? '...' : job.state === 'done' ? 'done' : 'failed'}
+              </Text>
+              {i < jobs.length - 1 && <Text dimColor>{'  '}</Text>}
+            </Text>
+          ))}
+        </Box>
+      );
+    >>>
 
 // ── Screen: CesarStatusStrip — always-visible compact status ────────
 
@@ -717,36 +723,14 @@ screen name=CesarStatusStrip target=ink memo=true export=named
   animation name=now interval=1000 update="Date.now()" active="isActive"
   render
     handler <<<
-      const planGauge = buildPlanPhaseGauge(activePlan, 12);
-      // Plan badge (shared between idle and active)
-      const hasPlan = planModeQueued || autoModeQueued || (activePlanState && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlanState));
-      let planLabel = '';
-      if (planModeQueued) planLabel = 'ready';
-      else if (autoModeQueued) planLabel = 'auto';
-      else if (activePlanState === 'planning') planLabel = 'thinking';
-      else if (activePlanState === 'awaiting_approval') planLabel = 'review';
-      else if (activePlanState === 'running') planLabel = 'executing';
-      else if (activePlanState === 'paused') planLabel = 'paused';
-
       // Idle: single dimmed line (no colored nesting issues)
       if (!isActive) {
         const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
         return (
           <Box paddingTop={0} flexDirection="column">
             <Text>
-              {hasPlan ? <><Text color={autoModeQueued ? '#f97316' : '#c084fc'} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
               <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{' \u2502 idle'}</Text>
             </Text>
-            {planGauge.visible ? (
-              <Text>
-                <Text color={planGauge.color} bold>{'PLAN '}{planGauge.shortId}</Text>
-                <Text dimColor>{' \u00b7 '}{planGauge.label}{' '}</Text>
-                <Text color={planGauge.color}>{planGauge.bar}</Text>
-                <Text dimColor>{' '}{planGauge.pct}{'% \u00b7 phase: '}{planGauge.phase}</Text>
-                {planGauge.current ? <Text dimColor>{' \u00b7 '}{planGauge.current}</Text> : null}
-                {planGauge.failed > 0 ? <Text color="#ef4444">{' \u00b7 '}{planGauge.failed}{' failed'}</Text> : null}
-              </Text>
-            ) : null}
           </Box>
         );
       }
@@ -794,7 +778,6 @@ screen name=CesarStatusStrip target=ink memo=true export=named
         <Box paddingTop={0} flexDirection="column">
           <Box>
             <Text>
-              {hasPlan ? <><Text color={autoModeQueued ? '#f97316' : '#c084fc'} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
               <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
               {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
               <Text dimColor>{' \u2502 '}</Text>
@@ -805,16 +788,6 @@ screen name=CesarStatusStrip target=ink memo=true export=named
               {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
             </Text>
           </Box>
-          {planGauge.visible ? (
-            <Text>
-              <Text color={planGauge.color} bold>{'PLAN '}{planGauge.shortId}</Text>
-              <Text dimColor>{' \u00b7 '}{planGauge.label}{' '}</Text>
-              <Text color={planGauge.color}>{planGauge.bar}</Text>
-              <Text dimColor>{' '}{planGauge.pct}{'% \u00b7 phase: '}{planGauge.phase}</Text>
-              {planGauge.current ? <Text dimColor>{' \u00b7 '}{planGauge.current}</Text> : null}
-              {planGauge.failed > 0 ? <Text color="#ef4444">{' \u00b7 '}{planGauge.failed}{' failed'}</Text> : null}
-            </Text>
-          ) : null}
           {rationaleStr ? <Text dimColor>{rationaleStr}</Text> : null}
           {scoreboardLines ? <Text dimColor>{scoreboardLines}</Text> : null}
         </Box>

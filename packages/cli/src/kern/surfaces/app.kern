@@ -83,10 +83,7 @@ fn name=isMutatingToolCall params="event:any" returns=boolean
     }
   >>>
 
-fn name=shortToolPath params="filePath:string" returns=string
-  handler <<<
-    return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~');
-  >>>
+fn name=shortToolPath params="filePath:string" returns=string expr={{ return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~'); }}
 
 fn name=isCesarTelemetryLine params="message:string" returns=boolean
   handler <<<
@@ -94,8 +91,7 @@ fn name=isCesarTelemetryLine params="message:string" returns=boolean
     return text.startsWith('Cesar route:') || text.startsWith('What happened:');
   >>>
 
-const name=_telemetryResourceSample type=any
-  handler <<< ({ lastCpu: null, lastAt: 0 }) >>>
+const name=_telemetryResourceSample type=any value={{ ({ lastCpu: null, lastAt: 0 }) }}
 
 fn name=sampleLocalResourceVitals returns="{cpuPercent:number,memPercent:number}" export=false
   handler <<<
@@ -368,10 +364,7 @@ fn name=detailViewerSupportsEvent params="event:any" returns=boolean
     return toolCallSupportsDetailView(event);
   >>>
 
-fn name=toolDetailViewportRows params="termHeight:number" returns=number
-  handler <<<
-    return Math.max(8, Math.min(18, termHeight - 14));
-  >>>
+fn name=toolDetailViewportRows params="termHeight:number" returns=number expr={{ return Math.max(8, Math.min(18, termHeight - 14)); }}
 
 fn name=findLatestToolDetailEvent params="blocks:OutputBlock[]" returns=any
   handler <<<
@@ -444,11 +437,9 @@ fn name=buildExecutionRailStats params="blocks:OutputBlock[],files:any[],queueCo
     };
   >>>
 
-const name=COMPOSER_HISTORY_LIMIT type=number
-  handler <<< 200 >>>
+const name=COMPOSER_HISTORY_LIMIT type=number value=200
 
-fn name=composerHistoryPath params="" returns=string
-  handler <<< return join(getAgonHome(), 'composer-history.json'); >>>
+fn name=composerHistoryPath params="" returns=string expr={{ return join(getAgonHome(), 'composer-history.json'); }}
 
 fn name=loadComposerInputHistory params="" returns="string[]"
   handler <<<
@@ -719,20 +710,15 @@ fn name=buildToolDetailView params="event:any" returns=any
   >>>
 
 // ── Module-level mutable refs for SIGINT ──
-const name=_activeAborts type="Set<AbortController>"
-  handler <<< new Set<AbortController>() >>>
+const name=_activeAborts type="Set<AbortController>" value={{ new Set<AbortController>() }}
 
-const name=_cancelCallback type="{ fn: (() => void) | null }"
-  handler <<< { fn: null } >>>
+const name=_cancelCallback type="{ fn: (() => void) | null }" value={{ { fn: null } }}
 
-const name=_cesarSessionRef type="{ session: PersistentSession | null }"
-  handler <<< { session: null } >>>
+const name=_cesarSessionRef type="{ session: PersistentSession | null }" value={{ { session: null } }}
 
-const name=_lastSigintAt type="{ value: number }"
-  handler <<< { value: 0 } >>>
+const name=_lastSigintAt type="{ value: number }" value={{ { value: 0 } }}
 
-const name=_pauseState type="{ value: PauseState | null }"
-  handler <<< { value: null } >>>
+const name=_pauseState type="{ value: PauseState | null }" value={{ { value: null } }}
 
 fn name=createInitialRegistry returns=EngineRegistry
   handler <<<
@@ -751,10 +737,7 @@ fn name=drainStdinBuffer returns=void
     } while (chunk !== null);
   >>>
 
-fn name=maxScrollOffsetForRowCount params="rowCount:number, rowBudget:number" returns=number
-  handler <<<
-    return Math.max(0, rowCount - Math.max(1, rowBudget));
-  >>>
+fn name=maxScrollOffsetForRowCount params="rowCount:number, rowBudget:number" returns=number expr={{ return Math.max(0, rowCount - Math.max(1, rowBudget)); }}
 
 fn name=nextWheelAnimationStep params="pending:number" returns="{step:number,remaining:number}" export=true
   handler <<<
@@ -766,10 +749,7 @@ fn name=nextWheelAnimationStep params="pending:number" returns="{step:number,rem
     return { step, remaining: pending - step };
   >>>
 
-fn name=clampNumber params="value:number, min:number, max:number" returns=number
-  handler <<<
-    return Math.min(max, Math.max(min, value));
-  >>>
+fn name=clampNumber params="value:number, min:number, max:number" returns=number expr={{ return Math.min(max, Math.max(min, value)); }}
 
 fn name=charDisplayWidth params="char:string" returns=number
   handler <<<
@@ -1318,10 +1298,7 @@ fn name=effectiveNativeArchiveBlockCount params="blocks:OutputBlock[], baseArchi
     return count;
   >>>
 
-fn name=estimateDisplayItemRows params="item:OutputBlock, mode:string, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number
-  handler <<<
-    return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
-  >>>
+fn name=estimateDisplayItemRows params="item:OutputBlock, mode:string, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number expr={{ return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded); }}
 
 fn name=historyBlocksForTranscript params="blocks:OutputBlock[]" returns="OutputBlock[]"
   handler <<<
@@ -1395,10 +1372,7 @@ fn name=appendTranscriptBlock params="blocks:OutputBlock[], event:any, archivePa
     return appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath);
   >>>
 
-fn name=normalizeTerminalMode params="value:any" returns="'native'|'fullscreen'" export=true
-  handler <<<
-    return value === 'fullscreen' ? 'fullscreen' : 'native';
-  >>>
+fn name=normalizeTerminalMode params="value:any" returns="'native'|'fullscreen'" export=true expr={{ return value === 'fullscreen' ? 'fullscreen' : 'native'; }}
 
 fn name=fileRailWidthForTerminal params="termWidth:number, expanded:boolean" returns=number export=true
   handler <<<
@@ -2600,6 +2574,7 @@ screen name=App target=ink
   ref name=chatStartTimeRef type=number initial=0
   ref name=currentPlanRef type="Plan|null" initial="null"
   ref name=activePlanRef type=any initial="null"
+  ref name=activePlanClearTimerRef type="ReturnType<typeof setTimeout>|null" initial="null"
   ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
   ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
   ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
@@ -3054,8 +3029,38 @@ screen name=App target=ink
 
   callback name=setActivePlanWrapped params="plan:any" deps=""
     handler <<<
+      if (activePlanClearTimerRef.current) {
+        clearTimeout(activePlanClearTimerRef.current);
+        activePlanClearTimerRef.current = null;
+      }
       activePlanRef.current = plan;
       setActivePlan(plan);
+      const state = String(plan?.state ?? '');
+      const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+      const allStepsComplete = steps.length > 0 && steps.every((step: any) => ['done', 'skipped'].includes(String(step?.state ?? ''))) && !steps.some((step: any) => String(step?.state ?? '') === 'failed');
+      const shouldRetire = state === 'done' || state === 'cancelled' || state === 'paused' || allStepsComplete;
+      if (plan && shouldRetire) {
+        const planId = String(plan.id ?? '');
+        const retireMs = state === 'paused' ? 45000 : 12000;
+        activePlanClearTimerRef.current = setTimeout(() => {
+          const current = activePlanRef.current;
+          if (current && String(current.id ?? '') === planId) {
+            activePlanRef.current = null;
+            setActivePlan(null);
+          }
+          activePlanClearTimerRef.current = null;
+        }, retireMs);
+      }
+    >>>
+
+  effect deps=""
+    handler <<<
+      return () => {
+        if (activePlanClearTimerRef.current) {
+          clearTimeout(activePlanClearTimerRef.current);
+          activePlanClearTimerRef.current = null;
+        }
+      };
     >>>
 
   // ── Output actions (KERN bridge) ──
@@ -3809,7 +3814,9 @@ screen name=App target=ink
           ctrlKeyHandledRef.current = true;
           setToolOutputExpanded((prev: boolean) => !prev);
           return;
+        case 'g':
         case 'i':
+        case 't':
           ctrlKeyHandledRef.current = true;
           setFileRailOpen(false);
           setFileRailExpandedPath(null);
@@ -3880,25 +3887,27 @@ screen name=App target=ink
     handler <<<
       if (isTerminalFocusReport(input)) return;
 
-      const globalCtrlInput = key.ctrl
-        ? ({
-            '\x01': 'a',
-            '\x03': 'c',
-            '\x05': 'e',
-            '\x0f': 'o',
-            '\x0a': 'j',
-            '\x0b': 'k',
-            '\x0c': 'l',
-            '\x12': 'r',
-            '\x14': 't',
-            '\x15': 'u',
-            '\x17': 'w',
-            '\x02': 'b',
-            '\x09': 'i',
-          } as Record<string, string>)[input] ?? input
-        : input;
+      const keyName = typeof key?.name === 'string' ? key.name.toLowerCase() : '';
+      const globalCtrlInputMap = {
+        '\x01': 'a',
+        '\x03': 'c',
+        '\x05': 'e',
+        '\x07': 'g',
+        '\x0f': 'o',
+        '\x0a': 'j',
+        '\x0b': 'k',
+        '\x0c': 'l',
+        '\x12': 'r',
+        '\x14': 't',
+        '\x15': 'u',
+        '\x17': 'w',
+        '\x02': 'b',
+        ...(key.ctrl ? { '\x09': 'i' } : {}),
+      } as Record<string, string>;
+      const globalCtrlInput = globalCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
+      const hasGlobalCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
       const textInputOwnsReservedShortcut = !statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices);
-      if (key.ctrl && globalCtrlInput === 'e' && !textInputOwnsReservedShortcut) {
+      if (hasGlobalCtrlSignal && globalCtrlInput === 'e' && !textInputOwnsReservedShortcut) {
         const nested = nestedCtrlShortcutRef.current;
         if (nested.key === 'e' && Date.now() - nested.at < 120) {
           nestedCtrlShortcutRef.current = { key: '', at: 0 };
@@ -3946,24 +3955,25 @@ screen name=App target=ink
         }
       }
 
-      const normalizedCtrlInput = key.ctrl
-        ? ({
-            '\x01': 'a',
-            '\x03': 'c',
-            '\x05': 'e',
-            '\x0f': 'o',
-            '\x0a': 'j',
-            '\x0b': 'k',
-            '\x0c': 'l',
-            '\x12': 'r',
-            '\x14': 't',
-            '\x15': 'u',
-            '\x17': 'w',
-            '\x02': 'b',
-            '\x09': 'i',
-          } as Record<string, string>)[input] ?? input
-        : input;
-      if (key.ctrl && normalizedCtrlInput) {
+      const normalizedCtrlInputMap = {
+        '\x01': 'a',
+        '\x03': 'c',
+        '\x05': 'e',
+        '\x07': 'g',
+        '\x0f': 'o',
+        '\x0a': 'j',
+        '\x0b': 'k',
+        '\x0c': 'l',
+        '\x12': 'r',
+        '\x14': 't',
+        '\x15': 'u',
+        '\x17': 'w',
+        '\x02': 'b',
+        ...(key.ctrl ? { '\x09': 'i' } : {}),
+      } as Record<string, string>;
+      const normalizedCtrlInput = normalizedCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
+      const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
+      if (hasCtrlSignal && normalizedCtrlInput) {
         const nested = nestedCtrlShortcutRef.current;
         if (nested.key === normalizedCtrlInput && Date.now() - nested.at < 120) {
           nestedCtrlShortcutRef.current = { key: '', at: 0 };
@@ -4113,7 +4123,7 @@ screen name=App target=ink
       );
       const lowerPanel = (
       <Box flexDirection="column" flexShrink={0}>
-        <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
+        <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} />
         <BackgroundJobRail jobs={runningJobs} />
         {startupUseDashboardView && (displayRows.length === 0 || terminalMode === 'native') && (
           <Box flexDirection="column">

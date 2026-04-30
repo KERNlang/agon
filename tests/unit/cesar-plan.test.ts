@@ -22,6 +22,9 @@ describe('CesarPlan state machine', () => {
     expect(plan.intent).toBe('add rate limiting');
     expect(plan.steps).toHaveLength(1);
     expect(plan.steps[0].state).toBe('pending');
+    expect(plan.updatedAt).toBeDefined();
+    expect(plan.currentStepId).toBeNull();
+    expect(plan.activeStepId).toBeNull();
   });
 
   it('approves a plan and transitions to running', () => {
@@ -30,6 +33,7 @@ describe('CesarPlan state machine', () => {
     plan = approveCesarPlan(plan);
     expect(plan.state).toBe('running');
     expect(plan.approvedAt).toBeDefined();
+    expect(plan.updatedAt).toBeDefined();
   });
 
   it('blocks steps with dependencies', () => {
@@ -128,7 +132,13 @@ describe('CesarPlan state machine', () => {
     });
 
     expect(updates[0].steps[0].state).toBe('running');
+    expect(updates[0].steps[0].startedAt).toBeDefined();
+    expect(updates[0].currentStepId).toBe('s1');
+    expect(updates[0].activeStepId).toBe('s1');
     expect(finalPlan.steps[0].state).toBe('done');
+    expect(finalPlan.steps[0].completedAt).toBeDefined();
+    expect(finalPlan.currentStepId).toBeNull();
+    expect(finalPlan.activeStepId).toBeNull();
     expect(updates.at(-1)?.steps[0].state).toBe('done');
   });
 

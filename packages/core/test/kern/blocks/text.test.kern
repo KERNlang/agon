@@ -1,0 +1,9 @@
+test name="Core text block" target="../../../src/kern/blocks/text.kern"
+  it name="wordWrap stays valid KERN"
+    expect no=schemaViolations
+    expect no=semanticViolations
+    expect no=codegenErrors
+
+  it name="wordWrap keeps its public shape"
+    expect node=fn name=wordWrap prop=params is="text:string, width:number"
+    expect node=fn name=wordWrap prop=returns is="string[]"

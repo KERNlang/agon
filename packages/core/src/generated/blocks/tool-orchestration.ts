@@ -276,13 +276,13 @@ export function createDelegateTool(): ToolHandler {
 export function createReviewTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Review',
-    description: 'Delegate to code review — dispatches one or more engines to review uncommitted changes, a branch diff, or a specific commit. Use when the user asks for a code review, PR review, or diff review. Set engine only when the user explicitly names one (for example, "review with gemini"); set engines when the user names multiple reviewers (for example, "review with codex gemini"); otherwise omit engine/engines and let the runtime auto-select. After calling, STOP and wait.',
+    description: 'Delegate to code review — dispatches one or more engines to review uncommitted changes, a branch diff, or a specific commit. Use when the user asks for a code review, PR review, or diff review.\n\nENGINE SELECTION:\n- If the user explicitly names one engine ("review with gemini") → set engine.\n- If the user names multiple ("review with codex and gemini") → set engines.\n- If the user does NOT name engines, YOU decide based on stakes:\n  • HIGH-STAKES (contract changes, multi-file refactors, architecture, security-sensitive code, race conditions, error-handling rewrites, anything that risks regressions) → set engines: ["codex","gemini"] for diverse parallel review. Different model families catch different bug classes.\n  • ROUTINE (typo fixes, single-file tweaks, docs, formatting, low-risk cleanups) → omit engine and engines; let runtime auto-select one reviewer.\nWhen unsure, lean toward two engines — the cost (one extra ~3min review) is worth catching regressions early. After calling, STOP and wait.',
     inputSchema: {
       type: 'object',
       properties: {
         target: { type: 'string', description: 'Review target: "uncommitted" (default), "branch:NAME", or "commit:SHA".' },
-        engine: { type: 'string', description: 'Specific engine for review. Set only when the user explicitly names an engine; otherwise omit to auto-select the best available reviewer.' },
-        engines: { type: 'array', items: { type: 'string' }, description: 'Multiple specific engines for review. Set only when the user explicitly names multiple reviewers, e.g. ["codex","gemini"].' },
+        engine: { type: 'string', description: 'Specific engine for review. Set only when the user explicitly names a single engine; otherwise prefer engines (for high-stakes) or omit (for routine).' },
+        engines: { type: 'array', items: { type: 'string' }, description: 'Multiple engines for review. Set when user names multiple reviewers, OR when this is a high-stakes change (contract changes, multi-file refactors, architecture, security). Default for high-stakes: ["codex","gemini"].' },
       },
       required: [],
     },

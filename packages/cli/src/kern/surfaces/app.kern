@@ -1009,12 +1009,13 @@ fn name=buildDashboardBlock params="enabledOverride:string[]|null" returns=Outpu
     };
   >>>
 
-fn name=estimatePinnedLiveRows params="mode:string, hasStream:boolean, hasProgress:boolean, agentCount:number" returns=number
+fn name=estimatePinnedLiveRows params="mode:string, hasStream:boolean, hasProgress:boolean, agentCount:number, toolStreamCount?:number" returns=number
   handler <<<
     const streamRows = hasStream ? (mode === 'chat' ? 3 : 6) : 0;
     const progressRows = hasProgress ? (mode === 'chat' ? 3 : 5) : 0;
     const agentRows = agentCount > 0 ? Math.min(18, agentCount * 7) : 0;
-    return streamRows + progressRows + agentRows;
+    const toolRows = toolStreamCount && toolStreamCount > 0 ? Math.min(10, 1 + toolStreamCount * 2) : 0;
+    return streamRows + progressRows + agentRows + toolRows;
   >>>
 
 fn name=estimateWrappedRows params="text:string, width:number" returns=number
@@ -1409,7 +1410,7 @@ fn name=buildTerminalReplaySnapshot params="blocks:OutputBlock[], opts:any" retu
     const hasProgress = !!opts?.hasProgress;
     const agentCount = Math.max(0, Math.floor(Number(opts?.agentCount) || 0));
     const bottomChromeExtraRows = estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner);
-    const pinnedLiveRows = estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount);
+    const pinnedLiveRows = estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount, Math.max(0, Math.floor(Number(opts?.toolStreamCount) || 0)));
     const visibleBudget = estimateVisibleBlockBudget(termHeight, mode, bottomChromeExtraRows + pinnedLiveRows);
 
     const transcriptBlocks = terminalMode === 'native'
@@ -2537,6 +2538,7 @@ screen name=App target=ink
   state name=modelPickerCliGroups type="any[]" initial="[]"
   state name=cesarPickerOpen type=boolean initial=false
   state name=streamingText type="Record<string,StreamingEntry>" initial="{}" throttle=33
+  state name=liveToolStreams type="Record<string,any>" initial="{}" throttle=50
   state name=pendingImages type="ImageAttachment[]" initial="[]"
   state name=reviewEvent type="ReviewEvent|null" initial="null"
   state name=pendingPlanProposal type="OutputEvent|null" initial="null"
@@ -2583,6 +2585,7 @@ screen name=App target=ink
   ref name=planWatcherStatMtimeRef type="number" initial=0
   ref name=lastActivePlanSigRef type="string" initial="''"
   ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
+  ref name=liveToolStreamsRef type="Record<string,any>" initial="{}"
   ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
   ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
   ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
@@ -2755,12 +2758,13 @@ screen name=App target=ink
       return toolDetailEvent ? buildToolDetailView(toolDetailEvent) : null;
     >>>
 
-  memo name=startupOnly deps="outputBlocks,activeStream,liveProgress,agentProgress"
+  memo name=startupOnly deps="outputBlocks,activeStream,liveProgress,agentProgress,liveToolStreams"
     handler <<<
       return outputBlocks.length === 1
         && outputBlocks[0]?.event?.type === 'dashboard'
         && !activeStream
         && !liveProgress
+        && Object.keys(liveToolStreams).length === 0
         && Object.keys(agentProgress).length === 0;
     >>>
 
@@ -2774,16 +2778,16 @@ screen name=App target=ink
       return startupOnly ? outputBlocks : historyBlocks;
     >>>
 
-  memo name=livePaneVisible deps="activeStream, liveProgress, agentProgress, startupOnly"
+  memo name=livePaneVisible deps="activeStream, liveProgress, liveToolStreams, agentProgress, startupOnly"
     handler <<<
       if (startupOnly) return false;
-      return !!activeStream || !!liveProgress || Object.keys(agentProgress).length > 0;
+      return !!activeStream || !!liveProgress || Object.keys(liveToolStreams).length > 0 || Object.keys(agentProgress).length > 0;
     >>>
 
-  memo name=currentVisibleRowBudget deps="termHeight, mode, overlayReservedRows, bottomChromeReservedRows, livePaneVisible, activeStream, liveProgress, agentProgress"
+  memo name=currentVisibleRowBudget deps="termHeight, mode, overlayReservedRows, bottomChromeReservedRows, livePaneVisible, activeStream, liveProgress, liveToolStreams, agentProgress"
     handler <<<
       const pinnedLiveRows = livePaneVisible
-        ? estimatePinnedLiveRows(mode, !!activeStream, !!liveProgress, Object.keys(agentProgress).length)
+        ? estimatePinnedLiveRows(mode, !!activeStream, !!liveProgress, Object.keys(agentProgress).length, Object.keys(liveToolStreams).length)
         : 0;
       const viewportRows = Math.max(1, termHeight - pinnedLiveRows);
       return estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows + bottomChromeReservedRows);
@@ -3143,6 +3147,12 @@ screen name=App target=ink
           streamingTextRef.current = next;
           setStreamingText(next);
         },
+        setLiveToolStreams: (updater: Record<string,any> | ((prev: Record<string,any>) => Record<string,any>)) => {
+          const prev = liveToolStreamsRef.current;
+          const next = typeof updater === 'function' ? (updater as (p: Record<string,any>) => Record<string,any>)(prev) : updater;
+          liveToolStreamsRef.current = next;
+          setLiveToolStreams(next);
+        },
         addBlock: (event: any) => {
           setOutputBlocks((prev: any) => appendTranscriptBlock(prev, event, blockArchivePathRef.current));
         },
@@ -3170,6 +3180,8 @@ screen name=App target=ink
           }
           streamingTextRef.current = {};
           setStreamingText({});
+          liveToolStreamsRef.current = {};
+          setLiveToolStreams({});
         },
         getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
         setCesarConfidence,
@@ -3216,7 +3228,7 @@ screen name=App target=ink
         const engineId = String((event as any).engineId ?? '').trim();
         if (engineId) activeEnginePidsRef.current.delete(engineId);
       }
-      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} };
+      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, liveToolStreams: liveToolStreamsRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} };
       handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
     >>>
 
@@ -4231,7 +4243,7 @@ screen name=App target=ink
         )}
         {livePaneVisible && (
           <>
-            <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} />
+            <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} />
             {Object.keys(agentProgress).length > 0 && (
               <Box flexDirection="column">
                 {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (

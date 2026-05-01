@@ -10,11 +10,35 @@ test name="Core tool permissions" target="../../../src/kern/tools/tool-permissio
     expect node=fn name=isDangerousCommand prop=returns is=boolean
     expect node=fn name=isReadOnlyCommand prop=returns is=boolean
     expect node=fn name=checkBashPermission prop=returns is=PermissionDecision
+    expect fn=isDangerousCommand args={{["rm -rf /"]}} equals=true
+    expect fn=isDangerousCommand args={{["sudo rm file"]}} equals=true
+    expect fn=isDangerousCommand args={{["ls -la"]}} equals=false
+    expect fn=isDangerousCommand args={{["npm test"]}} equals=false
+    expect fn=isReadOnlyCommand args={{["ls -la"]}} equals=true
+    expect fn=isReadOnlyCommand args={{["git status"]}} equals=true
+    expect fn=isReadOnlyCommand args={{["npm test"]}} equals=true
+    expect fn=isReadOnlyCommand args={{["npm install"]}} equals=false
+    expect fn=isReadOnlyCommand args={{["rm file.txt"]}} equals=false
+    expect fn=isReadOnlyCommand args={{["cat file.txt | grep pattern"]}} equals=true
+    expect fn=isReadOnlyCommand args={{['agon config --help 2>/dev/null && echo "---" && agon config list 2>/dev/null']}} equals=true
+    expect fn=isReadOnlyCommand args={{["npm install express"]}} equals=false
 
-  it name="shell cleanup helpers keep typed public shape"
+  it name="shell cleanup helpers normalize command text"
     expect fn=stripShellRedirections args={{["cat file.txt > out.txt"]}} equals="cat file.txt"
+    expect fn=stripShellWrappers args={{["timeout --preserve-status npm test"]}} equals="npm test"
+    expect fn=extractBaseCommand args={{["timeout --preserve-status npm test"]}} equals="npm"
     expect node=fn name=stripShellWrappers prop=returns is=string
     expect node=fn name=extractBaseCommand prop=returns is=string
+
+  it name="bash permission decisions run at KERN level"
+    fixture name=askCtx value={{({ cwd: "/home/user/project", permissionMode: "ask" })}}
+    fixture name=autoCtx value={{({ cwd: "/home/user/project", permissionMode: "auto" })}}
+    expect expr={{checkBashPermission("rm -rf /", askCtx).behavior}} equals="deny"
+    expect expr={{checkBashPermission("git status", askCtx).behavior}} equals="allow"
+    expect expr={{checkBashPermission('agon config --help 2>/dev/null && echo "---" && agon config list 2>/dev/null', askCtx).behavior}} equals="allow"
+    expect expr={{checkBashPermission("npm install express", askCtx).behavior}} equals="ask"
+    expect expr={{checkBashPermission("npm install express", autoCtx).behavior}} equals="allow"
+    expect expr={{checkBashPermission("rm -rf /", autoCtx).behavior}} equals="deny"
 
   it name="file permission gates stay declared in KERN"
     expect node=fn name=checkFileReadPermission prop=returns is=PermissionDecision

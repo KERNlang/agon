@@ -140,9 +140,53 @@ export function App() {
   const [sessionStartTime, _setSessionStartTimeRaw] = useState<number>(Date.now());
   const setSessionStartTime = useMemo(() => __inkSafe(_setSessionStartTimeRaw), [_setSessionStartTimeRaw]);
   const [liveSpinner, _setLiveSpinnerRaw] = useState<any>(null);
-  const setLiveSpinner = useMemo(() => __inkSafe(_setLiveSpinnerRaw), [_setLiveSpinnerRaw]);
+  const setLiveSpinner = useMemo(() => {
+    let _lastCall = 0;
+    let _pendingValue: React.SetStateAction<any>;
+    let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
+    return (value: React.SetStateAction<any>) => {
+      const now = Date.now();
+      const elapsed = now - _lastCall;
+      if (elapsed >= 50) {
+        _lastCall = now;
+        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
+        setTimeout(() => _setLiveSpinnerRaw(value), 0);
+      } else {
+        _pendingValue = value;
+        if (!_pendingTimer) {
+          _pendingTimer = setTimeout(() => {
+            _lastCall = Date.now();
+            _pendingTimer = null;
+            _setLiveSpinnerRaw(_pendingValue);
+          }, 50 - elapsed);
+        }
+      }
+    };
+  }, []);
   const [liveProgress, _setLiveProgressRaw] = useState<EngineProgress[]|null>(null);
-  const setLiveProgress = useMemo(() => __inkSafe(_setLiveProgressRaw), [_setLiveProgressRaw]);
+  const setLiveProgress = useMemo(() => {
+    let _lastCall = 0;
+    let _pendingValue: React.SetStateAction<EngineProgress[]|null>;
+    let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
+    return (value: React.SetStateAction<EngineProgress[]|null>) => {
+      const now = Date.now();
+      const elapsed = now - _lastCall;
+      if (elapsed >= 50) {
+        _lastCall = now;
+        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
+        setTimeout(() => _setLiveProgressRaw(value), 0);
+      } else {
+        _pendingValue = value;
+        if (!_pendingTimer) {
+          _pendingTimer = setTimeout(() => {
+            _lastCall = Date.now();
+            _pendingTimer = null;
+            _setLiveProgressRaw(_pendingValue);
+          }, 50 - elapsed);
+        }
+      }
+    };
+  }, []);
   const [slashPickerOpen, setSlashPickerOpen] = useState<boolean>(false);
   const [questionState, _setQuestionStateRaw] = useState<any>(null);
   const setQuestionState = useMemo(() => __inkSafe(_setQuestionStateRaw), [_setQuestionStateRaw]);

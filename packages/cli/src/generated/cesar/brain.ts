@@ -1146,7 +1146,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 } else if (signal.tool === 'ProposePlan') {
                   recordToolUse('ProposePlan', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
                   const activePlan = ctx.activePlan;
-                  if (activePlan && ['running', 'paused'].includes(activePlan.state)) {
+                  if (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state)) {
                     dispatch({
                       type: 'tool-call',
                       engineId: cesarEngineId,
@@ -1346,7 +1346,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           delete (ctx.cesar as any)._proposePlanArgs;
           try {
             const activePlan = ctx.activePlan;
-            if (activePlan && ['running', 'paused'].includes(activePlan.state)) {
+            if (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state)) {
               dispatch({
                 type: 'tool-call',
                 engineId: cesarEngineId,

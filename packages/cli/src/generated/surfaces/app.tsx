@@ -851,7 +851,7 @@ export function App() {
       explorationMode, setExplorationMode,
       neroMode, setNeroMode,
       cesarMemory,
-      activePlan: activePlanRef.current, setActivePlan: setActivePlanWrapped,
+      get activePlan() { return activePlanRef.current; }, setActivePlan: setActivePlanWrapped,
       extensionPromptFragments,
       sessionMcpServers, setSessionMcpServers,
       telemetryVitals,

@@ -6,7 +6,7 @@ import { Box, Static, Text, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@agon/core';
 
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
 
@@ -100,7 +100,7 @@ import { join, dirname } from 'node:path';
 
 import { fileURLToPath } from 'node:url';
 
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, statSync } from 'node:fs';
 
 import { tmpdir, totalmem, cpus } from 'node:os';
 
@@ -384,6 +384,7 @@ export function App() {
   const activePlanClearTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const planWatcherTimerRef = useRef<ReturnType<typeof setInterval>|null>(null);
   const planWatcherDebounceTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const planWatcherStatMtimeRef = useRef<number>(0);
   const streamingTextRef = useRef<Record<string,StreamingEntry>>({});
   const agentProgressRef = useRef<Record<string,AgentProgressSnapshot>>({});
   const lastReviewResultRef = useRef<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null>(null);
@@ -1494,8 +1495,22 @@ export function App() {
     if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
     if (!activePlan?.id) return;
     const planId = activePlan.id;
+    const planFilePath = (() => { try { return cesarPlanJsonPath(planId); } catch { return null; } })();
     planWatcherTimerRef.current = setInterval(() => {
       try {
+        // Idle bail-out: free syscall, returns immediately when file hasn't
+        // been written since last tick. Skips the readFileSync + JSON.parse
+        // + comparison + stringify-fallback hot path that compounds as the
+        // plan grows. Only the gate — the rest of the body is identical to
+        // the original conservative logic so render-frequency is unchanged
+        // on real updates.
+        if (planFilePath) {
+          try {
+            const mtimeMs = statSync(planFilePath).mtimeMs;
+            if (mtimeMs === planWatcherStatMtimeRef.current) return;
+            planWatcherStatMtimeRef.current = mtimeMs;
+          } catch { /* file gone — fall through to loadCesarPlan which handles missing */ }
+        }
         const loaded = loadCesarPlan(planId);
         if (!loaded) return;
         const current = activePlanRef.current;
@@ -1640,6 +1655,8 @@ export function App() {
 
   useEffect(() => {
     try {
+      const startupConfig = loadConfig();
+      if ((startupConfig as any).resumePausedPlanOnStartup !== true) return;
       const MAX_RESUME_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
       const now = Date.now();
       const plans = listCesarPlans();
@@ -4620,7 +4637,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4467
+// @kern-source: app:4487
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

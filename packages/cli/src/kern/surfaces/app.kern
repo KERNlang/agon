@@ -1009,12 +1009,13 @@ fn name=buildDashboardBlock params="enabledOverride:string[]|null" returns=Outpu
     };
   >>>
 
-fn name=estimatePinnedLiveRows params="mode:string, hasStream:boolean, hasProgress:boolean, agentCount:number" returns=number
+fn name=estimatePinnedLiveRows params="mode:string, hasStream:boolean, hasProgress:boolean, agentCount:number, toolStreamCount?:number" returns=number
   handler <<<
     const streamRows = hasStream ? (mode === 'chat' ? 3 : 6) : 0;
     const progressRows = hasProgress ? (mode === 'chat' ? 3 : 5) : 0;
     const agentRows = agentCount > 0 ? Math.min(18, agentCount * 7) : 0;
-    return streamRows + progressRows + agentRows;
+    const toolRows = toolStreamCount && toolStreamCount > 0 ? Math.min(10, 1 + toolStreamCount * 2) : 0;
+    return streamRows + progressRows + agentRows + toolRows;
   >>>
 
 fn name=estimateWrappedRows params="text:string, width:number" returns=number
@@ -1409,7 +1410,7 @@ fn name=buildTerminalReplaySnapshot params="blocks:OutputBlock[], opts:any" retu
     const hasProgress = !!opts?.hasProgress;
     const agentCount = Math.max(0, Math.floor(Number(opts?.agentCount) || 0));
     const bottomChromeExtraRows = estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner);
-    const pinnedLiveRows = estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount);
+    const pinnedLiveRows = estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount, Math.max(0, Math.floor(Number(opts?.toolStreamCount) || 0)));
     const visibleBudget = estimateVisibleBlockBudget(termHeight, mode, bottomChromeExtraRows + pinnedLiveRows);
 
     const transcriptBlocks = terminalMode === 'native'
@@ -2522,8 +2523,8 @@ screen name=App target=ink
   state name=historyIndex type=number initial=-1 safe=false
   state name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   state name=sessionStartTime type=number initial="Date.now()"
-  state name=liveSpinner type=any initial="null"
-  state name=liveProgress type="EngineProgress[]|null" initial="null"
+  state name=liveSpinner type=any initial="null" throttle=50
+  state name=liveProgress type="EngineProgress[]|null" initial="null" throttle=50
   state name=slashPickerOpen type=boolean initial=false safe=false
   state name=questionState type=any initial="null"
   state name=questionAnswer type=string initial="''" safe=false
@@ -2537,6 +2538,7 @@ screen name=App target=ink
   state name=modelPickerCliGroups type="any[]" initial="[]"
   state name=cesarPickerOpen type=boolean initial=false
   state name=streamingText type="Record<string,StreamingEntry>" initial="{}" throttle=33
+  state name=liveToolStreams type="Record<string,any>" initial="{}" throttle=50
   state name=pendingImages type="ImageAttachment[]" initial="[]"
   state name=reviewEvent type="ReviewEvent|null" initial="null"
   state name=pendingPlanProposal type="OutputEvent|null" initial="null"
@@ -2581,7 +2583,9 @@ screen name=App target=ink
   // effect re-mounts so we don't pay full read+parse on every render that
   // re-mounts the watcher.
   ref name=planWatcherStatMtimeRef type="number" initial=0
+  ref name=lastActivePlanSigRef type="string" initial="''"
   ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
+  ref name=liveToolStreamsRef type="Record<string,any>" initial="{}"
   ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
   ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
   ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
@@ -2754,12 +2758,13 @@ screen name=App target=ink
       return toolDetailEvent ? buildToolDetailView(toolDetailEvent) : null;
     >>>
 
-  memo name=startupOnly deps="outputBlocks,activeStream,liveProgress,agentProgress"
+  memo name=startupOnly deps="outputBlocks,activeStream,liveProgress,agentProgress,liveToolStreams"
     handler <<<
       return outputBlocks.length === 1
         && outputBlocks[0]?.event?.type === 'dashboard'
         && !activeStream
         && !liveProgress
+        && Object.keys(liveToolStreams).length === 0
         && Object.keys(agentProgress).length === 0;
     >>>
 
@@ -2773,16 +2778,16 @@ screen name=App target=ink
       return startupOnly ? outputBlocks : historyBlocks;
     >>>
 
-  memo name=livePaneVisible deps="activeStream, liveProgress, agentProgress, startupOnly"
+  memo name=livePaneVisible deps="activeStream, liveProgress, liveToolStreams, agentProgress, startupOnly"
     handler <<<
       if (startupOnly) return false;
-      return !!activeStream || !!liveProgress || Object.keys(agentProgress).length > 0;
+      return !!activeStream || !!liveProgress || Object.keys(liveToolStreams).length > 0 || Object.keys(agentProgress).length > 0;
     >>>
 
-  memo name=currentVisibleRowBudget deps="termHeight, mode, overlayReservedRows, bottomChromeReservedRows, livePaneVisible, activeStream, liveProgress, agentProgress"
+  memo name=currentVisibleRowBudget deps="termHeight, mode, overlayReservedRows, bottomChromeReservedRows, livePaneVisible, activeStream, liveProgress, liveToolStreams, agentProgress"
     handler <<<
       const pinnedLiveRows = livePaneVisible
-        ? estimatePinnedLiveRows(mode, !!activeStream, !!liveProgress, Object.keys(agentProgress).length)
+        ? estimatePinnedLiveRows(mode, !!activeStream, !!liveProgress, Object.keys(agentProgress).length, Object.keys(liveToolStreams).length)
         : 0;
       const viewportRows = Math.max(1, termHeight - pinnedLiveRows);
       return estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows + bottomChromeReservedRows);
@@ -2809,16 +2814,8 @@ screen name=App target=ink
       return nativeTranscriptBlocks.slice(effectiveNativeArchiveCount);
     >>>
 
-  // Per-block row cache: only re-parse blocks whose content changed.
-  // Key = block.id + stable hash of event JSON; value = parsed rows.
-  ref name=blockRowCacheRef type="Map<string, any[]>" initial="new Map()"
-
   memo name=displayRows deps="displayBlocks, mode, toolOutputExpanded, thinkingExpanded"
     handler <<<
-      // Build the transcript in one pass so adjacent tool-call-group blocks
-      // can collapse together. Per-block rendering breaks that context and
-      // creates repeated "1 tool call / 2 tool calls" noise.
-      blockRowCacheRef.current.clear();
       return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
     >>>
 
@@ -3095,9 +3092,22 @@ screen name=App target=ink
         activePlanClearTimerRef.current = null;
       }
       activePlanRef.current = plan;
-      setActivePlan(plan);
       const state = String(plan?.state ?? '');
       const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+      // Cheap signature of UI-visible plan state. If unchanged, skip the
+      // React setState — plan-watcher writes a fresh object every tick during
+      // execution, but step-state and plan-state often haven't shifted, and
+      // a setActivePlan call here cascades into ChromeBar/ExecutionRail/
+      // CesarStatusStrip re-renders despite identical content. Refs still
+      // get the new object so callers reading fresh fields via the ref see
+      // the latest data.
+      const sig = plan
+        ? `${String(plan.id ?? '')}|${state}|${String(plan.currentStepId ?? '')}|${steps.map((s: any) => `${String(s?.id ?? '')}:${String(s?.state ?? '')}`).join(',')}`
+        : '';
+      if (sig !== lastActivePlanSigRef.current) {
+        lastActivePlanSigRef.current = sig;
+        setActivePlan(plan);
+      }
       const allStepsComplete = steps.length > 0 && steps.every((step: any) => ['done', 'skipped'].includes(String(step?.state ?? ''))) && !steps.some((step: any) => String(step?.state ?? '') === 'failed');
       const shouldRetire = state === 'done' || state === 'cancelled' || state === 'paused' || allStepsComplete;
       if (plan && shouldRetire) {
@@ -3107,6 +3117,7 @@ screen name=App target=ink
           const current = activePlanRef.current;
           if (current && String(current.id ?? '') === planId) {
             activePlanRef.current = null;
+            lastActivePlanSigRef.current = '';
             setActivePlan(null);
           }
           activePlanClearTimerRef.current = null;
@@ -3136,6 +3147,12 @@ screen name=App target=ink
           streamingTextRef.current = next;
           setStreamingText(next);
         },
+        setLiveToolStreams: (updater: Record<string,any> | ((prev: Record<string,any>) => Record<string,any>)) => {
+          const prev = liveToolStreamsRef.current;
+          const next = typeof updater === 'function' ? (updater as (p: Record<string,any>) => Record<string,any>)(prev) : updater;
+          liveToolStreamsRef.current = next;
+          setLiveToolStreams(next);
+        },
         addBlock: (event: any) => {
           setOutputBlocks((prev: any) => appendTranscriptBlock(prev, event, blockArchivePathRef.current));
         },
@@ -3163,6 +3180,8 @@ screen name=App target=ink
           }
           streamingTextRef.current = {};
           setStreamingText({});
+          liveToolStreamsRef.current = {};
+          setLiveToolStreams({});
         },
         getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
         setCesarConfidence,
@@ -3209,7 +3228,7 @@ screen name=App target=ink
         const engineId = String((event as any).engineId ?? '').trim();
         if (engineId) activeEnginePidsRef.current.delete(engineId);
       }
-      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} };
+      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, liveToolStreams: liveToolStreamsRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} };
       handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
     >>>
 
@@ -3255,7 +3274,7 @@ screen name=App target=ink
       if (clearChat) dispatch({ type: 'clear' } as any);
     >>>
 
-  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped"
+  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped"
     handler <<<
       return {
         registry, adapter, activeEngines,
@@ -3272,7 +3291,7 @@ screen name=App target=ink
         explorationMode, setExplorationMode,
         neroMode, setNeroMode,
         cesarMemory,
-        activePlan: activePlanRef.current ?? activePlan, setActivePlan: setActivePlanWrapped,
+        get activePlan() { return activePlanRef.current; }, setActivePlan: setActivePlanWrapped,
         extensionPromptFragments,
         sessionMcpServers, setSessionMcpServers,
         telemetryVitals,
@@ -3532,7 +3551,7 @@ screen name=App target=ink
       setInputValue(updatedValue);
     >>>
 
-  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,activePlan,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped"
+  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped"
     handler <<<
       inputEpochRef.current += 1;
       let input = cleanSubmitValue(value);
@@ -3573,7 +3592,7 @@ screen name=App target=ink
         return;
       }
 
-      if (!input.startsWith('/') && activePlan?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
+      if (!input.startsWith('/') && activePlanRef.current?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
         input = '/approve';
       }
 
@@ -3587,7 +3606,7 @@ screen name=App target=ink
         const btwQuestion = input.trim().slice(5).trim();
         const activeWorkForBtw = hasBtwSideChannelTarget({
           replState,
-          activePlanState: activePlan?.state ?? null,
+          activePlanState: activePlanRef.current?.state ?? null,
           runningJobCount: jobManager.running().length,
         });
         if (btwQuestion && activeWorkForBtw) {
@@ -3965,7 +3984,7 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen"
     handler <<<
       if (isTerminalFocusReport(input)) return;
 
@@ -4070,7 +4089,7 @@ screen name=App target=ink
         reviewEventOpen: !!reviewEvent,
         toolDetailOpen: !!toolDetailEvent,
         questionState, replState, inputValue, inputHistory, historyIndex,
-        planModeQueued, autoModeQueued, activePlanState: activePlan?.state ?? null,
+        planModeQueued, autoModeQueued, activePlanState: activePlanRef.current?.state ?? null,
         outputBlockCount: outputBlocks.length,
         commands: allSlashCommands,
         engineIds: availableEngines,
@@ -4224,7 +4243,7 @@ screen name=App target=ink
         )}
         {livePaneVisible && (
           <>
-            <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} />
+            <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} />
             {Object.keys(agentProgress).length > 0 && (
               <Box flexDirection="column">
                 {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (

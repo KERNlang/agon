@@ -37,12 +37,14 @@ interface name=OutputState
   field name=liveSpinner type="{message:string,color?:number,engineId?:string}|null"
   field name=liveProgress type="EngineProgress[]|null"
   field name=streamingText type="Record<string,StreamingEntry>"
+  field name=liveToolStreams type="Record<string,any>"
   field name=agentProgress type="Record<string,AgentProgressSnapshot>"
 
 interface name=OutputActions
   field name=setLiveSpinner type="(val:any) => void"
   field name=setLiveProgress type="(val:EngineProgress[]|null) => void"
   field name=setStreamingText type="(updater:Record<string,StreamingEntry> | ((prev:Record<string,StreamingEntry>) => Record<string,StreamingEntry>)) => void"
+  field name=setLiveToolStreams type="(updater:Record<string,any> | ((prev:Record<string,any>) => Record<string,any>)) => void"
   field name=addBlock type="(event:OutputEvent) => void"
   field name=replaceBlocksOfType type="(eventType:string, event:OutputEvent) => void"
   field name=clearBlocks type="() => void"
@@ -95,6 +97,9 @@ const name=TOOL_CALL_GROUP_FLUSH_MS type=number value=500
 const name=_pendingToolCalls type="any[]" value={{ [] as any[] }}
 
 const name=_pendingFlushTimer type="{ timer: any, actions: any }" value={{ ({ timer: null, actions: null }) as any }}
+
+// ── Live tool-stream buffers — tracks in-progress inline tool calls keyed by streamId
+const name=_liveToolStreams type="Record<string,any>" value={{ {} as Record<string, any> }}
 
 fn name=toolCallKey params="event:any" returns=string export=false
   handler <<<
@@ -521,6 +526,78 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
           return { ...prev, [eid]: next };
         });
         actions.addBlock({ type: 'warning', message: `Agent ${e.kind} budget: ${e.remaining}/${e.limit} remaining` } as any);
+        return;
+      }
+      case 'tool-stream-start': {
+        const e = event as any;
+        const entry = {
+          streamId: e.streamId,
+          engineId: e.engineId,
+          tool: e.tool,
+          input: e.input,
+          output: '',
+          status: 'running',
+          startedAt: Date.now(),
+        };
+        _liveToolStreams[e.streamId] = entry;
+        actions.setLiveToolStreams((prev) => ({
+          ...prev,
+          [e.streamId]: entry,
+        }));
+        return;
+      }
+      case 'tool-stream-chunk': {
+        const e = event as any;
+        const existingBuffer = _liveToolStreams[e.streamId];
+        if (existingBuffer) {
+          _liveToolStreams[e.streamId] = {
+            ...existingBuffer,
+            output: String(existingBuffer.output ?? '') + String(e.chunk ?? ''),
+          };
+        }
+        actions.setLiveToolStreams((prev) => {
+          const existing = prev[e.streamId];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [e.streamId]: {
+              ...existing,
+              output: existing.output + e.chunk,
+            },
+          };
+        });
+        return;
+      }
+      case 'tool-stream-end': {
+        const e = event as any;
+        const existing = _liveToolStreams[e.streamId] ?? {};
+        const output = e.output ?? existing.output;
+        delete _liveToolStreams[e.streamId];
+        actions.setLiveToolStreams((prev) => {
+          const next = { ...prev };
+          delete next[e.streamId];
+          return next;
+        });
+        // Convert to a normal tool-call block for scrollback
+        const toolCallEvent = {
+          type: 'tool-call',
+          engineId: e.engineId ?? existing.engineId ?? '',
+          tool: e.tool ?? existing.tool ?? '',
+          input: e.input ?? existing.input ?? '',
+          status: e.status,
+          output,
+        };
+        const key = toolCallKey(toolCallEvent);
+        if (e.status === 'done' || e.status === 'error') {
+          for (let i = _pendingToolCalls.length - 1; i >= 0; i--) {
+            const pending = _pendingToolCalls[i];
+            if (pending?.status === 'running' && toolCallKey(pending) === key) {
+              _pendingToolCalls.splice(i, 1);
+            }
+          }
+          _pendingToolCalls.push(toolCallEvent);
+          schedulePendingFlush(actions);
+        }
         return;
       }
       case 'tool-call': {

@@ -2581,6 +2581,7 @@ screen name=App target=ink
   // effect re-mounts so we don't pay full read+parse on every render that
   // re-mounts the watcher.
   ref name=planWatcherStatMtimeRef type="number" initial=0
+  ref name=lastActivePlanSigRef type="string" initial="''"
   ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
   ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
   ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
@@ -3095,9 +3096,22 @@ screen name=App target=ink
         activePlanClearTimerRef.current = null;
       }
       activePlanRef.current = plan;
-      setActivePlan(plan);
       const state = String(plan?.state ?? '');
       const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+      // Cheap signature of UI-visible plan state. If unchanged, skip the
+      // React setState — plan-watcher writes a fresh object every tick during
+      // execution, but step-state and plan-state often haven't shifted, and
+      // a setActivePlan call here cascades into ChromeBar/ExecutionRail/
+      // CesarStatusStrip re-renders despite identical content. Refs still
+      // get the new object so callers reading fresh fields via the ref see
+      // the latest data.
+      const sig = plan
+        ? `${String(plan.id ?? '')}|${state}|${String(plan.currentStepId ?? '')}|${steps.map((s: any) => `${String(s?.id ?? '')}:${String(s?.state ?? '')}`).join(',')}`
+        : '';
+      if (sig !== lastActivePlanSigRef.current) {
+        lastActivePlanSigRef.current = sig;
+        setActivePlan(plan);
+      }
       const allStepsComplete = steps.length > 0 && steps.every((step: any) => ['done', 'skipped'].includes(String(step?.state ?? ''))) && !steps.some((step: any) => String(step?.state ?? '') === 'failed');
       const shouldRetire = state === 'done' || state === 'cancelled' || state === 'paused' || allStepsComplete;
       if (plan && shouldRetire) {
@@ -3107,6 +3121,7 @@ screen name=App target=ink
           const current = activePlanRef.current;
           if (current && String(current.id ?? '') === planId) {
             activePlanRef.current = null;
+            lastActivePlanSigRef.current = '';
             setActivePlan(null);
           }
           activePlanClearTimerRef.current = null;
@@ -3255,7 +3270,7 @@ screen name=App target=ink
       if (clearChat) dispatch({ type: 'clear' } as any);
     >>>
 
-  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped"
+  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped"
     handler <<<
       return {
         registry, adapter, activeEngines,
@@ -3272,7 +3287,7 @@ screen name=App target=ink
         explorationMode, setExplorationMode,
         neroMode, setNeroMode,
         cesarMemory,
-        activePlan: activePlanRef.current ?? activePlan, setActivePlan: setActivePlanWrapped,
+        activePlan: activePlanRef.current, setActivePlan: setActivePlanWrapped,
         extensionPromptFragments,
         sessionMcpServers, setSessionMcpServers,
         telemetryVitals,
@@ -3532,7 +3547,7 @@ screen name=App target=ink
       setInputValue(updatedValue);
     >>>
 
-  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,activePlan,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped"
+  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped"
     handler <<<
       inputEpochRef.current += 1;
       let input = cleanSubmitValue(value);
@@ -3573,7 +3588,7 @@ screen name=App target=ink
         return;
       }
 
-      if (!input.startsWith('/') && activePlan?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
+      if (!input.startsWith('/') && activePlanRef.current?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
         input = '/approve';
       }
 
@@ -3587,7 +3602,7 @@ screen name=App target=ink
         const btwQuestion = input.trim().slice(5).trim();
         const activeWorkForBtw = hasBtwSideChannelTarget({
           replState,
-          activePlanState: activePlan?.state ?? null,
+          activePlanState: activePlanRef.current?.state ?? null,
           runningJobCount: jobManager.running().length,
         });
         if (btwQuestion && activeWorkForBtw) {
@@ -3965,7 +3980,7 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen"
     handler <<<
       if (isTerminalFocusReport(input)) return;
 
@@ -4070,7 +4085,7 @@ screen name=App target=ink
         reviewEventOpen: !!reviewEvent,
         toolDetailOpen: !!toolDetailEvent,
         questionState, replState, inputValue, inputHistory, historyIndex,
-        planModeQueued, autoModeQueued, activePlanState: activePlan?.state ?? null,
+        planModeQueued, autoModeQueued, activePlanState: activePlanRef.current?.state ?? null,
         outputBlockCount: outputBlocks.length,
         commands: allSlashCommands,
         engineIds: availableEngines,

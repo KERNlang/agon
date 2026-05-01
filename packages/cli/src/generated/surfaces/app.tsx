@@ -385,6 +385,7 @@ export function App() {
   const planWatcherTimerRef = useRef<ReturnType<typeof setInterval>|null>(null);
   const planWatcherDebounceTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const planWatcherStatMtimeRef = useRef<number>(0);
+  const lastActivePlanSigRef = useRef<string>('');
   const streamingTextRef = useRef<Record<string,StreamingEntry>>({});
   const agentProgressRef = useRef<Record<string,AgentProgressSnapshot>>({});
   const lastReviewResultRef = useRef<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null>(null);
@@ -697,9 +698,22 @@ export function App() {
       activePlanClearTimerRef.current = null;
     }
     activePlanRef.current = plan;
-    setActivePlan(plan);
     const state = String(plan?.state ?? '');
     const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+    // Cheap signature of UI-visible plan state. If unchanged, skip the
+    // React setState — plan-watcher writes a fresh object every tick during
+    // execution, but step-state and plan-state often haven't shifted, and
+    // a setActivePlan call here cascades into ChromeBar/ExecutionRail/
+    // CesarStatusStrip re-renders despite identical content. Refs still
+    // get the new object so callers reading fresh fields via the ref see
+    // the latest data.
+    const sig = plan
+      ? `${String(plan.id ?? '')}|${state}|${String(plan.currentStepId ?? '')}|${steps.map((s: any) => `${String(s?.id ?? '')}:${String(s?.state ?? '')}`).join(',')}`
+      : '';
+    if (sig !== lastActivePlanSigRef.current) {
+      lastActivePlanSigRef.current = sig;
+      setActivePlan(plan);
+    }
     const allStepsComplete = steps.length > 0 && steps.every((step: any) => ['done', 'skipped'].includes(String(step?.state ?? ''))) && !steps.some((step: any) => String(step?.state ?? '') === 'failed');
     const shouldRetire = state === 'done' || state === 'cancelled' || state === 'paused' || allStepsComplete;
     if (plan && shouldRetire) {
@@ -709,6 +723,7 @@ export function App() {
         const current = activePlanRef.current;
         if (current && String(current.id ?? '') === planId) {
           activePlanRef.current = null;
+          lastActivePlanSigRef.current = '';
           setActivePlan(null);
         }
         activePlanClearTimerRef.current = null;
@@ -797,13 +812,13 @@ export function App() {
       explorationMode, setExplorationMode,
       neroMode, setNeroMode,
       cesarMemory,
-      activePlan: activePlanRef.current ?? activePlan, setActivePlan: setActivePlanWrapped,
+      activePlan: activePlanRef.current, setActivePlan: setActivePlanWrapped,
       extensionPromptFragments,
       sessionMcpServers, setSessionMcpServers,
       telemetryVitals,
       recentFallbacks,
     };
-  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped]);
+  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped]);
 
   const handleInputChange = useCallback((value:string) => {
     // Swallow input while a choice question is active — the keyboard handler
@@ -908,7 +923,7 @@ export function App() {
       return;
     }
 
-    if (!input.startsWith('/') && activePlan?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
+    if (!input.startsWith('/') && activePlanRef.current?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
       input = '/approve';
     }
 
@@ -922,7 +937,7 @@ export function App() {
       const btwQuestion = input.trim().slice(5).trim();
       const activeWorkForBtw = hasBtwSideChannelTarget({
         replState,
-        activePlanState: activePlan?.state ?? null,
+        activePlanState: activePlanRef.current?.state ?? null,
         runningJobCount: jobManager.running().length,
       });
       if (btwQuestion && activeWorkForBtw) {
@@ -1053,7 +1068,7 @@ export function App() {
       if (activeTurnRef.current?.input === input) activeTurnRef.current = null;
       setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
     }
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,activePlan,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped]);
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
     if (!reviewEvent) return;
@@ -1356,7 +1371,7 @@ export function App() {
       reviewEventOpen: !!reviewEvent,
       toolDetailOpen: !!toolDetailEvent,
       questionState, replState, inputValue, inputHistory, historyIndex,
-      planModeQueued, autoModeQueued, activePlanState: activePlan?.state ?? null,
+      planModeQueued, autoModeQueued, activePlanState: activePlanRef.current?.state ?? null,
       outputBlockCount: outputBlocks.length,
       commands: allSlashCommands,
       engineIds: availableEngines,
@@ -1466,7 +1481,7 @@ export function App() {
         handleCancelOrExit();
         return;
     }
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen]);
 
   useEffect(() => {
     initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
@@ -4626,7 +4641,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4476
+// @kern-source: app:4491
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

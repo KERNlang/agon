@@ -342,8 +342,10 @@ screen name=StreamingView target=ink memo=true
   prop name=streamingText type="{engineId:string,content:string} | null"
   prop name=mode type="string"
   prop name=liveProgress type="EngineProgress[] | null"
+  prop name=liveToolStreams type="Record<string,any>" optional=true
   render
     handler <<<
+      const toolStreams = Object.values(liveToolStreams ?? {});
       return (
         <>
           {streamingText && (() => {
@@ -371,6 +373,23 @@ screen name=StreamingView target=ink memo=true
               </Box>
             );
           })()}
+          {toolStreams.length > 0 && (
+            <Box flexDirection="column" paddingLeft={mode === 'chat' ? 1 : 2}>
+              {toolStreams.map((entry: any) => {
+                const c = engineColor(entry.engineId);
+                const output = String(entry.output ?? '').split('\n').filter((line: string) => line.trim()).slice(-2).join(' ');
+                const preview = output.length > 96 ? output.slice(0, 95) + '\u2026' : output;
+                return (
+                  <Text key={entry.streamId}>
+                    <Text color={c} bold>{icons().dotOn + ' '}{entry.engineId}</Text>
+                    <Text dimColor>{' tool '}</Text>
+                    <Text color={c}>{entry.tool}</Text>
+                    <Text dimColor>{preview ? ` ${preview}` : ' running\u2026'}</Text>
+                  </Text>
+                );
+              })}
+            </Box>
+          )}
           {liveProgress && <EngineProgressView engines={liveProgress} mode={mode} />}
         </>
       );

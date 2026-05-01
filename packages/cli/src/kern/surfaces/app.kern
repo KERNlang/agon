@@ -2810,16 +2810,8 @@ screen name=App target=ink
       return nativeTranscriptBlocks.slice(effectiveNativeArchiveCount);
     >>>
 
-  // Per-block row cache: only re-parse blocks whose content changed.
-  // Key = block.id + stable hash of event JSON; value = parsed rows.
-  ref name=blockRowCacheRef type="Map<string, any[]>" initial="new Map()"
-
   memo name=displayRows deps="displayBlocks, mode, toolOutputExpanded, thinkingExpanded"
     handler <<<
-      // Build the transcript in one pass so adjacent tool-call-group blocks
-      // can collapse together. Per-block rendering breaks that context and
-      // creates repeated "1 tool call / 2 tool calls" noise.
-      blockRowCacheRef.current.clear();
       return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
     >>>
 

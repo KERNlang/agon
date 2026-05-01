@@ -340,7 +340,7 @@ describe('app scroll helpers', () => {
     const text = transcriptRowsToPlainText(rows, 0, 0, 999, 999);
 
     expect(confidenceRow).toBeTruthy();
-    expect(confidenceRow.segments[0]).toMatchObject({ italic: true, dimColor: true });
+    expect(confidenceRow.segments[0]).toMatchObject({ italic: true, color: '#a8a8a8' });
     expect(summaryRow).toBeTruthy();
     expect(summaryRow.paddingLeft).toBe(4);
     expect(summaryRow.segments.some((segment: any) => segment.text === 'Ctrl+E')).toBe(true);

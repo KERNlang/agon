@@ -1,0 +1,12 @@
+test name="Core read tool" target="../../../src/kern/tools/tool-read.kern"
+  it name="read tool source stays valid KERN"
+    expect no=schemaViolations
+    expect no=semanticViolations
+    expect no=codegenErrors
+
+  it name="line number formatting is stable before TypeScript tests"
+    expect fn=formatWithLineNumbers args={{["alpha\nbeta", 3]}} equals={{"     3\talpha\n     4\tbeta"}}
+
+  it name="read tool declaration keeps filesystem safety shape"
+    expect node=fn name=createReadTool prop=returns is=ToolHandler
+    expect node=fn name=formatWithLineNumbers prop=returns is=string

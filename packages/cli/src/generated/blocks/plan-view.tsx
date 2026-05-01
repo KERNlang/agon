@@ -9,7 +9,7 @@ import { contentWidth, engineColor, RenderedSegments } from './rendering.js';
 import { parseMarkdownBlocks } from './markdown.js';
 
 // @kern-source: plan-view:47
-export function PlanProposalView({ plan, markdown, costEstimate }: { plan:any; markdown?:string; costEstimate?:{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null }) {
+const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, costEstimate }: { plan:any; markdown?:string; costEstimate?:{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null }) {
   const steps = plan.steps ?? [];
   const est = costEstimate;
   const totalTokens = est?.totalTokens ?? plan.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
@@ -198,7 +198,8 @@ export function PlanProposalView({ plan, markdown, costEstimate }: { plan:any; m
       </Box>
     </Box>
   );
-}
+});
+export { PlanProposalView };
 
 // @kern-source: plan-view:245
 export function PlanExecutionView({ plan }: { plan:any }) {

@@ -298,12 +298,20 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
   parts.push(`COMPLEXITY HINT: ${hints.complexityHint}`);
   parts.push(`UNCERTAINTY FAMILY: ${hints.uncertaintyFamily}`);
   parts.push(`IF ESCALATING: prefer ${hints.escalationHint} (${hints.recommendedBreadth})`);
-  parts.push(`FLOW RULE: quick-fix/bug-fix = read, patch, verify live; spec-first/plan-first = clarify scope and call ProposePlan before mutating; brainstorm/tribunal/campfire/review = call that orchestration tool directly when it fits.`);
+  // Suppress the ProposePlan suggestion when we're already inside a running
+  // plan step — calling it from there creates a nested plan, which is
+  // blocked downstream and pollutes the transcript with policy errors.
+  const insideActivePlan = ctx.activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(ctx.activePlan.state);
+  if (insideActivePlan) {
+    parts.push(`FLOW RULE: a plan is already active — execute this step's instructions directly with tools (Read/Edit/Bash). Do NOT call ProposePlan; do NOT propose another plan; do NOT ask whether to start. Use brainstorm/tribunal/campfire/review only if the step explicitly calls for it.`);
+  } else {
+    parts.push(`FLOW RULE: quick-fix/bug-fix = read, patch, verify live; spec-first/plan-first = clarify scope and call ProposePlan before mutating; brainstorm/tribunal/campfire/review = call that orchestration tool directly when it fits.`);
+  }
   try {
     const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? activeEngines[0] ?? 'claude';
     const reliability = readCesarToolReliability(cesarId, undefined, 200);
     parts.push(`CESAR TOOL RELIABILITY: ${formatCesarReliabilityLine(reliability)}`);
-    if (shouldDowngradeCesarToolWork(reliability, hints.intakeKind, hints.recommendedFlow)) {
+    if (shouldDowngradeCesarToolWork(reliability, hints.intakeKind, hints.recommendedFlow) && !insideActivePlan) {
       parts.push(`WEAK TOOL POLICY: current Cesar looks weak at direct tool work for tool-heavy turns. Prefer ProposePlan, Agent, Forge, Review, or a precise advisory answer over pretending self-tooling happened.`);
     }
   } catch { /* reliability is advisory only */ }
@@ -404,7 +412,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
 /**
  * Pure, zero-LLM-cost classification: should this /agent request run as a team (parallel engines) rather than solo? Returns true when the task pattern suggests cross-module fan-out AND at least 2 API engines are available. Based on the same FANOUT_RE/scopeDirSpread signals that buildRoutingContext includes in the Cesar prompt — but exported so dispatch can use them without a full brain call.
  */
-// @kern-source: routing:379
+// @kern-source: routing:387
 export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean {
   // Need at least 2 active engines for team mode to make sense.
   const available = ctx.activeEngines();
@@ -416,7 +424,7 @@ export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean 
 /**
  * Cost-aware speculation gate. Returns true only when: (1) estimated step cost exceeds speculativeThresholdUsd, (2) uncertainty is not 'none', (3) ELO spread between top engines is below speculativeEloSpreadThreshold. Prevents wasteful scout+parallel runs on cheap, sure, or lopsided tasks.
  */
-// @kern-source: routing:389
+// @kern-source: routing:397
 export function shouldSpeculate(hints: CesarRoutingHints, config: Required<AgonConfig>): boolean {
   const threshold = (config as any).speculativeThresholdUsd ?? 0.50;
   const eloThreshold = (config as any).speculativeEloSpreadThreshold ?? 15;

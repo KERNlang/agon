@@ -36,6 +36,7 @@ function createMockActions(): OutputActions & { calls: Record<string, unknown[][
     setLiveSpinner: [],
     setLiveProgress: [],
     setStreamingText: [],
+    setLiveToolStreams: [],
     clearBlocks: [],
     setReviewEvent: [],
     setPendingPlanProposal: [],
@@ -50,6 +51,7 @@ function createMockActions(): OutputActions & { calls: Record<string, unknown[][
     setLiveSpinner: vi.fn((...args) => calls.setLiveSpinner.push(args)),
     setLiveProgress: vi.fn((...args) => calls.setLiveProgress.push(args)),
     setStreamingText: vi.fn((...args) => calls.setStreamingText.push(args)),
+    setLiveToolStreams: vi.fn((...args) => calls.setLiveToolStreams.push(args)),
     clearBlocks: vi.fn((...args) => calls.clearBlocks.push(args)),
     setReviewEvent: vi.fn((...args) => calls.setReviewEvent.push(args)),
     setPendingPlanProposal: vi.fn((...args) => calls.setPendingPlanProposal.push(args)),
@@ -61,7 +63,7 @@ function createMockActions(): OutputActions & { calls: Record<string, unknown[][
 }
 
 function emptyState(): OutputState {
-  return { liveSpinner: null, liveProgress: null, streamingText: null, agentProgress: {} };
+  return { liveSpinner: null, liveProgress: null, streamingText: {}, liveToolStreams: {}, agentProgress: {} };
 }
 
 function firePermission(
@@ -242,6 +244,34 @@ describe('permission queue', () => {
     const group = actions.calls.addBlock[0][0] as any;
     expect(group.blocks).toHaveLength(1);
     expect(group.blocks[0].event).toMatchObject({ tool: 'Read', status: 'done', output: 'file content' });
+  });
+
+  it('tracks streamed tool output live and flushes final output to scrollback', () => {
+    const actions = createMockActions();
+
+    handleOutputEvent(
+      { type: 'tool-stream-start', streamId: 's1', engineId: 'cesar', tool: 'Read', input: '{"file_path":"a.ts"}' } as any,
+      emptyState(),
+      actions,
+      'chat',
+      0,
+    );
+    handleOutputEvent({ type: 'tool-stream-chunk', streamId: 's1', chunk: 'file ' } as any, emptyState(), actions, 'chat', 0);
+    handleOutputEvent({ type: 'tool-stream-chunk', streamId: 's1', chunk: 'content' } as any, emptyState(), actions, 'chat', 0);
+    handleOutputEvent({ type: 'tool-stream-end', streamId: 's1', status: 'done' } as any, emptyState(), actions, 'chat', 0);
+    flushPendingToolCalls(actions);
+
+    expect(actions.calls.setLiveToolStreams.length).toBeGreaterThanOrEqual(4);
+    expect(actions.calls.addBlock).toHaveLength(1);
+    const group = actions.calls.addBlock[0][0] as any;
+    expect(group.blocks).toHaveLength(1);
+    expect(group.blocks[0].event).toMatchObject({
+      engineId: 'cesar',
+      tool: 'Read',
+      input: '{"file_path":"a.ts"}',
+      status: 'done',
+      output: 'file content',
+    });
   });
 
   it('keeps plan proposals in the live approval panel instead of transcript blocks', () => {

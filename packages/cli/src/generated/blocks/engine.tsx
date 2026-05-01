@@ -147,7 +147,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
       </Text>
       <Text dimColor>{'  '}{toolLine}{failedTools > 0 ? ` · ${failedTools} failed` : ''}</Text>
       {(event as any).confidenceReasoning ? (
-        <Text italic dimColor color="#8b8b8b">{'  why: '}{(event as any).confidenceReasoning}</Text>
+        <Text italic color="#a8a8a8">{'  why: '}{(event as any).confidenceReasoning}</Text>
       ) : null}
       {commands.slice(0, 5).map((cmd: any, index: number) => (
         <Text key={`cmd-${index}`}>
@@ -328,7 +328,9 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
     case 'info': {
       const message = String(event.message ?? '');
       const cesarTelemetry = isCesarTelemetryLine(message);
-      return <Text italic={cesarTelemetry} dimColor color={cesarTelemetry ? '#8b8b8b' : undefined}>{'  '}{message}</Text>;
+      return cesarTelemetry
+        ? <Text italic color="#a8a8a8">{'  '}{message}</Text>
+        : <Text dimColor>{'  '}{message}</Text>;
     }
     case 'permission-ask': {
       const permCmd = (event as any).command as string;
@@ -410,7 +412,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       return (
         <Box flexDirection="column" paddingLeft={2}>
           {lines.map((line: string, i: number) => (
-            <Text key={`think-${i}`} italic dimColor color="#8b8b8b">{'  \u25B9 '}{line}</Text>
+            <Text key={`think-${i}`} italic color="#a8a8a8">{'  \u25B9 '}{line}</Text>
           ))}
         </Box>
       );
@@ -420,7 +422,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
       if (isThinking) {
         if (thinkingExpanded === false) return null;
-        return <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{chunkText}</Text>;
+        return <Text italic color="#a8a8a8">{'  \u25B9 '}{chunkText}</Text>;
       }
       return <Text>{'  '}{chunkText}</Text>;
     }
@@ -530,7 +532,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       if (toolKey === 'reportconfidence') {
         return (
           <Box paddingLeft={2}>
-            <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{formatConfidenceToolLabel(parsed, rawInput)}</Text>
+            <Text italic color="#a8a8a8">{'  \u25B9 '}{formatConfidenceToolLabel(parsed, rawInput)}</Text>
           </Box>
         );
       }
@@ -885,7 +887,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:1041
+// @kern-source: engine:1043
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -971,7 +973,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
     <Box paddingLeft={2} flexDirection="column">
       {confidenceLabel && (
         <Text>
-          <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{confidenceLabel}</Text>
+          <Text italic color="#a8a8a8">{'  \u25B9 '}{confidenceLabel}</Text>
         </Text>
       )}
       <Text dimColor>{'    '}{blocks.length}{' tool calls'}{summary ? ` \u00b7 ${summary}` : ''}{statusSummary}{changedSummary}{'  '}<Text color="#f59e0b">{'Ctrl+E'}</Text></Text>
@@ -986,7 +988,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1159
+// @kern-source: engine:1161
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1012,7 +1014,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1188
+// @kern-source: engine:1190
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -1174,7 +1176,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: engine:1145
+// @kern-source: engine:1147
 export function extractSummary(text: string, maxLen: number): string {
   let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   s = s.replace(/^#+\s+.+\n/gm, '');

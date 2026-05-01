@@ -44,7 +44,7 @@ const name=STEP_STATE_ICONS type="Record<string, {icon:string,color:string}>"
 
 // ── Plan Proposal View — shown before confirmation ──────────────────
 
-screen name=PlanProposalView target=ink
+screen name=PlanProposalView target=ink memo=true
   prop name=plan type=any
   prop name=markdown type=string optional=true
   prop name=costEstimate type="{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null" optional=true

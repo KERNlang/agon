@@ -1,0 +1,22 @@
+test name="Core tool permissions" target="../../../src/kern/tools/tool-permissions.kern"
+  it name="permission source stays valid KERN"
+    expect no=schemaViolations
+    expect no=semanticViolations
+    expect no=codegenErrors
+
+  it name="command classifiers keep safety boundaries"
+    expect node=const name=DANGEROUS_COMMANDS prop=type is="string[]"
+    expect node=const name=DANGEROUS_PREFIXES prop=type is="string[]"
+    expect node=fn name=isDangerousCommand prop=returns is=boolean
+    expect node=fn name=isReadOnlyCommand prop=returns is=boolean
+    expect node=fn name=checkBashPermission prop=returns is=PermissionDecision
+
+  it name="shell cleanup helpers keep typed public shape"
+    expect fn=stripShellRedirections args={{["cat file.txt > out.txt"]}} equals="cat file.txt"
+    expect node=fn name=stripShellWrappers prop=returns is=string
+    expect node=fn name=extractBaseCommand prop=returns is=string
+
+  it name="file permission gates stay declared in KERN"
+    expect node=fn name=checkFileReadPermission prop=returns is=PermissionDecision
+    expect node=fn name=checkFileWritePermission prop=returns is=PermissionDecision
+    expect node=fn name=isPathUnderCwd prop=returns is=boolean

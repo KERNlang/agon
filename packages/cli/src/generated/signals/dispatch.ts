@@ -2949,18 +2949,20 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 // @kern-source: dispatch:2859
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
+  const FORGE_LIKE = new Set(['forge', 'teamforge', 'pipeline']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));
+  const planRanForgeStep = finalPlan.steps.some((s: any) => FORGE_LIKE.has(s.type) && (s.state === 'done' || s.state === 'failed'));
 
   // Tribunal fix #2 + #8: source of truth is the actual cwd, not step state.
   const cwd = resolveWorkingDir();
   const changedFiles = gitChangedFiles(cwd);
   const hasUncommittedChanges = changedFiles.length > 0;
 
-  // Tribunal fix #2: if mutating steps ran but cwd is unchanged, the user
-  // likely needs to apply forge winners manually. Force paused with an
-  // actionable message instead of marking 'done' silently.
-  if (planTouchedMutation && !hasUncommittedChanges && finalPlan.state === 'done') {
-    cb.dispatch({ type: 'warning', message: 'Plan completed mutating steps but cwd has no changes. Forge winners may need to be applied. Use /forge accept or inspect ~/.agon/runs.' });
+  // Only forge/teamforge/pipeline produce un-applied "winner" patches —
+  // self/agent/delegate live-edit (or don't edit at all). A self-only plan
+  // that left cwd clean is a no-op success, not a stuck forge.
+  if (planRanForgeStep && !hasUncommittedChanges && finalPlan.state === 'done') {
+    cb.dispatch({ type: 'warning', message: 'Plan completed forge steps but cwd has no changes. Forge winners may need to be applied. Use /forge accept or inspect ~/.agon/runs.' });
     const paused = { ...finalPlan, state: 'paused' as any };
     saveCesarPlan(paused);
     cb.setActivePlan(paused);

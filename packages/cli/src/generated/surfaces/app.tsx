@@ -1862,7 +1862,7 @@ export function App() {
   );
   const lowerPanel = (
   <Box flexDirection="column" flexShrink={0}>
-    <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} />
+    <ChromeBar mode={mode} cwdLabel={workspacePath.split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} />
     <BackgroundJobRail jobs={runningJobs} />
     {startupUseDashboardView && (displayRows.length === 0 || terminalMode === 'native') && (
       <Box flexDirection="column">
@@ -1907,23 +1907,12 @@ export function App() {
         )}
       </>
     )}
-    {pendingPlanProposal && (() => {
-      const plan = (pendingPlanProposal as any).plan;
-      const steps = plan?.steps ?? [];
-      const stepEsts = steps.map((s: any) => {
-        const e = planCostEstimator.estimate(s.type, s.engines ?? (s.engine ? [s.engine] : []));
-        return { id: s.id, tokens: e.tokens, costUsd: e.costUsd };
-      });
-      const totalTokens = stepEsts.reduce((sum: number, e: any) => sum + e.tokens, 0);
-      const totalCostUsd = stepEsts.reduce((sum: number, e: any) => sum + e.costUsd, 0);
-      return (
-        <PlanProposalView
-          plan={plan}
-          markdown={(pendingPlanProposal as any).markdown}
-          costEstimate={{ totalTokens, totalCostUsd, steps: stepEsts }}
-        />
-      );
-    })()}
+    {pendingPlanProposal && (
+      <PlanProposalView
+        plan={(pendingPlanProposal as any).plan}
+        markdown={(pendingPlanProposal as any).markdown}
+      />
+    )}
     {toolDetailView && (
       <ToolDetailBlock
         title={toolDetailView.title}
@@ -3737,7 +3726,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
 
   if (toolKey === 'reportconfidence') {
     pushSegmentsRow('confidence', [
-      { text: `▹ ${formatConfidenceToolLabel(parsed, rawInput)}`, color: '#8b8b8b', dimColor: true, italic: true },
+      { text: `▹ ${formatConfidenceToolLabel(parsed, rawInput)}`, color: '#a8a8a8', italic: true },
     ]);
     return rows;
   }
@@ -4120,7 +4109,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
       kind: 'segments',
       paddingLeft: 2,
       segments: [
-        { text: `▹ ${confidenceLabel}`, color: '#8b8b8b', dimColor: true, italic: true },
+        { text: `▹ ${confidenceLabel}`, color: '#a8a8a8', italic: true },
       ],
     });
   }
@@ -4309,7 +4298,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         if (thinkingExpanded === false) return;
         const lines = String(event.chunk ?? '').split('\n').filter((line: string) => line.trim());
         lines.forEach((line: string, index: number) => {
-          pushSegmentsRow(`${baseKey}-thinking-${index}`, 2, [{ text: `▹ ${line}`, color: '#8b8b8b', dimColor: true, italic: true }]);
+          pushSegmentsRow(`${baseKey}-thinking-${index}`, 2, [{ text: `▹ ${line}`, color: '#a8a8a8', italic: true }]);
         });
         return;
       }
@@ -4477,7 +4466,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         ].filter(Boolean));
         pushSegmentsRow(`${baseKey}-recap-tools`, 1, [{ text: `  ${toolLine}${failedTools > 0 ? ` · ${failedTools} failed` : ''}`, dimColor: true }]);
         if ((event as any).confidenceReasoning) {
-          pushSegmentsRow(`${baseKey}-recap-why`, 1, [{ text: `  why: ${(event as any).confidenceReasoning}`, dimColor: true, italic: true, color: '#8b8b8b' }]);
+          pushSegmentsRow(`${baseKey}-recap-why`, 1, [{ text: `  why: ${(event as any).confidenceReasoning}`, italic: true, color: '#a8a8a8' }]);
         }
         commands.slice(0, 5).forEach((cmd: any, index: number) => {
           const failed = String(cmd.status).toLowerCase() === 'error';
@@ -4637,7 +4626,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4487
+// @kern-source: app:4476
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

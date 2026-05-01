@@ -284,7 +284,7 @@ screen name=CesarRecapBlock target=ink memo=true
           </Text>
           <Text dimColor>{'  '}{toolLine}{failedTools > 0 ? ` · ${failedTools} failed` : ''}</Text>
           {(event as any).confidenceReasoning ? (
-            <Text italic dimColor color="#8b8b8b">{'  why: '}{(event as any).confidenceReasoning}</Text>
+            <Text italic color="#a8a8a8">{'  why: '}{(event as any).confidenceReasoning}</Text>
           ) : null}
           {commands.slice(0, 5).map((cmd: any, index: number) => (
             <Text key={`cmd-${index}`}>
@@ -480,7 +480,9 @@ screen name=OutputBlockView target=ink memo=true
         case 'info': {
           const message = String(event.message ?? '');
           const cesarTelemetry = isCesarTelemetryLine(message);
-          return <Text italic={cesarTelemetry} dimColor color={cesarTelemetry ? '#8b8b8b' : undefined}>{'  '}{message}</Text>;
+          return cesarTelemetry
+            ? <Text italic color="#a8a8a8">{'  '}{message}</Text>
+            : <Text dimColor>{'  '}{message}</Text>;
         }
         case 'permission-ask': {
           const permCmd = (event as any).command as string;
@@ -562,7 +564,7 @@ screen name=OutputBlockView target=ink memo=true
           return (
             <Box flexDirection="column" paddingLeft={2}>
               {lines.map((line: string, i: number) => (
-                <Text key={`think-${i}`} italic dimColor color="#8b8b8b">{'  \u25B9 '}{line}</Text>
+                <Text key={`think-${i}`} italic color="#a8a8a8">{'  \u25B9 '}{line}</Text>
               ))}
             </Box>
           );
@@ -572,7 +574,7 @@ screen name=OutputBlockView target=ink memo=true
           const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
           if (isThinking) {
             if (thinkingExpanded === false) return null;
-            return <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{chunkText}</Text>;
+            return <Text italic color="#a8a8a8">{'  \u25B9 '}{chunkText}</Text>;
           }
           return <Text>{'  '}{chunkText}</Text>;
         }
@@ -682,7 +684,7 @@ screen name=OutputBlockView target=ink memo=true
           if (toolKey === 'reportconfidence') {
             return (
               <Box paddingLeft={2}>
-                <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{formatConfidenceToolLabel(parsed, rawInput)}</Text>
+                <Text italic color="#a8a8a8">{'  \u25B9 '}{formatConfidenceToolLabel(parsed, rawInput)}</Text>
               </Box>
             );
           }
@@ -1126,7 +1128,7 @@ screen name=ToolCallGroup target=ink memo=true
         <Box paddingLeft={2} flexDirection="column">
           {confidenceLabel && (
             <Text>
-              <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{confidenceLabel}</Text>
+              <Text italic color="#a8a8a8">{'  \u25B9 '}{confidenceLabel}</Text>
             </Text>
           )}
           <Text dimColor>{'    '}{blocks.length}{' tool calls'}{summary ? ` \u00b7 ${summary}` : ''}{statusSummary}{changedSummary}{'  '}<Text color="#f59e0b">{'Ctrl+E'}</Text></Text>

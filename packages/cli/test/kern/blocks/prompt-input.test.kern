@@ -12,3 +12,17 @@ test name="Prompt input block" target="../../../src/kern/blocks/prompt-input.ker
   it name="cursor and viewport helpers keep stable boundaries"
     expect fn=locatePromptCursor args={{["abcd", 2, 2]}} equals={{ { line: 1, column: 0, synthetic: false } }}
     expect fn=selectPromptViewport args={{[10, 7, 4]}} equals={{ { start: 6, end: 10, hiddenAbove: 6, hiddenBelow: 0 } }}
+
+  it name="terminal escape noise stays out of prompt state"
+    expect node=fn name=isMouseReportInput prop=returns is=boolean
+    expect node=fn name=stripMouseReportInput prop=returns is=string
+
+  it name="prompt echo adoption avoids stale buffered values"
+    expect fn=shouldAdoptPromptValue args={{["", "remote"]}} equals=true
+    expect fn=shouldAdoptPromptValue args={{["hello", "hello"]}} equals=true
+    expect fn=shouldAdoptPromptValue args={{["hel", "hello"]}} equals=false
+    expect fn=shouldAdoptPromptValue args={{["hello", null]}} equals=true
+
+  it name="shortcut delegation remains explicit"
+    expect node=fn name=isDelegatedCtrlShortcut prop=returns is=boolean
+    expect node=fn name=isDelegatedCtrlShortcut prop=export is=true

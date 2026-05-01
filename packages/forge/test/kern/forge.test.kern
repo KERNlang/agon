@@ -1,0 +1,15 @@
+test name="Forge source contracts" target="../../src/kern/forge.kern"
+  it name="forge source stays valid KERN"
+    expect no=schemaViolations
+    expect no=semanticViolations
+    expect no=codegenErrors
+
+  it name="shell quoting protects cleanup commands"
+    expect fn=shellQuoteForForge args={{["/tmp/forge-safe"]}} equals="/tmp/forge-safe"
+    expect fn=shellQuoteForForge args={{["/tmp/forge dir"]}} equals={{"'/tmp/forge dir'"}}
+    expect fn=shellQuoteForForge args={{["/tmp/bob's forge"]}} equals="'/tmp/bob'\\''s forge'"
+    expect node=fn name=buildForgeCleanupCommand prop=returns is=string
+
+  it name="result bundle source keeps inspectable failure fields"
+    expect node=fn name=writeForgeResultBundle prop=returns is=string
+    expect node=fn name=runForge prop=returns is="Promise<ForgeManifest>"

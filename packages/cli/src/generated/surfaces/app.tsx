@@ -453,7 +453,6 @@ export function App() {
   const lastTerminalInputAtRef = useRef<number>(Date.now());
   const scrollBoxRef = useRef<any>(null);
   const nativeTranscriptBlockCountRef = useRef<number>(0);
-  const blockRowCacheRef = useRef<Map<string, any[]>>(new Map());
 
   const allSlashCommands = useMemo(() => {
           const builtinCmds = SLASH_COMMANDS;
@@ -597,10 +596,6 @@ export function App() {
   }, [nativeTranscriptBlocks,effectiveNativeArchiveCount]);
 
   const displayRows = useMemo(() => {
-          // Build the transcript in one pass so adjacent tool-call-group blocks
-          // can collapse together. Per-block rendering breaks that context and
-          // creates repeated "1 tool call / 2 tool calls" noise.
-          blockRowCacheRef.current.clear();
           return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
   }, [displayBlocks, mode, toolOutputExpanded, thinkingExpanded]);
 
@@ -4685,7 +4680,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4491
+// @kern-source: app:4483
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

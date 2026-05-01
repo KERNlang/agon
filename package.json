@@ -22,7 +22,8 @@
     "build:cli:workspaces": "npm run build -w packages/core && npm run build -w packages/forge && npm run build -w packages/adapter-cli && npm run build -w packages/cli",
     "install:cli": "npm run build:cli && cd packages/cli && npm link",
     "typecheck": "tsc -b",
-    "test": "node scripts/run-node22.mjs vitest run",
+    "test": "npm run kern:test && npm run test:ts",
+    "test:ts": "node scripts/run-node22.mjs vitest run",
     "test:watch": "node scripts/run-node22.mjs vitest"
   },
   "engines": {

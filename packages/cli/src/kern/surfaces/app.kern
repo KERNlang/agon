@@ -2522,8 +2522,8 @@ screen name=App target=ink
   state name=historyIndex type=number initial=-1 safe=false
   state name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   state name=sessionStartTime type=number initial="Date.now()"
-  state name=liveSpinner type=any initial="null"
-  state name=liveProgress type="EngineProgress[]|null" initial="null"
+  state name=liveSpinner type=any initial="null" throttle=50
+  state name=liveProgress type="EngineProgress[]|null" initial="null" throttle=50
   state name=slashPickerOpen type=boolean initial=false safe=false
   state name=questionState type=any initial="null"
   state name=questionAnswer type=string initial="''" safe=false

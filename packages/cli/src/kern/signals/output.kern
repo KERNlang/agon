@@ -238,6 +238,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       'confidence-update',
       'streaming-chunk', 'streaming-start',
       'thinking-chunk', 'thinking-start', 'thinking-stop',
+      'tool-stream-start', 'tool-stream-chunk', 'tool-stream-end',
     ]);
     if (!_nonFlushing.has(event.type) && _pendingToolCalls.length > 0) {
       flushPendingToolCalls(actions);

@@ -1104,14 +1104,11 @@ fn name=findPendingCesarPlan params="ctx:HandlerContext" returns="CesarPlan | nu
   >>>
 
 fn name=findResumableCesarPlan params="ctx:HandlerContext" returns="CesarPlan | null" export=true
-  doc "Find the most relevant paused/running plan for resume and status recovery."
+  doc "Return the in-session paused/running plan if any. No disk fallback — stale persisted plans must be resumed explicitly via `/plan resume <id>` so innocuous words like 'go' or 'continue' cannot resurrect them."
   handler <<<
     const active = ctx.activePlan as CesarPlan | undefined;
     if (active && (active.state === 'paused' || active.state === 'running')) return active;
-    const saved = listCesarPlans()
-      .filter((p: CesarPlan) => p.state === 'paused' || p.state === 'running')
-      .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
-    return saved[0] ?? null;
+    return null;
   >>>
 
 fn name=shouldApprovePendingCesarPlanInput params="input:string,ctx:HandlerContext" returns=boolean export=true
@@ -1749,11 +1746,25 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         break;
       }
       case 'plan-resume': {
-        // Find the most recent paused plan and resume execution
-        const resumePlan = findResumableCesarPlan(cb.ctx);
-        if (!resumePlan) {
-          cb.dispatch({ type: 'info', message: 'No paused plan found to resume.' });
-          break;
+        // Explicit planId/path: load from disk. No arg: only resume the in-session active plan.
+        // Disk discovery is intentionally OFF so innocuous words like "go" cannot resurrect stale persisted plans.
+        const explicitArg = (intent.planId ?? '').trim();
+        let resumePlan: CesarPlan | null = null;
+        if (explicitArg) {
+          // Allow either a bare plan ID (cplan-…) or a full path. Strip dir + .json if a path was pasted.
+          const tail = explicitArg.split(/[\\/]/).pop() ?? explicitArg;
+          const planId = tail.endsWith('.json') ? tail.slice(0, -5) : tail;
+          resumePlan = loadCesarPlan(planId);
+          if (!resumePlan) {
+            cb.dispatch({ type: 'warning', message: `No plan found for id "${planId}". Tip: \`ls ~/.agon/plans\` to list saved plan IDs.` });
+            break;
+          }
+        } else {
+          resumePlan = findResumableCesarPlan(cb.ctx);
+          if (!resumePlan) {
+            cb.dispatch({ type: 'info', message: 'No active plan in this session. Pass an ID to resume a saved plan: `/plan resume <plan-id>`.' });
+            break;
+          }
         }
         await resumeCesarPlan(resumePlan, cb);
         break;

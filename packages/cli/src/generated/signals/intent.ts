@@ -544,11 +544,12 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
     }
     case 'plan': {
         const text = rest.trim();
-        if (text && text !== 'resume') {
-          return { type: 'plan-task', task: text } as Intent;
+        if (text.startsWith('resume')) {
+          const planArg = text.slice('resume'.length).trim();
+          return { type: 'plan-resume', planId: planArg || undefined } as Intent;
         }
-        if (text === 'resume') {
-          return { type: 'plan-resume' } as Intent;
+        if (text) {
+          return { type: 'plan-task', task: text } as Intent;
         }
         return { type: 'plan', planId: undefined } as Intent;
       }
@@ -682,7 +683,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   }
 }
 
-// @kern-source: intent:669
+// @kern-source: intent:670
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) return { type: 'unknown', input: '' } as Intent;

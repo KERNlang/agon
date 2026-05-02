@@ -118,7 +118,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-// @kern-source: app:2528
+// @kern-source: app:2516
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -3361,8 +3361,6 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
     }
     case 'file-changes':
       return 1 + (((event as any).files as any[])?.length ?? 0);
-    case 'tool-stream-live':
-      return 1;
     case 'dashboard':
       return 17;
     case 'agent-step-start':
@@ -3391,7 +3389,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   }
 }
 
-// @kern-source: app:1211
+// @kern-source: app:1209
 export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boolean): OutputBlock[] {
   // Keep collapse as a per-block display concern, not a synthetic grouped
   // scroll unit. Grouped tool summaries make wheel scrolling jump because
@@ -3399,7 +3397,7 @@ export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boo
   return blocks;
 }
 
-// @kern-source: app:1219
+// @kern-source: app:1217
 export function isToolCallLikeBlock(block: OutputBlock): boolean {
   const type = (block?.event as any)?.type;
   return type === 'tool-call' || type === 'tool-call-group';
@@ -3408,7 +3406,7 @@ export function isToolCallLikeBlock(block: OutputBlock): boolean {
 /**
  * Merge adjacent tool-call and tool-call-group blocks into one group so native/live renderers do not show repeated collapsed tool summaries.
  */
-// @kern-source: app:1225
+// @kern-source: app:1223
 export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
   if (!Array.isArray(blocks) || blocks.length === 0) return [];
   const out: OutputBlock[] = [];
@@ -3455,7 +3453,7 @@ export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
 /**
  * Choose the native Static archive count. When tools are expanded, keep the latest tool-call island live because Ink Static cannot repaint already-sealed collapsed tool summaries.
  */
-// @kern-source: app:1270
+// @kern-source: app:1268
 export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArchiveCount: number, targetArchiveCount: number, toolOutputExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -3488,12 +3486,12 @@ export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArch
   return count;
 }
 
-// @kern-source: app:1304
+// @kern-source: app:1302
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
 }
 
-// @kern-source: app:1306
+// @kern-source: app:1304
 export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -3502,7 +3500,7 @@ export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[]
 /**
  * Native transcript history. While idle, the startup dashboard is live chrome. Once the first real transcript row exists, keep the dashboard as the first chat-history block so the AGON header scrolls with the conversation instead of disappearing.
  */
-// @kern-source: app:1312
+// @kern-source: app:1310
 export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -3511,7 +3509,7 @@ export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBl
 /**
  * Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender while older rows remain in terminal scrollback.
  */
-// @kern-source: app:1319
+// @kern-source: app:1317
 export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, rowBudget: number, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -3545,7 +3543,7 @@ export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, row
 /**
  * Detect same-turn duplicate completed engine output. A new user-message resets the guard so an intentional repeat request can still show identical text.
  */
-// @kern-source: app:1351
+// @kern-source: app:1349
 export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boolean {
   if (!event || event.type !== 'engine-block') return false;
   const content = cleanEngineOutput(String(event.content ?? '')).trim();
@@ -3567,25 +3565,25 @@ export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boole
 /**
  * Append a transcript block with cap/archive handling while suppressing accidental duplicate engine output.
  */
-// @kern-source: app:1371
+// @kern-source: app:1369
 export function appendTranscriptBlock(blocks: OutputBlock[], event: any, archivePath: string): OutputBlock[] {
   if (isDuplicateEngineBlock(blocks, event)) return blocks;
   return appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath);
 }
 
-// @kern-source: app:1378
+// @kern-source: app:1376
 export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
   return value === 'fullscreen' ? 'fullscreen' : 'native';
 }
 
-// @kern-source: app:1380
+// @kern-source: app:1378
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
   if (expanded) return Math.max(36, Math.min(84, Math.floor(safeWidth * 0.35)));
   return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
 }
 
-// @kern-source: app:1387
+// @kern-source: app:1385
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
   if (terminalMode === 'native') {
@@ -3599,7 +3597,7 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
 /**
  * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
  */
-// @kern-source: app:1398
+// @kern-source: app:1396
 export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
   const terminalMode = normalizeTerminalMode(opts?.terminalMode);
   const mode = String(opts?.mode ?? 'chat');
@@ -3653,7 +3651,7 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   };
 }
 
-// @kern-source: app:1453
+// @kern-source: app:1451
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
@@ -3761,7 +3759,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
   return rows;
 }
 
-// @kern-source: app:1561
+// @kern-source: app:1559
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
 
@@ -4132,7 +4130,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   return rows;
 }
 
-// @kern-source: app:1932
+// @kern-source: app:1930
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
 
@@ -4227,7 +4225,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
-// @kern-source: app:2027
+// @kern-source: app:2025
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);
@@ -4698,16 +4696,6 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
       case 'agent-team-complete':
         pushSegmentsRow(`${baseKey}-team-complete`, 2, [{ text: `Team ${event.teamId} complete · winner ${event.winner ?? 'none'} · $${event.teamCostUsd.toFixed(2)}`, dimColor: true }]);
         return;
-      case 'tool-stream-live': {
-        const toolName = String(event.tool ?? 'tool');
-        const inputPreview = String(event.input ?? '').slice(0, 60);
-        pushSegmentsRow(`${baseKey}-tool-stream`, 2, [
-          { text: '⟳ ', color: '#fbbf24' },
-          { text: toolName, bold: true },
-          inputPreview ? { text: ` · ${inputPreview}`, dimColor: true } : null,
-        ].filter(Boolean));
-        return;
-      }
       case 'spinner-start':
       case 'spinner-stop':
       case 'spinner-update':
@@ -4727,7 +4715,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4507
+// @kern-source: app:4495
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

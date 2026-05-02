@@ -128,9 +128,23 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
   }
   const parsedInput = parsed.input ?? {};
 
+  const streamId = `eager-stream-${callId}`;
+  let streamStarted = false;
+
+  const streamingCtx: ToolContext = {
+    ...toolCtx,
+    onStreamChunk: (chunk: string) => {
+      if (!streamStarted) {
+        streamStarted = true;
+        dispatch({ type: 'tool-stream-start', streamId, engineId: cesarEngineId, tool: toolName, input: toolInput } as any);
+      }
+      dispatch({ type: 'tool-stream-chunk', streamId, chunk } as any);
+    },
+  };
+
   const result = await executeToolCall(
     { id: callId, name: toolName, input: parsedInput },
-    toolCtx,
+    streamingCtx,
     toolRegistry,
     async (tool: string, message: string) => {
       return new Promise<boolean>((resolve) => {
@@ -142,6 +156,12 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
   );
 
   const out = result.result.ok ? result.result.content : result.result.error;
-  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: result.result.ok ? 'done' : 'error', output: out } as any);
+  const status = result.result.ok ? 'done' : 'error';
+  if (streamStarted) {
+    dispatch({ type: 'tool-stream-end', streamId, engineId: cesarEngineId, tool: toolName, input: toolInput, status, output: out } as any);
+  } else {
+    // No chunks produced (permission denied, fast exit, etc.) — emit a normal tool-call block
+    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status, output: out } as any);
+  }
   return result;
 }

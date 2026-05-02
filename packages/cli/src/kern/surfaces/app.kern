@@ -1178,6 +1178,8 @@ fn name=estimateOutputEventRows params="event:OutputEvent, mode:string, toolOutp
       }
       case 'file-changes':
         return 1 + (((event as any).files as any[])?.length ?? 0);
+      case 'tool-stream-live':
+        return 1;
       case 'dashboard':
         return 17;
       case 'agent-step-start':
@@ -2493,6 +2495,16 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
         case 'agent-team-complete':
           pushSegmentsRow(`${baseKey}-team-complete`, 2, [{ text: `Team ${event.teamId} complete · winner ${event.winner ?? 'none'} · $${event.teamCostUsd.toFixed(2)}`, dimColor: true }]);
           return;
+        case 'tool-stream-live': {
+          const toolName = String(event.tool ?? 'tool');
+          const inputPreview = String(event.input ?? '').slice(0, 60);
+          pushSegmentsRow(`${baseKey}-tool-stream`, 2, [
+            { text: '⟳ ', color: '#fbbf24' },
+            { text: toolName, bold: true },
+            inputPreview ? { text: ` · ${inputPreview}`, dimColor: true } : null,
+          ].filter(Boolean));
+          return;
+        }
         case 'spinner-start':
         case 'spinner-stop':
         case 'spinner-update':

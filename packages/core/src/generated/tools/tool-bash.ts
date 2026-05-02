@@ -2,7 +2,7 @@
 
 import type { ToolResult, ToolContext, ToolDefinition, PermissionDecision, ToolHandler } from '../models/tool-types.js';
 
-import { spawnWithTimeout } from '../blocks/process.js';
+import { spawnWithTimeout, spawnStream } from '../blocks/process.js';
 
 // @kern-source: tool-bash:7
 export const DANGEROUS_PREFIXES: readonly string[] = [
@@ -165,20 +165,41 @@ export function createBashTool(): ToolHandler {
       ctx.onProgress(`Running: ${command}`);
     }
 
-    const result = await spawnWithTimeout({
+    // Use spawnStream to capture chunks live; manual iteration lets us
+    // collect the generator's final return value (the close result).
+    const stream = spawnStream({
       command: '/bin/sh',
       args: ['-c', command],
       cwd: ctx.cwd,
       timeout,
       signal: ctx.abortSignal,
     });
+    const iterator = stream[Symbol.asyncIterator]();
+
+    let stdout = '';
+    let stderr = '';
+    let closeResult: any = null;
+    while (true) {
+      const { value, done } = await iterator.next();
+      if (done) {
+        closeResult = value;
+        break;
+      }
+      const chunk = value as string;
+      if (chunk.startsWith('\x00')) {
+        const errChunk = chunk.slice(1);
+        stderr += errChunk;
+        if (ctx.onStreamChunk) ctx.onStreamChunk(errChunk);
+      } else {
+        stdout += chunk;
+        if (ctx.onStreamChunk) ctx.onStreamChunk(chunk);
+      }
+    }
 
     const durationMs = Date.now() - start;
-    const exitCode = result.exitCode;
-    const stdout = result.stdout;
-    const stderr = result.stderr;
+    const exitCode = closeResult?.exitCode ?? 1;
 
-    if (result.timedOut) {
+    if (closeResult?.timedOut) {
       return {
         ok: false,
         content: stdout,

@@ -264,6 +264,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     'confidence-update',
     'streaming-chunk', 'streaming-start',
     'thinking-chunk', 'thinking-start', 'thinking-stop',
+    'tool-stream-start', 'tool-stream-chunk', 'tool-stream-end',
   ]);
   if (!_nonFlushing.has(event.type) && _pendingToolCalls.length > 0) {
     flushPendingToolCalls(actions);

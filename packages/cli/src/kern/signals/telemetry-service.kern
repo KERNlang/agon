@@ -18,6 +18,7 @@ interface name=TelemetryServiceOptions export=true
   field name=sampleIntervalMs type=number optional=true
   field name=stallThresholdMs type=number optional=true
   field name=networkProbeUrl type=string optional=true
+  field name=__test type=boolean optional=true doc="Bypass clamp floors for unit tests"
 
 service name=TelemetryService export=true singleton=true
   doc "1Hz telemetry sampler for engine vitals with heartbeat/stall/fallback bus events."
@@ -38,8 +39,13 @@ service name=TelemetryService export=true singleton=true
   constructor params="opts:TelemetryServiceOptions"
     handler <<<
       this.opts = opts;
-      this.sampleIntervalMs = Math.max(250, Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS));
-      this.stallThresholdMs = Math.max(1000, Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS));
+      if (opts.__test) {
+        this.sampleIntervalMs = Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS);
+        this.stallThresholdMs = Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS);
+      } else {
+        this.sampleIntervalMs = Math.max(250, Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS));
+        this.stallThresholdMs = Math.max(1000, Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS));
+      }
       this.networkProbeUrl = String(opts.networkProbeUrl ?? DEFAULT_NETWORK_PROBE_URL);
       this.vitals = new Map();
       this.subscribers = new Set();

@@ -1,0 +1,80 @@
+// ── Mock Stall Engine: deterministic EngineAdapter for telemetry fallback tests ──
+// Randomly suppresses heartbeats to simulate engine stalls.  Configurable
+// stallProbability (0-1) and stallDurationMs.  Used by telemetry-fallback.test.ts.
+
+import from="@agon/core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
+
+interface name=MockStallEngineOptions export=true
+  field name=stallProbability type=number doc="0-1 chance of stalling on any dispatch"
+  field name=stallDurationMs type=number doc="how long the stall lasts"
+  field name=engineId type=string doc="id for logging"
+
+service name=MockStallEngine implements=EngineAdapter export=true
+  doc "Test fixture engine that randomly hangs during dispatch to trigger stall detection."
+
+  field name=opts type=MockStallEngineOptions private=true
+  field name=stalling type=boolean private=true
+  field name=stallStart type=number private=true
+
+  constructor params="opts:MockStallEngineOptions"
+    handler <<<
+      this.opts = opts;
+      this.stalling = false;
+      this.stallStart = 0;
+    >>>
+
+  method name=dispatch async=true params="options:DispatchOptions" returns="Promise<DispatchResult>"
+    handler <<<
+      const start = Date.now();
+      const shouldStall = Math.random() < this.opts.stallProbability;
+      if (shouldStall && !this.stalling) {
+        this.stalling = true;
+        this.stallStart = start;
+        await new Promise((resolve) => setTimeout(resolve, this.opts.stallDurationMs));
+        this.stalling = false;
+      }
+      // Write a minimal generated file so fitness passes
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const outFile = path.join(options.cwd, 'generated.ts');
+      fs.writeFileSync(outFile, 'export function hello() { return "world"; }\n');
+      return {
+        exitCode: 0,
+        stdout: `mock-stall-engine ${this.opts.engineId} wrote generated.ts`,
+        stderr: '',
+        durationMs: Date.now() - start,
+        timedOut: false,
+      };
+    >>>
+
+  method name=dispatchAgent async=true params="options:DispatchOptions" returns="Promise<AgentDispatchResult>"
+    handler <<<
+      const result = await this.dispatch(options);
+      return {
+        ...result,
+        diff: '',
+        diffLines: 0,
+        filesChanged: 0,
+      };
+    >>>
+
+  method name=isAvailable async=true params="engine:EngineDefinition" returns="Promise<boolean>"
+    handler <<<
+      return true;
+    >>>
+
+  method name=getVersion async=true params="engine:EngineDefinition" returns="Promise<string|null>"
+    handler <<<
+      return 'mock-stall-engine 1.0.0';
+    >>>
+
+  method name=isStalling returns=boolean
+    handler <<<
+      return this.stalling;
+    >>>
+
+  method name=reset returns=void
+    handler <<<
+      this.stalling = false;
+      this.stallStart = 0;
+    >>>

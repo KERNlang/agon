@@ -29,12 +29,13 @@ export interface TelemetryServiceOptions {
   sampleIntervalMs?: number;
   stallThresholdMs?: number;
   networkProbeUrl?: string;
+  __test?: boolean;
 }
 
 /**
  * 1Hz telemetry sampler for engine vitals with heartbeat/stall/fallback bus events.
  */
-// @kern-source: telemetry-service:22
+// @kern-source: telemetry-service:23
 export class TelemetryService {
   private opts: TelemetryServiceOptions;
   private vitals: Map<string,EngineVitals>;
@@ -51,8 +52,13 @@ export class TelemetryService {
 
   constructor(opts: TelemetryServiceOptions) {
     this.opts = opts;
-    this.sampleIntervalMs = Math.max(250, Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS));
-    this.stallThresholdMs = Math.max(1000, Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS));
+    if (opts.__test) {
+      this.sampleIntervalMs = Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS);
+      this.stallThresholdMs = Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS);
+    } else {
+      this.sampleIntervalMs = Math.max(250, Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS));
+      this.stallThresholdMs = Math.max(1000, Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS));
+    }
     this.networkProbeUrl = String(opts.networkProbeUrl ?? DEFAULT_NETWORK_PROBE_URL);
     this.vitals = new Map();
     this.subscribers = new Set();
@@ -442,7 +448,7 @@ export class TelemetryService {
   }
 }
 
-// @kern-source: telemetry-service:452
+// @kern-source: telemetry-service:458
 export function createTelemetryService(opts: TelemetryServiceOptions): TelemetryService {
   return new TelemetryService(opts);
 }

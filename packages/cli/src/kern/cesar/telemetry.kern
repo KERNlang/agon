@@ -71,7 +71,7 @@ fn name=formatVitalBar params="label:string,value:number,width:number=10" return
   handler lang="kern"
     let name=filled value="Math.round((value / 100) * width)"
     let name=empty value="width - filled"
-    let name=bar value="'\\u2588'.repeat(filled) + '\\u2591'.repeat(empty)"
+    let name=bar value="'█'.repeat(filled) + '░'.repeat(empty)"
     return value="`${label} ${bar} ${value.toFixed(0)}%`"
 
 fn name=renderEngineVitalLine params="v:EngineVitals" returns=string export=true

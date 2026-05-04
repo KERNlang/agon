@@ -156,7 +156,7 @@ function progressBar(pct: number, width: number): string {
   const p = Math.max(0, Math.min(1, pct));
   const filled = Math.round(p * width);
   const empty = width - filled;
-  return '\\u2588'.repeat(filled) + '\\u2591'.repeat(empty);
+  return '█'.repeat(filled) + '░'.repeat(empty);
 }
 
 /**

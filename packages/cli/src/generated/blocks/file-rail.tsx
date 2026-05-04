@@ -145,7 +145,7 @@ export function truncateLeft(s: string, max: number): string {
   if (s.length <= max) {
     return s;
   }
-  return '\\u2026' + s.slice(s.length - max + 1);
+  return '…' + s.slice(s.length - max + 1);
 }
 
 // @kern-source: file-rail:32

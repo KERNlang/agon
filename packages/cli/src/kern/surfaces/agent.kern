@@ -51,7 +51,7 @@ fn name=progressBar params="pct:number,width:number" returns=string export=false
     let name=p value="Math.max(0, Math.min(1, pct))"
     let name=filled value="Math.round(p * width)"
     let name=empty value="width - filled"
-    return value="'\\u2588'.repeat(filled) + '\\u2591'.repeat(empty)"
+    return value="'█'.repeat(filled) + '░'.repeat(empty)"
 
 fn name=formatElapsed params="ms:number" returns=string export=false
   doc "Human-readable elapsed time (e.g. '42s', '3m12s', '1h04m')."

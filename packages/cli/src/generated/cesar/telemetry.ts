@@ -78,7 +78,7 @@ export function computeOverallHealth(engines: EngineVitals[]): 'healthy'|'degrad
 function formatVitalBar(label: string, value: number, width: number = 10): string {
   const filled = Math.round(value / 100 * width);
   const empty = width - filled;
-  const bar = '\\u2588'.repeat(filled) + '\\u2591'.repeat(empty);
+  const bar = '█'.repeat(filled) + '░'.repeat(empty);
   return `${label} ${bar} ${value.toFixed(0)}%`;
 }
 

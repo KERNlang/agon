@@ -27,7 +27,7 @@ fn name=truncateLeft params="s:string, max:number" returns=string export=true
   handler lang="kern"
     if cond="s.length <= max"
       return value="s"
-    return value="'\\u2026' + s.slice(s.length - max + 1)"
+    return value="'…' + s.slice(s.length - max + 1)"
 
 fn name=resolveFileRailExpandedFile params="files:FileEntry[], selectedIndex:number|undefined, expandedPath:string|null|undefined, autoExpandSelected:boolean|undefined" returns="FileEntry|undefined" export=true
   handler <<<

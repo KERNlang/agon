@@ -416,13 +416,12 @@ function addParagraphBreaks(text: string): string {
 }
 
 // @kern-source: markdown:385
-export const _cleanCache: Map<number, string> = new Map();
+export const _cleanCache: Map<string, string> = new Map();
 
 // @kern-source: markdown:387
 export function cleanEngineOutput(raw: string): string {
-  // Cache by length — during streaming, content only grows
-  const cacheKey = raw.length;
-  const cached = _cleanCache.get(cacheKey);
+  // Key by raw content — different streams can share lengths, so length alone collides.
+  const cached = _cleanCache.get(raw);
   if (cached !== undefined) return cached;
 
   const lines = raw.split('\n');
@@ -473,7 +472,7 @@ export function cleanEngineOutput(raw: string): string {
 
   // Cache and evict old entries
   if (_cleanCache.size > 200) _cleanCache.clear();
-  _cleanCache.set(cacheKey, result);
+  _cleanCache.set(raw, result);
 
   return result;
 }

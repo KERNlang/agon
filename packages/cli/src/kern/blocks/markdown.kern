@@ -15,10 +15,9 @@ const name=FENCE_CLOSE type=RegExp value={{ /^```\s*$/ }}
 fn name=isTableSeparator params="line:string" returns=boolean export=false expr={{ return /^\|[\s:_-]+(\|[\s:_-]+)*\|?\s*$/.test(line.trim()); }}
 
 fn name=isTableRow params="line:string" returns=boolean export=false
-  handler <<<
-    const t = line.trim();
-    return t.startsWith('|') && t.includes('|', 1);
-  >>>
+  handler lang="kern"
+    let name=t value="line.trim()"
+    return value="t.startsWith('|') && t.includes('|', 1)"
 
 fn name=parseTableAlignment params="sepLine:string" returns="('left'|'center'|'right')[]" export=false
   handler <<<
@@ -145,11 +144,11 @@ fn name=parseMarkdownBlocks params="text:string" returns="ContentSegment[]"
   >>>
 
 fn name=truncateCodeLine params="line:string, maxWidth:number" returns=string
-  handler <<<
-    if (line.length <= maxWidth) return line;
-    const overflow = line.length - maxWidth + 1;
-    return line.slice(0, maxWidth - 1) + `…+${overflow}`;
-  >>>
+  handler lang="kern"
+    if cond="line.length <= maxWidth"
+      return value="line"
+    let name=overflow value="line.length - maxWidth + 1"
+    return value="line.slice(0, maxWidth - 1) + `…+${overflow}`"
 
 fn name=extractCodexStructured params="text:string" returns="string|null" export=false
   handler <<<

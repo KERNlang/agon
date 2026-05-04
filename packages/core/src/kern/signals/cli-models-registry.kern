@@ -138,13 +138,14 @@ fn name=findBinary params="binary:string" returns="string|null" export=true
   >>>
 
 fn name=getBinaryVersion params="binary:string, versionCmd:string[]" returns="string|null" export=true
-  handler <<<
-    if (!versionCmd.length) return null;
-    try {
-      const result = execSync(`${binary} ${versionCmd.join(' ')}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-      return result || null;
-    } catch { return null; }
-  >>>
+  handler lang="kern"
+    if cond="!versionCmd.length"
+      return value="null"
+    try
+      let name=result value="execSync(`${binary} ${versionCmd.join(' ')}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim()"
+      return value="result || null"
+      catch name=e
+        return value="null"
 
 fn name=buildCliModelGroups returns="CliProviderGroup[]" export=true
   doc "Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync."

@@ -145,12 +145,14 @@ const name=KNOWN_COLLAB_ENGINE_IDS type="Set<string>"
   >>>
 
 fn name=classifyTask params="input:string" returns="'code'|'question'|'ambiguous'"
-  handler <<<
-    if (QUESTION_PATTERN.test(input)) return 'question';
-    if (CODE_TASK_PATTERN.test(input)) return 'code';
-    if (CODE_ARTIFACT_PATTERN.test(input)) return 'code';
-    return 'ambiguous';
-  >>>
+  handler lang="kern"
+    if cond="QUESTION_PATTERN.test(input)"
+      return value="'question'"
+    if cond="CODE_TASK_PATTERN.test(input)"
+      return value="'code'"
+    if cond="CODE_ARTIFACT_PATTERN.test(input)"
+      return value="'code'"
+    return value="'ambiguous'"
 
 fn name=parseForgeInput params="input:string" returns=Intent export=false
   handler <<<
@@ -307,16 +309,14 @@ fn name=splitReviewArgs params="input:string" returns="string[]" export=false
   >>>
 
 fn name=isReviewTargetArg params="part:string" returns=boolean export=false
-  handler <<<
-    const lower = part.toLowerCase();
-    return lower === 'uncommitted' || lower.startsWith('branch:') || lower.startsWith('commit:');
-  >>>
+  handler lang="kern"
+    let name=lower value="part.toLowerCase()"
+    return value="lower === 'uncommitted' || lower.startsWith('branch:') || lower.startsWith('commit:')"
 
 fn name=isImplicitReviewSubjectArg params="part:string" returns=boolean export=false
-  handler <<<
-    const lower = part.toLowerCase();
-    return lower === 'it' || lower === 'this' || lower === 'that' || lower === 'them' || lower === 'changes' || lower === 'diff';
-  >>>
+  handler lang="kern"
+    let name=lower value="part.toLowerCase()"
+    return value="lower === 'it' || lower === 'this' || lower === 'that' || lower === 'them' || lower === 'changes' || lower === 'diff'"
 
 fn name=parseReviewInput params="input:string" returns=Intent export=false
   handler <<<

@@ -294,12 +294,13 @@ fn name=formatCesarRecoveryStatus params="stage:'delegation'|'rebuild'|'retry'|'
 
 fn name=normalizeCesarActingFallbackMode params="value:any" returns="'ask'|'auto'|'off'" export=true
   doc "Normalize the cross-engine Cesar fallback policy. Defaults to ask so Agon never silently swaps from the user's chosen Cesar engine to another model."
-  handler <<<
-    const mode = String(value ?? 'ask').trim().toLowerCase();
-    if (mode === 'auto' || mode === 'always' || mode === 'on') return 'auto';
-    if (mode === 'off' || mode === 'never' || mode === 'same-only' || mode === 'same') return 'off';
-    return 'ask';
-  >>>
+  handler lang="kern"
+    let name=mode value="String(value ?? 'ask').trim().toLowerCase()"
+    if cond="mode === 'auto' || mode === 'always' || mode === 'on'"
+      return value="'auto'"
+    if cond="mode === 'off' || mode === 'never' || mode === 'same-only' || mode === 'same'"
+      return value="'off'"
+    return value="'ask'"
 
 fn name=countTrackedUserTurns params="ctx:HandlerContext" returns=number
   handler <<<

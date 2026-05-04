@@ -426,12 +426,13 @@ fn name=gitChangedFiles params="cwd:string" returns="string[]"
 
 fn name=gitTruncatedDiff params="cwd:string,maxLines?:number" returns=string
   doc "Read-only: truncated git diff (unstaged). Caps output. No git add."
-  handler <<<
-    try {
-      const diff = git(['diff'], cwd);
-      const lines = diff.split('\n');
-      const limit = maxLines ?? 200;
-      if (lines.length <= limit) return diff;
-      return lines.slice(0, limit).join('\n') + `\n... (${lines.length - limit} more lines)`;
-    } catch { return ''; }
-  >>>
+  handler lang="kern"
+    try
+      let name=diff value="git(['diff'], cwd)"
+      let name=lines value="diff.split('\\n')"
+      let name=limit value="maxLines ?? 200"
+      if cond="lines.length <= limit"
+        return value="diff"
+      return value="lines.slice(0, limit).join('\\n') + `\\n... (${lines.length - limit} more lines)`"
+      catch name=e
+        return value="''"

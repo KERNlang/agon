@@ -70,16 +70,15 @@ fn name=saveToolResultToDisk params="engineId:string, toolCallId:string, toolNam
 
 fn name=loadToolResultFromDisk params="engineId:string, toolCallId:string" returns="string|null"
   doc "Read a cached tool result from disk. Returns null if not found."
-  handler <<<
-    try {
-      const cacheDir = sessionCacheDir(engineId);
-      const filePath = join(cacheDir, `${toolCallId}.txt`);
-      if (!existsSync(filePath)) return null;
-      return readFileSync(filePath, 'utf-8');
-    } catch {
-      return null;
-    }
-  >>>
+  handler lang="kern"
+    try
+      let name=cacheDir value="sessionCacheDir(engineId)"
+      let name=filePath value="join(cacheDir, `${toolCallId}.txt`)"
+      if cond="!existsSync(filePath)"
+        return value="null"
+      return value="readFileSync(filePath, 'utf-8')"
+      catch name=e
+        return value="null"
 
 fn name=pruneToolCache params="engineId:string, keepIds:Set<string>" returns="void"
   doc "Remove cached tool results not in the keep set. Prevents unbounded disk growth."

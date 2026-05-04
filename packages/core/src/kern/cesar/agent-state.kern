@@ -227,48 +227,39 @@ fn name=rejectTool params="state:AgentState,reason:string,now?:number" returns=A
 
 fn name=cancelAgent params="state:AgentState,reason:string" returns=AgentState export=true
   doc "Transition any non-terminal phase → cancelled. Idempotent over terminal phases."
-  handler <<<
-    if (state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled') {
-      return state;
-    }
-    return { context: state.context, phase: { kind: 'cancelled', reason } };
-  >>>
+  handler lang="kern"
+    if cond="state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled'"
+      return value="state"
+    return value="{ context: state.context, phase: { kind: 'cancelled', reason } }"
 
 fn name=failAgent params="state:AgentState,reason:'budget_turns'|'budget_tokens'|'budget_duration'|'error'|'rejected',errorMessage?:string" returns=AgentState export=true
   doc "Transition any non-terminal phase → failed."
-  handler <<<
-    if (state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled') {
-      return state;
-    }
-    return { context: state.context, phase: { kind: 'failed', reason, errorMessage } };
-  >>>
+  handler lang="kern"
+    if cond="state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled'"
+      return value="state"
+    return value="{ context: state.context, phase: { kind: 'failed', reason, errorMessage } }"
 
 fn name=completeAgent params="state:AgentState,finalResponse:string" returns=AgentState export=true
   doc "Transition idle → completed. Terminal success state."
-  handler <<<
-    if (state.phase.kind !== 'idle') return state;
-    return { context: state.context, phase: { kind: 'completed', finalResponse } };
-  >>>
+  handler lang="kern"
+    if cond="state.phase.kind !== 'idle'"
+      return value="state"
+    return value="{ context: state.context, phase: { kind: 'completed', finalResponse } }"
 
 fn name=checkBudget params="state:AgentState,now?:number" returns="AgentState|null" export=true
   doc "Returns a new failed state if any budget is exhausted, or null if the state is still within budget. Pure — does not mutate."
-  handler <<<
-    if (state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled') {
-      return null;
-    }
-    const budget = state.context.budget;
-    if (state.context.turns.length >= budget.maxTurns) {
-      return { context: state.context, phase: { kind: 'failed', reason: 'budget_turns', errorMessage: `Turn budget exceeded: ${state.context.turns.length}/${budget.maxTurns}` } };
-    }
-    if (budget.maxTokens != null && state.context.cumulativeTokens >= budget.maxTokens) {
-      return { context: state.context, phase: { kind: 'failed', reason: 'budget_tokens', errorMessage: `Token budget exceeded: ${state.context.cumulativeTokens}/${budget.maxTokens}` } };
-    }
-    const elapsed = (now ?? Date.now()) - state.context.startedAt;
-    if (elapsed >= budget.maxDurationMs) {
-      return { context: state.context, phase: { kind: 'failed', reason: 'budget_duration', errorMessage: `Duration budget exceeded: ${elapsed}ms/${budget.maxDurationMs}ms` } };
-    }
-    return null;
-  >>>
+  handler lang="kern"
+    if cond="state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled'"
+      return value="null"
+    let name=budget value="state.context.budget"
+    if cond="state.context.turns.length >= budget.maxTurns"
+      return value="{ context: state.context, phase: { kind: 'failed', reason: 'budget_turns', errorMessage: `Turn budget exceeded: ${state.context.turns.length}/${budget.maxTurns}` } }"
+    if cond="budget.maxTokens != null && state.context.cumulativeTokens >= budget.maxTokens"
+      return value="{ context: state.context, phase: { kind: 'failed', reason: 'budget_tokens', errorMessage: `Token budget exceeded: ${state.context.cumulativeTokens}/${budget.maxTokens}` } }"
+    let name=elapsed value="(now ?? Date.now()) - state.context.startedAt"
+    if cond="elapsed >= budget.maxDurationMs"
+      return value="{ context: state.context, phase: { kind: 'failed', reason: 'budget_duration', errorMessage: `Duration budget exceeded: ${elapsed}ms/${budget.maxDurationMs}ms` } }"
+    return value="null"
 
 fn name=isTerminal params="state:AgentState" returns=boolean export=true expr={{ return state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled'; }}
   doc "True if the state is in a terminal phase (completed/failed/cancelled)."

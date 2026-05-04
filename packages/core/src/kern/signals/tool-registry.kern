@@ -37,9 +37,8 @@ service name=ToolRegistry singleton=true
     >>>
 
   method name=names returns="string[]"
-    handler <<<
-      return Array.from(this.tools.keys());
-    >>>
+    handler lang="kern"
+      return value="Array.from(this.tools.keys())"
 
 // ── Executor Pipeline ─────────────────────────────────────────────
 

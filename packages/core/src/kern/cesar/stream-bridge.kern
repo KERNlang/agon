@@ -158,9 +158,8 @@ service name=StreamBridge export=true
     >>>
 
   method name=getActiveEngineId returns="string|undefined"
-    handler <<<
-      return this.activeEngineId;
-    >>>
+    handler lang="kern"
+      return value="this.activeEngineId"
 
 // ── Factory ───────────────────────────────────────────────────────────
 

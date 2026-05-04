@@ -382,13 +382,12 @@ fn name=addParagraphBreaks params="text:string" returns=string export=false
     return result.join('\n\n');
   >>>
 
-const name=_cleanCache type="Map<number, string>" value={{ new Map() }}
+const name=_cleanCache type="Map<string, string>" value={{ new Map() }}
 
 fn name=cleanEngineOutput params="raw:string" returns=string
   handler <<<
-    // Cache by length — during streaming, content only grows
-    const cacheKey = raw.length;
-    const cached = _cleanCache.get(cacheKey);
+    // Key by raw content — different streams can share lengths, so length alone collides.
+    const cached = _cleanCache.get(raw);
     if (cached !== undefined) return cached;
 
     const lines = raw.split('\n');
@@ -439,7 +438,7 @@ fn name=cleanEngineOutput params="raw:string" returns=string
 
     // Cache and evict old entries
     if (_cleanCache.size > 200) _cleanCache.clear();
-    _cleanCache.set(cacheKey, result);
+    _cleanCache.set(raw, result);
 
     return result;
   >>>

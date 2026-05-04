@@ -2,6 +2,5 @@
 // This stub exists only so surfaces/onboarding.kern still compiles.
 screen name=Onboarding target=ink
   render
-    handler <<<
-      return null;
-    >>>
+    handler lang="kern"
+      return value="null"

@@ -86,10 +86,9 @@ fn name=isMutatingToolCall params="event:any" returns=boolean
 fn name=shortToolPath params="filePath:string" returns=string expr={{ return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~'); }}
 
 fn name=isCesarTelemetryLine params="message:string" returns=boolean
-  handler <<<
-    const text = String(message ?? '').trim();
-    return text.startsWith('Cesar route:') || text.startsWith('What happened:');
-  >>>
+  handler lang="kern"
+    let name=text value="String(message ?? '').trim()"
+    return value="text.startsWith('Cesar route:') || text.startsWith('What happened:')"
 
 const name=_telemetryResourceSample type=any value={{ ({ lastCpu: null, lastAt: 0 }) }}
 
@@ -355,14 +354,13 @@ fn name=toolCallSupportsDetailView params="event:any" returns=boolean
   >>>
 
 fn name=detailViewerSupportsEvent params="event:any" returns=boolean
-  handler <<<
-    if (!event) return false;
-    if (event.type === 'permission-ask') {
-      const command = String(event.command ?? '');
-      return command.split('\n').length > 4 || command.length > 180;
-    }
-    return toolCallSupportsDetailView(event);
-  >>>
+  handler lang="kern"
+    if cond="!event"
+      return value="false"
+    if cond="event.type === 'permission-ask'"
+      let name=command value="String(event.command ?? '')"
+      return value="command.split('\\n').length > 4 || command.length > 180"
+    return value="toolCallSupportsDetailView(event)"
 
 fn name=toolDetailViewportRows params="termHeight:number" returns=number expr={{ return Math.max(8, Math.min(18, termHeight - 14)); }}
 
@@ -813,19 +811,22 @@ fn name=displayColumnToStringIndex params="text:string, targetColumn:number" ret
   >>>
 
 fn name=normalizeRowSelection params="anchor:number|null, focus:number|null" returns="{start:number,end:number}|null"
-  handler <<<
-    if (anchor === null || focus === null) return null;
-    return { start: Math.min(anchor, focus), end: Math.max(anchor, focus) };
-  >>>
+  handler lang="kern"
+    if cond="anchor === null || focus === null"
+      return value="null"
+    return value="{ start: Math.min(anchor, focus), end: Math.max(anchor, focus) }"
 
 fn name=normalizeTextSelection params="anchorRow:number|null, anchorCol:number|null, focusRow:number|null, focusCol:number|null" returns="{startRow:number,startCol:number,endRow:number,endCol:number}|null"
-  handler <<<
-    if (anchorRow === null || anchorCol === null || focusRow === null || focusCol === null) return null;
-    if (anchorRow < focusRow) return { startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol };
-    if (anchorRow > focusRow) return { startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol };
-    if (anchorCol <= focusCol) return { startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol };
-    return { startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol };
-  >>>
+  handler lang="kern"
+    if cond="anchorRow === null || anchorCol === null || focusRow === null || focusCol === null"
+      return value="null"
+    if cond="anchorRow < focusRow"
+      return value="{ startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol }"
+    if cond="anchorRow > focusRow"
+      return value="{ startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol }"
+    if cond="anchorCol <= focusCol"
+      return value="{ startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol }"
+    return value="{ startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol }"
 
 fn name=richLineToPlainText params="line:any" returns=string
   handler <<<
@@ -871,13 +872,13 @@ fn name=transcriptRowTextStartColumn params="row:any" returns=number
   >>>
 
 fn name=resolveTranscriptColumnFromMouse params="mouseX:number, row:any" returns=number
-  handler <<<
-    const text = transcriptRowToPlainText(row);
-    const startColumn = transcriptRowTextStartColumn(row);
-    if (!Number.isFinite(mouseX) || !text) return 0;
-    const targetColumn = clampNumber(mouseX - startColumn, 0, stringDisplayWidth(text));
-    return displayColumnToStringIndex(text, targetColumn);
-  >>>
+  handler lang="kern"
+    let name=text value="transcriptRowToPlainText(row)"
+    let name=startColumn value="transcriptRowTextStartColumn(row)"
+    if cond="!Number.isFinite(mouseX) || !text"
+      return value="0"
+    let name=targetColumn value="clampNumber(mouseX - startColumn, 0, stringDisplayWidth(text))"
+    return value="displayColumnToStringIndex(text, targetColumn)"
 
 fn name=transcriptRowsToPlainText params="rows:any[], anchorRow:number|null, anchorCol:number|null, focusRow:number|null, focusCol:number|null" returns=string export=true
   handler <<<
@@ -905,13 +906,14 @@ fn name=transcriptRowsToPlainText params="rows:any[], anchorRow:number|null, anc
   >>>
 
 fn name=resolveTranscriptRowFromMouse params="mouseY:number, viewportTopLine:number, firstVisibleRow:number, visibleRowCount:number" returns="number|null"
-  handler <<<
-    if (visibleRowCount <= 0) return null;
-    const offset = mouseY - viewportTopLine;
-    if (!Number.isFinite(offset)) return null;
-    const clamped = clampNumber(offset, 0, visibleRowCount - 1);
-    return firstVisibleRow + clamped;
-  >>>
+  handler lang="kern"
+    if cond="visibleRowCount <= 0"
+      return value="null"
+    let name=offset value="mouseY - viewportTopLine"
+    if cond="!Number.isFinite(offset)"
+      return value="null"
+    let name=clamped value="clampNumber(offset, 0, visibleRowCount - 1)"
+    return value="firstVisibleRow + clamped"
 
 fn name=estimateVisibleBlockBudget params="rows:number, mode:string, overlayReservedRows:number" returns=number
   handler <<<
@@ -1368,30 +1370,30 @@ fn name=isDuplicateEngineBlock params="blocks:OutputBlock[], event:any" returns=
 
 fn name=appendTranscriptBlock params="blocks:OutputBlock[], event:any, archivePath:string" returns="OutputBlock[]" export=true
   doc "Append a transcript block with cap/archive handling while suppressing accidental duplicate engine output."
-  handler <<<
-    if (isDuplicateEngineBlock(blocks, event)) return blocks;
-    return appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath);
-  >>>
+  handler lang="kern"
+    if cond="isDuplicateEngineBlock(blocks, event)"
+      return value="blocks"
+    return value="appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath)"
 
 fn name=normalizeTerminalMode params="value:any" returns="'native'|'fullscreen'" export=true expr={{ return value === 'fullscreen' ? 'fullscreen' : 'native'; }}
 
 fn name=fileRailWidthForTerminal params="termWidth:number, expanded:boolean" returns=number export=true
-  handler <<<
-    const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
-    if (expanded) return Math.max(36, Math.min(84, Math.floor(safeWidth * 0.35)));
-    return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
-  >>>
+  handler lang="kern"
+    let name=safeWidth value="Math.max(40, Math.floor(Number(termWidth) || 100))"
+    if cond="expanded"
+      return value="Math.max(36, Math.min(84, Math.floor(safeWidth * 0.35)))"
+    return value="Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)))"
 
 fn name=fileRailMaxRowsForTerminal params="termHeight:number, terminalMode:string, expanded:boolean" returns=number export=true
-  handler <<<
-    const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
-    if (terminalMode === 'native') {
-      if (expanded) return Math.max(8, Math.min(36, safeHeight - 4));
-      return Math.max(5, Math.min(14, safeHeight - 8));
-    }
-    if (expanded) return Math.max(12, safeHeight - 4);
-    return Math.max(6, Math.min(12, 10));
-  >>>
+  handler lang="kern"
+    let name=safeHeight value="Math.max(8, Math.floor(Number(termHeight) || 24))"
+    if cond="terminalMode === 'native'"
+      if cond="expanded"
+        return value="Math.max(8, Math.min(36, safeHeight - 4))"
+      return value="Math.max(5, Math.min(14, safeHeight - 8))"
+    if cond="expanded"
+      return value="Math.max(12, safeHeight - 4)"
+    return value="Math.max(6, Math.min(12, 10))"
 
 fn name=buildTerminalReplaySnapshot params="blocks:OutputBlock[], opts:any" returns="{terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number}" export=true
   doc "Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY."
@@ -2656,9 +2658,8 @@ screen name=App target=ink
     >>>
 
   memo name=availableEngines deps="registry, registryVersion"
-    handler <<<
-      return registry.availableIds();
-    >>>
+    handler lang="kern"
+      return value="registry.availableIds()"
 
   // Memoized loadConfig() — without this, every inline `loadConfig()` call in
   // the render tree runs 3× readFileSync + JSON.parse per keystroke (composer
@@ -2666,9 +2667,8 @@ screen name=App target=ink
   // component trigger a re-read; external configSet() won't, but the render
   // tree doesn't need to reflect those mid-interaction.
   memo name=config deps="configVersion"
-    handler <<<
-      return loadConfig();
-    >>>
+    handler lang="kern"
+      return value="loadConfig()"
 
   memo name=terminalMode deps="config"
     handler <<<
@@ -2676,9 +2676,8 @@ screen name=App target=ink
     >>>
 
   memo name=nativeTranscriptBlocks deps="outputBlocks"
-    handler <<<
-      return nativeTranscriptBlocksForStatic(outputBlocks);
-    >>>
+    handler lang="kern"
+      return value="nativeTranscriptBlocksForStatic(outputBlocks)"
 
   memo name=statusCwd deps="workspacePath"
     handler <<<
@@ -2686,9 +2685,11 @@ screen name=App target=ink
     >>>
 
   memo name=statusBranch deps="workspacePath"
-    handler <<<
-      try { return currentBranch(workspacePath); } catch { return ''; }
-    >>>
+    handler lang="kern"
+      try
+        return value="currentBranch(workspacePath)"
+        catch name=e
+          return value="''"
 
   memo name=statusStats deps="outputBlocks,chatSession,replState,config"
     handler <<<
@@ -2728,14 +2729,12 @@ screen name=App target=ink
     >>>
 
   memo name=latestToolEvent deps="outputBlocks"
-    handler <<<
-      return findLatestToolEvent(outputBlocks);
-    >>>
+    handler lang="kern"
+      return value="findLatestToolEvent(outputBlocks)"
 
   memo name=executionRailStats deps="outputBlocks,fileRailVersion,inputQueue"
-    handler <<<
-      return buildExecutionRailStats(outputBlocks, listFiles(), inputQueue.length);
-    >>>
+    handler lang="kern"
+      return value="buildExecutionRailStats(outputBlocks, listFiles(), inputQueue.length)"
 
   memo name=overlayReservedRows deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, termHeight"
     handler <<<
@@ -2744,14 +2743,12 @@ screen name=App target=ink
     >>>
 
   memo name=bottomChromeReservedRows deps="mode,questionState,termWidth,pendingImages,inputQueue,liveSpinner"
-    handler <<<
-      return estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !!liveSpinner);
-    >>>
+    handler lang="kern"
+      return value="estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !!liveSpinner)"
 
   memo name=overlayActive deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent"
-    handler <<<
-      return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent || !!toolDetailEvent;
-    >>>
+    handler lang="kern"
+      return value="enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent || !!toolDetailEvent"
 
   memo name=toolDetailView deps="toolDetailEvent, termWidth"
     handler <<<
@@ -2769,9 +2766,8 @@ screen name=App target=ink
     >>>
 
   memo name=historyBlocks deps="outputBlocks"
-    handler <<<
-      return historyBlocksForTranscript(outputBlocks);
-    >>>
+    handler lang="kern"
+      return value="historyBlocksForTranscript(outputBlocks)"
 
   memo name=displayBlocks deps="startupOnly,outputBlocks,historyBlocks"
     handler <<<
@@ -2779,10 +2775,10 @@ screen name=App target=ink
     >>>
 
   memo name=livePaneVisible deps="activeStream, liveProgress, liveToolStreams, agentProgress, startupOnly"
-    handler <<<
-      if (startupOnly) return false;
-      return !!activeStream || !!liveProgress || Object.keys(liveToolStreams).length > 0 || Object.keys(agentProgress).length > 0;
-    >>>
+    handler lang="kern"
+      if cond="startupOnly"
+        return value="false"
+      return value="!!activeStream || !!liveProgress || Object.keys(liveToolStreams).length > 0 || Object.keys(agentProgress).length > 0"
 
   memo name=currentVisibleRowBudget deps="termHeight, mode, overlayReservedRows, bottomChromeReservedRows, livePaneVisible, activeStream, liveProgress, liveToolStreams, agentProgress"
     handler <<<
@@ -2794,9 +2790,8 @@ screen name=App target=ink
     >>>
 
   memo name=nativeArchiveTarget deps="nativeTranscriptBlocks,mode,currentVisibleRowBudget,toolOutputExpanded,thinkingExpanded"
-    handler <<<
-      return nativeArchiveBlockCount(nativeTranscriptBlocks, mode, currentVisibleRowBudget, toolOutputExpanded, thinkingExpanded);
-    >>>
+    handler lang="kern"
+      return value="nativeArchiveBlockCount(nativeTranscriptBlocks, mode, currentVisibleRowBudget, toolOutputExpanded, thinkingExpanded)"
 
   memo name=effectiveNativeArchiveCount deps="nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks,toolOutputExpanded"
     handler <<<
@@ -2805,29 +2800,24 @@ screen name=App target=ink
     >>>
 
   memo name=nativeArchiveBlocks deps="nativeTranscriptBlocks,effectiveNativeArchiveCount"
-    handler <<<
-      return coalesceToolCallBlocks(nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount));
-    >>>
+    handler lang="kern"
+      return value="coalesceToolCallBlocks(nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount))"
 
   memo name=nativeLiveBlocks deps="nativeTranscriptBlocks,effectiveNativeArchiveCount"
-    handler <<<
-      return nativeTranscriptBlocks.slice(effectiveNativeArchiveCount);
-    >>>
+    handler lang="kern"
+      return value="nativeTranscriptBlocks.slice(effectiveNativeArchiveCount)"
 
   memo name=displayRows deps="displayBlocks, mode, toolOutputExpanded, thinkingExpanded"
-    handler <<<
-      return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
-    >>>
+    handler lang="kern"
+      return value="buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded)"
 
   memo name=nativeLiveRows deps="nativeLiveBlocks,mode,toolOutputExpanded,thinkingExpanded"
-    handler <<<
-      return buildTranscriptRows(nativeLiveBlocks, mode, toolOutputExpanded, thinkingExpanded);
-    >>>
+    handler lang="kern"
+      return value="buildTranscriptRows(nativeLiveBlocks, mode, toolOutputExpanded, thinkingExpanded)"
 
   memo name=totalDisplayRows deps="displayRows"
-    handler <<<
-      return displayRows.length;
-    >>>
+    handler lang="kern"
+      return value="displayRows.length"
 
   memo name=selectedRowRange deps="mouseSelection"
     handler <<<
@@ -2851,14 +2841,12 @@ screen name=App target=ink
     >>>
 
   memo name=startupFitsViewport deps="startupOnly, totalDisplayRows, currentVisibleRowBudget"
-    handler <<<
-      return startupOnly && totalDisplayRows <= currentVisibleRowBudget;
-    >>>
+    handler lang="kern"
+      return value="startupOnly && totalDisplayRows <= currentVisibleRowBudget"
 
   memo name=startupUseDashboardView deps="startupFitsViewport, termWidth"
-    handler <<<
-      return startupFitsViewport && termWidth >= 100;
-    >>>
+    handler lang="kern"
+      return value="startupFitsViewport && termWidth >= 100"
 
   // ── Load extensions on startup + workspace switch ──
   effect deps="workspacePath"

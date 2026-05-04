@@ -97,9 +97,8 @@ service name=TokenTracker
     >>>
 
   method name=recent params="n:number=5" returns="TokenUsage[]"
-    handler <<<
-      return this.usages.slice(-n);
-    >>>
+    handler lang="kern"
+      return value="this.usages.slice(-n)"
 
   method name=reset returns=void
     handler <<<

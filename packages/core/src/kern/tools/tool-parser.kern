@@ -410,12 +410,10 @@ fn name=toolCallsToApiFormat params="parsed:ParsedToolCall[]" returns="ToolCall[
 
 fn name=formatToolResult params="toolName:string, result:string, isError?:boolean" returns=string
   doc "Format a tool result to inject back into the conversation."
-  handler <<<
-    if (isError) {
-      return `<tool_result name="${toolName}" error="true">\n${result}\n</tool_result>`;
-    }
-    return `<tool_result name="${toolName}">\n${result}\n</tool_result>`;
-  >>>
+  handler lang="kern"
+    if cond="isError"
+      return value="`<tool_result name=\"${toolName}\" error=\"true\">\\n${result}\\n</tool_result>`"
+    return value="`<tool_result name=\"${toolName}\">\\n${result}\\n</tool_result>`"
 
 fn name=formatToolResults params="results:{name:string,content:string,error?:string}[]" returns=string
   doc "Format multiple tool results for injection."

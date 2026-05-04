@@ -44,11 +44,11 @@ service name=PasteStore singleton=true
 
   method name=retrieve params="hash:string" returns="string|null"
     doc "Retrieve a stored paste by hash. Returns null if missing."
-    handler <<<
-      const filePath = join(getPasteStoreDir(), `${hash}.txt`);
-      if (!existsSync(filePath)) return null;
-      return readFileSync(filePath, 'utf-8');
-    >>>
+    handler lang="kern"
+      let name=filePath value="join(getPasteStoreDir(), `${hash}.txt`)"
+      if cond="!existsSync(filePath)"
+        return value="null"
+      return value="readFileSync(filePath, 'utf-8')"
 
   method name=cleanup params="maxAge?:number" returns=number
     doc "Delete pastes older than maxAge ms. Returns count deleted."

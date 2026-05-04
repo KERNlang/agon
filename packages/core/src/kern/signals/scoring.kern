@@ -29,13 +29,17 @@ fn name=computeScore params="result:FitnessResult,weights?:ScoreWeights" returns
   >>>
 
 fn name=tiebreak params="a:FitnessResult,b:FitnessResult" returns=number
-  handler <<<
-    const aScore = computeScore(a).composite;
-    const bScore = computeScore(b).composite;
-    if (aScore !== bScore) return bScore - aScore;
-    if (a.lintWarnings !== b.lintWarnings) return a.lintWarnings - b.lintWarnings;
-    if (a.styleScore !== b.styleScore) return b.styleScore - a.styleScore;
-    if (a.diffLines !== b.diffLines) return a.diffLines - b.diffLines;
-    if (a.filesChanged !== b.filesChanged) return a.filesChanged - b.filesChanged;
-    return a.durationSec - b.durationSec;
-  >>>
+  handler lang="kern"
+    let name=aScore value="computeScore(a).composite"
+    let name=bScore value="computeScore(b).composite"
+    if cond="aScore !== bScore"
+      return value="bScore - aScore"
+    if cond="a.lintWarnings !== b.lintWarnings"
+      return value="a.lintWarnings - b.lintWarnings"
+    if cond="a.styleScore !== b.styleScore"
+      return value="b.styleScore - a.styleScore"
+    if cond="a.diffLines !== b.diffLines"
+      return value="a.diffLines - b.diffLines"
+    if cond="a.filesChanged !== b.filesChanged"
+      return value="a.filesChanged - b.filesChanged"
+    return value="a.durationSec - b.durationSec"

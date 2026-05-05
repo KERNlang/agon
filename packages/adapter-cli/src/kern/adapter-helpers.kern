@@ -40,11 +40,12 @@ fn name=resolveModel params="engine:EngineDefinition,cwd?:string" returns="strin
   >>>
 
 fn name=formatFileSize params="bytes:number" returns="string" export=false
-  handler <<<
-    if (bytes < 1024) return `${bytes}B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-  >>>
+  handler lang="kern"
+    if cond="bytes < 1024"
+      return value="`${bytes}B`"
+    if cond="bytes < 1024 * 1024"
+      return value="`${(bytes / 1024).toFixed(1)}KB`"
+    return value="`${(bytes / (1024 * 1024)).toFixed(1)}MB`"
 
 fn name=buildCommand params="engine:EngineDefinition, mode:EngineMode, prompt:string, cwd:string, timeout:number, binaryPath:string, images?:ImageAttachment[]" returns="{command:string, args:string[]}"
   handler <<<

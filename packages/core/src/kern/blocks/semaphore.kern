@@ -89,15 +89,13 @@ service name=Semaphore export=true
 
   method name=available returns=number
     doc "Diagnostic: current free permit count."
-    handler <<<
-      return this.permits;
-    >>>
+    handler lang="kern"
+      return value="this.permits"
 
   method name=queueDepth returns=number
     doc "Diagnostic: how many acquirers are blocked waiting for a permit."
-    handler <<<
-      return this.waiters.length;
-    >>>
+    handler lang="kern"
+      return value="this.waiters.length"
 
   method name=runWith async=true params="fn:() => Promise<unknown>, signal?:AbortSignal" returns="Promise<unknown>"
     doc "Convenience: acquire, run the fn, release in finally — even if fn throws. Forwards the optional signal to acquire() so a cancelled caller is rejected from the queue immediately."

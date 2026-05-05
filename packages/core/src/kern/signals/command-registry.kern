@@ -37,20 +37,20 @@ service name=CommandRegistry singleton=true
     >>>
 
   method name=get params="name:string" returns="CommandHandler | undefined"
-    handler <<<
-      const lower = name.toLowerCase();
-      const handler = this.commands.get(lower);
-      if (handler) return handler;
-      const canonical = this.aliasMap.get(lower);
-      if (canonical) return this.commands.get(canonical);
-      return undefined;
-    >>>
+    handler lang="kern"
+      let name=lower value="name.toLowerCase()"
+      let name=handler value="this.commands.get(lower)"
+      if cond="handler"
+        return value="handler"
+      let name=canonical value="this.aliasMap.get(lower)"
+      if cond="canonical"
+        return value="this.commands.get(canonical)"
+      return value="undefined"
 
   method name=has params="name:string" returns=boolean
-    handler <<<
-      const lower = name.toLowerCase();
-      return this.commands.has(lower) || this.aliasMap.has(lower);
-    >>>
+    handler lang="kern"
+      let name=lower value="name.toLowerCase()"
+      return value="this.commands.has(lower) || this.aliasMap.has(lower)"
 
   method name=list returns="CommandDefinition[]"
     handler <<<
@@ -74,9 +74,8 @@ service name=CommandRegistry singleton=true
     >>>
 
   method name=names returns="string[]"
-    handler <<<
-      return Array.from(this.commands.keys());
-    >>>
+    handler lang="kern"
+      return value="Array.from(this.commands.keys())"
 
   method name=unregister params="name:string" returns=void
     handler <<<

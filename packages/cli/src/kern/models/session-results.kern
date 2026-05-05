@@ -9,14 +9,12 @@ service name=SessionResultStore
     >>>
 
   method name=getResults returns="SessionResult[]"
-    handler <<<
-      return [...this.results];
-    >>>
+    handler lang="kern"
+      return value="[...this.results]"
 
   method name=hasResults returns=boolean
-    handler <<<
-      return this.results.length > 0;
-    >>>
+    handler lang="kern"
+      return value="this.results.length > 0"
 
   method name=getLatest returns="SessionResult|null"
     handler <<<

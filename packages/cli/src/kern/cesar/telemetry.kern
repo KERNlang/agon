@@ -46,20 +46,16 @@ fn name=createEngineVitals params="engineId:string,partial?:Partial<EngineVitals
 fn name=updateEngineVitals params="v:EngineVitals,partial:Partial<EngineVitals>" returns=EngineVitals export=true expr={{ return { ...v, ...partial, lastHeartbeatAt: partial.lastHeartbeatAt ?? Date.now() }; }}
 
 fn name=markEngineStalled params="v:EngineVitals,stallThresholdMs:number" returns=EngineVitals export=true
-  handler <<<
-    const now = Date.now();
-    const elapsed = now - v.lastHeartbeatAt;
-    if (elapsed >= stallThresholdMs && v.state !== 'stalled') {
-      return { ...v, state: 'stalled', stallDurationMs: elapsed };
-    }
-    if (v.state === 'stalled' && elapsed < stallThresholdMs) {
-      return { ...v, state: 'busy', stallDurationMs: undefined };
-    }
-    if (v.state === 'stalled') {
-      return { ...v, stallDurationMs: elapsed };
-    }
-    return v;
-  >>>
+  handler lang="kern"
+    let name=now value="Date.now()"
+    let name=elapsed value="now - v.lastHeartbeatAt"
+    if cond="elapsed >= stallThresholdMs && v.state !== 'stalled'"
+      return value="{ ...v, state: 'stalled', stallDurationMs: elapsed }"
+    if cond="v.state === 'stalled' && elapsed < stallThresholdMs"
+      return value="{ ...v, state: 'busy', stallDurationMs: undefined }"
+    if cond="v.state === 'stalled'"
+      return value="{ ...v, stallDurationMs: elapsed }"
+    return value="v"
 
 fn name=computeOverallHealth params="engines:EngineVitals[]" returns="'healthy'|'degraded'|'critical'" export=true
   handler <<<
@@ -72,12 +68,11 @@ fn name=computeOverallHealth params="engines:EngineVitals[]" returns="'healthy'|
   >>>
 
 fn name=formatVitalBar params="label:string,value:number,width:number=10" returns=string export=false
-  handler <<<
-    const filled = Math.round((value / 100) * width);
-    const empty = width - filled;
-    const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(empty);
-    return `${label} ${bar} ${value.toFixed(0)}%`;
-  >>>
+  handler lang="kern"
+    let name=filled value="Math.round((value / 100) * width)"
+    let name=empty value="width - filled"
+    let name=bar value="'█'.repeat(filled) + '░'.repeat(empty)"
+    return value="`${label} ${bar} ${value.toFixed(0)}%`"
 
 fn name=renderEngineVitalLine params="v:EngineVitals" returns=string export=true
   handler <<<

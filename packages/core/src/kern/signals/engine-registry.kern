@@ -132,21 +132,19 @@ service name=EngineRegistry
     >>>
 
   method name=get params="id:string" returns=EngineDefinition
-    handler <<<
-      const engine = this.engines.get(id);
-      if (!engine) throw new EngineNotFoundError(id);
-      return engine;
-    >>>
+    handler lang="kern"
+      let name=engine value="this.engines.get(id)"
+      if cond="!engine"
+        throw value="new EngineNotFoundError(id)"
+      return value="engine"
 
   method name=list returns="EngineDefinition[]"
-    handler <<<
-      return Array.from(this.engines.values());
-    >>>
+    handler lang="kern"
+      return value="Array.from(this.engines.values())"
 
   method name=listIds returns="string[]"
-    handler <<<
-      return Array.from(this.engines.keys());
-    >>>
+    handler lang="kern"
+      return value="Array.from(this.engines.keys())"
 
   method name=findBinary params="engine:EngineDefinition" returns="string|null"
     handler <<<
@@ -178,12 +176,14 @@ service name=EngineRegistry
     >>>
 
   method name=supportsMode params="engine:EngineDefinition, mode:EngineMode" returns=boolean
-    handler <<<
-      if (mode === 'exec' && engine.exec) return true;
-      if (mode === 'review' && engine.review) return true;
-      if (mode === 'agent' && engine.agent) return true;
-      return engine.modes?.includes(mode) ?? false;
-    >>>
+    handler lang="kern"
+      if cond="mode === 'exec' && engine.exec"
+        return value="true"
+      if cond="mode === 'review' && engine.review"
+        return value="true"
+      if cond="mode === 'agent' && engine.agent"
+        return value="true"
+      return value="engine.modes?.includes(mode) ?? false"
 
   method name=agentCapableIds returns="string[]"
     handler <<<

@@ -792,11 +792,11 @@ fn name=loadCesarMcpServers params="config:any,cwd:string" returns="Array<Record
   >>>
 
 fn name=canUseCesarMcp params="engine:any,binaryPath:string" returns=boolean
-  handler <<<
-    if (!binaryPath) return false;
-    const protocol = engine?.companion?.protocol;
-    return protocol === 'acp' || protocol === 'jsonrpc' || protocol === 'stream-json';
-  >>>
+  handler lang="kern"
+    if cond="!binaryPath"
+      return value="false"
+    let name=protocol value="engine?.companion?.protocol"
+    return value="protocol === 'acp' || protocol === 'jsonrpc' || protocol === 'stream-json'"
 
 fn name=mcpConfigFingerprint params="config:any" returns=string
   doc "Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources."

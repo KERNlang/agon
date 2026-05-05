@@ -71,9 +71,8 @@ service name=EventBus singleton=true
     >>>
 
   method name=listenerCount params="event:string" returns=number
-    handler <<<
-      return this.listeners.get(event)?.length ?? 0;
-    >>>
+    handler lang="kern"
+      return value="this.listeners.get(event)?.length ?? 0"
 
   method name=removeAll params="source:string" returns=void
     doc "Remove all listeners from a specific source (e.g., an extension being unloaded)."

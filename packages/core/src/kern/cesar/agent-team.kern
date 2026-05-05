@@ -150,17 +150,17 @@ service name=AgentTeam export=true
 
   method name=getRunId returns=string
     doc "Return the per-construction run ID. Used to scope worktree paths and tag agentProgress snapshots."
-    handler <<<
-      if (this.disposed) throw makeAgentTeamDisposedError();
-      return this.runId;
-    >>>
+    handler lang="kern"
+      if cond="this.disposed"
+        throw value="makeAgentTeamDisposedError()"
+      return value="this.runId"
 
   method name=getBaseSha returns=string
     doc "Return the base SHA captured at initialize() time. Used by Phase 3 scoring to compute per-member diffs."
-    handler <<<
-      if (this.disposed) throw makeAgentTeamDisposedError();
-      return this.baseSha;
-    >>>
+    handler lang="kern"
+      if cond="this.disposed"
+        throw value="makeAgentTeamDisposedError()"
+      return value="this.baseSha"
 
   method name=getMemberEngineIds returns="string[]"
     doc "Return engineIds in input order. Used by callers to iterate members for event correlation."

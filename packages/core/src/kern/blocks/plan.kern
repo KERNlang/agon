@@ -166,12 +166,10 @@ fn name=mergeStepResult params="plan:Plan,stepId:string,partial:Partial<StepResu
   >>>
 
 fn name=approvePlan params="plan:Plan" returns=Plan
-  handler <<<
-    if (plan.state !== 'draft') {
-      throw new PlanStateError('draft', plan.state);
-    }
-    return { ...plan, state: 'approved', updatedAt: new Date().toISOString() };
-  >>>
+  handler lang="kern"
+    if cond="plan.state !== 'draft'"
+      throw value="new PlanStateError('draft', plan.state)"
+    return value="{ ...plan, state: 'approved', updatedAt: new Date().toISOString() }"
 
 fn name=startPlan params="plan:Plan" returns=Plan
   handler <<<

@@ -510,14 +510,12 @@ service name=ContextThread export=true
     >>>
 
   method name=getThreadId returns=string
-    handler <<<
-      return this.threadId;
-    >>>
+    handler lang="kern"
+      return value="this.threadId"
 
   method name=getProjectPath returns=string
-    handler <<<
-      return this.projectPath;
-    >>>
+    handler lang="kern"
+      return value="this.projectPath"
 
   method name=append params="msg:Omit<ThreadMessage,'id'|'timestamp'|'tokens'>" returns=ThreadMessage
     doc "Append a message. Assigns id + timestamp. Estimates tokens. Marks the thread dirty. Caller must call save() to flush. The message's engineId (if set) updates engineHead so that engine is considered caught up through this message. Rejects role:'system' (red-team finding 2) and runs secret redaction (red-team finding 1)."
@@ -1027,14 +1025,12 @@ service name=ContextThread export=true
 
   method name=getAllMessages returns="ThreadMessage[]"
     doc "Return a shallow copy of the full message list. For tests and introspection — do not mutate."
-    handler <<<
-      return [...this.messages];
-    >>>
+    handler lang="kern"
+      return value="[...this.messages]"
 
   method name=getCheckpoints returns="ThreadCheckpoint[]"
-    handler <<<
-      return [...this.checkpoints];
-    >>>
+    handler lang="kern"
+      return value="[...this.checkpoints]"
 
   method name=getEngineHead params="engineId:string" returns="string|undefined"
     handler <<<

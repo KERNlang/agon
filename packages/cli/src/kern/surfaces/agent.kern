@@ -32,23 +32,26 @@ fn name=phaseGlyph params="phase:string" returns=string export=false
 
 fn name=phaseColor params="phase:string" returns=string export=false
   doc "Terminal color for a phase glyph."
-  handler <<<
-    if (phase === 'running') return '#fbbf24';
-    if (phase === 'awaiting_approval') return '#60a5fa';
-    if (phase === 'completed') return '#22c55e';
-    if (phase === 'failed') return '#ef4444';
-    if (phase === 'cancelled') return '#9ca3af';
-    return '#6b7280';
-  >>>
+  handler lang="kern"
+    if cond="phase === 'running'"
+      return value="'#fbbf24'"
+    if cond="phase === 'awaiting_approval'"
+      return value="'#60a5fa'"
+    if cond="phase === 'completed'"
+      return value="'#22c55e'"
+    if cond="phase === 'failed'"
+      return value="'#ef4444'"
+    if cond="phase === 'cancelled'"
+      return value="'#9ca3af'"
+    return value="'#6b7280'"
 
 fn name=progressBar params="pct:number,width:number" returns=string export=false
   doc "Unicode block-bar string. pct in [0,1], width is cell count."
-  handler <<<
-    const p = Math.max(0, Math.min(1, pct));
-    const filled = Math.round(p * width);
-    const empty = width - filled;
-    return '\u2588'.repeat(filled) + '\u2591'.repeat(empty);
-  >>>
+  handler lang="kern"
+    let name=p value="Math.max(0, Math.min(1, pct))"
+    let name=filled value="Math.round(p * width)"
+    let name=empty value="width - filled"
+    return value="'█'.repeat(filled) + '░'.repeat(empty)"
 
 fn name=formatElapsed params="ms:number" returns=string export=false
   doc "Human-readable elapsed time (e.g. '42s', '3m12s', '1h04m')."
@@ -65,11 +68,12 @@ fn name=formatElapsed params="ms:number" returns=string export=false
 
 fn name=formatTokens params="tokens:number" returns=string export=false
   doc "Render token count as 1.2k, 45k, 1.4M."
-  handler <<<
-    if (tokens < 1000) return `${tokens} tok`;
-    if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(1)}k tok`;
-    return `${(tokens / 1_000_000).toFixed(2)}M tok`;
-  >>>
+  handler lang="kern"
+    if cond="tokens < 1000"
+      return value="`${tokens} tok`"
+    if cond="tokens < 1_000_000"
+      return value="`${(tokens / 1000).toFixed(1)}k tok`"
+    return value="`${(tokens / 1_000_000).toFixed(2)}M tok`"
 
 // ── Screen: AgentProgressView ──────────────────────────────────────
 

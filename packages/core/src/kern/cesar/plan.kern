@@ -23,21 +23,21 @@ fn name=safeCesarPlanId params="planId:string" returns=string export=false
 
 fn name=cesarPlanJsonPath params="planId:string" returns=string export=true
   doc "Canonical JSON path for a Cesar plan under ~/.agon/plans."
-  handler <<<
-    const plansDir = getCesarPlansDir();
-    const full = resolve(plansDir, `${safeCesarPlanId(planId)}.json`);
-    if (!full.startsWith(resolve(plansDir))) throw new Error(`Invalid plan ID: ${planId}`);
-    return full;
-  >>>
+  handler lang="kern"
+    let name=plansDir value="getCesarPlansDir()"
+    let name=full value="resolve(plansDir, `${safeCesarPlanId(planId)}.json`)"
+    if cond="!full.startsWith(resolve(plansDir))"
+      throw value="new Error(`Invalid plan ID: ${planId}`)"
+    return value="full"
 
 fn name=cesarPlanMarkdownPath params="planId:string" returns=string export=true
   doc "Canonical Markdown path for a Cesar plan under ~/.agon/plans."
-  handler <<<
-    const plansDir = getCesarPlansDir();
-    const full = resolve(plansDir, `${safeCesarPlanId(planId)}.md`);
-    if (!full.startsWith(resolve(plansDir))) throw new Error(`Invalid plan ID: ${planId}`);
-    return full;
-  >>>
+  handler lang="kern"
+    let name=plansDir value="getCesarPlansDir()"
+    let name=full value="resolve(plansDir, `${safeCesarPlanId(planId)}.md`)"
+    if cond="!full.startsWith(resolve(plansDir))"
+      throw value="new Error(`Invalid plan ID: ${planId}`)"
+    return value="full"
 
 type name=CesarPlanState values="planning|awaiting_approval|running|paused|done|cancelled"
 type name=CesarStepState values="pending|blocked|running|done|failed|skipped|cancelled"

@@ -47,24 +47,20 @@ service name=EngineHealth singleton=true
     >>>
 
   method name=isHealthy params="engineId:string" returns=boolean
-    handler <<<
-      return !this.records.has(engineId);
-    >>>
+    handler lang="kern"
+      return value="!this.records.has(engineId)"
 
   method name=get params="engineId:string" returns="EngineHealthRecord | undefined"
-    handler <<<
-      return this.records.get(engineId);
-    >>>
+    handler lang="kern"
+      return value="this.records.get(engineId)"
 
   method name=listUnhealthy returns="EngineHealthRecord[]"
-    handler <<<
-      return [...this.records.values()];
-    >>>
+    handler lang="kern"
+      return value="[...this.records.values()]"
 
   method name=count returns=number
-    handler <<<
-      return this.records.size;
-    >>>
+    handler lang="kern"
+      return value="this.records.size"
 
 const name=engineHealth value={{ new EngineHealth() }}
 

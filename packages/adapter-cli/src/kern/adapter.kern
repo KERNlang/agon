@@ -426,9 +426,8 @@ service name=CliAdapter implements=EngineAdapter
     >>>
 
   method name=isAvailable params="engine:EngineDefinition" returns="Promise<boolean>" async=true
-    handler <<<
-      return this.registry.isAvailable(engine);
-    >>>
+    handler lang="kern"
+      return value="this.registry.isAvailable(engine)"
 
   method name=getVersion params="engine:EngineDefinition" returns="Promise<string|null>" async=true
     handler <<<

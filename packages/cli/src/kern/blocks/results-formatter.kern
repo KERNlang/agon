@@ -19,10 +19,9 @@ const name=RULE type=string value={{ '═'.repeat(70) }}
 const name=THIN_RULE type=string value={{ '─'.repeat(70) }}
 
 fn name=formatTime params="iso:string" returns=string
-  handler <<<
-    const d = new Date(iso);
-    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-  >>>
+  handler lang="kern"
+    let name=d value="new Date(iso)"
+    return value="d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })"
 
 fn name=formatChatTranscript params="session:ChatSession" returns=string export=true
   handler <<<

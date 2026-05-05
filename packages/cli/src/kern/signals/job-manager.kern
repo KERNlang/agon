@@ -57,14 +57,12 @@ service name=JobManager singleton=true
     >>>
 
   method name=get params="id:string" returns="Job|undefined"
-    handler <<<
-      return this.jobs.get(id);
-    >>>
+    handler lang="kern"
+      return value="this.jobs.get(id)"
 
   method name=list returns="Job[]"
-    handler <<<
-      return [...this.jobs.values()];
-    >>>
+    handler lang="kern"
+      return value="[...this.jobs.values()]"
 
   method name=running returns="Job[]"
     handler <<<

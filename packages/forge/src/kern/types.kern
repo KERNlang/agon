@@ -13,6 +13,7 @@ interface name=SynthesisResult
   field name=patchPath type=string
   field name=originalWinnerScore type=number
   field name=critiques type="Critique[]"
+  field name=reason type=string optional=true
 
 // ForgeEventCallback is inlined as (event: ForgeEvent) => void in function params
 // KERN type node produces string literal unions, not arbitrary type aliases

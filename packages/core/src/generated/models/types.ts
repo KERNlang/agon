@@ -264,7 +264,7 @@ export interface AgonConfig {
 export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   debug: false,
   timeout: 360,
-  forgeTimeout: 600,
+  forgeTimeout: 1800,
   forgeAutoAcceptScore: 88,
   forgeClearWinnerSpread: 8,
   forgeEnableSynthesis: false,

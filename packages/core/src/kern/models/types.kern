@@ -150,7 +150,7 @@ interface name=RatingRecord
 config name=AgonConfig
   field name=debug type=boolean default=false
   field name=timeout type=number default=360
-  field name=forgeTimeout type=number default=600
+  field name=forgeTimeout type=number default=1800
   field name=forgeAutoAcceptScore type=number default=88
   field name=forgeClearWinnerSpread type=number default=8
   field name=forgeEnableSynthesis type=boolean default=false

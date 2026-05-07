@@ -44,23 +44,13 @@ fn name=resolveForgeSynthesisTimeout params="config:Required<AgonConfig>,taskCla
   >>>
 
 fn name=resolveForgeRunTimeout params="config:AgonConfig,explicitTimeout:number|undefined,taskClass:string" returns=number export=true
-  doc "Pick the per-engine forge timeout. Explicit user timeout wins. Otherwise cap long saved defaults by task class so a stuck engine cannot make normal forge runs feel wedged."
+  doc "Pick the per-engine forge timeout. Explicit user timeout wins; otherwise use the configured Forge timeout without task-class caps. Forge is expected to run until engines finish or the user cancels."
   handler <<<
     const explicit = Number(explicitTimeout ?? 0);
     if (Number.isFinite(explicit) && explicit > 0) return explicit;
 
-    const configured = Number((config as any).forgeTimeout ?? 600);
-    const base = Number.isFinite(configured) && configured > 0 ? configured : 600;
-    if (taskClass === 'docs') {
-      return Math.min(base, 120);
-    }
-    if (taskClass === 'bugfix' || taskClass === 'refactor' || taskClass === 'test') {
-      return Math.min(base, 180);
-    }
-    if (taskClass === 'feature' || taskClass === 'algorithm') {
-      return Math.min(base, 300);
-    }
-    return base;
+    const configured = Number((config as any).forgeTimeout ?? 1800);
+    return Number.isFinite(configured) && configured > 0 ? configured : 1800;
   >>>
 
 fn name=completeMissingForgeResults params="manifest:ForgeManifest, engineIds:string[], reason:string" returns=ForgeManifest export=true

@@ -52,7 +52,7 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
   // that re-runs fitness against the baseline. Wasted compute with a
   // misleading "synthesis didn't improve" outcome.
   if (!winnerPatch.trim()) {
-    opts.onEvent?.({ type: 'synthesis:done', data: { wins: false, score: winnerResult.score, originalScore: winnerResult.score } });
+    opts.onEvent?.({ type: 'synthesis:done', engineId: winner, data: { wins: false, score: winnerResult.score, originalScore: winnerResult.score, keptWinner: winner, reason: 'empty-patch' } });
     return {
       pass: winnerResult.pass,
       score: winnerResult.score,
@@ -60,6 +60,7 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
       patchPath: winnerResult.patchPath,
       originalWinnerScore: winnerResult.score,
       critiques: [],
+      reason: 'empty-patch',
     };
   }
 
@@ -131,13 +132,15 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
   const allCritiques = critiqueArrays.flat().slice(0, opts.maxCritiques);
 
   if (allCritiques.length === 0) {
+    opts.onEvent?.({ type: 'synthesis:done', engineId: winner, data: { wins: false, score: winnerResult.score, originalScore: winnerResult.score, keptWinner: winner, reason: 'no-structured-critiques' } });
     return {
-      pass: false,
-      score: 0,
+      pass: winnerResult.pass,
+      score: winnerResult.score,
       wins: false,
-      patchPath: '',
+      patchPath: winnerResult.patchPath,
       originalWinnerScore: winnerResult.score,
       critiques: [],
+      reason: 'no-structured-critiques',
     };
   }
 

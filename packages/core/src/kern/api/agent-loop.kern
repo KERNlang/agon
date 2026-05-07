@@ -10,6 +10,7 @@ import from="../signals/tool-registry.js" names="ToolRegistry,executeToolCall"
 import from="../blocks/semaphore.js" names="Semaphore,isHeavyTool"
 import from="../tools/tool-prompt.js" names="toolsToOpenAIFormat"
 import from="../tools/tool-loop.js" names="buildToolSystemPrompt"
+import from="../tools/tool-parser.js" names="parseToolCalls"
 import from="../tools/tool-read.js" names="createReadTool"
 import from="../tools/tool-edit.js" names="createEditTool"
 import from="../tools/tool-write.js" names="createWriteTool"
@@ -208,16 +209,17 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
 
       if (!fullResponse) break;
 
-      // Extract tool calls
-      const toolMarkerRe = /<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/g;
+      // Extract tool calls using the shared parser so API engines with
+      // provider-specific XML wrappers (MiniMax, Gemini, Qwen-style tags) get
+      // the same tool loop as persistent CLI sessions.
+      const parsedToolCalls = parseToolCalls(fullResponse);
       const extractedCalls: Array<{id: string, name: string, arguments: string}> = [];
-      let tmMatch;
-      while ((tmMatch = toolMarkerRe.exec(fullResponse)) !== null) {
-        extractedCalls.push({ id: `call_${Date.now()}_${extractedCalls.length}`, name: tmMatch[1], arguments: tmMatch[2] });
+      for (const tc of parsedToolCalls.toolCalls) {
+        extractedCalls.push({ id: `call_${Date.now()}_${extractedCalls.length}`, name: tc.name, arguments: JSON.stringify(tc.input ?? {}) });
       }
 
       if (extractedCalls.length > 0) {
-        const cleanText = fullResponse.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
+        const cleanText = [parsedToolCalls.textBefore, parsedToolCalls.textAfter].filter(Boolean).join('\n\n').trim();
         pushHistory({
           role: 'assistant', content: cleanText || null,
           tool_calls: extractedCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments } })),

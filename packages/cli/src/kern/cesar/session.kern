@@ -68,9 +68,10 @@ CRITICAL: You have orchestration modes as DIRECT TOOL CALLS. NEVER use Bash to r
 
   Forge(task, fitnessCmd?, hardened?, team?)
     Engines compete to implement code. Best implementation wins via fitness test.
-    hardened=true for gauntlet verification. team=true for architect+implementer+reviewer.
+    hardened=true ONLY when the user explicitly asks for hardened/gauntlet/adversarial verification, or the task is high-risk security/data-migration work. For docs, README, UI copy, and routine edits leave hardened false. team=true for architect+implementer+reviewer.
     USE WHEN: quality matters, complex implementations, want to see multiple solutions.
-    EXAMPLE: "Implement rate limiter with sliding window" → Forge(task:"...", hardened:true)
+    EXAMPLE: "Implement rate limiter with sliding window" → Forge(task:"...")
+    EXAMPLE: "Harden this auth migration with a gauntlet" → Forge(task:"...", hardened:true)
 
   Pipeline(task, fitnessCmd?)
     Full pipeline: brainstorm → forge → tribunal. The complete treatment.

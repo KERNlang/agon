@@ -14,6 +14,8 @@ import { toolsToOpenAIFormat } from '../tools/tool-prompt.js';
 
 import { buildToolSystemPrompt } from '../tools/tool-loop.js';
 
+import { parseToolCalls } from '../tools/tool-parser.js';
+
 import { createReadTool } from '../tools/tool-read.js';
 
 import { createEditTool } from '../tools/tool-edit.js';
@@ -36,7 +38,7 @@ import { createRetrieveResultTool } from '../tools/tool-retrieve.js';
 
 import type { ToolCacheEntry } from '../models/context-parts.js';
 
-// @kern-source: agent-loop:25
+// @kern-source: agent-loop:26
 export interface ApiAgentOptions {
   api: ApiConfig;
   prompt: string;
@@ -58,7 +60,7 @@ export interface ApiAgentOptions {
   onPermissionAsk?: (tool:string, command:string, reason:string)=>Promise<boolean|string>;
 }
 
-// @kern-source: agent-loop:45
+// @kern-source: agent-loop:46
 export interface ApiAgentResult {
   response: string;
   toolCalls: number;
@@ -68,7 +70,7 @@ export interface ApiAgentResult {
 /**
  * Attempt to repair malformed JSON tool arguments. Handles common LLM mistakes: markdown fencing, trailing commas, single quotes, unquoted keys.
  */
-// @kern-source: agent-loop:50
+// @kern-source: agent-loop:51
 export function repairToolArgs(raw: string): Record<string,unknown>|null {
   let cleaned = raw.trim();
 
@@ -99,7 +101,7 @@ export function repairToolArgs(raw: string): Record<string,unknown>|null {
 /**
  * Auto-correct tool name case mismatches. Maps 'read' → 'Read', 'GREP' → 'Grep', etc.
  */
-// @kern-source: agent-loop:79
+// @kern-source: agent-loop:80
 export function repairToolName(name: string, registry: any): string {
   // Check if exact match exists
   if (registry.has?.(name) || registry.get?.(name)) return name;
@@ -120,7 +122,7 @@ export function repairToolName(name: string, registry: any): string {
 /**
  * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
  */
-// @kern-source: agent-loop:98
+// @kern-source: agent-loop:99
 export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentResult> {
   // Run-scoped cache ID: prevents concurrent forge runs from colliding
   const runCacheId = `${opts.api.model || 'api-agent'}-${randomUUID().slice(0, 8)}`;
@@ -232,16 +234,17 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
 
     if (!fullResponse) break;
 
-    // Extract tool calls
-    const toolMarkerRe = /<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/g;
+    // Extract tool calls using the shared parser so API engines with
+    // provider-specific XML wrappers (MiniMax, Gemini, Qwen-style tags) get
+    // the same tool loop as persistent CLI sessions.
+    const parsedToolCalls = parseToolCalls(fullResponse);
     const extractedCalls: Array<{id: string, name: string, arguments: string}> = [];
-    let tmMatch;
-    while ((tmMatch = toolMarkerRe.exec(fullResponse)) !== null) {
-      extractedCalls.push({ id: `call_${Date.now()}_${extractedCalls.length}`, name: tmMatch[1], arguments: tmMatch[2] });
+    for (const tc of parsedToolCalls.toolCalls) {
+      extractedCalls.push({ id: `call_${Date.now()}_${extractedCalls.length}`, name: tc.name, arguments: JSON.stringify(tc.input ?? {}) });
     }
 
     if (extractedCalls.length > 0) {
-      const cleanText = fullResponse.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
+      const cleanText = [parsedToolCalls.textBefore, parsedToolCalls.textAfter].filter(Boolean).join('\n\n').trim();
       pushHistory({
         role: 'assistant', content: cleanText || null,
         tool_calls: extractedCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments } })),

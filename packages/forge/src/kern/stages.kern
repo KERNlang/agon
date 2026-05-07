@@ -33,12 +33,12 @@ fn name=makeFailedResult params="engineId:string,error:string,durationMs?:number
     };
   >>>
 
-fn name=selectForgeFallbackEngine params="registry:EngineRegistry,sourceId:string,taskClass?:string,usedIds?:string[]" returns="string|null" export=true
-  doc "Pick a one-shot fallback engine for a failed forge dispatch, excluding engines already used in this run slice. Skips engines that have been session-quarantined for auth-failed or unreachable — retrying a known-bad engine just burns time."
+fn name=selectForgeFallbackEngine params="registry:EngineRegistry,sourceId:string,taskClass?:string,usedIds?:string[],candidateIds?:string[]" returns="string|null" export=true
+  doc "Pick a one-shot fallback engine for a failed forge dispatch, excluding engines already used in this run slice. When candidateIds is provided, fallback is restricted to that active roster so hidden/removed engines cannot re-enter through fallback. Skips engines that have been session-quarantined for auth-failed or unreachable — retrying a known-bad engine just burns time."
   handler <<<
     const used = new Set<string>(usedIds ?? []);
     used.add(sourceId);
-    const chain = registry.getFallbackChain(sourceId, taskClass);
+    const chain = registry.getFallbackChain(sourceId, taskClass, candidateIds);
     for (const id of chain) {
       if (used.has(id)) continue;
       const health = engineHealth.get(id);
@@ -216,7 +216,8 @@ fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, f
         totalDurationMs: elapsed,
         error,
       });
-      const fallbackId = selectForgeFallbackEngine(opts.registry, opts.starter, opts.taskClass, [...engineResults.keys()]);
+      const fallbackCandidates = opts.enginePrompts ? [...opts.enginePrompts.keys()] : undefined;
+      const fallbackId = selectForgeFallbackEngine(opts.registry, opts.starter, opts.taskClass, [...engineResults.keys()], fallbackCandidates);
       if (fallbackId) {
         opts.onEvent?.({ type: 'engine:fallback' as any, engineId: opts.starter, data: { from: opts.starter, to: fallbackId, phase: 'stage1', error } });
         try {
@@ -350,7 +351,8 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
           error,
         });
         const usedIds = [...opts.challengers, ...Array.from(allResults.keys())];
-        const fallbackId = selectForgeFallbackEngine(opts.registry, failedId, undefined, usedIds);
+        const fallbackCandidates = opts.enginePrompts ? [...opts.enginePrompts.keys()] : opts.challengers;
+        const fallbackId = selectForgeFallbackEngine(opts.registry, failedId, undefined, usedIds, fallbackCandidates);
         if (fallbackId) {
           opts.onEvent?.({ type: 'engine:fallback' as any, engineId: failedId, data: { from: failedId, to: fallbackId, phase: 'stage2', error } });
           try {
@@ -473,7 +475,8 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
         error,
       });
       const usedIds = [...opts.challengers, ...Array.from(opts.existingResults.keys())];
-      const fallbackId = selectForgeFallbackEngine(opts.registry, scoutId, undefined, usedIds);
+      const fallbackCandidates = opts.enginePrompts ? [...opts.enginePrompts.keys()] : opts.challengers;
+      const fallbackId = selectForgeFallbackEngine(opts.registry, scoutId, undefined, usedIds, fallbackCandidates);
       if (fallbackId) {
         opts.onEvent?.({ type: 'engine:fallback' as any, engineId: scoutId, data: { from: scoutId, to: fallbackId, phase: 'stage2-scout', error } });
         try {
@@ -558,7 +561,8 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
           error,
         });
         const usedIds = [...opts.challengers, ...Array.from(allResults.keys())];
-        const fallbackId = selectForgeFallbackEngine(opts.registry, failedId, undefined, usedIds);
+        const fallbackCandidates = opts.enginePrompts ? [...opts.enginePrompts.keys()] : opts.challengers;
+        const fallbackId = selectForgeFallbackEngine(opts.registry, failedId, undefined, usedIds, fallbackCandidates);
         if (fallbackId) {
           opts.onEvent?.({ type: 'engine:fallback' as any, engineId: failedId, data: { from: failedId, to: fallbackId, phase: 'stage2-follower', error } });
           try {

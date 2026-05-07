@@ -223,7 +223,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
     if (quickFixLikely) {
       intakeKind = 'quick-fix';
       recommendedFlow = 'quick-fix';
-      flowReason = 'Implementation request appears bounded and low-risk.';
+      flowReason = 'Implementation request appears small, bounded, and low-risk.';
     } else {
       intakeKind = 'feature';
       recommendedFlow = inputTokens >= 36 || scopeFileCount >= 2 ? 'plan-first' : 'quick-fix';

@@ -33,28 +33,36 @@ fn name=parseRecapJsonObject params="input:unknown" returns="Record<string,unkno
   >>>
 
 fn name=recapToolLabel params="tool:unknown" returns=string export=true
-  handler <<<
-    const key = String(tool ?? '').toLowerCase();
-    if (key === 'bash' || key === 'run' || key === 'agonbash') return 'Bash';
-    if (key === 'read') return 'Read';
-    if (key === 'grep' || key === 'search') return 'Search';
-    if (key === 'glob' || key === 'find') return 'Find';
-    if (key === 'edit' || key === 'update' || key === 'agonedit') return 'Edit';
-    if (key === 'write' || key === 'agonwrite') return 'Write';
-    if (key === 'applypatch' || key === 'apply_patch') return 'Patch';
-    if (key === 'reportconfidence') return 'Confidence';
-    if (key === 'quicknero') return 'QuickNero';
-    return String(tool ?? 'Tool');
-  >>>
+  handler lang="kern"
+    let name=key value="String(tool ?? '').toLowerCase()"
+    if cond="key === 'bash' || key === 'run' || key === 'agonbash'"
+      return value="'Bash'"
+    if cond="key === 'read'"
+      return value="'Read'"
+    if cond="key === 'grep' || key === 'search'"
+      return value="'Search'"
+    if cond="key === 'glob' || key === 'find'"
+      return value="'Find'"
+    if cond="key === 'edit' || key === 'update' || key === 'agonedit'"
+      return value="'Edit'"
+    if cond="key === 'write' || key === 'agonwrite'"
+      return value="'Write'"
+    if cond="key === 'applypatch' || key === 'apply_patch'"
+      return value="'Patch'"
+    if cond="key === 'reportconfidence'"
+      return value="'Confidence'"
+    if cond="key === 'quicknero'"
+      return value="'QuickNero'"
+    return value="String(tool ?? 'Tool')"
 
 fn name=extractRecapCommand params="tool:unknown,input:unknown" returns=string export=true
-  handler <<<
-    const key = String(tool ?? '').toLowerCase();
-    if (key !== 'bash' && key !== 'run' && key !== 'agonbash') return '';
-    const parsed = parseRecapJsonObject(input);
-    const command = String(parsed.command ?? parsed.cmd ?? input ?? '').trim();
-    return command;
-  >>>
+  handler lang="kern"
+    let name=key value="String(tool ?? '').toLowerCase()"
+    if cond="key !== 'bash' && key !== 'run' && key !== 'agonbash'"
+      return value="''"
+    let name=parsed value="parseRecapJsonObject(input)"
+    let name=command value="String(parsed.command ?? parsed.cmd ?? input ?? '').trim()"
+    return value="command"
 
 fn name=classifyRecapCommand params="command:string" returns=string export=true
   handler <<<

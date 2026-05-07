@@ -432,7 +432,7 @@ export function toolCallsToApiFormat(parsed: ParsedToolCall[]): ToolCall[] {
 /**
  * Format a tool result to inject back into the conversation.
  */
-// @kern-source: tool-parser:411
+// @kern-source: tool-parser:412
 export function formatToolResult(toolName: string, result: string, isError?: boolean): string {
   if (isError) {
     return `<tool_result name="${toolName}" error="true">\n${result}\n</tool_result>`;
@@ -443,7 +443,7 @@ export function formatToolResult(toolName: string, result: string, isError?: boo
 /**
  * Format multiple tool results for injection.
  */
-// @kern-source: tool-parser:420
+// @kern-source: tool-parser:421
 export function formatToolResults(results: {name:string,content:string,error?:string}[]): string {
   return results.map(r => {
     if (r.error) {

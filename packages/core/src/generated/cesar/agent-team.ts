@@ -141,12 +141,16 @@ export class AgentTeam {
   }
 
   getRunId(): string {
-    if (this.disposed) throw makeAgentTeamDisposedError();
+    if (this.disposed) {
+      throw makeAgentTeamDisposedError();
+    }
     return this.runId;
   }
 
   getBaseSha(): string {
-    if (this.disposed) throw makeAgentTeamDisposedError();
+    if (this.disposed) {
+      throw makeAgentTeamDisposedError();
+    }
     return this.baseSha;
   }
 

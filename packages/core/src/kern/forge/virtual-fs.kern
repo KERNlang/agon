@@ -160,11 +160,11 @@ service name=VirtualFS export=true
 
   method name=read params="absPath:string" returns="string|null"
     doc "Read a file. Overlay takes priority over snapshot. Returns null if the file is deleted or doesn't exist."
-    handler <<<
-      const key = resolve(absPath);
-      if (this.overlay.has(key)) return this.overlay.get(key) ?? null;
-      return snapshotRead(this.snapshot, key);
-    >>>
+    handler lang="kern"
+      let name=key value="resolve(absPath)"
+      if cond="this.overlay.has(key)"
+        return value="this.overlay.get(key) ?? null"
+      return value="snapshotRead(this.snapshot, key)"
 
   method name=write params="absPath:string,content:string" returns=void
     doc "Write (create or overwrite) a file in the overlay. Does NOT touch disk."
@@ -185,11 +185,11 @@ service name=VirtualFS export=true
     >>>
 
   method name=exists params="absPath:string" returns=boolean
-    handler <<<
-      const key = resolve(absPath);
-      if (this.overlay.has(key)) return this.overlay.get(key) !== null;
-      return snapshotRead(this.snapshot, key) !== null;
-    >>>
+    handler lang="kern"
+      let name=key value="resolve(absPath)"
+      if cond="this.overlay.has(key)"
+        return value="this.overlay.get(key) !== null"
+      return value="snapshotRead(this.snapshot, key) !== null"
 
   method name=list params="absDir:string" returns="string[]"
     doc "List files in a directory. Merges snapshot contents with overlay writes/deletes."

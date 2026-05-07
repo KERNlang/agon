@@ -91,9 +91,8 @@ service name=TelemetryService export=true singleton=true
     >>>
 
   method name=isRunning returns=boolean
-    handler <<<
-      return this.running;
-    >>>
+    handler lang="kern"
+      return value="this.running"
 
   method name=subscribe params="callback:(snapshot:TelemetrySnapshot)=>void" returns="() => void"
     handler <<<
@@ -452,8 +451,7 @@ service name=TelemetryService export=true singleton=true
     >>>
 
   method name=totalSystemMemory returns=number private=true
-    handler <<<
-      return Number(totalmem()) || 1;
-    >>>
+    handler lang="kern"
+      return value="Number(totalmem()) || 1"
 
 fn name=createTelemetryService params="opts:TelemetryServiceOptions" returns=TelemetryService export=true expr={{ return new TelemetryService(opts); }}

@@ -135,7 +135,7 @@ export class StreamBridge {
 /**
  * Create a StreamBridge for one agent invocation. Pass the same Dispatch function used by the handler.
  */
-// @kern-source: stream-bridge:167
+// @kern-source: stream-bridge:166
 export function createStreamBridge(dispatch: (event:Record<string,unknown>)=>void, opts?: {initialEngineId?:string,onSwitch?:(sw:EngineSwitch)=>void}): StreamBridge {
   return new StreamBridge(dispatch, opts);
 }

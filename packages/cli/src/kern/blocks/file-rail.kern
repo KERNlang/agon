@@ -8,24 +8,26 @@ import from="../signals/file-tracker.js" names="FileEntry" types=true
 import from="../signals/file-tracker.js" names="getFileDiff"
 
 fn name=statusGlyph params="status:string" returns=string export=true
-  handler <<<
-    if (status === 'edited') return 'M';
-    if (status === 'created') return '+';
-    return 'r';
-  >>>
+  handler lang="kern"
+    if cond="status === 'edited'"
+      return value="'M'"
+    if cond="status === 'created'"
+      return value="'+'"
+    return value="'r'"
 
 fn name=statusColor params="status:string" returns=string export=true
-  handler <<<
-    if (status === 'edited') return '#22d3ee';
-    if (status === 'created') return '#4ade80';
-    return 'gray';
-  >>>
+  handler lang="kern"
+    if cond="status === 'edited'"
+      return value="'#22d3ee'"
+    if cond="status === 'created'"
+      return value="'#4ade80'"
+    return value="'gray'"
 
 fn name=truncateLeft params="s:string, max:number" returns=string export=true
-  handler <<<
-    if (s.length <= max) return s;
-    return '\u2026' + s.slice(s.length - max + 1);
-  >>>
+  handler lang="kern"
+    if cond="s.length <= max"
+      return value="s"
+    return value="'…' + s.slice(s.length - max + 1)"
 
 fn name=resolveFileRailExpandedFile params="files:FileEntry[], selectedIndex:number|undefined, expandedPath:string|null|undefined, autoExpandSelected:boolean|undefined" returns="FileEntry|undefined" export=true
   handler <<<
@@ -37,25 +39,28 @@ fn name=resolveFileRailExpandedFile params="files:FileEntry[], selectedIndex:num
   >>>
 
 fn name=fileRailDetailRows params="maxRows:number, hasDetail:boolean" returns=number export=true
-  handler <<<
-    if (!hasDetail) return 0;
-    const safeRows = Math.max(4, Math.floor(Number(maxRows) || 0));
-    const rows = Math.floor(safeRows * 0.58);
-    return Math.max(4, Math.min(Math.max(4, safeRows - 5), rows));
-  >>>
+  handler lang="kern"
+    if cond="!hasDetail"
+      return value="0"
+    let name=safeRows value="Math.max(4, Math.floor(Number(maxRows) || 0))"
+    let name=rows value="Math.floor(safeRows * 0.58)"
+    return value="Math.max(4, Math.min(Math.max(4, safeRows - 5), rows))"
 
 fn name=formatRelativeTime params="ms:number" returns=string export=true confidence=0.95
-  handler <<<
-    const diff = Date.now() - ms;
-    const s = Math.floor(diff / 1000);
-    if (s < 5) return 'just now';
-    if (s < 60) return `${s}s ago`;
-    const m = Math.floor(s / 60);
-    if (m < 60) return `${m}m ago`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-    return `${Math.floor(h / 24)}d ago`;
-  >>>
+  handler lang="kern"
+    let name=diff value="Date.now() - ms"
+    let name=s value="Math.floor(diff / 1000)"
+    if cond="s < 5"
+      return value="'just now'"
+    if cond="s < 60"
+      return value="`${s}s ago`"
+    let name=m value="Math.floor(s / 60)"
+    if cond="m < 60"
+      return value="`${m}m ago`"
+    let name=h value="Math.floor(m / 60)"
+    if cond="h < 24"
+      return value="`${h}h ago`"
+    return value="`${Math.floor(h / 24)}d ago`"
 
 // Empty-state content — Fragment only, no wrapper Box (parent supplies it).
 screen name=FileRailEmpty target=ink export=false

@@ -8,13 +8,15 @@ import from="node:path" names="resolve,relative,isAbsolute,basename"
 import from="@agon/core" names="ToolContext" types=true
 
 fn name=canonicalToolName params="tool:string" returns=string export=false
-  handler <<<
-    const lower = String(tool ?? '').toLowerCase();
-    if (lower === 'agonedit' || lower === 'edit' || lower === 'fileedit' || lower === 'filechange') return 'Edit';
-    if (lower === 'agonwrite' || lower === 'write') return 'Write';
-    if (lower === 'agonbash' || lower === 'bash' || lower === 'shell') return 'Bash';
-    return tool;
-  >>>
+  handler lang="kern"
+    let name=lower value="String(tool ?? '').toLowerCase()"
+    if cond="lower === 'agonedit' || lower === 'edit' || lower === 'fileedit' || lower === 'filechange'"
+      return value="'Edit'"
+    if cond="lower === 'agonwrite' || lower === 'write'"
+      return value="'Write'"
+    if cond="lower === 'agonbash' || lower === 'bash' || lower === 'shell'"
+      return value="'Bash'"
+    return value="tool"
 
 fn name=approvalArgsFromCommand params="tool:string,command:string" returns="Record<string,unknown>" export=true
   doc "Best-effort adapter for native approval protocols that only expose a command/description string."

@@ -821,7 +821,9 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
 
 // @kern-source: session:798
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
-  if (!binaryPath) return false;
+  if (!binaryPath) {
+    return false;
+  }
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc' || protocol === 'stream-json';
 }

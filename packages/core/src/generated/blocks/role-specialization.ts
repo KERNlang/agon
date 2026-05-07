@@ -77,7 +77,9 @@ export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): Engi
 // @kern-source: role-specialization:71
 export function buildSpecializedPrompt(engineId: string, taskClass: TaskClass, basePrompt: string): string {
   const rolePrompt = buildRolePrompt(engineId, taskClass);
-  if (!rolePrompt) return basePrompt;
+  if (!rolePrompt) {
+    return basePrompt;
+  }
   return basePrompt + '\n' + rolePrompt;
 }
 

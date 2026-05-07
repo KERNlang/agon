@@ -23,10 +23,9 @@ const name=IMAGE_PATH_REGEX type=RegExp value={{ /(?:^|\s)((?:\/[\w.\-]+)+\.(?:p
 const name=IMG_CMD_REGEX type=RegExp value={{ /^\/img\s+(.+)$/i }}
 
 fn name=isImagePath params="filePath:string" returns="boolean"
-  handler <<<
-    const ext = extname(filePath).toLowerCase();
-    return IMAGE_EXTENSIONS.has(ext);
-  >>>
+  handler lang="kern"
+    let name=ext value="extname(filePath).toLowerCase()"
+    return value="IMAGE_EXTENSIONS.has(ext)"
 
 fn name=mimeFromExt params="filePath:string" returns="string"
   handler <<<

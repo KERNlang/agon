@@ -260,7 +260,7 @@ export class Speculator {
 /**
  * Create a fresh Speculator instance. One per agent invocation.
  */
-// @kern-source: speculator:269
+// @kern-source: speculator:268
 export function createSpeculator(): Speculator {
   return new Speculator();
 }

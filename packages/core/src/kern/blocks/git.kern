@@ -424,6 +424,7 @@ fn name=gitChangedFiles params="cwd:string" returns="string[]"
     } catch { return []; }
   >>>
 
+// KERN-GAP: lang="kern" — `\n` in template literal inside `return value="..."` is reformatted to a real newline + 2-space indent in generated TS. Same bug as tool-parser.formatToolResult. Reverted to raw body.
 fn name=gitTruncatedDiff params="cwd:string,maxLines?:number" returns=string
   doc "Read-only: truncated git diff (unstaged). Caps output. No git add."
   handler <<<

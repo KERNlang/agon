@@ -780,6 +780,61 @@ describe('Forge E2E', () => {
     }
   });
 
+  it('scores a timed-out engine when it left a valid candidate diff', async () => {
+    const repoDir = createRepo('timeout-harvest');
+    const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(forgeDir, { recursive: true });
+
+    try {
+      vi.resetModules();
+      const { EngineRegistry, headSha } = await import('../../packages/core/src/index.js');
+      const { runStage2 } = await import('../../packages/forge/src/index.js');
+      const registry = new EngineRegistry();
+      registry.register(makeEngine('slow-writer'));
+      const adapter: EngineAdapter = {
+        dispatch: async (options: DispatchOptions): Promise<DispatchResult> => {
+          writeFileSync(join(options.cwd, 'generated.ts'), 'export function hello() { return "world"; }\n');
+          return {
+            exitCode: 124,
+            stdout: 'wrote generated.ts before timeout',
+            stderr: 'Turn timed out',
+            durationMs: 1,
+            timedOut: true,
+          };
+        },
+        isAvailable: async () => true,
+        getVersion: async () => 'test',
+      };
+
+      const stage = await runStage2({
+        challengers: ['slow-writer'],
+        forgePrompt: 'Create generated.ts that returns world',
+        fitnessCmd: `grep -q '"world"' generated.ts`,
+        config: {
+          forgeTimeout: 1,
+          forgeFitnessTimeout: 1,
+          forgeAutoAcceptScore: 101,
+        } as any,
+        registry,
+        adapter,
+        cwd: repoDir,
+        baseSha: headSha(repoDir),
+        forgeDir,
+        existingResults: new Map(),
+        worktrees: [],
+      });
+
+      const result = stage.engineResults.get('slow-writer');
+      expect(result?.pass).toBe(true);
+      expect(result?.diffLines).toBeGreaterThan(0);
+      expect(readFileSync(result!.patchPath!, 'utf-8')).toContain('return "world"');
+      expect(result?.dispatchStdout).toContain('harvesting candidate worktree');
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
+
   it('bases forge worktrees on dirty tracked changes', async () => {
     const agonHome = setupTestAgonHome('forge-dirty-base');
     const repoDir = createRepo('dirty-base');

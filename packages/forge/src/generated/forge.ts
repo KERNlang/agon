@@ -58,31 +58,21 @@ export function resolveForgeSynthesisTimeout(config: Required<AgonConfig>, taskC
 }
 
 /**
- * Pick the per-engine forge timeout. Explicit user timeout wins. Otherwise cap long saved defaults by task class so a stuck engine cannot make normal forge runs feel wedged.
+ * Pick the per-engine forge timeout. Explicit user timeout wins; otherwise use the configured Forge timeout without task-class caps. Forge is expected to run until engines finish or the user cancels.
  */
 // @kern-source: forge:46
 export function resolveForgeRunTimeout(config: AgonConfig, explicitTimeout: number|undefined, taskClass: string): number {
   const explicit = Number(explicitTimeout ?? 0);
   if (Number.isFinite(explicit) && explicit > 0) return explicit;
 
-  const configured = Number((config as any).forgeTimeout ?? 600);
-  const base = Number.isFinite(configured) && configured > 0 ? configured : 600;
-  if (taskClass === 'docs') {
-    return Math.min(base, 120);
-  }
-  if (taskClass === 'bugfix' || taskClass === 'refactor' || taskClass === 'test') {
-    return Math.min(base, 180);
-  }
-  if (taskClass === 'feature' || taskClass === 'algorithm') {
-    return Math.min(base, 300);
-  }
-  return base;
+  const configured = Number((config as any).forgeTimeout ?? 1800);
+  return Number.isFinite(configured) && configured > 0 ? configured : 1800;
 }
 
 /**
  * Mark every selected forge engine terminal before persisting a bundle. This keeps aborted, timed-out, or disappearing engines visible instead of leaving the run looking half-open.
  */
-// @kern-source: forge:66
+// @kern-source: forge:56
 export function completeMissingForgeResults(manifest: ForgeManifest, engineIds: string[], reason: string): ForgeManifest {
   for (const id of engineIds) {
     if ((manifest.results as any)[id]) continue;
@@ -107,7 +97,7 @@ export function completeMissingForgeResults(manifest: ForgeManifest, engineIds: 
 /**
  * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
  */
-// @kern-source: forge:89
+// @kern-source: forge:79
 export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: WorktreeEntry[], options: ForgeOptions, repoRootPath: string, baseSha: string, sidechainPath: string, errorMessage?: string): string {
   const cleanupCommand = buildForgeCleanupCommand(repoRootPath, manifest.forgeDir);
   const bundlePath = `${manifest.forgeDir}/result.json`;
@@ -187,7 +177,7 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
   return bundlePath;
 }
 
-// @kern-source: forge:170
+// @kern-source: forge:160
 export async function runForge(options: ForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const loadedConfig = loadConfig(options.cwd);
   const taskClass = classifyTask(options.task);

@@ -168,6 +168,12 @@ fn name=usesStreamJson params="engine:EngineDefinition" returns=boolean
     return args.includes('stream-json') || args.some((a: string) => a === '--output-format' && args[args.indexOf(a) + 1] === 'stream-json');
   >>>
 
+fn name=shouldUseCompanionForAgent params="engine:EngineDefinition" returns=boolean export=true
+  doc "Only Codex-style JSON-RPC app-server is reliable for one-shot forge agent dispatch. Claude stream-json and Gemini ACP are reliable as persistent Cesar sessions, but the one-shot companion wrapper can hang or return empty, so forge should use their direct non-interactive CLI agent commands."
+  handler <<<
+    return engine.companion?.protocol === 'jsonrpc';
+  >>>
+
 fn name=checkEnvVars params="engine:EngineDefinition" returns="string|null"
   handler <<<
     if (!engine.env) return null;

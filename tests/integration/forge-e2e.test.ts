@@ -995,4 +995,45 @@ describe('Forge E2E', () => {
       rmSync(outputDir, { recursive: true, force: true });
     }
   });
+
+  it('runs multiline node -e fitness checks that contain markdown fences', async () => {
+    const repoDir = createRepo('node-e-markdown-fence');
+    const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const fakeNpx = createFakeNpx();
+    mkdirSync(forgeDir, { recursive: true });
+
+    try {
+      writeFileSync(join(repoDir, 'README.md'), [
+        '# Agon',
+        '',
+        '```bash',
+        'agon forge "fix it"',
+        '```',
+        '',
+      ].join('\n'));
+
+      vi.resetModules();
+      const { runFitness } = await import('../../packages/forge/src/index.js');
+      const result = await runFitness({
+        engineId: 'candidate',
+        worktreePath: repoDir,
+        fitnessCmd: 'node -e "\n'
+          + "const fs = require('fs');\n"
+          + "const content = fs.readFileSync('README.md', 'utf8');\n"
+          + "if (!content.includes('```bash')) process.exit(1);\n"
+          + 'console.log("Score: 100");\n'
+          + '"',
+        timeout: 1,
+        forgeDir,
+      });
+
+      expect(result.pass).toBe(true);
+      expect(readFileSync(result.fitnessLogPath!, 'utf-8')).toContain('Score: 100');
+    } finally {
+      process.env.PATH = fakeNpx.originalPath;
+      rmSync(fakeNpx.binDir, { recursive: true, force: true });
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
 });

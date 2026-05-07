@@ -4,15 +4,41 @@ import from="@agon/core" names="FitnessResult,EngineResult" types=true
 import from="@agon/core" names="spawnWithTimeout,worktreeDiff,diffLineCount,diffFileCount,computeScore"
 import from="./quality.js" names="runLint,runStyleCheck"
 
+fn name=normalizeFitnessCommandForShell params="command:string" returns=string export=true
+  doc "Normalize fragile `node -e \"...\"` fitness checks into a quoted heredoc. Shell command substitution inside Markdown fences (```bash) otherwise makes valid candidates fail before Node starts."
+  handler <<<
+    const raw = String(command ?? '');
+    const trimmed = raw.trim();
+    const match = trimmed.match(/^node\s+-e\s+(['"])([\s\S]*)$/);
+    if (!match) return raw;
+
+    const quote = match[1];
+    const rest = match[2].trimEnd();
+    if (!rest.endsWith(quote)) return raw;
+
+    const script = rest.slice(0, -quote.length);
+    if (!script.includes('\n') && !script.includes('`')) return raw;
+
+    let delimiter = 'AGON_FITNESS_NODE';
+    let suffix = 0;
+    while (script.includes(delimiter)) {
+      suffix += 1;
+      delimiter = `AGON_FITNESS_NODE_${suffix}`;
+    }
+
+    return `node <<'${delimiter}'\n${script}\n${delimiter}`;
+  >>>
+
 fn name=runFitness async=true params="opts:{engineId:string, worktreePath:string, fitnessCmd:string, timeout:number, forgeDir:string}" returns="Promise<EngineResult>"
   handler <<<
     const startTime = Date.now();
+    const fitnessCmd = normalizeFitnessCommandForShell(opts.fitnessCmd);
 
     let fitnessResult: any;
     if (existsSync(opts.worktreePath)) {
       fitnessResult = await spawnWithTimeout({
         command: '/bin/sh',
-        args: ['-c', opts.fitnessCmd],
+        args: ['-c', fitnessCmd],
         cwd: opts.worktreePath,
         timeout: opts.timeout * 1000,
       });

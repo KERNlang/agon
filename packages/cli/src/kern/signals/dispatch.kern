@@ -16,6 +16,7 @@ import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./icons.js" names="icons"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/index.js" names="handleForge,handleChat,handleBrainstorm,handleCampfire,handleTribunal,handleLeaderboard,handleCesarReport,handleCesarHints,handleHistory,handleEngines,handleDiscover,handleConfig,handleUse,handleCesar,handleTokens,handleModels,handleWorkspace,handleChats,handlePlanShow,handlePlansList,handleApprove,handleRetry,handleCancel,handleApplyPatch,handleCp,handleCommit,handleFlowReport,handleFlowAnalysis,handleBuild,handleRun,handleReview,handleReviewMany,runAgentMode,runAgentTeam"
+import from="../handlers/forge.js" names="prepareForgeFitnessCommand,inferProjectFitnessCommand"
 import from="../handlers/team-tribunal.js" names="handleTeamTribunal"
 import from="../handlers/team-forge.js" names="handleTeamForge"
 import from="../handlers/team-brainstorm.js" names="handleTeamBrainstorm"
@@ -590,12 +591,13 @@ You still own the overall task. Integrate the forged slice with the rest of the 
             return true;
           }
           case 'team-forge': {
-            const tfFitness = fitnessCmd ?? await cb.askQuestion('What command tests this?');
-            if (!tfFitness.trim()) { cb.dispatch({ type: 'warning', message: 'Team-forge needs a test command.' }); break; }
+            const preparedFitness = fitnessCmd ?? await prepareForgeFitnessCommand(taskInput, cb.dispatch, cb.ctx);
+            const tfFitness = (preparedFitness ?? inferProjectFitnessCommand(resolveWorkingDir())).trim();
+            if (!preparedFitness) cb.dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${tfFitness}` });
             const displayMode = result.mode ?? routeAction;
             cb.dispatch({ type: 'info', message: `Cesar → ${displayMode}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdTForge = resolveWorkingDir();
-            cb.runAsJob('team-forge', label, withThreadOutcome(_cwdTForge, 'team-forge', label, () => handleTeamForge(taskInput, tfFitness.trim(), cb.dispatch, cb.ctx, undefined), cb.ctx));
+            cb.runAsJob('team-forge', label, withThreadOutcome(_cwdTForge, 'team-forge', label, () => handleTeamForge(taskInput, tfFitness, cb.dispatch, cb.ctx, undefined), cb.ctx));
             return true;
           }
           case 'brainstorm': {
@@ -806,7 +808,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
             }, cb.ctx));
             return true;
           }
-          case 'team-forge': { const tf = recoveredFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-forge', 'recovered delegation') }); cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
+          case 'team-forge': { const preparedTf = recoveredFitness ?? await prepareForgeFitnessCommand(recoveredTask, cb.dispatch, cb.ctx); const tf = (preparedTf ?? inferProjectFitnessCommand(resolveWorkingDir())).trim(); cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-forge', 'recovered delegation') }); if (!preparedTf) cb.dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${tf}` }); cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf, cb.dispatch, cb.ctx, undefined)); return true; }
           case 'team-brainstorm': {
             cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-brainstorm', 'recovered delegation') });
             const _cwdRecoverTBs = resolveWorkingDir();
@@ -958,7 +960,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
                 }, cb.ctx));
                 return true;
               }
-              case 'team-forge': { const tf = fallbackFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.dispatch({ type: 'info', message: 'Cesar → team-forge' }); cb.runAsJob('team-forge', label, () => handleTeamForge(fallbackTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
+              case 'team-forge': { const preparedTf = fallbackFitness ?? await prepareForgeFitnessCommand(fallbackTask, cb.dispatch, cb.ctx); const tf = (preparedTf ?? inferProjectFitnessCommand(resolveWorkingDir())).trim(); cb.dispatch({ type: 'info', message: 'Cesar → team-forge' }); if (!preparedTf) cb.dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${tf}` }); cb.runAsJob('team-forge', label, () => handleTeamForge(fallbackTask, tf, cb.dispatch, cb.ctx, undefined)); return true; }
               case 'team-brainstorm': {
                 cb.dispatch({ type: 'info', message: 'Cesar → team-brainstorm' });
                 const _cwdFallbackTBs = resolveWorkingDir();

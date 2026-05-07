@@ -2,7 +2,7 @@
 
 import { join } from 'node:path';
 
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 
 import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, tracker, resolveWorkingDir, loadOrCreateActiveThread } from '@agon/core';
 
@@ -114,7 +114,146 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
   return plan;
 }
 
+/**
+ * Parse Cesar's command-only fitness response. Accepts strict JSON first, then a plain one-line command.
+ */
 // @kern-source: forge:105
+export function extractFitnessCommandFromCesarOutput(output: string): string|null {
+  let text = String(output ?? '').trim();
+  if (!text) return null;
+  text = text
+    .replace(/^```(?:json|bash|sh)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  let candidate: string | null = null;
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed && typeof parsed.fitnessCmd === 'string') candidate = parsed.fitnessCmd;
+      else if (parsed && typeof parsed.command === 'string') candidate = parsed.command;
+    } catch {
+      // Fall back to plain command parsing below.
+    }
+  }
+  if (!candidate) {
+    candidate = text
+      .split(/\r?\n/)
+      .map((line: string) => line.trim())
+      .find((line: string) => line.length > 0 && !/^(```|fitnessCmd\s*:|command\s*:)/i.test(line)) ?? null;
+  }
+  if (!candidate) return null;
+  candidate = candidate.replace(/^`|`$/g, '').trim();
+  candidate = candidate.replace(/^(fitnessCmd|command)\s*:\s*/i, '').trim();
+  if (!candidate || candidate.length > 500 || /[\r\n\0]/.test(candidate)) return null;
+  return candidate;
+}
+
+// @kern-source: forge:139
+function describeProjectFitnessOptions(cwd: string): string {
+  const lines: string[] = [];
+  const packageJsonPath = join(cwd, 'package.json');
+  if (existsSync(packageJsonPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+      const scripts = pkg && typeof pkg === 'object' && pkg.scripts && typeof pkg.scripts === 'object'
+        ? Object.keys(pkg.scripts as Record<string, unknown>).sort()
+        : [];
+      if (scripts.length > 0) lines.push(`package.json scripts: ${scripts.join(', ')}`);
+    } catch {
+      lines.push('package.json exists but could not be parsed');
+    }
+  }
+  if (existsSync(join(cwd, 'Cargo.toml'))) lines.push('Cargo.toml present');
+  if (existsSync(join(cwd, 'go.mod'))) lines.push('go.mod present');
+  if (existsSync(join(cwd, 'pyproject.toml'))) lines.push('pyproject.toml present');
+  if (existsSync(join(cwd, 'README.md'))) lines.push('README.md present');
+  return lines.length > 0 ? lines.join('\n') : 'No common project test metadata found.';
+}
+
+/**
+ * Ask Cesar to prepare a task-specific fitness command when a forge call omitted one. This keeps UX non-interactive without hardcoding task-specific checks in the handler.
+ */
+// @kern-source: forge:161
+export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
+  const config = ctx.config;
+  const cwd = resolveWorkingDir();
+  const cesarEngineId = String((config as any).cesarEngine ?? config.forgeFixedStarter ?? ctx.activeEngines()[0] ?? '').trim();
+  if (!cesarEngineId) return null;
+
+  let engine: any = null;
+  try { engine = ctx.registry.get(cesarEngineId); } catch { return null; }
+  if (!engine) return null;
+
+  const outputDir = join(RUNS_DIR, `fitness-${Date.now()}`);
+  mkdirSync(outputDir, { recursive: true });
+  dispatch({ type: 'info', message: `Cesar preparing fitness check with ${cesarEngineId}…` });
+
+  const prompt = [
+    'Prepare one shell fitness command for a forge run.',
+    '',
+    'Return strict JSON only: {"fitnessCmd":"<command>","reason":"<short reason>"}',
+    '',
+    'Rules:',
+    '- The command must be non-interactive and suitable to run from the repository root.',
+    '- The command should verify the task requirements as specifically as possible.',
+    '- Prefer existing project scripts when they fit; otherwise write a small shell/node/python check.',
+    '- Do not include markdown, prose, or multiple commands outside the JSON string.',
+    '',
+    `Task:\n${task}`,
+    '',
+    `Project signals:\n${describeProjectFitnessOptions(cwd)}`,
+  ].join('\n');
+
+  try {
+    const result = await ctx.adapter.dispatch({
+      engine,
+      prompt,
+      cwd,
+      mode: 'exec' as any,
+      timeout: Math.min((config.timeout ?? 90), 90),
+      outputDir,
+    });
+    const cmd = extractFitnessCommandFromCesarOutput(String(result.stdout ?? ''));
+    if (cmd) {
+      dispatch({ type: 'info', message: `Cesar fitness check: ${cmd}` });
+      return cmd;
+    }
+  } catch (err) {
+    dispatch({ type: 'warning', message: `Cesar could not prepare a fitness check: ${err instanceof Error ? err.message : String(err)}` });
+  }
+  return null;
+}
+
+/**
+ * Pick a non-interactive fallback fitness command from the current project when the user or Cesar did not provide one.
+ */
+// @kern-source: forge:213
+export function inferProjectFitnessCommand(cwd: string): string {
+  const packageJsonPath = join(cwd, 'package.json');
+  if (existsSync(packageJsonPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+      const scripts = pkg && typeof pkg === 'object' && pkg.scripts && typeof pkg.scripts === 'object'
+        ? pkg.scripts as Record<string, unknown>
+        : {};
+      const hasScript = (name: string) => typeof scripts[name] === 'string' && String(scripts[name]).trim().length > 0;
+      if (hasScript('test:ts')) return 'npm run test:ts';
+      if (hasScript('test')) return 'npm test';
+      if (hasScript('typecheck')) return 'npm run typecheck';
+      if (hasScript('build')) return 'npm run build';
+    } catch {
+      // Fall through to generic checks when package.json cannot be parsed.
+    }
+  }
+  if (existsSync(join(cwd, 'Cargo.toml'))) return 'cargo test';
+  if (existsSync(join(cwd, 'go.mod'))) return 'go test ./...';
+  if (existsSync(join(cwd, 'pyproject.toml'))) return 'python -m pytest';
+  return 'git diff --check';
+}
+
+// @kern-source: forge:238
 export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {
@@ -127,12 +266,11 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
 
     let fitness = fitnessCmd;
     if (!fitness) {
-      fitness = await ctx.askQuestion('What command tests this?');
-      fitness = fitness.trim();
-      if (!fitness) {
-        dispatch({ type: 'warning', message: 'Forge needs a test command. Try again with: "fix X, test with npm test"' });
-        return null;
-      }
+      fitness = await prepareForgeFitnessCommand(task, dispatch, ctx);
+    }
+    if (!fitness) {
+      fitness = inferProjectFitnessCommand(resolveWorkingDir());
+      dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${fitness}` });
     }
 
     const engines = ctx.activeEngines();

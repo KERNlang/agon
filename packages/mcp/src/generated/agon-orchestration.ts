@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import { createInterface } from 'node:readline';
 
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 
 // @kern-source: agon-orchestration:15
 export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSchema:Record<string,unknown>}> = ([
@@ -230,13 +230,129 @@ export function writeSignal(tool: string, args: Record<string,unknown>) {
   } catch { /* signal write failed — not critical */ }
 }
 
+// @kern-source: agon-orchestration:237
+function hasSignalTransport(): boolean {
+  return !!(process.env.AGON_SIGNAL_DIR && process.env.AGON_SESSION_ID);
+}
+
+// @kern-source: agon-orchestration:242
+function parseOptionalStringList(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+  return String(value).split(',').map((v) => v.trim()).filter(Boolean);
+}
+
+/**
+ * Translate an external MCP orchestration call into one or more Agon CLI invocations. Used only when the server is running outside an active Agon session.
+ */
+// @kern-source: agon-orchestration:249
+export function buildDirectAgonCommand(tool: string, args: Record<string,unknown>): {commands:string[][],cwd:string,timeoutMs:number} {
+  const cwd = String((args as any).cwd ?? process.env.AGON_CWD ?? process.cwd());
+  const timeoutSec = Number((args as any).timeout ?? 900);
+  const timeoutMs = Math.max(1, timeoutSec) * 1000;
+  const engines = parseOptionalStringList((args as any).engines ?? (args as any).engine);
+  const engineArgs = engines.length > 0 ? ['--engines', engines.join(',')] : [];
+  const commands: string[][] = [];
+
+  if (tool === 'Forge') {
+    const task = String((args as any).task ?? '').trim();
+    const fitness = String((args as any).fitnessCmd ?? (args as any).fitness ?? 'true').trim() || 'true';
+    commands.push(['forge', task, '--test', fitness, ...engineArgs]);
+  } else if (tool === 'Brainstorm') {
+    const question = String((args as any).question ?? '').trim();
+    commands.push(['brainstorm', question, ...engineArgs]);
+  } else if (tool === 'Tribunal') {
+    const question = String((args as any).question ?? '').trim();
+    const rounds = String((args as any).rounds ?? '2');
+    commands.push(['tribunal', question, '--rounds', rounds, ...engineArgs]);
+  } else if (tool === 'Campfire') {
+    const topic = String((args as any).topic ?? '').trim();
+    commands.push(['campfire', topic, ...engineArgs]);
+  } else if (tool === 'Pipeline') {
+    const task = String((args as any).task ?? '').trim();
+    const fitness = String((args as any).fitnessCmd ?? (args as any).fitness ?? 'true').trim() || 'true';
+    commands.push(['brainstorm', task, ...engineArgs]);
+    commands.push(['forge', task, '--test', fitness, ...engineArgs]);
+    commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', '1', ...engineArgs]);
+  } else if (tool === 'Review') {
+    const target = String((args as any).target ?? 'uncommitted').trim();
+    commands.push(['review', target, ...engineArgs]);
+  } else {
+    throw new Error(`Tool ${tool} cannot run directly outside Agon yet`);
+  }
+
+  return { commands, cwd, timeoutMs };
+}
+
+/**
+ * Run Agon workflows directly for external Claude/Codex MCP plugin use. Refuses recursive calls when already inside an Agon-spawned engine.
+ */
+// @kern-source: agon-orchestration:289
+export function runAgonCliDirect(tool: string, args: Record<string,unknown>): string {
+  const depth = Number(process.env.AGON_CALL_DEPTH ?? '0');
+  if (Number.isFinite(depth) && depth > 0) {
+    return JSON.stringify({
+      ok: false,
+      tool,
+      error: 'Refusing recursive Agon call: this MCP server is already running inside an Agon-dispatched engine.',
+    }, null, 2);
+  }
+
+  const direct = buildDirectAgonCommand(tool, args);
+  const nodeScript = process.env.AGON_CLI_NODE_SCRIPT;
+  const command = nodeScript ? process.execPath : (process.env.AGON_CLI_COMMAND || 'agon');
+  const prefixArgs = nodeScript ? [nodeScript] : [];
+  const results: any[] = [];
+
+  for (const cliArgs of direct.commands) {
+    const runArgs = [...prefixArgs, ...cliArgs];
+    const startedAt = Date.now();
+    const result = spawnSync(command, runArgs, {
+      cwd: direct.cwd,
+      timeout: direct.timeoutMs,
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        AGON_CALL_DEPTH: String(depth + 1),
+        AGON_CWD: direct.cwd,
+      },
+      maxBuffer: 1024 * 1024 * 8,
+    });
+    const stdout = String(result.stdout ?? '');
+    const stderr = String(result.stderr ?? '');
+    results.push({
+      command: [command, ...runArgs].join(' '),
+      cwd: direct.cwd,
+      exitCode: result.status,
+      signal: result.signal,
+      timedOut: !!result.error && /timed out/i.test(String(result.error.message ?? result.error)),
+      durationMs: Date.now() - startedAt,
+      stdout: stdout.slice(-12000),
+      stderr: stderr.slice(-4000),
+      error: result.error ? String(result.error.message ?? result.error) : undefined,
+    });
+    if (result.status !== 0 || result.error) break;
+  }
+
+  return JSON.stringify({
+    ok: results.every((r) => r.exitCode === 0 && !r.error),
+    tool,
+    mode: 'direct-cli',
+    results,
+  }, null, 2);
+}
+
 /**
  * Handle an MCP tool call — write signal and return delegation message.
  */
-// @kern-source: agon-orchestration:237
+// @kern-source: agon-orchestration:345
 export function handleToolCall(name: string, args: Record<string,unknown>): string {
   const NON_BREAKING = new Set(['ReportConfidence', 'QuickNero']);
   const BREAK_AND_RESUME = new Set(['Delegate']);
+  const DIRECT_WORKFLOWS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review']);
+  if (!hasSignalTransport() && DIRECT_WORKFLOWS.has(name)) {
+    return runAgonCliDirect(name, args);
+  }
   writeSignal(name, args);
   if (NON_BREAKING.has(name)) {
     if (name === 'QuickNero') {
@@ -250,7 +366,7 @@ export function handleToolCall(name: string, args: Record<string,unknown>): stri
   return 'Delegation accepted. The orchestrator will handle the rest. STOP responding now — do not continue after this tool call.';
 }
 
-// @kern-source: agon-orchestration:261
+// @kern-source: agon-orchestration:373
 function writePermissionRequest(id: string, tool: string, args: Record<string,unknown>): void {
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
@@ -260,7 +376,7 @@ function writePermissionRequest(id: string, tool: string, args: Record<string,un
   writeFileSync(requestPath, JSON.stringify({ type: 'permission-request', id, tool, args, timestamp: Date.now() }));
 }
 
-// @kern-source: agon-orchestration:271
+// @kern-source: agon-orchestration:383
 function writeToolCompletion(id: string, tool: string, args: Record<string,unknown>, status: string, output: string): void {
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
@@ -281,7 +397,7 @@ function writeToolCompletion(id: string, tool: string, args: Record<string,unkno
   } catch { /* completion signal is best-effort */ }
 }
 
-// @kern-source: agon-orchestration:292
+// @kern-source: agon-orchestration:404
 async function pollPermissionResponse(id: string, timeoutMs: number): Promise<{approved:boolean,reason?:string}> {
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
@@ -307,7 +423,7 @@ async function pollPermissionResponse(id: string, timeoutMs: number): Promise<{a
 /**
  * Handle write tool calls with permission — request approval, wait, execute.
  */
-// @kern-source: agon-orchestration:315
+// @kern-source: agon-orchestration:427
 export async function handleWriteToolCall(name: string, args: Record<string,unknown>): Promise<string> {
   const requestId = `pr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const toolMap: Record<string, string> = { AgonBash: 'Bash', AgonEdit: 'Edit', AgonWrite: 'Write' };
@@ -374,7 +490,7 @@ export async function handleWriteToolCall(name: string, args: Record<string,unkn
 /**
  * Start the Agon orchestration MCP server on stdio. Line-delimited JSONRPC 2.0.
  */
-// @kern-source: agon-orchestration:380
+// @kern-source: agon-orchestration:492
 export function startMcpServer() {
   const rl = createInterface({ input: process.stdin, terminal: false });
 

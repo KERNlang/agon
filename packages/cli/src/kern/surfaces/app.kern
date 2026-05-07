@@ -980,6 +980,28 @@ fn name=estimateBottomChromeExtraRows params="mode:string, questionState:any, te
     return extraRows;
   >>>
 
+fn name=summarizeBtwTranscriptEvent params="event:any" returns="string|null" export=false
+  handler <<<
+    if (!event || typeof event !== 'object') return null;
+    switch (event.type) {
+      case 'user-message':
+        return `User: ${String(event.content ?? '').slice(0, 500)}`;
+      case 'engine-block':
+        return `${String(event.engineId ?? 'engine')}: ${String(event.content ?? '').slice(0, 700)}`;
+      case 'info':
+      case 'warning':
+      case 'error':
+      case 'success':
+        return `${event.type}: ${String(event.message ?? '').slice(0, 350)}`;
+      case 'header':
+        return `Section: ${String(event.title ?? '').slice(0, 250)}`;
+      case 'tool-call':
+        return `Tool: ${String(event.tool ?? '').slice(0, 80)} ${String(event.input ?? '').slice(0, 350)}`;
+      default:
+        return null;
+    }
+  >>>
+
 fn name=buildDashboardBlock params="enabledOverride:string[]|null" returns=OutputBlock
   handler <<<
     const registry = createInitialRegistry();
@@ -2530,6 +2552,7 @@ screen name=App target=ink
   state name=slashPickerOpen type=boolean initial=false safe=false
   state name=questionState type=any initial="null"
   state name=questionAnswer type=string initial="''" safe=false
+  state name=btwPanel type="any|null" initial="null"
   state name=enginePickerOpen type=boolean initial=false
   state name=modelPickerOpen type=boolean initial=false
   state name=modelPickerEntries type="any[]" initial="[]"
@@ -2740,9 +2763,10 @@ screen name=App target=ink
       return buildExecutionRailStats(outputBlocks, listFiles(), inputQueue.length);
     >>>
 
-  memo name=overlayReservedRows deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, termHeight"
+  memo name=overlayReservedRows deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, btwPanel, termHeight"
     handler <<<
       if (toolDetailEvent) return toolDetailViewportRows(termHeight) + 5;
+      if (btwPanel) return 9;
       return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent ? 4 : 0;
     >>>
 
@@ -3554,7 +3578,7 @@ screen name=App target=ink
       setInputValue(updatedValue);
     >>>
 
-  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped"
+  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks"
     handler <<<
       inputEpochRef.current += 1;
       let input = cleanSubmitValue(value);
@@ -3613,10 +3637,7 @@ screen name=App target=ink
           runningJobCount: jobManager.running().length,
         });
         if (btwQuestion && activeWorkForBtw) {
-          // Fire side-dispatch — don't interrupt main task
-          dispatch({ type: 'separator' } as any);
-          dispatch({ type: 'user-message', content: `/btw ${btwQuestion}` } as any);
-
+          // Fire side-dispatch into its own panel — don't interrupt main task
           const ctx = buildContext();
           const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
           let engineDef: any;
@@ -3626,9 +3647,6 @@ screen name=App target=ink
             dispatch({ type: 'error', message: `btw: engine ${cesarId} not available` } as any);
             return;
           }
-
-          const color = ENGINE_COLORS[cesarId] ?? 124;
-          dispatch({ type: 'info', message: 'btw\u2026' } as any);
 
           // Build context from streaming output (pick the most recent in-flight stream)
           let streamCtx = '';
@@ -3644,9 +3662,42 @@ screen name=App target=ink
             }
           }
 
-          const prompt = `The user asks while you are working on another task:\n\n${btwQuestion}\n\n${streamCtx ? '--- Recent output from the running task ---\n' + streamCtx + '\n---\n\n' : ''}Answer briefly and concisely. Keep it short.`;
+          const transcriptCtx = outputBlocks
+            .slice(-16)
+            .map((block: any) => summarizeBtwTranscriptEvent(block?.event))
+            .filter(Boolean)
+            .slice(-8)
+            .join('\n');
+          const runningCtx = [
+            `Mode: ${mode}`,
+            `UI state: ${replState}`,
+            activePlanRef.current?.state ? `Plan state: ${activePlanRef.current.state}` : '',
+            jobManager.running().length > 0 ? `Running background jobs: ${jobManager.running().map((job: any) => job.label ?? job.id).join(', ')}` : '',
+          ].filter(Boolean).join('\n');
+          const contextPreview = [streamCtx, transcriptCtx].filter(Boolean).join('\n').slice(-900);
+
+          const prompt = `You are answering a /btw side question while Agon continues another task in the main window.
+
+Side question:
+${btwQuestion}
+
+Current runtime context:
+${runningCtx || '(none)'}
+
+${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n' : ''}${transcriptCtx ? 'Recent transcript context:\n' + transcriptCtx + '\n\n' : ''}Answer the side question directly and briefly. Do not take over, cancel, or modify the main task.`;
 
           const btwOutputDir = join(RUNS_DIR, `btw-${Date.now()}`);
+          const btwId = `btw-${Date.now()}`;
+          setBtwPanel({
+            id: btwId,
+            question: btwQuestion,
+            engineId: cesarId,
+            status: 'running',
+            answer: '',
+            error: '',
+            contextPreview,
+            startedAt: Date.now(),
+          });
           try { mkdirSync(btwOutputDir, { recursive: true }); } catch { /* dir already exists or parent missing */ }
           ctx.adapter.dispatch({
             engine: engineDef,
@@ -3658,12 +3709,12 @@ screen name=App target=ink
           }).then((result: any) => {
             const answer = (result.stdout || '').trim();
             if (answer) {
-              dispatch({ type: 'engine-block', engineId: cesarId, color, content: answer } as any);
+              setBtwPanel((prev: any) => prev?.id === btwId ? { ...prev, status: 'done', answer } : prev);
             } else {
-              dispatch({ type: 'warning', message: 'btw: no response' } as any);
+              setBtwPanel((prev: any) => prev?.id === btwId ? { ...prev, status: 'empty', error: 'No response' } : prev);
             }
           }).catch((err: any) => {
-            dispatch({ type: 'error', message: `btw: ${err instanceof Error ? err.message : String(err)}` } as any);
+            setBtwPanel((prev: any) => prev?.id === btwId ? { ...prev, status: 'error', error: err instanceof Error ? err.message : String(err) } : prev);
           });
           return;
         }
@@ -3987,7 +4038,7 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen"
     handler <<<
       if (isTerminalFocusReport(input)) return;
 
@@ -4010,6 +4061,10 @@ screen name=App target=ink
       } as Record<string, string>;
       const globalCtrlInput = globalCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
       const hasGlobalCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
+      if (btwPanel && (key.escape || input === '\x1b')) {
+        setBtwPanel(null);
+        return;
+      }
       const textInputOwnsReservedShortcut = !statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices);
       if (hasGlobalCtrlSignal && globalCtrlInput === 'e' && !textInputOwnsReservedShortcut) {
         const nested = nestedCtrlShortcutRef.current;
@@ -4277,6 +4332,29 @@ screen name=App target=ink
             plan={(pendingPlanProposal as any).plan}
             markdown={(pendingPlanProposal as any).markdown}
           />
+        )}
+        {btwPanel && (
+          <Box flexDirection="column" borderStyle="round" borderColor="#22d3ee" paddingX={1} marginY={1}>
+            <Box justifyContent="space-between">
+              <Text bold color="#22d3ee">{'BTW'}</Text>
+              <Text dimColor>{btwPanel.status === 'running' ? `${btwPanel.engineId} thinking…` : 'Esc close'}</Text>
+            </Box>
+            <Text dimColor>{btwPanel.question}</Text>
+            {btwPanel.contextPreview && (
+              <Text dimColor>{'Context: '}{String(btwPanel.contextPreview).split('\n').filter((line: string) => line.trim()).slice(-2).join(' / ').slice(0, Math.max(40, termWidth - 16))}</Text>
+            )}
+            {btwPanel.status === 'running' ? (
+              <Text color="#fbbf24">{'Answering in a side channel; main work continues.'}</Text>
+            ) : btwPanel.error ? (
+              <Text color="#ef4444">{btwPanel.error}</Text>
+            ) : (
+              <Box flexDirection="column">
+                {String(btwPanel.answer ?? '').split('\n').slice(0, 8).map((line: string, i: number) => (
+                  <Text key={i}>{line}</Text>
+                ))}
+              </Box>
+            )}
+          </Box>
         )}
         {toolDetailView && (
           <ToolDetailBlock

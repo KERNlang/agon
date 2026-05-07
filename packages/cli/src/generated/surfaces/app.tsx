@@ -754,9 +754,8 @@ export function App() {
   }, [chatSession,config]);
 
   const activeEngines = useCallback(() => {
-    const available = registry.availableIds();
     if (!sessionEngines) return registry.activeIds(config as any);
-    return sessionEngines.filter((id: string) => available.includes(id));
+    return registry.activeIds({ ...(config as any), engineActivationMode: 'explicit', forgeEnabledEngines: sessionEngines } as any);
   }, [registry,sessionEngines,config]);
 
   const setPersistentAutoMode = useCallback((enabled:boolean) => {
@@ -2055,8 +2054,13 @@ export function App() {
             return;
           }
           setSessionEngines(next);
+          const cfg = loadConfig() as any;
+          const hidden = new Set(cfg.hiddenEngines ?? []);
+          if (active) hidden.delete(engineId);
+          else hidden.add(engineId);
           configSet('engineActivationMode' as any, 'explicit' as any);
           configSet('forgeEnabledEngines', next as any);
+          configSet('hiddenEngines', [...hidden] as any);
           setConfigVersion((v: number) => v + 1);
           dispatch({ type: 'success', message: `${active ? 'Activated' : 'Deactivated'} CLI engine: ${engineId}` } as any);
         }}
@@ -2092,9 +2096,13 @@ export function App() {
           writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');
           registry.register(def as any);
           const nextSelected = Array.from(new Set([...(sessionEngines ?? registry.activeIds(config as any)), def.id]));
+          const cfg = loadConfig() as any;
+          const hidden = new Set(cfg.hiddenEngines ?? []);
+          hidden.delete(def.id);
           setSessionEngines(nextSelected);
           configSet('engineActivationMode' as any, 'explicit' as any);
           configSet('forgeEnabledEngines', nextSelected as any);
+          configSet('hiddenEngines', [...hidden] as any);
           setRegistryVersion((v: number) => v + 1);
           setConfigVersion((v: number) => v + 1);
           dispatch({ type: 'success', message: `Added: ${entry.providerName} \u2014 ${entry.modelName}` } as any);
@@ -4764,7 +4772,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4520
+// @kern-source: app:4528
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

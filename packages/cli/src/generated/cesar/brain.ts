@@ -97,9 +97,18 @@ export function shouldRunEagerRepairTool(toolName: string, meta: any, failedTool
 }
 
 /**
- * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
+ * Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet.
  */
 // @kern-source: brain:77
+export function shouldStopAfterXmlToolCall(toolName: string): boolean {
+  const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'ProposePlan']);
+  return HANDOFF_TOOLS.has(String(toolName ?? ''));
+}
+
+/**
+ * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
+ */
+// @kern-source: brain:84
 export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
   const trimmed = input.trim();
   const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
@@ -137,7 +146,7 @@ export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): {
   return { matched: true, prompt };
 }
 
-// @kern-source: brain:116
+// @kern-source: brain:123
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;
@@ -173,7 +182,7 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
   };
 }
 
-// @kern-source: brain:152
+// @kern-source: brain:159
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
     if (!streaming) dispatch({ type: 'spinner-stop' });
@@ -196,7 +205,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...(telemetry ?? {}) };
 }
 
-// @kern-source: brain:175
+// @kern-source: brain:182
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
     if (!streaming) dispatch({ type: 'spinner-stop' });
@@ -216,7 +225,7 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...(telemetry ?? {}) };
 }
 
-// @kern-source: brain:195
+// @kern-source: brain:202
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -1311,7 +1320,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     delete _lastToolInputs[name];
                   }
                 },
-                shouldStopAfterToolCall: (name: string) => name === 'ProposePlan',
+                shouldStopAfterToolCall: shouldStopAfterXmlToolCall,
                 onToolResult: (name: string, result: any) => {
                   const out = result.result.ok ? result.result.content : result.result.error;
                   // Track if a mutation was deferred during investigation

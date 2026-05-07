@@ -220,6 +220,51 @@ export function repairFitnessCommandRepositoryLiteral(command: string, repoLiter
 }
 
 // @kern-source: forge:203
+function taskExplicitlyMentionsLiteral(task: string, literal: string): boolean {
+  const taskLower = String(task ?? '').toLowerCase();
+  const literalLower = String(literal ?? '').toLowerCase();
+  if (!literalLower) return false;
+  if (taskLower.includes(literalLower)) return true;
+  const escaped = literalLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b(?:no|avoid|without|forbid|exclude|do not mention)\\s+${escaped}\\b`, 'i').test(taskLower);
+}
+
+/**
+ * Decide whether a fitness command may assert a GitHub/repository URL. This is semantic intent, not literal echoing: public README/footer/link tasks can check the local git origin; normal local docs tasks should not.
+ */
+// @kern-source: forge:213
+export function taskWantsRepositoryLinkCheck(task: string): boolean {
+  const t = String(task ?? '').toLowerCase();
+  if (/github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+/i.test(t)) return true;
+  return /\b(?:github|repo(?:sitory)?\s+(?:url|link)|project\s+(?:url|link)|source\s+(?:url|link)|footer\s+(?:with|containing|link)|public\s+(?:repo|repository|link|url))\b/i.test(t);
+}
+
+/**
+ * Remove forbidden literals that are local identity facts rather than internal details. Example: avoid KERN compilation must not become forbidden=['KERNlang'] when KERNlang is the GitHub owner.
+ */
+// @kern-source: forge:221
+export function repairOverbroadForbiddenLiterals(task: string, command: string, repoLiteral: string|null): string {
+  const forbidden = extractFitnessStringArray(command, 'forbidden');
+  if (forbidden.length === 0 || !repoLiteral) return command;
+  const parts = repoLiteral.split('/');
+  const protectedLiterals = new Set<string>();
+  if (parts[1]) protectedLiterals.add(parts[1]);
+  if (parts[2]) protectedLiterals.add(parts[2]);
+  protectedLiterals.add(repoLiteral);
+  protectedLiterals.add(`https://${repoLiteral}`);
+
+  const kept = forbidden.filter((f: string) => {
+    const isProtected = [...protectedLiterals].some((p: string) => p.toLowerCase() === f.toLowerCase());
+    if (!isProtected) return true;
+    return taskExplicitlyMentionsLiteral(task, f);
+  });
+  if (kept.length === forbidden.length) return command;
+
+  const serialized = kept.map((v: string) => `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`).join(',');
+  return command.replace(/forbidden\s*=\s*\[[^\]]*\]/, `forbidden=[${serialized}]`);
+}
+
+// @kern-source: forge:244
 function extractFitnessStringArray(command: string, name: string): string[] {
   const re = new RegExp(`${name}\\s*=\\s*\\[([^\\]]*)\\]`);
   const match = String(command ?? '').match(re);
@@ -237,7 +282,7 @@ function extractFitnessStringArray(command: string, name: string): string[] {
 /**
  * Remove forbidden string literals that are required as part of another fitness assertion. Cesar sometimes requires github.com/KERNlang/agon and also forbids KERNlang, making the check impossible.
  */
-// @kern-source: forge:218
+// @kern-source: forge:259
 export function repairContradictoryFitnessLiterals(command: string): string {
   const required = extractFitnessStringArray(command, 'required');
   const forbidden = extractFitnessStringArray(command, 'forbidden');
@@ -257,15 +302,51 @@ export function repairContradictoryFitnessLiterals(command: string): string {
 }
 
 /**
+ * Reject Cesar-generated fitness checks that drift from task intent. Fitness may inspect local files and exact requested literals, but should not add GitHub/repo assertions unless the task semantically asks for a public repo link.
+ */
+// @kern-source: forge:279
+export function validateFitnessCommandIntent(task: string, command: string, repoLiteral: string|null): {ok:boolean,reason?:string} {
+  const cmd = String(command ?? '');
+  if (!cmd.trim()) return { ok: false, reason: 'empty fitness command' };
+
+  const githubLiterals = extractGithubLiterals(cmd);
+  if (githubLiterals.length > 0 && !taskWantsRepositoryLinkCheck(task)) {
+    return { ok: false, reason: `fitness added repository URL check without repo-link intent: ${githubLiterals.join(', ')}` };
+  }
+
+  const required = extractFitnessStringArray(cmd, 'required');
+  const forbidden = extractFitnessStringArray(cmd, 'forbidden');
+  for (const r of required) {
+    const req = r.toLowerCase();
+    for (const f of forbidden) {
+      const forb = f.toLowerCase();
+      if (req.includes(forb) || forb.includes(req)) {
+        return { ok: false, reason: `fitness requires and forbids overlapping literal "${f}"` };
+      }
+    }
+  }
+
+  if (repoLiteral) {
+    const owner = repoLiteral.split('/')[1] ?? '';
+    if (owner) {
+      const overbroad = forbidden.find((f: string) => f.toLowerCase() === owner.toLowerCase() && !taskExplicitlyMentionsLiteral(task, f));
+      if (overbroad) return { ok: false, reason: `fitness forbids local repo identity "${overbroad}" without explicit task intent` };
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
  * Normalize current-repository GitHub literals in a forge task before displaying the plan or sending the prompt to engines.
  */
-// @kern-source: forge:238
+// @kern-source: forge:313
 export function repairForgeTaskRepositoryLiteral(task: string, cwd: string): string {
   const repoLiteral = detectGithubRemoteLiteral(cwd);
   return repairFitnessCommandRepositoryLiteral(task, repoLiteral);
 }
 
-// @kern-source: forge:245
+// @kern-source: forge:320
 function describeProjectFitnessOptions(cwd: string): string {
   const lines: string[] = [];
   const packageJsonPath = join(cwd, 'package.json');
@@ -292,7 +373,7 @@ function describeProjectFitnessOptions(cwd: string): string {
 /**
  * Ask Cesar to prepare a task-specific fitness command when a forge call omitted one. This keeps UX non-interactive without hardcoding task-specific checks in the handler.
  */
-// @kern-source: forge:269
+// @kern-source: forge:344
 export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   const config = ctx.config;
   const cwd = resolveWorkingDir();
@@ -314,9 +395,12 @@ export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatc
     '',
     'Rules:',
     '- The command must be non-interactive and suitable to run from the repository root.',
-    '- The command should verify the task requirements as specifically as possible.',
-    '- For links to this repository, use the git origin shown in Project signals as the source of truth.',
-    '- Preserve other literal strings and URLs from the task exactly. Do not correct or invent spellings.',
+    '- Interpret the task semantically. Do not convert every phrase into a literal grep.',
+    '- The command should verify the task requirements as specifically as possible using local files and local project facts.',
+    '- Do not add GitHub/repository URL checks unless the task explicitly asks for a public repo link, GitHub URL, or footer/source link.',
+    '- If a repo link is needed, use the git origin shown in Project signals as the source of truth.',
+    '- Preserve exact literals only when the task actually requires those literals. Do not correct or invent spellings.',
+    '- Do not turn broad wording like "avoid internal build details" into forbidding local identity names such as the GitHub owner or repo name.',
     '- Prefer existing project scripts when they fit; otherwise write a small shell/node/python check.',
     '- Do not include markdown, prose, or multiple commands outside the JSON string.',
     '',
@@ -339,7 +423,13 @@ export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatc
       const repoLiteral = detectGithubRemoteLiteral(cwd);
       const taskRepaired = repairFitnessCommandTaskLiterals(task, cmd);
       const repoRepaired = repairFitnessCommandRepositoryLiteral(taskRepaired, repoLiteral);
-      const repaired = repairContradictoryFitnessLiterals(repoRepaired);
+      const forbiddenRepaired = repairOverbroadForbiddenLiterals(task, repoRepaired, repoLiteral);
+      const repaired = repairContradictoryFitnessLiterals(forbiddenRepaired);
+      const validation = validateFitnessCommandIntent(task, repaired, repoLiteral);
+      if (!validation.ok) {
+        dispatch({ type: 'warning', message: `Rejected Cesar fitness check: ${validation.reason}` });
+        return null;
+      }
       if (repaired !== cmd) {
         dispatch({ type: 'warning', message: `Repaired Cesar fitness literal: ${cmd} -> ${repaired}` });
       }
@@ -355,7 +445,7 @@ export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatc
 /**
  * Pick a non-interactive fallback fitness command from the current project when the user or Cesar did not provide one.
  */
-// @kern-source: forge:330
+// @kern-source: forge:414
 export function inferProjectFitnessCommand(cwd: string): string {
   const packageJsonPath = join(cwd, 'package.json');
   if (existsSync(packageJsonPath)) {
@@ -379,7 +469,7 @@ export function inferProjectFitnessCommand(cwd: string): string {
   return 'git diff --check';
 }
 
-// @kern-source: forge:355
+// @kern-source: forge:439
 export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {

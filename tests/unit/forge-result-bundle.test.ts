@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe('forge result bundle helpers', () => {
   it('builds a cleanup command with safe quoting', () => {
-    expect(buildForgeCleanupCommand('/repo/root', '/tmp/forge run')).toBe("git -C /repo/root worktree prune && rm -rf '/tmp/forge run'");
+    expect(buildForgeCleanupCommand('/repo/root', '/tmp/forge run')).toBe("for wt in '/tmp/forge run'/wt-* '/tmp/forge run'/synth-worktree; do [ -e \"$wt\" ] && git -C /repo/root worktree remove --force \"$wt\"; done; git -C /repo/root worktree prune; rm -rf '/tmp/forge run'");
   });
 
   it('writes an inspectable result bundle for completed and failed engines', () => {

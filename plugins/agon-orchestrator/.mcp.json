@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "agon": {
+      "command": "node",
+      "args": [
+        "./scripts/agon-mcp.js"
+      ]
+    }
+  }
+}

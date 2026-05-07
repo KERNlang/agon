@@ -219,7 +219,16 @@ export function repairFitnessCommandRepositoryLiteral(command: string, repoLiter
   return repaired;
 }
 
+/**
+ * Normalize current-repository GitHub literals in a forge task before displaying the plan or sending the prompt to engines.
+ */
 // @kern-source: forge:203
+export function repairForgeTaskRepositoryLiteral(task: string, cwd: string): string {
+  const repoLiteral = detectGithubRemoteLiteral(cwd);
+  return repairFitnessCommandRepositoryLiteral(task, repoLiteral);
+}
+
+// @kern-source: forge:210
 function describeProjectFitnessOptions(cwd: string): string {
   const lines: string[] = [];
   const packageJsonPath = join(cwd, 'package.json');
@@ -246,7 +255,7 @@ function describeProjectFitnessOptions(cwd: string): string {
 /**
  * Ask Cesar to prepare a task-specific fitness command when a forge call omitted one. This keeps UX non-interactive without hardcoding task-specific checks in the handler.
  */
-// @kern-source: forge:227
+// @kern-source: forge:234
 export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   const config = ctx.config;
   const cwd = resolveWorkingDir();
@@ -308,7 +317,7 @@ export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatc
 /**
  * Pick a non-interactive fallback fitness command from the current project when the user or Cesar did not provide one.
  */
-// @kern-source: forge:287
+// @kern-source: forge:294
 export function inferProjectFitnessCommand(cwd: string): string {
   const packageJsonPath = join(cwd, 'package.json');
   if (existsSync(packageJsonPath)) {
@@ -332,7 +341,7 @@ export function inferProjectFitnessCommand(cwd: string): string {
   return 'git diff --check';
 }
 
-// @kern-source: forge:312
+// @kern-source: forge:319
 export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {
@@ -341,6 +350,12 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     if (!task) {
       dispatch({ type: 'warning', message: 'No task provided. Usage: "fix the auth bug, test with npm test"' });
       return null;
+    }
+    const forgeCwd = resolveWorkingDir();
+    const originalTask = task;
+    task = repairForgeTaskRepositoryLiteral(task, forgeCwd);
+    if (task !== originalTask) {
+      dispatch({ type: 'warning', message: 'Repaired forge task repository link to match git origin.' });
     }
 
     let fitness = fitnessCmd;
@@ -369,7 +384,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       const ws = getActiveWorkspace();
       const snapshot = ws
         ? snapshotWorkspace(ws)
-        : { id: 'cwd', path: resolveWorkingDir(), headSha: 'unknown', branch: 'unknown', dirty: false };
+        : { id: 'cwd', path: forgeCwd, headSha: 'unknown', branch: 'unknown', dirty: false };
 
       const forgeSteps: PlanStepInput[] = [
         { id: 'baseline', kind: 'fitness', label: 'Baseline fitness check', effects: ['exec'] },
@@ -412,7 +427,6 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     mkdirSync(forgeDir, { recursive: true });
     dispatch({ type: 'info', message: `Forge run dir: ${forgeDir}` });
 
-    const forgeCwd = resolveWorkingDir();
     const projectCtx = scanProjectContext(forgeCwd, config.projectContext || undefined, config.contextFormat);
 
     const engineStatus: Record<string, string> = {};

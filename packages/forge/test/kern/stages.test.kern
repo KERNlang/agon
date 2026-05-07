@@ -9,5 +9,5 @@ test name="Forge stage contracts" target="../../src/kern/stages.kern"
 
   it name="stage orchestration keeps typed public shape"
     expect node=fn name=formatDispatchError prop=returns is=string
-    expect node=fn name=selectForgeFallbackEngine prop=returns is="string|null"
     expect node=fn name=runStage1 prop=returns is="Promise<StageResult>"
+    expect node=fn name=runStage2 prop=returns is="Promise<StageResult>"

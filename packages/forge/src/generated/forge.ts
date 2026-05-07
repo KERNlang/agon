@@ -58,7 +58,7 @@ export function resolveForgeSynthesisTimeout(config: Required<AgonConfig>, taskC
 }
 
 /**
- * Pick the per-engine forge timeout. Explicit user timeout wins. For docs/content tasks, cap long global defaults so a README-style forge cannot sit behind a slow engine for ten minutes.
+ * Pick the per-engine forge timeout. Explicit user timeout wins. Otherwise cap long saved defaults by task class so a stuck engine cannot make normal forge runs feel wedged.
  */
 // @kern-source: forge:46
 export function resolveForgeRunTimeout(config: AgonConfig, explicitTimeout: number|undefined, taskClass: string): number {
@@ -67,14 +67,19 @@ export function resolveForgeRunTimeout(config: AgonConfig, explicitTimeout: numb
 
   const configured = Number((config as any).forgeTimeout ?? 600);
   const base = Number.isFinite(configured) && configured > 0 ? configured : 600;
-  if (taskClass === 'docs') return Math.min(base, 180);
+  if (taskClass === 'docs' || taskClass === 'bugfix' || taskClass === 'refactor' || taskClass === 'test') {
+    return Math.min(base, 120);
+  }
+  if (taskClass === 'feature' || taskClass === 'algorithm') {
+    return Math.min(base, 300);
+  }
   return base;
 }
 
 /**
  * Mark every selected forge engine terminal before persisting a bundle. This keeps aborted, timed-out, or disappearing engines visible instead of leaving the run looking half-open.
  */
-// @kern-source: forge:58
+// @kern-source: forge:63
 export function completeMissingForgeResults(manifest: ForgeManifest, engineIds: string[], reason: string): ForgeManifest {
   for (const id of engineIds) {
     if ((manifest.results as any)[id]) continue;
@@ -99,7 +104,7 @@ export function completeMissingForgeResults(manifest: ForgeManifest, engineIds: 
 /**
  * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
  */
-// @kern-source: forge:81
+// @kern-source: forge:86
 export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: WorktreeEntry[], options: ForgeOptions, repoRootPath: string, baseSha: string, sidechainPath: string, errorMessage?: string): string {
   const cleanupCommand = buildForgeCleanupCommand(repoRootPath, manifest.forgeDir);
   const bundlePath = `${manifest.forgeDir}/result.json`;
@@ -179,7 +184,7 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
   return bundlePath;
 }
 
-// @kern-source: forge:162
+// @kern-source: forge:167
 export async function runForge(options: ForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const loadedConfig = loadConfig(options.cwd);
   const taskClass = classifyTask(options.task);

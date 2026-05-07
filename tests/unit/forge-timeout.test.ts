@@ -34,14 +34,19 @@ describe('forge run timeout selection', () => {
   const config = { forgeTimeout: 600 } as any;
 
   it('caps docs forge dispatches when no explicit timeout is provided', () => {
-    expect(resolveForgeRunTimeout(config, undefined, 'docs')).toBe(180);
+    expect(resolveForgeRunTimeout(config, undefined, 'docs')).toBe(120);
   });
 
   it('honors explicit timeout for docs tasks', () => {
     expect(resolveForgeRunTimeout(config, 420, 'docs')).toBe(420);
   });
 
-  it('keeps configured timeout for non-docs tasks', () => {
-    expect(resolveForgeRunTimeout(config, undefined, 'feature')).toBe(600);
+  it('caps small implementation tasks when no explicit timeout is provided', () => {
+    expect(resolveForgeRunTimeout(config, undefined, 'bugfix')).toBe(120);
+    expect(resolveForgeRunTimeout(config, undefined, 'refactor')).toBe(120);
+  });
+
+  it('caps larger implementation tasks when no explicit timeout is provided', () => {
+    expect(resolveForgeRunTimeout(config, undefined, 'feature')).toBe(300);
   });
 });

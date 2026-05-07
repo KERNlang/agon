@@ -58,9 +58,23 @@ export function resolveForgeSynthesisTimeout(config: Required<AgonConfig>, taskC
 }
 
 /**
- * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
+ * Pick the per-engine forge timeout. Explicit user timeout wins. For docs/content tasks, cap long global defaults so a README-style forge cannot sit behind a slow engine for ten minutes.
  */
 // @kern-source: forge:46
+export function resolveForgeRunTimeout(config: AgonConfig, explicitTimeout: number|undefined, taskClass: string): number {
+  const explicit = Number(explicitTimeout ?? 0);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+
+  const configured = Number((config as any).forgeTimeout ?? 600);
+  const base = Number.isFinite(configured) && configured > 0 ? configured : 600;
+  if (taskClass === 'docs') return Math.min(base, 180);
+  return base;
+}
+
+/**
+ * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
+ */
+// @kern-source: forge:58
 export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: WorktreeEntry[], options: ForgeOptions, repoRootPath: string, baseSha: string, sidechainPath: string, errorMessage?: string): string {
   const cleanupCommand = buildForgeCleanupCommand(repoRootPath, manifest.forgeDir);
   const bundlePath = `${manifest.forgeDir}/result.json`;
@@ -140,12 +154,13 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
   return bundlePath;
 }
 
-// @kern-source: forge:127
+// @kern-source: forge:139
 export async function runForge(options: ForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const loadedConfig = loadConfig(options.cwd);
+  const taskClass = classifyTask(options.task);
   const config = {
     ...loadedConfig,
-    forgeTimeout: options.timeout ?? loadedConfig.forgeTimeout,
+    forgeTimeout: resolveForgeRunTimeout(loadedConfig, options.timeout, taskClass),
     forgeFitnessTimeout: options.fitnessTimeout ?? loadedConfig.forgeFitnessTimeout,
   } as Required<AgonConfig>;
   const forgeId = randomUUID();
@@ -302,7 +317,6 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
   });
 
   // Role specialization — assign roles based on ELO per-task-class
-  const taskClass = classifyTask(options.task);
   const roles = assignForgeRoles(available, taskClass);
   const enginePrompts = new Map<string, string>();
   for (const id of available) {
@@ -542,7 +556,9 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         const losers = [...stage2.engineResults.entries()]
           .filter(([id, r]) => id !== winner && r.pass)
           .map(([id]) => id);
+        let synthesisTimedOut = false;
         const onSynthesisEvent = (event: ForgeEvent) => {
+          if (synthesisTimedOut) return;
           sidechain.log(event.type, event.engineId, event.data ?? {});
           onEvent?.(event);
         };
@@ -572,6 +588,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
           });
           const timeoutPromise = new Promise<never>((_, reject) => {
             synthesisTimer = setTimeout(() => {
+              synthesisTimedOut = true;
               synthesisAbort.abort();
               reject(new Error(`synthesis timed out after ${synthesisTimeout}s`));
             }, synthesisTimeout * 1000);
@@ -591,6 +608,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
             manifest.winner = 'synthesis';
           }
         } catch (synthErr) {
+          synthesisTimedOut = true;
           const synthError = synthErr instanceof Error ? synthErr.message : String(synthErr);
           manifest.synthesis = {
             pass: false,

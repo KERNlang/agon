@@ -185,7 +185,7 @@ export class EngineRegistry {
     return engine.modes?.includes(mode) ?? false;
   }
 
-  agentCapableIds(config?: Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'>): string[] {
+  agentCapableIds(config?: Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'|'hiddenEngines'>): string[] {
     return this.activeEngines(config)
       .filter((e: EngineDefinition) => !!e.agent && !!e.binary && this.findBinary(e) !== null)
       .map((e: EngineDefinition) => e.id);
@@ -199,14 +199,15 @@ export class EngineRegistry {
     return this.availableEngines().map((e: EngineDefinition) => e.id);
   }
 
-  activeEngines(config?: Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'>): EngineDefinition[] {
-    const available = this.availableEngines();
+  activeEngines(config?: Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'|'hiddenEngines'>): EngineDefinition[] {
+    const hidden = new Set(config?.hiddenEngines ?? []);
+    const available = this.availableEngines().filter((e: EngineDefinition) => !hidden.has(e.id));
     if (!config || config.engineActivationMode !== 'explicit') return available;
     const selected = new Set(config.forgeEnabledEngines ?? []);
     return available.filter((e: EngineDefinition) => selected.has(e.id));
   }
 
-  activeIds(config?: Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'>): string[] {
+  activeIds(config?: Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'|'hiddenEngines'>): string[] {
     return this.activeEngines(config).map((e: EngineDefinition) => e.id);
   }
 

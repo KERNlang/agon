@@ -184,6 +184,42 @@ describe('Forge E2E', () => {
     }
   });
 
+  it('persists an initial manifest before dispatch work', async () => {
+    const agonHome = setupTestAgonHome('forge-initial-manifest');
+    const repoDir = createRepo('initial-manifest');
+    const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+    try {
+      vi.resetModules();
+      const { EngineRegistry } = await import('../../packages/core/src/index.js');
+      const { runForge } = await import('../../packages/forge/src/index.js');
+      const registry = new EngineRegistry();
+      registry.register(makeEngine('starter'));
+
+      const manifest = await runForge({
+        task: 'Dry-run manifest probe',
+        fitnessCmd: 'true',
+        cwd: repoDir,
+        forgeDir,
+        engines: ['starter'],
+        starter: 'starter',
+        dryRun: true,
+      }, registry, createDeterministicAdapter());
+
+      const manifestPath = join(forgeDir, 'manifest.json');
+      expect(existsSync(manifestPath)).toBe(true);
+      const saved = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+      expect(saved.forgeId).toBe(manifest.forgeId);
+      expect(saved.engines).toEqual(['starter']);
+      expect(saved.enginesDispatched).toBe(0);
+      expect(saved.dispatchLog).toEqual([]);
+    } finally {
+      cleanupTestAgonHome(agonHome);
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
+
   it('routes API-only forge engines through the tool-using agent loop', async () => {
     const agonHome = setupTestAgonHome('forge-api-agent');
     const repoDir = createRepo('api-agent');

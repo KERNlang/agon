@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall } from '../../packages/cli/src/handlers/cesar-brain.js';
-import { eagerFailedToolNames, shouldRunEagerRepairTool, splitBeforeToolMarkup } from '../../packages/cli/src/generated/cesar/brain.js';
+import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup } from '../../packages/cli/src/generated/cesar/brain.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 
 describe('Cesar Brain', () => {
@@ -47,6 +47,20 @@ describe('Cesar Brain', () => {
       expect(shouldRunEagerRepairTool('Read', { status: 'running', input: { file_path: 'a.ts' } }, failedNames, ['Read'])).toBe(false);
       expect(shouldRunEagerRepairTool('Grep', { status: 'running', input: { pattern: 'x' } }, failedNames, [])).toBe(false);
       expect(shouldRunEagerRepairTool('Read', { status: 'done', input: { file_path: 'a.ts' } }, failedNames, [])).toBe(false);
+    });
+  });
+
+  describe('shouldStopAfterXmlToolCall', () => {
+    it('stops the XML loop for orchestration handoff tools', () => {
+      for (const tool of ['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'ProposePlan']) {
+        expect(shouldStopAfterXmlToolCall(tool)).toBe(true);
+      }
+    });
+
+    it('does not stop for inline workspace tools', () => {
+      for (const tool of ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'ReportConfidence']) {
+        expect(shouldStopAfterXmlToolCall(tool)).toBe(false);
+      }
     });
   });
 

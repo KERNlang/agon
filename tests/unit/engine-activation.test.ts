@@ -17,10 +17,11 @@ function makeEngine(id: string): EngineDefinition {
   };
 }
 
-function makeConfig(overrides: Partial<AgonConfig>): Pick<Required<AgonConfig>, 'engineActivationMode'|'forgeEnabledEngines'> {
+function makeConfig(overrides: Partial<AgonConfig>): Pick<Required<AgonConfig>, 'engineActivationMode'|'forgeEnabledEngines'|'hiddenEngines'> {
   return {
     engineActivationMode: 'auto',
     forgeEnabledEngines: [],
+    hiddenEngines: [],
     ...overrides,
   };
 }
@@ -45,6 +46,25 @@ describe('engine activation', () => {
     expect(registry.activeIds(makeConfig({ engineActivationMode: 'explicit', forgeEnabledEngines: ['api-sonnet'] }))).toEqual([
       'api-sonnet',
     ]);
+  });
+
+  it('removes hidden engines from auto and explicit routing', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('claude'));
+    registry.register(makeEngine('codex'));
+    registry.register(makeEngine('gemini'));
+
+    expect(registry.activeIds(makeConfig({
+      engineActivationMode: 'auto',
+      hiddenEngines: ['codex'],
+    }))).toEqual(['claude', 'gemini']);
+
+    expect(registry.activeIds(makeConfig({
+      engineActivationMode: 'explicit',
+      forgeEnabledEngines: ['claude', 'codex'],
+      hiddenEngines: ['codex'],
+    }))).toEqual(['claude']);
   });
 
   it('restricts fallback candidates to the active engine list', () => {

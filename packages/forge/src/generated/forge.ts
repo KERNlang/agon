@@ -408,6 +408,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       // Dispatch challengers in parallel. The old peek scout path serialized
       // everyone behind the first challenger, which made multi-engine forge
       // look like only one engine was working.
+      const partialStage2Metrics: DispatchMetric[] = [];
       const stage2 = await runStage2({
         challengers: remainingChallengers,
         forgePrompt,
@@ -423,6 +424,14 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         worktrees,
         onEvent,
         signal: forgeSignal,
+        onResult: (id: string, result: any, metric: DispatchMetric) => {
+          manifest.results[id] = result;
+          if (result.patchPath) manifest.patches[id] = result.patchPath;
+          manifest.enginesDispatched = Object.keys(manifest.results).length;
+          if (metric) partialStage2Metrics.push(metric);
+          manifest.dispatchLog = [...allMetrics, ...partialStage2Metrics];
+          try { writeManifest(manifest); } catch { /* best-effort partial write */ }
+        },
       });
 
       manifest.enginesDispatched = stage2.engineResults.size;

@@ -293,7 +293,7 @@ fn name=parseSemanticForgeShortcut params="input:string" returns="Intent|null" e
       .trim();
 
     const parsed = parseForgeInput(task || input);
-    return { ...parsed, type: 'forge' } as Intent;
+    return { ...parsed, type: 'forge', action: 'natural' } as Intent;
   >>>
 
 fn name=parseSemanticDelegationShortcut params="input:string" returns="Intent|null" export=false

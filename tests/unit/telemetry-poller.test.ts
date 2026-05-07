@@ -43,4 +43,41 @@ describe('TelemetryPoller fallback', () => {
     poller.stop();
     await vi.runOnlyPendingTimersAsync();
   });
+
+  it('clears probe timeout timers when probes resolve before timeout', async () => {
+    vi.useFakeTimers();
+    const poller = createTelemetryPoller({
+      registry: makeRegistry(),
+      probe: async (engineId) => ({
+        engineId,
+        state: 'idle' as const,
+        lastHeartbeatAt: Date.now(),
+      }),
+      probeTimeoutMs: 1000,
+    });
+
+    await poller.probeNow();
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not schedule catch-up timers for one-shot probes on a stopped poller', async () => {
+    vi.useFakeTimers();
+    const poller = createTelemetryPoller({
+      registry: makeRegistry(),
+      probe: async (engineId) => ({
+        engineId,
+        state: 'busy' as const,
+        task: 'stale',
+        lastHeartbeatAt: Date.now() - 1000,
+      }),
+      stallThresholdMs: 10,
+      probeTimeoutMs: 1000,
+    });
+
+    await poller.probeNow();
+
+    expect(poller.snapshot().get('mock-a')?.state).toBe('stalled');
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

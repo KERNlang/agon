@@ -986,13 +986,13 @@ fn name=buildDashboardBlock params="enabledOverride:string[]|null" returns=Outpu
     const available = registry.availableIds();
     const config = loadConfig();
     const ratings = getRatings();
-    const defaultEngine = config.forgeFixedStarter ?? available[0] ?? 'none';
+    const enabled = enabledOverride ?? registry.activeIds(config);
+    const defaultEngine = enabled.includes(config.forgeFixedStarter) ? config.forgeFixedStarter : enabled[0] ?? 'none';
     const activeWs = getActiveWorkspace();
     const totalMatches = Object.values(ratings.global).reduce((sum: number, r: any) => sum + r.wins + r.losses, 0);
     const sorted = Object.entries(ratings.global)
       .map(([id, r]: any) => [id, { rating: Math.round(r.mu - 2 * r.phi) }] as const)
       .sort(([, a], [, b]) => b.rating - a.rating);
-    const enabled = enabledOverride ?? available;
     let runCount = 0;
     try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch { /* runs dir missing — first run */ }
 
@@ -2518,7 +2518,7 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
 screen name=App target=ink
   // ── State ──
   state name=replState type="ReplStateState" initial="'idle'"
-  state name=outputBlocks type="OutputBlock[]" initial="() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return [buildDashboardBlock(saved && saved.length > 0 ? saved : null)]; }"
+  state name=outputBlocks type="OutputBlock[]" initial="() => { const cfg = loadConfig(); const saved = cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; return [buildDashboardBlock(saved)]; }"
   state name=inputValue type=string initial="''" safe=false
   state name=inputHistory type="string[]" initial="loadComposerInputHistory()"
   state name=inputQueue type="string[]" initial="[]"
@@ -2549,7 +2549,7 @@ screen name=App target=ink
   state name=jobManager type=any initial="new JobManager()"
   state name=jobList type="Job[]" initial="[]"
   state name=lastUndoToken type="string|null" initial="null"
-  state name=sessionEngines type="string[]|null" initial="() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return saved && saved.length > 0 ? saved : null; }"
+  state name=sessionEngines type="string[]|null" initial="() => { const cfg = loadConfig(); return cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; }"
   state name=currentPlan type="Plan|null" initial="null"
   state name=activePlan type="any" initial="null"
   state name=chatSession type=ChatSession initial="() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } return startChatSession({ cwd, branch }); }"
@@ -2658,8 +2658,9 @@ screen name=App target=ink
     >>>
 
   memo name=availableEngines deps="registry, registryVersion"
-    handler lang="kern"
-      return value="registry.availableIds()"
+    handler <<<
+      return registry.availableIds();
+    >>>
 
   // Memoized loadConfig() — without this, every inline `loadConfig()` call in
   // the render tree runs 3× readFileSync + JSON.parse per keystroke (composer
@@ -2667,8 +2668,9 @@ screen name=App target=ink
   // component trigger a re-read; external configSet() won't, but the render
   // tree doesn't need to reflect those mid-interaction.
   memo name=config deps="configVersion"
-    handler lang="kern"
-      return value="loadConfig()"
+    handler <<<
+      return loadConfig();
+    >>>
 
   memo name=terminalMode deps="config"
     handler <<<
@@ -2676,8 +2678,9 @@ screen name=App target=ink
     >>>
 
   memo name=nativeTranscriptBlocks deps="outputBlocks"
-    handler lang="kern"
-      return value="nativeTranscriptBlocksForStatic(outputBlocks)"
+    handler <<<
+      return nativeTranscriptBlocksForStatic(outputBlocks);
+    >>>
 
   memo name=statusCwd deps="workspacePath"
     handler <<<
@@ -2685,11 +2688,10 @@ screen name=App target=ink
     >>>
 
   memo name=statusBranch deps="workspacePath"
-    handler lang="kern"
-      try
-        return value="currentBranch(workspacePath)"
-        catch name=e
-          return value="''"
+    handler <<<
+      try { return currentBranch(workspacePath); }
+      catch { return ''; }
+    >>>
 
   memo name=statusStats deps="outputBlocks,chatSession,replState,config"
     handler <<<
@@ -2729,12 +2731,14 @@ screen name=App target=ink
     >>>
 
   memo name=latestToolEvent deps="outputBlocks"
-    handler lang="kern"
-      return value="findLatestToolEvent(outputBlocks)"
+    handler <<<
+      return findLatestToolEvent(outputBlocks);
+    >>>
 
   memo name=executionRailStats deps="outputBlocks,fileRailVersion,inputQueue"
-    handler lang="kern"
-      return value="buildExecutionRailStats(outputBlocks, listFiles(), inputQueue.length)"
+    handler <<<
+      return buildExecutionRailStats(outputBlocks, listFiles(), inputQueue.length);
+    >>>
 
   memo name=overlayReservedRows deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, termHeight"
     handler <<<
@@ -2743,12 +2747,14 @@ screen name=App target=ink
     >>>
 
   memo name=bottomChromeReservedRows deps="mode,questionState,termWidth,pendingImages,inputQueue,liveSpinner"
-    handler lang="kern"
-      return value="estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !!liveSpinner)"
+    handler <<<
+      return estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !!liveSpinner);
+    >>>
 
   memo name=overlayActive deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent"
-    handler lang="kern"
-      return value="enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent || !!toolDetailEvent"
+    handler <<<
+      return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent || !!toolDetailEvent;
+    >>>
 
   memo name=toolDetailView deps="toolDetailEvent, termWidth"
     handler <<<
@@ -2766,8 +2772,9 @@ screen name=App target=ink
     >>>
 
   memo name=historyBlocks deps="outputBlocks"
-    handler lang="kern"
-      return value="historyBlocksForTranscript(outputBlocks)"
+    handler <<<
+      return historyBlocksForTranscript(outputBlocks);
+    >>>
 
   memo name=displayBlocks deps="startupOnly,outputBlocks,historyBlocks"
     handler <<<
@@ -2775,10 +2782,10 @@ screen name=App target=ink
     >>>
 
   memo name=livePaneVisible deps="activeStream, liveProgress, liveToolStreams, agentProgress, startupOnly"
-    handler lang="kern"
-      if cond="startupOnly"
-        return value="false"
-      return value="!!activeStream || !!liveProgress || Object.keys(liveToolStreams).length > 0 || Object.keys(agentProgress).length > 0"
+    handler <<<
+      if (startupOnly) return false;
+      return !!activeStream || !!liveProgress || Object.keys(liveToolStreams).length > 0 || Object.keys(agentProgress).length > 0;
+    >>>
 
   memo name=currentVisibleRowBudget deps="termHeight, mode, overlayReservedRows, bottomChromeReservedRows, livePaneVisible, activeStream, liveProgress, liveToolStreams, agentProgress"
     handler <<<
@@ -2790,8 +2797,9 @@ screen name=App target=ink
     >>>
 
   memo name=nativeArchiveTarget deps="nativeTranscriptBlocks,mode,currentVisibleRowBudget,toolOutputExpanded,thinkingExpanded"
-    handler lang="kern"
-      return value="nativeArchiveBlockCount(nativeTranscriptBlocks, mode, currentVisibleRowBudget, toolOutputExpanded, thinkingExpanded)"
+    handler <<<
+      return nativeArchiveBlockCount(nativeTranscriptBlocks, mode, currentVisibleRowBudget, toolOutputExpanded, thinkingExpanded);
+    >>>
 
   memo name=effectiveNativeArchiveCount deps="nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks,toolOutputExpanded"
     handler <<<
@@ -2800,24 +2808,29 @@ screen name=App target=ink
     >>>
 
   memo name=nativeArchiveBlocks deps="nativeTranscriptBlocks,effectiveNativeArchiveCount"
-    handler lang="kern"
-      return value="coalesceToolCallBlocks(nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount))"
+    handler <<<
+      return coalesceToolCallBlocks(nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount));
+    >>>
 
   memo name=nativeLiveBlocks deps="nativeTranscriptBlocks,effectiveNativeArchiveCount"
-    handler lang="kern"
-      return value="nativeTranscriptBlocks.slice(effectiveNativeArchiveCount)"
+    handler <<<
+      return nativeTranscriptBlocks.slice(effectiveNativeArchiveCount);
+    >>>
 
   memo name=displayRows deps="displayBlocks, mode, toolOutputExpanded, thinkingExpanded"
-    handler lang="kern"
-      return value="buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded)"
+    handler <<<
+      return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
+    >>>
 
   memo name=nativeLiveRows deps="nativeLiveBlocks,mode,toolOutputExpanded,thinkingExpanded"
-    handler lang="kern"
-      return value="buildTranscriptRows(nativeLiveBlocks, mode, toolOutputExpanded, thinkingExpanded)"
+    handler <<<
+      return buildTranscriptRows(nativeLiveBlocks, mode, toolOutputExpanded, thinkingExpanded);
+    >>>
 
   memo name=totalDisplayRows deps="displayRows"
-    handler lang="kern"
-      return value="displayRows.length"
+    handler <<<
+      return displayRows.length;
+    >>>
 
   memo name=selectedRowRange deps="mouseSelection"
     handler <<<
@@ -2841,12 +2854,14 @@ screen name=App target=ink
     >>>
 
   memo name=startupFitsViewport deps="startupOnly, totalDisplayRows, currentVisibleRowBudget"
-    handler lang="kern"
-      return value="startupOnly && totalDisplayRows <= currentVisibleRowBudget"
+    handler <<<
+      return startupOnly && totalDisplayRows <= currentVisibleRowBudget;
+    >>>
 
   memo name=startupUseDashboardView deps="startupFitsViewport, termWidth"
-    handler lang="kern"
-      return value="startupFitsViewport && termWidth >= 100"
+    handler <<<
+      return startupFitsViewport && termWidth >= 100;
+    >>>
 
   // ── Load extensions on startup + workspace switch ──
   effect deps="workspacePath"
@@ -3058,10 +3073,10 @@ screen name=App target=ink
       setCesarSession(session);
     >>>
 
-  callback name=activeEngines params="" deps="registry,sessionEngines"
+  callback name=activeEngines params="" deps="registry,sessionEngines,config"
     handler <<<
       const available = registry.availableIds();
-      if (!sessionEngines) return available;
+      if (!sessionEngines) return registry.activeIds(config as any);
       return sessionEngines.filter((id: string) => available.includes(id));
     >>>
 
@@ -3394,7 +3409,7 @@ screen name=App target=ink
     >>>
 
   // ── Telemetry poller lifecycle ──
-  effect deps="registry,cesarSession"
+  effect deps="registry,cesarSession,activeEngines"
     handler <<<
       if (telemetryPollerRef.current) {
         telemetryPollerRef.current.stop();
@@ -3406,6 +3421,7 @@ screen name=App target=ink
         intervalMs: 5000,
         stallThresholdMs: 30000,
         probeTimeoutMs: 2500,
+        activeEngineIds: activeEngines,
         autoFallback: 'auto',
         onAutoFallback: async (from: string, to: string, reason: string) => {
           const activeTurn = activeTurnRef.current;
@@ -4275,10 +4291,10 @@ screen name=App target=ink
         )}
         {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
         {enginePickerOpen && (
-          <EnginePicker available={availableEngines} initialSelected={sessionEngines ?? availableEngines}
+          <EnginePicker available={availableEngines} initialSelected={sessionEngines ?? registry.activeIds(config as any)}
             userEngines={new Set(registry.list().filter((e: any) => e.tier === 'user').map((e: any) => e.id))}
             modelOverrides={(config as any).engineModels ?? {}}
-            onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); setConfigVersion((v: number) => v + 1); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
+            onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('engineActivationMode' as any, 'explicit' as any); configSet('forgeEnabledEngines', selected); setConfigVersion((v: number) => v + 1); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
             onCancel={() => setEnginePickerOpen(false)}
             onRemove={(engineId: string) => {
               const engPath = join(getAgonHome(), 'engines', `${engineId}.json`);
@@ -4304,6 +4320,22 @@ screen name=App target=ink
         )}
         {modelPickerOpen && (
           <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle} cliGroups={modelPickerCliGroups}
+            activeEngineIds={activeEngines()}
+            onToggleCliEngine={(engineId: string, active: boolean) => {
+              const current = sessionEngines ?? registry.activeIds(config as any);
+              const next = active
+                ? Array.from(new Set([...current, engineId]))
+                : current.filter((id: string) => id !== engineId);
+              if (next.length === 0) {
+                dispatch({ type: 'warning', message: 'Keep at least one engine active.' } as any);
+                return;
+              }
+              setSessionEngines(next);
+              configSet('engineActivationMode' as any, 'explicit' as any);
+              configSet('forgeEnabledEngines', next as any);
+              setConfigVersion((v: number) => v + 1);
+              dispatch({ type: 'success', message: `${active ? 'Activated' : 'Deactivated'} CLI engine: ${engineId}` } as any);
+            }}
             onSelect={(entry: any) => {
               if (modelPickerTargetEngine) {
                 const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
@@ -4335,7 +4367,12 @@ screen name=App target=ink
               mkdirSync(dir, { recursive: true });
               writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');
               registry.register(def as any);
+              const nextSelected = Array.from(new Set([...(sessionEngines ?? registry.activeIds(config as any)), def.id]));
+              setSessionEngines(nextSelected);
+              configSet('engineActivationMode' as any, 'explicit' as any);
+              configSet('forgeEnabledEngines', nextSelected as any);
               setRegistryVersion((v: number) => v + 1);
+              setConfigVersion((v: number) => v + 1);
               dispatch({ type: 'success', message: `Added: ${entry.providerName} \u2014 ${entry.modelName}` } as any);
             }}
             onCancel={() => {

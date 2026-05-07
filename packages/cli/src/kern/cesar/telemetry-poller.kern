@@ -32,6 +32,7 @@ interface name=TelemetryPollerOptions export=true
   field name=autoFallback type=FallbackMode optional=true doc="auto=immediately dispatch to best candidate, ask=fire onAutoFallback for consent gate, off=disable"
   field name=onAutoFallback type="(from:string, to:string, reason:string) => Promise<boolean>" optional=true doc="for ask mode: return true to approve fallback"
   field name=taskClass type=string optional=true doc="passed to registry.getFallbackChain for ranking"
+  field name=activeEngineIds type="() => string[]" optional=true doc="Optional active engine selector; fallback candidates are restricted to this list."
 
 // ── The poller service ────────────────────────────────────────────────
 
@@ -47,12 +48,14 @@ service name=TelemetryPoller export=true
   field name=autoFallback type=FallbackMode private=true
   field name=onAutoFallback type="((from:string, to:string, reason:string) => Promise<boolean>)|undefined" private=true
   field name=taskClass type="string|undefined" private=true
+  field name=activeEngineIds type="(() => string[])|undefined" private=true
   field name=vitals type="Map<string, EngineVitals>" private=true
   field name=subscribers type="Set<(snapshot: Map<string, EngineVitals>) => void>" private=true
   field name=stalledIds type="Set<string>" private=true
   field name=timer type="ReturnType<typeof setInterval>|undefined" private=true
   field name=tickInFlight type=boolean private=true
   field name=catchUpTimer type="ReturnType<typeof setTimeout>|undefined" private=true
+  field name=running type=boolean private=true
 
   constructor params="opts:TelemetryPollerOptions"
     handler <<<
@@ -65,18 +68,21 @@ service name=TelemetryPoller export=true
       this.autoFallback = opts.autoFallback ?? 'off';
       this.onAutoFallback = opts.onAutoFallback;
       this.taskClass = opts.taskClass;
+      this.activeEngineIds = opts.activeEngineIds;
       this.vitals = new Map();
       this.subscribers = new Set();
       this.stalledIds = new Set();
       this.timer = undefined;
       this.tickInFlight = false;
       this.catchUpTimer = undefined;
+      this.running = false;
     >>>
 
   method name=start returns=void
     doc "Begin polling. Idempotent — calling start() while already running is a no-op. Fires an immediate tick before scheduling the recurring one so the first snapshot is available without waiting a full interval."
     handler <<<
       if (this.timer) return;
+      this.running = true;
       void this.tick();
       this.timer = setInterval(() => { void this.tick(); }, this.intervalMs);
     >>>
@@ -84,6 +90,7 @@ service name=TelemetryPoller export=true
   method name=stop returns=void
     doc "Halt polling and clear the interval. Vitals map and subscribers are retained — call clear() if you need to wipe them."
     handler <<<
+      this.running = false;
       if (this.timer) {
         clearInterval(this.timer);
         this.timer = undefined;
@@ -100,7 +107,8 @@ service name=TelemetryPoller export=true
       if (this.tickInFlight) return;
       this.tickInFlight = true;
       try {
-        const ids = this.registry.listIds();
+        const activeIds = this.activeEngineIds ? this.activeEngineIds() : this.registry.listIds();
+        const ids = activeIds.length > 0 ? activeIds : [];
         const probes = await Promise.all(
           ids.map(async (id: string) => {
             const prev = this.vitals.get(id) ?? {
@@ -108,17 +116,20 @@ service name=TelemetryPoller export=true
               state: 'idle' as EngineVitalState,
               lastHeartbeatAt: Date.now(),
             };
+            let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
             try {
               const timeout = new Promise<Partial<EngineVitals>>((resolve) => {
-                setTimeout(() => resolve({
+                timeoutHandle = setTimeout(() => resolve({
                   state: prev.state === 'offline' ? 'offline' as EngineVitalState : 'busy' as EngineVitalState,
                   task: `probe timeout > ${this.probeTimeoutMs}ms`,
                   lastHeartbeatAt: prev.lastHeartbeatAt,
                 }), this.probeTimeoutMs);
               });
               const partial = await Promise.race([this.probe(id), timeout]);
+              if (timeoutHandle) clearTimeout(timeoutHandle);
               return { id, partial, ok: true as const };
             } catch (err) {
+              if (timeoutHandle) clearTimeout(timeoutHandle);
               const reason = err instanceof Error ? err.message : String(err);
               const partial: Partial<EngineVitals> = {
                 state: 'offline' as EngineVitalState,
@@ -165,7 +176,7 @@ service name=TelemetryPoller export=true
         this.tickInFlight = false;
         // Schedule catch-up tick if any engine is stalled so we recover faster
         const hasStalled = Array.from(this.vitals.values()).some((v: EngineVitals) => v.state === 'stalled');
-        if (hasStalled && !this.catchUpTimer) {
+        if (this.running && hasStalled && !this.catchUpTimer) {
           this.catchUpTimer = setTimeout(() => {
             this.catchUpTimer = undefined;
             void this.tick();
@@ -210,8 +221,9 @@ service name=TelemetryPoller export=true
 
   method name=isRunning returns=boolean
     doc "Diagnostic: whether start() has been called and stop() hasn't."
-    handler lang="kern"
-      return value="this.timer !== undefined"
+    handler <<<
+      return this.running;
+    >>>
 
   method name=clear returns=void
     doc "Reset all internal state — vitals, stall tracker, subscribers. Does not stop the timer."
@@ -225,7 +237,8 @@ service name=TelemetryPoller export=true
     doc "If autoFallback is enabled, pick best candidate and either dispatch immediately (auto) or ask via onAutoFallback (ask)."
     handler <<<
       if (this.autoFallback === 'off') return;
-      const chain = this.registry.getFallbackChain(engineId, this.taskClass);
+      const candidateIds = this.activeEngineIds ? this.activeEngineIds() : undefined;
+      const chain = this.registry.getFallbackChain(engineId, this.taskClass, candidateIds);
       if (chain.length === 0) return;
       const candidate = chain[0];
       const reason = vitals.task ?? 'stalled';

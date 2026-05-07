@@ -10,7 +10,7 @@
 import from="node:fs" names="writeFileSync,readFileSync,mkdirSync,existsSync,unlinkSync"
 import from="node:path" names="join"
 import from="node:readline" names="createInterface"
-import from="node:child_process" names="execSync"
+import from="node:child_process" names="execSync,spawnSync"
 
 const name=ORCHESTRATION_TOOLS type="Array<{name:string,description:string,inputSchema:Record<string,unknown>}>"
   handler <<<
@@ -234,11 +234,123 @@ fn name=writeSignal params="tool:string, args:Record<string,unknown>"
     } catch { /* signal write failed — not critical */ }
   >>>
 
+fn name=hasSignalTransport returns=boolean export=false
+  handler <<<
+    return !!(process.env.AGON_SIGNAL_DIR && process.env.AGON_SESSION_ID);
+  >>>
+
+fn name=parseOptionalStringList params="value:unknown" returns="string[]" export=false
+  handler <<<
+    if (!value) return [];
+    if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+    return String(value).split(',').map((v) => v.trim()).filter(Boolean);
+  >>>
+
+fn name=buildDirectAgonCommand params="tool:string,args:Record<string,unknown>" returns="{commands:string[][],cwd:string,timeoutMs:number}"
+  doc "Translate an external MCP orchestration call into one or more Agon CLI invocations. Used only when the server is running outside an active Agon session."
+  handler <<<
+    const cwd = String((args as any).cwd ?? process.env.AGON_CWD ?? process.cwd());
+    const timeoutSec = Number((args as any).timeout ?? 900);
+    const timeoutMs = Math.max(1, timeoutSec) * 1000;
+    const engines = parseOptionalStringList((args as any).engines ?? (args as any).engine);
+    const engineArgs = engines.length > 0 ? ['--engines', engines.join(',')] : [];
+    const commands: string[][] = [];
+
+    if (tool === 'Forge') {
+      const task = String((args as any).task ?? '').trim();
+      const fitness = String((args as any).fitnessCmd ?? (args as any).fitness ?? 'true').trim() || 'true';
+      commands.push(['forge', task, '--test', fitness, ...engineArgs]);
+    } else if (tool === 'Brainstorm') {
+      const question = String((args as any).question ?? '').trim();
+      commands.push(['brainstorm', question, ...engineArgs]);
+    } else if (tool === 'Tribunal') {
+      const question = String((args as any).question ?? '').trim();
+      const rounds = String((args as any).rounds ?? '2');
+      commands.push(['tribunal', question, '--rounds', rounds, ...engineArgs]);
+    } else if (tool === 'Campfire') {
+      const topic = String((args as any).topic ?? '').trim();
+      commands.push(['campfire', topic, ...engineArgs]);
+    } else if (tool === 'Pipeline') {
+      const task = String((args as any).task ?? '').trim();
+      const fitness = String((args as any).fitnessCmd ?? (args as any).fitness ?? 'true').trim() || 'true';
+      commands.push(['brainstorm', task, ...engineArgs]);
+      commands.push(['forge', task, '--test', fitness, ...engineArgs]);
+      commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', '1', ...engineArgs]);
+    } else if (tool === 'Review') {
+      const target = String((args as any).target ?? 'uncommitted').trim();
+      commands.push(['review', target, ...engineArgs]);
+    } else {
+      throw new Error(`Tool ${tool} cannot run directly outside Agon yet`);
+    }
+
+    return { commands, cwd, timeoutMs };
+  >>>
+
+fn name=runAgonCliDirect params="tool:string,args:Record<string,unknown>" returns="string"
+  doc "Run Agon workflows directly for external Claude/Codex MCP plugin use. Refuses recursive calls when already inside an Agon-spawned engine."
+  handler <<<
+    const depth = Number(process.env.AGON_CALL_DEPTH ?? '0');
+    if (Number.isFinite(depth) && depth > 0) {
+      return JSON.stringify({
+        ok: false,
+        tool,
+        error: 'Refusing recursive Agon call: this MCP server is already running inside an Agon-dispatched engine.',
+      }, null, 2);
+    }
+
+    const direct = buildDirectAgonCommand(tool, args);
+    const nodeScript = process.env.AGON_CLI_NODE_SCRIPT;
+    const command = nodeScript ? process.execPath : (process.env.AGON_CLI_COMMAND || 'agon');
+    const prefixArgs = nodeScript ? [nodeScript] : [];
+    const results: any[] = [];
+
+    for (const cliArgs of direct.commands) {
+      const runArgs = [...prefixArgs, ...cliArgs];
+      const startedAt = Date.now();
+      const result = spawnSync(command, runArgs, {
+        cwd: direct.cwd,
+        timeout: direct.timeoutMs,
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          AGON_CALL_DEPTH: String(depth + 1),
+          AGON_CWD: direct.cwd,
+        },
+        maxBuffer: 1024 * 1024 * 8,
+      });
+      const stdout = String(result.stdout ?? '');
+      const stderr = String(result.stderr ?? '');
+      results.push({
+        command: [command, ...runArgs].join(' '),
+        cwd: direct.cwd,
+        exitCode: result.status,
+        signal: result.signal,
+        timedOut: !!result.error && /timed out/i.test(String(result.error.message ?? result.error)),
+        durationMs: Date.now() - startedAt,
+        stdout: stdout.slice(-12000),
+        stderr: stderr.slice(-4000),
+        error: result.error ? String(result.error.message ?? result.error) : undefined,
+      });
+      if (result.status !== 0 || result.error) break;
+    }
+
+    return JSON.stringify({
+      ok: results.every((r) => r.exitCode === 0 && !r.error),
+      tool,
+      mode: 'direct-cli',
+      results,
+    }, null, 2);
+  >>>
+
 fn name=handleToolCall params="name:string, args:Record<string,unknown>" returns="string"
   doc "Handle an MCP tool call — write signal and return delegation message."
   handler <<<
     const NON_BREAKING = new Set(['ReportConfidence', 'QuickNero']);
     const BREAK_AND_RESUME = new Set(['Delegate']);
+    const DIRECT_WORKFLOWS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review']);
+    if (!hasSignalTransport() && DIRECT_WORKFLOWS.has(name)) {
+      return runAgonCliDirect(name, args);
+    }
     writeSignal(name, args);
     if (NON_BREAKING.has(name)) {
       if (name === 'QuickNero') {

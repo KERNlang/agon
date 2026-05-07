@@ -31,10 +31,12 @@ export function shellQuoteForForge(value: string): string {
 
 // @kern-source: forge:20
 export function buildForgeCleanupCommand(repoRootPath: string, forgeDir: string): string {
-  return `git -C ${shellQuoteForForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForForge(forgeDir)}`;
+  const repo = shellQuoteForForge(repoRootPath);
+  const dir = shellQuoteForForge(forgeDir);
+  return `for wt in ${dir}/wt-* ${dir}/synth-worktree; do [ -e "$wt" ] && git -C ${repo} worktree remove --force "$wt"; done; git -C ${repo} worktree prune; rm -rf ${dir}`;
 }
 
-// @kern-source: forge:22
+// @kern-source: forge:27
 function collectForgeFilePatterns(manifest: ForgeManifest): string[] {
   const patchTexts: string[] = [];
   for (const patchPath of Object.values(manifest.patches) as string[]) {
@@ -48,7 +50,7 @@ function collectForgeFilePatterns(manifest: ForgeManifest): string[] {
 /**
  * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
  */
-// @kern-source: forge:33
+// @kern-source: forge:38
 export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: WorktreeEntry[], options: ForgeOptions, repoRootPath: string, baseSha: string, sidechainPath: string, errorMessage?: string): string {
   const cleanupCommand = buildForgeCleanupCommand(repoRootPath, manifest.forgeDir);
   const bundlePath = `${manifest.forgeDir}/result.json`;
@@ -128,7 +130,7 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
   return bundlePath;
 }
 
-// @kern-source: forge:114
+// @kern-source: forge:119
 export async function runForge(options: ForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const loadedConfig = loadConfig(options.cwd);
   const config = {
@@ -345,21 +347,12 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         forgeDir,
         onEvent,
       });
-      // Already-satisfied short-circuit: if the fitness command already passes
-      // on a clean checkout, dispatching engines is wasted compute — every
-      // engine will correctly produce a zero-byte patch and forge would
-      // declare "no-winner" against a non-discriminating test. Emit a distinct
-      // status so callers (plan-step orchestrator, /forge) can treat this as
-      // success instead of failure.
+      // A passing baseline is a warning, not a stop condition. Content,
+      // docs, refactor, and "make it better" tasks often use broad fitness
+      // gates that pass before the requested change exists. Forge still must
+      // dispatch engines so the user gets a real competition.
       if (manifest.baselinePasses) {
-        manifest.alreadySatisfied = true;
-        manifest.dispatchLog = [];
-        writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path);
-        writeManifest(manifest);
-        sidechain.log('forge:already-satisfied', undefined, { baselinePasses: true });
-        onEvent?.({ type: 'forge:already-satisfied', data: { baselinePasses: true } });
-        onEvent?.({ type: 'forge:done', data: { alreadySatisfied: true } });
-        return manifest;
+        sidechain.log('forge:baseline-nondiscriminating', undefined, { baselinePasses: true });
       }
     }
 
@@ -417,6 +410,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       // Dispatch challengers in parallel. The old peek scout path serialized
       // everyone behind the first challenger, which made multi-engine forge
       // look like only one engine was working.
+      const partialStage2Metrics: DispatchMetric[] = [];
       const stage2 = await runStage2({
         challengers: remainingChallengers,
         forgePrompt,
@@ -432,6 +426,14 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         worktrees,
         onEvent,
         signal: forgeSignal,
+        onResult: (id: string, result: any, metric: DispatchMetric) => {
+          manifest.results[id] = result;
+          if (result.patchPath) manifest.patches[id] = result.patchPath;
+          manifest.enginesDispatched = Object.keys(manifest.results).length;
+          if (metric) partialStage2Metrics.push(metric);
+          manifest.dispatchLog = [...allMetrics, ...partialStage2Metrics];
+          try { writeManifest(manifest); } catch { /* best-effort partial write */ }
+        },
       });
 
       manifest.enginesDispatched = stage2.engineResults.size;
@@ -455,6 +457,10 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       );
       manifest.winner = winner;
       manifest.closeCall = closeCall;
+      // Persist the winner immediately. Synthesis/gauntlet are optional
+      // refinement phases and must not make a completed competition look
+      // like it still has no winner.
+      try { writeManifest(manifest); } catch { /* best-effort winner checkpoint */ }
 
       // Removed previous "all-no-op → alreadySatisfied" inference. It was
       // unsafe: when forgeRequireBaselineCheck is true and baseline FAILS
@@ -523,36 +529,65 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
 
       const passingCount = [...stage2.engineResults.values()].filter((r) => r.pass).length;
       if (closeCall && config.forgeEnableSynthesis && passingCount >= 2 && winner) {
-        const losers = [...stage2.engineResults.keys()].filter((id) => id !== winner);
+        const losers = [...stage2.engineResults.entries()]
+          .filter(([id, r]) => id !== winner && r.pass)
+          .map(([id]) => id);
 
-        const synthResult = await runSynthesis({
-          manifest,
-          winner,
-          losers,
-          registry,
-          adapter,
-          forgeDir,
-          fitnessCmd: options.fitnessCmd,
-          timeout: config.forgeSynthesisTimeout,
-          fitnessTimeout: config.forgeFitnessTimeout,
-          maxCritiques: config.forgeMaxCritiques,
-          repoRoot: root,
-          headSha: sha,
-          worktrees,
-          onEvent,
-          signal: forgeSignal,
-        });
+        const synthesisAbort = new AbortController();
+        if (forgeSignal.aborted) synthesisAbort.abort();
+        else forgeSignal.addEventListener('abort', () => synthesisAbort.abort(), { once: true });
+        let synthesisTimer: ReturnType<typeof setTimeout> | null = null;
+        try {
+          const synthPromise = runSynthesis({
+            manifest,
+            winner,
+            losers,
+            registry,
+            adapter,
+            forgeDir,
+            fitnessCmd: options.fitnessCmd,
+            timeout: config.forgeSynthesisTimeout,
+            fitnessTimeout: config.forgeFitnessTimeout,
+            maxCritiques: config.forgeMaxCritiques,
+            repoRoot: root,
+            headSha: sha,
+            worktrees,
+            onEvent,
+            signal: synthesisAbort.signal,
+          });
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            synthesisTimer = setTimeout(() => {
+              synthesisAbort.abort();
+              reject(new Error(`synthesis timed out after ${config.forgeSynthesisTimeout}s`));
+            }, config.forgeSynthesisTimeout * 1000);
+          });
+          const synthResult = await Promise.race([synthPromise, timeoutPromise]);
 
-        manifest.synthesis = {
-          pass: synthResult.pass,
-          score: synthResult.score,
-          wins: synthResult.wins,
-          patchPath: synthResult.patchPath,
-          originalWinnerScore: synthResult.originalWinnerScore,
-        };
+          manifest.synthesis = {
+            pass: synthResult.pass,
+            score: synthResult.score,
+            wins: synthResult.wins,
+            patchPath: synthResult.patchPath,
+            originalWinnerScore: synthResult.originalWinnerScore,
+          };
 
-        if (synthResult.wins) {
-          manifest.winner = 'synthesis';
+          if (synthResult.wins) {
+            manifest.winner = 'synthesis';
+          }
+        } catch (synthErr) {
+          const synthError = synthErr instanceof Error ? synthErr.message : String(synthErr);
+          manifest.synthesis = {
+            pass: false,
+            score: 0,
+            wins: false,
+            patchPath: '',
+            originalWinnerScore: manifest.results[winner]?.score ?? 0,
+            error: synthError,
+          } as any;
+          sidechain.log('synthesis:error', winner, { error: synthError, keptWinner: winner });
+          onEvent?.({ type: 'synthesis:done' as any, engineId: winner, data: { wins: false, error: synthError, keptWinner: winner } });
+        } finally {
+          if (synthesisTimer) clearTimeout(synthesisTimer);
         }
       }
     } else {

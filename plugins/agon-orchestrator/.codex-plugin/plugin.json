@@ -1,0 +1,37 @@
+{
+  "name": "agon-orchestrator",
+  "version": "0.1.0",
+  "description": "Expose Agon orchestration modes to Codex through MCP.",
+  "author": {
+    "name": "Agon-AI"
+  },
+  "homepage": "https://github.com/cukas/Agon-AI",
+  "repository": "https://github.com/cukas/Agon-AI",
+  "license": "MIT",
+  "keywords": [
+    "agon",
+    "mcp",
+    "orchestration",
+    "multi-agent"
+  ],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Agon Orchestrator",
+    "shortDescription": "Run Agon forge, brainstorm, tribunal, campfire, pipeline, and review from Codex.",
+    "longDescription": "Connects Codex to an existing Agon-AI checkout so Codex can invoke Agon orchestration workflows through MCP while Agon manages the configured engines.",
+    "developerName": "Agon-AI",
+    "category": "Productivity",
+    "capabilities": [
+      "MCP",
+      "Code",
+      "Orchestration"
+    ],
+    "websiteURL": "https://github.com/cukas/Agon-AI",
+    "defaultPrompt": [
+      "Use Agon forge to have engines compete on this implementation.",
+      "Use Agon brainstorm to compare approaches.",
+      "Use Agon tribunal to stress-test this design."
+    ],
+    "brandColor": "#22D3EE"
+  }
+}

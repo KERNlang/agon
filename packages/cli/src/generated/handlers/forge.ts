@@ -2,7 +2,9 @@
 
 import { join } from 'node:path';
 
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+
+import { execFileSync } from 'node:child_process';
 
 import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, tracker, resolveWorkingDir, loadOrCreateActiveThread } from '@agon/core';
 
@@ -22,7 +24,7 @@ import { createScoreboard, scoreboardStartEngine, scoreboardUpdateProgress, scor
 
 import { buildCheckpoint, recordCheckpoint } from '../cesar/checkpoint.js';
 
-// @kern-source: forge:13
+// @kern-source: forge:14
 function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,string>, dispatch: Dispatch, ctx: HandlerContext): Plan {
   if (ctx.currentPlan?.state === 'cancelled') return plan;
   const id = event.engineId ?? '';
@@ -114,7 +116,232 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
   return plan;
 }
 
-// @kern-source: forge:105
+/**
+ * Parse Cesar's command-only fitness response. Accepts strict JSON first, then a plain one-line command.
+ */
+// @kern-source: forge:106
+export function extractFitnessCommandFromCesarOutput(output: string): string|null {
+  let text = String(output ?? '').trim();
+  if (!text) return null;
+  text = text
+    .replace(/^```(?:json|bash|sh)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  let candidate: string | null = null;
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed && typeof parsed.fitnessCmd === 'string') candidate = parsed.fitnessCmd;
+      else if (parsed && typeof parsed.command === 'string') candidate = parsed.command;
+    } catch {
+      // Fall back to plain command parsing below.
+    }
+  }
+  if (!candidate) {
+    candidate = text
+      .split(/\r?\n/)
+      .map((line: string) => line.trim())
+      .find((line: string) => line.length > 0 && !/^(```|fitnessCmd\s*:|command\s*:)/i.test(line)) ?? null;
+  }
+  if (!candidate) return null;
+  candidate = candidate.replace(/^`|`$/g, '').trim();
+  candidate = candidate.replace(/^(fitnessCmd|command)\s*:\s*/i, '').trim();
+  if (!candidate || candidate.length > 500 || /[\r\n\0]/.test(candidate)) return null;
+  return candidate;
+}
+
+// @kern-source: forge:140
+function extractGithubLiterals(text: string): string[] {
+  const matches = String(text ?? '').match(/(?:https?:\/\/)?github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/g) ?? [];
+  return [...new Set(matches.map((m: string) => m.replace(/^https?:\/\//, '').replace(/[).,;:'"`\]]+$/g, '')))];
+}
+
+/**
+ * Keep literal GitHub repo URLs in Cesar-generated fitness commands aligned with the user's task. Prevents small hallucinated typos from making all engines optimize for the wrong marker.
+ */
+// @kern-source: forge:146
+export function repairFitnessCommandTaskLiterals(task: string, command: string): string {
+  const taskUrls = extractGithubLiterals(task);
+  if (taskUrls.length === 0) return command;
+  const taskUrlSet = new Set(taskUrls);
+  let repaired = command;
+  for (const cmdUrl of extractGithubLiterals(command)) {
+    if (taskUrlSet.has(cmdUrl)) continue;
+    const cmdParts = cmdUrl.split('/');
+    const replacement = taskUrls.length === 1
+      ? taskUrls[0]
+      : taskUrls.find((url: string) => {
+          const parts = url.split('/');
+          return parts[2]?.toLowerCase() === cmdParts[2]?.toLowerCase();
+        });
+    if (replacement) {
+      repaired = repaired.split(cmdUrl).join(replacement);
+    }
+  }
+  return repaired;
+}
+
+// @kern-source: forge:169
+export function normalizeGithubRemoteLiteral(remote: string): string|null {
+  const raw = String(remote ?? '').trim();
+  if (!raw) return null;
+  const cleaned = raw.replace(/\.git$/, '');
+  const ssh = cleaned.match(/^git@github\.com:([^/]+)\/(.+)$/);
+  if (ssh) return `github.com/${ssh[1]}/${ssh[2]}`;
+  const https = cleaned.match(/^https?:\/\/github\.com\/([^/]+)\/(.+)$/);
+  if (https) return `github.com/${https[1]}/${https[2]}`;
+  return null;
+}
+
+// @kern-source: forge:181
+function detectGithubRemoteLiteral(cwd: string): string|null {
+  try {
+    const remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+    return normalizeGithubRemoteLiteral(remote);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * For current-repository README/docs checks, prefer the actual git origin over stale chat examples or old repo names.
+ */
+// @kern-source: forge:191
+export function repairFitnessCommandRepositoryLiteral(command: string, repoLiteral: string|null): string {
+  if (!repoLiteral) return command;
+  let repaired = command;
+  for (const cmdUrl of extractGithubLiterals(command)) {
+    if (cmdUrl === repoLiteral) continue;
+    repaired = repaired.split(cmdUrl).join(repoLiteral);
+  }
+  return repaired;
+}
+
+/**
+ * Normalize current-repository GitHub literals in a forge task before displaying the plan or sending the prompt to engines.
+ */
+// @kern-source: forge:203
+export function repairForgeTaskRepositoryLiteral(task: string, cwd: string): string {
+  const repoLiteral = detectGithubRemoteLiteral(cwd);
+  return repairFitnessCommandRepositoryLiteral(task, repoLiteral);
+}
+
+// @kern-source: forge:210
+function describeProjectFitnessOptions(cwd: string): string {
+  const lines: string[] = [];
+  const packageJsonPath = join(cwd, 'package.json');
+  if (existsSync(packageJsonPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+      const scripts = pkg && typeof pkg === 'object' && pkg.scripts && typeof pkg.scripts === 'object'
+        ? Object.keys(pkg.scripts as Record<string, unknown>).sort()
+        : [];
+      if (scripts.length > 0) lines.push(`package.json scripts: ${scripts.join(', ')}`);
+    } catch {
+      lines.push('package.json exists but could not be parsed');
+    }
+  }
+  if (existsSync(join(cwd, 'Cargo.toml'))) lines.push('Cargo.toml present');
+  if (existsSync(join(cwd, 'go.mod'))) lines.push('go.mod present');
+  if (existsSync(join(cwd, 'pyproject.toml'))) lines.push('pyproject.toml present');
+  if (existsSync(join(cwd, 'README.md'))) lines.push('README.md present');
+  const repoLiteral = detectGithubRemoteLiteral(cwd);
+  if (repoLiteral) lines.push(`git origin: ${repoLiteral}`);
+  return lines.length > 0 ? lines.join('\n') : 'No common project test metadata found.';
+}
+
+/**
+ * Ask Cesar to prepare a task-specific fitness command when a forge call omitted one. This keeps UX non-interactive without hardcoding task-specific checks in the handler.
+ */
+// @kern-source: forge:234
+export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
+  const config = ctx.config;
+  const cwd = resolveWorkingDir();
+  const cesarEngineId = String((config as any).cesarEngine ?? config.forgeFixedStarter ?? ctx.activeEngines()[0] ?? '').trim();
+  if (!cesarEngineId) return null;
+
+  let engine: any = null;
+  try { engine = ctx.registry.get(cesarEngineId); } catch { return null; }
+  if (!engine) return null;
+
+  const outputDir = join(RUNS_DIR, `fitness-${Date.now()}`);
+  mkdirSync(outputDir, { recursive: true });
+  dispatch({ type: 'info', message: `Cesar preparing fitness check with ${cesarEngineId}…` });
+
+  const prompt = [
+    'Prepare one shell fitness command for a forge run.',
+    '',
+    'Return strict JSON only: {"fitnessCmd":"<command>","reason":"<short reason>"}',
+    '',
+    'Rules:',
+    '- The command must be non-interactive and suitable to run from the repository root.',
+    '- The command should verify the task requirements as specifically as possible.',
+    '- For links to this repository, use the git origin shown in Project signals as the source of truth.',
+    '- Preserve other literal strings and URLs from the task exactly. Do not correct or invent spellings.',
+    '- Prefer existing project scripts when they fit; otherwise write a small shell/node/python check.',
+    '- Do not include markdown, prose, or multiple commands outside the JSON string.',
+    '',
+    `Task:\n${task}`,
+    '',
+    `Project signals:\n${describeProjectFitnessOptions(cwd)}`,
+  ].join('\n');
+
+  try {
+    const result = await ctx.adapter.dispatch({
+      engine,
+      prompt,
+      cwd,
+      mode: 'exec' as any,
+      timeout: Math.min((config.timeout ?? 90), 90),
+      outputDir,
+    });
+    const cmd = extractFitnessCommandFromCesarOutput(String(result.stdout ?? ''));
+    if (cmd) {
+      const repoLiteral = detectGithubRemoteLiteral(cwd);
+      const taskRepaired = repairFitnessCommandTaskLiterals(task, cmd);
+      const repaired = repairFitnessCommandRepositoryLiteral(taskRepaired, repoLiteral);
+      if (repaired !== cmd) {
+        dispatch({ type: 'warning', message: `Repaired Cesar fitness literal: ${cmd} -> ${repaired}` });
+      }
+      dispatch({ type: 'info', message: `Cesar fitness check: ${repaired}` });
+      return repaired;
+    }
+  } catch (err) {
+    dispatch({ type: 'warning', message: `Cesar could not prepare a fitness check: ${err instanceof Error ? err.message : String(err)}` });
+  }
+  return null;
+}
+
+/**
+ * Pick a non-interactive fallback fitness command from the current project when the user or Cesar did not provide one.
+ */
+// @kern-source: forge:294
+export function inferProjectFitnessCommand(cwd: string): string {
+  const packageJsonPath = join(cwd, 'package.json');
+  if (existsSync(packageJsonPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+      const scripts = pkg && typeof pkg === 'object' && pkg.scripts && typeof pkg.scripts === 'object'
+        ? pkg.scripts as Record<string, unknown>
+        : {};
+      const hasScript = (name: string) => typeof scripts[name] === 'string' && String(scripts[name]).trim().length > 0;
+      if (hasScript('test:ts')) return 'npm run test:ts';
+      if (hasScript('test')) return 'npm test';
+      if (hasScript('typecheck')) return 'npm run typecheck';
+      if (hasScript('build')) return 'npm run build';
+    } catch {
+      // Fall through to generic checks when package.json cannot be parsed.
+    }
+  }
+  if (existsSync(join(cwd, 'Cargo.toml'))) return 'cargo test';
+  if (existsSync(join(cwd, 'go.mod'))) return 'go test ./...';
+  if (existsSync(join(cwd, 'pyproject.toml'))) return 'python -m pytest';
+  return 'git diff --check';
+}
+
+// @kern-source: forge:319
 export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {
@@ -124,15 +351,20 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       dispatch({ type: 'warning', message: 'No task provided. Usage: "fix the auth bug, test with npm test"' });
       return null;
     }
+    const forgeCwd = resolveWorkingDir();
+    const originalTask = task;
+    task = repairForgeTaskRepositoryLiteral(task, forgeCwd);
+    if (task !== originalTask) {
+      dispatch({ type: 'warning', message: 'Repaired forge task repository link to match git origin.' });
+    }
 
     let fitness = fitnessCmd;
     if (!fitness) {
-      fitness = await ctx.askQuestion('What command tests this?');
-      fitness = fitness.trim();
-      if (!fitness) {
-        dispatch({ type: 'warning', message: 'Forge needs a test command. Try again with: "fix X, test with npm test"' });
-        return null;
-      }
+      fitness = await prepareForgeFitnessCommand(task, dispatch, ctx);
+    }
+    if (!fitness) {
+      fitness = inferProjectFitnessCommand(resolveWorkingDir());
+      dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${fitness}` });
     }
 
     const engines = ctx.activeEngines();
@@ -152,7 +384,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       const ws = getActiveWorkspace();
       const snapshot = ws
         ? snapshotWorkspace(ws)
-        : { id: 'cwd', path: resolveWorkingDir(), headSha: 'unknown', branch: 'unknown', dirty: false };
+        : { id: 'cwd', path: forgeCwd, headSha: 'unknown', branch: 'unknown', dirty: false };
 
       const forgeSteps: PlanStepInput[] = [
         { id: 'baseline', kind: 'fitness', label: 'Baseline fitness check', effects: ['exec'] },
@@ -195,7 +427,6 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     mkdirSync(forgeDir, { recursive: true });
     dispatch({ type: 'info', message: `Forge run dir: ${forgeDir}` });
 
-    const forgeCwd = resolveWorkingDir();
     const projectCtx = scanProjectContext(forgeCwd, config.projectContext || undefined, config.contextFormat);
 
     const engineStatus: Record<string, string> = {};

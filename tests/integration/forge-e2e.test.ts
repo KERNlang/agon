@@ -93,6 +93,10 @@ function createDeterministicAdapter(): EngineAdapter {
   };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 describe('Forge E2E', () => {
   it('links dependencies into external worktrees while preserving workspace packages', async () => {
     const repoDir = createRepo('worktree-node-modules');
@@ -214,6 +218,111 @@ describe('Forge E2E', () => {
       expect(saved.enginesDispatched).toBe(0);
       expect(saved.dispatchLog).toEqual([]);
     } finally {
+      cleanupTestAgonHome(agonHome);
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
+
+  it('still dispatches engines when the baseline fitness already passes', async () => {
+    const agonHome = setupTestAgonHome('forge-baseline-pass-dispatch');
+    const repoDir = createRepo('baseline-pass-dispatch');
+    const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const fakeNpx = createFakeNpx();
+
+    writeFileSync(join(repoDir, '.agon.json'), JSON.stringify({
+      forgeAutoAcceptScore: 101,
+      forgeEnableSynthesis: false,
+      forgeRequireBaselineCheck: true,
+      ratingsEnabled: false,
+    }, null, 2) + '\n');
+
+    try {
+      vi.resetModules();
+      const { EngineRegistry } = await import('../../packages/core/src/index.js');
+      const { runForge } = await import('../../packages/forge/src/index.js');
+      const registry = new EngineRegistry();
+      registry.register(makeEngine('loser'));
+      registry.register(makeEngine('winner'));
+
+      const manifest = await runForge({
+        task: 'Improve generated output even though the broad fitness already passes',
+        fitnessCmd: 'true',
+        cwd: repoDir,
+        forgeDir,
+        engines: ['loser', 'winner'],
+        starter: 'loser',
+      }, registry, createDeterministicAdapter());
+
+      expect(manifest.baselinePasses).toBe(true);
+      expect(manifest.alreadySatisfied).not.toBe(true);
+      expect(manifest.enginesDispatched).toBeGreaterThan(0);
+      expect(Object.keys(manifest.results).length).toBeGreaterThan(0);
+      const saved = JSON.parse(readFileSync(join(forgeDir, 'manifest.json'), 'utf-8'));
+      expect(saved.baselinePasses).toBe(true);
+      expect(saved.enginesDispatched).toBeGreaterThan(0);
+    } finally {
+      process.env.PATH = fakeNpx.originalPath;
+      rmSync(fakeNpx.binDir, { recursive: true, force: true });
+      cleanupTestAgonHome(agonHome);
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists completed stage2 engine results while slower engines are still running', async () => {
+    const agonHome = setupTestAgonHome('forge-partial-stage2-manifest');
+    const repoDir = createRepo('partial-stage2-manifest');
+    const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const fakeNpx = createFakeNpx();
+    let releaseSlow!: () => void;
+    const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve; });
+
+    try {
+      vi.resetModules();
+      const { EngineRegistry } = await import('../../packages/core/src/index.js');
+      const { runForge } = await import('../../packages/forge/src/index.js');
+      const registry = new EngineRegistry();
+      registry.register(makeEngine('fast'));
+      registry.register(makeEngine('slow'));
+      const adapter: EngineAdapter = {
+        dispatch: async (options: DispatchOptions): Promise<DispatchResult> => {
+          if (options.engine.id === 'slow') await slowGate;
+          writeFileSync(join(options.cwd, 'generated.ts'), `export const engine = "${options.engine.id}";\n`);
+          return { exitCode: 0, stdout: `${options.engine.id} done`, stderr: '', durationMs: 1, timedOut: false };
+        },
+        isAvailable: async () => true,
+        getVersion: async () => 'test',
+      };
+
+      const forgePromise = runForge({
+        task: 'write generated file',
+        fitnessCmd: 'test -f generated.ts',
+        cwd: repoDir,
+        forgeDir,
+        engines: ['fast', 'slow'],
+      }, registry, adapter);
+
+      let partial: any = null;
+      for (let i = 0; i < 40; i++) {
+        if (existsSync(join(forgeDir, 'manifest.json'))) {
+          partial = JSON.parse(readFileSync(join(forgeDir, 'manifest.json'), 'utf-8'));
+          if (partial.results?.fast) break;
+        }
+        await sleep(50);
+      }
+
+      expect(partial?.results?.fast?.pass).toBe(true);
+      expect(partial?.enginesDispatched).toBeGreaterThanOrEqual(1);
+
+      releaseSlow();
+      const manifest = await forgePromise;
+      expect(manifest.results.fast.pass).toBe(true);
+      expect(manifest.results.slow.pass).toBe(true);
+    } finally {
+      releaseSlow?.();
+      process.env.PATH = fakeNpx.originalPath;
+      rmSync(fakeNpx.binDir, { recursive: true, force: true });
       cleanupTestAgonHome(agonHome);
       rmSync(repoDir, { recursive: true, force: true });
       rmSync(forgeDir, { recursive: true, force: true });

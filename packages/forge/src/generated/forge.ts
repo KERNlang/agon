@@ -67,8 +67,11 @@ export function resolveForgeRunTimeout(config: AgonConfig, explicitTimeout: numb
 
   const configured = Number((config as any).forgeTimeout ?? 600);
   const base = Number.isFinite(configured) && configured > 0 ? configured : 600;
-  if (taskClass === 'docs' || taskClass === 'bugfix' || taskClass === 'refactor' || taskClass === 'test') {
+  if (taskClass === 'docs') {
     return Math.min(base, 120);
+  }
+  if (taskClass === 'bugfix' || taskClass === 'refactor' || taskClass === 'test') {
+    return Math.min(base, 180);
   }
   if (taskClass === 'feature' || taskClass === 'algorithm') {
     return Math.min(base, 300);
@@ -79,7 +82,7 @@ export function resolveForgeRunTimeout(config: AgonConfig, explicitTimeout: numb
 /**
  * Mark every selected forge engine terminal before persisting a bundle. This keeps aborted, timed-out, or disappearing engines visible instead of leaving the run looking half-open.
  */
-// @kern-source: forge:63
+// @kern-source: forge:66
 export function completeMissingForgeResults(manifest: ForgeManifest, engineIds: string[], reason: string): ForgeManifest {
   for (const id of engineIds) {
     if ((manifest.results as any)[id]) continue;
@@ -104,7 +107,7 @@ export function completeMissingForgeResults(manifest: ForgeManifest, engineIds: 
 /**
  * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
  */
-// @kern-source: forge:86
+// @kern-source: forge:89
 export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: WorktreeEntry[], options: ForgeOptions, repoRootPath: string, baseSha: string, sidechainPath: string, errorMessage?: string): string {
   const cleanupCommand = buildForgeCleanupCommand(repoRootPath, manifest.forgeDir);
   const bundlePath = `${manifest.forgeDir}/result.json`;
@@ -184,7 +187,7 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
   return bundlePath;
 }
 
-// @kern-source: forge:167
+// @kern-source: forge:170
 export async function runForge(options: ForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const loadedConfig = loadConfig(options.cwd);
   const taskClass = classifyTask(options.task);

@@ -2,7 +2,7 @@ import { defineCommand } from 'citty';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync } from 'node:fs';
-import { EngineRegistry, ensureAgonHome, RUNS_DIR } from '@agon/core';
+import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
 import type { BrainstormBid } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runBrainstorm } from '@agon/forge';
@@ -33,6 +33,7 @@ export const brainstormCommand = defineCommand({
   },
   async run({ args }) {
     ensureAgonHome();
+    const config = loadConfig(process.cwd());
 
     const registry = new EngineRegistry();
     registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../engines'));
@@ -40,7 +41,7 @@ export const brainstormCommand = defineCommand({
     const adapter = createCliAdapter(registry);
     const available = args.engines
       ? args.engines.split(',').map((s) => s.trim())
-      : registry.availableIds();
+      : registry.activeIds(config);
 
     const outputDir = join(RUNS_DIR, `brainstorm-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });

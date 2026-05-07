@@ -12,7 +12,7 @@ const name=modelsCommand type="any"
       },
       subCommands: {
         list: defineCommand({
-          meta: { name: 'list', description: 'List engine model mappings' },
+          meta: { name: 'list', description: 'List engine model mappings and activation mode' },
           async run(ctx) {
             const config = loadConfig();
             const mappings = config.engineModels || {};
@@ -23,6 +23,47 @@ const name=modelsCommand type="any"
             } else {
               table(['Engine', 'Model'], rows);
             }
+            console.log('');
+            header('Engine Activation');
+            console.log(`  Mode: ${(config as any).engineActivationMode ?? 'auto'}`);
+            console.log(`  Active list: ${(config.forgeEnabledEngines ?? []).join(', ') || '(none)'}`);
+          },
+        }),
+        enable: defineCommand({
+          meta: { name: 'enable', description: 'Activate an engine for routing/fallback' },
+          args: {
+            engine: { type: 'positional', required: true, description: 'Engine ID' },
+          },
+          async run(ctx) {
+            const engine = String(ctx.args.engine).trim();
+            if (!engine) return;
+            const config = loadConfig();
+            const next = Array.from(new Set([...(config.forgeEnabledEngines ?? []), engine]));
+            configSet('engineActivationMode' as any, 'explicit' as any);
+            configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
+            success(`Activated ${engine}`);
+          },
+        }),
+        disable: defineCommand({
+          meta: { name: 'disable', description: 'Deactivate an engine for routing/fallback' },
+          args: {
+            engine: { type: 'positional', required: true, description: 'Engine ID' },
+          },
+          async run(ctx) {
+            const engine = String(ctx.args.engine).trim();
+            if (!engine) return;
+            const config = loadConfig();
+            const next = (config.forgeEnabledEngines ?? []).filter((id: string) => id !== engine);
+            configSet('engineActivationMode' as any, 'explicit' as any);
+            configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
+            success(`Deactivated ${engine}`);
+          },
+        }),
+        auto: defineCommand({
+          meta: { name: 'auto', description: 'Use every available engine automatically' },
+          async run(ctx) {
+            configSet('engineActivationMode' as any, 'auto' as any);
+            success('Engine activation mode set to auto');
           },
         }),
         set: defineCommand({
@@ -57,4 +98,3 @@ const name=modelsCommand type="any"
       },
     })
   >>>
-

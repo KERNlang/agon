@@ -14,6 +14,7 @@ interface name=TelemetryServiceOptions export=true
   field name=getProgressEngines type="(() => Array<{id:string,status?:string,elapsed?:number}>)|undefined" optional=true
   field name=getScoreboard type="(() => {engineIds:string[],title?:string}|null|undefined)|undefined" optional=true
   field name=getActiveEnginePids type="(() => Map<string,number>)|undefined" optional=true
+  field name=getActiveEngineIds type="(() => string[])|undefined" optional=true
   field name=isPaused type="(() => boolean)|undefined" optional=true
   field name=sampleIntervalMs type=number optional=true
   field name=stallThresholdMs type=number optional=true
@@ -326,7 +327,7 @@ service name=TelemetryService export=true singleton=true
   method name=pickFallbackCandidate params="engineId:string" returns="string|undefined" private=true
     handler <<<
       try {
-        const chain = this.opts.registry.getFallbackChain(engineId, 'telemetry');
+        const chain = this.opts.registry.getFallbackChain(engineId, 'telemetry', this.opts.getActiveEngineIds?.());
         if (Array.isArray(chain) && chain.length > 0) {
           const candidate = String(chain[0] ?? '').trim();
           return candidate || undefined;
@@ -455,7 +456,4 @@ service name=TelemetryService export=true singleton=true
       return Number(totalmem()) || 1;
     >>>
 
-fn name=createTelemetryService params="opts:TelemetryServiceOptions" returns=TelemetryService export=true
-  handler <<<
-    return new TelemetryService(opts);
-  >>>
+fn name=createTelemetryService params="opts:TelemetryServiceOptions" returns=TelemetryService export=true expr={{ return new TelemetryService(opts); }}

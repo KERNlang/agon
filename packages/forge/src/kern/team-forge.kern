@@ -496,7 +496,7 @@ fn name=runTeamForge async=true params="options:TeamForgeOptions, registry:Engin
       outputDir: forgeDir,
     });
 
-    const enabledEngines = options.engines ?? config.forgeEnabledEngines;
+    const enabledEngines = options.engines ?? registry.activeIds(config as any);
     const available = enabledEngines.filter((id: string) => {
       try {
         const engine = registry.get(id);

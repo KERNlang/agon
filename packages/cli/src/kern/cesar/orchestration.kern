@@ -10,7 +10,7 @@ fn name=routeViaCesar params="input:string, dispatch:Dispatch, ctx:HandlerContex
   handler <<<
     const config = ctx.config;
     const engines = ctx.activeEngines();
-    const agentIds = ctx.registry.agentCapableIds();
+    const agentIds = ctx.registry.agentCapableIds(config as any);
 
     // ── Fast-path: single engine → skip scouts entirely ──
     if (engines.length <= 1) {
@@ -45,7 +45,8 @@ fn name=routeViaCesar params="input:string, dispatch:Dispatch, ctx:HandlerContex
     const needsScout = !isSlashLike && !isGreeting && !(isShort && isQuestion);
 
     if (!needsScout || isTinyCodeTask) {
-      const lead = (config as any).cesarEngine ?? config.forgeFixedStarter ?? engines[0] ?? 'claude';
+      const preferredLead = (config as any).cesarEngine ?? config.forgeFixedStarter;
+      const lead = preferredLead && engines.includes(preferredLead) ? preferredLead : engines[0] ?? 'none';
       const leadHasAgent = agentIds.includes(lead);
       const directAction = isTinyCodeTask && leadHasAgent ? 'build' as const : 'chat' as const;
       dispatch({ type: 'info', message: `Cesar → ${directAction} (${lead}, direct)` });

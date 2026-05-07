@@ -495,6 +495,7 @@ fn name=handleUse params="engineIds:string[], dispatch:Dispatch, ctx:HandlerCont
   handler <<<
     if (engineIds.length === 0 || (engineIds.length === 1 && engineIds[0] === 'all')) {
       setSessionEngines(null);
+      configSet('engineActivationMode' as any, 'auto' as any);
       configSet('forgeEnabledEngines', ctx.registry.availableIds());
       dispatch({ type: 'success', message: 'Using all available engines' });
       dispatch({ type: 'info', message: ctx.registry.availableIds().join(', ') });
@@ -514,6 +515,7 @@ fn name=handleUse params="engineIds:string[], dispatch:Dispatch, ctx:HandlerCont
       return;
     }
     setSessionEngines(valid);
+    configSet('engineActivationMode' as any, 'explicit' as any);
     configSet('forgeEnabledEngines', valid);
 
     dispatch({ type: 'success', message: `Active engines: ${valid.join(', ')}` });
@@ -736,7 +738,7 @@ fn name=handleModels params="dispatch:Dispatch, ctx:HandlerContext" returns=void
 
     const config = ctx.config;
     const available = ctx.registry.availableIds();
-    const enabled = config.forgeEnabledEngines ?? available;
+    const enabled = ctx.registry.activeIds(config as any);
 
     const rows = available.map((id: string) => [
       enabled.includes(id) ? icons().dotOn : icons().dotOff,
@@ -745,11 +747,13 @@ fn name=handleModels params="dispatch:Dispatch, ctx:HandlerContext" returns=void
     ]);
     dispatch({ type: 'table', headers: ['', 'Engine', 'Status'], rows });
 
-    const defaultEngine = config.forgeFixedStarter ?? available[0] ?? 'none';
+    const configuredDefault = config.forgeFixedStarter ?? '';
+    const defaultEngine = configuredDefault && enabled.includes(configuredDefault) ? configuredDefault : enabled[0] ?? 'none';
     dispatch({ type: 'info', message: `Default chat engine: ${defaultEngine}` });
+    dispatch({ type: 'info', message: `Activation mode: ${(config as any).engineActivationMode ?? 'auto'}` });
 
     dispatch({ type: 'separator' });
     dispatch({ type: 'info', message: 'Change engines:  /use claude,codex    (persists across sessions)' });
-    dispatch({ type: 'info', message: 'Reset to all:    /use all' });
+    dispatch({ type: 'info', message: 'Reset to auto:   /use all' });
     dispatch({ type: 'info', message: 'Set chat default: /config set forgeFixedStarter claude' });
   >>>

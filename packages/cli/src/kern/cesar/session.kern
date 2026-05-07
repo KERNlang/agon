@@ -409,7 +409,7 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         try {
           targetEngine = ctx.registry.get(targetId);
         } catch {
-          const available = ctx.registry.availableIds().filter((id: string) => id !== cesarEngineId);
+          const available = ctx.activeEngines().filter((id: string) => id !== cesarEngineId);
           return `Error: Engine "${targetId}" not found. Available: ${available.join(', ')}`;
         }
 
@@ -456,13 +456,17 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         }
         // Validate engines exist before creating the plan
         const proposedSteps = (args as any).steps ?? [];
+        const planAvailableEngines = typeof ctx.activeEngines === 'function' ? ctx.activeEngines() : ctx.registry.availableIds();
         for (const step of proposedSteps) {
           const engines = step.engines ?? (step.engine ? [step.engine] : []);
           for (const engineId of engines) {
             try {
               ctx.registry.get(engineId);
+              if (!planAvailableEngines.includes(engineId)) {
+                return `[PLAN_ERROR] Engine "${engineId}" in step "${step.id}" is not active. Active engines: ${planAvailableEngines.join(', ')}. Revise your plan.`;
+              }
             } catch {
-              return `[PLAN_ERROR] Engine "${engineId}" in step "${step.id}" is not available. Available engines: ${ctx.registry.availableIds().join(', ')}. Revise your plan.`;
+              return `[PLAN_ERROR] Engine "${engineId}" in step "${step.id}" is not available. Available engines: ${planAvailableEngines.join(', ')}. Revise your plan.`;
             }
           }
         }

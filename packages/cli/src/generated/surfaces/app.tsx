@@ -118,7 +118,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-// @kern-source: app:2518
+// @kern-source: app:2540
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -191,6 +191,8 @@ export function App() {
   const [questionState, _setQuestionStateRaw] = useState<any>(null);
   const setQuestionState = useMemo(() => __inkSafe(_setQuestionStateRaw), [_setQuestionStateRaw]);
   const [questionAnswer, setQuestionAnswer] = useState<string>('');
+  const [btwPanel, _setBtwPanelRaw] = useState<any|null>(null);
+  const setBtwPanel = useMemo(() => __inkSafe(_setBtwPanelRaw), [_setBtwPanelRaw]);
   const [enginePickerOpen, _setEnginePickerOpenRaw] = useState<boolean>(false);
   const setEnginePickerOpen = useMemo(() => __inkSafe(_setEnginePickerOpenRaw), [_setEnginePickerOpenRaw]);
   const [modelPickerOpen, _setModelPickerOpenRaw] = useState<boolean>(false);
@@ -560,8 +562,9 @@ export function App() {
 
   const overlayReservedRows = useMemo(() => {
           if (toolDetailEvent) return toolDetailViewportRows(termHeight) + 5;
+          if (btwPanel) return 9;
           return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent ? 4 : 0;
-  }, [enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, termHeight]);
+  }, [enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, btwPanel, termHeight]);
 
   const bottomChromeReservedRows = useMemo(() => {
           return estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !!liveSpinner);
@@ -958,190 +961,217 @@ export function App() {
 
   const handleSubmit = useCallback(async (value:string) => {
     inputEpochRef.current += 1;
-    let input = cleanSubmitValue(value);
-    if (!input) return;
-    // Bare "/" → open slash picker flyout, don't dump text list
-    if (input === '/') {
-      if (planModeQueued) setPlanModeQueued(false);
-      setSlashPickerOpen(true);
-      return;
-    }
-    input = expandPastePlaceholders(input, pasteHashesRef.current);
-    pasteHashesRef.current.clear();
-    pasteCountRef.current = 0;
-    inputValueRef.current = '';
-    setInputValue('');
-    setInputHistory((prev: string[]) => {
-      const next = appendInputHistory(prev, input, COMPOSER_HISTORY_LIMIT);
-      saveComposerInputHistory(next);
-      return next;
-    });
-    setHistoryIndex(-1);
-
-    const autoControl = parseAutoModeCommand(input);
-    if (autoControl) {
-      if (autoControl === 'status') {
-        dispatch({ type: 'info', message: autoModeQueued ? 'AUTO is ON by default — plain tasks may self-escalate through Cesar.' : 'AUTO is OFF by default.' } as any);
-        return;
-      }
-      const nextAutoModeQueued = autoControl === 'toggle' ? !autoModeQueued : autoControl === 'on';
-      setPlanModeQueued(false);
-      setPersistentAutoMode(nextAutoModeQueued);
-      dispatch({
-        type: 'info',
-        message: nextAutoModeQueued
-          ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Use /auto off or Ctrl+A to disable.'
-          : 'AUTO OFF by default.',
-      } as any);
-      return;
-    }
-
-    if (!input.startsWith('/') && activePlanRef.current?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
-      input = '/approve';
-    }
-
-    // /btw <question> — side-channel question during active dispatch
-    const btwLower = input.trim().toLowerCase();
-    if (btwLower === '/btw') {
-      dispatch({ type: 'info', message: 'Usage: /btw <question> — ask something while engines work.' } as any);
-      return;
-    }
-    if (btwLower.startsWith('/btw ')) {
-      const btwQuestion = input.trim().slice(5).trim();
-      const activeWorkForBtw = hasBtwSideChannelTarget({
-        replState,
-        activePlanState: activePlanRef.current?.state ?? null,
-        runningJobCount: jobManager.running().length,
-      });
-      if (btwQuestion && activeWorkForBtw) {
-        // Fire side-dispatch — don't interrupt main task
-        dispatch({ type: 'separator' } as any);
-        dispatch({ type: 'user-message', content: `/btw ${btwQuestion}` } as any);
-
-        const ctx = buildContext();
-        const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
-        let engineDef: any;
-        try { engineDef = ctx.registry.get(cesarId); } catch { /* cesar engine not registered */ }
-
-        if (!engineDef) {
-          dispatch({ type: 'error', message: `btw: engine ${cesarId} not available` } as any);
-          return;
-        }
-
-        const color = ENGINE_COLORS[cesarId] ?? 124;
-        dispatch({ type: 'info', message: 'btw\u2026' } as any);
-
-        // Build context from streaming output (pick the most recent in-flight stream)
-        let streamCtx = '';
-        const streamEntries = Object.values(streamingTextRef.current ?? {});
-        if (streamEntries.length > 0) {
-          let latest: StreamingEntry | null = null;
-          for (const e of streamEntries) {
-            if (!latest || e.startedAt > latest.startedAt) latest = e;
+          let input = cleanSubmitValue(value);
+          if (!input) return;
+          // Bare "/" → open slash picker flyout, don't dump text list
+          if (input === '/') {
+            if (planModeQueued) setPlanModeQueued(false);
+            setSlashPickerOpen(true);
+            return;
           }
-          if (latest && latest.content) {
-            const lines = latest.content.split('\n').filter((l: string) => l.trim());
-            streamCtx = lines.slice(-10).join('\n');
-          }
-        }
+          input = expandPastePlaceholders(input, pasteHashesRef.current);
+          pasteHashesRef.current.clear();
+          pasteCountRef.current = 0;
+          inputValueRef.current = '';
+          setInputValue('');
+          setInputHistory((prev: string[]) => {
+            const next = appendInputHistory(prev, input, COMPOSER_HISTORY_LIMIT);
+            saveComposerInputHistory(next);
+            return next;
+          });
+          setHistoryIndex(-1);
 
-        const prompt = `The user asks while you are working on another task:\n\n${btwQuestion}\n\n${streamCtx ? '--- Recent output from the running task ---\n' + streamCtx + '\n---\n\n' : ''}Answer briefly and concisely. Keep it short.`;
-
-        const btwOutputDir = join(RUNS_DIR, `btw-${Date.now()}`);
-        try { mkdirSync(btwOutputDir, { recursive: true }); } catch { /* dir already exists or parent missing */ }
-        ctx.adapter.dispatch({
-          engine: engineDef,
-          prompt,
-          cwd: resolveWorkingDir(),
-          mode: 'exec' as any,
-          timeout: 60,
-          outputDir: btwOutputDir,
-        }).then((result: any) => {
-          const answer = (result.stdout || '').trim();
-          if (answer) {
-            dispatch({ type: 'engine-block', engineId: cesarId, color, content: answer } as any);
-          } else {
-            dispatch({ type: 'warning', message: 'btw: no response' } as any);
+          const autoControl = parseAutoModeCommand(input);
+          if (autoControl) {
+            if (autoControl === 'status') {
+              dispatch({ type: 'info', message: autoModeQueued ? 'AUTO is ON by default — plain tasks may self-escalate through Cesar.' : 'AUTO is OFF by default.' } as any);
+              return;
+            }
+            const nextAutoModeQueued = autoControl === 'toggle' ? !autoModeQueued : autoControl === 'on';
+            setPlanModeQueued(false);
+            setPersistentAutoMode(nextAutoModeQueued);
+            dispatch({
+              type: 'info',
+              message: nextAutoModeQueued
+                ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Use /auto off or Ctrl+A to disable.'
+                : 'AUTO OFF by default.',
+            } as any);
+            return;
           }
-        }).catch((err: any) => {
-          dispatch({ type: 'error', message: `btw: ${err instanceof Error ? err.message : String(err)}` } as any);
-        });
-        return;
-      }
-      if (!btwQuestion) {
-        dispatch({ type: 'info', message: 'Usage: /btw <question>' } as any);
-        return;
-      }
-      dispatch({ type: 'info', message: 'No active work for /btw. Ask normally without the /btw prefix.' } as any);
-      return;
-    }
-    if (replState !== 'idle' && !jobManager.running().length) {
-      setInputQueue((prev: string[]) => [...prev, input]);
-      dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '\u2026' : input}` } as any);
-      return;
-    }
-    if (planModeQueued && input.trim() && !input.startsWith('/')) {
-      setPlanModeQueued(false);
-      handleSubmit(`/plan ${input}`);
-      return;
-    }
-    const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
-    if (planModeQueued) setPlanModeQueued(false);
-    transition(startCommandReplState);
-    dispatch({ type: 'separator' } as any);
-    dispatch({ type: 'user-message', content: input } as any);
-    const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
-    const allImages = [...pendingImages, ...detectedImages];
-    let intent = detectIntent(cleanInput || input, commandRegistry);
-    if (intent.type === 'status') {
-      setStatusDashboardOpen(true);
-      dispatch({ type: 'info', message: 'Status dashboard open. Press q or Esc to close.' } as any);
-      transition(finishReplState);
-      return;
-    }
-    const ctx = buildContext();
-    (ctx as any).autoModeQueued = autoModeForTurn;
-    const cesarEngineForTurn = String((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
-    activeTurnRef.current = (!input.startsWith('/') && mode === 'chat')
-      ? { input, engineId: cesarEngineForTurn, retried: false }
-      : null;
-    const cb: DispatchCallbacks = {
-      dispatch, ctx, commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
-      runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
-        const job = jobManager.create(type, label);
-        setJobList([...jobManager.list()]);
-        // Transition to idle so user can submit new commands while job runs
-        // Strip stays active via jobList.some(j => j.state === 'running') check
-        setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
-        fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); })
-          .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
-      },
-      setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
-      setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups,
-      allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
-      explorationMode, setExplorationMode,
-      neroMode, setNeroMode,
-      setActivePlan: setActivePlanWrapped,
-    };
-    if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
-      if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
-    }
-    if (intent.type === 'unknown' && mode !== 'chat') {
-      switch (mode) {
-        case 'campfire': intent = { type: 'campfire', topic: input } as any; break;
-        case 'brainstorm': intent = { type: 'brainstorm', question: input } as any; break;
-        case 'tribunal': intent = { type: 'tribunal', question: input } as any; break;
-      }
-    }
-    try {
-      const result = await dispatchIntent(intent, input, cb);
-      if (result.ranAsJob) return;
-    } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
-    finally {
-      if (activeTurnRef.current?.input === input) activeTurnRef.current = null;
-      setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
-    }
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped]);
+
+          if (!input.startsWith('/') && activePlanRef.current?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
+            input = '/approve';
+          }
+
+          // /btw <question> — side-channel question during active dispatch
+          const btwLower = input.trim().toLowerCase();
+          if (btwLower === '/btw') {
+            dispatch({ type: 'info', message: 'Usage: /btw <question> — ask something while engines work.' } as any);
+            return;
+          }
+          if (btwLower.startsWith('/btw ')) {
+            const btwQuestion = input.trim().slice(5).trim();
+            const activeWorkForBtw = hasBtwSideChannelTarget({
+              replState,
+              activePlanState: activePlanRef.current?.state ?? null,
+              runningJobCount: jobManager.running().length,
+            });
+            if (btwQuestion && activeWorkForBtw) {
+              // Fire side-dispatch into its own panel — don't interrupt main task
+              const ctx = buildContext();
+              const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
+              let engineDef: any;
+              try { engineDef = ctx.registry.get(cesarId); } catch { /* cesar engine not registered */ }
+
+              if (!engineDef) {
+                dispatch({ type: 'error', message: `btw: engine ${cesarId} not available` } as any);
+                return;
+              }
+
+              // Build context from streaming output (pick the most recent in-flight stream)
+              let streamCtx = '';
+              const streamEntries = Object.values(streamingTextRef.current ?? {});
+              if (streamEntries.length > 0) {
+                let latest: StreamingEntry | null = null;
+                for (const e of streamEntries) {
+                  if (!latest || e.startedAt > latest.startedAt) latest = e;
+                }
+                if (latest && latest.content) {
+                  const lines = latest.content.split('\n').filter((l: string) => l.trim());
+                  streamCtx = lines.slice(-10).join('\n');
+                }
+              }
+
+              const transcriptCtx = outputBlocks
+                .slice(-16)
+                .map((block: any) => summarizeBtwTranscriptEvent(block?.event))
+                .filter(Boolean)
+                .slice(-8)
+                .join('\n');
+              const runningCtx = [
+                `Mode: ${mode}`,
+                `UI state: ${replState}`,
+                activePlanRef.current?.state ? `Plan state: ${activePlanRef.current.state}` : '',
+                jobManager.running().length > 0 ? `Running background jobs: ${jobManager.running().map((job: any) => job.label ?? job.id).join(', ')}` : '',
+              ].filter(Boolean).join('\n');
+              const contextPreview = [streamCtx, transcriptCtx].filter(Boolean).join('\n').slice(-900);
+
+              const prompt = `You are answering a /btw side question while Agon continues another task in the main window.
+
+    Side question:
+    ${btwQuestion}
+
+    Current runtime context:
+    ${runningCtx || '(none)'}
+
+    ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n' : ''}${transcriptCtx ? 'Recent transcript context:\n' + transcriptCtx + '\n\n' : ''}Answer the side question directly and briefly. Do not take over, cancel, or modify the main task.`;
+
+              const btwOutputDir = join(RUNS_DIR, `btw-${Date.now()}`);
+              const btwId = `btw-${Date.now()}`;
+              setBtwPanel({
+                id: btwId,
+                question: btwQuestion,
+                engineId: cesarId,
+                status: 'running',
+                answer: '',
+                error: '',
+                contextPreview,
+                startedAt: Date.now(),
+              });
+              try { mkdirSync(btwOutputDir, { recursive: true }); } catch { /* dir already exists or parent missing */ }
+              ctx.adapter.dispatch({
+                engine: engineDef,
+                prompt,
+                cwd: resolveWorkingDir(),
+                mode: 'exec' as any,
+                timeout: 60,
+                outputDir: btwOutputDir,
+              }).then((result: any) => {
+                const answer = (result.stdout || '').trim();
+                if (answer) {
+                  setBtwPanel((prev: any) => prev?.id === btwId ? { ...prev, status: 'done', answer } : prev);
+                } else {
+                  setBtwPanel((prev: any) => prev?.id === btwId ? { ...prev, status: 'empty', error: 'No response' } : prev);
+                }
+              }).catch((err: any) => {
+                setBtwPanel((prev: any) => prev?.id === btwId ? { ...prev, status: 'error', error: err instanceof Error ? err.message : String(err) } : prev);
+              });
+              return;
+            }
+            if (!btwQuestion) {
+              dispatch({ type: 'info', message: 'Usage: /btw <question>' } as any);
+              return;
+            }
+            dispatch({ type: 'info', message: 'No active work for /btw. Ask normally without the /btw prefix.' } as any);
+            return;
+          }
+          if (replState !== 'idle' && !jobManager.running().length) {
+            setInputQueue((prev: string[]) => [...prev, input]);
+            dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '\u2026' : input}` } as any);
+            return;
+          }
+          if (planModeQueued && input.trim() && !input.startsWith('/')) {
+            setPlanModeQueued(false);
+            handleSubmit(`/plan ${input}`);
+            return;
+          }
+          const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
+          if (planModeQueued) setPlanModeQueued(false);
+          transition(startCommandReplState);
+          dispatch({ type: 'separator' } as any);
+          dispatch({ type: 'user-message', content: input } as any);
+          const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
+          const allImages = [...pendingImages, ...detectedImages];
+          let intent = detectIntent(cleanInput || input, commandRegistry);
+          if (intent.type === 'status') {
+            setStatusDashboardOpen(true);
+            dispatch({ type: 'info', message: 'Status dashboard open. Press q or Esc to close.' } as any);
+            transition(finishReplState);
+            return;
+          }
+          const ctx = buildContext();
+          (ctx as any).autoModeQueued = autoModeForTurn;
+          const cesarEngineForTurn = String((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
+          activeTurnRef.current = (!input.startsWith('/') && mode === 'chat')
+            ? { input, engineId: cesarEngineForTurn, retried: false }
+            : null;
+          const cb: DispatchCallbacks = {
+            dispatch, ctx, commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
+            runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
+              const job = jobManager.create(type, label);
+              setJobList([...jobManager.list()]);
+              // Transition to idle so user can submit new commands while job runs
+              // Strip stays active via jobList.some(j => j.state === 'running') check
+              setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
+              fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); })
+                .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
+            },
+            setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
+            setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups,
+            allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
+            explorationMode, setExplorationMode,
+            neroMode, setNeroMode,
+            setActivePlan: setActivePlanWrapped,
+          };
+          if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
+            if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
+          }
+          if (intent.type === 'unknown' && mode !== 'chat') {
+            switch (mode) {
+              case 'campfire': intent = { type: 'campfire', topic: input } as any; break;
+              case 'brainstorm': intent = { type: 'brainstorm', question: input } as any; break;
+              case 'tribunal': intent = { type: 'tribunal', question: input } as any; break;
+            }
+          }
+          try {
+            const result = await dispatchIntent(intent, input, cb);
+            if (result.ranAsJob) return;
+          } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
+          finally {
+            if (activeTurnRef.current?.input === input) activeTurnRef.current = null;
+            setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
+          }
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
     if (!reviewEvent) return;
@@ -1362,6 +1392,10 @@ export function App() {
     } as Record<string, string>;
     const globalCtrlInput = globalCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
     const hasGlobalCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
+    if (btwPanel && (key.escape || input === '\x1b')) {
+      setBtwPanel(null);
+      return;
+    }
     const textInputOwnsReservedShortcut = !statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices);
     if (hasGlobalCtrlSignal && globalCtrlInput === 'e' && !textInputOwnsReservedShortcut) {
       const nested = nestedCtrlShortcutRef.current;
@@ -1554,7 +1588,7 @@ export function App() {
         handleCancelOrExit();
         return;
     }
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen]);
 
   useEffect(() => {
     initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
@@ -2001,6 +2035,29 @@ export function App() {
         plan={(pendingPlanProposal as any).plan}
         markdown={(pendingPlanProposal as any).markdown}
       />
+    )}
+    {btwPanel && (
+      <Box flexDirection="column" borderStyle="round" borderColor="#22d3ee" paddingX={1} marginY={1}>
+        <Box justifyContent="space-between">
+          <Text bold color="#22d3ee">{'BTW'}</Text>
+          <Text dimColor>{btwPanel.status === 'running' ? `${btwPanel.engineId} thinking…` : 'Esc close'}</Text>
+        </Box>
+        <Text dimColor>{btwPanel.question}</Text>
+        {btwPanel.contextPreview && (
+          <Text dimColor>{'Context: '}{String(btwPanel.contextPreview).split('\n').filter((line: string) => line.trim()).slice(-2).join(' / ').slice(0, Math.max(40, termWidth - 16))}</Text>
+        )}
+        {btwPanel.status === 'running' ? (
+          <Text color="#fbbf24">{'Answering in a side channel; main work continues.'}</Text>
+        ) : btwPanel.error ? (
+          <Text color="#ef4444">{btwPanel.error}</Text>
+        ) : (
+          <Box flexDirection="column">
+            {String(btwPanel.answer ?? '').split('\n').slice(0, 8).map((line: string, i: number) => (
+              <Text key={i}>{line}</Text>
+            ))}
+          </Box>
+        )}
+      </Box>
     )}
     {toolDetailView && (
       <ToolDetailBlock
@@ -3211,6 +3268,28 @@ export function estimateBottomChromeExtraRows(mode: string, questionState: any, 
 }
 
 // @kern-source: app:983
+function summarizeBtwTranscriptEvent(event: any): string|null {
+  if (!event || typeof event !== 'object') return null;
+  switch (event.type) {
+    case 'user-message':
+      return `User: ${String(event.content ?? '').slice(0, 500)}`;
+    case 'engine-block':
+      return `${String(event.engineId ?? 'engine')}: ${String(event.content ?? '').slice(0, 700)}`;
+    case 'info':
+    case 'warning':
+    case 'error':
+    case 'success':
+      return `${event.type}: ${String(event.message ?? '').slice(0, 350)}`;
+    case 'header':
+      return `Section: ${String(event.title ?? '').slice(0, 250)}`;
+    case 'tool-call':
+      return `Tool: ${String(event.tool ?? '').slice(0, 80)} ${String(event.input ?? '').slice(0, 350)}`;
+    default:
+      return null;
+  }
+}
+
+// @kern-source: app:1005
 export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock {
   const registry = createInitialRegistry();
   const available = registry.availableIds();
@@ -3241,7 +3320,7 @@ export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock
   };
 }
 
-// @kern-source: app:1014
+// @kern-source: app:1036
 export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProgress: boolean, agentCount: number, toolStreamCount?: number): number {
   const streamRows = hasStream ? (mode === 'chat' ? 3 : 6) : 0;
   const progressRows = hasProgress ? (mode === 'chat' ? 3 : 5) : 0;
@@ -3250,7 +3329,7 @@ export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProg
   return streamRows + progressRows + agentRows + toolRows;
 }
 
-// @kern-source: app:1023
+// @kern-source: app:1045
 export function estimateWrappedRows(text: string, width: number): number {
   const safeWidth = Math.max(1, width);
   if (!text) return 0;
@@ -3260,7 +3339,7 @@ export function estimateWrappedRows(text: string, width: number): number {
   }, 0);
 }
 
-// @kern-source: app:1033
+// @kern-source: app:1055
 export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
   if (!event || event.type !== 'tool-call') return 0;
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return 0;
@@ -3333,7 +3412,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
   return rows;
 }
 
-// @kern-source: app:1106
+// @kern-source: app:1128
 export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   const proseWidth = contentWidth(4);
   const chatWidth = contentWidth(2);
@@ -3438,7 +3517,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   }
 }
 
-// @kern-source: app:1211
+// @kern-source: app:1233
 export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boolean): OutputBlock[] {
   // Keep collapse as a per-block display concern, not a synthetic grouped
   // scroll unit. Grouped tool summaries make wheel scrolling jump because
@@ -3446,7 +3525,7 @@ export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boo
   return blocks;
 }
 
-// @kern-source: app:1219
+// @kern-source: app:1241
 export function isToolCallLikeBlock(block: OutputBlock): boolean {
   const type = (block?.event as any)?.type;
   return type === 'tool-call' || type === 'tool-call-group';
@@ -3455,7 +3534,7 @@ export function isToolCallLikeBlock(block: OutputBlock): boolean {
 /**
  * Merge adjacent tool-call and tool-call-group blocks into one group so native/live renderers do not show repeated collapsed tool summaries.
  */
-// @kern-source: app:1225
+// @kern-source: app:1247
 export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
   if (!Array.isArray(blocks) || blocks.length === 0) return [];
   const out: OutputBlock[] = [];
@@ -3502,7 +3581,7 @@ export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
 /**
  * Choose the native Static archive count. When tools are expanded, keep the latest tool-call island live because Ink Static cannot repaint already-sealed collapsed tool summaries.
  */
-// @kern-source: app:1270
+// @kern-source: app:1292
 export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArchiveCount: number, targetArchiveCount: number, toolOutputExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -3535,12 +3614,12 @@ export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArch
   return count;
 }
 
-// @kern-source: app:1304
+// @kern-source: app:1326
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
 }
 
-// @kern-source: app:1306
+// @kern-source: app:1328
 export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -3549,7 +3628,7 @@ export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[]
 /**
  * Native transcript history. While idle, the startup dashboard is live chrome. Once the first real transcript row exists, keep the dashboard as the first chat-history block so the AGON header scrolls with the conversation instead of disappearing.
  */
-// @kern-source: app:1312
+// @kern-source: app:1334
 export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -3558,7 +3637,7 @@ export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBl
 /**
  * Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender while older rows remain in terminal scrollback.
  */
-// @kern-source: app:1319
+// @kern-source: app:1341
 export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, rowBudget: number, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -3592,7 +3671,7 @@ export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, row
 /**
  * Detect same-turn duplicate completed engine output. A new user-message resets the guard so an intentional repeat request can still show identical text.
  */
-// @kern-source: app:1351
+// @kern-source: app:1373
 export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boolean {
   if (!event || event.type !== 'engine-block') return false;
   const content = cleanEngineOutput(String(event.content ?? '')).trim();
@@ -3614,7 +3693,7 @@ export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boole
 /**
  * Append a transcript block with cap/archive handling while suppressing accidental duplicate engine output.
  */
-// @kern-source: app:1371
+// @kern-source: app:1393
 export function appendTranscriptBlock(blocks: OutputBlock[], event: any, archivePath: string): OutputBlock[] {
   if (isDuplicateEngineBlock(blocks, event)) {
     return blocks;
@@ -3622,12 +3701,12 @@ export function appendTranscriptBlock(blocks: OutputBlock[], event: any, archive
   return appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event: event }, archivePath);
 }
 
-// @kern-source: app:1378
+// @kern-source: app:1400
 export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
   return value === 'fullscreen' ? 'fullscreen' : 'native';
 }
 
-// @kern-source: app:1380
+// @kern-source: app:1402
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
   if (expanded) {
@@ -3636,7 +3715,7 @@ export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): 
   return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
 }
 
-// @kern-source: app:1387
+// @kern-source: app:1409
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
   if (terminalMode === 'native') {
@@ -3654,7 +3733,7 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
 /**
  * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
  */
-// @kern-source: app:1398
+// @kern-source: app:1420
 export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
   const terminalMode = normalizeTerminalMode(opts?.terminalMode);
   const mode = String(opts?.mode ?? 'chat');
@@ -3708,7 +3787,7 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   };
 }
 
-// @kern-source: app:1453
+// @kern-source: app:1475
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
@@ -3816,7 +3895,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
   return rows;
 }
 
-// @kern-source: app:1561
+// @kern-source: app:1583
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
 
@@ -4187,7 +4266,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   return rows;
 }
 
-// @kern-source: app:1932
+// @kern-source: app:1954
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
 
@@ -4282,7 +4361,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
-// @kern-source: app:2027
+// @kern-source: app:2049
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);
@@ -4772,7 +4851,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4528
+// @kern-source: app:4606
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

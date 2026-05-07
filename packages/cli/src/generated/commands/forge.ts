@@ -80,15 +80,16 @@ export const forgeCommand: any = defineCommand({
     const forgeDir = join(RUNS_DIR, `forge-${Date.now()}`);
     mkdirSync(forgeDir, { recursive: true });
 
+    const engines = args.engines?.split(',').map((s: string) => s.trim());
+    const displayEngines = engines && engines.length > 0 ? engines : available;
+
     header(`Forge: ${args.task}`);
-    info(`Engines: ${available.join(', ')}`);
+    info(`Engines: ${displayEngines.join(', ')}`);
     info(`Fitness: ${args.test}`);
 
     if (args.dryRun) {
       warn('Dry-run mode — no engines will be dispatched');
     }
-
-    const engines = args.engines?.split(',').map((s: string) => s.trim());
 
     const manifest = await runForge(
       {

@@ -220,6 +220,52 @@ describe('Forge E2E', () => {
     }
   });
 
+  it('still dispatches engines when the baseline fitness already passes', async () => {
+    const agonHome = setupTestAgonHome('forge-baseline-pass-dispatch');
+    const repoDir = createRepo('baseline-pass-dispatch');
+    const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const fakeNpx = createFakeNpx();
+
+    writeFileSync(join(repoDir, '.agon.json'), JSON.stringify({
+      forgeAutoAcceptScore: 101,
+      forgeEnableSynthesis: false,
+      forgeRequireBaselineCheck: true,
+      ratingsEnabled: false,
+    }, null, 2) + '\n');
+
+    try {
+      vi.resetModules();
+      const { EngineRegistry } = await import('../../packages/core/src/index.js');
+      const { runForge } = await import('../../packages/forge/src/index.js');
+      const registry = new EngineRegistry();
+      registry.register(makeEngine('loser'));
+      registry.register(makeEngine('winner'));
+
+      const manifest = await runForge({
+        task: 'Improve generated output even though the broad fitness already passes',
+        fitnessCmd: 'true',
+        cwd: repoDir,
+        forgeDir,
+        engines: ['loser', 'winner'],
+        starter: 'loser',
+      }, registry, createDeterministicAdapter());
+
+      expect(manifest.baselinePasses).toBe(true);
+      expect(manifest.alreadySatisfied).not.toBe(true);
+      expect(manifest.enginesDispatched).toBeGreaterThan(0);
+      expect(Object.keys(manifest.results).length).toBeGreaterThan(0);
+      const saved = JSON.parse(readFileSync(join(forgeDir, 'manifest.json'), 'utf-8'));
+      expect(saved.baselinePasses).toBe(true);
+      expect(saved.enginesDispatched).toBeGreaterThan(0);
+    } finally {
+      process.env.PATH = fakeNpx.originalPath;
+      rmSync(fakeNpx.binDir, { recursive: true, force: true });
+      cleanupTestAgonHome(agonHome);
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
+
   it('routes API-only forge engines through the tool-using agent loop', async () => {
     const agonHome = setupTestAgonHome('forge-api-agent');
     const repoDir = createRepo('api-agent');

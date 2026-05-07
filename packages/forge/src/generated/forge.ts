@@ -345,21 +345,12 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         forgeDir,
         onEvent,
       });
-      // Already-satisfied short-circuit: if the fitness command already passes
-      // on a clean checkout, dispatching engines is wasted compute — every
-      // engine will correctly produce a zero-byte patch and forge would
-      // declare "no-winner" against a non-discriminating test. Emit a distinct
-      // status so callers (plan-step orchestrator, /forge) can treat this as
-      // success instead of failure.
+      // A passing baseline is a warning, not a stop condition. Content,
+      // docs, refactor, and "make it better" tasks often use broad fitness
+      // gates that pass before the requested change exists. Forge still must
+      // dispatch engines so the user gets a real competition.
       if (manifest.baselinePasses) {
-        manifest.alreadySatisfied = true;
-        manifest.dispatchLog = [];
-        writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path);
-        writeManifest(manifest);
-        sidechain.log('forge:already-satisfied', undefined, { baselinePasses: true });
-        onEvent?.({ type: 'forge:already-satisfied', data: { baselinePasses: true } });
-        onEvent?.({ type: 'forge:done', data: { alreadySatisfied: true } });
-        return manifest;
+        sidechain.log('forge:baseline-nondiscriminating', undefined, { baselinePasses: true });
       }
     }
 

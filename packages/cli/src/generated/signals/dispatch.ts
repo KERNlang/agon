@@ -1409,7 +1409,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       const _fLabel = intent.task?.slice(0, 40) ?? 'forge';
       cb.runAsJob('forge', _fLabel, withThreadOutcome(_fCwd, 'forge', _fLabel, async () => {
         if (cb.eventBus) await cb.eventBus.emit('pre:forge', { task: intent.task, cwd: _fCwd });
-        await handleForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx, undefined, intent.hardened);
+        await handleForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx, undefined, intent.hardened, true);
         if (cb.eventBus) cb.eventBus.emit('post:forge', { task: intent.task, cwd: _fCwd }).catch(() => {});
       }, cb.ctx));
       return { handled: true, ranAsJob: true };

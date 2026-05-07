@@ -1,8 +1,9 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { extractFitnessCommandFromCesarOutput, inferProjectFitnessCommand, normalizeGithubRemoteLiteral, repairFitnessCommandRepositoryLiteral, repairFitnessCommandTaskLiterals } from '../../packages/cli/src/generated/handlers/forge.js';
+import { extractFitnessCommandFromCesarOutput, inferProjectFitnessCommand, normalizeGithubRemoteLiteral, repairFitnessCommandRepositoryLiteral, repairFitnessCommandTaskLiterals, repairForgeTaskRepositoryLiteral } from '../../packages/cli/src/generated/handlers/forge.js';
 
 describe('forge fitness preparation', () => {
   it('parses Cesar JSON fitness output', () => {
@@ -32,6 +33,20 @@ describe('forge fitness preparation', () => {
     expect(repo).toBe('github.com/KERNlang/agon');
     expect(repairFitnessCommandRepositoryLiteral(cmd, repo)).toContain('github.com/KERNlang/agon');
     expect(repairFitnessCommandRepositoryLiteral(cmd, repo)).not.toContain('github.com/cukas/Agon-AI');
+  });
+
+  it('normalizes current-repo links in forge tasks before dispatch', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agon-forge-task-repo-'));
+    try {
+      execFileSync('git', ['init'], { cwd: dir, stdio: 'ignore' });
+      execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:KERNlang/agon.git'], { cwd: dir, stdio: 'ignore' });
+      const repaired = repairForgeTaskRepositoryLiteral('README must contain github.com/cukas/Agon-AI', dir);
+
+      expect(repaired).toContain('github.com/KERNlang/agon');
+      expect(repaired).not.toContain('github.com/cukas/Agon-AI');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('auto-selects a project fitness command instead of asking the user', () => {

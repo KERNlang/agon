@@ -200,6 +200,13 @@ fn name=repairFitnessCommandRepositoryLiteral params="command:string, repoLitera
     return repaired;
   >>>
 
+fn name=repairForgeTaskRepositoryLiteral params="task:string, cwd:string" returns="string" export=true
+  doc "Normalize current-repository GitHub literals in a forge task before displaying the plan or sending the prompt to engines."
+  handler <<<
+    const repoLiteral = detectGithubRemoteLiteral(cwd);
+    return repairFitnessCommandRepositoryLiteral(task, repoLiteral);
+  >>>
+
 fn name=describeProjectFitnessOptions params="cwd:string" returns="string" export=false
   handler <<<
     const lines: string[] = [];
@@ -318,6 +325,12 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       dispatch({ type: 'warning', message: 'No task provided. Usage: "fix the auth bug, test with npm test"' });
       return null;
     }
+    const forgeCwd = resolveWorkingDir();
+    const originalTask = task;
+    task = repairForgeTaskRepositoryLiteral(task, forgeCwd);
+    if (task !== originalTask) {
+      dispatch({ type: 'warning', message: 'Repaired forge task repository link to match git origin.' });
+    }
 
     let fitness = fitnessCmd;
     if (!fitness) {
@@ -345,7 +358,7 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       const ws = getActiveWorkspace();
       const snapshot = ws
         ? snapshotWorkspace(ws)
-        : { id: 'cwd', path: resolveWorkingDir(), headSha: 'unknown', branch: 'unknown', dirty: false };
+        : { id: 'cwd', path: forgeCwd, headSha: 'unknown', branch: 'unknown', dirty: false };
 
       const forgeSteps: PlanStepInput[] = [
         { id: 'baseline', kind: 'fitness', label: 'Baseline fitness check', effects: ['exec'] },
@@ -388,7 +401,6 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
     mkdirSync(forgeDir, { recursive: true });
     dispatch({ type: 'info', message: `Forge run dir: ${forgeDir}` });
 
-    const forgeCwd = resolveWorkingDir();
     const projectCtx = scanProjectContext(forgeCwd, config.projectContext || undefined, config.contextFormat);
 
     const engineStatus: Record<string, string> = {};

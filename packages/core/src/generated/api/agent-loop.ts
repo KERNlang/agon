@@ -202,10 +202,12 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   let step = 0;
   let totalToolCalls = 0;
   let finalResponse = '';
+  let emptyDispatchRetries = 0;
 
   while (step < MAX_STEPS) {
     step++;
     let fullResponse = '';
+    let dispatchResult: any = null;
 
     // Per-step timeout: remaining time, not the full configured timeout
     const remaining = Math.max(30, Math.floor((totalDeadline - Date.now()) / 1000));
@@ -219,9 +221,9 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       while (true) {
         const { value, done } = await gen.next();
         if (done) {
-          const result = value as any;
-          if (result?.stderr) {
-            return { response: `Error: ${result.stderr}`, toolCalls: totalToolCalls, steps: step };
+          dispatchResult = value as any;
+          if (dispatchResult?.stderr) {
+            return { response: `Error: ${dispatchResult.stderr}`, toolCalls: totalToolCalls, steps: step };
           }
           break;
         }
@@ -232,7 +234,50 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       return { response: fullResponse || `Error: ${err.message ?? String(err)}`, toolCalls: totalToolCalls, steps: step };
     }
 
-    if (!fullResponse) break;
+    if (!fullResponse) {
+      const parts = Array.isArray(dispatchResult?.parts) ? dispatchResult.parts : [];
+      const textFromParts = parts
+        .filter((p: any) => p?.kind === 'text' && typeof p.text === 'string')
+        .map((p: any) => p.text)
+        .join('');
+      const toolMarkers = parts
+        .filter((p: any) => p?.kind === 'tool_call' && typeof p.toolName === 'string')
+        .map((p: any) => `\n<tool name="${p.toolName}">${JSON.stringify(p.args ?? {})}</tool>\n`)
+        .join('');
+
+      if (textFromParts || toolMarkers) {
+        fullResponse = `${textFromParts}${toolMarkers}`;
+      } else if (parts.some((p: any) => p?.kind === 'reasoning')) {
+        emptyDispatchRetries++;
+        if (emptyDispatchRetries <= 2) {
+          pushHistory({
+            role: 'user',
+            content: 'Your last turn produced hidden reasoning but no visible answer and no tool call. Continue now by calling the required tools or by giving a visible final answer. Do not stop after internal reasoning.',
+          });
+          continue;
+        }
+        return {
+          response: 'Error: API engine produced hidden reasoning but no visible answer or tool calls after retry.',
+          toolCalls: totalToolCalls,
+          steps: step,
+        };
+      } else {
+        emptyDispatchRetries++;
+        if (emptyDispatchRetries <= 1) {
+          pushHistory({
+            role: 'user',
+            content: 'Your last turn produced no visible output. Continue now by using tools or giving a visible final answer.',
+          });
+          continue;
+        }
+        return {
+          response: 'Error: API engine produced no visible answer or tool calls.',
+          toolCalls: totalToolCalls,
+          steps: step,
+        };
+      }
+    }
+    emptyDispatchRetries = 0;
 
     // Extract tool calls using the shared parser so API engines with
     // provider-specific XML wrappers (MiniMax, Gemini, Qwen-style tags) get

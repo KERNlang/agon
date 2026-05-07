@@ -31,10 +31,12 @@ export function shellQuoteForForge(value: string): string {
 
 // @kern-source: forge:20
 export function buildForgeCleanupCommand(repoRootPath: string, forgeDir: string): string {
-  return `git -C ${shellQuoteForForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForForge(forgeDir)}`;
+  const repo = shellQuoteForForge(repoRootPath);
+  const dir = shellQuoteForForge(forgeDir);
+  return `for wt in ${dir}/wt-* ${dir}/synth-worktree; do [ -e "$wt" ] && git -C ${repo} worktree remove --force "$wt"; done; git -C ${repo} worktree prune; rm -rf ${dir}`;
 }
 
-// @kern-source: forge:22
+// @kern-source: forge:27
 function collectForgeFilePatterns(manifest: ForgeManifest): string[] {
   const patchTexts: string[] = [];
   for (const patchPath of Object.values(manifest.patches) as string[]) {
@@ -48,7 +50,7 @@ function collectForgeFilePatterns(manifest: ForgeManifest): string[] {
 /**
  * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
  */
-// @kern-source: forge:33
+// @kern-source: forge:38
 export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: WorktreeEntry[], options: ForgeOptions, repoRootPath: string, baseSha: string, sidechainPath: string, errorMessage?: string): string {
   const cleanupCommand = buildForgeCleanupCommand(repoRootPath, manifest.forgeDir);
   const bundlePath = `${manifest.forgeDir}/result.json`;
@@ -128,7 +130,7 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
   return bundlePath;
 }
 
-// @kern-source: forge:114
+// @kern-source: forge:119
 export async function runForge(options: ForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const loadedConfig = loadConfig(options.cwd);
   const config = {

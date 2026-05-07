@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { extractFitnessCommandFromCesarOutput, inferProjectFitnessCommand, repairFitnessCommandTaskLiterals } from '../../packages/cli/src/generated/handlers/forge.js';
+import { extractFitnessCommandFromCesarOutput, inferProjectFitnessCommand, normalizeGithubRemoteLiteral, repairFitnessCommandRepositoryLiteral, repairFitnessCommandTaskLiterals } from '../../packages/cli/src/generated/handlers/forge.js';
 
 describe('forge fitness preparation', () => {
   it('parses Cesar JSON fitness output', () => {
@@ -23,6 +23,15 @@ describe('forge fitness preparation', () => {
 
     expect(repairFitnessCommandTaskLiterals(task, cmd)).toContain('github.com/cukas/Agon-AI');
     expect(repairFitnessCommandTaskLiterals(task, cmd)).not.toContain('github.com/cukus/Agon-AI');
+  });
+
+  it('normalizes repository links from git origin for current-repo fitness checks', () => {
+    const repo = normalizeGithubRemoteLiteral('git@github.com:KERNlang/agon.git');
+    const cmd = "node -e \"if(!s.includes('github.com/cukas/Agon-AI')) process.exit(1)\"";
+
+    expect(repo).toBe('github.com/KERNlang/agon');
+    expect(repairFitnessCommandRepositoryLiteral(cmd, repo)).toContain('github.com/KERNlang/agon');
+    expect(repairFitnessCommandRepositoryLiteral(cmd, repo)).not.toContain('github.com/cukas/Agon-AI');
   });
 
   it('auto-selects a project fitness command instead of asking the user', () => {

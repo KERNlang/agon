@@ -160,6 +160,8 @@ config name=AgonConfig
   field name=reviewDefaultEngine type=string default=""
     doc "Optional preferred engine for /review and Review(). Empty means auto-select from active review-capable engines; this is intentionally separate from forgeFixedStarter."
   field name=forgeRequireBaselineCheck type=boolean default=true
+  field name=engineActivationMode type="'auto'|'explicit'" default=auto
+    doc "'auto' keeps every available engine active. 'explicit' only activates engines listed in forgeEnabledEngines; set by /use or the engine picker."
   field name=forgeEnabledEngines type="string[]" default="['claude','codex','gemini']"
   field name=forgeFitnessTimeout type=number default=120
   field name=forgeSynthesisTimeout type=number default=300

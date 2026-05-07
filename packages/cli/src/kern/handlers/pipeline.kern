@@ -10,7 +10,7 @@ fn name=handlePipeline params="input:string, dispatch:Dispatch, ctx:HandlerConte
   handler <<<
     ensureAgonHome();
 
-    const agentIds = ctx.registry.agentCapableIds();
+    const agentIds = ctx.registry.agentCapableIds(ctx.config as any);
     if (agentIds.length === 0) {
       dispatch({ type: 'error', message: 'No agent-capable engines available.' });
       return;

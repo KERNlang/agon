@@ -1,0 +1,11 @@
+test name="Telemetry service signal" target="../../../src/kern/signals/telemetry-service.kern"
+  it name="telemetry service source stays valid KERN"
+    expect no=schemaViolations
+    expect no=semanticViolations
+    expect no=codegenErrors
+
+  it name="telemetry service factory keeps public typed shape"
+    expect node=interface name=TelemetryServiceOptions prop=export is=true
+    expect node=service name=TelemetryService prop=export is=true
+    expect node=fn name=createTelemetryService prop=returns is=TelemetryService
+    expect node=fn name=createTelemetryService prop=export is=true

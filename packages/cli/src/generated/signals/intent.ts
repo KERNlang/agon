@@ -313,7 +313,7 @@ function parseSemanticForgeShortcut(input: string): Intent|null {
     .trim();
 
   const parsed = parseForgeInput(task || input);
-  return { ...parsed, type: 'forge' } as Intent;
+  return { ...parsed, type: 'forge', action: 'natural' } as Intent;
 }
 
 // @kern-source: intent:299

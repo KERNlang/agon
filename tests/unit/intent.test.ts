@@ -424,9 +424,20 @@ describe('Intent Detection — Natural Language', () => {
     const r = detectIntent('can you Forge a small CLI UX fix: make forge status labels show synthesizing before final patch review. Fitness: npm run test:ts -- tests/unit/forge-timeout.test.ts tests/integration/forge-e2e.test.ts');
     expect(r.type).toBe('forge');
     if (r.type === 'forge') {
+      expect(r.action).toBe('natural');
       expect(r.task).toContain('small CLI UX fix');
       expect(r.task).toContain('final patch review');
       expect(r.fitnessCmd).toBe('npm run test:ts -- tests/unit/forge-timeout.test.ts tests/integration/forge-e2e.test.ts');
+    }
+  });
+
+  it('lets natural-language forge prompts omit fitness so Cesar can prepare it', () => {
+    const r = detectIntent('forge a small CLI UX fix for forge status labels');
+    expect(r.type).toBe('forge');
+    if (r.type === 'forge') {
+      expect(r.action).toBe('natural');
+      expect(r.task).toBe('a small CLI UX fix for forge status labels');
+      expect(r.fitnessCmd).toBeNull();
     }
   });
 

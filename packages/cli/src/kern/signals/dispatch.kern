@@ -1321,6 +1321,9 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       case 'forge': {
         const _fCwd = resolveWorkingDir();
         const _fLabel = intent.task?.slice(0, 40) ?? 'forge';
+        if (intent.action === 'natural') {
+          cb.dispatch({ type: 'info', message: `Cesar route: explicit-forge -> forge | fitness: ${intent.fitnessCmd ? 'provided' : 'auto'}` });
+        }
         cb.runAsJob('forge', _fLabel, withThreadOutcome(_fCwd, 'forge', _fLabel, async () => {
           if (cb.eventBus) await cb.eventBus.emit('pre:forge', { task: intent.task, cwd: _fCwd });
           await handleForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx, undefined, intent.hardened, true);

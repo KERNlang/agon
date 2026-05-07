@@ -34,6 +34,7 @@ vi.mock('@agon/core', async () => ({
   snapshotWorkspace: vi.fn(() => ({ id: 'cwd', path: '/repo', headSha: 'abc', branch: 'main', dirty: false })),
   resolveWorkingDir: vi.fn(() => '/repo'),
   loadOrCreateActiveThread: vi.fn(() => ({ append: vi.fn(), save: vi.fn() })),
+  applyPatchWithUndo: vi.fn(() => ({ ok: true, undoToken: 'undo-test' })),
   formatChatHistoryForPrompt: vi.fn(() => ''),
   formatChatContextForPrompt: vi.fn(() => ''),
   updateChatSummary: vi.fn(() => false),

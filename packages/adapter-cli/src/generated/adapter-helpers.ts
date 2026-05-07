@@ -184,7 +184,15 @@ export function usesStreamJson(engine: EngineDefinition): boolean {
   return args.includes('stream-json') || args.some((a: string) => a === '--output-format' && args[args.indexOf(a) + 1] === 'stream-json');
 }
 
+/**
+ * Only Codex-style JSON-RPC app-server is reliable for one-shot forge agent dispatch. Claude stream-json and Gemini ACP are reliable as persistent Cesar sessions, but the one-shot companion wrapper can hang or return empty, so forge should use their direct non-interactive CLI agent commands.
+ */
 // @kern-source: adapter-helpers:171
+export function shouldUseCompanionForAgent(engine: EngineDefinition): boolean {
+  return engine.companion?.protocol === 'jsonrpc';
+}
+
+// @kern-source: adapter-helpers:177
 export function checkEnvVars(engine: EngineDefinition): string|null {
   if (!engine.env) return null;
   for (const [envVar, config] of Object.entries(engine.env)) {

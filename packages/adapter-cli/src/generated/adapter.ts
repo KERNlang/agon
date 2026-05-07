@@ -8,7 +8,7 @@ import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, 
 
 import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, sessionContext, resolveWorkingDir, engineHealth, classifyDispatchFailure } from '@agon/core';
 
-import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth } from './adapter-helpers.js';
+import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth, shouldUseCompanionForAgent } from './adapter-helpers.js';
 
 // @kern-source: adapter:7
 export class CliAdapter implements EngineAdapter {
@@ -220,7 +220,7 @@ export class CliAdapter implements EngineAdapter {
           cwd,
           timeout: options.timeout,
           signal: options.signal,
-          maxSteps: 15,
+          maxSteps: 40,
           permissionMode: options.permissionMode,
           allowedCommands: options.allowedCommands,
           toolPermissions: options.toolPermissions,
@@ -280,7 +280,7 @@ export class CliAdapter implements EngineAdapter {
       const baselineDiff = readOnlyDiff(options.cwd);
 
       // Try companion protocol first
-      if (options.engine.companion) {
+      if (options.engine.companion && shouldUseCompanionForAgent(options.engine)) {
       const companionResult = await companionDispatch({
         config: options.engine.companion,
         binaryPath,
@@ -290,6 +290,7 @@ export class CliAdapter implements EngineAdapter {
         mode: 'agent',
         model: resolveModel(options.engine, options.cwd) ?? undefined,
         signal: options.signal,
+        systemPrompt: options.systemPrompt,
         onApproval: options.onApproval,
       });
         if (companionResult.exitCode !== 2 && companionResult.stdout.trim()) {
@@ -316,10 +317,25 @@ export class CliAdapter implements EngineAdapter {
         }
       }
 
+      // Resolve system prompt for direct CLI agent dispatch. Forge relies on
+      // this path for Claude/Gemini because their one-shot companion wrappers
+      // are not equivalent to their persistent Cesar sessions.
+      let effectivePrompt = options.prompt;
+      const sysFlag = options.engine.systemPromptFlag;
+      if (options.systemPrompt && !sysFlag) {
+        effectivePrompt = `[System Instructions]\n${options.systemPrompt}\n\n[User Message]\n${options.prompt}`;
+      }
+
       const { command, args } = buildCommand(
-        options.engine, options.mode, options.prompt,
+        options.engine, options.mode, effectivePrompt,
         options.cwd, options.timeout, binaryPath, options.images,
       );
+
+      if (options.systemPrompt && sysFlag) {
+        const promptIdx = args.indexOf(effectivePrompt);
+        const insertAt = promptIdx >= 0 ? promptIdx : 0;
+        args.splice(insertAt, 0, sysFlag, options.systemPrompt);
+      }
 
       const result = await spawnWithTimeout({
         command, args,

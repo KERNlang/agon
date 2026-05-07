@@ -34,13 +34,15 @@ fn name=makeFailedResult params="engineId:string,error:string,durationMs?:number
   >>>
 
 fn name=resolveForgeDispatchTimeout params="engine:any,config:Required<AgonConfig>" returns=number export=true
-  doc "Use an engine's own timeout when present, capped by the forge global timeout. User-added API engines often specify a shorter timeout; ignoring it makes native forge feel stuck."
+  doc "Forge is a long-running code competition. Per-engine chat defaults such as 120s must not shorten a forge run; use the larger of the engine timeout and forge timeout so useful candidate work is not killed early."
   handler <<<
+    const forgeTimeout = Number(config.forgeTimeout ?? 0);
+    const base = Number.isFinite(forgeTimeout) && forgeTimeout > 0 ? forgeTimeout : 1800;
     const engineTimeout = Number(engine?.timeout ?? 0);
     if (Number.isFinite(engineTimeout) && engineTimeout > 0) {
-      return Math.min(engineTimeout, config.forgeTimeout);
+      return Math.max(engineTimeout, base);
     }
-    return config.forgeTimeout;
+    return base;
   >>>
 
 fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:string,dispatchMode:'exec'|'review',metricPhase:'stage1'|'stage2-scout'|'stage2-follower',fitnessCmd:string,config:Required<AgonConfig>,registry:EngineRegistry,adapter:EngineAdapter,root:string,baseSha:string,forgeDir:string,worktrees:WorktreeEntry[],onEvent?:ForgeEventCallback,signal?:AbortSignal,eventType:string,eventData?:Record<string,unknown>,worktreePath?:string}" returns="Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}>"
@@ -91,10 +93,14 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
         });
       }
       const dispatchExitCode = typeof dispatchResult?.exitCode === 'number' ? dispatchResult.exitCode : 0;
-      if (dispatchResult?.timedOut || dispatchExitCode !== 0) {
-        const reason = dispatchResult?.timedOut
-          ? `dispatch timed out after ${dispatchTimeout}s`
-          : `dispatch exited with code ${dispatchExitCode}`;
+      if (dispatchResult?.timedOut) {
+        const stderr = dispatchResult?.stderr ? `: ${String(dispatchResult.stderr).slice(0, 240).replace(/\s+/g, ' ').trim()}` : '';
+        dispatchResult = {
+          ...dispatchResult,
+          stdout: `${dispatchResult?.stdout ?? ''}\n[agon] dispatch timed out after ${dispatchTimeout}s${stderr}; harvesting candidate worktree for fitness.\n`,
+        };
+      } else if (dispatchExitCode !== 0) {
+        const reason = `dispatch exited with code ${dispatchExitCode}`;
         const stderr = dispatchResult?.stderr ? `: ${String(dispatchResult.stderr).slice(0, 240).replace(/\s+/g, ' ').trim()}` : '';
         throw new Error(`${reason}${stderr}`);
       }

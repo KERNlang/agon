@@ -5,12 +5,12 @@ import { resolveForgeRunTimeout, resolveForgeSynthesisTimeout } from '../../pack
 describe('forge dispatch timeout selection', () => {
   const config = { forgeTimeout: 600 } as any;
 
-  it('uses shorter per-engine timeout for native user engines', () => {
-    expect(resolveForgeDispatchTimeout({ id: 'kimi', timeout: 180 }, config)).toBe(180);
+  it('does not let short per-engine chat defaults cut off forge work', () => {
+    expect(resolveForgeDispatchTimeout({ id: 'codex', timeout: 120 }, config)).toBe(600);
   });
 
-  it('caps longer engine timeout at the forge global timeout', () => {
-    expect(resolveForgeDispatchTimeout({ id: 'slow', timeout: 900 }, config)).toBe(600);
+  it('honors longer per-engine forge timeouts', () => {
+    expect(resolveForgeDispatchTimeout({ id: 'slow', timeout: 900 }, config)).toBe(900);
   });
 
   it('falls back to forge global timeout when engine has no timeout', () => {
@@ -33,20 +33,24 @@ describe('forge synthesis timeout selection', () => {
 describe('forge run timeout selection', () => {
   const config = { forgeTimeout: 600 } as any;
 
-  it('caps docs forge dispatches when no explicit timeout is provided', () => {
-    expect(resolveForgeRunTimeout(config, undefined, 'docs')).toBe(120);
+  it('uses the configured forge timeout for docs tasks', () => {
+    expect(resolveForgeRunTimeout(config, undefined, 'docs')).toBe(600);
   });
 
   it('honors explicit timeout for docs tasks', () => {
     expect(resolveForgeRunTimeout(config, 420, 'docs')).toBe(420);
   });
 
-  it('caps small implementation tasks when no explicit timeout is provided', () => {
-    expect(resolveForgeRunTimeout(config, undefined, 'bugfix')).toBe(180);
-    expect(resolveForgeRunTimeout(config, undefined, 'refactor')).toBe(180);
+  it('uses the configured forge timeout for small implementation tasks', () => {
+    expect(resolveForgeRunTimeout(config, undefined, 'bugfix')).toBe(600);
+    expect(resolveForgeRunTimeout(config, undefined, 'refactor')).toBe(600);
   });
 
-  it('caps larger implementation tasks when no explicit timeout is provided', () => {
-    expect(resolveForgeRunTimeout(config, undefined, 'feature')).toBe(300);
+  it('uses the configured forge timeout for larger implementation tasks', () => {
+    expect(resolveForgeRunTimeout(config, undefined, 'feature')).toBe(600);
+  });
+
+  it('defaults to a long forge timeout when config is missing', () => {
+    expect(resolveForgeRunTimeout({} as any, undefined, 'bugfix')).toBe(1800);
   });
 });

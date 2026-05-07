@@ -200,6 +200,41 @@ fn name=repairFitnessCommandRepositoryLiteral params="command:string, repoLitera
     return repaired;
   >>>
 
+fn name=extractFitnessStringArray params="command:string,name:string" returns="string[]" export=false
+  handler <<<
+    const re = new RegExp(`${name}\\s*=\\s*\\[([^\\]]*)\\]`);
+    const match = String(command ?? '').match(re);
+    if (!match) return [];
+    const values: string[] = [];
+    const body = match[1];
+    const stringRe = /(['"])((?:\\.|(?!\1).)*)\1/g;
+    let m;
+    while ((m = stringRe.exec(body)) !== null) {
+      values.push(m[2].replace(/\\(['"\\])/g, '$1'));
+    }
+    return values;
+  >>>
+
+fn name=repairContradictoryFitnessLiterals params="command:string" returns=string export=true
+  doc "Remove forbidden string literals that are required as part of another fitness assertion. Cesar sometimes requires github.com/KERNlang/agon and also forbids KERNlang, making the check impossible."
+  handler <<<
+    const required = extractFitnessStringArray(command, 'required');
+    const forbidden = extractFitnessStringArray(command, 'forbidden');
+    if (required.length === 0 || forbidden.length === 0) return command;
+
+    const kept = forbidden.filter((f: string) => {
+      const lower = f.toLowerCase();
+      return !required.some((r: string) => {
+        const req = r.toLowerCase();
+        return req.includes(lower) || lower.includes(req);
+      });
+    });
+    if (kept.length === forbidden.length) return command;
+
+    const serialized = kept.map((v: string) => `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`).join(',');
+    return command.replace(/forbidden\s*=\s*\[[^\]]*\]/, `forbidden=[${serialized}]`);
+  >>>
+
 fn name=repairForgeTaskRepositoryLiteral params="task:string, cwd:string" returns="string" export=true
   doc "Normalize current-repository GitHub literals in a forge task before displaying the plan or sending the prompt to engines."
   handler <<<
@@ -278,7 +313,8 @@ fn name=prepareForgeFitnessCommand params="task:string, dispatch:Dispatch, ctx:H
       if (cmd) {
         const repoLiteral = detectGithubRemoteLiteral(cwd);
         const taskRepaired = repairFitnessCommandTaskLiterals(task, cmd);
-        const repaired = repairFitnessCommandRepositoryLiteral(taskRepaired, repoLiteral);
+        const repoRepaired = repairFitnessCommandRepositoryLiteral(taskRepaired, repoLiteral);
+        const repaired = repairContradictoryFitnessLiterals(repoRepaired);
         if (repaired !== cmd) {
           dispatch({ type: 'warning', message: `Repaired Cesar fitness literal: ${cmd} -> ${repaired}` });
         }

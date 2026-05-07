@@ -131,6 +131,19 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
   const critiqueArrays = await Promise.all(critiquePromises);
   const allCritiques = critiqueArrays.flat().slice(0, opts.maxCritiques);
 
+  if (opts.signal?.aborted) {
+    opts.onEvent?.({ type: 'synthesis:done', engineId: winner, data: { wins: false, score: winnerResult.score, originalScore: winnerResult.score, keptWinner: winner, reason: 'aborted' } });
+    return {
+      pass: winnerResult.pass,
+      score: winnerResult.score,
+      wins: false,
+      patchPath: winnerResult.patchPath,
+      originalWinnerScore: winnerResult.score,
+      critiques: allCritiques,
+      reason: 'aborted',
+    };
+  }
+
   if (allCritiques.length === 0) {
     opts.onEvent?.({ type: 'synthesis:done', engineId: winner, data: { wins: false, score: winnerResult.score, originalScore: winnerResult.score, keptWinner: winner, reason: 'no-structured-critiques' } });
     return {

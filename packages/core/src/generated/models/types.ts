@@ -267,7 +267,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   forgeTimeout: 600,
   forgeAutoAcceptScore: 88,
   forgeClearWinnerSpread: 8,
-  forgeEnableSynthesis: true,
+  forgeEnableSynthesis: false,
   forgeMaxCritiques: 3,
   forgeStarterStrategy: 'fixed',
   forgeFixedStarter: 'claude',

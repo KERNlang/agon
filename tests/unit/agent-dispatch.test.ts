@@ -46,6 +46,16 @@ describe('Agent Dispatch', () => {
       expect(args).toContain('-p');
     });
 
+    it('keeps gemini model flags outside the -p prompt pair', () => {
+      const reg = loadRegistry();
+      const engine = reg.get('gemini');
+      const binary = '/usr/local/bin/gemini';
+      const { args } = buildCommand(engine, 'agent', 'fix the bug', '/tmp', 120, binary);
+      const promptFlagIdx = args.indexOf('-p');
+      expect(args[promptFlagIdx + 1]).toBe('fix the bug');
+      expect(args.indexOf('--model')).toBeLessThan(promptFlagIdx);
+    });
+
     it('throws for engines without agent config', () => {
       const reg = loadRegistry();
       const engine = reg.get('ollama');

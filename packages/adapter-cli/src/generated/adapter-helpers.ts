@@ -99,7 +99,9 @@ export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt:
 
   if (model && engine.model?.flag) {
     const promptIdx = args.indexOf(effectivePrompt);
-    if (promptIdx >= 0) {
+    if (promptIdx > 0 && ['-p', '--prompt'].includes(args[promptIdx - 1])) {
+      args.splice(promptIdx - 1, 0, engine.model.flag, model);
+    } else if (promptIdx >= 0) {
       args.splice(promptIdx, 0, engine.model.flag, model);
     } else {
       args.unshift(engine.model.flag, model);
@@ -120,12 +122,12 @@ export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt:
   return { command: binaryPath, args };
 }
 
-// @kern-source: adapter-helpers:114
+// @kern-source: adapter-helpers:116
 export function supportsAgentMode(engine: EngineDefinition): boolean {
   return !!engine.agent;
 }
 
-// @kern-source: adapter-helpers:116
+// @kern-source: adapter-helpers:118
 export function resolveAgentArgs(engine: EngineDefinition, permissionLevel: 'full'|'plan'|'read-only'): EngineModeConfig|null {
   if (permissionLevel === 'read-only') return null;
   if (!engine.agent) return null;
@@ -143,7 +145,7 @@ export function resolveAgentArgs(engine: EngineDefinition, permissionLevel: 'ful
 /**
  * Extract text content from Claude stream-json NDJSON output. Returns plain text with system/hook messages removed.
  */
-// @kern-source: adapter-helpers:131
+// @kern-source: adapter-helpers:133
 export function stripStreamJson(stdout: string): string {
   const lines = stdout.split('\n');
   const textParts: string[] = [];
@@ -176,13 +178,13 @@ export function stripStreamJson(stdout: string): string {
 /**
  * Check if engine exec mode outputs stream-json NDJSON.
  */
-// @kern-source: adapter-helpers:162
+// @kern-source: adapter-helpers:164
 export function usesStreamJson(engine: EngineDefinition): boolean {
   const args = engine.exec?.args ?? [];
   return args.includes('stream-json') || args.some((a: string) => a === '--output-format' && args[args.indexOf(a) + 1] === 'stream-json');
 }
 
-// @kern-source: adapter-helpers:169
+// @kern-source: adapter-helpers:171
 export function checkEnvVars(engine: EngineDefinition): string|null {
   if (!engine.env) return null;
   for (const [envVar, config] of Object.entries(engine.env)) {

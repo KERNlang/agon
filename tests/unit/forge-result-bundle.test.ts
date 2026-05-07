@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   buildForgeCleanupCommand,
+  completeMissingForgeResults,
   writeForgeResultBundle,
 } from '../../packages/forge/src/generated/forge.js';
 
@@ -81,5 +82,47 @@ describe('forge result bundle helpers', () => {
     expect(bundle.worktrees[0]).toMatchObject({ cleanupPlanned: true, cleanupMode: 'best-effort-after-bundle' });
     expect(bundle.worktrees[0]).not.toHaveProperty('removedAfterRun');
     expect(manifest.resultBundlePath).toBe(bundlePath);
+  });
+
+  it('marks selected engines without output as terminal failed results', () => {
+    const manifest = {
+      forgeId: 'forge-test',
+      forgeDir: '/tmp/forge-test',
+      task: 'fix cli',
+      fitnessCmd: 'npm test',
+      timestamp: new Date().toISOString(),
+      engines: ['claude', 'codex', 'gemini'],
+      results: {
+        codex: {
+          engineId: 'codex',
+          pass: true,
+          score: 90,
+          diffLines: 4,
+          filesChanged: 1,
+          durationSec: 3,
+          lintWarnings: 0,
+          styleScore: 100,
+        },
+      },
+      patches: {},
+      winner: 'codex',
+      closeCall: false,
+      stage1Accepted: false,
+      baselinePasses: false,
+      starter: 'parallel',
+      enginesDispatched: 1,
+    } as any;
+
+    completeMissingForgeResults(manifest, manifest.engines, 'aborted');
+
+    expect(manifest.enginesDispatched).toBe(3);
+    expect(manifest.results.codex.pass).toBe(true);
+    expect(manifest.results.claude).toMatchObject({
+      engineId: 'claude',
+      pass: false,
+      score: 0,
+      dispatchStdout: 'ERROR: aborted',
+    });
+    expect(manifest.results.gemini.pass).toBe(false);
   });
 });

@@ -97,6 +97,33 @@ describe('handleForge', () => {
     expect(runForgeMock).toHaveBeenCalled();
   });
 
+  it('uses Cesar to prepare missing forge fitness before falling back', async () => {
+    const { handleForge } = await import('../../packages/cli/src/generated/handlers/forge.js');
+    const adapterDispatchMock = vi.fn(async () => ({
+      stdout: '{"fitnessCmd":"npm run test:ts -- tests/unit/intent.test.ts","reason":"focused parser regression"}',
+    }));
+
+    const ctx: any = {
+      askQuestion: askQuestionMock,
+      activeEngines: () => ['codex'],
+      config: { approvalLevel: 'plan', forgeEnableSynthesis: false, cesarEngine: 'codex', timeout: 90 },
+      registry: { get: vi.fn(() => ({ id: 'codex' })) },
+      adapter: { dispatch: adapterDispatchMock },
+      currentPlan: null,
+      setCurrentPlan: setCurrentPlanMock,
+      setActiveAbort: setActiveAbortMock,
+      chatSession: {},
+      cesarSession: null,
+    };
+
+    await handleForge('forge a small CLI UX fix', null, dispatchMock, ctx, undefined, false, true);
+
+    expect(adapterDispatchMock).toHaveBeenCalled();
+    expect(runForgeMock).toHaveBeenCalledWith(expect.objectContaining({
+      fitnessCmd: 'npm run test:ts -- tests/unit/intent.test.ts',
+    }), expect.anything(), expect.anything(), expect.anything());
+  });
+
   it('skips the internal build approval prompt when already approved upstream', async () => {
     const { handleBuild } = await import('../../packages/cli/src/generated/handlers/build.js');
 

@@ -10,15 +10,43 @@ import { spawnWithTimeout, worktreeDiff, diffLineCount, diffFileCount, computeSc
 
 import { runLint, runStyleCheck } from './quality.js';
 
+/**
+ * Normalize fragile `node -e "..."` fitness checks into a quoted heredoc. Shell command substitution inside Markdown fences (```bash) otherwise makes valid candidates fail before Node starts.
+ */
 // @kern-source: fitness:7
+export function normalizeFitnessCommandForShell(command: string): string {
+  const raw = String(command ?? '');
+  const trimmed = raw.trim();
+  const match = trimmed.match(/^node\s+-e\s+(['"])([\s\S]*)$/);
+  if (!match) return raw;
+
+  const quote = match[1];
+  const rest = match[2].trimEnd();
+  if (!rest.endsWith(quote)) return raw;
+
+  const script = rest.slice(0, -quote.length);
+  if (!script.includes('\n') && !script.includes('`')) return raw;
+
+  let delimiter = 'AGON_FITNESS_NODE';
+  let suffix = 0;
+  while (script.includes(delimiter)) {
+    suffix += 1;
+    delimiter = `AGON_FITNESS_NODE_${suffix}`;
+  }
+
+  return `node <<'${delimiter}'\n${script}\n${delimiter}`;
+}
+
+// @kern-source: fitness:32
 export async function runFitness(opts: {engineId:string, worktreePath:string, fitnessCmd:string, timeout:number, forgeDir:string}): Promise<EngineResult> {
   const startTime = Date.now();
+  const fitnessCmd = normalizeFitnessCommandForShell(opts.fitnessCmd);
 
   let fitnessResult: any;
   if (existsSync(opts.worktreePath)) {
     fitnessResult = await spawnWithTimeout({
       command: '/bin/sh',
-      args: ['-c', opts.fitnessCmd],
+      args: ['-c', fitnessCmd],
       cwd: opts.worktreePath,
       timeout: opts.timeout * 1000,
     });

@@ -51,6 +51,7 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
   // applyPatch would silently no-op leaving synthesis on a clean checkout
   // that re-runs fitness against the baseline. Wasted compute with a
   // misleading "synthesis didn't improve" outcome.
+  opts.onEvent?.({ type: 'synthesis:start' });
   if (!winnerPatch.trim()) {
     opts.onEvent?.({ type: 'synthesis:done', engineId: winner, data: { wins: false, score: winnerResult.score, originalScore: winnerResult.score, keptWinner: winner, reason: 'empty-patch' } });
     return {
@@ -63,8 +64,6 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
       reason: 'empty-patch',
     };
   }
-
-  opts.onEvent?.({ type: 'synthesis:start' });
 
   // Build StageContext for each loser — gives critics richer context about what was tried
   const loserContexts: string[] = [];

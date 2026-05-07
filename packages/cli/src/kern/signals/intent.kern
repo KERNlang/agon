@@ -278,12 +278,16 @@ fn name=parseSemanticCollaborationShortcut params="input:string" returns="Intent
 
 fn name=parseSemanticForgeShortcut params="input:string" returns="Intent|null" export=false
   handler <<<
-    const hasForgeShape = /\b(?:forge\s+this|forge\s+it|have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|competitive\s+(?:build|implementation|fix))\b/i.test(input);
+    const explicitForgeImperative = /^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\b/i.test(input)
+      && !/^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\s+(?:is|was|seems?|looks?|does|did|can|should|would|will|not|still)\b/i.test(input);
+    const hasForgeShape = explicitForgeImperative
+      || /\b(?:forge\s+this|forge\s+it|have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|competitive\s+(?:build|implementation|fix))\b/i.test(input);
     if (!hasForgeShape) return null;
 
     const task = input
       .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?/i, '')
       .replace(/^forge\s+(?:this|it)\s*/i, '')
+      .replace(/^forge\s+/i, '')
       .replace(/^have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete\s+(?:on\s+|to\s+)?/i, '')
       .replace(/^make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete\s+(?:on\s+|to\s+)?/i, '')
       .trim();

@@ -298,12 +298,16 @@ function parseSemanticCollaborationShortcut(input: string): Intent|null {
 
 // @kern-source: intent:279
 function parseSemanticForgeShortcut(input: string): Intent|null {
-  const hasForgeShape = /\b(?:forge\s+this|forge\s+it|have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|competitive\s+(?:build|implementation|fix))\b/i.test(input);
+  const explicitForgeImperative = /^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\b/i.test(input)
+    && !/^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\s+(?:is|was|seems?|looks?|does|did|can|should|would|will|not|still)\b/i.test(input);
+  const hasForgeShape = explicitForgeImperative
+    || /\b(?:forge\s+this|forge\s+it|have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|competitive\s+(?:build|implementation|fix))\b/i.test(input);
   if (!hasForgeShape) return null;
 
   const task = input
     .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?/i, '')
     .replace(/^forge\s+(?:this|it)\s*/i, '')
+    .replace(/^forge\s+/i, '')
     .replace(/^have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete\s+(?:on\s+|to\s+)?/i, '')
     .replace(/^make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete\s+(?:on\s+|to\s+)?/i, '')
     .trim();
@@ -312,14 +316,14 @@ function parseSemanticForgeShortcut(input: string): Intent|null {
   return { ...parsed, type: 'forge' } as Intent;
 }
 
-// @kern-source: intent:295
+// @kern-source: intent:299
 function parseSemanticDelegationShortcut(input: string): Intent|null {
   return parseSemanticReviewShortcut(input)
     ?? parseSemanticForgeShortcut(input)
     ?? parseSemanticCollaborationShortcut(input);
 }
 
-// @kern-source: intent:302
+// @kern-source: intent:306
 function splitReviewArgs(input: string): string[] {
   return input
     .split(/\s+/)
@@ -328,19 +332,19 @@ function splitReviewArgs(input: string): string[] {
     .filter(Boolean);
 }
 
-// @kern-source: intent:311
+// @kern-source: intent:315
 function isReviewTargetArg(part: string): boolean {
   const lower = part.toLowerCase();
   return lower === 'uncommitted' || lower.startsWith('branch:') || lower.startsWith('commit:');
 }
 
-// @kern-source: intent:316
+// @kern-source: intent:320
 function isImplicitReviewSubjectArg(part: string): boolean {
   const lower = part.toLowerCase();
   return lower === 'it' || lower === 'this' || lower === 'that' || lower === 'them' || lower === 'changes' || lower === 'diff';
 }
 
-// @kern-source: intent:321
+// @kern-source: intent:325
 function parseReviewInput(input: string): Intent {
   const reviewParts = splitReviewArgs(input);
   const engineIds: string[] = [];
@@ -375,7 +379,7 @@ function parseReviewInput(input: string): Intent {
   return { type: 'review', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target } as Intent;
 }
 
-// @kern-source: intent:356
+// @kern-source: intent:360
 function parseReviewShortcut(input: string): Intent|null {
   const match = input.match(/^(?:review|cr)(?:\s+([\s\S]+))?$/i);
   if (!match) return null;
@@ -398,7 +402,7 @@ function parseReviewShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:379
+// @kern-source: intent:383
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
@@ -689,7 +693,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   }
 }
 
-// @kern-source: intent:670
+// @kern-source: intent:674
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) return { type: 'unknown', input: '' } as Intent;

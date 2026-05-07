@@ -136,4 +136,29 @@ describe('runApiAgentLoop', () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
+
+  it('does not return empty output when the tool loop reaches max steps', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+
+    apiStreamDispatchWithHistoryMock.mockImplementation(() => streamChunks([
+      '<tool name="Read">{"file_path":"missing.txt"}</tool>',
+    ]));
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Keep reading',
+        cwd,
+        timeout: 120,
+        maxSteps: 2,
+      });
+
+      expect(result.response).toContain('tool loop limit');
+      expect(result.response.length).toBeGreaterThan(0);
+      expect(result.toolCalls).toBe(2);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 });

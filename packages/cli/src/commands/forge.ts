@@ -60,7 +60,7 @@ export const forgeCommand = defineCommand({
 
     const adapter = createCliAdapter(registry);
 
-    const available = registry.availableIds();
+    const available = registry.activeIds(config);
     if (available.length === 0) {
       fail('No engines found. Install at least one AI CLI tool.');
       info('Supported: claude, codex, gemini');

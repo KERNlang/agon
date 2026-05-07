@@ -346,7 +346,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         const resolvedForTelemetry = resolveCesarBackend(ctx, cesarEngineId);
         _actualCesarBackend = resolvedForTelemetry.backend ?? 'unknown';
       } catch { /* telemetry best-effort */ }
-      const allAvailable = ctx.registry.availableIds();
+      const allAvailable = ctx.activeEngines();
       if (!allAvailable.includes(cesarEngineId)) {
         return { delegated: false, responded: false };
       }

@@ -2,7 +2,7 @@ import from="node:fs" names="readdirSync,readFileSync,existsSync"
 import from="node:path" names="join,dirname,resolve"
 import from="node:os" names="homedir"
 import from="node:child_process" names="execFileSync"
-import from="../models/types.js" names="EngineDefinition,EngineMode" types=true
+import from="../models/types.js" names="EngineDefinition,EngineMode,AgonConfig" types=true
 import from="../models/errors.js" names="EngineNotFoundError"
 import from="../../schemas/engine-schema.js" names="validateEngineConfig"
 
@@ -185,9 +185,9 @@ service name=EngineRegistry
       return engine.modes?.includes(mode) ?? false;
     >>>
 
-  method name=agentCapableIds returns="string[]"
+  method name=agentCapableIds params="config?:Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'>" returns="string[]"
     handler <<<
-      return this.availableEngines()
+      return this.activeEngines(config)
         .filter((e: EngineDefinition) => !!e.agent && !!e.binary && this.findBinary(e) !== null)
         .map((e: EngineDefinition) => e.id);
     >>>
@@ -202,6 +202,20 @@ service name=EngineRegistry
       return this.availableEngines().map((e: EngineDefinition) => e.id);
     >>>
 
+  method name=activeEngines params="config?:Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'>" returns="EngineDefinition[]"
+    doc "Available engines filtered through user activation settings. In auto mode every available engine is active; in explicit mode only forgeEnabledEngines are active."
+    handler <<<
+      const available = this.availableEngines();
+      if (!config || config.engineActivationMode !== 'explicit') return available;
+      const selected = new Set(config.forgeEnabledEngines ?? []);
+      return available.filter((e: EngineDefinition) => selected.has(e.id));
+    >>>
+
+  method name=activeIds params="config?:Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'>" returns="string[]"
+    handler <<<
+      return this.activeEngines(config).map((e: EngineDefinition) => e.id);
+    >>>
+
   method name=pickStarter params="available:string[], strategy:'fixed'|'rotate', preferred?:string" returns=string
     handler <<<
       if (available.length === 0) throw new EngineNotFoundError('(any)', 'No engines available');
@@ -212,10 +226,10 @@ service name=EngineRegistry
       return available[Math.floor(Date.now() / 1000) % available.length];
     >>>
 
-  method name=getFallbackChain params="sourceId:string, taskClass?:string" returns="string[]"
+  method name=getFallbackChain params="sourceId:string, taskClass?:string, candidateIds?:string[]" returns="string[]"
     doc "Return ranked candidate engines for fallback from sourceId, excluding source itself. Uses Glicko-2 ratings when available; falls back to available order."
     handler <<<
-      const available = this.availableIds().filter((id: string) => id !== sourceId);
+      const available = (candidateIds ?? this.availableIds()).filter((id: string) => id !== sourceId);
       if (available.length === 0) return [];
       try {
         const { getEngineGlickoRating } = require('../signals/glicko.js');
@@ -230,9 +244,9 @@ service name=EngineRegistry
       }
     >>>
 
-  method name=getFallbackCandidate params="sourceId:string, taskClass?:string" returns="string|undefined"
+  method name=getFallbackCandidate params="sourceId:string, taskClass?:string, candidateIds?:string[]" returns="string|undefined"
     doc "Top fallback candidate for sourceId, or undefined if none available."
     handler <<<
-      const chain = this.getFallbackChain(sourceId, taskClass);
+      const chain = this.getFallbackChain(sourceId, taskClass, candidateIds);
       return chain[0];
     >>>

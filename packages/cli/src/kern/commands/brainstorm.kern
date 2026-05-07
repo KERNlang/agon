@@ -2,7 +2,7 @@ import from="citty" names="defineCommand"
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="EngineRegistry,ensureAgonHome,RUNS_DIR"
+import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,RUNS_DIR"
 import from="@agon/adapter-cli" names="createCliAdapter"
 import from="@agon/forge" names="runBrainstorm"
 import from="../blocks/output-format.js" names="header,success,info,table,bold,cyan,green"
@@ -34,6 +34,7 @@ const name=brainstormCommand type=any
       },
       async run({ args }) {
         ensureAgonHome();
+        const config = loadConfig(process.cwd());
 
         const registry = new EngineRegistry();
         registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../engines'));
@@ -41,7 +42,7 @@ const name=brainstormCommand type=any
         const adapter = createCliAdapter(registry);
         const available = args.engines
           ? args.engines.split(',').map((s: string) => s.trim())
-          : registry.availableIds();
+          : registry.activeIds(config as any);
 
         const outputDir = join(RUNS_DIR, `brainstorm-${Date.now()}`);
         mkdirSync(outputDir, { recursive: true });

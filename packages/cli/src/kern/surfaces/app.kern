@@ -984,13 +984,13 @@ fn name=buildDashboardBlock params="enabledOverride:string[]|null" returns=Outpu
     const available = registry.availableIds();
     const config = loadConfig();
     const ratings = getRatings();
-    const defaultEngine = config.forgeFixedStarter ?? available[0] ?? 'none';
+    const enabled = enabledOverride ?? registry.activeIds(config);
+    const defaultEngine = enabled.includes(config.forgeFixedStarter) ? config.forgeFixedStarter : enabled[0] ?? 'none';
     const activeWs = getActiveWorkspace();
     const totalMatches = Object.values(ratings.global).reduce((sum: number, r: any) => sum + r.wins + r.losses, 0);
     const sorted = Object.entries(ratings.global)
       .map(([id, r]: any) => [id, { rating: Math.round(r.mu - 2 * r.phi) }] as const)
       .sort(([, a], [, b]) => b.rating - a.rating);
-    const enabled = enabledOverride ?? available;
     let runCount = 0;
     try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch { /* runs dir missing — first run */ }
 
@@ -2516,7 +2516,7 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
 screen name=App target=ink
   // ── State ──
   state name=replState type="ReplStateState" initial="'idle'"
-  state name=outputBlocks type="OutputBlock[]" initial="() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return [buildDashboardBlock(saved && saved.length > 0 ? saved : null)]; }"
+  state name=outputBlocks type="OutputBlock[]" initial="() => { const cfg = loadConfig(); const saved = cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; return [buildDashboardBlock(saved)]; }"
   state name=inputValue type=string initial="''" safe=false
   state name=inputHistory type="string[]" initial="loadComposerInputHistory()"
   state name=inputQueue type="string[]" initial="[]"
@@ -2547,7 +2547,7 @@ screen name=App target=ink
   state name=jobManager type=any initial="new JobManager()"
   state name=jobList type="Job[]" initial="[]"
   state name=lastUndoToken type="string|null" initial="null"
-  state name=sessionEngines type="string[]|null" initial="() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return saved && saved.length > 0 ? saved : null; }"
+  state name=sessionEngines type="string[]|null" initial="() => { const cfg = loadConfig(); return cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; }"
   state name=currentPlan type="Plan|null" initial="null"
   state name=activePlan type="any" initial="null"
   state name=chatSession type=ChatSession initial="() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } return startChatSession({ cwd, branch }); }"
@@ -3070,10 +3070,10 @@ screen name=App target=ink
       setCesarSession(session);
     >>>
 
-  callback name=activeEngines params="" deps="registry,sessionEngines"
+  callback name=activeEngines params="" deps="registry,sessionEngines,config"
     handler <<<
       const available = registry.availableIds();
-      if (!sessionEngines) return available;
+      if (!sessionEngines) return registry.activeIds(config as any);
       return sessionEngines.filter((id: string) => available.includes(id));
     >>>
 
@@ -3406,7 +3406,7 @@ screen name=App target=ink
     >>>
 
   // ── Telemetry poller lifecycle ──
-  effect deps="registry,cesarSession"
+  effect deps="registry,cesarSession,activeEngines"
     handler <<<
       if (telemetryPollerRef.current) {
         telemetryPollerRef.current.stop();
@@ -3418,6 +3418,7 @@ screen name=App target=ink
         intervalMs: 5000,
         stallThresholdMs: 30000,
         probeTimeoutMs: 2500,
+        activeEngineIds: activeEngines,
         autoFallback: 'auto',
         onAutoFallback: async (from: string, to: string, reason: string) => {
           const activeTurn = activeTurnRef.current;
@@ -4287,10 +4288,10 @@ screen name=App target=ink
         )}
         {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
         {enginePickerOpen && (
-          <EnginePicker available={availableEngines} initialSelected={sessionEngines ?? availableEngines}
+          <EnginePicker available={availableEngines} initialSelected={sessionEngines ?? registry.activeIds(config as any)}
             userEngines={new Set(registry.list().filter((e: any) => e.tier === 'user').map((e: any) => e.id))}
             modelOverrides={(config as any).engineModels ?? {}}
-            onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); setConfigVersion((v: number) => v + 1); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
+            onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('engineActivationMode' as any, 'explicit' as any); configSet('forgeEnabledEngines', selected); setConfigVersion((v: number) => v + 1); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
             onCancel={() => setEnginePickerOpen(false)}
             onRemove={(engineId: string) => {
               const engPath = join(getAgonHome(), 'engines', `${engineId}.json`);
@@ -4316,6 +4317,22 @@ screen name=App target=ink
         )}
         {modelPickerOpen && (
           <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle} cliGroups={modelPickerCliGroups}
+            activeEngineIds={activeEngines()}
+            onToggleCliEngine={(engineId: string, active: boolean) => {
+              const current = sessionEngines ?? registry.activeIds(config as any);
+              const next = active
+                ? Array.from(new Set([...current, engineId]))
+                : current.filter((id: string) => id !== engineId);
+              if (next.length === 0) {
+                dispatch({ type: 'warning', message: 'Keep at least one engine active.' } as any);
+                return;
+              }
+              setSessionEngines(next);
+              configSet('engineActivationMode' as any, 'explicit' as any);
+              configSet('forgeEnabledEngines', next as any);
+              setConfigVersion((v: number) => v + 1);
+              dispatch({ type: 'success', message: `${active ? 'Activated' : 'Deactivated'} CLI engine: ${engineId}` } as any);
+            }}
             onSelect={(entry: any) => {
               if (modelPickerTargetEngine) {
                 const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
@@ -4347,7 +4364,12 @@ screen name=App target=ink
               mkdirSync(dir, { recursive: true });
               writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');
               registry.register(def as any);
+              const nextSelected = Array.from(new Set([...(sessionEngines ?? registry.activeIds(config as any)), def.id]));
+              setSessionEngines(nextSelected);
+              configSet('engineActivationMode' as any, 'explicit' as any);
+              configSet('forgeEnabledEngines', nextSelected as any);
               setRegistryVersion((v: number) => v + 1);
+              setConfigVersion((v: number) => v + 1);
               dispatch({ type: 'success', message: `Added: ${entry.providerName} \u2014 ${entry.modelName}` } as any);
             }}
             onCancel={() => {

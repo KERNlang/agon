@@ -289,26 +289,12 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   // Tab switch resets cursor + filter
   useEffect(() => { setCursor(0); setFilter(''); }, [activeTab]);
 
-  // ── CLI tab: scanned CLI engines. Installed engines expose models; missing
-  // engines show one row so users can see what Agon knows how to use.
+  // ── CLI tab: scanned CLI engines. Only installed engines are shown;
+  // missing CLIs belong in doctor/discover output, not the add/remove picker.
   const cliFlat = useMemo(() => {
     const items: { group: CliProviderGroup; model: CliModelEntry; missing?: boolean }[] = [];
     for (const g of groups) {
-      if (!g.installed) {
-        items.push({
-          group: g,
-          model: {
-            id: '__missing__',
-            name: `${g.engineBinary} not installed`,
-            providerId: g.providerId,
-            providerName: g.providerName,
-            engineId: g.engineId,
-            engineBinary: g.engineBinary,
-          } as any,
-          missing: true,
-        });
-        continue;
-      }
+      if (!g.installed) continue;
       for (const m of g.models) {
         items.push({ group: g, model: m });
       }
@@ -610,7 +596,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   );
 }
 
-// @kern-source: controls:603
+// @kern-source: controls:589
 export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
   const eColor = engineColor(event.winnerId);
   const codeWidth = contentWidth(10);
@@ -649,7 +635,7 @@ export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(
   );
 }
 
-// @kern-source: controls:645
+// @kern-source: controls:631
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines:string[]; currentCesar:string; onSelect:(engineId: string) => void; onCancel:() => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

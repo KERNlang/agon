@@ -507,9 +507,10 @@ export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerC
   if (engineIds.length === 0 || (engineIds.length === 1 && engineIds[0] === 'all')) {
     setSessionEngines(null);
     configSet('engineActivationMode' as any, 'auto' as any);
-    configSet('forgeEnabledEngines', ctx.registry.availableIds());
+    const active = ctx.registry.activeIds({ ...(ctx.config as any), engineActivationMode: 'auto' } as any);
+    configSet('forgeEnabledEngines', active);
     dispatch({ type: 'success', message: 'Using all available engines' });
-    dispatch({ type: 'info', message: ctx.registry.availableIds().join(', ') });
+    dispatch({ type: 'info', message: active.join(', ') });
     return;
   }
 
@@ -533,7 +534,7 @@ export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerC
   dispatch({ type: 'info', message: 'Saved — persists across sessions. Use /cesar <engine> to change Cesar brain separately.' });
 }
 
-// @kern-source: info:525
+// @kern-source: info:526
 export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerContext): void {
   // Parse: "/cesar claude api" or "/cesar claude cli" or "/cesar claude" or "/cesar"
   const parts = engineId.trim().split(/\s+/);
@@ -604,7 +605,7 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
   dispatch({ type: 'info', message: 'Conversation context + memory preserved. Forge/tribunal engines unchanged — use /use to change those.' });
 }
 
-// @kern-source: info:596
+// @kern-source: info:597
 export function handleTokens(dispatch: Dispatch): void {
   const stats = tracker.getStats();
   dispatch({ type: 'header', title: 'Token Usage — This Session' });
@@ -657,7 +658,7 @@ export function handleTokens(dispatch: Dispatch): void {
   dispatch({ type: 'info', message: `${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines` });
 }
 
-// @kern-source: info:649
+// @kern-source: info:650
 export function handleWorkspace(action: string, dispatch: Dispatch, ctx: HandlerContext, path?: string): void {
   switch (action) {
     case 'add': {
@@ -709,7 +710,7 @@ export function handleWorkspace(action: string, dispatch: Dispatch, ctx: Handler
   }
 }
 
-// @kern-source: info:701
+// @kern-source: info:702
 export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   if (sessionId) {
     const session = loadChatSession(sessionId);
@@ -743,7 +744,7 @@ export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   dispatch({ type: 'table', headers: ['Session', 'Msgs', 'Date', 'First Message'], rows });
 }
 
-// @kern-source: info:735
+// @kern-source: info:736
 export function handleModels(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'header', title: 'Models & Engines' });
 

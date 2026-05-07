@@ -74,6 +74,13 @@ fn name=shouldRunEagerRepairTool params="toolName:string,meta:any,failedToolName
     return true;
   >>>
 
+fn name=shouldStopAfterXmlToolCall params="toolName:string" returns=boolean export=true
+  doc "Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet."
+  handler <<<
+    const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'ProposePlan']);
+    return HANDOFF_TOOLS.has(String(toolName ?? ''));
+  >>>
+
 fn name=buildReviewFollowupPrompt params="input:string, ctx:HandlerContext" returns="{ matched: boolean; prompt: string }" export=true
   doc "Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history."
   handler <<<
@@ -1287,7 +1294,7 @@ ${reviewFollowup.prompt}`;
                   delete _lastToolInputs[name];
                 }
               },
-              shouldStopAfterToolCall: (name: string) => name === 'ProposePlan',
+              shouldStopAfterToolCall: shouldStopAfterXmlToolCall,
               onToolResult: (name: string, result: any) => {
                 const out = result.result.ok ? result.result.content : result.result.error;
                 // Track if a mutation was deferred during investigation

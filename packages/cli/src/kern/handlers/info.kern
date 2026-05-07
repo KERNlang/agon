@@ -496,9 +496,10 @@ fn name=handleUse params="engineIds:string[], dispatch:Dispatch, ctx:HandlerCont
     if (engineIds.length === 0 || (engineIds.length === 1 && engineIds[0] === 'all')) {
       setSessionEngines(null);
       configSet('engineActivationMode' as any, 'auto' as any);
-      configSet('forgeEnabledEngines', ctx.registry.availableIds());
+      const active = ctx.registry.activeIds({ ...(ctx.config as any), engineActivationMode: 'auto' } as any);
+      configSet('forgeEnabledEngines', active);
       dispatch({ type: 'success', message: 'Using all available engines' });
-      dispatch({ type: 'info', message: ctx.registry.availableIds().join(', ') });
+      dispatch({ type: 'info', message: active.join(', ') });
       return;
     }
 

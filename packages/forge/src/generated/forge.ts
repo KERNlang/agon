@@ -72,9 +72,34 @@ export function resolveForgeRunTimeout(config: AgonConfig, explicitTimeout: numb
 }
 
 /**
- * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
+ * Mark every selected forge engine terminal before persisting a bundle. This keeps aborted, timed-out, or disappearing engines visible instead of leaving the run looking half-open.
  */
 // @kern-source: forge:58
+export function completeMissingForgeResults(manifest: ForgeManifest, engineIds: string[], reason: string): ForgeManifest {
+  for (const id of engineIds) {
+    if ((manifest.results as any)[id]) continue;
+    (manifest.results as any)[id] = {
+      engineId: id,
+      pass: false,
+      score: 0,
+      diffLines: 0,
+      filesChanged: 0,
+      durationSec: 0,
+      lintWarnings: 0,
+      styleScore: 0,
+      dispatchStdout: `ERROR: ${reason}`,
+    };
+  }
+  manifest.enginesDispatched = Object.keys(manifest.results ?? {})
+    .filter((id) => id !== 'synthesis')
+    .length;
+  return manifest;
+}
+
+/**
+ * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
+ */
+// @kern-source: forge:81
 export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: WorktreeEntry[], options: ForgeOptions, repoRootPath: string, baseSha: string, sidechainPath: string, errorMessage?: string): string {
   const cleanupCommand = buildForgeCleanupCommand(repoRootPath, manifest.forgeDir);
   const bundlePath = `${manifest.forgeDir}/result.json`;
@@ -154,7 +179,7 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
   return bundlePath;
 }
 
-// @kern-source: forge:139
+// @kern-source: forge:162
 export async function runForge(options: ForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const loadedConfig = loadConfig(options.cwd);
   const taskClass = classifyTask(options.task);
@@ -292,10 +317,12 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     return manifest;
   }
 
-  const starter = options.starter
-    ?? registry.pickStarter(available, config.forgeStarterStrategy, config.forgeFixedStarter);
+  const singleEngineMode = available.length === 1;
+  const starter = singleEngineMode
+    ? (options.starter ?? available[0])
+    : 'parallel';
 
-  const challengers = available.filter((id: string) => id !== starter);
+  const challengers = singleEngineMode ? [] : available;
 
   const hasAgentEngines = available.some((id: string) => {
     try {
@@ -380,7 +407,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       }
     }
 
-    const shouldRunStarterGate = available.length === 1;
+    const shouldRunStarterGate = singleEngineMode;
     const stage1 = shouldRunStarterGate
       ? await runStage1({
           starter,
@@ -431,9 +458,9 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     const stage2EngineIds = shouldRunStarterGate ? challengers : available;
     const remainingChallengers = stage2EngineIds.filter((id: string) => !stage1.engineResults.has(id));
     if (remainingChallengers.length > 0) {
-      // Dispatch challengers in parallel. The old peek scout path serialized
-      // everyone behind the first challenger, which made multi-engine forge
-      // look like only one engine was working.
+      // Default forge is a plain competition: every selected engine gets an
+      // independent worktree and one terminal result. Stage 1 is retained
+      // only for the single-engine legacy path.
       const partialStage2Metrics: DispatchMetric[] = [];
       const stage2 = await runStage2({
         challengers: remainingChallengers,
@@ -460,7 +487,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         },
       });
 
-      manifest.enginesDispatched = stage2.engineResults.size;
+      completeMissingForgeResults(manifest, available, 'forge competition ended before this engine produced a result');
       allMetrics.push(...(stage2.metrics ?? []));
       for (const [id, result] of stage2.engineResults) {
         manifest.results[id] = result;
@@ -710,6 +737,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       }
     }
 
+    completeMissingForgeResults(manifest, available, 'forge ended before this engine produced a result');
     manifest.dispatchLog = allMetrics;
     writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path);
     writeManifest(manifest);
@@ -731,6 +759,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     // the failure cause for resume/inspection.
     manifest.error = error;
     try {
+      completeMissingForgeResults(manifest, available, `forge failed before this engine produced a result: ${error}`);
       writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path, error);
       writeManifest(manifest);
       sidechain.log('forge:error', undefined, { error });

@@ -489,7 +489,7 @@ describe('Forge E2E', () => {
     }
   });
 
-  it('retries a failed starter on a fallback engine outside the forge roster', async () => {
+  it('does not retry a failed starter on an engine outside the active forge roster', async () => {
     const agonHome = setupTestAgonHome('forge-starter-fallback');
     const repoDir = createRepo('starter-fallback');
     const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -523,10 +523,10 @@ describe('Forge E2E', () => {
         starter: 'starter',
       }, registry, adapter, (event) => events.push(event));
 
-      expect(manifest.winner).toBe('backup');
+      expect(manifest.winner).toBe(null);
       expect(manifest.results.starter?.pass).toBe(false);
-      expect(manifest.results.backup?.pass).toBe(true);
-      expect(events.some((e) => e.type === 'engine:fallback' && e.data?.to === 'backup')).toBe(true);
+      expect(manifest.results.backup).toBeUndefined();
+      expect(events.some((e) => e.type === 'engine:fallback' && e.data?.to === 'backup')).toBe(false);
     } finally {
       cleanupTestAgonHome(agonHome);
       process.env.PATH = fakeNpx.originalPath;

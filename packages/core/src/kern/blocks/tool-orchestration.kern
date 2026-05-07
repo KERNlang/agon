@@ -18,7 +18,7 @@ fn name=createForgeTool returns=ToolHandler
           task: { type: 'string', description: 'Brief description of the task to forge' },
           scope: { type: 'string', description: 'Use "slice" when only one hard subpart deserves forge and Cesar will integrate the rest. Use "full" for whole-task forge. Optional.' },
           fitnessCmd: { type: 'string', description: 'Optional test or fitness command to preserve when routing to forge.' },
-          hardened: { type: 'boolean', description: 'Set true for forge-hardened (gauntlet verification). Optional.' },
+          hardened: { type: 'boolean', description: 'Set true only when the user explicitly asks for hardened/gauntlet/adversarial verification, or for high-risk security/data-migration changes. Leave false for docs, README, UI copy, and routine edits.' },
           team: { type: 'boolean', description: 'Solo (false) or team-forge (true). Choose based on task scope: single-file = solo, multi-file/architecture = team. Defaults to false if omitted.' },
         },
         required: ['task'],

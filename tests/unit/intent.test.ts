@@ -420,6 +420,21 @@ describe('Intent Detection — Natural Language', () => {
     }
   });
 
+  it('routes explicit natural-language forge imperatives before Cesar review routing', () => {
+    const r = detectIntent('can you Forge a small CLI UX fix: make forge status labels show synthesizing before final patch review. Fitness: npm run test:ts -- tests/unit/forge-timeout.test.ts tests/integration/forge-e2e.test.ts');
+    expect(r.type).toBe('forge');
+    if (r.type === 'forge') {
+      expect(r.task).toContain('small CLI UX fix');
+      expect(r.task).toContain('final patch review');
+      expect(r.fitnessCmd).toBe('npm run test:ts -- tests/unit/forge-timeout.test.ts tests/integration/forge-e2e.test.ts');
+    }
+  });
+
+  it('does not treat forge status questions as forge jobs', () => {
+    const r = detectIntent('forge is still stuck, why?');
+    expect(r.type).toBe('auto');
+  });
+
   it('parses explicit natural-language agent shortcuts without waiting for Cesar', () => {
     const direct = detectIntent('agent fix paste handling and run tests');
     expect(direct.type).toBe('agent');

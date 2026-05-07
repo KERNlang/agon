@@ -105,12 +105,18 @@ describe('Forge E2E', () => {
     const agonScopeDir = join(repoDir, 'node_modules', '@agon');
     const agonPackageDir = join(repoDir, 'packages', 'core');
 
-    writeFileSync(join(repoDir, '.gitignore'), 'node_modules/\n');
+    writeFileSync(join(repoDir, '.gitignore'), 'node_modules/\npackages/*/dist/\n');
     mkdirSync(agonPackageDir, { recursive: true });
-    writeFileSync(join(agonPackageDir, 'package.json'), JSON.stringify({ name: '@agon/core', version: '0.0.0-test' }) + '\n');
+    writeFileSync(join(agonPackageDir, 'package.json'), JSON.stringify({
+      name: '@agon/core',
+      version: '0.0.0-test',
+      exports: { '.': './dist/index.js' },
+    }) + '\n');
     git(repoDir, ['add', '.gitignore']);
     git(repoDir, ['add', 'packages/core/package.json']);
     git(repoDir, ['commit', '-m', 'ignore node modules']);
+    mkdirSync(join(agonPackageDir, 'dist'), { recursive: true });
+    writeFileSync(join(agonPackageDir, 'dist', 'index.js'), 'export const hydrated = true;\n');
     mkdirSync(kernModuleDir, { recursive: true });
     writeFileSync(join(kernModuleDir, 'package.json'), JSON.stringify({ name: '@kernlang/core', version: '0.0.0-test' }) + '\n');
     mkdirSync(agonScopeDir, { recursive: true });
@@ -124,12 +130,16 @@ describe('Forge E2E', () => {
       const linkedNodeModules = join(worktreePath, 'node_modules');
       const linkedKernScope = join(linkedNodeModules, '@kernlang');
       const linkedAgonCore = join(linkedNodeModules, '@agon', 'core');
+      const hydratedDist = join(worktreePath, 'packages', 'core', 'dist', 'index.js');
       expect(existsSync(linkedNodeModules)).toBe(true);
       expect(lstatSync(linkedNodeModules).isDirectory()).toBe(true);
       expect(lstatSync(linkedKernScope).isSymbolicLink()).toBe(true);
       expect(readlinkSync(linkedKernScope)).toBe(join(repoDir, 'node_modules', '@kernlang'));
       expect(lstatSync(linkedAgonCore).isSymbolicLink()).toBe(true);
       expect(readlinkSync(linkedAgonCore)).toBe(join(worktreePath, 'packages', 'core'));
+      expect(existsSync(hydratedDist)).toBe(true);
+      expect(lstatSync(join(worktreePath, 'packages', 'core', 'dist')).isSymbolicLink()).toBe(false);
+      expect(readFileSync(hydratedDist, 'utf-8')).toContain('hydrated');
     } finally {
       try { git(repoDir, ['worktree', 'remove', worktreePath, '--force']); } catch { /* best effort */ }
       try { git(repoDir, ['worktree', 'prune']); } catch { /* best effort */ }
@@ -993,6 +1003,47 @@ describe('Forge E2E', () => {
     } finally {
       cleanupTestAgonHome(agonHome);
       rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it('runs multiline node -e fitness checks that contain markdown fences', async () => {
+    const repoDir = createRepo('node-e-markdown-fence');
+    const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const fakeNpx = createFakeNpx();
+    mkdirSync(forgeDir, { recursive: true });
+
+    try {
+      writeFileSync(join(repoDir, 'README.md'), [
+        '# Agon',
+        '',
+        '```bash',
+        'agon forge "fix it"',
+        '```',
+        '',
+      ].join('\n'));
+
+      vi.resetModules();
+      const { runFitness } = await import('../../packages/forge/src/index.js');
+      const result = await runFitness({
+        engineId: 'candidate',
+        worktreePath: repoDir,
+        fitnessCmd: 'node -e "\n'
+          + "const fs = require('fs');\n"
+          + "const content = fs.readFileSync('README.md', 'utf8');\n"
+          + "if (!content.includes('```bash')) process.exit(1);\n"
+          + 'console.log("Score: 100");\n'
+          + '"',
+        timeout: 1,
+        forgeDir,
+      });
+
+      expect(result.pass).toBe(true);
+      expect(readFileSync(result.fitnessLogPath!, 'utf-8')).toContain('Score: 100');
+    } finally {
+      process.env.PATH = fakeNpx.originalPath;
+      rmSync(fakeNpx.binDir, { recursive: true, force: true });
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
     }
   });
 });

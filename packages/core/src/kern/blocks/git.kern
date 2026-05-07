@@ -1,5 +1,5 @@
 import from="node:child_process" names="execFileSync"
-import from="node:fs" names="readdirSync,statSync,existsSync,rmSync,readFileSync,symlinkSync,mkdirSync"
+import from="node:fs" names="readdirSync,statSync,existsSync,rmSync,readFileSync,symlinkSync,mkdirSync,cpSync"
 import from="node:path" names="join"
 import from="../models/errors.js" names="GitError,WorktreeError"
 
@@ -96,12 +96,34 @@ fn name=linkWorktreeNodeModules params="repoDir:string,worktreePath:string" retu
     }
   >>>
 
+fn name=hydrateWorktreeBuildArtifacts params="repoDir:string,worktreePath:string" returns=void export=false
+  doc "Git worktrees omit ignored package dist artifacts, but workspace package exports point at dist. Copy existing root artifacts into the candidate worktree so fitness commands can resolve local workspace packages without forcing every forge candidate to rebuild first."
+  handler <<<
+    const sourcePackages = join(repoDir, 'packages');
+    const targetPackages = join(worktreePath, 'packages');
+    if (!existsSync(sourcePackages) || !existsSync(targetPackages)) return;
+    try {
+      const packageEntries = readdirSync(sourcePackages, { withFileTypes: true });
+      for (const entry of packageEntries) {
+        if (!entry.isDirectory()) continue;
+        const sourceDist = join(sourcePackages, entry.name, 'dist');
+        const targetDist = join(targetPackages, entry.name, 'dist');
+        const targetPackage = join(targetPackages, entry.name);
+        if (!existsSync(sourceDist) || !existsSync(targetPackage) || existsSync(targetDist)) continue;
+        cpSync(sourceDist, targetDist, { recursive: true, dereference: true });
+      }
+    } catch (err) {
+      console.warn(`[agon] worktree artifact hydration failed for ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  >>>
+
 fn name=worktreeCreate params="repoDir:string,worktreePath:string,sha:string" returns=string
   handler <<<
     worktreePrune(repoDir);
     try {
       git(['worktree', 'add', '--detach', worktreePath, sha], repoDir);
       linkWorktreeNodeModules(repoDir, worktreePath);
+      hydrateWorktreeBuildArtifacts(repoDir, worktreePath);
       return worktreePath;
     } catch (err) {
       throw new WorktreeError(

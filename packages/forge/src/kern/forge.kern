@@ -43,6 +43,49 @@ fn name=resolveForgeSynthesisTimeout params="config:Required<AgonConfig>,taskCla
     return configured;
   >>>
 
+fn name=resolveForgeRunTimeout params="config:AgonConfig,explicitTimeout:number|undefined,taskClass:string" returns=number export=true
+  doc "Pick the per-engine forge timeout. Explicit user timeout wins. Otherwise cap long saved defaults by task class so a stuck engine cannot make normal forge runs feel wedged."
+  handler <<<
+    const explicit = Number(explicitTimeout ?? 0);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+
+    const configured = Number((config as any).forgeTimeout ?? 600);
+    const base = Number.isFinite(configured) && configured > 0 ? configured : 600;
+    if (taskClass === 'docs') {
+      return Math.min(base, 120);
+    }
+    if (taskClass === 'bugfix' || taskClass === 'refactor' || taskClass === 'test') {
+      return Math.min(base, 180);
+    }
+    if (taskClass === 'feature' || taskClass === 'algorithm') {
+      return Math.min(base, 300);
+    }
+    return base;
+  >>>
+
+fn name=completeMissingForgeResults params="manifest:ForgeManifest, engineIds:string[], reason:string" returns=ForgeManifest export=true
+  doc "Mark every selected forge engine terminal before persisting a bundle. This keeps aborted, timed-out, or disappearing engines visible instead of leaving the run looking half-open."
+  handler <<<
+    for (const id of engineIds) {
+      if ((manifest.results as any)[id]) continue;
+      (manifest.results as any)[id] = {
+        engineId: id,
+        pass: false,
+        score: 0,
+        diffLines: 0,
+        filesChanged: 0,
+        durationSec: 0,
+        lintWarnings: 0,
+        styleScore: 0,
+        dispatchStdout: `ERROR: ${reason}`,
+      };
+    }
+    manifest.enginesDispatched = Object.keys(manifest.results ?? {})
+      .filter((id) => id !== 'synthesis')
+      .length;
+    return manifest;
+  >>>
+
 fn name=writeForgeResultBundle params="manifest:ForgeManifest, worktrees:WorktreeEntry[], options:ForgeOptions, repoRootPath:string, baseSha:string, sidechainPath:string, errorMessage?:string" returns=string export=true
   doc "Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command."
   handler <<<
@@ -127,9 +170,10 @@ fn name=writeForgeResultBundle params="manifest:ForgeManifest, worktrees:Worktre
 fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistry, adapter:EngineAdapter, onEvent?:(event:ForgeEvent)=>void" returns="Promise<ForgeManifest>"
   handler <<<
     const loadedConfig = loadConfig(options.cwd);
+    const taskClass = classifyTask(options.task);
     const config = {
       ...loadedConfig,
-      forgeTimeout: options.timeout ?? loadedConfig.forgeTimeout,
+      forgeTimeout: resolveForgeRunTimeout(loadedConfig, options.timeout, taskClass),
       forgeFitnessTimeout: options.fitnessTimeout ?? loadedConfig.forgeFitnessTimeout,
     } as Required<AgonConfig>;
     const forgeId = randomUUID();
@@ -261,10 +305,12 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
       return manifest;
     }
 
-    const starter = options.starter
-      ?? registry.pickStarter(available, config.forgeStarterStrategy, config.forgeFixedStarter);
+    const singleEngineMode = available.length === 1;
+    const starter = singleEngineMode
+      ? (options.starter ?? available[0])
+      : 'parallel';
 
-    const challengers = available.filter((id: string) => id !== starter);
+    const challengers = singleEngineMode ? [] : available;
 
     const hasAgentEngines = available.some((id: string) => {
       try {
@@ -286,7 +332,6 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
     });
 
     // Role specialization — assign roles based on ELO per-task-class
-    const taskClass = classifyTask(options.task);
     const roles = assignForgeRoles(available, taskClass);
     const enginePrompts = new Map<string, string>();
     for (const id of available) {
@@ -350,7 +395,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
         }
       }
 
-      const shouldRunStarterGate = available.length === 1;
+      const shouldRunStarterGate = singleEngineMode;
       const stage1 = shouldRunStarterGate
         ? await runStage1({
             starter,
@@ -401,9 +446,9 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
       const stage2EngineIds = shouldRunStarterGate ? challengers : available;
       const remainingChallengers = stage2EngineIds.filter((id: string) => !stage1.engineResults.has(id));
       if (remainingChallengers.length > 0) {
-        // Dispatch challengers in parallel. The old peek scout path serialized
-        // everyone behind the first challenger, which made multi-engine forge
-        // look like only one engine was working.
+        // Default forge is a plain competition: every selected engine gets an
+        // independent worktree and one terminal result. Stage 1 is retained
+        // only for the single-engine legacy path.
         const partialStage2Metrics: DispatchMetric[] = [];
         const stage2 = await runStage2({
           challengers: remainingChallengers,
@@ -430,7 +475,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
           },
         });
 
-        manifest.enginesDispatched = stage2.engineResults.size;
+        completeMissingForgeResults(manifest, available, 'forge competition ended before this engine produced a result');
         allMetrics.push(...(stage2.metrics ?? []));
         for (const [id, result] of stage2.engineResults) {
           manifest.results[id] = result;
@@ -526,7 +571,9 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
           const losers = [...stage2.engineResults.entries()]
             .filter(([id, r]) => id !== winner && r.pass)
             .map(([id]) => id);
+          let synthesisTimedOut = false;
           const onSynthesisEvent = (event: ForgeEvent) => {
+            if (synthesisTimedOut) return;
             sidechain.log(event.type, event.engineId, event.data ?? {});
             onEvent?.(event);
           };
@@ -556,6 +603,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
             });
             const timeoutPromise = new Promise<never>((_, reject) => {
               synthesisTimer = setTimeout(() => {
+                synthesisTimedOut = true;
                 synthesisAbort.abort();
                 reject(new Error(`synthesis timed out after ${synthesisTimeout}s`));
               }, synthesisTimeout * 1000);
@@ -575,6 +623,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
               manifest.winner = 'synthesis';
             }
           } catch (synthErr) {
+            synthesisTimedOut = true;
             const synthError = synthErr instanceof Error ? synthErr.message : String(synthErr);
             manifest.synthesis = {
               pass: false,
@@ -676,6 +725,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
         }
       }
 
+      completeMissingForgeResults(manifest, available, 'forge ended before this engine produced a result');
       manifest.dispatchLog = allMetrics;
       writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path);
       writeManifest(manifest);
@@ -697,6 +747,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
       // the failure cause for resume/inspection.
       manifest.error = error;
       try {
+        completeMissingForgeResults(manifest, available, `forge failed before this engine produced a result: ${error}`);
         writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path, error);
         writeManifest(manifest);
         sidechain.log('forge:error', undefined, { error });

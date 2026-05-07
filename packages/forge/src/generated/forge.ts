@@ -457,6 +457,10 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       );
       manifest.winner = winner;
       manifest.closeCall = closeCall;
+      // Persist the winner immediately. Synthesis/gauntlet are optional
+      // refinement phases and must not make a completed competition look
+      // like it still has no winner.
+      try { writeManifest(manifest); } catch { /* best-effort winner checkpoint */ }
 
       // Removed previous "all-no-op → alreadySatisfied" inference. It was
       // unsafe: when forgeRequireBaselineCheck is true and baseline FAILS
@@ -525,36 +529,65 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
 
       const passingCount = [...stage2.engineResults.values()].filter((r) => r.pass).length;
       if (closeCall && config.forgeEnableSynthesis && passingCount >= 2 && winner) {
-        const losers = [...stage2.engineResults.keys()].filter((id) => id !== winner);
+        const losers = [...stage2.engineResults.entries()]
+          .filter(([id, r]) => id !== winner && r.pass)
+          .map(([id]) => id);
 
-        const synthResult = await runSynthesis({
-          manifest,
-          winner,
-          losers,
-          registry,
-          adapter,
-          forgeDir,
-          fitnessCmd: options.fitnessCmd,
-          timeout: config.forgeSynthesisTimeout,
-          fitnessTimeout: config.forgeFitnessTimeout,
-          maxCritiques: config.forgeMaxCritiques,
-          repoRoot: root,
-          headSha: sha,
-          worktrees,
-          onEvent,
-          signal: forgeSignal,
-        });
+        const synthesisAbort = new AbortController();
+        if (forgeSignal.aborted) synthesisAbort.abort();
+        else forgeSignal.addEventListener('abort', () => synthesisAbort.abort(), { once: true });
+        let synthesisTimer: ReturnType<typeof setTimeout> | null = null;
+        try {
+          const synthPromise = runSynthesis({
+            manifest,
+            winner,
+            losers,
+            registry,
+            adapter,
+            forgeDir,
+            fitnessCmd: options.fitnessCmd,
+            timeout: config.forgeSynthesisTimeout,
+            fitnessTimeout: config.forgeFitnessTimeout,
+            maxCritiques: config.forgeMaxCritiques,
+            repoRoot: root,
+            headSha: sha,
+            worktrees,
+            onEvent,
+            signal: synthesisAbort.signal,
+          });
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            synthesisTimer = setTimeout(() => {
+              synthesisAbort.abort();
+              reject(new Error(`synthesis timed out after ${config.forgeSynthesisTimeout}s`));
+            }, config.forgeSynthesisTimeout * 1000);
+          });
+          const synthResult = await Promise.race([synthPromise, timeoutPromise]);
 
-        manifest.synthesis = {
-          pass: synthResult.pass,
-          score: synthResult.score,
-          wins: synthResult.wins,
-          patchPath: synthResult.patchPath,
-          originalWinnerScore: synthResult.originalWinnerScore,
-        };
+          manifest.synthesis = {
+            pass: synthResult.pass,
+            score: synthResult.score,
+            wins: synthResult.wins,
+            patchPath: synthResult.patchPath,
+            originalWinnerScore: synthResult.originalWinnerScore,
+          };
 
-        if (synthResult.wins) {
-          manifest.winner = 'synthesis';
+          if (synthResult.wins) {
+            manifest.winner = 'synthesis';
+          }
+        } catch (synthErr) {
+          const synthError = synthErr instanceof Error ? synthErr.message : String(synthErr);
+          manifest.synthesis = {
+            pass: false,
+            score: 0,
+            wins: false,
+            patchPath: '',
+            originalWinnerScore: manifest.results[winner]?.score ?? 0,
+            error: synthError,
+          } as any;
+          sidechain.log('synthesis:error', winner, { error: synthError, keptWinner: winner });
+          onEvent?.({ type: 'synthesis:done' as any, engineId: winner, data: { wins: false, error: synthError, keptWinner: winner } });
+        } finally {
+          if (synthesisTimer) clearTimeout(synthesisTimer);
         }
       }
     } else {

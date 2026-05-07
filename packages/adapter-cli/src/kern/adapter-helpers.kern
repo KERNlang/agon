@@ -90,7 +90,9 @@ fn name=buildCommand params="engine:EngineDefinition, mode:EngineMode, prompt:st
 
     if (model && engine.model?.flag) {
       const promptIdx = args.indexOf(effectivePrompt);
-      if (promptIdx >= 0) {
+      if (promptIdx > 0 && ['-p', '--prompt'].includes(args[promptIdx - 1])) {
+        args.splice(promptIdx - 1, 0, engine.model.flag, model);
+      } else if (promptIdx >= 0) {
         args.splice(promptIdx, 0, engine.model.flag, model);
       } else {
         args.unshift(engine.model.flag, model);

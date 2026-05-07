@@ -42,8 +42,8 @@ describe('forge run timeout selection', () => {
   });
 
   it('caps small implementation tasks when no explicit timeout is provided', () => {
-    expect(resolveForgeRunTimeout(config, undefined, 'bugfix')).toBe(120);
-    expect(resolveForgeRunTimeout(config, undefined, 'refactor')).toBe(120);
+    expect(resolveForgeRunTimeout(config, undefined, 'bugfix')).toBe(180);
+    expect(resolveForgeRunTimeout(config, undefined, 'refactor')).toBe(180);
   });
 
   it('caps larger implementation tasks when no explicit timeout is provided', () => {

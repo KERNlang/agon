@@ -51,8 +51,11 @@ fn name=resolveForgeRunTimeout params="config:AgonConfig,explicitTimeout:number|
 
     const configured = Number((config as any).forgeTimeout ?? 600);
     const base = Number.isFinite(configured) && configured > 0 ? configured : 600;
-    if (taskClass === 'docs' || taskClass === 'bugfix' || taskClass === 'refactor' || taskClass === 'test') {
+    if (taskClass === 'docs') {
       return Math.min(base, 120);
+    }
+    if (taskClass === 'bugfix' || taskClass === 'refactor' || taskClass === 'test') {
+      return Math.min(base, 180);
     }
     if (taskClass === 'feature' || taskClass === 'algorithm') {
       return Math.min(base, 300);

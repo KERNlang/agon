@@ -219,16 +219,53 @@ export function repairFitnessCommandRepositoryLiteral(command: string, repoLiter
   return repaired;
 }
 
+// @kern-source: forge:203
+function extractFitnessStringArray(command: string, name: string): string[] {
+  const re = new RegExp(`${name}\\s*=\\s*\\[([^\\]]*)\\]`);
+  const match = String(command ?? '').match(re);
+  if (!match) return [];
+  const values: string[] = [];
+  const body = match[1];
+  const stringRe = /(['"])((?:\\.|(?!\1).)*)\1/g;
+  let m;
+  while ((m = stringRe.exec(body)) !== null) {
+    values.push(m[2].replace(/\\(['"\\])/g, '$1'));
+  }
+  return values;
+}
+
+/**
+ * Remove forbidden string literals that are required as part of another fitness assertion. Cesar sometimes requires github.com/KERNlang/agon and also forbids KERNlang, making the check impossible.
+ */
+// @kern-source: forge:218
+export function repairContradictoryFitnessLiterals(command: string): string {
+  const required = extractFitnessStringArray(command, 'required');
+  const forbidden = extractFitnessStringArray(command, 'forbidden');
+  if (required.length === 0 || forbidden.length === 0) return command;
+
+  const kept = forbidden.filter((f: string) => {
+    const lower = f.toLowerCase();
+    return !required.some((r: string) => {
+      const req = r.toLowerCase();
+      return req.includes(lower) || lower.includes(req);
+    });
+  });
+  if (kept.length === forbidden.length) return command;
+
+  const serialized = kept.map((v: string) => `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`).join(',');
+  return command.replace(/forbidden\s*=\s*\[[^\]]*\]/, `forbidden=[${serialized}]`);
+}
+
 /**
  * Normalize current-repository GitHub literals in a forge task before displaying the plan or sending the prompt to engines.
  */
-// @kern-source: forge:203
+// @kern-source: forge:238
 export function repairForgeTaskRepositoryLiteral(task: string, cwd: string): string {
   const repoLiteral = detectGithubRemoteLiteral(cwd);
   return repairFitnessCommandRepositoryLiteral(task, repoLiteral);
 }
 
-// @kern-source: forge:210
+// @kern-source: forge:245
 function describeProjectFitnessOptions(cwd: string): string {
   const lines: string[] = [];
   const packageJsonPath = join(cwd, 'package.json');
@@ -255,7 +292,7 @@ function describeProjectFitnessOptions(cwd: string): string {
 /**
  * Ask Cesar to prepare a task-specific fitness command when a forge call omitted one. This keeps UX non-interactive without hardcoding task-specific checks in the handler.
  */
-// @kern-source: forge:234
+// @kern-source: forge:269
 export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   const config = ctx.config;
   const cwd = resolveWorkingDir();
@@ -301,7 +338,8 @@ export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatc
     if (cmd) {
       const repoLiteral = detectGithubRemoteLiteral(cwd);
       const taskRepaired = repairFitnessCommandTaskLiterals(task, cmd);
-      const repaired = repairFitnessCommandRepositoryLiteral(taskRepaired, repoLiteral);
+      const repoRepaired = repairFitnessCommandRepositoryLiteral(taskRepaired, repoLiteral);
+      const repaired = repairContradictoryFitnessLiterals(repoRepaired);
       if (repaired !== cmd) {
         dispatch({ type: 'warning', message: `Repaired Cesar fitness literal: ${cmd} -> ${repaired}` });
       }
@@ -317,7 +355,7 @@ export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatc
 /**
  * Pick a non-interactive fallback fitness command from the current project when the user or Cesar did not provide one.
  */
-// @kern-source: forge:294
+// @kern-source: forge:330
 export function inferProjectFitnessCommand(cwd: string): string {
   const packageJsonPath = join(cwd, 'package.json');
   if (existsSync(packageJsonPath)) {
@@ -341,7 +379,7 @@ export function inferProjectFitnessCommand(cwd: string): string {
   return 'git diff --check';
 }
 
-// @kern-source: forge:319
+// @kern-source: forge:355
 export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {

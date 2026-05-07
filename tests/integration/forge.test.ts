@@ -89,6 +89,10 @@ describe('Forge Integration', () => {
       expect(classifyTask('update the README')).toBe('docs');
     });
 
+    it('keeps README tasks as docs even when constraints mention scoring', () => {
+      expect(classifyTask('write a README and avoid scoring weights')).toBe('docs');
+    });
+
     it('detects feature tasks', () => {
       expect(classifyTask('add a new export command')).toBe('feature');
     });

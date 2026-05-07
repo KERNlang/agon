@@ -53,9 +53,20 @@ fn name=selectForgeFallbackEngine params="registry:EngineRegistry,sourceId:strin
 
 fn name=buildFallbackRetryPrompt params="prompt:string,failedEngine:string,phase:string,error:string" returns=string export=false expr={{ return `${prompt}\n\n## FALLBACK RETRY\nYou are rerunning the same forge step after engine "${failedEngine}" failed during ${phase}.\nFailure: ${error}\nComplete the original task normally.`; }}
 
+fn name=resolveForgeDispatchTimeout params="engine:any,config:Required<AgonConfig>" returns=number export=true
+  doc "Use an engine's own timeout when present, capped by the forge global timeout. User-added API engines often specify a shorter timeout; ignoring it makes native forge feel stuck."
+  handler <<<
+    const engineTimeout = Number(engine?.timeout ?? 0);
+    if (Number.isFinite(engineTimeout) && engineTimeout > 0) {
+      return Math.min(engineTimeout, config.forgeTimeout);
+    }
+    return config.forgeTimeout;
+  >>>
+
 fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:string,dispatchMode:'exec'|'review',metricPhase:'stage1'|'stage1-fallback'|'stage2-scout'|'stage2-scout-fallback'|'stage2-follower'|'stage2-fallback',fitnessCmd:string,config:Required<AgonConfig>,registry:EngineRegistry,adapter:EngineAdapter,root:string,baseSha:string,forgeDir:string,worktrees:WorktreeEntry[],onEvent?:ForgeEventCallback,signal?:AbortSignal,eventType:string,eventData?:Record<string,unknown>,worktreePath?:string}" returns="Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}>"
   handler <<<
     const engine = opts.registry.get(opts.engineId);
+    const dispatchTimeout = resolveForgeDispatchTimeout(engine as any, opts.config);
     const wtPath = opts.worktreePath ?? join(opts.forgeDir, `wt-${opts.engineId}`);
     worktreeCreate(opts.root, wtPath, opts.baseSha);
     opts.worktrees.push({ engineId: opts.engineId, path: wtPath, repoRoot: opts.root });
@@ -82,7 +93,7 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
           prompt: opts.prompt,
           cwd: wtPath,
           mode: 'agent',
-          timeout: opts.config.forgeTimeout,
+          timeout: dispatchTimeout,
           outputDir: opts.forgeDir,
           signal: opts.signal,
           onSpawn,
@@ -93,7 +104,7 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
           prompt: opts.prompt,
           cwd: wtPath,
           mode: opts.dispatchMode,
-          timeout: opts.config.forgeTimeout,
+          timeout: dispatchTimeout,
           outputDir: opts.forgeDir,
           signal: opts.signal,
           onSpawn,
@@ -102,7 +113,7 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
       const dispatchExitCode = typeof dispatchResult?.exitCode === 'number' ? dispatchResult.exitCode : 0;
       if (dispatchResult?.timedOut || dispatchExitCode !== 0) {
         const reason = dispatchResult?.timedOut
-          ? `dispatch timed out after ${opts.config.forgeTimeout}s`
+          ? `dispatch timed out after ${dispatchTimeout}s`
           : `dispatch exited with code ${dispatchExitCode}`;
         const stderr = dispatchResult?.stderr ? `: ${String(dispatchResult.stderr).slice(0, 240).replace(/\s+/g, ' ').trim()}` : '';
         throw new Error(`${reason}${stderr}`);
@@ -270,8 +281,16 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
     const challengerPromises = opts.challengers.map(async (engineId: string) => {
       // Use per-engine specialized prompt if available (role specialization)
       const prompt = opts.enginePrompts?.get(engineId) ?? opts.forgePrompt;
+      const engine = opts.registry.get(engineId);
+      const dispatchTimeout = resolveForgeDispatchTimeout(engine as any, opts.config);
+      const hardTimeoutMs = Math.max(5, dispatchTimeout + opts.config.forgeFitnessTimeout + 5) * 1000;
+      const engineAbort = new AbortController();
+      if (opts.signal) {
+        if (opts.signal.aborted) engineAbort.abort();
+        else opts.signal.addEventListener('abort', () => engineAbort.abort(), { once: true });
+      }
 
-      const attempt = await runForgeEngineAttempt({
+      const attemptPromise = runForgeEngineAttempt({
         engineId,
         prompt,
         dispatchMode: 'exec',
@@ -285,9 +304,22 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
         forgeDir: opts.forgeDir,
         worktrees: opts.worktrees,
         onEvent: opts.onEvent,
-        signal: opts.signal,
+        signal: engineAbort.signal,
         eventType: 'stage2:dispatch',
       });
+      let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+      const timeoutPromise = new Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}>((resolve) => {
+        timeoutHandle = setTimeout(() => {
+          engineAbort.abort();
+          const error = `stage2 engine timed out after ${Math.round(hardTimeoutMs / 1000)}s`;
+          opts.onEvent?.({ type: 'engine:failed' as any, engineId, data: { engineId, phase: 'stage2', error } });
+          const result = makeFailedResult(engineId, error, hardTimeoutMs);
+          const metric: DispatchMetric = { engineId, phase: 'stage2-follower', dispatchDurationMs: hardTimeoutMs, totalDurationMs: hardTimeoutMs, error, timedOut: true };
+          resolve({ result, metric, dispatchResult: null, worktreePath: join(opts.forgeDir, `wt-${engineId}`) });
+        }, hardTimeoutMs);
+      });
+      const attempt = await Promise.race([attemptPromise, timeoutPromise]);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       metrics.push(attempt.metric);
       opts.onResult?.(engineId, attempt.result, attempt.metric);
       return attempt.result;

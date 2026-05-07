@@ -271,7 +271,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
 }
 
 // @kern-source: stages:262
-export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
+export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>void}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
   const root = repoRoot(opts.cwd);
@@ -300,6 +300,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
       eventType: 'stage2:dispatch',
     });
     metrics.push(attempt.metric);
+    opts.onResult?.(engineId, attempt.result, attempt.metric);
     return attempt.result;
   });
 
@@ -368,7 +369,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:360
+// @kern-source: stages:361
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

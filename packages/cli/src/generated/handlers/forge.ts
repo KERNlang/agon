@@ -151,6 +151,37 @@ export function extractFitnessCommandFromCesarOutput(output: string): string|nul
 }
 
 // @kern-source: forge:139
+function extractGithubLiterals(text: string): string[] {
+  const matches = String(text ?? '').match(/(?:https?:\/\/)?github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/g) ?? [];
+  return [...new Set(matches.map((m: string) => m.replace(/^https?:\/\//, '').replace(/[).,;:'"`\]]+$/g, '')))];
+}
+
+/**
+ * Keep literal GitHub repo URLs in Cesar-generated fitness commands aligned with the user's task. Prevents small hallucinated typos from making all engines optimize for the wrong marker.
+ */
+// @kern-source: forge:145
+export function repairFitnessCommandTaskLiterals(task: string, command: string): string {
+  const taskUrls = extractGithubLiterals(task);
+  if (taskUrls.length === 0) return command;
+  const taskUrlSet = new Set(taskUrls);
+  let repaired = command;
+  for (const cmdUrl of extractGithubLiterals(command)) {
+    if (taskUrlSet.has(cmdUrl)) continue;
+    const cmdParts = cmdUrl.split('/');
+    const replacement = taskUrls.length === 1
+      ? taskUrls[0]
+      : taskUrls.find((url: string) => {
+          const parts = url.split('/');
+          return parts[2]?.toLowerCase() === cmdParts[2]?.toLowerCase();
+        });
+    if (replacement) {
+      repaired = repaired.split(cmdUrl).join(replacement);
+    }
+  }
+  return repaired;
+}
+
+// @kern-source: forge:168
 function describeProjectFitnessOptions(cwd: string): string {
   const lines: string[] = [];
   const packageJsonPath = join(cwd, 'package.json');
@@ -175,7 +206,7 @@ function describeProjectFitnessOptions(cwd: string): string {
 /**
  * Ask Cesar to prepare a task-specific fitness command when a forge call omitted one. This keeps UX non-interactive without hardcoding task-specific checks in the handler.
  */
-// @kern-source: forge:161
+// @kern-source: forge:190
 export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   const config = ctx.config;
   const cwd = resolveWorkingDir();
@@ -198,6 +229,7 @@ export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatc
     'Rules:',
     '- The command must be non-interactive and suitable to run from the repository root.',
     '- The command should verify the task requirements as specifically as possible.',
+    '- Preserve literal strings and URLs from the task exactly. Do not correct or invent spellings.',
     '- Prefer existing project scripts when they fit; otherwise write a small shell/node/python check.',
     '- Do not include markdown, prose, or multiple commands outside the JSON string.',
     '',
@@ -217,8 +249,12 @@ export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatc
     });
     const cmd = extractFitnessCommandFromCesarOutput(String(result.stdout ?? ''));
     if (cmd) {
-      dispatch({ type: 'info', message: `Cesar fitness check: ${cmd}` });
-      return cmd;
+      const repaired = repairFitnessCommandTaskLiterals(task, cmd);
+      if (repaired !== cmd) {
+        dispatch({ type: 'warning', message: `Repaired Cesar fitness literal: ${cmd} -> ${repaired}` });
+      }
+      dispatch({ type: 'info', message: `Cesar fitness check: ${repaired}` });
+      return repaired;
     }
   } catch (err) {
     dispatch({ type: 'warning', message: `Cesar could not prepare a fitness check: ${err instanceof Error ? err.message : String(err)}` });
@@ -229,7 +265,7 @@ export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatc
 /**
  * Pick a non-interactive fallback fitness command from the current project when the user or Cesar did not provide one.
  */
-// @kern-source: forge:213
+// @kern-source: forge:247
 export function inferProjectFitnessCommand(cwd: string): string {
   const packageJsonPath = join(cwd, 'package.json');
   if (existsSync(packageJsonPath)) {
@@ -253,7 +289,7 @@ export function inferProjectFitnessCommand(cwd: string): string {
   return 'git diff --check';
 }
 
-// @kern-source: forge:238
+// @kern-source: forge:272
 export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {

@@ -259,7 +259,7 @@ fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, f
     return { engineResults, accepted, winner: result?.pass ? result.engineId : null, metrics };
   >>>
 
-fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}" returns="Promise<StageResult>"
+fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>void}" returns="Promise<StageResult>"
   handler <<<
     opts.onEvent?.({ type: 'stage2:start' });
 
@@ -289,6 +289,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
         eventType: 'stage2:dispatch',
       });
       metrics.push(attempt.metric);
+      opts.onResult?.(engineId, attempt.result, attempt.metric);
       return attempt.result;
     });
 

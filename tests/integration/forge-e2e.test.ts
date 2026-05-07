@@ -329,6 +329,71 @@ describe('Forge E2E', () => {
     }
   });
 
+  it('surfaces synthesis completion when critics return no structured critiques', async () => {
+    const agonHome = setupTestAgonHome('forge-synthesis-no-critiques');
+    const repoDir = createRepo('synthesis-no-critiques');
+    const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const fakeNpx = createFakeNpx();
+    writeFileSync(join(repoDir, '.agon.json'), JSON.stringify({
+      forgeAutoAcceptScore: 101,
+      forgeClearWinnerSpread: 8,
+      forgeEnableSynthesis: true,
+      forgeRequireBaselineCheck: false,
+      ratingsEnabled: false,
+    }, null, 2) + '\n');
+    git(repoDir, ['add', '.agon.json']);
+    git(repoDir, ['commit', '-m', 'enable synthesis']);
+
+    const events: any[] = [];
+    const adapter: EngineAdapter = {
+      dispatch: async (options: DispatchOptions): Promise<DispatchResult> => {
+        if (options.mode === 'review') {
+          return { exitCode: 0, stdout: 'No obvious issues.', stderr: '', durationMs: 1, timedOut: false };
+        }
+        writeFileSync(join(options.cwd, 'generated.ts'), `export const engine = "${options.engine.id}";\n`);
+        return { exitCode: 0, stdout: `${options.engine.id} done`, stderr: '', durationMs: 1, timedOut: false };
+      },
+      isAvailable: async () => true,
+      getVersion: async () => 'test',
+    };
+
+    try {
+      vi.resetModules();
+      const { EngineRegistry } = await import('../../packages/core/src/index.js');
+      const { runForge } = await import('../../packages/forge/src/index.js');
+      const registry = new EngineRegistry();
+      registry.register(makeEngine('alpha'));
+      registry.register(makeEngine('beta'));
+
+      const manifest = await runForge({
+        task: 'write generated file',
+        fitnessCmd: 'test -f generated.ts',
+        cwd: repoDir,
+        forgeDir,
+        engines: ['alpha', 'beta'],
+      }, registry, adapter, (event: any) => events.push(event));
+
+      expect(manifest.closeCall).toBe(true);
+      expect(manifest.synthesis?.reason).toBe('no-structured-critiques');
+      expect(manifest.synthesis?.pass).toBe(true);
+      expect(manifest.synthesis?.score).toBe(manifest.results[manifest.winner!]?.score);
+      expect(manifest.synthesis?.patchPath).toBe(manifest.patches[manifest.winner!]);
+      expect(events.some((event) => event.type === 'synthesis:start')).toBe(true);
+      expect(events.some((event) => event.type === 'synthesis:done' && event.data?.reason === 'no-structured-critiques')).toBe(true);
+
+      const sidechainPath = JSON.parse(readFileSync(join(forgeDir, 'result.json'), 'utf-8')).logs.sidechain;
+      const sidechain = readFileSync(sidechainPath, 'utf-8');
+      expect(sidechain).toContain('"type":"synthesis:start"');
+      expect(sidechain).toContain('"reason":"no-structured-critiques"');
+    } finally {
+      process.env.PATH = fakeNpx.originalPath;
+      rmSync(fakeNpx.binDir, { recursive: true, force: true });
+      cleanupTestAgonHome(agonHome);
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
+
   it('routes API-only forge engines through the tool-using agent loop', async () => {
     const agonHome = setupTestAgonHome('forge-api-agent');
     const repoDir = createRepo('api-agent');

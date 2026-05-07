@@ -526,6 +526,10 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
           const losers = [...stage2.engineResults.entries()]
             .filter(([id, r]) => id !== winner && r.pass)
             .map(([id]) => id);
+          const onSynthesisEvent = (event: ForgeEvent) => {
+            sidechain.log(event.type, event.engineId, event.data ?? {});
+            onEvent?.(event);
+          };
 
           const synthesisAbort = new AbortController();
           if (forgeSignal.aborted) synthesisAbort.abort();
@@ -547,7 +551,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
               repoRoot: root,
               headSha: sha,
               worktrees,
-              onEvent,
+              onEvent: onSynthesisEvent,
               signal: synthesisAbort.signal,
             });
             const timeoutPromise = new Promise<never>((_, reject) => {
@@ -564,6 +568,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
               wins: synthResult.wins,
               patchPath: synthResult.patchPath,
               originalWinnerScore: synthResult.originalWinnerScore,
+              reason: synthResult.reason,
             };
 
             if (synthResult.wins) {

@@ -48,9 +48,19 @@ function collectForgeFilePatterns(manifest: ForgeManifest): string[] {
 }
 
 /**
- * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
+ * Synthesis is a refinement phase after a winner already exists. Documentation/content tasks should not spend the full forge timeout here; if synthesis cannot improve quickly, keep the original winner.
  */
 // @kern-source: forge:38
+export function resolveForgeSynthesisTimeout(config: Required<AgonConfig>, taskClass: string): number {
+  const configured = Math.max(1, config.forgeSynthesisTimeout);
+  if (taskClass === 'docs') return Math.min(configured, 90);
+  return configured;
+}
+
+/**
+ * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
+ */
+// @kern-source: forge:46
 export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: WorktreeEntry[], options: ForgeOptions, repoRootPath: string, baseSha: string, sidechainPath: string, errorMessage?: string): string {
   const cleanupCommand = buildForgeCleanupCommand(repoRootPath, manifest.forgeDir);
   const bundlePath = `${manifest.forgeDir}/result.json`;
@@ -130,7 +140,7 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
   return bundlePath;
 }
 
-// @kern-source: forge:119
+// @kern-source: forge:127
 export async function runForge(options: ForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const loadedConfig = loadConfig(options.cwd);
   const config = {
@@ -532,11 +542,16 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         const losers = [...stage2.engineResults.entries()]
           .filter(([id, r]) => id !== winner && r.pass)
           .map(([id]) => id);
+        const onSynthesisEvent = (event: ForgeEvent) => {
+          sidechain.log(event.type, event.engineId, event.data ?? {});
+          onEvent?.(event);
+        };
 
         const synthesisAbort = new AbortController();
         if (forgeSignal.aborted) synthesisAbort.abort();
         else forgeSignal.addEventListener('abort', () => synthesisAbort.abort(), { once: true });
         let synthesisTimer: ReturnType<typeof setTimeout> | null = null;
+        const synthesisTimeout = resolveForgeSynthesisTimeout(config, taskClass);
         try {
           const synthPromise = runSynthesis({
             manifest,
@@ -546,20 +561,20 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
             adapter,
             forgeDir,
             fitnessCmd: options.fitnessCmd,
-            timeout: config.forgeSynthesisTimeout,
+            timeout: synthesisTimeout,
             fitnessTimeout: config.forgeFitnessTimeout,
             maxCritiques: config.forgeMaxCritiques,
             repoRoot: root,
             headSha: sha,
             worktrees,
-            onEvent,
+            onEvent: onSynthesisEvent,
             signal: synthesisAbort.signal,
           });
           const timeoutPromise = new Promise<never>((_, reject) => {
             synthesisTimer = setTimeout(() => {
               synthesisAbort.abort();
-              reject(new Error(`synthesis timed out after ${config.forgeSynthesisTimeout}s`));
-            }, config.forgeSynthesisTimeout * 1000);
+              reject(new Error(`synthesis timed out after ${synthesisTimeout}s`));
+            }, synthesisTimeout * 1000);
           });
           const synthResult = await Promise.race([synthPromise, timeoutPromise]);
 
@@ -569,6 +584,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
             wins: synthResult.wins,
             patchPath: synthResult.patchPath,
             originalWinnerScore: synthResult.originalWinnerScore,
+            reason: synthResult.reason,
           };
 
           if (synthResult.wins) {

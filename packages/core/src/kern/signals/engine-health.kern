@@ -73,8 +73,8 @@ fn name=classifyDispatchFailure params="signal:{stderr?:string, exitCode?:number
       signal.errorMessage ?? '',
     ].join('\n').toLowerCase();
     if (!haystack.trim()) return 'failed';
-    // Auth: 401, "invalid api key", "token expired", "unauthorized", "authentication failed"
-    if (/\b401\b|invalid api key|invalid access token|token (expired|invalid)|unauthori[sz]ed|authentication (failed|error)|authorized_error|authentication required/.test(haystack)) {
+    // Auth: 401, "invalid api key", "token expired", "unauthorized", "authentication failed", OAuth plan/auth failures
+    if (/\b401\b|invalid api key|invalid access token|token (expired|invalid)|oauth|free tier was discontinued|coding plan|unauthori[sz]ed|authentication (failed|error)|authorized_error|authentication required/.test(haystack)) {
       return 'auth-failed';
     }
     // Unreachable: ENOENT spawn, ENOTFOUND DNS, ECONNREFUSED, ECONNRESET, network unreachable

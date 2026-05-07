@@ -3,11 +3,11 @@ import from="../models/types.js" names="TaskClass" types=true
 fn name=classifyTask params="description:string" returns=TaskClass
   handler <<<
     const PATTERNS: [RegExp, TaskClass][] = [
+      [/\b(doc|readme|comment|changelog)\b/i, 'docs'],
       [/\b(tests?|spec|coverage|assert)\b/i, 'test'],
       [/\b(fix|bug|error|crash|broken|regression)\b/i, 'bugfix'],
       [/\b(refactor|rename|extract|simplify|reorganize|clean)\b/i, 'refactor'],
       [/\b(algorithm|sort|search|scoring|math|compute|calculate)\b/i, 'algorithm'],
-      [/\b(doc|readme|comment|changelog)\b/i, 'docs'],
       [/\b(add|implement|create|build|feature|new)\b/i, 'feature'],
     ];
     for (const [pattern, taskClass] of PATTERNS) {

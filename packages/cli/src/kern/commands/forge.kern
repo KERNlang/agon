@@ -130,6 +130,12 @@ const name=forgeCommand type=any
               case 'synthesis:done':
                 if (event.data?.wins) {
                   success(`Synthesis improved score: ${event.data.originalScore} → ${event.data.score}`);
+                } else if (event.data?.error) {
+                  warn(`Synthesis kept ${event.data.keptWinner ?? 'winner'} — ${event.data.error}`);
+                } else if (event.data?.reason) {
+                  warn(`Synthesis kept ${event.data.keptWinner ?? 'winner'} — ${event.data.reason}`);
+                } else {
+                  info('Synthesis completed without improving the winner');
                 }
                 break;
               case 'forge:done':

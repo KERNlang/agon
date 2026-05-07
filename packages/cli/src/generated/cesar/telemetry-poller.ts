@@ -254,7 +254,7 @@ export class TelemetryPoller {
 /**
  * Convenience constructor. Equivalent to `new TelemetryPoller(opts)`.
  */
-// @kern-source: telemetry-poller:280
+// @kern-source: telemetry-poller:278
 export function createTelemetryPoller(opts: TelemetryPollerOptions): TelemetryPoller {
   return new TelemetryPoller(opts);
 }
@@ -262,7 +262,7 @@ export function createTelemetryPoller(opts: TelemetryPollerOptions): TelemetryPo
 /**
  * Test fixture for telemetry fallback: selected engine hangs for stallMs, all others report healthy.
  */
-// @kern-source: telemetry-poller:283
+// @kern-source: telemetry-poller:281
 export function createMockStallProbe(stallEngineId: string, stallMs: number = 35000): (engineId:string) => Promise<Partial<EngineVitals>> {
   return async (engineId: string) => {
     if (stallEngineId === '*' || engineId === stallEngineId) {

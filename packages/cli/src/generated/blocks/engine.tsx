@@ -26,13 +26,13 @@ import { ForgeArena, BrainstormStorm, CampfireFire, TribunalCourt } from './aren
 
 import { PlanProposalView, PlanExecutionView } from './plan-view.js';
 
-// @kern-source: engine:150
+// @kern-source: engine:149
 export interface OutputBlock {
   id: number;
   event: OutputEvent;
 }
 
-// @kern-source: engine:156
+// @kern-source: engine:155
 export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]; mode?:string }) {
   // Use explicit mode if it's an arena mode, otherwise detect from status text
   const arenaModes = ['forge', 'brainstorm', 'campfire', 'tribunal'];
@@ -71,7 +71,7 @@ export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]
   );
 }
 
-// @kern-source: engine:200
+// @kern-source: engine:199
 const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }: { engineId:string; color:number; content:string }) {
   const wrapWidth = contentWidth(8);
   const cleaned = cleanEngineOutput(content);
@@ -100,7 +100,7 @@ const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }
 });
 export { EngineBlock };
 
-// @kern-source: engine:234
+// @kern-source: engine:233
 const ConversationalResponse = React.memo(function ConversationalResponse({ engineId, content }: { engineId:string; content:string }) {
   const wrapWidth = contentWidth(2);
   const cleaned = cleanEngineOutput(content);
@@ -117,7 +117,7 @@ const ConversationalResponse = React.memo(function ConversationalResponse({ engi
 });
 export { ConversationalResponse };
 
-// @kern-source: engine:255
+// @kern-source: engine:254
 const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:OutputEvent & { type: 'cesar-recap' } }) {
   const files = Array.isArray((event as any).files) ? (event as any).files : [];
   const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
@@ -184,7 +184,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
 });
 export { CesarRecapBlock };
 
-// @kern-source: engine:325
+// @kern-source: engine:324
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -252,7 +252,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-// @kern-source: engine:397
+// @kern-source: engine:396
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -276,7 +276,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:426
+// @kern-source: engine:425
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -887,7 +887,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:1043
+// @kern-source: engine:1042
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -988,7 +988,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1161
+// @kern-source: engine:1160
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1014,7 +1014,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1190
+// @kern-source: engine:1189
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -1071,7 +1071,7 @@ export function isCesarTelemetryLine(message: string): boolean {
   return text.startsWith('Cesar route:') || text.startsWith('What happened:');
 }
 
-// @kern-source: engine:43
+// @kern-source: engine:42
 export function parseToolInputPayload(input: string): any {
   const rawInput = String(input ?? '');
   let parsed: Record<string, unknown> = {};
@@ -1083,7 +1083,7 @@ export function parseToolInputPayload(input: string): any {
   return { rawInput, parsed };
 }
 
-// @kern-source: engine:55
+// @kern-source: engine:54
 export function formatConfidenceToolLabel(parsed: any, rawInput: string): string {
   const rawValue = parsed?.value ?? parsed?.confidence ?? parsed?.score;
   let value = Number(rawValue);
@@ -1103,7 +1103,7 @@ export function formatConfidenceToolLabel(parsed: any, rawInput: string): string
   return 'confidence';
 }
 
-// @kern-source: engine:75
+// @kern-source: engine:74
 export function extractPatchText(rawInput: string, parsed: any): string {
   const values = [
     parsed?.patch,
@@ -1127,7 +1127,7 @@ export function extractPatchText(rawInput: string, parsed: any): string {
   return values[0] ?? '';
 }
 
-// @kern-source: engine:99
+// @kern-source: engine:98
 export function parsePatchPreview(rawInput: string, parsed: any): { files:string[]; lines:string[]; additions:number; deletions:number } {
   const patchText = extractPatchText(rawInput, parsed);
   const files: string[] = [];
@@ -1176,7 +1176,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: engine:1147
+// @kern-source: engine:1146
 export function extractSummary(text: string, maxLen: number): string {
   let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   s = s.replace(/^#+\s+.+\n/gm, '');

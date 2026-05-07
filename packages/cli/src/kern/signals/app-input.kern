@@ -70,33 +70,31 @@ fn name=parseAutoModeCommand params="input:string" returns="'on'|'off'|'toggle'|
 
 fn name=hasBtwSideChannelTarget params="opts:{replState:string,activePlanState?:string|null,runningJobCount?:number}" returns=boolean export=true
   doc "True when /btw should run as a side-channel instead of falling through to normal command dispatch."
-  handler <<<
-    if (opts.replState !== 'idle') return true;
-    if ((opts.runningJobCount ?? 0) > 0) return true;
-    const planState = String(opts.activePlanState ?? '');
-    return ['planning', 'awaiting_approval', 'running', 'paused'].includes(planState);
-  >>>
+  handler lang="kern"
+    if cond="opts.replState !== 'idle'"
+      return value="true"
+    if cond="(opts.runningJobCount ?? 0) > 0"
+      return value="true"
+    let name=planState value="String(opts.activePlanState ?? '')"
+    return value="['planning', 'awaiting_approval', 'running', 'paused'].includes(planState)"
 
 interface name=EscapeDecision
   field name=action type="'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'clear-input'|'noop'"
 
 fn name=resolveEscapeAction params="opts:{replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean}" returns="EscapeDecision"
   doc "Resolve Esc behavior without destructive transcript clearing."
-  handler <<<
-    if (opts.slashPickerOpen) return { action: 'close-slash' };
-    if (opts.enginePickerOpen) return { action: 'close-engine-picker' };
-    if (opts.questionOpen) return { action: 'cancel-question' };
-
-    if (opts.replState !== 'idle') {
-      return { action: 'interrupt' };
-    }
-
-    if (opts.inputValue) {
-      return { action: 'clear-input' };
-    }
-
-    return { action: 'noop' };
-  >>>
+  handler lang="kern"
+    if cond="opts.slashPickerOpen"
+      return value="{ action: 'close-slash' }"
+    if cond="opts.enginePickerOpen"
+      return value="{ action: 'close-engine-picker' }"
+    if cond="opts.questionOpen"
+      return value="{ action: 'cancel-question' }"
+    if cond="opts.replState !== 'idle'"
+      return value="{ action: 'interrupt' }"
+    if cond="opts.inputValue"
+      return value="{ action: 'clear-input' }"
+    return value="{ action: 'noop' }"
 
 fn name=tryGhostComplete params="inputValue:string, commands:any[], engineIds:string[]" returns="string|null" expr={{ return getGhostCompletion(inputValue, commands, engineIds); }}
   doc "Get ghost text completion for current input."
@@ -129,9 +127,11 @@ fn name=movePickerCursor params="direction:'up'|'down', currentIndex:number, ite
 
 fn name=shouldQueuePlanModeOnTab params="opts:{replState:string,inputValue:string,activePlanState?:string|null}" returns=boolean
   doc "Only queue plan mode from Tab when the composer is idle and empty."
-  handler <<<
-    if (opts.replState !== 'idle') return false;
-    if (opts.inputValue.trim()) return false;
-    if (opts.activePlanState && ['planning', 'awaiting_approval', 'running', 'paused'].includes(opts.activePlanState)) return false;
-    return true;
-  >>>
+  handler lang="kern"
+    if cond="opts.replState !== 'idle'"
+      return value="false"
+    if cond="opts.inputValue.trim()"
+      return value="false"
+    if cond="opts.activePlanState && ['planning', 'awaiting_approval', 'running', 'paused'].includes(opts.activePlanState)"
+      return value="false"
+    return value="true"

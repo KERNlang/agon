@@ -81,11 +81,12 @@ interface name=AgentSynthesisResult
 
 fn name=clampStr params="s:string,maxChars:number" returns=string export=false
   doc "Truncate a string to maxChars with a visible marker. Preserves the empty string as-is so downstream detection of 'empty means missing' still works."
-  handler <<<
-    if (!s) return s;
-    if (s.length <= maxChars) return s;
-    return s.slice(0, maxChars) + '\n... [truncated for prompt budget]';
-  >>>
+  handler lang="kern"
+    if cond="!s"
+      return value="s"
+    if cond="s.length <= maxChars"
+      return value="s"
+    return value="s.slice(0, maxChars) + '\\n... [truncated for prompt budget]'"
 
 fn name=buildAgentSynthesisPrompt params="opts:{task:string,winnerEngineId:string,winnerDiff:string,losers:AgentSynthesisLoser[]}" returns=string export=true
   doc "Construct the elevated-loser-insights synthesis prompt template. Closes RT-25 by forcing the winner into a humility frame: their solution is a draft, the losers each saw something they missed, and they should refine to incorporate the valuable insights. The wording is deliberately confrontational — 'NOT to defend', 'Treat your own as a draft' — to counter the LLM tendency to polish-instead-of-incorporate. Prompt-injection defense: all loser content is wrapped in clearly-marked <untrusted_data> blocks and the template warns the winner that loser content is DATA not instructions. Progressive trimming: if the composed prompt exceeds MAX_TOTAL_PROMPT_CHARS, loser context is trimmed from the end until it fits."
@@ -242,13 +243,15 @@ fn name=buildAgentInvestigateSynthesisPrompt params="opts:{task:string,winnerEng
 
 fn name=isAgentLoopErrorResponse params="response:string" returns=boolean export=false
   doc "Detect the error-as-response shapes that runApiAgentLoop returns on abort, timeout, or upstream failure. The loop converts thrown errors into `{response: 'Error: ...', toolCalls, steps}` for most streaming failures, and returns `[Timeout — ran out of time]` when the internal deadline fires. Synthesis must treat these as failures, not successful completions."
-  handler <<<
-    if (!response) return true;
-    const t = response.trimStart();
-    if (t.startsWith('Error:')) return true;
-    if (t.startsWith('[Timeout')) return true;
-    return false;
-  >>>
+  handler lang="kern"
+    if cond="!response"
+      return value="true"
+    let name=t value="response.trimStart()"
+    if cond="t.startsWith('Error:')"
+      return value="true"
+    if cond="t.startsWith('[Timeout')"
+      return value="true"
+    return value="false"
 
 fn name=runAgentTeamSynthesis async=true params="opts:AgentSynthesisOptions" returns="Promise<AgentSynthesisResult>" export=true
   doc "Run a synthesis pass on the winner's worktree using the elevated-loser-insights prompt. Re-invokes the winner via runApiAgentLoop with full tool access against the worktree the winner already edited, then captures the new diff against baseSha. Falls back gracefully in FIVE failure modes: (a) no losers → skipped; (b) signal aborted before call → ok=false; (c) runApiAgentLoop throws → ok=false; (d) runApiAgentLoop returns error-as-response shape → ok=false; (e) signal aborted during call → ok=false (checked post-return); (f) worktreeChangedDiff throws OR returns empty when original was non-empty → ok=false (corruption signal). In every failure mode synthesizedDiff is the original winnerDiff so the caller always has a safe value to surface. Used by AgentTeam.runAgentTeam in the CLI handler to mitigate RT-25 winner-refines blind spot."

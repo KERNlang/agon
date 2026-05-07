@@ -45,9 +45,8 @@ service name=SessionContext
 
   method name=isStale params="maxAgeMs?:number" returns=boolean
     doc "Returns true if context is older than maxAgeMs (default 5 minutes)."
-    handler <<<
-      const limit = maxAgeMs ?? 300_000;
-      return this.age() > limit;
-    >>>
+    handler lang="kern"
+      let name=limit value="maxAgeMs ?? 300_000"
+      return value="this.age() > limit"
 
   singleton name=sessionContext

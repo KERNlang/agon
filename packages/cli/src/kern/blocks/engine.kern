@@ -35,10 +35,9 @@ const name=VERSION type=string value={{ '0.1.0' }}
 fn name=shortToolPath params="filePath:string" returns=string expr={{ return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~'); }}
 
 fn name=isCesarTelemetryLine params="message:string" returns=boolean
-  handler <<<
-    const text = String(message ?? '').trim();
-    return text.startsWith('Cesar route:') || text.startsWith('What happened:');
-  >>>
+  handler lang="kern"
+    let name=text value="String(message ?? '').trim()"
+    return value="text.startsWith('Cesar route:') || text.startsWith('What happened:')"
 
 fn name=parseToolInputPayload params="input:string" returns=any
   handler <<<

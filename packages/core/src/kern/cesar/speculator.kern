@@ -260,9 +260,8 @@ service name=Speculator export=true
     >>>
 
   method name=getSnapshot returns="FileSnapshot|null"
-    handler <<<
-      return this.snapshot;
-    >>>
+    handler lang="kern"
+      return value="this.snapshot"
 
 // ── Factory ───────────────────────────────────────────────────────────
 

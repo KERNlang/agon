@@ -205,15 +205,13 @@ service name=TelemetryPoller export=true
 
   method name=getVitals params="engineId:string" returns="EngineVitals|undefined"
     doc "Read one engine's last-known vitals without subscribing."
-    handler <<<
-      return this.vitals.get(engineId);
-    >>>
+    handler lang="kern"
+      return value="this.vitals.get(engineId)"
 
   method name=snapshot returns="Map<string, EngineVitals>"
     doc "Defensive copy of the current vitals map — safe to mutate or hand to React state."
-    handler <<<
-      return new Map(this.vitals);
-    >>>
+    handler lang="kern"
+      return value="new Map(this.vitals)"
 
   method name=probeNow async=true returns="Promise<void>"
     doc "Run one poll immediately. Public for /status refreshes and deterministic tests; start() still owns the interval loop."

@@ -134,17 +134,21 @@ export function findBinary(binary: string): string|null {
 
 // @kern-source: cli-models-registry:140
 export function getBinaryVersion(binary: string, versionCmd: string[]): string|null {
-  if (!versionCmd.length) return null;
+  if (!versionCmd.length) {
+    return null;
+  }
   try {
     const result = execSync(`${binary} ${versionCmd.join(' ')}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
     return result || null;
-  } catch { return null; }
+  } catch (e) {
+    return null;
+  }
 }
 
 /**
  * Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync.
  */
-// @kern-source: cli-models-registry:149
+// @kern-source: cli-models-registry:150
 export function buildCliModelGroups(): CliProviderGroup[] {
   const groups: CliProviderGroup[] = [];
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
@@ -179,7 +183,7 @@ export function buildCliModelGroups(): CliProviderGroup[] {
 /**
  * Build CLI provider groups with latest models from models.dev API. Falls back to static list on failure.
  */
-// @kern-source: cli-models-registry:182
+// @kern-source: cli-models-registry:183
 export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
   let registry: Record<string, any> | null = null;
   try {

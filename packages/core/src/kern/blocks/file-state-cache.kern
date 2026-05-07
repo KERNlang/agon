@@ -88,23 +88,22 @@ service name=FileStateCache singleton=true
     >>>
 
   method name=has params="filePath:string" returns=boolean
-    handler <<<
-      return this.cache.has(filePath);
-    >>>
+    handler lang="kern"
+      return value="this.cache.has(filePath)"
 
   method name=isStale params="filePath:string, currentMtime:number" returns=boolean
-    handler <<<
-      const state = this.cache.get(filePath);
-      if (!state) return true;
-      return currentMtime > state.timestamp;
-    >>>
+    handler lang="kern"
+      let name=state value="this.cache.get(filePath)"
+      if cond="!state"
+        return value="true"
+      return value="currentMtime > state.timestamp"
 
   method name=wasReadFully params="filePath:string" returns=boolean
-    handler <<<
-      const state = this.cache.get(filePath);
-      if (!state) return false;
-      return !state.isPartialView;
-    >>>
+    handler lang="kern"
+      let name=state value="this.cache.get(filePath)"
+      if cond="!state"
+        return value="false"
+      return value="!state.isPartialView"
 
   method name=remove params="filePath:string" returns=void
     handler <<<
@@ -117,9 +116,8 @@ service name=FileStateCache singleton=true
     >>>
 
   method name=size returns=number
-    handler <<<
-      return this.cache.size;
-    >>>
+    handler lang="kern"
+      return value="this.cache.size"
 
   method name=evict returns=void export=false
     handler <<<

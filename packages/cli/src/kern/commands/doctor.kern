@@ -33,11 +33,12 @@ fn name=shellQuoteForDoctor params="value:string" returns=string export=true
 fn name=buildDoctorCleanupCommand params="repo:string,path:string" returns=string export=true expr={{ return `git -C ${shellQuoteForDoctor(repo)} worktree prune && rm -rf ${shellQuoteForDoctor(path)}`; }}
 
 fn name=formatDoctorStatus params="status:'ok'|'warn'|'fail'" returns=string export=true
-  handler <<<
-    if (status === 'ok') return green('ok');
-    if (status === 'warn') return yellow('warn');
-    return red('fail');
-  >>>
+  handler lang="kern"
+    if cond="status === 'ok'"
+      return value="green('ok')"
+    if cond="status === 'warn'"
+      return value="yellow('warn')"
+    return value="red('fail')"
 
 fn name=diagnoseEngineDoctorEntry params="engine:EngineDefinition, registry:EngineRegistry, enabledIds:string[]" returns=EngineDoctorEntry export=true
   handler <<<

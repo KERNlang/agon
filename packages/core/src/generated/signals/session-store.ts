@@ -96,9 +96,11 @@ export function loadToolResultFromDisk(engineId: string, toolCallId: string): st
   try {
     const cacheDir = sessionCacheDir(engineId);
     const filePath = join(cacheDir, `${toolCallId}.txt`);
-    if (!existsSync(filePath)) return null;
+    if (!existsSync(filePath)) {
+      return null;
+    }
     return readFileSync(filePath, 'utf-8');
-  } catch {
+  } catch (e) {
     return null;
   }
 }
@@ -106,7 +108,7 @@ export function loadToolResultFromDisk(engineId: string, toolCallId: string): st
 /**
  * Remove cached tool results not in the keep set. Prevents unbounded disk growth.
  */
-// @kern-source: session-store:84
+// @kern-source: session-store:83
 export function pruneToolCache(engineId: string, keepIds: Set<string>): void {
   try {
     const cacheDir = sessionCacheDir(engineId);
@@ -124,7 +126,7 @@ export function pruneToolCache(engineId: string, keepIds: Set<string>): void {
 /**
  * Persist API session state to disk (v2 schema).
  */
-// @kern-source: session-store:100
+// @kern-source: session-store:99
 export function saveSessionState(engineId: string, state: { messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, confidence:number|null, compactionSummary?:CompactionSummaryPart|null, toolCacheManifest?:ToolCacheEntry[] }): void {
   const dir = runtimeAgonPath('sessions');
   mkdirSync(dir, { recursive: true });
@@ -147,7 +149,7 @@ export function saveSessionState(engineId: string, state: { messageHistory: Arra
 /**
  * Load persisted API session state from disk. Handles v1→v2 migration transparently.
  */
-// @kern-source: session-store:121
+// @kern-source: session-store:120
 export function loadSessionState(engineId: string): { messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, confidence:number|null, compactionSummary:CompactionSummaryPart|null, toolCacheManifest:ToolCacheEntry[], savedAt: number } | null {
   const path = sessionStorePath(engineId);
   if (!existsSync(path)) return null;
@@ -185,7 +187,7 @@ export function loadSessionState(engineId: string): { messageHistory: Array<{rol
 /**
  * Delete persisted session state and its cache directory.
  */
-// @kern-source: session-store:157
+// @kern-source: session-store:156
 export function clearSessionState(engineId: string): void {
   const path = sessionStorePath(engineId);
   try { if (existsSync(path)) unlinkSync(path); } catch { /* already removed */ }
@@ -200,10 +202,10 @@ export function clearSessionState(engineId: string): void {
   } catch { /* cache dir cleanup is best-effort */ }
 }
 
-// @kern-source: session-store:177
+// @kern-source: session-store:176
 export const CONVERSATION_SCHEMA_VERSION: number = 1;
 
-// @kern-source: session-store:179
+// @kern-source: session-store:178
 export interface ConversationState {
   schemaVersion: number;
   messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>;
@@ -214,7 +216,7 @@ export interface ConversationState {
 /**
  * Conversation path scoped by workspace only — shared across all engines.
  */
-// @kern-source: session-store:185
+// @kern-source: session-store:184
 export function conversationStorePath(): string {
   const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
   return runtimeAgonPath('sessions', `conversation-${cwdHash}.json`);
@@ -223,7 +225,7 @@ export function conversationStorePath(): string {
 /**
  * Strip engine-specific artifacts (tool call IDs, internal markers) for clean replay into a different engine.
  */
-// @kern-source: session-store:192
+// @kern-source: session-store:191
 export function stripEngineArtifacts(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const stringifyContent = (content: any): any => {
     if (typeof content === 'string') return content;
@@ -282,7 +284,7 @@ export function stripEngineArtifacts(messages: Array<{role:string,content:any,to
 /**
  * Save conversation history to the workspace-scoped conversation store. Called before engine switch.
  */
-// @kern-source: session-store:249
+// @kern-source: session-store:248
 export function saveConversation(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, sourceEngineId: string|null): void {
   const dir = runtimeAgonPath('sessions');
   mkdirSync(dir, { recursive: true });
@@ -304,7 +306,7 @@ export function saveConversation(messages: Array<{role:string,content:any,tool_c
 /**
  * Load conversation history from the workspace-scoped store. Used when booting a new engine after a switch.
  */
-// @kern-source: session-store:269
+// @kern-source: session-store:268
 export function loadConversation(): { messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, sourceEngine: string|null, savedAt: number } | null {
   const path = conversationStorePath();
   if (!existsSync(path)) return null;
@@ -327,7 +329,7 @@ export function loadConversation(): { messageHistory: Array<{role:string,content
 /**
  * Delete the workspace-scoped conversation store.
  */
-// @kern-source: session-store:290
+// @kern-source: session-store:289
 export function clearConversation(): void {
   const path = conversationStorePath();
   try { if (existsSync(path)) unlinkSync(path); } catch { /* already removed */ }

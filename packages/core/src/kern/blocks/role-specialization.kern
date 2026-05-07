@@ -69,11 +69,11 @@ fn name=rankByTaskClass params="engineIds:string[], taskClass:TaskClass" returns
   >>>
 
 fn name=buildSpecializedPrompt params="engineId:string, taskClass:TaskClass, basePrompt:string" returns=string
-  handler <<<
-    const rolePrompt = buildRolePrompt(engineId, taskClass);
-    if (!rolePrompt) return basePrompt;
-    return basePrompt + '\n' + rolePrompt;
-  >>>
+  handler lang="kern"
+    let name=rolePrompt value="buildRolePrompt(engineId, taskClass)"
+    if cond="!rolePrompt"
+      return value="basePrompt"
+    return value="basePrompt + '\\n' + rolePrompt"
 
 fn name=assignForgeRoles params="engineIds:string[], taskClass:TaskClass" returns="Map<string,{role:string,specialization:string}>"
   handler <<<

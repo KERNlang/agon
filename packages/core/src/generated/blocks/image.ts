@@ -34,13 +34,13 @@ export function isImagePath(filePath: string): boolean {
   return IMAGE_EXTENSIONS.has(ext);
 }
 
-// @kern-source: image:31
+// @kern-source: image:30
 export function mimeFromExt(filePath: string): string {
   const ext = extname(filePath).toLowerCase();
   return MIME_MAP[ext] ?? 'application/octet-stream';
 }
 
-// @kern-source: image:37
+// @kern-source: image:36
 export function resolveImagePath(rawPath: string, cwd: string): string|null {
   let resolved: string;
   if (rawPath.startsWith('~/')) {
@@ -53,7 +53,7 @@ export function resolveImagePath(rawPath: string, cwd: string): string|null {
   return existsSync(resolved) ? resolved : null;
 }
 
-// @kern-source: image:50
+// @kern-source: image:49
 export function buildImageAttachment(rawPath: string, cwd: string): ImageAttachment|null {
   const resolved = resolveImagePath(rawPath.trim(), cwd);
   if (!resolved) return null;
@@ -64,7 +64,7 @@ export function buildImageAttachment(rawPath: string, cwd: string): ImageAttachm
   };
 }
 
-// @kern-source: image:61
+// @kern-source: image:60
 export function extractImagesFromInput(input: string, cwd: string): {text:string, images:ImageAttachment[]} {
   const images: ImageAttachment[] = [];
 

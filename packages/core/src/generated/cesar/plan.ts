@@ -35,7 +35,9 @@ function safeCesarPlanId(planId: string): string {
 export function cesarPlanJsonPath(planId: string): string {
   const plansDir = getCesarPlansDir();
   const full = resolve(plansDir, `${safeCesarPlanId(planId)}.json`);
-  if (!full.startsWith(resolve(plansDir))) throw new Error(`Invalid plan ID: ${planId}`);
+  if (!full.startsWith(resolve(plansDir))) {
+    throw new Error(`Invalid plan ID: ${planId}`);
+  }
   return full;
 }
 
@@ -46,7 +48,9 @@ export function cesarPlanJsonPath(planId: string): string {
 export function cesarPlanMarkdownPath(planId: string): string {
   const plansDir = getCesarPlansDir();
   const full = resolve(plansDir, `${safeCesarPlanId(planId)}.md`);
-  if (!full.startsWith(resolve(plansDir))) throw new Error(`Invalid plan ID: ${planId}`);
+  if (!full.startsWith(resolve(plansDir))) {
+    throw new Error(`Invalid plan ID: ${planId}`);
+  }
   return full;
 }
 

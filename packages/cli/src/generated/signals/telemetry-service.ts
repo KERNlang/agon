@@ -449,7 +449,7 @@ export class TelemetryService {
   }
 }
 
-// @kern-source: telemetry-service:459
+// @kern-source: telemetry-service:457
 export function createTelemetryService(opts: TelemetryServiceOptions): TelemetryService {
   return new TelemetryService(opts);
 }

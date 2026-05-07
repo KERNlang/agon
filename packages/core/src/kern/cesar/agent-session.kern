@@ -443,6 +443,5 @@ service name=AgentSession export=true
 
   method name=getSignal returns=AbortSignal
     doc "Expose the session's abort signal so callers can pass it to nested operations."
-    handler <<<
-      return this.abortController.signal;
-    >>>
+    handler lang="kern"
+      return value="this.abortController.signal"

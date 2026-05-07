@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveForgeDispatchTimeout } from '../../packages/forge/src/generated/stages.js';
-import { resolveForgeSynthesisTimeout } from '../../packages/forge/src/generated/forge.js';
+import { resolveForgeRunTimeout, resolveForgeSynthesisTimeout } from '../../packages/forge/src/generated/forge.js';
 
 describe('forge dispatch timeout selection', () => {
   const config = { forgeTimeout: 600 } as any;
@@ -27,5 +27,21 @@ describe('forge synthesis timeout selection', () => {
 
   it('keeps the configured synthesis timeout for code tasks', () => {
     expect(resolveForgeSynthesisTimeout(config, 'feature')).toBe(300);
+  });
+});
+
+describe('forge run timeout selection', () => {
+  const config = { forgeTimeout: 600 } as any;
+
+  it('caps docs forge dispatches when no explicit timeout is provided', () => {
+    expect(resolveForgeRunTimeout(config, undefined, 'docs')).toBe(180);
+  });
+
+  it('honors explicit timeout for docs tasks', () => {
+    expect(resolveForgeRunTimeout(config, 420, 'docs')).toBe(420);
+  });
+
+  it('keeps configured timeout for non-docs tasks', () => {
+    expect(resolveForgeRunTimeout(config, undefined, 'feature')).toBe(600);
   });
 });

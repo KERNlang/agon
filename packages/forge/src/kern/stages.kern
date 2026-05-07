@@ -350,40 +350,6 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
           totalDurationMs: 0,
           error,
         });
-        const usedIds = [...opts.challengers, ...Array.from(allResults.keys())];
-        const fallbackCandidates = opts.enginePrompts ? [...opts.enginePrompts.keys()] : opts.challengers;
-        const fallbackId = selectForgeFallbackEngine(opts.registry, failedId, undefined, usedIds, fallbackCandidates);
-        if (fallbackId) {
-          opts.onEvent?.({ type: 'engine:fallback' as any, engineId: failedId, data: { from: failedId, to: fallbackId, phase: 'stage2', error } });
-          try {
-            const fallbackPrompt = buildFallbackRetryPrompt(opts.enginePrompts?.get(fallbackId) ?? opts.forgePrompt, failedId, 'stage2', error);
-            const fallback = await runForgeEngineAttempt({
-              engineId: fallbackId,
-              prompt: fallbackPrompt,
-              dispatchMode: 'exec',
-              metricPhase: 'stage2-fallback',
-              fitnessCmd: opts.fitnessCmd,
-              config: opts.config,
-              registry: opts.registry,
-              adapter: opts.adapter,
-              root,
-              baseSha: opts.baseSha,
-              forgeDir: opts.forgeDir,
-              worktrees: opts.worktrees,
-              onEvent: opts.onEvent,
-              signal: opts.signal,
-              eventType: 'stage2:dispatch',
-              eventData: { fallbackFrom: failedId },
-            });
-            allResults.set(fallbackId, fallback.result);
-            metrics.push(fallback.metric);
-          } catch (fallbackErr) {
-            const fallbackError = formatDispatchError(fallbackErr);
-            opts.onEvent?.({ type: 'engine:failed' as any, engineId: fallbackId, data: { engineId: fallbackId, phase: 'stage2-fallback', error: fallbackError } });
-            allResults.set(fallbackId, makeFailedResult(fallbackId, fallbackError));
-            metrics.push({ engineId: fallbackId, phase: 'stage2-fallback', dispatchDurationMs: 0, totalDurationMs: 0, error: fallbackError });
-          }
-        }
       }
     }
 

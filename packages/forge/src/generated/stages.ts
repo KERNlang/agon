@@ -363,40 +363,6 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
         totalDurationMs: 0,
         error,
       });
-      const usedIds = [...opts.challengers, ...Array.from(allResults.keys())];
-      const fallbackCandidates = opts.enginePrompts ? [...opts.enginePrompts.keys()] : opts.challengers;
-      const fallbackId = selectForgeFallbackEngine(opts.registry, failedId, undefined, usedIds, fallbackCandidates);
-      if (fallbackId) {
-        opts.onEvent?.({ type: 'engine:fallback' as any, engineId: failedId, data: { from: failedId, to: fallbackId, phase: 'stage2', error } });
-        try {
-          const fallbackPrompt = buildFallbackRetryPrompt(opts.enginePrompts?.get(fallbackId) ?? opts.forgePrompt, failedId, 'stage2', error);
-          const fallback = await runForgeEngineAttempt({
-            engineId: fallbackId,
-            prompt: fallbackPrompt,
-            dispatchMode: 'exec',
-            metricPhase: 'stage2-fallback',
-            fitnessCmd: opts.fitnessCmd,
-            config: opts.config,
-            registry: opts.registry,
-            adapter: opts.adapter,
-            root,
-            baseSha: opts.baseSha,
-            forgeDir: opts.forgeDir,
-            worktrees: opts.worktrees,
-            onEvent: opts.onEvent,
-            signal: opts.signal,
-            eventType: 'stage2:dispatch',
-            eventData: { fallbackFrom: failedId },
-          });
-          allResults.set(fallbackId, fallback.result);
-          metrics.push(fallback.metric);
-        } catch (fallbackErr) {
-          const fallbackError = formatDispatchError(fallbackErr);
-          opts.onEvent?.({ type: 'engine:failed' as any, engineId: fallbackId, data: { engineId: fallbackId, phase: 'stage2-fallback', error: fallbackError } });
-          allResults.set(fallbackId, makeFailedResult(fallbackId, fallbackError));
-          metrics.push({ engineId: fallbackId, phase: 'stage2-fallback', dispatchDurationMs: 0, totalDurationMs: 0, error: fallbackError });
-        }
-      }
     }
   }
 
@@ -405,7 +371,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:395
+// @kern-source: stages:361
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

@@ -1,5 +1,6 @@
 import from="node:path" names="join"
 import from="node:fs" names="existsSync,mkdirSync,readFileSync"
+import from="node:child_process" names="execFileSync"
 import from="@agon/core" names="ensureAgonHome,RUNS_DIR,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,scanProjectContext,getActiveWorkspace,snapshotWorkspace,tracker,resolveWorkingDir,loadOrCreateActiveThread"
 import from="@agon/core" names="Plan,PlanStepInput,ApprovalLevel" types=true
 import from="@agon/forge" names="runForge"
@@ -165,6 +166,40 @@ fn name=repairFitnessCommandTaskLiterals params="task:string, command:string" re
     return repaired;
   >>>
 
+fn name=normalizeGithubRemoteLiteral params="remote:string" returns="string|null" export=true
+  handler <<<
+    const raw = String(remote ?? '').trim();
+    if (!raw) return null;
+    const cleaned = raw.replace(/\.git$/, '');
+    const ssh = cleaned.match(/^git@github\.com:([^/]+)\/(.+)$/);
+    if (ssh) return `github.com/${ssh[1]}/${ssh[2]}`;
+    const https = cleaned.match(/^https?:\/\/github\.com\/([^/]+)\/(.+)$/);
+    if (https) return `github.com/${https[1]}/${https[2]}`;
+    return null;
+  >>>
+
+fn name=detectGithubRemoteLiteral params="cwd:string" returns="string|null" export=false
+  handler <<<
+    try {
+      const remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+      return normalizeGithubRemoteLiteral(remote);
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=repairFitnessCommandRepositoryLiteral params="command:string, repoLiteral:string|null" returns="string" export=true
+  doc "For current-repository README/docs checks, prefer the actual git origin over stale chat examples or old repo names."
+  handler <<<
+    if (!repoLiteral) return command;
+    let repaired = command;
+    for (const cmdUrl of extractGithubLiterals(command)) {
+      if (cmdUrl === repoLiteral) continue;
+      repaired = repaired.split(cmdUrl).join(repoLiteral);
+    }
+    return repaired;
+  >>>
+
 fn name=describeProjectFitnessOptions params="cwd:string" returns="string" export=false
   handler <<<
     const lines: string[] = [];
@@ -184,6 +219,8 @@ fn name=describeProjectFitnessOptions params="cwd:string" returns="string" expor
     if (existsSync(join(cwd, 'go.mod'))) lines.push('go.mod present');
     if (existsSync(join(cwd, 'pyproject.toml'))) lines.push('pyproject.toml present');
     if (existsSync(join(cwd, 'README.md'))) lines.push('README.md present');
+    const repoLiteral = detectGithubRemoteLiteral(cwd);
+    if (repoLiteral) lines.push(`git origin: ${repoLiteral}`);
     return lines.length > 0 ? lines.join('\n') : 'No common project test metadata found.';
   >>>
 
@@ -211,7 +248,8 @@ fn name=prepareForgeFitnessCommand params="task:string, dispatch:Dispatch, ctx:H
       'Rules:',
       '- The command must be non-interactive and suitable to run from the repository root.',
       '- The command should verify the task requirements as specifically as possible.',
-      '- Preserve literal strings and URLs from the task exactly. Do not correct or invent spellings.',
+      '- For links to this repository, use the git origin shown in Project signals as the source of truth.',
+      '- Preserve other literal strings and URLs from the task exactly. Do not correct or invent spellings.',
       '- Prefer existing project scripts when they fit; otherwise write a small shell/node/python check.',
       '- Do not include markdown, prose, or multiple commands outside the JSON string.',
       '',
@@ -231,7 +269,9 @@ fn name=prepareForgeFitnessCommand params="task:string, dispatch:Dispatch, ctx:H
       });
       const cmd = extractFitnessCommandFromCesarOutput(String(result.stdout ?? ''));
       if (cmd) {
-        const repaired = repairFitnessCommandTaskLiterals(task, cmd);
+        const repoLiteral = detectGithubRemoteLiteral(cwd);
+        const taskRepaired = repairFitnessCommandTaskLiterals(task, cmd);
+        const repaired = repairFitnessCommandRepositoryLiteral(taskRepaired, repoLiteral);
         if (repaired !== cmd) {
           dispatch({ type: 'warning', message: `Repaired Cesar fitness literal: ${cmd} -> ${repaired}` });
         }

@@ -14,23 +14,21 @@ import { updateTeamElo } from '@agon/core';
 
 import { runFitness } from './fitness.js';
 
-import { selectForgeFallbackEngine } from './stages.js';
-
 import type { WorktreeEntry } from '../types.js';
 
-// @kern-source: team-forge:15
+// @kern-source: team-forge:14
 export function shellQuoteForTeamForge(value: string): string {
   const s = String(value ?? '');
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s;
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-// @kern-source: team-forge:22
+// @kern-source: team-forge:21
 export function buildTeamForgeCleanupCommand(repoRootPath: string, forgeDir: string): string {
   return `git -C ${shellQuoteForTeamForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForTeamForge(forgeDir)}`;
 }
 
-// @kern-source: team-forge:24
+// @kern-source: team-forge:23
 export function writeTeamForgeResultBundle(matchId: string, options: TeamForgeOptions, worktrees: WorktreeEntry[], repoRootPath: string, baseSha: string, sidechainPath: string, result?: TeamMatchResult|null, errorMessage?: string): string {
   const cleanupCommand = buildTeamForgeCleanupCommand(repoRootPath, options.forgeDir);
   const bundlePath = `${options.forgeDir}/result.json`;
@@ -101,7 +99,7 @@ export function writeTeamForgeResultBundle(matchId: string, options: TeamForgeOp
   return bundlePath;
 }
 
-// @kern-source: team-forge:95
+// @kern-source: team-forge:94
 export interface TeamForgeOptions {
   task: string;
   fitnessCmd: string;
@@ -117,7 +115,7 @@ export interface TeamForgeOptions {
   signal?: AbortSignal;
 }
 
-// @kern-source: team-forge:109
+// @kern-source: team-forge:108
 export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd: string, forgePrompt: string, registry: EngineRegistry, adapter: EngineAdapter, cwd: string, baseSha: string, forgeDir: string, worktrees: WorktreeEntry[], timeout: number, fitnessTimeout: number, maxReviewLoops: number, onEvent?: (event:ForgeEvent|TeamEvent)=>void, signal?: AbortSignal): Promise<TeamSubmission> {
   const trace: TeamRoundTrace[] = [];
   const start = Date.now();
@@ -164,37 +162,25 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
     trace.push({ round, actor: architect.engineId, role: 'architect', action: 'failed' as any, artifactSummary: error.slice(0, 200), durationMs: 0 });
     onEvent?.({ type: 'engine:failed' as any, engineId: architect.engineId, data: { teamId: team.teamId, engineId: architect.engineId, phase: 'team-architect', error } });
     onEvent?.({ type: 'engine:pid-clear' as any, engineId: architect.engineId, data: { teamId: team.teamId, engineId: architect.engineId } });
-    const usedIds = team.members.map((m) => m.engineId);
-    const fallbackId = selectForgeFallbackEngine(registry, architect.engineId, classifyTask(task), usedIds);
-    if (fallbackId) {
-      onEvent?.({ type: 'engine:fallback' as any, engineId: architect.engineId, data: { teamId: team.teamId, from: architect.engineId, to: fallbackId, phase: 'team-architect', error } });
-      try {
-        const fallbackEngine = registry.get(fallbackId);
-        const fallbackResult = await adapter.dispatch({
-          engine: fallbackEngine,
-          prompt: `${planPrompt}\n\n## FALLBACK RETRY\nYou are replacing failed architect ${architect.engineId}. Failure: ${error}`,
-          systemPrompt: 'Produce a plan only. Do not edit files, run tools, or execute commands.',
-          cwd,
-          mode: 'review',
-          timeout,
-          outputDir: forgeDir,
-          signal,
-          onSpawn: (pid: number) => onEvent?.({ type: 'engine:pid' as any, engineId: fallbackId, data: { teamId: team.teamId, engineId: fallbackId, pid, phase: 'team-architect-fallback' } }),
-        });
-        tokenSum += fallbackResult.usage?.totalTokens ?? 0;
-        plan = fallbackResult.stdout.trim();
-        trace.push({ round, actor: fallbackId, role: 'architect', action: 'planned', artifactSummary: plan.slice(0, 200), durationMs: fallbackResult.durationMs });
-        onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: fallbackId } });
-        onEvent?.({ type: 'engine:pid-clear' as any, engineId: fallbackId, data: { teamId: team.teamId, engineId: fallbackId } });
-      } catch (fallbackErr) {
-        const fallbackError = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-        trace.push({ round, actor: fallbackId, role: 'architect', action: 'failed' as any, artifactSummary: fallbackError.slice(0, 200), durationMs: 0 });
-        onEvent?.({ type: 'engine:failed' as any, engineId: fallbackId, data: { teamId: team.teamId, engineId: fallbackId, phase: 'team-architect-fallback', error: fallbackError } });
-        plan = `Architect ${architect.engineId} failed (${error}). Fallback ${fallbackId} also failed (${fallbackError}). Implement the task directly using the base instructions.`;
-      }
-    } else {
-      plan = `Architect ${architect.engineId} failed (${error}). Implement the task directly using the base instructions.`;
-    }
+    const finalResult: EngineResult = {
+      engineId: `team:${team.teamId}`,
+      pass: false,
+      score: 0,
+      diffLines: 0,
+      filesChanged: 0,
+      durationSec: (Date.now() - start) / 1000,
+      lintWarnings: 0,
+      styleScore: 0,
+      dispatchStdout: `ERROR: team architect ${architect.engineId} failed: ${error}`,
+    };
+    return {
+      teamId: team.teamId,
+      finalOutput: finalResult,
+      trace,
+      totalTokens: tokenSum,
+      wallClockMs: Date.now() - start,
+      collaborationLift: 0,
+    };
   }
 
   // --- Phase 2: Implementers build (parallel if multiple) ---
@@ -269,57 +255,6 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
       trace.push({ round, actor: failed.engineId, role: 'implementer', action: 'failed' as any, artifactSummary: error.slice(0, 200), durationMs: 0 });
       onEvent?.({ type: 'engine:failed' as any, engineId: failed.engineId, data: { teamId: team.teamId, engineId: failed.engineId, phase: 'team-implementer', error } });
       onEvent?.({ type: 'engine:pid-clear' as any, engineId: failed.engineId, data: { teamId: team.teamId, engineId: failed.engineId } });
-      const usedIds = [...team.members.map((m) => m.engineId), ...implResults.map((r) => r.engineId)];
-      const fallbackId = selectForgeFallbackEngine(registry, failed.engineId, classifyTask(task), usedIds);
-      if (fallbackId) {
-        onEvent?.({ type: 'engine:fallback' as any, engineId: failed.engineId, data: { teamId: team.teamId, from: failed.engineId, to: fallbackId, phase: 'team-implementer', error } });
-        try {
-          const root = repoRoot(cwd);
-          const wtPath = `${forgeDir}/${team.teamId}-${fallbackId}-fallback-${failed.engineId}`;
-          worktreeCreate(root, wtPath, baseSha);
-          const wt: WorktreeEntry = { engineId: fallbackId, path: wtPath, repoRoot: root };
-          worktrees.push(wt);
-          const fallbackEngine = registry.get(fallbackId);
-          const fallbackPrompt = `${forgePrompt}\n\n## YOUR ROLE: IMPLEMENTER FALLBACK\nYou are replacing failed implementer ${failed.engineId}. Failure: ${error}\n\n## ARCHITECT'S PLAN:\n${plan}\n\nTask: ${task}`;
-          const startFallback = Date.now();
-          let fallbackResult: any;
-          if (adapter.dispatchAgent && (fallbackEngine.agent || fallbackEngine.api)) {
-            fallbackResult = await adapter.dispatchAgent({
-              engine: fallbackEngine,
-              prompt: fallbackPrompt,
-              cwd: wt.path,
-              mode: 'agent',
-              timeout,
-              outputDir: forgeDir,
-              signal,
-              onSpawn: (pid: number) => onEvent?.({ type: 'engine:pid' as any, engineId: fallbackId, data: { teamId: team.teamId, engineId: fallbackId, pid, phase: 'team-implementer-fallback' } }),
-            });
-          } else {
-            fallbackResult = await adapter.dispatch({
-              engine: fallbackEngine,
-              prompt: fallbackPrompt,
-              cwd: wt.path,
-              mode: 'exec',
-              timeout,
-              outputDir: forgeDir,
-              signal,
-              onSpawn: (pid: number) => onEvent?.({ type: 'engine:pid' as any, engineId: fallbackId, data: { teamId: team.teamId, engineId: fallbackId, pid, phase: 'team-implementer-fallback' } }),
-            });
-          }
-          tokenSum += fallbackResult.usage?.totalTokens ?? 0;
-          const fitness = await runFitness({ engineId: fallbackId, worktreePath: wt.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
-          const durationMs = fallbackResult.durationMs ?? (Date.now() - startFallback);
-          trace.push({ round, actor: fallbackId, role: 'implementer', action: 'implemented', artifactSummary: `fallback score=${fitness.score}`, durationMs });
-          onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: fallbackId } });
-          onEvent?.({ type: 'engine:pid-clear' as any, engineId: fallbackId, data: { teamId: team.teamId, engineId: fallbackId } });
-          implResults.push({ engineId: fallbackId, fitness, worktree: wt, durationMs });
-        } catch (fallbackErr) {
-          const fallbackError = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-          trace.push({ round, actor: fallbackId, role: 'implementer', action: 'failed' as any, artifactSummary: fallbackError.slice(0, 200), durationMs: 0 });
-          onEvent?.({ type: 'engine:failed' as any, engineId: fallbackId, data: { teamId: team.teamId, engineId: fallbackId, phase: 'team-implementer-fallback', error: fallbackError } });
-          onEvent?.({ type: 'engine:pid-clear' as any, engineId: fallbackId, data: { teamId: team.teamId, engineId: fallbackId } });
-        }
-      }
     }
   }
 
@@ -478,7 +413,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
   };
 }
 
-// @kern-source: team-forge:470
+// @kern-source: team-forge:406
 export async function runTeamForge(options: TeamForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent|TeamEvent)=>void): Promise<TeamMatchResult> {
   const config = loadConfig(options.cwd);
   const matchId = randomUUID().slice(0, 8);

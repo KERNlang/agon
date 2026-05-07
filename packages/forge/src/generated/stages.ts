@@ -233,6 +233,14 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   const root = repoRoot(opts.cwd);
 
   const metrics: DispatchMetric[] = [];
+  const published = new Set<string>();
+  const publishResult = (engineId: string, result: EngineResult, metric: DispatchMetric) => {
+    metrics.push(metric);
+    if (!published.has(engineId)) {
+      published.add(engineId);
+      opts.onResult?.(engineId, result, metric);
+    }
+  };
 
   const challengerPromises = opts.challengers.map(async (engineId: string) => {
     // Use per-engine specialized prompt if available (role specialization)
@@ -274,11 +282,27 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
         resolve({ result, metric, dispatchResult: null, worktreePath: join(opts.forgeDir, `wt-${engineId}`) });
       }, hardTimeoutMs);
     });
-    const attempt = await Promise.race([attemptPromise, timeoutPromise]);
-    if (timeoutHandle) clearTimeout(timeoutHandle);
-    metrics.push(attempt.metric);
-    opts.onResult?.(engineId, attempt.result, attempt.metric);
-    return attempt.result;
+    try {
+      const attempt = await Promise.race([attemptPromise, timeoutPromise]);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      publishResult(engineId, attempt.result, attempt.metric);
+      return attempt.result;
+    } catch (err) {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      const error = formatDispatchError(err);
+      console.warn(`[agon] forge stage2: engine ${engineId} failed: ${error}`);
+      opts.onEvent?.({ type: 'engine:failed' as any, engineId, data: { engineId, phase: 'stage2', error } });
+      const failed = makeFailedResult(engineId, error);
+      const metric: DispatchMetric = {
+        engineId,
+        phase: 'stage2-follower',
+        dispatchDurationMs: 0,
+        totalDurationMs: 0,
+        error,
+      };
+      publishResult(engineId, failed, metric);
+      return failed;
+    }
   });
 
   // Use Promise.allSettled — one slow/broken engine must NOT stall the others.
@@ -297,14 +321,16 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
       const error = formatDispatchError(outcome.reason);
       console.warn(`[agon] forge stage2: engine ${failedId} failed: ${error}`);
       opts.onEvent?.({ type: 'engine:failed' as any, engineId: failedId, data: { engineId: failedId, phase: 'stage2', error } });
-      allResults.set(failedId, makeFailedResult(failedId, error));
-      metrics.push({
+      const failed = makeFailedResult(failedId, error);
+      const metric: DispatchMetric = {
         engineId: failedId,
         phase: 'stage2-follower',
         dispatchDurationMs: 0,
         totalDurationMs: 0,
         error,
-      });
+      };
+      allResults.set(failedId, failed);
+      publishResult(failedId, failed, metric);
     }
   }
 
@@ -313,7 +339,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:308
+// @kern-source: stages:334
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

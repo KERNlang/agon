@@ -323,8 +323,14 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     starter,
     enginesDispatched: 0,
   };
+  manifest.dispatchLog = [];
+  // Persist the run skeleton before any long dispatch work. If an engine
+  // hangs, crashes the process, or the user cancels, the run directory still
+  // contains an inspectable manifest proving forge actually started.
+  try { writeManifest(manifest); } catch { /* best-effort initial write */ }
 
   if (options.dryRun) {
+    try { writeManifest(manifest); } catch { /* best-effort dry-run write */ }
     onEvent?.({ type: 'forge:done', data: { dryRun: true, engines: available, starter } });
     return manifest;
   }

@@ -277,26 +277,12 @@ screen name=ModelPicker target=ink
       // Tab switch resets cursor + filter
       useEffect(() => { setCursor(0); setFilter(''); }, [activeTab]);
 
-      // ── CLI tab: scanned CLI engines. Installed engines expose models; missing
-      // engines show one row so users can see what Agon knows how to use.
+      // ── CLI tab: scanned CLI engines. Only installed engines are shown;
+      // missing CLIs belong in doctor/discover output, not the add/remove picker.
       const cliFlat = useMemo(() => {
         const items: { group: CliProviderGroup; model: CliModelEntry; missing?: boolean }[] = [];
         for (const g of groups) {
-          if (!g.installed) {
-            items.push({
-              group: g,
-              model: {
-                id: '__missing__',
-                name: `${g.engineBinary} not installed`,
-                providerId: g.providerId,
-                providerName: g.providerName,
-                engineId: g.engineId,
-                engineBinary: g.engineBinary,
-              } as any,
-              missing: true,
-            });
-            continue;
-          }
+          if (!g.installed) continue;
           for (const m of g.models) {
             items.push({ group: g, model: m });
           }

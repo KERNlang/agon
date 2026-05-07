@@ -1,7 +1,8 @@
 import from="citty" names="defineCommand"
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
-import from="@agon/core" names="EngineRegistry,getEngineGlickoRating"
+import from="@agon/core" names="EngineRegistry,getEngineGlickoRating,loadConfig,configSet"
+import from="@agon/core" names="AgonConfig" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
 import from="../blocks/output-format.js" names="header,success,fail,info,table,bold,green,red,dim"
 
@@ -15,7 +16,7 @@ const name=engineCommand type="any"
       args: {
         action: {
           type: 'positional',
-          description: 'Action: list | info <id>',
+          description: 'Action: list | info <id> | add <id> | remove <id>',
           required: true,
         },
         id: {
@@ -32,10 +33,11 @@ const name=engineCommand type="any"
         // Handle "agon engine info claude" — citty may merge into action or use _ rest args
         let action = args.action;
         let id = args.id;
-        if (action.startsWith('info ')) {
-          id = action.slice(5);
-          action = 'info';
-        } else if (action === 'info' && !id) {
+        const splitAction = action.match(/^(info|add|enable|remove|disable|hide)\s+(.+)$/);
+        if (splitAction) {
+          action = splitAction[1];
+          id = splitAction[2];
+        } else if (['info', 'add', 'enable', 'remove', 'disable', 'hide'].includes(action) && !id) {
           // Check for remaining args from process.argv
           const extraArgs = process.argv.slice(4);
           if (extraArgs.length > 0 && !extraArgs[0].startsWith('-')) {
@@ -105,9 +107,53 @@ const name=engineCommand type="any"
             break;
           }
 
+          case 'add':
+          case 'enable': {
+            if (!id) {
+              fail('Usage: agon engine add <id>');
+              process.exit(1);
+            }
+            try {
+              const engine = registry.get(id);
+              if (!registry.isAvailable(engine)) {
+                fail(`Engine "${id}" is not available on this machine`);
+                if (engine.installHint) info(`Install: ${engine.installHint}`);
+                process.exit(1);
+              }
+              const config = loadConfig();
+              const next = Array.from(new Set([...(config.forgeEnabledEngines ?? []), id]));
+              const hidden = ((config as any).hiddenEngines ?? []).filter((engineId: string) => engineId !== id);
+              configSet('engineActivationMode' as any, 'explicit' as any);
+              configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
+              configSet('hiddenEngines', hidden as any);
+              success(`Added ${id}`);
+            } catch {
+              fail(`Engine "${id}" not found`);
+              process.exit(1);
+            }
+            break;
+          }
+
+          case 'remove':
+          case 'disable':
+          case 'hide': {
+            if (!id) {
+              fail('Usage: agon engine remove <id>');
+              process.exit(1);
+            }
+            const config = loadConfig();
+            const next = (config.forgeEnabledEngines ?? []).filter((engineId: string) => engineId !== id);
+            const hidden = Array.from(new Set([...((config as any).hiddenEngines ?? []), id]));
+            configSet('engineActivationMode' as any, 'explicit' as any);
+            configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
+            configSet('hiddenEngines', hidden as any);
+            success(`Removed ${id}`);
+            break;
+          }
+
           default:
             fail(`Unknown action: ${args.action}`);
-            info('Available: list, info');
+            info('Available: list, info, add, remove');
             process.exit(1);
         }
       },

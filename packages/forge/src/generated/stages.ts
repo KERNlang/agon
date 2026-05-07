@@ -40,13 +40,13 @@ function makeFailedResult(engineId: string, error: string, durationMs?: number):
 }
 
 /**
- * Pick a one-shot fallback engine for a failed forge dispatch, excluding engines already used in this run slice. Skips engines that have been session-quarantined for auth-failed or unreachable — retrying a known-bad engine just burns time.
+ * Pick a one-shot fallback engine for a failed forge dispatch, excluding engines already used in this run slice. When candidateIds is provided, fallback is restricted to that active roster so hidden/removed engines cannot re-enter through fallback. Skips engines that have been session-quarantined for auth-failed or unreachable — retrying a known-bad engine just burns time.
  */
 // @kern-source: stages:36
-export function selectForgeFallbackEngine(registry: EngineRegistry, sourceId: string, taskClass?: string, usedIds?: string[]): string|null {
+export function selectForgeFallbackEngine(registry: EngineRegistry, sourceId: string, taskClass?: string, usedIds?: string[], candidateIds?: string[]): string|null {
   const used = new Set<string>(usedIds ?? []);
   used.add(sourceId);
-  const chain = registry.getFallbackChain(sourceId, taskClass);
+  const chain = registry.getFallbackChain(sourceId, taskClass, candidateIds);
   for (const id of chain) {
     if (used.has(id)) continue;
     const health = engineHealth.get(id);
@@ -229,7 +229,8 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
       totalDurationMs: elapsed,
       error,
     });
-    const fallbackId = selectForgeFallbackEngine(opts.registry, opts.starter, opts.taskClass, [...engineResults.keys()]);
+    const fallbackCandidates = opts.enginePrompts ? [...opts.enginePrompts.keys()] : undefined;
+    const fallbackId = selectForgeFallbackEngine(opts.registry, opts.starter, opts.taskClass, [...engineResults.keys()], fallbackCandidates);
     if (fallbackId) {
       opts.onEvent?.({ type: 'engine:fallback' as any, engineId: opts.starter, data: { from: opts.starter, to: fallbackId, phase: 'stage1', error } });
       try {
@@ -283,7 +284,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
   return { engineResults, accepted, winner: result?.pass ? result.engineId : null, metrics };
 }
 
-// @kern-source: stages:273
+// @kern-source: stages:274
 export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>void}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
@@ -363,7 +364,8 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
         error,
       });
       const usedIds = [...opts.challengers, ...Array.from(allResults.keys())];
-      const fallbackId = selectForgeFallbackEngine(opts.registry, failedId, undefined, usedIds);
+      const fallbackCandidates = opts.enginePrompts ? [...opts.enginePrompts.keys()] : opts.challengers;
+      const fallbackId = selectForgeFallbackEngine(opts.registry, failedId, undefined, usedIds, fallbackCandidates);
       if (fallbackId) {
         opts.onEvent?.({ type: 'engine:fallback' as any, engineId: failedId, data: { from: failedId, to: fallbackId, phase: 'stage2', error } });
         try {
@@ -403,7 +405,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:393
+// @kern-source: stages:395
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2
@@ -486,7 +488,8 @@ export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt
       error,
     });
     const usedIds = [...opts.challengers, ...Array.from(opts.existingResults.keys())];
-    const fallbackId = selectForgeFallbackEngine(opts.registry, scoutId, undefined, usedIds);
+    const fallbackCandidates = opts.enginePrompts ? [...opts.enginePrompts.keys()] : opts.challengers;
+    const fallbackId = selectForgeFallbackEngine(opts.registry, scoutId, undefined, usedIds, fallbackCandidates);
     if (fallbackId) {
       opts.onEvent?.({ type: 'engine:fallback' as any, engineId: scoutId, data: { from: scoutId, to: fallbackId, phase: 'stage2-scout', error } });
       try {
@@ -571,7 +574,8 @@ export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt
         error,
       });
       const usedIds = [...opts.challengers, ...Array.from(allResults.keys())];
-      const fallbackId = selectForgeFallbackEngine(opts.registry, failedId, undefined, usedIds);
+      const fallbackCandidates = opts.enginePrompts ? [...opts.enginePrompts.keys()] : opts.challengers;
+      const fallbackId = selectForgeFallbackEngine(opts.registry, failedId, undefined, usedIds, fallbackCandidates);
       if (fallbackId) {
         opts.onEvent?.({ type: 'engine:fallback' as any, engineId: failedId, data: { from: failedId, to: fallbackId, phase: 'stage2-follower', error } });
         try {

@@ -44,14 +44,19 @@ fn name=resolveForgeSynthesisTimeout params="config:Required<AgonConfig>,taskCla
   >>>
 
 fn name=resolveForgeRunTimeout params="config:AgonConfig,explicitTimeout:number|undefined,taskClass:string" returns=number export=true
-  doc "Pick the per-engine forge timeout. Explicit user timeout wins. For docs/content tasks, cap long global defaults so a README-style forge cannot sit behind a slow engine for ten minutes."
+  doc "Pick the per-engine forge timeout. Explicit user timeout wins. Otherwise cap long saved defaults by task class so a stuck engine cannot make normal forge runs feel wedged."
   handler <<<
     const explicit = Number(explicitTimeout ?? 0);
     if (Number.isFinite(explicit) && explicit > 0) return explicit;
 
     const configured = Number((config as any).forgeTimeout ?? 600);
     const base = Number.isFinite(configured) && configured > 0 ? configured : 600;
-    if (taskClass === 'docs') return Math.min(base, 180);
+    if (taskClass === 'docs' || taskClass === 'bugfix' || taskClass === 'refactor' || taskClass === 'test') {
+      return Math.min(base, 120);
+    }
+    if (taskClass === 'feature' || taskClass === 'algorithm') {
+      return Math.min(base, 300);
+    }
     return base;
   >>>
 

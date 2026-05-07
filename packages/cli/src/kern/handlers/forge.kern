@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="existsSync,mkdirSync,readFileSync"
 import from="node:child_process" names="execFileSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,scanProjectContext,getActiveWorkspace,snapshotWorkspace,tracker,resolveWorkingDir,loadOrCreateActiveThread"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,scanProjectContext,getActiveWorkspace,snapshotWorkspace,tracker,resolveWorkingDir,loadOrCreateActiveThread,applyPatchWithUndo"
 import from="@agon/core" names="Plan,PlanStepInput,ApprovalLevel" types=true
 import from="@agon/forge" names="runForge"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
@@ -87,20 +87,46 @@ fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<strin
         plan = mergeStepResult(plan, 'score', { state: 'completed' });
         plan = mergeStepResult(plan, 'winner', { state: 'completed' });
         if (event.data?.winner) {
-          engineStatus[String(event.data.winner)] = 'done';
-          engineStatus[`${String(event.data.winner)}:score`] = String(event.data.bestScore ?? '?');
+          const winnerId = String(event.data.winner);
+          engineStatus[winnerId] = 'done';
+          engineStatus[`${winnerId}:score`] = String(event.data.bestScore ?? '?');
+          engineStatus['__winner'] = winnerId;
         }
         break;
       }
-      case 'synthesis:start':
+      case 'synthesis:start': {
         plan = mergeStepResult(plan, 'synthesis', { state: 'running', attempts: [{ startedAt: new Date().toISOString() }] });
+        const winnerId = id || engineStatus['__winner'] || '';
+        if (winnerId) engineStatus[winnerId] = 'synthesizing';
         break;
-      case 'synthesis:done':
+      }
+      case 'synthesis:done': {
         plan = mergeStepResult(plan, 'synthesis', { state: 'completed' });
+        const winnerId = id || engineStatus['__winner'] || '';
+        if (winnerId && engineStatus[winnerId] === 'synthesizing') engineStatus[winnerId] = 'done';
         break;
+      }
     }
     ctx.setCurrentPlan(plan);
     return plan;
+  >>>
+
+fn name=applyForgePatchToWorkspace params="winnerId:string, patchContent:string, dispatch:Dispatch" returns=boolean export=false
+  handler <<<
+    if (!patchContent.trim()) {
+      dispatch({ type: 'info', message: `Winner ${winnerId} produced an empty patch.` });
+      return true;
+    }
+
+    const result = applyPatchWithUndo(resolveWorkingDir(), patchContent);
+    if (result.ok) {
+      dispatch({ type: 'success', message: `Applied winner patch from ${winnerId}` });
+      if (result.undoToken) dispatch({ type: 'info', message: 'Undo available: /undo' });
+      return true;
+    }
+
+    dispatch({ type: 'warning', message: `Winner patch not applied automatically: ${result.error ?? 'unknown error'}` });
+    return false;
   >>>
 
 fn name=extractFitnessCommandFromCesarOutput params="output:string" returns="string|null" export=true
@@ -701,7 +727,8 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
           if (convergedPath) {
             dispatch({ type: 'success', message: 'Convergence complete — merged patch ready' });
             const convergedContent = readFileSync(convergedPath, 'utf-8');
-            dispatch({ type: 'patch-review' as any, winnerId: 'convergence', patchPath: convergedPath, patchContent: convergedContent });
+            const applied = applyForgePatchToWorkspace('convergence', convergedContent, dispatch);
+            if (!applied) dispatch({ type: 'patch-review' as any, winnerId: 'convergence', patchPath: convergedPath, patchContent: convergedContent });
 
             if ((ctx.config as any).sessionContinuity === true) {
               try {
@@ -775,7 +802,8 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       if (patchPath) {
         try {
           const patchContent = readFileSync(patchPath, 'utf-8');
-          dispatch({ type: 'patch-review' as any, winnerId: finalWinner, patchPath, patchContent });
+          const applied = applyForgePatchToWorkspace(finalWinner, patchContent, dispatch);
+          if (!applied) dispatch({ type: 'patch-review' as any, winnerId: finalWinner, patchPath, patchContent });
 
           if ((ctx.config as any).sessionContinuity === true) {
             try {

@@ -220,7 +220,7 @@ export class CliAdapter implements EngineAdapter {
           cwd,
           timeout: options.timeout,
           signal: options.signal,
-          maxSteps: 15,
+          maxSteps: 40,
           permissionMode: options.permissionMode,
           allowedCommands: options.allowedCommands,
           toolPermissions: options.toolPermissions,

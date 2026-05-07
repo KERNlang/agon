@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 
 import { execFileSync } from 'node:child_process';
 
-import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, tracker, resolveWorkingDir, loadOrCreateActiveThread } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, tracker, resolveWorkingDir, loadOrCreateActiveThread, applyPatchWithUndo } from '@agon/core';
 
 import type { Plan, PlanStepInput, ApprovalLevel } from '@agon/core';
 
@@ -100,26 +100,52 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
       plan = mergeStepResult(plan, 'score', { state: 'completed' });
       plan = mergeStepResult(plan, 'winner', { state: 'completed' });
       if (event.data?.winner) {
-        engineStatus[String(event.data.winner)] = 'done';
-        engineStatus[`${String(event.data.winner)}:score`] = String(event.data.bestScore ?? '?');
+        const winnerId = String(event.data.winner);
+        engineStatus[winnerId] = 'done';
+        engineStatus[`${winnerId}:score`] = String(event.data.bestScore ?? '?');
+        engineStatus['__winner'] = winnerId;
       }
       break;
     }
-    case 'synthesis:start':
+    case 'synthesis:start': {
       plan = mergeStepResult(plan, 'synthesis', { state: 'running', attempts: [{ startedAt: new Date().toISOString() }] });
+      const winnerId = id || engineStatus['__winner'] || '';
+      if (winnerId) engineStatus[winnerId] = 'synthesizing';
       break;
-    case 'synthesis:done':
+    }
+    case 'synthesis:done': {
       plan = mergeStepResult(plan, 'synthesis', { state: 'completed' });
+      const winnerId = id || engineStatus['__winner'] || '';
+      if (winnerId && engineStatus[winnerId] === 'synthesizing') engineStatus[winnerId] = 'done';
       break;
+    }
   }
   ctx.setCurrentPlan(plan);
   return plan;
 }
 
+// @kern-source: forge:114
+function applyForgePatchToWorkspace(winnerId: string, patchContent: string, dispatch: Dispatch): boolean {
+  if (!patchContent.trim()) {
+    dispatch({ type: 'info', message: `Winner ${winnerId} produced an empty patch.` });
+    return true;
+  }
+
+  const result = applyPatchWithUndo(resolveWorkingDir(), patchContent);
+  if (result.ok) {
+    dispatch({ type: 'success', message: `Applied winner patch from ${winnerId}` });
+    if (result.undoToken) dispatch({ type: 'info', message: 'Undo available: /undo' });
+    return true;
+  }
+
+  dispatch({ type: 'warning', message: `Winner patch not applied automatically: ${result.error ?? 'unknown error'}` });
+  return false;
+}
+
 /**
  * Parse Cesar's command-only fitness response. Accepts strict JSON first, then a plain one-line command.
  */
-// @kern-source: forge:106
+// @kern-source: forge:132
 export function extractFitnessCommandFromCesarOutput(output: string): string|null {
   let text = String(output ?? '').trim();
   if (!text) return null;
@@ -152,7 +178,7 @@ export function extractFitnessCommandFromCesarOutput(output: string): string|nul
   return candidate;
 }
 
-// @kern-source: forge:140
+// @kern-source: forge:166
 function extractGithubLiterals(text: string): string[] {
   const matches = String(text ?? '').match(/(?:https?:\/\/)?github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/g) ?? [];
   return [...new Set(matches.map((m: string) => m.replace(/^https?:\/\//, '').replace(/[).,;:'"`\]]+$/g, '')))];
@@ -161,7 +187,7 @@ function extractGithubLiterals(text: string): string[] {
 /**
  * Keep literal GitHub repo URLs in Cesar-generated fitness commands aligned with the user's task. Prevents small hallucinated typos from making all engines optimize for the wrong marker.
  */
-// @kern-source: forge:146
+// @kern-source: forge:172
 export function repairFitnessCommandTaskLiterals(task: string, command: string): string {
   const taskUrls = extractGithubLiterals(task);
   if (taskUrls.length === 0) return command;
@@ -183,7 +209,7 @@ export function repairFitnessCommandTaskLiterals(task: string, command: string):
   return repaired;
 }
 
-// @kern-source: forge:169
+// @kern-source: forge:195
 export function normalizeGithubRemoteLiteral(remote: string): string|null {
   const raw = String(remote ?? '').trim();
   if (!raw) return null;
@@ -195,7 +221,7 @@ export function normalizeGithubRemoteLiteral(remote: string): string|null {
   return null;
 }
 
-// @kern-source: forge:181
+// @kern-source: forge:207
 function detectGithubRemoteLiteral(cwd: string): string|null {
   try {
     const remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
@@ -208,7 +234,7 @@ function detectGithubRemoteLiteral(cwd: string): string|null {
 /**
  * For current-repository README/docs checks, prefer the actual git origin over stale chat examples or old repo names.
  */
-// @kern-source: forge:191
+// @kern-source: forge:217
 export function repairFitnessCommandRepositoryLiteral(command: string, repoLiteral: string|null): string {
   if (!repoLiteral) return command;
   let repaired = command;
@@ -219,7 +245,7 @@ export function repairFitnessCommandRepositoryLiteral(command: string, repoLiter
   return repaired;
 }
 
-// @kern-source: forge:203
+// @kern-source: forge:229
 function taskExplicitlyMentionsLiteral(task: string, literal: string): boolean {
   const taskLower = String(task ?? '').toLowerCase();
   const literalLower = String(literal ?? '').toLowerCase();
@@ -232,7 +258,7 @@ function taskExplicitlyMentionsLiteral(task: string, literal: string): boolean {
 /**
  * Decide whether a fitness command may assert a GitHub/repository URL. This is semantic intent, not literal echoing: public README/footer/link tasks can check the local git origin; normal local docs tasks should not.
  */
-// @kern-source: forge:213
+// @kern-source: forge:239
 export function taskWantsRepositoryLinkCheck(task: string): boolean {
   const t = String(task ?? '').toLowerCase();
   if (/github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+/i.test(t)) return true;
@@ -242,7 +268,7 @@ export function taskWantsRepositoryLinkCheck(task: string): boolean {
 /**
  * Remove forbidden literals that are local identity facts rather than internal details. Example: avoid KERN compilation must not become forbidden=['KERNlang'] when KERNlang is the GitHub owner.
  */
-// @kern-source: forge:221
+// @kern-source: forge:247
 export function repairOverbroadForbiddenLiterals(task: string, command: string, repoLiteral: string|null): string {
   const forbidden = extractFitnessStringArray(command, 'forbidden');
   if (forbidden.length === 0 || !repoLiteral) return command;
@@ -264,7 +290,7 @@ export function repairOverbroadForbiddenLiterals(task: string, command: string, 
   return command.replace(/forbidden\s*=\s*\[[^\]]*\]/, `forbidden=[${serialized}]`);
 }
 
-// @kern-source: forge:244
+// @kern-source: forge:270
 function extractFitnessStringArray(command: string, name: string): string[] {
   const re = new RegExp(`${name}\\s*=\\s*\\[([^\\]]*)\\]`);
   const match = String(command ?? '').match(re);
@@ -282,7 +308,7 @@ function extractFitnessStringArray(command: string, name: string): string[] {
 /**
  * Remove forbidden string literals that are required as part of another fitness assertion. Cesar sometimes requires github.com/KERNlang/agon and also forbids KERNlang, making the check impossible.
  */
-// @kern-source: forge:259
+// @kern-source: forge:285
 export function repairContradictoryFitnessLiterals(command: string): string {
   const required = extractFitnessStringArray(command, 'required');
   const forbidden = extractFitnessStringArray(command, 'forbidden');
@@ -304,7 +330,7 @@ export function repairContradictoryFitnessLiterals(command: string): string {
 /**
  * Reject Cesar-generated fitness checks that drift from task intent. Fitness may inspect local files and exact requested literals, but should not add GitHub/repo assertions unless the task semantically asks for a public repo link.
  */
-// @kern-source: forge:279
+// @kern-source: forge:305
 export function validateFitnessCommandIntent(task: string, command: string, repoLiteral: string|null): {ok:boolean,reason?:string} {
   const cmd = String(command ?? '');
   if (!cmd.trim()) return { ok: false, reason: 'empty fitness command' };
@@ -340,13 +366,13 @@ export function validateFitnessCommandIntent(task: string, command: string, repo
 /**
  * Normalize current-repository GitHub literals in a forge task before displaying the plan or sending the prompt to engines.
  */
-// @kern-source: forge:313
+// @kern-source: forge:339
 export function repairForgeTaskRepositoryLiteral(task: string, cwd: string): string {
   const repoLiteral = detectGithubRemoteLiteral(cwd);
   return repairFitnessCommandRepositoryLiteral(task, repoLiteral);
 }
 
-// @kern-source: forge:320
+// @kern-source: forge:346
 function describeProjectFitnessOptions(cwd: string): string {
   const lines: string[] = [];
   const packageJsonPath = join(cwd, 'package.json');
@@ -373,7 +399,7 @@ function describeProjectFitnessOptions(cwd: string): string {
 /**
  * Ask Cesar to prepare a task-specific fitness command when a forge call omitted one. This keeps UX non-interactive without hardcoding task-specific checks in the handler.
  */
-// @kern-source: forge:344
+// @kern-source: forge:370
 export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   const config = ctx.config;
   const cwd = resolveWorkingDir();
@@ -445,7 +471,7 @@ export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatc
 /**
  * Pick a non-interactive fallback fitness command from the current project when the user or Cesar did not provide one.
  */
-// @kern-source: forge:414
+// @kern-source: forge:440
 export function inferProjectFitnessCommand(cwd: string): string {
   const packageJsonPath = join(cwd, 'package.json');
   if (existsSync(packageJsonPath)) {
@@ -469,7 +495,7 @@ export function inferProjectFitnessCommand(cwd: string): string {
   return 'git diff --check';
 }
 
-// @kern-source: forge:439
+// @kern-source: forge:465
 export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {
@@ -735,7 +761,8 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
           if (convergedPath) {
             dispatch({ type: 'success', message: 'Convergence complete — merged patch ready' });
             const convergedContent = readFileSync(convergedPath, 'utf-8');
-            dispatch({ type: 'patch-review' as any, winnerId: 'convergence', patchPath: convergedPath, patchContent: convergedContent });
+            const applied = applyForgePatchToWorkspace('convergence', convergedContent, dispatch);
+            if (!applied) dispatch({ type: 'patch-review' as any, winnerId: 'convergence', patchPath: convergedPath, patchContent: convergedContent });
 
             if ((ctx.config as any).sessionContinuity === true) {
               try {
@@ -809,7 +836,8 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       if (patchPath) {
         try {
           const patchContent = readFileSync(patchPath, 'utf-8');
-          dispatch({ type: 'patch-review' as any, winnerId: finalWinner, patchPath, patchContent });
+          const applied = applyForgePatchToWorkspace(finalWinner, patchContent, dispatch);
+          if (!applied) dispatch({ type: 'patch-review' as any, winnerId: finalWinner, patchPath, patchContent });
 
           if ((ctx.config as any).sessionContinuity === true) {
             try {

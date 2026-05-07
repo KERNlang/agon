@@ -451,5 +451,21 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     break;
   }
 
+  if (!finalResponse && totalToolCalls > 0) {
+    return {
+      response: `API engine reached the ${MAX_STEPS}-step tool loop limit after ${totalToolCalls} tool calls; evaluating any candidate worktree changes with fitness.`,
+      toolCalls: totalToolCalls,
+      steps: step,
+    };
+  }
+
+  if (!finalResponse) {
+    return {
+      response: `Error: API engine completed ${step} steps without visible output or tool calls.`,
+      toolCalls: totalToolCalls,
+      steps: step,
+    };
+  }
+
   return { response: finalResponse, toolCalls: totalToolCalls, steps: step };
 }

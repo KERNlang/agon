@@ -2,7 +2,7 @@ import from="react" default="React" names="useEffect,useMemo,useRef,useState"
 import from="ink" names="Box,Text"
 import from="chalk" default="chalk"
 import from="../../input-utils.js" names="stripTerminalInputMarkers"
-import from="../../safe-text-input.js" names="applyInlineInputEdits,classifyDeleteInput,deleteWordBackward,findLineEnd,findLineStart,findWordBoundaryLeft,findWordBoundaryRight,syncControlledInputCursor"
+import from="../../generated/signals/text-editing.js" names="applyInlineInputEdits,classifyDeleteInput,deleteWordBackward,findLineEnd,findLineStart,findWordBoundaryLeft,findWordBoundaryRight,syncControlledInputCursor"
 import from="../../stable-input.js" names="useStableInput"
 
 interface name=PromptToken

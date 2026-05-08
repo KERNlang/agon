@@ -28,6 +28,16 @@ import { Text } from 'ink';
 import chalk from 'chalk';
 import { stripTerminalInputMarkers } from './input-utils.js';
 import { useStableInput } from './stable-input.js';
+import {
+  applyInlineInputEdits,
+  classifyDeleteInput,
+  deleteWordBackward,
+  findLineEnd,
+  findLineStart,
+  findWordBoundaryLeft,
+  findWordBoundaryRight,
+  syncControlledInputCursor,
+} from './generated/signals/text-editing.js';
 
 type Props = {
   value: string;
@@ -62,125 +72,6 @@ function stripMouseReportInput(input: string): string {
     .replace(/\x1b\[<\d+;\d+;\d+[mM]/g, '')
     .replace(/\[<\d+;\d+;\d+[mM]/g, '')
     .replace(/(?:\x1b\[|\[)?<\d+;\d+;\d*(?:[mM])?/g, '');
-}
-
-function isWordChar(char: string | undefined): boolean {
-  return !!char && /[A-Za-z0-9_]/.test(char);
-}
-
-function charClass(char: string | undefined): 'space' | 'word' | 'punct' | 'none' {
-  if (!char) return 'none';
-  if (/\s/.test(char)) return 'space';
-  if (isWordChar(char)) return 'word';
-  return 'punct';
-}
-
-export function classifyDeleteInput(
-  input: string,
-  key: { backspace?: boolean; delete?: boolean },
-): 'none' | 'backward' | 'forward' {
-  if (input === '\x1b[3~') return 'forward';
-  if (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08') {
-    return 'backward';
-  }
-  return 'none';
-}
-
-export function findLineStart(value: string, cursorOffset: number): number {
-  const bounded = Math.max(0, Math.min(cursorOffset, value.length));
-  const lineBreak = value.lastIndexOf('\n', bounded - 1);
-  return lineBreak === -1 ? 0 : lineBreak + 1;
-}
-
-export function findLineEnd(value: string, cursorOffset: number): number {
-  const bounded = Math.max(0, Math.min(cursorOffset, value.length));
-  const lineBreak = value.indexOf('\n', bounded);
-  return lineBreak === -1 ? value.length : lineBreak;
-}
-
-export function findWordBoundaryLeft(value: string, cursorOffset: number): number {
-  let nextOffset = Math.max(0, Math.min(cursorOffset, value.length));
-  while (nextOffset > 0 && charClass(value[nextOffset - 1]) === 'space') nextOffset--;
-  const cls = charClass(value[nextOffset - 1]);
-  while (nextOffset > 0 && charClass(value[nextOffset - 1]) === cls) nextOffset--;
-  return nextOffset;
-}
-
-export function findWordBoundaryRight(value: string, cursorOffset: number): number {
-  let nextOffset = Math.max(0, Math.min(cursorOffset, value.length));
-  while (nextOffset < value.length && charClass(value[nextOffset]) === 'space') nextOffset++;
-  const cls = charClass(value[nextOffset]);
-  while (nextOffset < value.length && charClass(value[nextOffset]) === cls) nextOffset++;
-  return nextOffset;
-}
-
-export function deleteWordBackward(value: string, cursorOffset: number): { value: string; cursorOffset: number } {
-  const nextCursorOffset = findWordBoundaryLeft(value, cursorOffset);
-  let deleteEnd = cursorOffset;
-  if (deleteEnd > 0 && /\s/.test(value[deleteEnd] ?? '') && !/\s/.test(value[deleteEnd - 1] ?? '')) {
-    while (deleteEnd < value.length && /\s/.test(value[deleteEnd] ?? '')) deleteEnd++;
-  }
-  return {
-    value: value.slice(0, nextCursorOffset) + value.slice(deleteEnd),
-    cursorOffset: nextCursorOffset,
-  };
-}
-
-export function applyInlineInputEdits(
-  value: string,
-  cursorOffset: number,
-  input: string,
-): { value: string; cursorOffset: number; cursorWidth: number } {
-  let nextValue = value;
-  let nextCursorOffset = cursorOffset;
-  let insertedChars = 0;
-
-  for (const char of input) {
-    if (char === '\x7f' || char === '\b' || char === '\x08') {
-      if (nextCursorOffset > 0) {
-        nextValue =
-          nextValue.slice(0, nextCursorOffset - 1) +
-          nextValue.slice(nextCursorOffset, nextValue.length);
-        nextCursorOffset--;
-      }
-      continue;
-    }
-
-    nextValue =
-      nextValue.slice(0, nextCursorOffset) +
-      char +
-      nextValue.slice(nextCursorOffset, nextValue.length);
-    nextCursorOffset += char.length;
-    insertedChars += char.length;
-  }
-
-  return {
-    value: nextValue,
-    cursorOffset: nextCursorOffset,
-    cursorWidth: insertedChars > 1 ? insertedChars : 0,
-  };
-}
-
-export function syncControlledInputCursor(
-  previousState: { cursorOffset: number; cursorWidth: number },
-  value: string,
-  opts: { focus: boolean; showCursor: boolean; lastCommittedValue: string },
-): { cursorOffset: number; cursorWidth: number } {
-  if (!opts.focus || !opts.showCursor) return previousState;
-
-  if (value !== opts.lastCommittedValue) {
-    return { cursorOffset: value.length, cursorWidth: 0 };
-  }
-
-  if (previousState.cursorOffset > value.length) {
-    return { cursorOffset: value.length, cursorWidth: 0 };
-  }
-
-  if (previousState.cursorWidth !== 0) {
-    return { ...previousState, cursorWidth: 0 };
-  }
-
-  return previousState;
 }
 
 function SafeTextInputImpl({

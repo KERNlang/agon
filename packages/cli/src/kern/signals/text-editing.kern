@@ -1,0 +1,122 @@
+// ── Text Editing Primitives ──────────────────────────────────────
+// Pure string/cursor manipulation extracted from safe-text-input.tsx
+// so the logic lives in KERN and only the React component remains
+// hand-maintained.
+
+fn name=isWordChar params="char:string|undefined" returns=boolean export=false
+  handler <<<
+    return !!char && /[A-Za-z0-9_]/.test(char);
+  >>>
+
+fn name=charClass params="char:string|undefined" returns="'space'|'word'|'punct'|'none'" export=false
+  handler <<<
+    if (!char) return 'none';
+    if (/\s/.test(char)) return 'space';
+    if (isWordChar(char)) return 'word';
+    return 'punct';
+  >>>
+
+fn name=classifyDeleteInput params="input:string,key:{backspace?:boolean;delete?:boolean}" returns="'none'|'backward'|'forward'" export=true
+  handler <<<
+    if (input === '\x1b[3~') return 'forward';
+    if (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08') {
+      return 'backward';
+    }
+    return 'none';
+  >>>
+
+fn name=findLineStart params="value:string,cursorOffset:number" returns=number export=true
+  handler <<<
+    const bounded = Math.max(0, Math.min(cursorOffset, value.length));
+    const lineBreak = value.lastIndexOf('\n', bounded - 1);
+    return lineBreak === -1 ? 0 : lineBreak + 1;
+  >>>
+
+fn name=findLineEnd params="value:string,cursorOffset:number" returns=number export=true
+  handler <<<
+    const bounded = Math.max(0, Math.min(cursorOffset, value.length));
+    const lineBreak = value.indexOf('\n', bounded);
+    return lineBreak === -1 ? value.length : lineBreak;
+  >>>
+
+fn name=findWordBoundaryLeft params="value:string,cursorOffset:number" returns=number export=true
+  handler <<<
+    let nextOffset = Math.max(0, Math.min(cursorOffset, value.length));
+    while (nextOffset > 0 && charClass(value[nextOffset - 1]) === 'space') nextOffset--;
+    const cls = charClass(value[nextOffset - 1]);
+    while (nextOffset > 0 && charClass(value[nextOffset - 1]) === cls) nextOffset--;
+    return nextOffset;
+  >>>
+
+fn name=findWordBoundaryRight params="value:string,cursorOffset:number" returns=number export=true
+  handler <<<
+    let nextOffset = Math.max(0, Math.min(cursorOffset, value.length));
+    while (nextOffset < value.length && charClass(value[nextOffset]) === 'space') nextOffset++;
+    const cls = charClass(value[nextOffset]);
+    while (nextOffset < value.length && charClass(value[nextOffset]) === cls) nextOffset++;
+    return nextOffset;
+  >>>
+
+fn name=deleteWordBackward params="value:string,cursorOffset:number" returns="{value:string;cursorOffset:number}" export=true
+  handler <<<
+    const nextCursorOffset = findWordBoundaryLeft(value, cursorOffset);
+    let deleteEnd = cursorOffset;
+    if (deleteEnd > 0 && /\s/.test(value[deleteEnd] ?? '') && !/\s/.test(value[deleteEnd - 1] ?? '')) {
+      while (deleteEnd < value.length && /\s/.test(value[deleteEnd] ?? '')) deleteEnd++;
+    }
+    return {
+      value: value.slice(0, nextCursorOffset) + value.slice(deleteEnd),
+      cursorOffset: nextCursorOffset,
+    };
+  >>>
+
+fn name=applyInlineInputEdits params="value:string,cursorOffset:number,input:string" returns="{value:string;cursorOffset:number;cursorWidth:number}" export=true
+  handler <<<
+    let nextValue = value;
+    let nextCursorOffset = cursorOffset;
+    let insertedChars = 0;
+
+    for (const char of input) {
+      if (char === '\x7f' || char === '\b' || char === '\x08') {
+        if (nextCursorOffset > 0) {
+          nextValue =
+            nextValue.slice(0, nextCursorOffset - 1) +
+            nextValue.slice(nextCursorOffset, nextValue.length);
+          nextCursorOffset--;
+        }
+        continue;
+      }
+
+      nextValue =
+        nextValue.slice(0, nextCursorOffset) +
+        char +
+        nextValue.slice(nextCursorOffset, nextValue.length);
+      nextCursorOffset += char.length;
+      insertedChars += char.length;
+    }
+
+    return {
+      value: nextValue,
+      cursorOffset: nextCursorOffset,
+      cursorWidth: insertedChars > 1 ? insertedChars : 0,
+    };
+  >>>
+
+fn name=syncControlledInputCursor params="previousState:{cursorOffset:number;cursorWidth:number},value:string,opts:{focus:boolean;showCursor:boolean;lastCommittedValue:string}" returns="{cursorOffset:number;cursorWidth:number}" export=true
+  handler <<<
+    if (!opts.focus || !opts.showCursor) return previousState;
+
+    if (value !== opts.lastCommittedValue) {
+      return { cursorOffset: value.length, cursorWidth: 0 };
+    }
+
+    if (previousState.cursorOffset > value.length) {
+      return { cursorOffset: value.length, cursorWidth: 0 };
+    }
+
+    if (previousState.cursorWidth !== 0) {
+      return { ...previousState, cursorWidth: 0 };
+    }
+
+    return previousState;
+  >>>

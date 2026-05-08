@@ -9,7 +9,7 @@ import {
   findWordBoundaryLeft,
   findWordBoundaryRight,
   syncControlledInputCursor,
-} from '../../packages/cli/src/safe-text-input.js';
+} from '../../packages/cli/src/generated/signals/text-editing.js';
 
 describe('safe text input helpers', () => {
   it('classifies delete keys even when Ink emits an empty input string', () => {
@@ -71,6 +71,18 @@ describe('safe text input helpers', () => {
       ),
     ).toEqual({
       cursorOffset: 15,
+      cursorWidth: 0,
+    });
+
+    // Regression guard: cursor must snap to end, not shift by length delta.
+    expect(
+      syncControlledInputCursor(
+        { cursorOffset: 1, cursorWidth: 0 },
+        'xyz',
+        { focus: true, showCursor: true, lastCommittedValue: 'ab' },
+      ),
+    ).toEqual({
+      cursorOffset: 3,
       cursorWidth: 0,
     });
   });

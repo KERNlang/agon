@@ -8,7 +8,7 @@ import chalk from 'chalk';
 
 import { stripTerminalInputMarkers } from '../../input-utils.js';
 
-import { applyInlineInputEdits, classifyDeleteInput, deleteWordBackward, findLineEnd, findLineStart, findWordBoundaryLeft, findWordBoundaryRight, syncControlledInputCursor } from '../../safe-text-input.js';
+import { applyInlineInputEdits, classifyDeleteInput, deleteWordBackward, findLineEnd, findLineStart, findWordBoundaryLeft, findWordBoundaryRight, syncControlledInputCursor } from '../../generated/signals/text-editing.js';
 
 import { useStableInput } from '../../stable-input.js';
 

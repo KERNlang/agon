@@ -67,7 +67,7 @@ export function registerBuiltinCommands(registry: CommandRegistry): void {
     { name: 'explore',   desc: '                        — toggle exploration mode (read-only)', category: 'session' },
     { name: 'nero',      desc: '                        — toggle Nero mode (adversarial)', category: 'session' },
     { name: 'btw',       desc: '<question>               — ask something while engines work', category: 'session' },
-    { name: 'clear',     desc: '                        — reset session', category: 'session' },
+    { name: 'clear',     desc: '                        — reset session', category: 'session', aliases: ['clean'] },
 
     // Utility
     { name: 'create-skill', desc: '<name>                  — scaffold a new skill (.agon/skills/)', category: 'utility' },

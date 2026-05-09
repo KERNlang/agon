@@ -4,7 +4,7 @@ import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="node:url" names="fileURLToPath"
 import from="@agon/core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./tools.js" names="createCesarToolRegistry"
@@ -356,7 +356,8 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       source: 'orchestrator' as const,
     };
     return async (name: string, args: Record<string, unknown>, callId: string) => {
-      // Plan mode: block execution tools
+      // Plan mode: block execution tools and mutating shell commands before
+      // they can open a permission prompt that captures "go"/"yes".
       const activePlan = ctx.activePlan;
       if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
         const BLOCKED_IN_PLAN = ['Forge', 'Pipeline', 'Agent', 'Edit', 'Write'];
@@ -365,10 +366,8 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         }
         if (name === 'Bash') {
           const cmd = String((args as any).command ?? '');
-          // Block destructive shell commands in plan mode — but NOT git commit/push (user-requested operations)
-          const destructivePatterns = /\b(rm\s+-rf|rm\s+--force|chmod\s+777|mkfs\.|dd\s+if=)\b/;
-          if (destructivePatterns.test(cmd)) {
-            return `[BLOCKED] Destructive commands are not available in plan mode. Use ProposePlan to propose your execution strategy.`;
+          if (!isReadOnlyCommand(cmd)) {
+            return `[BLOCKED] Mutating Bash commands are not available in plan mode. Use Read/Grep/Glob or read-only Bash for investigation, then call ProposePlan and wait for approval before running "${cmd}".`;
           }
         }
       }
@@ -628,9 +627,18 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
         }
       }
 
-      // Block file writes during plan mode — Bash goes through normal permission UI
+      // Block mutating tools during plan mode before they can open a permission
+      // prompt that steals natural plan approvals like "go" or "yes".
       const activePlan = ctx.activePlan;
       if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
+        if (agonTool === 'Bash') {
+          if (isReadOnlyCommand(command)) {
+            logApproval('approved', 'policy.plan-mode-readonly', 'plan mode allows read-only Bash');
+            return true;
+          }
+          logApproval('blocked', 'policy.plan-mode', 'plan mode blocks mutating Bash');
+          return 'BLOCKED: Plan mode — mutating Bash is not allowed before approval. Use Read/Grep/Glob or read-only Bash for investigation, call ProposePlan, then wait for the user to type go/yes before retrying this command.';
+        }
         const WRITE_TOOLS = ['Edit', 'Write'];
         if (WRITE_TOOLS.includes(agonTool)) {
           logApproval('blocked', 'policy.plan-mode', 'plan mode blocks file writes');

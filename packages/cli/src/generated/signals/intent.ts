@@ -96,54 +96,55 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/init',        desc: '                        — create AGON.md config wizard' },
   { cmd: '/create-skill', desc: '<name>                  — scaffold a new skill (.agon/skills/)' },
   { cmd: '/clear',       desc: '                        — reset session (saves chat, clears brain)' },
+  { cmd: '/clean',       desc: '                        — alias for /clear' },
   { cmd: '/extensions',  desc: '                        — list installed extensions' },
   { cmd: '/help',        desc: '                        — show this help' },
   { cmd: '/exit',        desc: '                        — quit' },
 ];
 
-// @kern-source: intent:98
+// @kern-source: intent:99
 export const FITNESS_PATTERN: RegExp = /\b(?:test with|test:|--test|fitness:)\s+(.+)/i;
 
-// @kern-source: intent:101
+// @kern-source: intent:102
 export const LEADERBOARD_KEYWORDS: RegExp = /\b(leaderboard|elo|rankings?)\b/i;
 
-// @kern-source: intent:103
+// @kern-source: intent:104
 export const HISTORY_KEYWORDS: RegExp = /\b(history|last runs?|recent)\b/i;
 
-// @kern-source: intent:105
+// @kern-source: intent:106
 export const ENGINES_KEYWORDS: RegExp = /\b(engines?|what engines)\b/i;
 
-// @kern-source: intent:107
+// @kern-source: intent:108
 export const CONFIG_KEYWORDS: RegExp = /\b(config|settings?)\b/i;
 
-// @kern-source: intent:109
+// @kern-source: intent:110
 export const HELP_KEYWORDS: RegExp = /^(help|\?)$/i;
 
-// @kern-source: intent:111
+// @kern-source: intent:112
 export const EXIT_KEYWORDS: RegExp = /^(exit|quit|bye)$/i;
 
-// @kern-source: intent:113
+// @kern-source: intent:114
 export const SENTENCE_PREFIX: RegExp = /^(do|does|did|is|are|was|were|have|has|had|can|could|would|should|will|shall|i\s)/i;
 
-// @kern-source: intent:115
+// @kern-source: intent:116
 export const QUESTION_PATTERN: RegExp = /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i;
 
-// @kern-source: intent:117
+// @kern-source: intent:118
 export const CODE_TASK_PATTERN: RegExp = /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|inline|optimize|port)\b/i;
 
-// @kern-source: intent:119
+// @kern-source: intent:120
 export const CODE_ARTIFACT_PATTERN: RegExp = /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m;
 
-// @kern-source: intent:121
+// @kern-source: intent:122
 export const AGENT_TRIGGER_PATTERN: RegExp = /^(?:agent(?:\s+mode)?|autonomous(?:\s+agent)?|run\s+agent)\s+([\s\S]+)$/i;
 
-// @kern-source: intent:124
+// @kern-source: intent:125
 export const AUTOCREDIT_OFF_KEYWORDS: RegExp = /\b(?:schalt(?:e|)?\s+(?:das|es|autoCredit)\s+ab|mach(?:e|)?\s+(?:das|es|autoCredit)\s+(?:aus|weg)|das\s+nervt|(?:autoCredit|co[\s-]?authored?|contributor)\s+(?:aus|ab|weg|nervt))\b/i;
 
-// @kern-source: intent:126
+// @kern-source: intent:127
 export const AUTOCREDIT_ON_KEYWORDS: RegExp = /\b(?:schalt(?:e|)?\s+(?:das|es|autoCredit)\s+an|mach(?:e|)?\s+(?:das|es|autoCredit)\s+an|(?:autoCredit|co[\s-]?authored?|contributor)\s+an)\b/i;
 
-// @kern-source: intent:128
+// @kern-source: intent:129
 export const KNOWN_COLLAB_ENGINE_IDS: Set<string> = new Set([
   'claude',
   'codex',
@@ -160,7 +161,7 @@ export const KNOWN_COLLAB_ENGINE_IDS: Set<string> = new Set([
   'openai',
 ]);
 
-// @kern-source: intent:147
+// @kern-source: intent:148
 export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   if (QUESTION_PATTERN.test(input)) {
     return 'question';
@@ -174,7 +175,7 @@ export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   return 'ambiguous';
 }
 
-// @kern-source: intent:157
+// @kern-source: intent:158
 function parseForgeInput(input: string): Intent {
   // Only match --hardened as a standalone flag (not inside task text or test args)
   const hardenedMatch = input.match(/^(--hardened)\s+(.*)$/i) || input.match(/^(.*?)\s+(--hardened)\s*$/i);
@@ -190,7 +191,7 @@ function parseForgeInput(input: string): Intent {
   return { type: 'forge', task, fitnessCmd, hardened } as Intent;
 }
 
-// @kern-source: intent:173
+// @kern-source: intent:174
 function parseAgentShortcut(input: string): Intent|null {
   const match = input.match(AGENT_TRIGGER_PATTERN);
   if (!match) return null;
@@ -199,7 +200,7 @@ function parseAgentShortcut(input: string): Intent|null {
   return { type: 'agent', input: task } as Intent;
 }
 
-// @kern-source: intent:182
+// @kern-source: intent:183
 function normalizeEngineToken(part: string): string|null {
   const cleaned = part
     .trim()
@@ -216,7 +217,7 @@ function normalizeEngineToken(part: string): string|null {
   return null;
 }
 
-// @kern-source: intent:199
+// @kern-source: intent:200
 function parseExplicitEngineIds(input: string): string[] {
   const engineIds: string[] = [];
   const add = (value: string | null) => {
@@ -239,7 +240,7 @@ function parseExplicitEngineIds(input: string): string[] {
   return engineIds;
 }
 
-// @kern-source: intent:222
+// @kern-source: intent:223
 function parseSemanticReviewShortcut(input: string): Intent|null {
   const lower = input.toLowerCase();
   const reviewVerb = /\b(?:review|check|audit|inspect|look\s+over)\b/i.test(input);
@@ -250,6 +251,12 @@ function parseSemanticReviewShortcut(input: string): Intent|null {
     /\b(?:ask|have|get)\s+[a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*\s+(?:to\s+)?(?:review|check|audit|look|inspect)\b/i.test(input);
   if (!hasDelegationShape) return null;
 
+  // Don't short-circuit compound instructions like "fix x then review with codex"
+  // to direct review dispatch — let Cesar handle the full sequence.
+  const IMPLEMENTATION_LEAD_RE = /^(?:fix(?:e[sd]|ing)?|add(?:ed|ing|s)?|implement(?:ed|ing|s)?|build(?:ing|s)?|built|creat(?:e[sd]?|ing)|refactor(?:ed|ing|s)?|rewrit(?:e|es|ing|ten)|migrat(?:e[sd]?|ing)|wir(?:e[sd]?|ing)|chang(?:e[sd]?|ing)|updat(?:e[sd]?|ing)|optimi[sz](?:e[sd]?|ing)|remov(?:e[sd]?|ing)|delet(?:e[sd]?|ing)|patch(?:ed|ing|es)?)\b/i;
+  const normalized = input.trim().replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?/i, '');
+  if (IMPLEMENTATION_LEAD_RE.test(normalized)) return null;
+
   const engineIds = parseExplicitEngineIds(input);
   if (engineIds.length === 0) return null;
 
@@ -258,7 +265,7 @@ function parseSemanticReviewShortcut(input: string): Intent|null {
   return { type: 'review', engineId: engineIds[0], engineIds, target } as Intent;
 }
 
-// @kern-source: intent:241
+// @kern-source: intent:248
 function stripCollaborationLeadIn(input: string): string {
   return input
     .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:to\s+)?/i, '')
@@ -267,14 +274,14 @@ function stripCollaborationLeadIn(input: string): string {
     .trim();
 }
 
-// @kern-source: intent:250
+// @kern-source: intent:257
 function hasCollaborationAskShape(input: string): boolean {
   return /^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\b/i.test(input)
     || /^(?:can\s+you\s+|could\s+you\s+|please\s+)?what\s+do\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:think|say|recommend)\b/i.test(input)
     || /^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:brainstorm|compare|weigh\s+in)\s+(?:this|it)?\s*(?:with\s+)?(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\b/i.test(input);
 }
 
-// @kern-source: intent:257
+// @kern-source: intent:264
 function parseSemanticCollaborationShortcut(input: string): Intent|null {
   const question = stripCollaborationLeadIn(input);
 
@@ -296,7 +303,7 @@ function parseSemanticCollaborationShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:279
+// @kern-source: intent:286
 function parseSemanticForgeShortcut(input: string): Intent|null {
   const explicitForgeImperative = /^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\b/i.test(input)
     && !/^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\s+(?:is|was|seems?|looks?|does|did|can|should|would|will|not|still)\b/i.test(input);
@@ -316,14 +323,14 @@ function parseSemanticForgeShortcut(input: string): Intent|null {
   return { ...parsed, type: 'forge', action: 'natural' } as Intent;
 }
 
-// @kern-source: intent:299
+// @kern-source: intent:306
 function parseSemanticDelegationShortcut(input: string): Intent|null {
   return parseSemanticReviewShortcut(input)
     ?? parseSemanticForgeShortcut(input)
     ?? parseSemanticCollaborationShortcut(input);
 }
 
-// @kern-source: intent:306
+// @kern-source: intent:313
 function splitReviewArgs(input: string): string[] {
   return input
     .split(/\s+/)
@@ -332,19 +339,19 @@ function splitReviewArgs(input: string): string[] {
     .filter(Boolean);
 }
 
-// @kern-source: intent:315
+// @kern-source: intent:322
 function isReviewTargetArg(part: string): boolean {
   const lower = part.toLowerCase();
   return lower === 'uncommitted' || lower.startsWith('branch:') || lower.startsWith('commit:');
 }
 
-// @kern-source: intent:320
+// @kern-source: intent:327
 function isImplicitReviewSubjectArg(part: string): boolean {
   const lower = part.toLowerCase();
   return lower === 'it' || lower === 'this' || lower === 'that' || lower === 'them' || lower === 'changes' || lower === 'diff';
 }
 
-// @kern-source: intent:325
+// @kern-source: intent:332
 function parseReviewInput(input: string): Intent {
   const reviewParts = splitReviewArgs(input);
   const engineIds: string[] = [];
@@ -379,7 +386,7 @@ function parseReviewInput(input: string): Intent {
   return { type: 'review', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target } as Intent;
 }
 
-// @kern-source: intent:360
+// @kern-source: intent:367
 function parseReviewShortcut(input: string): Intent|null {
   const match = input.match(/^(?:review|cr)(?:\s+([\s\S]+))?$/i);
   if (!match) return null;
@@ -402,7 +409,7 @@ function parseReviewShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:383
+// @kern-source: intent:390
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
@@ -676,6 +683,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
       return { type: 'mcp' as const, action: 'list' as const } as unknown as Intent;
     }
     case 'clear':
+    case 'clean':
       return { type: 'clear' } as Intent;
     case 'help':
       return { type: 'help' } as Intent;
@@ -693,7 +701,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   }
 }
 
-// @kern-source: intent:674
+// @kern-source: intent:682
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) return { type: 'unknown', input: '' } as Intent;

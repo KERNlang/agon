@@ -26,6 +26,7 @@ screen name=ComposerView target=ink memo=true
   prop name=slashPickerOpen type=boolean
   prop name=inputValue type=string
   prop name=handleInputChange type="(value:string) => void"
+  prop name=handlePasteInput type="(raw:string) => string"
   prop name=handleSubmit type="(value:string) => void"
   prop name=allSlashCommands type="any[]"
   prop name=availableEngines type="string[]"
@@ -105,6 +106,7 @@ screen name=ComposerView target=ink memo=true
                   <PromptTextInput
                     value={inputValue}
                     onChange={handleInputChange}
+                    onPaste={handlePasteInput}
                     onSubmit={handleSubmit}
                     onCtrlShortcut={onCtrlShortcut}
                     placeholder={placeholder}
@@ -170,6 +172,7 @@ screen name=ComposerView target=ink memo=true
                       <PromptTextInput
                         value={questionAnswer}
                         onChange={onQuestionAnswerChange}
+                        onPaste={undefined}
                         onSubmit={onQuestionAnswerSubmit}
                         onCtrlShortcut={onCtrlShortcut}
                         placeholder=""

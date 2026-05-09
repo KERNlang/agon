@@ -24,7 +24,7 @@ import from="../cesar/pause-state.js" names="createPauseState,renderPauseMenu,mo
 import from="../cesar/pause-state.js" names="PauseState" types=true
 import from="../cesar/scoreboard.js" names="Scoreboard" types=true
 import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
-import from="../signals/paste-handler.js" names="processPasteContent,expandPastePlaceholders"
+import from="../signals/paste-handler.js" names="processPasteContent,expandPastePlaceholders,recordPastePlaceholder"
 import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch,isCesarPlanApprovalInput"
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
 import from="../cesar/telemetry-poller.js" names="createTelemetryPoller,TelemetryPoller"
@@ -2617,9 +2617,8 @@ screen name=App target=ink
   ref name=inputEpochRef type=number initial=0
   ref name=inputValueRef type=string initial="''"
   ref name=ctrlKeyHandledRef type=boolean initial=false
-  ref name=justPastedRef type=boolean initial=false
+  ref name=pendingPasteTransformRef type=boolean initial=false
   ref name=pasteHashesRef type="Map<string,string>" initial="new Map()"
-  ref name=pasteCountRef type=number initial=0
   ref name=activeAbortRef type="AbortController|null" initial="null"
   ref name=activeTurnRef type="{ input:string; engineId:string; retried:boolean }|null" initial="null"
   ref name=lastActivityTimeRef type=number initial="Date.now()"
@@ -3514,6 +3513,22 @@ screen name=App target=ink
     >>>
 
   // ── Input handlers ──
+  callback name=handlePasteInput params="raw:string" deps=""
+    handler <<<
+      const result = processPasteContent(String(raw ?? ''));
+      if (result.type === 'empty') {
+        return '';
+      }
+
+      if (result.type === 'stored') {
+        recordPastePlaceholder(pasteHashesRef.current, result.placeholder, result.fullHash);
+      }
+
+      const replacement = result.type === 'stored' ? result.placeholder : result.content;
+      pendingPasteTransformRef.current = replacement.length > 0;
+      return replacement;
+    >>>
+
   callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued"
     handler <<<
       // Swallow input while a choice question is active — the keyboard handler
@@ -3529,9 +3544,14 @@ screen name=App target=ink
 
       const nextValue = cleanInputValue(value);
       const prevValue = inputValueRef.current;
+      const change = findInputChange(prevValue, nextValue);
+      const cameFromPasteTransform = pendingPasteTransformRef.current;
+      if (cameFromPasteTransform) {
+        pendingPasteTransformRef.current = false;
+      }
 
       // "/" typed into empty input → open slash picker, swallow the character
-      if (!prevValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !justPastedRef.current) {
+      if (!prevValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !cameFromPasteTransform) {
         if (planModeQueued) setPlanModeQueued(false);
         setSlashPickerOpen(true);
         return;
@@ -3542,26 +3562,15 @@ screen name=App target=ink
         return;
       }
 
-      if (justPastedRef.current) {
-        inputValueRef.current = nextValue;
-        setInputValue(nextValue);
-        return;
-      }
-
-      const change = findInputChange(prevValue, nextValue);
       const looksLikePaste = value !== nextValue || change.inserted.length > 1;
 
-      if (!looksLikePaste || !change.inserted) {
+      if (cameFromPasteTransform || !looksLikePaste || !change.inserted) {
         inputValueRef.current = nextValue;
         setInputValue(nextValue);
         return;
       }
 
-      justPastedRef.current = true;
-      setTimeout(() => { justPastedRef.current = false; }, 100);
-
-      pasteCountRef.current += 1;
-      const result = processPasteContent(change.inserted, pasteCountRef.current);
+      const result = processPasteContent(change.inserted);
       if (result.type === 'empty') {
         inputValueRef.current = nextValue;
         setInputValue(nextValue);
@@ -3569,7 +3578,7 @@ screen name=App target=ink
       }
 
       if (result.type === 'stored') {
-        pasteHashesRef.current.set(String(pasteCountRef.current), result.fullHash);
+        recordPastePlaceholder(pasteHashesRef.current, result.placeholder, result.fullHash);
       }
 
       const replacement = result.type === 'stored' ? result.placeholder : result.content;
@@ -3591,7 +3600,7 @@ screen name=App target=ink
       }
       input = expandPastePlaceholders(input, pasteHashesRef.current);
       pasteHashesRef.current.clear();
-      pasteCountRef.current = 0;
+      pendingPasteTransformRef.current = false;
       inputValueRef.current = '';
       setInputValue('');
       setInputHistory((prev: string[]) => {
@@ -4041,6 +4050,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
   callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen"
     handler <<<
       if (isTerminalFocusReport(input)) return;
+      if (key?.paste) return;
 
       const keyName = typeof key?.name === 'string' ? key.name.toLowerCase() : '';
       const globalCtrlInputMap = {
@@ -4506,6 +4516,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
                 slashPickerOpen={slashPickerOpen}
                 inputValue={inputValue}
                 handleInputChange={handleInputChange}
+                handlePasteInput={handlePasteInput}
                 handleSubmit={handleSubmit}
                 allSlashCommands={allSlashCommands}
                 availableEngines={availableEngines}

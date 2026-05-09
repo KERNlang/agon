@@ -1897,13 +1897,18 @@ export function App() {
           ? [runningStep.engine, ...(Array.isArray(runningStep.engines) ? runningStep.engines : [])].filter((id: any) => typeof id === 'string' && id.trim())
           : [];
         const retryActivePlan = !!(runningStep && !((plan as any).fallbackRetriesUsed?.[runningStep.id]) && (stepEngines.length === 0 || stepEngines.includes(from)));
+        setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
+        if (!retryActivePlan && !retryActiveTurn) {
+          dispatch({ type: 'warning', message: `Telemetry: ${from} stalled (${reason}); keeping Cesar unchanged.` } as any);
+          return false;
+        }
+
         configSet('cesarEngine' as any, to as any);
         setConfigVersion((v: number) => v + 1);
         if (cesarSession) {
           cesarSession.close();
           setCesarSessionWrapped(null);
         }
-        setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
         if (retryActivePlan) {
           if (activeAbortRef.current) activeAbortRef.current.abort();
           dispatch({ type: 'warning', message: `Telemetry: ${from} stalled during plan step — switched to ${to} and retrying that step (${reason})` } as any);
@@ -4861,7 +4866,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4617
+// @kern-source: app:4622
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

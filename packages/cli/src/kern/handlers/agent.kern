@@ -14,7 +14,7 @@
 // user messages is deferred — when it's needed, wrap the body below
 // in a while-loop keyed on AgentState.phase.
 
-import from="@agon/core" names="AgentSession,AgentTeam,createAgentState,beginTurn,completeTurn,cancelAgent,completeAgent,failAgent,checkBudget,isTerminal,resolveWorkingDir,determineWinner,scoreAgentTeamResult,estimatedTokensToCost,worktreeChangedDiff,worktreeChangedShortstat,spawnWithTimeout,RUNS_DIR,runAgentTeamSynthesis,runAgentInvestigateSynthesis,runPostSynthesisFitnessCheck,detectSynthesisInsightMention,loadOrCreateActiveThread,createStreamBridge"
+import from="@agon/core" names="AgentSession,AgentTeam,createAgentState,beginTurn,completeTurn,cancelAgent,completeAgent,failAgent,checkBudget,isTerminal,resolveWorkingDir,determineWinner,scoreAgentTeamResult,estimatedTokensToCost,worktreeChangedDiff,worktreeChangedShortstat,spawnWithTimeout,RUNS_DIR,runAgentTeamSynthesis,runAgentInvestigateSynthesis,runPostSynthesisFitnessCheck,detectSynthesisInsightMention,loadOrCreateActiveThread,createStreamBridge,isReadOnlyCommand"
 import from="@agon/core" names="AgentBudget,AgentState,AgentStepResult,AgentEvent,AgentTeamConfig,AgentTeamMemberConfig,AgentTeamResult,EngineDefinition,EngineResult,AgentSynthesisLoser" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="node:fs" names="writeFileSync,mkdirSync,existsSync"
@@ -70,6 +70,10 @@ fn name=buildAgentApprovalCallback params="dispatch:Dispatch, ctx:HandlerContext
 
       const activePlan = ctx.activePlan;
       if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
+        if (agonTool === 'Bash') {
+          if (isReadOnlyCommand(command)) return true;
+          return 'BLOCKED: Plan mode — mutating Bash is not allowed before the plan is approved.';
+        }
         const WRITE_TOOLS = ['Edit', 'Write'];
         if (WRITE_TOOLS.includes(agonTool)) {
           return 'BLOCKED: Plan mode — no code changes allowed until the plan is approved.';

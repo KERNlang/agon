@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ToolRegistry } from '@agon/core';
 import type { ToolContext, ToolHandler } from '@agon/core';
-import { buildCesarConversationSnapshot, buildOnToolCall, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers } from '../../packages/cli/src/generated/cesar/session.js';
+import { buildCesarConversationSnapshot, buildOnApproval, buildOnToolCall, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers } from '../../packages/cli/src/generated/cesar/session.js';
 
 const testDirs: string[] = [];
 
@@ -139,6 +139,56 @@ describe('cesar MCP session config', () => {
     } as any, {} as any, {});
 
     await expect(onToolCall?.('Forge', { task: 'simple question' }, 'call_1')).rejects.toThrow(/\[BLOCKED_FAST_PATH\]/);
+  });
+
+  it('blocks mutating Bash while a plan is waiting for approval', async () => {
+    const events: any[] = [];
+    const onApproval = buildOnApproval({
+      config: {},
+      activePlan: { id: 'cplan-pending', state: 'awaiting_approval' },
+      cesar: {
+        turnId: 'turn-pending',
+        lastDispatch: (event: any) => events.push(event),
+      },
+      registry: { get: () => ({}) },
+    } as any, 'claude');
+
+    const result = await onApproval('Bash', 'npm run build');
+
+    expect(result).toContain('BLOCKED: Plan mode');
+    expect(result).toContain('mutating Bash');
+    expect(events).toEqual([]);
+  });
+
+  it('does not open a permission prompt for mutating native Bash in plan mode', async () => {
+    const registry = new ToolRegistry();
+    let permissionAsked = false;
+    const bashTool: ToolHandler = {
+      definition: {
+        name: 'Bash',
+        description: 'test bash',
+        inputSchema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
+        maxResultSizeChars: 1000,
+        isReadOnly: false,
+        isConcurrencySafe: false,
+      },
+      validate: () => null,
+      checkPermission: () => ({ behavior: 'ask', message: 'needs approval' }),
+      execute: async () => ({ ok: true, content: 'ran' }),
+    };
+    registry.register(bashTool);
+
+    const onToolCall = buildOnToolCall({
+      cesar: { confidenceSatisfied: true, lastDispatch: () => { permissionAsked = true; } },
+      explorationMode: false,
+      activePlan: { id: 'cplan-pending', state: 'awaiting_approval' },
+    } as any, registry, {});
+
+    const result = await onToolCall?.('Bash', { command: 'npm run build' }, 'call_bash');
+
+    expect(result).toContain('[BLOCKED]');
+    expect(result).toContain('Mutating Bash');
+    expect(permissionAsked).toBe(false);
   });
 
   it('stores ReportConfidence reasoning for inline display by the brain', async () => {

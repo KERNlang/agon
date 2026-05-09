@@ -16,7 +16,9 @@ import { createScoreboard, scoreboardStartEngine, scoreboardFinishEngine, scoreb
 
 import { buildCheckpoint, recordCheckpoint } from '../cesar/checkpoint.js';
 
-// @kern-source: tribunal:10
+import { recordRun, formatRunSummary } from '../../telemetry/index.js';
+
+// @kern-source: tribunal:11
 export async function handleTribunal(question: string, dispatch: Dispatch, ctx: HandlerContext, tribunalMode?: string): Promise<void> {
   const tribunalAbort = new AbortController();
   try {
@@ -169,6 +171,19 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
         verdict: result.summary,
       },
     });
+
+    const runRecord = recordRun({
+      mode: 'tribunal',
+      intent: question,
+      winner: undefined,
+      success: true,
+      durationMs: Date.now() - startTime,
+      engineIds: engines,
+      completionState: 'completed',
+    });
+    if (!process.env.AGON_NO_SUMMARY) {
+      dispatch({ type: 'info', message: formatRunSummary(runRecord) });
+    }
 
     for (const round of result.rounds) {
       for (const pos of round.positions) {

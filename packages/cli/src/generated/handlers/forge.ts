@@ -24,7 +24,9 @@ import { createScoreboard, scoreboardStartEngine, scoreboardUpdateProgress, scor
 
 import { buildCheckpoint, recordCheckpoint } from '../cesar/checkpoint.js';
 
-// @kern-source: forge:14
+import { recordRun, formatRunSummary } from '../../telemetry/index.js';
+
+// @kern-source: forge:15
 function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,string>, dispatch: Dispatch, ctx: HandlerContext): Plan {
   if (ctx.currentPlan?.state === 'cancelled') return plan;
   const id = event.engineId ?? '';
@@ -124,7 +126,7 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
   return plan;
 }
 
-// @kern-source: forge:114
+// @kern-source: forge:115
 function applyForgePatchToWorkspace(winnerId: string, patchContent: string, dispatch: Dispatch): boolean {
   if (!patchContent.trim()) {
     dispatch({ type: 'info', message: `Winner ${winnerId} produced an empty patch.` });
@@ -145,7 +147,7 @@ function applyForgePatchToWorkspace(winnerId: string, patchContent: string, disp
 /**
  * Parse Cesar's command-only fitness response. Accepts strict JSON first, then a plain one-line command.
  */
-// @kern-source: forge:132
+// @kern-source: forge:133
 export function extractFitnessCommandFromCesarOutput(output: string): string|null {
   let text = String(output ?? '').trim();
   if (!text) return null;
@@ -178,7 +180,7 @@ export function extractFitnessCommandFromCesarOutput(output: string): string|nul
   return candidate;
 }
 
-// @kern-source: forge:166
+// @kern-source: forge:167
 function extractGithubLiterals(text: string): string[] {
   const matches = String(text ?? '').match(/(?:https?:\/\/)?github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/g) ?? [];
   return [...new Set(matches.map((m: string) => m.replace(/^https?:\/\//, '').replace(/[).,;:'"`\]]+$/g, '')))];
@@ -187,7 +189,7 @@ function extractGithubLiterals(text: string): string[] {
 /**
  * Keep literal GitHub repo URLs in Cesar-generated fitness commands aligned with the user's task. Prevents small hallucinated typos from making all engines optimize for the wrong marker.
  */
-// @kern-source: forge:172
+// @kern-source: forge:173
 export function repairFitnessCommandTaskLiterals(task: string, command: string): string {
   const taskUrls = extractGithubLiterals(task);
   if (taskUrls.length === 0) return command;
@@ -209,7 +211,7 @@ export function repairFitnessCommandTaskLiterals(task: string, command: string):
   return repaired;
 }
 
-// @kern-source: forge:195
+// @kern-source: forge:196
 export function normalizeGithubRemoteLiteral(remote: string): string|null {
   const raw = String(remote ?? '').trim();
   if (!raw) return null;
@@ -221,7 +223,7 @@ export function normalizeGithubRemoteLiteral(remote: string): string|null {
   return null;
 }
 
-// @kern-source: forge:207
+// @kern-source: forge:208
 function detectGithubRemoteLiteral(cwd: string): string|null {
   try {
     const remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
@@ -234,7 +236,7 @@ function detectGithubRemoteLiteral(cwd: string): string|null {
 /**
  * For current-repository README/docs checks, prefer the actual git origin over stale chat examples or old repo names.
  */
-// @kern-source: forge:217
+// @kern-source: forge:218
 export function repairFitnessCommandRepositoryLiteral(command: string, repoLiteral: string|null): string {
   if (!repoLiteral) return command;
   let repaired = command;
@@ -245,7 +247,7 @@ export function repairFitnessCommandRepositoryLiteral(command: string, repoLiter
   return repaired;
 }
 
-// @kern-source: forge:229
+// @kern-source: forge:230
 function taskExplicitlyMentionsLiteral(task: string, literal: string): boolean {
   const taskLower = String(task ?? '').toLowerCase();
   const literalLower = String(literal ?? '').toLowerCase();
@@ -258,7 +260,7 @@ function taskExplicitlyMentionsLiteral(task: string, literal: string): boolean {
 /**
  * Decide whether a fitness command may assert a GitHub/repository URL. This is semantic intent, not literal echoing: public README/footer/link tasks can check the local git origin; normal local docs tasks should not.
  */
-// @kern-source: forge:239
+// @kern-source: forge:240
 export function taskWantsRepositoryLinkCheck(task: string): boolean {
   const t = String(task ?? '').toLowerCase();
   if (/github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+/i.test(t)) return true;
@@ -268,7 +270,7 @@ export function taskWantsRepositoryLinkCheck(task: string): boolean {
 /**
  * Remove forbidden literals that are local identity facts rather than internal details. Example: avoid KERN compilation must not become forbidden=['KERNlang'] when KERNlang is the GitHub owner.
  */
-// @kern-source: forge:247
+// @kern-source: forge:248
 export function repairOverbroadForbiddenLiterals(task: string, command: string, repoLiteral: string|null): string {
   const forbidden = extractFitnessStringArray(command, 'forbidden');
   if (forbidden.length === 0 || !repoLiteral) return command;
@@ -290,7 +292,7 @@ export function repairOverbroadForbiddenLiterals(task: string, command: string, 
   return command.replace(/forbidden\s*=\s*\[[^\]]*\]/, `forbidden=[${serialized}]`);
 }
 
-// @kern-source: forge:270
+// @kern-source: forge:271
 function extractFitnessStringArray(command: string, name: string): string[] {
   const re = new RegExp(`${name}\\s*=\\s*\\[([^\\]]*)\\]`);
   const match = String(command ?? '').match(re);
@@ -308,7 +310,7 @@ function extractFitnessStringArray(command: string, name: string): string[] {
 /**
  * Remove forbidden string literals that are required as part of another fitness assertion. Cesar sometimes requires github.com/KERNlang/agon and also forbids KERNlang, making the check impossible.
  */
-// @kern-source: forge:285
+// @kern-source: forge:286
 export function repairContradictoryFitnessLiterals(command: string): string {
   const required = extractFitnessStringArray(command, 'required');
   const forbidden = extractFitnessStringArray(command, 'forbidden');
@@ -330,7 +332,7 @@ export function repairContradictoryFitnessLiterals(command: string): string {
 /**
  * Reject Cesar-generated fitness checks that drift from task intent. Fitness may inspect local files and exact requested literals, but should not add GitHub/repo assertions unless the task semantically asks for a public repo link.
  */
-// @kern-source: forge:305
+// @kern-source: forge:306
 export function validateFitnessCommandIntent(task: string, command: string, repoLiteral: string|null): {ok:boolean,reason?:string} {
   const cmd = String(command ?? '');
   if (!cmd.trim()) return { ok: false, reason: 'empty fitness command' };
@@ -366,13 +368,13 @@ export function validateFitnessCommandIntent(task: string, command: string, repo
 /**
  * Normalize current-repository GitHub literals in a forge task before displaying the plan or sending the prompt to engines.
  */
-// @kern-source: forge:339
+// @kern-source: forge:340
 export function repairForgeTaskRepositoryLiteral(task: string, cwd: string): string {
   const repoLiteral = detectGithubRemoteLiteral(cwd);
   return repairFitnessCommandRepositoryLiteral(task, repoLiteral);
 }
 
-// @kern-source: forge:346
+// @kern-source: forge:347
 function describeProjectFitnessOptions(cwd: string): string {
   const lines: string[] = [];
   const packageJsonPath = join(cwd, 'package.json');
@@ -399,7 +401,7 @@ function describeProjectFitnessOptions(cwd: string): string {
 /**
  * Ask Cesar to prepare a task-specific fitness command when a forge call omitted one. This keeps UX non-interactive without hardcoding task-specific checks in the handler.
  */
-// @kern-source: forge:370
+// @kern-source: forge:371
 export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   const config = ctx.config;
   const cwd = resolveWorkingDir();
@@ -471,7 +473,7 @@ export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatc
 /**
  * Pick a non-interactive fallback fitness command from the current project when the user or Cesar did not provide one.
  */
-// @kern-source: forge:440
+// @kern-source: forge:441
 export function inferProjectFitnessCommand(cwd: string): string {
   const packageJsonPath = join(cwd, 'package.json');
   if (existsSync(packageJsonPath)) {
@@ -495,7 +497,7 @@ export function inferProjectFitnessCommand(cwd: string): string {
   return 'git diff --check';
 }
 
-// @kern-source: forge:465
+// @kern-source: forge:466
 export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {
@@ -679,6 +681,17 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
         ctx.setCurrentPlan(plan);
         savePlan(plan);
       }
+      recordRun({
+        mode: 'forge',
+        intent: task,
+        winner: undefined,
+        success: false,
+        durationMs: Date.now() - startTime,
+        engineIds: engines,
+        fitnessCmd: fitness ?? undefined,
+        completionState: 'crashed',
+        error: manifest.error,
+      });
       ctx.setActiveAbort(null);
       return null;
     }
@@ -690,6 +703,16 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       // early return, the rest of the handler (scoreboard, judge, plan-finalize)
       // sees an empty manifest.results and reports "No winner — all engines
       // failed", marking the plan failed.
+      recordRun({
+        mode: 'forge',
+        intent: task,
+        winner: undefined,
+        success: true,
+        durationMs: Date.now() - startTime,
+        engineIds: engines,
+        fitnessCmd: fitness ?? undefined,
+        completionState: 'completed',
+      });
       ctx.setActiveAbort(null);
       return { winner: null, patchPath: null, manifestPath: `${forgeDir}/manifest.json`, task, fitnessCmd: fitness };
     }
@@ -815,6 +838,16 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
             for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
               tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
             }
+            recordRun({
+              mode: 'forge',
+              intent: task,
+              winner: 'convergence',
+              success: true,
+              durationMs: Date.now() - startTime,
+              engineIds: engineIds,
+              fitnessCmd: fitness ?? undefined,
+              completionState: 'completed',
+            });
             return {
               winner: 'convergence',
               patchPath: convergedPath,
@@ -907,6 +940,20 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
 
     for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
       tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
+    }
+
+    const runRecord = recordRun({
+      mode: 'forge',
+      intent: task,
+      winner: finalWinner ?? undefined,
+      success: anyPassed,
+      durationMs: Date.now() - startTime,
+      engineIds: engineIds,
+      fitnessCmd: fitness ?? undefined,
+      completionState: 'completed',
+    });
+    if (!process.env.AGON_NO_SUMMARY) {
+      dispatch({ type: 'info', message: formatRunSummary(runRecord) });
     }
 
     return {

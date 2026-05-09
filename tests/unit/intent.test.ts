@@ -358,6 +358,17 @@ describe('Intent Detection — Natural Language', () => {
     }
   });
 
+  it('does not short-circuit compound instructions starting with implementation verbs', () => {
+    const fixThenReview = detectIntent('fix auth then review with codex');
+    expect(fixThenReview.type).not.toBe('review');
+
+    const pleaseFix = detectIntent('please fix auth then review with codex');
+    expect(pleaseFix.type).not.toBe('review');
+
+    const canYouFix = detectIntent('can you fix auth then review with codex');
+    expect(canYouFix.type).not.toBe('review');
+  });
+
   it('routes high-confidence natural review delegation', () => {
     const r = detectIntent('review it with codex');
     expect(r.type).toBe('review');

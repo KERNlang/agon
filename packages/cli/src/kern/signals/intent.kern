@@ -230,6 +230,12 @@ fn name=parseSemanticReviewShortcut params="input:string" returns="Intent|null" 
       /\b(?:ask|have|get)\s+[a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*\s+(?:to\s+)?(?:review|check|audit|look|inspect)\b/i.test(input);
     if (!hasDelegationShape) return null;
 
+    // Don't short-circuit compound instructions like "fix x then review with codex"
+    // to direct review dispatch — let Cesar handle the full sequence.
+    const IMPLEMENTATION_LEAD_RE = /^(?:fix|add|implement|build|create|refactor|rewrite|migrate|wire|change|update|optimi[sz]e|remove|delete|patch)\b/i;
+    const normalized = input.trim().replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?/i, '');
+    if (IMPLEMENTATION_LEAD_RE.test(normalized)) return null;
+
     const engineIds = parseExplicitEngineIds(input);
     if (engineIds.length === 0) return null;
 

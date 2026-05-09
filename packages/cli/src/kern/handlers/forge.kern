@@ -10,6 +10,7 @@ import from="../../handlers/cesar-brain.js" names="cesarJudgeForge,cesarConverge
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../cesar/scoreboard.js" names="createScoreboard,scoreboardStartEngine,scoreboardUpdateProgress,scoreboardFinishEngine,scoreboardFailEngine,renderScoreboard"
 import from="../cesar/checkpoint.js" names="buildCheckpoint,recordCheckpoint"
+import from="../../telemetry/index.js" names="recordRun,formatRunSummary"
 
 fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<string,string>, dispatch:Dispatch, ctx:HandlerContext" returns=Plan export=false
   handler <<<
@@ -645,6 +646,17 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
         ctx.setCurrentPlan(plan);
         savePlan(plan);
       }
+      recordRun({
+        mode: 'forge',
+        intent: task,
+        winner: undefined,
+        success: false,
+        durationMs: Date.now() - startTime,
+        engineIds: engines,
+        fitnessCmd: fitness ?? undefined,
+        completionState: 'crashed',
+        error: manifest.error,
+      });
       ctx.setActiveAbort(null);
       return null;
     }
@@ -656,6 +668,16 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       // early return, the rest of the handler (scoreboard, judge, plan-finalize)
       // sees an empty manifest.results and reports "No winner — all engines
       // failed", marking the plan failed.
+      recordRun({
+        mode: 'forge',
+        intent: task,
+        winner: undefined,
+        success: true,
+        durationMs: Date.now() - startTime,
+        engineIds: engines,
+        fitnessCmd: fitness ?? undefined,
+        completionState: 'completed',
+      });
       ctx.setActiveAbort(null);
       return { winner: null, patchPath: null, manifestPath: `${forgeDir}/manifest.json`, task, fitnessCmd: fitness };
     }
@@ -781,6 +803,16 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
             for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
               tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
             }
+            recordRun({
+              mode: 'forge',
+              intent: task,
+              winner: 'convergence',
+              success: true,
+              durationMs: Date.now() - startTime,
+              engineIds: engineIds,
+              fitnessCmd: fitness ?? undefined,
+              completionState: 'completed',
+            });
             return {
               winner: 'convergence',
               patchPath: convergedPath,
@@ -873,6 +905,20 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
 
     for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
       tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
+    }
+
+    const runRecord = recordRun({
+      mode: 'forge',
+      intent: task,
+      winner: finalWinner ?? undefined,
+      success: anyPassed,
+      durationMs: Date.now() - startTime,
+      engineIds: engineIds,
+      fitnessCmd: fitness ?? undefined,
+      completionState: 'completed',
+    });
+    if (!process.env.AGON_NO_SUMMARY) {
+      dispatch({ type: 'info', message: formatRunSummary(runRecord) });
     }
 
     return {

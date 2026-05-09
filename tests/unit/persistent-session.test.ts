@@ -32,6 +32,14 @@ async function* streamStaleReadRetryBatch(count: number) {
   return {};
 }
 
+async function* streamStaleReadRetryBatchFrom(start: number, count: number) {
+  const calls = Array.from({ length: count }, (_, index) =>
+    `<tool name="Read">${JSON.stringify({ file_path: `src/file-${start + index}.ts` })}</tool>`,
+  ).join('\n');
+  yield `I see the issue. The file was modified since my last read. Let me re-read and then edit.\n${calls}`;
+  return {};
+}
+
 function createMockProcess(onLine: (line: string, stdout: PassThrough) => void) {
   const proc = new EventEmitter() as any;
   const stdin = new PassThrough();
@@ -387,5 +395,44 @@ describe('persistent session streaming dedupe', () => {
     const history = session.getMessageHistory();
     expect(history.some((msg: any) => msg.role === 'assistant' && Array.isArray(msg.tool_calls))).toBe(false);
     expect(history.some((msg: any) => msg.role === 'assistant' && /Agon omitted a duplicate read-only tool batch/.test(String(msg.content)))).toBe(true);
+  });
+
+  it('does not stop stale-read narration when the engine reads different files', async () => {
+    const { createResumeSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+    let readCount = 0;
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(() => streamStaleReadRetryBatchFrom(0, 2))
+      .mockImplementationOnce(() => streamStaleReadRetryBatchFrom(2, 2))
+      .mockImplementationOnce(() => streamStaleReadRetryBatchFrom(4, 2))
+      .mockImplementationOnce(async function* () {
+        yield 'Finished after fresh reads.';
+        return {};
+      });
+
+    const session = createResumeSession({
+      engine: {
+        id: 'api-test',
+        api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test' },
+      } as any,
+      binaryPath: '',
+      cwd: process.cwd(),
+      systemPrompt: 'You are Cesar.',
+      onToolCall: async () => {
+        readCount++;
+        return `read-${readCount}`;
+      },
+      toolLoopBaseBudget: 5,
+      toolLoopMaxBudget: 5,
+    });
+
+    await session.start();
+    const chunks = [];
+    for await (const chunk of session.send({ message: 'fresh stale reads', toolLoopBaseBudget: 5, toolLoopMaxBudget: 5 })) {
+      chunks.push(chunk);
+    }
+
+    expect(readCount).toBe(6);
+    expect(chunks.some((chunk: any) => chunk.type === 'error' && /repeated read-only retry loop/.test(chunk.content))).toBe(false);
+    expect(chunks.some((chunk: any) => chunk.type === 'text' && /Finished after fresh reads/.test(chunk.content))).toBe(true);
   });
 });

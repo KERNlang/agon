@@ -1,5 +1,9 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, failedPlanStepIsFallbackRetryable, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, handleProposedCesarPlan, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, normalizeCesarActingFallbackMode, preparePlanFallbackRetry, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { clearConversation, loadConversation, loadSessionState, saveConversation, saveSessionState } from '@agon/core';
+import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, clearPersistedSessionContext, collectRecentEngineContext, extractExecutionSpec, failedPlanStepIsFallbackRetryable, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, handleProposedCesarPlan, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, normalizeCesarActingFallbackMode, preparePlanFallbackRetry, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -289,6 +293,38 @@ describe('Dispatch routing helpers', () => {
     expect(context).toContain('[claude]: first');
     expect(context).toContain('[gemini]: xxxxx');
     expect(context).not.toContain('question');
+  });
+
+  it('clears persisted conversation and per-engine session context', () => {
+    const previousHome = process.env.AGON_HOME;
+    const testHome = mkdtempSync(join(tmpdir(), 'agon-clear-context-'));
+    process.env.AGON_HOME = testHome;
+    try {
+      saveConversation([{ role: 'user', content: 'old workspace conversation' }], 'claude');
+      saveSessionState('claude', { messageHistory: [{ role: 'user', content: 'old claude context' }], confidence: null });
+      saveSessionState('gemini', { messageHistory: [{ role: 'user', content: 'old gemini context' }], confidence: null });
+      saveSessionState('kimi', { messageHistory: [{ role: 'user', content: 'old kimi context' }], confidence: null });
+      saveSessionState('qwen', { messageHistory: [{ role: 'user', content: 'old qwen context' }], confidence: null });
+
+      const cleared = clearPersistedSessionContext({
+        config: { cesarEngine: 'claude', forgeFixedStarter: 'kimi', forgeEnabledEngines: ['gemini'] },
+        cesarSession: { engineId: 'opencode' },
+        activeEngines: () => ['qwen'],
+        registry: { availableIds: () => ['claude', 'gemini', 'opencode'] },
+      } as any);
+
+      expect(cleared).toEqual(['claude', 'gemini', 'kimi', 'opencode', 'qwen']);
+      expect(loadConversation()).toBeNull();
+      expect(loadSessionState('claude')).toBeNull();
+      expect(loadSessionState('gemini')).toBeNull();
+      expect(loadSessionState('kimi')).toBeNull();
+      expect(loadSessionState('qwen')).toBeNull();
+    } finally {
+      try { clearConversation(); } catch {}
+      if (previousHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousHome;
+      rmSync(testHome, { recursive: true, force: true });
+    }
   });
 
   it('builds a review absorption prompt that gives Cesar the findings and fix-plan task', () => {

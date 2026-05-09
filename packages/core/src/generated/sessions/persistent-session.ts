@@ -1662,9 +1662,10 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   : '';
                 const staleReadRetryText = /\bfile (?:has been |was )?modified since (?:my |the )?last read\b/i.test(fullResponse)
                   || /\bre-?read\b[\s\S]{0,120}\bedit\b/i.test(fullResponse);
-                if (readOnlyStep && (staleReadRetryText || (readOnlySignature && readOnlySignature === lastReadOnlySignature))) {
+                const duplicateReadOnlyStep = readOnlyStep && readOnlySignature !== '' && readOnlySignature === lastReadOnlySignature;
+                if (duplicateReadOnlyStep) {
                   repeatedReadOnlyRetrySteps++;
-                } else if (!readOnlyStep) {
+                } else {
                   repeatedReadOnlyRetrySteps = 0;
                 }
                 lastReadOnlySignature = readOnlySignature;

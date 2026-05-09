@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange, getSlashMatches, hasBtwSideChannelTarget, movePickerCursor, parseAutoModeCommand, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from '../../packages/cli/src/generated/signals/app-input.js';
-import { processPasteContent } from '../../packages/cli/src/generated/signals/paste-handler.js';
+import { expandPastePlaceholders, processPasteContent, recordPastePlaceholder } from '../../packages/cli/src/generated/signals/paste-handler.js';
 import { pasteStore } from '@agon/core';
 
 afterEach(() => {
@@ -85,10 +85,28 @@ describe('processPasteContent', () => {
       lineCount: 1,
     });
     const longLine = 'x'.repeat(501);
-    expect(processPasteContent(longLine, 2)).toMatchObject({
+    expect(processPasteContent(longLine)).toMatchObject({
       type: 'stored',
-      placeholder: '[Pasted text #2 +1 lines]',
+      placeholder: '[Pasted Content 501 chars]',
     });
+  });
+
+  it('expands codex-style paste placeholders by exact placeholder key', () => {
+    vi.spyOn(pasteStore, 'retrieve').mockReturnValue('expanded text');
+    const hashes = new Map([['[Pasted Content 501 chars]', '0123456789abcdef']]);
+
+    expect(expandPastePlaceholders('before [Pasted Content 501 chars] after', hashes)).toBe('before expanded text after');
+  });
+
+  it('expands duplicate paste placeholders in insertion order', () => {
+    vi.spyOn(pasteStore, 'retrieve')
+      .mockReturnValueOnce('first paste')
+      .mockReturnValueOnce('second paste');
+    const hashes = new Map<string, string>();
+    recordPastePlaceholder(hashes, '[Pasted Content 501 chars]', 'hash-one');
+    recordPastePlaceholder(hashes, '[Pasted Content 501 chars]', 'hash-two');
+
+    expect(expandPastePlaceholders('[Pasted Content 501 chars]\n[Pasted Content 501 chars]', hashes)).toBe('first paste\nsecond paste');
   });
 });
 

@@ -17,6 +17,7 @@ type Key = {
   backspace?: boolean;
   delete?: boolean;
   meta?: boolean;
+  paste?: boolean;
 };
 
 type ParsedKeypress = {
@@ -354,7 +355,7 @@ export function useStableInput(inputHandler: Handler, options: Options = {}) {
 
       for (const segment of split.segments) {
         if (segment.kind === 'paste') {
-          handlerRef.current(segment.value, {});
+          handlerRef.current(segment.value, { paste: true });
         } else {
           handleKeyData(segment.value);
         }

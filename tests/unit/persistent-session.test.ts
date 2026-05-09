@@ -348,10 +348,15 @@ describe('persistent session streaming dedupe', () => {
     expect(readCount).toBe(2);
   });
 
-  it('stops repeated stale-read retry batches before burning tool calls', async () => {
+  it('recovers once from repeated stale-read retry batches before hard-stopping', async () => {
     const { createResumeSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
     let readCount = 0;
-    apiStreamDispatchWithHistoryMock.mockImplementation(() => streamStaleReadRetryBatch(25));
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(() => streamStaleReadRetryBatch(25))
+      .mockImplementationOnce(async function* () {
+        yield 'Done after recovery.';
+        return {};
+      });
 
     const session = createResumeSession({
       engine: {
@@ -376,9 +381,11 @@ describe('persistent session streaming dedupe', () => {
     }
 
     expect(readCount).toBe(0);
-    expect(chunks.some((chunk: any) => chunk.type === 'error' && /repeated read-only retry loop/.test(chunk.content))).toBe(true);
+    expect(chunks.some((chunk: any) => chunk.type === 'status' && /recovering from repeated stale read loop/.test(chunk.content))).toBe(true);
+    expect(chunks.some((chunk: any) => chunk.type === 'error' && /repeated read-only retry loop/.test(chunk.content))).toBe(false);
+    expect(chunks.some((chunk: any) => chunk.type === 'text' && /Done after recovery/.test(chunk.content))).toBe(true);
     const history = session.getMessageHistory();
     expect(history.some((msg: any) => msg.role === 'assistant' && Array.isArray(msg.tool_calls))).toBe(false);
-    expect(history.some((msg: any) => msg.role === 'assistant' && /Tool loop stopped/.test(String(msg.content)))).toBe(true);
+    expect(history.some((msg: any) => msg.role === 'assistant' && /Agon omitted a duplicate read-only tool batch/.test(String(msg.content)))).toBe(true);
   });
 });

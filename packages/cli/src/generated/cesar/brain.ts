@@ -828,7 +828,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             if (chunk.type === 'error') {
               // If we already have content (text or tool calls happened), don't discard it.
               // API engines often error AFTER producing useful output (timeout on follow-up, malformed final SSE).
-              if (response.length > 0 || streaming) {
+              if (response.length > 0 || streaming || hadToolActivity) {
                 dispatch({ type: 'warning', message: `Cesar stream error (partial response preserved): ${(chunk.content ?? '').slice(0, 80)}` });
                 break; // Exit stream loop, process whatever we have
               }

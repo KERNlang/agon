@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { PersistentSession, PersistentSessionConfig } from '@agon/core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand } from '@agon/core';
 
 import type { ToolContext, ToolCallResult } from '@agon/core';
 
@@ -378,7 +378,8 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     source: 'orchestrator' as const,
   };
   return async (name: string, args: Record<string, unknown>, callId: string) => {
-    // Plan mode: block execution tools
+    // Plan mode: block execution tools and mutating shell commands before
+    // they can open a permission prompt that captures "go"/"yes".
     const activePlan = ctx.activePlan;
     if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
       const BLOCKED_IN_PLAN = ['Forge', 'Pipeline', 'Agent', 'Edit', 'Write'];
@@ -387,10 +388,8 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       }
       if (name === 'Bash') {
         const cmd = String((args as any).command ?? '');
-        // Block destructive shell commands in plan mode — but NOT git commit/push (user-requested operations)
-        const destructivePatterns = /\b(rm\s+-rf|rm\s+--force|chmod\s+777|mkfs\.|dd\s+if=)\b/;
-        if (destructivePatterns.test(cmd)) {
-          return `[BLOCKED] Destructive commands are not available in plan mode. Use ProposePlan to propose your execution strategy.`;
+        if (!isReadOnlyCommand(cmd)) {
+          return `[BLOCKED] Mutating Bash commands are not available in plan mode. Use Read/Grep/Glob or read-only Bash for investigation, then call ProposePlan and wait for approval before running "${cmd}".`;
         }
       }
     }
@@ -596,7 +595,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:574
+// @kern-source: session:573
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -652,9 +651,18 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
       }
     }
 
-    // Block file writes during plan mode — Bash goes through normal permission UI
+    // Block mutating tools during plan mode before they can open a permission
+    // prompt that steals natural plan approvals like "go" or "yes".
     const activePlan = ctx.activePlan;
     if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
+      if (agonTool === 'Bash') {
+        if (isReadOnlyCommand(command)) {
+          logApproval('approved', 'policy.plan-mode-readonly', 'plan mode allows read-only Bash');
+          return true;
+        }
+        logApproval('blocked', 'policy.plan-mode', 'plan mode blocks mutating Bash');
+        return 'BLOCKED: Plan mode — mutating Bash is not allowed before approval. Use Read/Grep/Glob or read-only Bash for investigation, call ProposePlan, then wait for the user to type go/yes before retrying this command.';
+      }
       const WRITE_TOOLS = ['Edit', 'Write'];
       if (WRITE_TOOLS.includes(agonTool)) {
         logApproval('blocked', 'policy.plan-mode', 'plan mode blocks file writes');
@@ -762,7 +770,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:741
+// @kern-source: session:749
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -796,7 +804,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:775
+// @kern-source: session:783
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -820,7 +828,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:799
+// @kern-source: session:807
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -832,7 +840,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:806
+// @kern-source: session:814
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -852,7 +860,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:824
+// @kern-source: session:832
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -877,7 +885,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:850
+// @kern-source: session:858
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

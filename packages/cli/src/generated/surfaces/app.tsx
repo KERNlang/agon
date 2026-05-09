@@ -46,7 +46,7 @@ import type { Scoreboard } from '../cesar/scoreboard.js';
 
 import type { ModeRationale } from '../cesar/mode-rationale.js';
 
-import { processPasteContent, expandPastePlaceholders } from '../signals/paste-handler.js';
+import { processPasteContent, expandPastePlaceholders, recordPastePlaceholder } from '../signals/paste-handler.js';
 
 import { dispatchIntent, handleModeSwitch, isCesarPlanApprovalInput } from '../signals/dispatch.js';
 
@@ -464,9 +464,8 @@ export function App() {
   const inputEpochRef = useRef<number>(0);
   const inputValueRef = useRef<string>('');
   const ctrlKeyHandledRef = useRef<boolean>(false);
-  const justPastedRef = useRef<boolean>(false);
+  const pendingPasteTransformRef = useRef<boolean>(false);
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
-  const pasteCountRef = useRef<number>(0);
   const activeAbortRef = useRef<AbortController|null>(null);
   const activeTurnRef = useRef<{ input:string; engineId:string; retried:boolean }|null>(null);
   const lastActivityTimeRef = useRef<number>(Date.now());
@@ -896,6 +895,21 @@ export function App() {
     };
   }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped]);
 
+  const handlePasteInput = useCallback((raw:string) => {
+    const result = processPasteContent(String(raw ?? ''));
+    if (result.type === 'empty') {
+      return '';
+    }
+
+    if (result.type === 'stored') {
+      recordPastePlaceholder(pasteHashesRef.current, result.placeholder, result.fullHash);
+    }
+
+    const replacement = result.type === 'stored' ? result.placeholder : result.content;
+    pendingPasteTransformRef.current = replacement.length > 0;
+    return replacement;
+  }, []);
+
   const handleInputChange = useCallback((value:string) => {
     // Swallow input while a choice question is active — the keyboard handler
     // resolves the choice on a single keypress.
@@ -910,9 +924,14 @@ export function App() {
 
     const nextValue = cleanInputValue(value);
     const prevValue = inputValueRef.current;
+    const change = findInputChange(prevValue, nextValue);
+    const cameFromPasteTransform = pendingPasteTransformRef.current;
+    if (cameFromPasteTransform) {
+      pendingPasteTransformRef.current = false;
+    }
 
     // "/" typed into empty input → open slash picker, swallow the character
-    if (!prevValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !justPastedRef.current) {
+    if (!prevValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !cameFromPasteTransform) {
       if (planModeQueued) setPlanModeQueued(false);
       setSlashPickerOpen(true);
       return;
@@ -923,26 +942,15 @@ export function App() {
       return;
     }
 
-    if (justPastedRef.current) {
-      inputValueRef.current = nextValue;
-      setInputValue(nextValue);
-      return;
-    }
-
-    const change = findInputChange(prevValue, nextValue);
     const looksLikePaste = value !== nextValue || change.inserted.length > 1;
 
-    if (!looksLikePaste || !change.inserted) {
+    if (cameFromPasteTransform || !looksLikePaste || !change.inserted) {
       inputValueRef.current = nextValue;
       setInputValue(nextValue);
       return;
     }
 
-    justPastedRef.current = true;
-    setTimeout(() => { justPastedRef.current = false; }, 100);
-
-    pasteCountRef.current += 1;
-    const result = processPasteContent(change.inserted, pasteCountRef.current);
+    const result = processPasteContent(change.inserted);
     if (result.type === 'empty') {
       inputValueRef.current = nextValue;
       setInputValue(nextValue);
@@ -950,7 +958,7 @@ export function App() {
     }
 
     if (result.type === 'stored') {
-      pasteHashesRef.current.set(String(pasteCountRef.current), result.fullHash);
+      recordPastePlaceholder(pasteHashesRef.current, result.placeholder, result.fullHash);
     }
 
     const replacement = result.type === 'stored' ? result.placeholder : result.content;
@@ -971,7 +979,7 @@ export function App() {
           }
           input = expandPastePlaceholders(input, pasteHashesRef.current);
           pasteHashesRef.current.clear();
-          pasteCountRef.current = 0;
+          pendingPasteTransformRef.current = false;
           inputValueRef.current = '';
           setInputValue('');
           setInputHistory((prev: string[]) => {
@@ -1372,6 +1380,7 @@ export function App() {
 
   const handleKeyboardInput = useCallback((input:string,key:any) => {
     if (isTerminalFocusReport(input)) return;
+    if (key?.paste) return;
 
     const keyName = typeof key?.name === 'string' ? key.name.toLowerCase() : '';
     const globalCtrlInputMap = {
@@ -1888,13 +1897,18 @@ export function App() {
           ? [runningStep.engine, ...(Array.isArray(runningStep.engines) ? runningStep.engines : [])].filter((id: any) => typeof id === 'string' && id.trim())
           : [];
         const retryActivePlan = !!(runningStep && !((plan as any).fallbackRetriesUsed?.[runningStep.id]) && (stepEngines.length === 0 || stepEngines.includes(from)));
+        setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
+        if (!retryActivePlan && !retryActiveTurn) {
+          dispatch({ type: 'warning', message: `Telemetry: ${from} stalled (${reason}); keeping Cesar unchanged.` } as any);
+          return false;
+        }
+
         configSet('cesarEngine' as any, to as any);
         setConfigVersion((v: number) => v + 1);
         if (cesarSession) {
           cesarSession.close();
           setCesarSessionWrapped(null);
         }
-        setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
         if (retryActivePlan) {
           if (activeAbortRef.current) activeAbortRef.current.abort();
           dispatch({ type: 'warning', message: `Telemetry: ${from} stalled during plan step — switched to ${to} and retrying that step (${reason})` } as any);
@@ -2209,6 +2223,7 @@ export function App() {
             slashPickerOpen={slashPickerOpen}
             inputValue={inputValue}
             handleInputChange={handleInputChange}
+            handlePasteInput={handlePasteInput}
             handleSubmit={handleSubmit}
             allSlashCommands={allSlashCommands}
             availableEngines={availableEngines}
@@ -4851,7 +4866,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4606
+// @kern-source: app:4622
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

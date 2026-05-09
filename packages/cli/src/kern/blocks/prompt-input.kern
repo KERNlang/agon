@@ -10,6 +10,7 @@ interface name=PromptToken
   field name=highlighted type=boolean
   field name=isCursor type=boolean
   field name=kind type="'char'|'cursor'"
+  field name=pasted type="boolean|undefined"
   field name=text type=string
 
 interface name=PromptLine
@@ -125,6 +126,8 @@ fn name=renderToken params="token:PromptToken" returns=string export=false
       return value="chalk.inverse(' ')"
     if cond="token.highlighted"
       return value="chalk.inverse(token.text)"
+    if cond="token.pasted"
+      return value="chalk.cyan(token.text)"
     if cond="token.dimmed"
       return value="chalk.grey(token.text)"
     return value="token.text"
@@ -150,7 +153,7 @@ fn name=buildPlaceholderLines params="placeholder:string, width:number, opts:{fo
 
     if (!placeholder) {
       if (opts.focus && opts.showCursor) {
-        pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true });
+        pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true, pasted: false });
       }
       return { lines, cursorLine };
     }
@@ -162,6 +165,7 @@ fn name=buildPlaceholderLines params="placeholder:string, width:number, opts:{fo
         dimmed: !(opts.focus && opts.showCursor && index === 0),
         highlighted: opts.focus && opts.showCursor && index === 0,
         isCursor: opts.focus && opts.showCursor && index === 0,
+        pasted: false,
       });
     }
 
@@ -170,15 +174,23 @@ fn name=buildPlaceholderLines params="placeholder:string, width:number, opts:{fo
 
 fn name=buildValueLines params="value:string, width:number, opts:{cursorOffset:number, cursorWidth:number, focus:boolean, highlightPastedText:boolean, showCursor:boolean}" returns="{cursorLine:number, lines:PromptLine[]}" export=false
   handler <<<
-    const safeWidth = Math.max(1, width);
-    const lines: PromptLine[] = [{ tokens: [] }];
-    const boundedCursorOffset = Math.max(0, Math.min(opts.cursorOffset, value.length));
-    const selectionStart = opts.highlightPastedText ? Math.max(0, boundedCursorOffset - opts.cursorWidth) : boundedCursorOffset;
-    const showCursor = opts.focus && opts.showCursor;
-    const needsSyntheticCursor = showCursor && (value.length === 0 || boundedCursorOffset === value.length || value[boundedCursorOffset] === '\n');
-    let col = 0;
-    let cursorLine = 0;
-    let cursorPlaced = false;
+      const safeWidth = Math.max(1, width);
+      const lines: PromptLine[] = [{ tokens: [] }];
+      const boundedCursorOffset = Math.max(0, Math.min(opts.cursorOffset, value.length));
+      const selectionStart = opts.highlightPastedText ? Math.max(0, boundedCursorOffset - opts.cursorWidth) : boundedCursorOffset;
+      const showCursor = opts.focus && opts.showCursor;
+      const needsSyntheticCursor = showCursor && (value.length === 0 || boundedCursorOffset === value.length || value[boundedCursorOffset] === '\n');
+      const pastedPlaceholderChars = new Set<number>();
+      const pastedPlaceholderRe = /\[Pasted Content \d+ chars\]/g;
+      for (const match of value.matchAll(pastedPlaceholderRe)) {
+        const start = match.index ?? 0;
+        for (let offset = 0; offset < match[0].length; offset++) {
+          pastedPlaceholderChars.add(start + offset);
+        }
+      }
+      let col = 0;
+      let cursorLine = 0;
+      let cursorPlaced = false;
 
     const pushLine = () => {
       lines.push({ tokens: [] });
@@ -197,12 +209,12 @@ fn name=buildValueLines params="value:string, width:number, opts:{cursorOffset:n
 
     const maybePushSyntheticCursor = (offset: number) => {
       if (!needsSyntheticCursor || offset !== boundedCursorOffset) return;
-      pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true });
+      pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true, pasted: false });
     };
 
     if (!value) {
       if (showCursor) {
-        pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true });
+        pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true, pasted: false });
       }
       return { lines, cursorLine };
     }
@@ -222,6 +234,7 @@ fn name=buildValueLines params="value:string, width:number, opts:{cursorOffset:n
         dimmed: false,
         highlighted: isCursorChar || isSelectionChar,
         isCursor: isCursorChar,
+        pasted: pastedPlaceholderChars.has(index),
       });
     }
 
@@ -262,6 +275,7 @@ screen name=PromptTextInput target=ink memo=true export=named
   prop name=onChange type="(value:string) => void"
   prop name=onSubmit type="((value:string) => void)|undefined"
   prop name=onCtrlShortcut type="((shortcut:string) => void)|undefined"
+  prop name=onPaste type="((raw:string) => string)|undefined"
   render
     handler <<<
       const originalValue = value;
@@ -453,7 +467,8 @@ screen name=PromptTextInput target=ink memo=true export=named
             nextValue = currentValue.slice(0, currentCursor.cursorOffset) + currentValue.slice(currentCursor.cursorOffset + 1);
           }
         } else {
-          const updated = applyInlineInputEdits(currentValue, currentCursor.cursorOffset, input);
+          const editInput = (key?.paste || input.length > 1) ? (onPaste?.(input) ?? input) : input;
+          const updated = applyInlineInputEdits(currentValue, currentCursor.cursorOffset, editInput);
           nextValue = updated.value;
           nextCursorOffset = updated.cursorOffset;
           nextCursorWidth = updated.cursorWidth;

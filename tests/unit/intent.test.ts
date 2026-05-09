@@ -292,6 +292,8 @@ describe('Intent Detection — Slash Commands', () => {
 
   it('/clear', () => {
     expect(detectIntent('/clear').type).toBe('clear');
+    expect(detectIntent('/clean').type).toBe('clear');
+    expect(SLASH_COMMANDS.some((cmd) => cmd.cmd === '/clean')).toBe(true);
   });
 
   it('/help', () => {
@@ -361,6 +363,12 @@ describe('Intent Detection — Natural Language', () => {
   it('does not short-circuit compound instructions starting with implementation verbs', () => {
     const fixThenReview = detectIntent('fix auth then review with codex');
     expect(fixThenReview.type).not.toBe('review');
+
+    const fixingThenReview = detectIntent('fixing auth now, ask codex to review it');
+    expect(fixingThenReview.type).not.toBe('review');
+
+    const createdThenReview = detectIntent('created auth wiring, review it with codex');
+    expect(createdThenReview.type).not.toBe('review');
 
     const pleaseFix = detectIntent('please fix auth then review with codex');
     expect(pleaseFix.type).not.toBe('review');

@@ -4,7 +4,7 @@
 
 import from="node:path" names="join,basename"
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,appendFileSync"
-import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,listSnapshots,revertSnapshot,resumeChatSession,findSkill,renderSkillPrompt,configSet,loadConfig,startChatSession,currentBranch,gitChangedFiles,buildExtensionContext,sessionContext,RUNS_DIR,getAgonHome,clearConversation"
+import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,listSnapshots,revertSnapshot,resumeChatSession,findSkill,renderSkillPrompt,configSet,loadConfig,startChatSession,currentBranch,gitChangedFiles,buildExtensionContext,sessionContext,RUNS_DIR,getAgonHome,clearConversation,clearSessionState"
 import from="../handlers/chat.js" names="invalidateCwdCache"
 import from="@agon/core" names="ImageAttachment,ChatSession" types=true
 import from="@agon/core" names="approveCesarPlan,saveCesarPlan,loadCesarPlan,listCesarPlans,executePlan,formatCesarPlanMarkdown,planCostEstimator"
@@ -200,6 +200,38 @@ fn name=collectRecentEngineContext params="ctx:HandlerContext,maxMessages?:numbe
       .filter((m: any) => m.role === 'engine' && m.content)
       .map((m: any) => `[${m.engineId}]: ${String(m.content).slice(0, cap)}`)
       .join('\n\n');
+  >>>
+
+fn name=clearPersistedSessionContext params="ctx:HandlerContext" returns="string[]" export=true
+  doc "Delete persisted workspace conversation plus per-engine session state/tool caches so /clear and /clean start with a genuinely empty context."
+  handler <<<
+    const engineIds = new Set<string>();
+    const add = (value: unknown) => {
+      const id = typeof value === 'string' ? value.trim() : '';
+      if (id) engineIds.add(id);
+    };
+
+    add((ctx.config as any)?.cesarEngine);
+    add((ctx.config as any)?.forgeFixedStarter);
+    add((ctx.cesarSession as any)?.engineId);
+    const enabled = (ctx.config as any)?.forgeEnabledEngines;
+    if (Array.isArray(enabled)) for (const id of enabled) add(id);
+    try {
+      const ids = typeof (ctx as any).activeEngines === 'function'
+        ? (ctx as any).activeEngines()
+        : [];
+      if (Array.isArray(ids)) for (const id of ids) add(id);
+    } catch { /* active engines unavailable */ }
+    try {
+      const ids = ctx.registry?.availableIds?.() ?? [];
+      if (Array.isArray(ids)) for (const id of ids) add(id);
+    } catch { /* registry unavailable */ }
+
+    clearConversation();
+    for (const engineId of engineIds) {
+      try { clearSessionState(engineId); } catch { /* best-effort */ }
+    }
+    return [...engineIds].sort();
   >>>
 
 fn name=shouldAutoContinueDelegatedResult params="launchInputEpoch?:number, launchUserTurns?:number, ctx?:HandlerContext" returns=boolean export=true
@@ -2505,7 +2537,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           cb.ctx.setCesarSession(null);
         }
         cb.ctx.lastReviewResult = undefined;
-        clearConversation();
+        const clearedEngineIds = clearPersistedSessionContext(cb.ctx);
         try {
           cb.ctx.cesarMemory?.clearSession?.();
         } catch { /* best-effort */ }
@@ -2527,6 +2559,9 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           ? `Session cleared. Previous chat saved as ${oldChatId} — use /chats resume ${oldChatId} to recover.`
           : 'Session cleared.';
         cb.dispatch({ type: 'success', message: clearMsg });
+        if (clearedEngineIds.length > 0) {
+          cb.dispatch({ type: 'info', message: `Cleared persisted engine context: ${clearedEngineIds.join(', ')}` });
+        }
         break;
       }
       case 'help': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;

@@ -2758,7 +2758,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 
   if (!decided) {
     cb.setActivePlan(proposed);
-    cb.dispatch({ type: 'info', message: 'Plan awaiting approval. Type go, yes, or /approve to execute; /cancel rejects it.' });
+    cb.dispatch({ type: 'info', message: 'Plan awaiting approval. Press Y to approve, N to reject — or type /approve / /cancel.' });
   }
 }
 

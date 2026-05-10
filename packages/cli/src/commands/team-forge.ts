@@ -1,8 +1,8 @@
 import { defineCommand } from 'citty';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { EngineRegistry, ensureAgonHome, RUNS_DIR } from '@agon/core';
+import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import type { ForgeEvent, TeamEvent } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runTeamForge } from '@agon/forge';
@@ -51,7 +51,7 @@ export const teamForgeCommand = defineCommand({
     ensureAgonHome();
 
     const registry = new EngineRegistry();
-    registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../engines'));
+    registry.load(resolveBuiltinEnginesDir());
 
     const adapter = createCliAdapter(registry);
 

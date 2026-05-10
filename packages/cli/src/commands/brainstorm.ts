@@ -1,8 +1,8 @@
 import { defineCommand } from 'citty';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
+import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import type { BrainstormBid } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runBrainstorm } from '@agon/forge';
@@ -36,7 +36,7 @@ export const brainstormCommand = defineCommand({
     const config = loadConfig(process.cwd());
 
     const registry = new EngineRegistry();
-    registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../engines'));
+    registry.load(resolveBuiltinEnginesDir());
 
     const adapter = createCliAdapter(registry);
     const available = args.engines

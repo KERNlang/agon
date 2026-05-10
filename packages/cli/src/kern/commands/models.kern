@@ -1,8 +1,8 @@
 import from="citty" names="defineCommand"
-import from="node:path" names="join,dirname"
-import from="node:url" names="fileURLToPath"
+import from="node:path" names="join"
 import from="@agon/core" names="EngineRegistry,loadConfig,configSet"
 import from="@agon/core" names="AgonConfig" types=true
+import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="../blocks/output-format.js" names="header,success,fail,info,table,green,red,dim"
 
 const name=modelsCommand type="any"
@@ -26,7 +26,7 @@ const name=modelsCommand type="any"
               table(['Engine', 'Model'], rows);
             }
             const registry = new EngineRegistry();
-            registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../engines'));
+            registry.load(resolveBuiltinEnginesDir());
             const active = new Set(registry.activeIds(config as any));
             const hidden = new Set((config as any).hiddenEngines ?? []);
 
@@ -65,7 +65,7 @@ const name=modelsCommand type="any"
             const engine = String(ctx.args.engine).trim();
             if (!engine) return;
             const registry = new EngineRegistry();
-            registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../engines'));
+            registry.load(resolveBuiltinEnginesDir());
             let def: any;
             try { def = registry.get(engine); } catch {
               fail(`Engine "${engine}" not found`);
@@ -95,7 +95,7 @@ const name=modelsCommand type="any"
             const engine = String(ctx.args.engine).trim();
             if (!engine) return;
             const registry = new EngineRegistry();
-            registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../engines'));
+            registry.load(resolveBuiltinEnginesDir());
             let def: any;
             try { def = registry.get(engine); } catch {
               fail(`Engine "${engine}" not found`);

@@ -304,9 +304,9 @@ fn name=parseSemanticForgeShortcut params="input:string" returns="Intent|null" e
   >>>
 
 fn name=parseSemanticDelegationShortcut params="input:string" returns="Intent|null" export=false
+  doc "Cesar owns multi-engine routing. Review-with-X used to short-circuit straight to handleReviewMany via parseSemanticReviewShortcut, which stole Cesar's role of choosing the mode (tribunal vs campfire vs sequential review). The review shortcut is intentionally disabled here so 'review with claude and codex' reaches Cesar instead. Slash form '/review with codex' still works through parseReviewShortcut."
   handler <<<
-    return parseSemanticReviewShortcut(input)
-      ?? parseSemanticForgeShortcut(input)
+    return parseSemanticForgeShortcut(input)
       ?? parseSemanticCollaborationShortcut(input);
   >>>
 

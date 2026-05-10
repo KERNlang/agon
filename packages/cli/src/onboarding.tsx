@@ -30,7 +30,7 @@ function OnboardingApp() {
 
   // Scan engines on mount
   useEffect(() => {
-    (async () => {
+    void (async () => {
       const registry = new EngineRegistry();
       registry.load(resolveBuiltinEnginesDir());
       const adapter = createCliAdapter(registry);

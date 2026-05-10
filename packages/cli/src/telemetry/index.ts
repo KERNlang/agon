@@ -219,6 +219,6 @@ export function formatRunSummary(record: Pick<RunRecord, 'mode' | 'winner' | 'du
   const mins = Math.floor(record.durationMs / 60000);
   const secs = Math.floor((record.durationMs % 60000) / 1000);
   const time = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-  const summarySegments = [`${mode} complete → ${winner} won`, cost, time].filter((segment): segment is string => Boolean(segment));
-  return summarySegments.join(' · ');
+  const costText = cost ? ` · ${cost}` : '';
+  return `${mode} complete → ${winner} won${costText} · ${time}`;
 }

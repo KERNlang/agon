@@ -63,12 +63,13 @@ export type KeyboardAction =
   | { type: 'cancelOrExit' }
   | { type: 'togglePauseMenu' }
   | { type: 'movePauseCursor'; direction: 'up'|'down' }
-  | { type: 'selectPauseAction' };
+  | { type: 'selectPauseAction' }
+  | { type: 'planControl'; action: 'approve'|'cancel' };
 
 /**
  * Pure keyboard decision tree. Takes current state, returns action to execute.
  */
-// @kern-source: keyboard:73
+// @kern-source: keyboard:75
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
   const keyName = typeof key.name === 'string' ? key.name.toLowerCase() : '';
@@ -161,6 +162,25 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
 
   // Ctrl+L: clear
   if (hasCtrlSignal && normalizedCtrlInput === 'l') return { type: 'submit', value: '/clear' };
+
+  // Plan awaiting approval: Y approves, N cancels — only when the composer
+  // is empty and no modal/picker owns input. Mirrors the permission prompt
+  // hotkey UX so the user does not have to type /approve and risk it being
+  // queued while Cesar's stream is still wrapping up.
+  if (
+    ctx.activePlanState === 'awaiting_approval'
+    && ctx.inputValue === ''
+    && !hasCtrlSignal
+    && !key.escape && !key.return && !key.tab
+    && !ctx.slashPickerOpen && !ctx.enginePickerOpen
+    && !ctx.reviewEventOpen && !ctx.toolDetailOpen
+    && !ctx.questionState
+    && typeof input === 'string' && input.length === 1
+  ) {
+    const lowered = input.toLowerCase();
+    if (lowered === 'y') return { type: 'planControl', action: 'approve' };
+    if (lowered === 'n') return { type: 'planControl', action: 'cancel' };
+  }
 
   // ── File rail navigation (only when rail is open AND composer is empty) ──
   // Arrows belong to the rail; Enter stays the composer's property so chat

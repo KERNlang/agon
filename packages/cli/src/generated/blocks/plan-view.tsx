@@ -56,15 +56,17 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
         <Text dimColor>{thinBar}</Text>
         <Box>
           <Text color="#fbbf24" bold>{'Awaiting approval: '}</Text>
-          <Text dimColor>{'type '}</Text>
+          <Text dimColor>{'press '}</Text>
+          <Text color="#4ade80" bold>{'Y'}</Text>
+          <Text dimColor>{' to approve, '}</Text>
+          <Text color="#ef4444" bold>{'N'}</Text>
+          <Text dimColor>{' to reject (or type '}</Text>
           <Text color="#4ade80" bold>{'go'}</Text>
-          <Text dimColor>{', '}</Text>
-          <Text color="#4ade80" bold>{'yes'}</Text>
-          <Text dimColor>{', or '}</Text>
+          <Text dimColor>{' / '}</Text>
           <Text color="#4ade80" bold>{'/approve'}</Text>
-          <Text dimColor>{' to execute. Type '}</Text>
+          <Text dimColor>{' / '}</Text>
           <Text color="#ef4444" bold>{'/cancel'}</Text>
-          <Text dimColor>{' to reject.'}</Text>
+          <Text dimColor>{').'}</Text>
         </Box>
       </Box>
     );
@@ -201,7 +203,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
 });
 export { PlanProposalView };
 
-// @kern-source: plan-view:245
+// @kern-source: plan-view:247
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');

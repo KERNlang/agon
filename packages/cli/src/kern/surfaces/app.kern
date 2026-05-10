@@ -5,7 +5,7 @@ import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,Static,render"
 import from="@kernlang/terminal/runtime" names="ScrollBox,AlternateScreen"
 import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,planCostEstimator,cancelCesarPlan,saveCesarPlan,listCesarPlans,loadCesarPlan,cesarPlanJsonPath"
-import from="../../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
+import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"

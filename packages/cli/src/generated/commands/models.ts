@@ -8,7 +8,7 @@ import { EngineRegistry, loadConfig, configSet } from '@agon/core';
 
 import type { AgonConfig } from '@agon/core';
 
-import { resolveBuiltinEnginesDir } from '../../lib/engines-dir.js';
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { header, success, fail, info, table, green, red, dim } from '../blocks/output-format.js';
 

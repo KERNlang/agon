@@ -6,7 +6,7 @@ import {
   ensureAgonHome,
   configSet,
 } from '@agon/core';
-import { resolveBuiltinEnginesDir } from './lib/engines-dir.js';
+import { resolveBuiltinEnginesDir } from './generated/lib/engines-dir.js';
 import { createCliAdapter } from '@agon/adapter-cli';
 import type { EngineAdapter } from '@agon/core';
 import { ENGINE_COLORS } from './output.js';

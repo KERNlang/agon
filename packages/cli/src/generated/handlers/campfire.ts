@@ -12,9 +12,11 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import { sessionResultStore } from '../models/session-results.js';
 
+import { recordRun, formatRunSummary } from '../../telemetry/index.js';
+
 import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
 
-// @kern-source: campfire:9
+// @kern-source: campfire:10
 export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: HandlerContext, opts?: {seedPlan?:string, observerStrategy?:'lead-first'|'all-respond', leadEngine?:string}): Promise<void> {
   const cfAbort = new AbortController();
   try {
@@ -98,6 +100,19 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
       winner: null,
       data: { rounds: result.rounds },
     });
+
+    const runRecord = recordRun({
+      mode: 'campfire',
+      intent: topic,
+      winner: undefined,
+      success: true,
+      durationMs: Date.now() - startTime,
+      engineIds: engines,
+      completionState: 'completed',
+    });
+    if (!process.env.AGON_NO_SUMMARY) {
+      dispatch({ type: 'info', message: formatRunSummary(runRecord) });
+    }
   } finally {
     ctx.setActiveAbort(null);
   }

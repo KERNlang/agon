@@ -79,11 +79,12 @@ fn name=normalizeToolCallId params="id:string, format?:string" returns=string ex
 fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, format?:string" returns="any[]"
   doc "Convert Agon message history (OpenAI wire format) to AI SDK CoreMessage format. Handles per-provider normalization."
   handler <<<
-    // Build original→normalized ID mapping, and count tool results that still
-    // remain later in the history. The AI SDK requires every assistant
-    // tool-call part to have a matching tool-result part. If an interrupted
-    // stream left a dangling assistant tool_call in history, replay it as
-    // plain context instead of letting the SDK throw MissingToolResultsError.
+    // Build original→normalized ID mapping, and record only immediately
+    // following tool results for each assistant message. The AI SDK requires
+    // every assistant tool-call part to be paired by the contiguous tool-result
+    // block that follows it. If an interrupted stream left a dangling or
+    // non-contiguous assistant tool_call in history, replay it as plain context
+    // instead of letting the SDK throw MissingToolResultsError.
     const idMap = new Map<string, string>();
     for (const msg of messages) {
       if (msg.tool_calls) {
@@ -95,13 +96,19 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
         }
       }
     }
-    const resultRemainingById = new Map<string, number>();
-    for (const msg of messages as any[]) {
-      if (msg?.role !== 'tool') continue;
-      const originalId = typeof msg.tool_call_id === 'string' ? msg.tool_call_id : '';
-      if (!originalId) continue;
-      const normalizedId = idMap.get(originalId) ?? normalizeToolCallId(originalId, format);
-      resultRemainingById.set(normalizedId, (resultRemainingById.get(normalizedId) ?? 0) + 1);
+    const contiguousResultIdsByAssistantIndex = new Map<number, Set<string>>();
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i] as any;
+      if (msg?.role !== 'assistant' || !Array.isArray(msg.tool_calls) || msg.tool_calls.length === 0) continue;
+      const resultIds = new Set<string>();
+      for (let j = i + 1; j < messages.length; j++) {
+        const candidate = messages[j] as any;
+        if (candidate?.role !== 'tool') break;
+        const originalId = typeof candidate.tool_call_id === 'string' ? candidate.tool_call_id : '';
+        if (!originalId) continue;
+        resultIds.add(idMap.get(originalId) ?? normalizeToolCallId(originalId, format));
+      }
+      contiguousResultIdsByAssistantIndex.set(i, resultIds);
     }
 
     const systemParts: string[] = [];
@@ -130,7 +137,8 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
       result.push(message);
     };
 
-    for (const msg of messages) {
+    for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
+      const msg = messages[messageIndex];
       if (msg.role === 'system') {
         continue;
       } else if (msg.role === 'user') {
@@ -142,6 +150,7 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
         }
         if (msg.tool_calls) {
           const droppedToolCalls: string[] = [];
+          const contiguousResultIds = contiguousResultIdsByAssistantIndex.get(messageIndex) ?? new Set<string>();
           for (const tc of msg.tool_calls) {
             let args: Record<string, unknown> = {};
             try {
@@ -151,7 +160,7 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
             } catch { args = {}; /* malformed tool_calls JSON — use empty args */ }
             const normalizedId = idMap.get(tc.id) ?? normalizeToolCallId(tc.id ?? `call_${Date.now()}`, format);
             const toolName = tc.function?.name ?? 'unknown';
-            if ((resultRemainingById.get(normalizedId) ?? 0) <= 0) {
+            if (!contiguousResultIds.has(normalizedId)) {
               droppedToolCalls.push(toolName);
               continue;
             }
@@ -199,9 +208,6 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
             }],
           });
           activeToolNamesById.delete(toolCallId);
-        }
-        if (toolCallId && resultRemainingById.has(toolCallId)) {
-          resultRemainingById.set(toolCallId, Math.max(0, (resultRemainingById.get(toolCallId) ?? 0) - 1));
         }
       }
     }

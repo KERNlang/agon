@@ -6,6 +6,7 @@ import from="../models/session-results.js" names="sessionResultStore"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
 import from="../cesar/scoreboard.js" names="createScoreboard,scoreboardStartEngine,scoreboardFinishEngine,scoreboardFailEngine,renderScoreboard"
 import from="../cesar/checkpoint.js" names="buildCheckpoint,recordCheckpoint"
+import from="../../telemetry/index.js" names="recordRun,formatRunSummary"
 
 fn name=handleTribunal params="question:string, dispatch:Dispatch, ctx:HandlerContext, tribunalMode?:string" returns="Promise<void>" async=true
   signal name=tribunalAbort
@@ -159,6 +160,19 @@ fn name=handleTribunal params="question:string, dispatch:Dispatch, ctx:HandlerCo
         verdict: result.summary,
       },
     });
+
+    const runRecord = recordRun({
+      mode: 'tribunal',
+      intent: question,
+      winner: undefined,
+      success: true,
+      durationMs: Date.now() - startTime,
+      engineIds: engines,
+      completionState: 'completed',
+    });
+    if (!process.env.AGON_NO_SUMMARY) {
+      dispatch({ type: 'info', message: formatRunSummary(runRecord) });
+    }
 
     for (const round of result.rounds) {
       for (const pos of round.positions) {

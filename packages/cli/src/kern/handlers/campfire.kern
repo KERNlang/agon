@@ -4,6 +4,7 @@ import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,track
 import from="@agon/forge" names="runCampfire"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../models/session-results.js" names="sessionResultStore"
+import from="../../telemetry/index.js" names="recordRun,formatRunSummary"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
 
 fn name=handleCampfire params="topic:string, dispatch:Dispatch, ctx:HandlerContext, opts?:{seedPlan?:string, observerStrategy?:'lead-first'|'all-respond', leadEngine?:string}" returns="Promise<void>" async=true
@@ -89,6 +90,19 @@ fn name=handleCampfire params="topic:string, dispatch:Dispatch, ctx:HandlerConte
       winner: null,
       data: { rounds: result.rounds },
     });
+
+    const runRecord = recordRun({
+      mode: 'campfire',
+      intent: topic,
+      winner: undefined,
+      success: true,
+      durationMs: Date.now() - startTime,
+      engineIds: engines,
+      completionState: 'completed',
+    });
+    if (!process.env.AGON_NO_SUMMARY) {
+      dispatch({ type: 'info', message: formatRunSummary(runRecord) });
+    }
   >>>
   cleanup <<<
     ctx.setActiveAbort(null);

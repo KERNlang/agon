@@ -2,7 +2,7 @@
 
 import { join, basename } from 'node:path';
 
-import { mkdirSync, writeFileSync, readFileSync, appendFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, appendFileSync, existsSync } from 'node:fs';
 
 import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, listSnapshots, revertSnapshot, resumeChatSession, findSkill, renderSkillPrompt, configSet, loadConfig, startChatSession, currentBranch, gitChangedFiles, buildExtensionContext, sessionContext, RUNS_DIR, getAgonHome, clearConversation, clearSessionState } from '@agon/core';
 
@@ -2211,6 +2211,20 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
           '',
         ].join('\n');
       } else if (isUserHome) {
+        const workspaceLines: string[] = [];
+        const workspaceRoots = [
+          { label: '~/dev', path: join(home, 'dev') },
+          { label: '~/projects', path: join(home, 'projects') },
+          { label: '~/work', path: join(home, 'work') },
+          { label: '~/src', path: join(home, 'src') },
+        ];
+        for (const root of workspaceRoots) {
+          if (existsSync(root.path)) workspaceLines.push(`- \`${root.label}\` — workspace root`);
+        }
+        if (workspaceLines.length === 0) {
+          workspaceLines.push('- `~/dev/my-project` — primary product or client project');
+          workspaceLines.push('- `~/dev/experiments` — prototypes and research');
+        }
         content = [
           '# AGON.md — User Home',
           '',
@@ -2218,7 +2232,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
           '',
           '## Workspace',
           '',
-          '- TODO: list your main workspaces and projects',
+          ...workspaceLines,
           '',
           '## Cross-References',
           '',
@@ -2704,7 +2718,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 /**
  * Activate a proposed Cesar plan. Auto-approved plans execute immediately; manual approval is intentionally non-blocking so the REPL returns to idle and accepts go, yes, or /approve through the normal composer.
  */
-// @kern-source: dispatch:2616
+// @kern-source: dispatch:2630
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -2751,7 +2765,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2666
+// @kern-source: dispatch:2680
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2881,7 +2895,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * Return true when a failed plan step looks like it was interrupted by stall/fallback handling rather than a semantic task failure.
  */
-// @kern-source: dispatch:2794
+// @kern-source: dispatch:2808
 export function failedPlanStepIsFallbackRetryable(step: any): boolean {
   if (!step || step.state !== 'failed') return false;
   const result = step.result ?? {};
@@ -2893,7 +2907,7 @@ export function failedPlanStepIsFallbackRetryable(step: any): boolean {
 /**
  * Reset one retryable failed plan step and bind it to the fallback engine. The caller runs executePlan again with a fresh abort controller.
  */
-// @kern-source: dispatch:2804
+// @kern-source: dispatch:2818
 export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string): CesarPlan|null {
   const engine = String(fallbackEngine ?? '').trim();
   if (!engine || !Array.isArray(plan.steps)) return null;
@@ -2933,7 +2947,7 @@ export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2842
+// @kern-source: dispatch:2856
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx, cb.dispatch);
   let abortController = new AbortController();
@@ -3004,7 +3018,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2911
+// @kern-source: dispatch:2925
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const FORGE_LIKE = new Set(['forge', 'teamforge', 'pipeline']);

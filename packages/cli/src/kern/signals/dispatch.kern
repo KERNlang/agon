@@ -3,7 +3,7 @@
 // No JSX, no React — just decides what handler to call for each intent.
 
 import from="node:path" names="join,basename"
-import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,appendFileSync"
+import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,appendFileSync,existsSync"
 import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,listSnapshots,revertSnapshot,resumeChatSession,findSkill,renderSkillPrompt,configSet,loadConfig,startChatSession,currentBranch,gitChangedFiles,buildExtensionContext,sessionContext,RUNS_DIR,getAgonHome,clearConversation,clearSessionState"
 import from="../handlers/chat.js" names="invalidateCwdCache"
 import from="@agon/core" names="ImageAttachment,ChatSession" types=true
@@ -2123,6 +2123,20 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
             '',
           ].join('\n');
         } else if (isUserHome) {
+          const workspaceLines: string[] = [];
+          const workspaceRoots = [
+            { label: '~/dev', path: join(home, 'dev') },
+            { label: '~/projects', path: join(home, 'projects') },
+            { label: '~/work', path: join(home, 'work') },
+            { label: '~/src', path: join(home, 'src') },
+          ];
+          for (const root of workspaceRoots) {
+            if (existsSync(root.path)) workspaceLines.push(`- \`${root.label}\` — workspace root`);
+          }
+          if (workspaceLines.length === 0) {
+            workspaceLines.push('- `~/dev/my-project` — primary product or client project');
+            workspaceLines.push('- `~/dev/experiments` — prototypes and research');
+          }
           content = [
             '# AGON.md — User Home',
             '',
@@ -2130,7 +2144,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
             '',
             '## Workspace',
             '',
-            '- TODO: list your main workspaces and projects',
+            ...workspaceLines,
             '',
             '## Cross-References',
             '',

@@ -20,7 +20,9 @@ import { createScoreboard, scoreboardStartEngine, scoreboardFinishEngine, scoreb
 
 import { buildCheckpoint, recordCheckpoint } from '../cesar/checkpoint.js';
 
-// @kern-source: brainstorm:12
+import { recordRun, formatRunSummary } from '../../telemetry/index.js';
+
+// @kern-source: brainstorm:13
 export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx: HandlerContext): Promise<{winner:string, bids:{engineId:string,reasoning:string,approach:string,score:number}[], response:string}|null> {
   const bsAbort = new AbortController();
   try {
@@ -152,6 +154,19 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
         response: result.response,
       },
     });
+
+    const runRecord = recordRun({
+      mode: 'brainstorm',
+      intent: question,
+      winner: result.winner,
+      success: true,
+      durationMs: Date.now() - startTime,
+      engineIds: engines,
+      completionState: 'completed',
+    });
+    if (!process.env.AGON_NO_SUMMARY) {
+      dispatch({ type: 'info', message: formatRunSummary(runRecord) });
+    }
 
     dispatch({ type: 'info', message: `Winner: ${result.winner} — returning result to Cesar` });
     dispatch({ type: 'progress-clear' });

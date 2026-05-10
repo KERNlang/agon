@@ -1535,6 +1535,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             let productiveSteps = 0;
             let consecutiveErrors = 0;
             let repeatedReadOnlyRetrySteps = 0;
+            let readOnlyLoopRecoveryUsed = false;
             let lastReadOnlySignature = '';
 
             // ── Solo-coding gate: track investigation vs write behavior ──
@@ -1661,17 +1662,31 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   : '';
                 const staleReadRetryText = /\bfile (?:has been |was )?modified since (?:my |the )?last read\b/i.test(fullResponse)
                   || /\bre-?read\b[\s\S]{0,120}\bedit\b/i.test(fullResponse);
-                if (readOnlyStep && (staleReadRetryText || (readOnlySignature && readOnlySignature === lastReadOnlySignature))) {
+                const duplicateReadOnlyStep = readOnlyStep && readOnlySignature !== '' && readOnlySignature === lastReadOnlySignature;
+                if (duplicateReadOnlyStep) {
                   repeatedReadOnlyRetrySteps++;
-                } else if (!readOnlyStep) {
+                } else {
                   repeatedReadOnlyRetrySteps = 0;
                 }
                 lastReadOnlySignature = readOnlySignature;
                 if ((readOnlyStep && staleReadRetryText && parsedCalls.length > 20) || repeatedReadOnlyRetrySteps >= 3) {
-                  yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after a stale edit/read condition. Re-read has already reached the tool layer; stop repeating reads and either edit from the current content or explain the blocker.' };
                   if (messageHistory[messageHistory.length - 1] === assistToolMsg) {
                     messageHistory.pop();
                   }
+                  if (!readOnlyLoopRecoveryUsed && step < budget) {
+                    readOnlyLoopRecoveryUsed = true;
+                    yield { type: 'status' as const, content: 'recovering from repeated stale read loop…' };
+                    messageHistory.push({
+                      role: 'assistant',
+                      content: `${cleanText ? `${cleanText}\n` : ''}[Agon omitted a duplicate read-only tool batch to avoid a stale-read loop.]`,
+                    });
+                    messageHistory.push({
+                      role: 'user',
+                      content: 'Agon detected repeated Read/Grep/Glob calls after a stale-file notice. Do not re-read the same files again. Use the latest content already in context and either finish the answer, call the required Edit/Write/Bash tool once, or explain the exact blocker.',
+                    });
+                    continue;
+                  }
+                  yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after stale edit/read recovery. The engine kept repeating reads instead of finishing, editing, or explaining the blocker.' };
                   messageHistory.push({
                     role: 'assistant',
                     content: `${cleanText ? `${cleanText}\n` : ''}[Tool loop stopped — repeated read-only stale-edit retry before executing duplicate read-only calls]`,

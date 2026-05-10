@@ -200,6 +200,37 @@ describe('api-dispatch — AI SDK message conversion', () => {
     ]);
   });
 
+  it('recovers assistant tool calls whose matching result is not contiguous', () => {
+    const messages = [
+      { role: 'user', content: 'read then continue' },
+      {
+        role: 'assistant',
+        content: 'Reading.',
+        tool_calls: [{
+          id: 'call_late',
+          type: 'function',
+          function: { name: 'Read', arguments: '{"file_path":"package.json"}' },
+        }],
+      },
+      { role: 'user', content: 'status note inserted after interruption' },
+      { role: 'tool', content: 'late file contents', tool_call_id: 'call_late' },
+    ];
+
+    const result = convertMessagesForSdk(messages);
+
+    expect(result[1]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'Reading.' },
+        { type: 'text', text: '[Recovered incomplete tool call omitted from native tool channel: Read]' },
+      ],
+    });
+    expect(result[2]).toEqual({
+      role: 'user',
+      content: 'status note inserted after interruption\n\n[Recovered orphan tool result omitted from native tool channel]\nlate file contents',
+    });
+  });
+
   it('keeps completed tool calls while recovering incomplete calls from the same assistant turn', () => {
     const messages = [
       { role: 'user', content: 'read both files' },

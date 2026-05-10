@@ -377,20 +377,16 @@ describe('Intent Detection — Natural Language', () => {
     expect(canYouFix.type).not.toBe('review');
   });
 
-  it('routes high-confidence natural review delegation', () => {
+  it('keeps short imperative review shortcuts but routes natural-language review delegation through Cesar', () => {
+    // Short command-like forms still bypass Cesar via parseReviewShortcut
+    // (input begins with "review"). Cesar owns multi-engine routing for
+    // anything more conversational so he can pick tribunal/campfire/etc.
     const r = detectIntent('review it with codex');
     expect(r.type).toBe('review');
     if (r.type === 'review') {
       expect(r.engineId).toBe('codex');
       expect(r.engineIds).toEqual(['codex']);
       expect(r.target).toBeUndefined();
-    }
-
-    const ask = detectIntent('ask codex and gemini to review it');
-    expect(ask.type).toBe('review');
-    if (ask.type === 'review') {
-      expect(ask.engineId).toBe('codex');
-      expect(ask.engineIds).toEqual(['codex', 'gemini']);
     }
 
     const withAnd = detectIntent('review it with codex and gemini');
@@ -400,6 +396,15 @@ describe('Intent Detection — Natural Language', () => {
       expect(withAnd.engineIds).toEqual(['codex', 'gemini']);
       expect(withAnd.target).toBeUndefined();
     }
+
+    // "ask X (and Y) to review it" no longer short-circuits to handleReviewMany.
+    // It must reach Cesar so he chooses the mode (tribunal vs campfire vs
+    // sequential review) instead of always running a sequential code review.
+    const ask = detectIntent('ask codex and gemini to review it');
+    expect(ask.type).toBe('auto');
+
+    const canYou = detectIntent('can you review with claude and codex');
+    expect(canYou.type).toBe('auto');
   });
 
   it('routes high-confidence collaboration phrases to buddy flows', () => {

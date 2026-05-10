@@ -323,10 +323,12 @@ function parseSemanticForgeShortcut(input: string): Intent|null {
   return { ...parsed, type: 'forge', action: 'natural' } as Intent;
 }
 
+/**
+ * Cesar owns multi-engine routing. Review-with-X used to short-circuit straight to handleReviewMany via parseSemanticReviewShortcut, which stole Cesar's role of choosing the mode (tribunal vs campfire vs sequential review). The review shortcut is intentionally disabled here so 'review with claude and codex' reaches Cesar instead. Slash form '/review with codex' still works through parseReviewShortcut.
+ */
 // @kern-source: intent:306
 function parseSemanticDelegationShortcut(input: string): Intent|null {
-  return parseSemanticReviewShortcut(input)
-    ?? parseSemanticForgeShortcut(input)
+  return parseSemanticForgeShortcut(input)
     ?? parseSemanticCollaborationShortcut(input);
 }
 

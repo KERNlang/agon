@@ -1,8 +1,8 @@
 import { defineCommand } from 'citty';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 import type { EngineResult, ForgeEvent } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runForge } from '@agon/forge';
@@ -56,7 +56,7 @@ export const forgeCommand = defineCommand({
     const config = loadConfig(args.cwd);
 
     const registry = new EngineRegistry();
-    registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../engines'));
+    registry.load(resolveBuiltinEnginesDir());
 
     const adapter = createCliAdapter(registry);
 

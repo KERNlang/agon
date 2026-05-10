@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import Spinner from 'ink-spinner';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   EngineRegistry,
   ensureAgonHome,
   configSet,
 } from '@agon/core';
+import { resolveBuiltinEnginesDir } from './lib/engines-dir.js';
 import { createCliAdapter } from '@agon/adapter-cli';
 import type { EngineAdapter } from '@agon/core';
 import { ENGINE_COLORS } from './output.js';
@@ -33,8 +32,7 @@ function OnboardingApp() {
   useEffect(() => {
     (async () => {
       const registry = new EngineRegistry();
-      const enginesDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines');
-      registry.load(enginesDir);
+      registry.load(resolveBuiltinEnginesDir());
       const adapter = createCliAdapter(registry);
       const allEngines = registry.list();
 

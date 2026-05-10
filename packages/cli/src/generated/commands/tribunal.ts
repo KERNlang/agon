@@ -8,7 +8,7 @@ import { mkdirSync } from 'node:fs';
 
 import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
 
-import { resolveBuiltinEnginesDir } from '../../lib/engines-dir.js';
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@agon/adapter-cli';
 

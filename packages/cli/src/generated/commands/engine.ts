@@ -8,7 +8,7 @@ import { EngineRegistry, getEngineGlickoRating, loadConfig, configSet } from '@a
 
 import type { AgonConfig } from '@agon/core';
 
-import { resolveBuiltinEnginesDir } from '../../lib/engines-dir.js';
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@agon/adapter-cli';
 

@@ -8,7 +8,7 @@ import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
 import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@agon/core';
 
-import { resolveBuiltinEnginesDir } from '../../lib/engines-dir.js';
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
 

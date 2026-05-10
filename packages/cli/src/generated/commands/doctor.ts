@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort } from '@agon/core';
 
-import { resolveBuiltinEnginesDir } from '../../lib/engines-dir.js';
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import type { EngineDefinition } from '@agon/core';
 

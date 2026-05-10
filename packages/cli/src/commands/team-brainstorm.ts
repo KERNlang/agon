@@ -2,7 +2,7 @@ import { defineCommand } from 'citty';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { EngineRegistry, ensureAgonHome, RUNS_DIR } from '@agon/core';
-import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
+import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import type { ForgeEvent, TeamEvent } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runTeamBrainstorm } from '@agon/forge';

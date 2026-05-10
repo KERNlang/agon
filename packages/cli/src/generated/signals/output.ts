@@ -361,6 +361,19 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       codeBlockBuffer.clear();
       _thinkingBuffer.engineId = '';
       _thinkingBuffer.content = '';
+      actions.setLiveSpinner(null);
+      actions.setLiveProgress(null);
+      actions.setLiveToolStreams({});
+      if (actions.setLiveScoreboard) actions.setLiveScoreboard(null);
+      if (actions.setLiveRationale) actions.setLiveRationale(null);
+      actions.setCesarConfidence(null);
+      if (_pendingFlushTimer.timer) {
+        clearTimeout(_pendingFlushTimer.timer);
+        _pendingFlushTimer.timer = null;
+      }
+      _pendingFlushTimer.actions = null;
+      clearPermissionQueue();
+      clearThinkingBuffer();
       return;
     case 'patch-review':
       actions.setReviewEvent({ winnerId: (event as any).winnerId, patchPath: (event as any).patchPath, patchContent: (event as any).patchContent });

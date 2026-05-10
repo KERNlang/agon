@@ -230,13 +230,19 @@ describe('Dispatch routing helpers', () => {
     expect(formatCesarRecoveryStatus('failed', 'all engines unavailable', 'run agon doctor engines')).toBe('Cesar recovery failed: all engines unavailable - run agon doctor engines');
   });
 
-  it('normalizes acting-Cesar fallback policy without silently defaulting to auto', () => {
-    expect(normalizeCesarActingFallbackMode(undefined)).toBe('ask');
+  it('normalizes acting-Cesar fallback policy with silent auto as default', () => {
+    // Default flipped to 'auto' (silent under-the-hood swap) so the user
+    // perceives a single Cesar persona instead of seeing rebuild/retry/
+    // acting-Cesar chrome every time the configured engine misbehaves.
+    expect(normalizeCesarActingFallbackMode(undefined)).toBe('auto');
     expect(normalizeCesarActingFallbackMode('auto')).toBe('auto');
     expect(normalizeCesarActingFallbackMode('always')).toBe('auto');
+    expect(normalizeCesarActingFallbackMode('on')).toBe('auto');
+    expect(normalizeCesarActingFallbackMode('ask')).toBe('ask');
+    expect(normalizeCesarActingFallbackMode('prompt')).toBe('ask');
     expect(normalizeCesarActingFallbackMode('off')).toBe('off');
     expect(normalizeCesarActingFallbackMode('same-only')).toBe('off');
-    expect(normalizeCesarActingFallbackMode('weird')).toBe('ask');
+    expect(normalizeCesarActingFallbackMode('weird')).toBe('auto');
   });
 
   it('builds an auto-resume prompt for team-agent results with unapplied patch context', () => {

@@ -326,14 +326,14 @@ fn name=formatCesarRecoveryStatus params="stage:'delegation'|'rebuild'|'retry'|'
   >>>
 
 fn name=normalizeCesarActingFallbackMode params="value:any" returns="'ask'|'auto'|'off'" export=true
-  doc "Normalize the cross-engine Cesar fallback policy. Defaults to ask so Agon never silently swaps from the user's chosen Cesar engine to another model."
+  doc "Normalize the cross-engine Cesar fallback policy. Defaults to auto: when the configured Cesar engine returns no response, Agon silently swaps to another available engine and attributes its output as Cesar so the user perceives one persona. 'ask' restores the legacy prompt-and-show-chrome behavior; 'off' never swaps."
   handler lang="kern"
-    let name=mode value="String(value ?? 'ask').trim().toLowerCase()"
-    if cond="mode === 'auto' || mode === 'always' || mode === 'on'"
-      return value="'auto'"
+    let name=mode value="String(value ?? 'auto').trim().toLowerCase()"
+    if cond="mode === 'ask' || mode === 'prompt' || mode === 'confirm'"
+      return value="'ask'"
     if cond="mode === 'off' || mode === 'never' || mode === 'same-only' || mode === 'same'"
       return value="'off'"
-    return value="'ask'"
+    return value="'auto'"
 
 fn name=countTrackedUserTurns params="ctx:HandlerContext" returns=number
   handler <<<
@@ -869,6 +869,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
     // Cesar truly didn't respond — try fresh CLI dispatch
     const cesarConfig = cb.ctx.config;
     const cesarId = (cesarConfig as any).cesarEngine ?? 'claude';
+    const _silentMode = normalizeCesarActingFallbackMode((cesarConfig as any).cesarActingFallback) === 'auto';
     // Gate the rebuild/retry warnings on the backend we're actually going to
     // use, not on what the engine *could* use. Engines that declare both binary
     // and api but are currently running on the API path (CLI absent, or
@@ -877,13 +878,33 @@ You still own the overall task. Integrate the forged slice with the rest of the 
     const resolvedBackend = resolveCesarBackend(cb.ctx, cesarId);
     const cesarEngineDef: any = resolvedBackend.engine;
     const usingApiBackend = resolvedBackend.backend === 'api';
+    // API-backed Cesar previously skipped the same-engine retry entirely and
+    // jumped straight to acting-Cesar, which made transient mid-tool failures
+    // (engine drops the stream after a Read/Edit) feel like Cesar froze.
+    // Try one silent same-engine retry first so the user perceives a hiccup-
+    // free continuation instead of a fallback.
+    if (usingApiBackend) {
+      try {
+        const retried = await handleCesarBrain(input, cb.dispatch, cb.ctx, []);
+        const retriedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
+        if (retriedPlan && retriedPlan.state === 'awaiting_approval') {
+          cb.setActivePlan(retriedPlan);
+          await handleProposedCesarPlan(retriedPlan, cb);
+          return false;
+        }
+        if (retried.delegated && retried.responded) return true;
+        if (retried.responded) return false;
+      } catch (e) {
+        console.warn(`[agon] dispatch: Cesar API retry failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
     if (!usingApiBackend) {
       try {
         if (cb.ctx.cesarSession) {
           try { cb.ctx.cesarSession.close(); } catch {}
           cb.ctx.setCesarSession(null);
         }
-        cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('rebuild', cesarId) });
+        if (!_silentMode) cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('rebuild', cesarId) });
         const retried = await handleCesarBrain(input, cb.dispatch, cb.ctx, []);
         const retriedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
         if (retriedPlan && retriedPlan.state === 'awaiting_approval') {
@@ -914,7 +935,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
       const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@agon/core');
       const outDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
       mkdirSync(outDir, { recursive: true });
-      cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('retry', cesarId, `log: ${outDir}`) });
+      if (!_silentMode) cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('retry', cesarId, `log: ${outDir}`) });
       const primedPrompt = buildHistoryPrimedPrompt(cb.ctx.chatSession, input);
       const freshResult = await cb.ctx.adapter.dispatch({
         engine: cesarEngine,
@@ -1050,7 +1071,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
     const fallbackMode = normalizeCesarActingFallbackMode((cesarConfig as any).cesarActingFallback);
     if (fallbackMode === 'off') {
       cb.dispatch({ type: 'warning', message: `${cesarId} returned no response. Cross-engine acting-Cesar fallback is off; staying on ${cesarId}.` });
-      cb.dispatch({ type: 'info', message: 'Enable fallback with /config set cesarActingFallback ask or /config set cesarActingFallback auto.' });
+      cb.dispatch({ type: 'info', message: 'Enable fallback with /config set cesarActingFallback auto.' });
       return false;
     }
 
@@ -1070,7 +1091,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
       }
     }
 
-    cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('acting', actingCesar, `${cesarId} unavailable`) });
+    if (!_silentMode) cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('acting', actingCesar, `${cesarId} unavailable`) });
 
     // Build context so acting Cesar can lead
     const historyContext = formatChatContextForPrompt(cb.ctx.chatSession, {
@@ -1088,7 +1109,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
       const actingEngine = cb.ctx.registry.get(actingCesar);
       const outDir = join(RUNS_DIR, `acting-cesar-${Date.now()}`);
       mkdirSync(outDir, { recursive: true });
-      cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('acting', actingCesar, `log: ${outDir}`) });
+      if (!_silentMode) cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('acting', actingCesar, `log: ${outDir}`) });
       const actingResult = await cb.ctx.adapter.dispatch({
         engine: actingEngine,
         prompt: actingPrompt,
@@ -1100,9 +1121,19 @@ You still own the overall task. Integrate the forged slice with the rest of the 
       });
       if (actingResult.stdout.trim()) {
         const actingText = actingResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
-        cb.dispatch({ type: 'engine-block', engineId: actingCesar, color: 208, content: actingText });
+        // In silent/auto mode the user perceives a single Cesar persona, so
+        // attribute the rendered block as the configured Cesar engine and
+        // drop the [acting-cesar] tag from the chat history. The actual
+        // dispatched engine is still recorded in the run output dir.
+        const attributedEngineId = _silentMode ? cesarId : actingCesar;
+        cb.dispatch({ type: 'engine-block', engineId: attributedEngineId, color: 208, content: actingText });
         appendUserTurnIfAbsent(cb.ctx.chatSession, input);
-        appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: actingCesar, content: `[acting-cesar] ${actingText}`, timestamp: new Date().toISOString() });
+        appendMessage(cb.ctx.chatSession, {
+          role: 'engine',
+          engineId: attributedEngineId,
+          content: _silentMode ? actingText : `[acting-cesar] ${actingText}`,
+          timestamp: new Date().toISOString(),
+        });
         return false;
       }
     } catch (e) { console.warn(`[agon] dispatch: acting Cesar failed: ${e instanceof Error ? e.message : String(e)}`); }

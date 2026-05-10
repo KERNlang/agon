@@ -1113,7 +1113,9 @@ export function App() {
             dispatch({ type: 'info', message: 'No active work for /btw. Ask normally without the /btw prefix.' } as any);
             return;
           }
-          if (replState !== 'idle' && !jobManager.running().length) {
+          const isPlanAwaitingControl = activePlanRef.current?.state === 'awaiting_approval'
+            && (input === '/approve' || input === '/cancel');
+          if (replState !== 'idle' && !jobManager.running().length && !isPlanAwaitingControl) {
             setInputQueue((prev: string[]) => [...prev, input]);
             dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '\u2026' : input}` } as any);
             return;
@@ -1524,6 +1526,12 @@ export function App() {
         return;
       case 'submit':
         handleSubmit(action.value); return;
+      case 'planControl':
+        // Swallow the y/n keystroke so PromptTextInput does not insert it
+        // into the composer after we route the approval.
+        ctrlKeyHandledRef.current = true;
+        handleSubmit(action.action === 'approve' ? '/approve' : '/cancel');
+        return;
       case 'toggleToolExpand':
         ctrlKeyHandledRef.current = true;
         setToolOutputExpanded((prev: boolean) => !prev); return;
@@ -4866,7 +4874,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4622
+// @kern-source: app:4630
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

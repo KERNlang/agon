@@ -8,6 +8,8 @@ import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
 import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@agon/core';
 
+import { resolveBuiltinEnginesDir } from '../../lib/engines-dir.js';
+
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
 
 import type { EngineProgress } from '../../handlers/types.js';
@@ -2328,7 +2330,7 @@ export function App() {
   );
 }
 
-// @kern-source: app:64
+// @kern-source: app:65
 export function isMutatingToolCall(event: any): boolean {
   if (!event || event.type !== 'tool-call') return false;
   const toolKey = String(event.tool ?? '').toLowerCase();
@@ -2350,21 +2352,21 @@ export function isMutatingToolCall(event: any): boolean {
   }
 }
 
-// @kern-source: app:86
+// @kern-source: app:87
 export function shortToolPath(filePath: string): string {
   return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~');
 }
 
-// @kern-source: app:88
+// @kern-source: app:89
 export function isCesarTelemetryLine(message: string): boolean {
   const text = String(message ?? '').trim();
   return text.startsWith('Cesar route:') || text.startsWith('What happened:');
 }
 
-// @kern-source: app:93
+// @kern-source: app:94
 export const _telemetryResourceSample: any = ({ lastCpu: null, lastAt: 0 });
 
-// @kern-source: app:95
+// @kern-source: app:96
 function sampleLocalResourceVitals(): {cpuPercent:number,memPercent:number} {
   const now = Date.now();
   const current = process.cpuUsage();
@@ -2383,7 +2385,7 @@ function sampleLocalResourceVitals(): {cpuPercent:number,memPercent:number} {
   return { cpuPercent, memPercent };
 }
 
-// @kern-source: app:114
+// @kern-source: app:115
 function sampleEngineProcessVitals(engine: any, exactPid?: number|null): {cpuPercent?:number,memPercent?:number,processCount?:number,taskDetail?:string} {
   const pid = Number(exactPid ?? 0);
   if (Number.isFinite(pid) && pid > 0) {
@@ -2435,7 +2437,7 @@ function sampleEngineProcessVitals(engine: any, exactPid?: number|null): {cpuPer
   }
 }
 
-// @kern-source: app:166
+// @kern-source: app:167
 async function probeEngineVitals(registry: any, engineId: string, session?: PersistentSession|null, activePids?: Map<string,number>): Promise<Partial<EngineVitals>> {
   const started = Date.now();
   const localResources = sampleLocalResourceVitals();
@@ -2479,7 +2481,7 @@ async function probeEngineVitals(registry: any, engineId: string, session?: Pers
   };
 }
 
-// @kern-source: app:210
+// @kern-source: app:211
 export function parseToolCallPayload(event: any): any {
   const rawInput = String(event?.input ?? '');
   let parsed: Record<string, unknown> = {};
@@ -2495,7 +2497,7 @@ export function parseToolCallPayload(event: any): any {
   };
 }
 
-// @kern-source: app:226
+// @kern-source: app:227
 export function formatConfidenceToolLabel(parsed: any, rawInput: string): string {
   const rawValue = parsed?.value ?? parsed?.confidence ?? parsed?.score;
   let value = Number(rawValue);
@@ -2514,7 +2516,7 @@ export function formatConfidenceToolLabel(parsed: any, rawInput: string): string
   return 'confidence';
 }
 
-// @kern-source: app:245
+// @kern-source: app:246
 export function extractPatchText(rawInput: string, parsed: any): string {
   const values = [
     parsed?.patch,
@@ -2538,7 +2540,7 @@ export function extractPatchText(rawInput: string, parsed: any): string {
   return values[0] ?? '';
 }
 
-// @kern-source: app:269
+// @kern-source: app:270
 export function parsePatchPreview(rawInput: string, parsed: any): { files:string[]; lines:string[]; additions:number; deletions:number } {
   const patchText = extractPatchText(rawInput, parsed);
   const files: string[] = [];
@@ -2587,7 +2589,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: app:318
+// @kern-source: app:319
 export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   if (lineCount <= 0) return { head: 0, tail: 0, skipped: 0 };
   if (expanded) return { head: lineCount, tail: 0, skipped: 0 };
@@ -2605,7 +2607,7 @@ export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   };
 }
 
-// @kern-source: app:336
+// @kern-source: app:337
 export function toolCallSupportsDetailView(event: any): boolean {
   if (!event || event.type !== 'tool-call') return false;
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
@@ -2625,7 +2627,7 @@ export function toolCallSupportsDetailView(event: any): boolean {
   return rawInput.length > 160 || outputText.length > 400;
 }
 
-// @kern-source: app:356
+// @kern-source: app:357
 export function detailViewerSupportsEvent(event: any): boolean {
   if (!event) {
     return false;
@@ -2637,12 +2639,12 @@ export function detailViewerSupportsEvent(event: any): boolean {
   return toolCallSupportsDetailView(event);
 }
 
-// @kern-source: app:365
+// @kern-source: app:366
 export function toolDetailViewportRows(termHeight: number): number {
   return Math.max(8, Math.min(18, termHeight - 14));
 }
 
-// @kern-source: app:367
+// @kern-source: app:368
 export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -2662,7 +2664,7 @@ export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
-// @kern-source: app:387
+// @kern-source: app:388
 export function findLatestToolEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -2681,7 +2683,7 @@ export function findLatestToolEvent(blocks: OutputBlock[]): any {
 /**
  * Count visible tool activity, touched files, and queued messages for the live execution rail.
  */
-// @kern-source: app:403
+// @kern-source: app:404
 export function buildExecutionRailStats(blocks: OutputBlock[], files: any[], queueCount: number): any {
   let toolCount = 0;
   let failedToolCount = 0;
@@ -2715,15 +2717,15 @@ export function buildExecutionRailStats(blocks: OutputBlock[], files: any[], que
   };
 }
 
-// @kern-source: app:438
+// @kern-source: app:439
 export const COMPOSER_HISTORY_LIMIT: number = 200;
 
-// @kern-source: app:440
+// @kern-source: app:441
 export function composerHistoryPath(): string {
   return join(getAgonHome(), 'composer-history.json');
 }
 
-// @kern-source: app:442
+// @kern-source: app:443
 export function loadComposerInputHistory(): string[] {
   try {
     const parsed = JSON.parse(readFileSync(composerHistoryPath(), 'utf-8'));
@@ -2736,7 +2738,7 @@ export function loadComposerInputHistory(): string[] {
   }
 }
 
-// @kern-source: app:455
+// @kern-source: app:456
 export function saveComposerInputHistory(history: string[]): void {
   try {
     ensureAgonHome();
@@ -2747,7 +2749,7 @@ export function saveComposerInputHistory(history: string[]): void {
   }
 }
 
-// @kern-source: app:466
+// @kern-source: app:467
 export function findLatestFailedToolEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -2763,7 +2765,7 @@ export function findLatestFailedToolEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
-// @kern-source: app:482
+// @kern-source: app:483
 export function buildFailedToolRetryDraft(event: any): string {
   if (!event) return '';
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
@@ -2778,7 +2780,7 @@ export function buildFailedToolRetryDraft(event: any): string {
   return `retry the failed ${toolName} call with corrected input:\n${payload}${suffix}`;
 }
 
-// @kern-source: app:497
+// @kern-source: app:498
 export function buildToolDetailView(event: any): any {
   if (!event) {
     return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };
@@ -2991,26 +2993,25 @@ export function buildToolDetailView(event: any): any {
   };
 }
 
-// @kern-source: app:711
+// @kern-source: app:712
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:713
+// @kern-source: app:714
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:715
+// @kern-source: app:716
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:717
+// @kern-source: app:718
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:719
+// @kern-source: app:720
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:721
+// @kern-source: app:722
 export function createInitialRegistry(): EngineRegistry {
   const reg = new EngineRegistry();
-  const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines');
-  reg.load(engDir);
+  reg.load(resolveBuiltinEnginesDir());
   return reg;
 }
 

@@ -1,4 +1,17 @@
 import { defineConfig } from 'tsup';
+import { copyFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+
+function copyEngines(outDir: string) {
+  const src = join(process.cwd(), '..', '..', 'engines');
+  const dest = join(outDir, 'engines');
+  mkdirSync(dest, { recursive: true });
+  for (const file of readdirSync(src)) {
+    if (file.endsWith('.json')) {
+      copyFileSync(join(src, file), join(dest, file));
+    }
+  }
+}
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -14,5 +27,8 @@ export default defineConfig({
   ],
   banner: {
     js: '#!/usr/bin/env node',
+  },
+  async onSuccess() {
+    copyEngines(join(process.cwd(), 'dist'));
   },
 });

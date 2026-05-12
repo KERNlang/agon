@@ -10,31 +10,25 @@ import from="../cesar/brain.js" names="yieldToInk"
 const name=_cachedCwd type="{value:string|null}" value={{ { value: null } }}
 
 fn name=cachedCwd returns=string export=false
-  handler <<<
-    if (_cachedCwd.value === null) {
-      _cachedCwd.value = resolveWorkingDir();
-    }
-    return _cachedCwd.value;
-  >>>
+  handler lang="kern"
+    if cond="_cachedCwd.value === null"
+      assign target="_cachedCwd.value" value="resolveWorkingDir()"
+    return value="_cachedCwd.value"
 
 fn name=invalidateCwdCache returns=void expr={{ _cachedCwd.value = null; }}
   doc "Call when workspace changes (e.g. /workspace switch)."
 
 fn name=detectTargetEngine params="input:string, availableIds:string[]" returns="{engineId:string|null,message:string}" export=false
-  handler <<<
-    const lower = input.toLowerCase();
-    for (const id of availableIds) {
-      if (lower.startsWith(id + ' ') || lower.startsWith(id + ',') || lower.startsWith(id + ':')) {
-        return { engineId: id, message: input.slice(id.length).replace(/^[,:\s]+/, '').trim() || input };
-      }
-      const heyPattern = new RegExp(`^(?:hey|yo|ok)\\s+${id}\\b[,:]?\\s*`, 'i');
-      const heyMatch = input.match(heyPattern);
-      if (heyMatch) {
-        return { engineId: id, message: input.slice(heyMatch[0].length).trim() || input };
-      }
-    }
-    return { engineId: null, message: input };
-  >>>
+  handler lang="kern"
+    let name=lower value="input.toLowerCase()"
+    each name=id in="availableIds"
+      if cond="lower.startsWith(id + ' ') || lower.startsWith(id + ',') || lower.startsWith(id + ':')"
+        return value="{ engineId: id, message: input.slice(id.length).replace(/^[,:\\s]+/, '').trim() || input }"
+      let name=heyPattern value="new RegExp(`^(?:hey|yo|ok)\\\\s+${id}\\\\b[,:]?\\\\s*`, 'i')"
+      let name=heyMatch value="input.match(heyPattern)"
+      if cond="heyMatch"
+        return value="{ engineId: id, message: input.slice(heyMatch[0].length).trim() || input }"
+    return value="{ engineId: null, message: input }"
 
 fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, images?:ImageAttachment[], opts?:{toolPolicy?:'full'|'none'}" returns="Promise<void>" async=true
   signal name=abort

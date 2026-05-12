@@ -13,6 +13,8 @@ import { doctorCommand } from './commands/doctor.js';
 import { modelsCommand } from './commands/models.js';
 import { configCommand } from './commands/config.js';
 import { providerCommand } from './commands/provider.js';
+import { reviewCommand } from './commands/review.js';
+import { callCommand } from './commands/call.js';
 import { startRepl } from './repl.js';
 import { runOnboarding } from './onboarding.js';
 import { loadConfig, loadAllAuthKeys } from '@agon/core';
@@ -81,6 +83,8 @@ const main = defineCommand({
     models: modelsCommand,
     provider: providerCommand,
     config: configCommand,
+    review: reviewCommand,
+    call: callCommand,
   },
 });
 

@@ -222,26 +222,27 @@ export const callCommand = defineCommand({
     },
   },
   async run({ args }) {
-    let built: BuiltCallCommands;
-    try {
-      built = buildCallCommands({
-        workflow: args.workflow,
-        input: args.input,
-        team: args.team,
-        engines: args.engines,
-        fitnessCmd: args.test,
-        rounds: args.rounds,
-        tribunalMode: args.tribunalMode,
-        members: args.members,
-        cwd: args.cwd,
-        engineTimeout: args.timeout,
-        strategy: args.strategy,
-        lead: args.lead,
-      });
-    } catch (err) {
-      fail(err instanceof Error ? err.message : String(err));
-      process.exit(1);
-    }
+    const built: BuiltCallCommands = (() => {
+      try {
+        return buildCallCommands({
+          workflow: args.workflow,
+          input: args.input,
+          team: args.team,
+          engines: args.engines,
+          fitnessCmd: args.test,
+          rounds: args.rounds,
+          tribunalMode: args.tribunalMode,
+          members: args.members,
+          cwd: args.cwd,
+          engineTimeout: args.timeout,
+          strategy: args.strategy,
+          lead: args.lead,
+        });
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    })();
 
     const script = process.argv[1];
     if (!script) {

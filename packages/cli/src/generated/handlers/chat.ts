@@ -28,12 +28,12 @@ function cachedCwd(): string {
 /**
  * Call when workspace changes (e.g. /workspace switch).
  */
-// @kern-source: chat:20
+// @kern-source: chat:18
 export function invalidateCwdCache(): void {
   _cachedCwd.value = null;
 }
 
-// @kern-source: chat:23
+// @kern-source: chat:21
 function detectTargetEngine(input: string, availableIds: string[]): {engineId:string|null,message:string} {
   const lower = input.toLowerCase();
   for (const id of availableIds) {
@@ -49,7 +49,7 @@ function detectTargetEngine(input: string, availableIds: string[]): {engineId:st
   return { engineId: null, message: input };
 }
 
-// @kern-source: chat:39
+// @kern-source: chat:33
 export async function handleChat(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[], opts?: {toolPolicy?:'full'|'none'}): Promise<void> {
   const abort = new AbortController();
   try {

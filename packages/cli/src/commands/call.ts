@@ -35,6 +35,11 @@ function requireInput(workflow: string, input: string | undefined): string {
   return text;
 }
 
+function exitWithFailure(message: string): never {
+  fail(message);
+  process.exit(1);
+}
+
 export function normalizeCallWorkflow(workflow: string): string {
   return workflow.trim().toLowerCase().replace(/_/g, '-');
 }
@@ -222,32 +227,29 @@ export const callCommand = defineCommand({
     },
   },
   async run({ args }) {
-    const built: BuiltCallCommands = (() => {
-      try {
-        return buildCallCommands({
-          workflow: args.workflow,
-          input: args.input,
-          team: args.team,
-          engines: args.engines,
-          fitnessCmd: args.test,
-          rounds: args.rounds,
-          tribunalMode: args.tribunalMode,
-          members: args.members,
-          cwd: args.cwd,
-          engineTimeout: args.timeout,
-          strategy: args.strategy,
-          lead: args.lead,
-        });
-      } catch (err) {
-        fail(err instanceof Error ? err.message : String(err));
-        process.exit(1);
-      }
-    })();
+    let built: BuiltCallCommands;
+    try {
+      built = buildCallCommands({
+        workflow: args.workflow,
+        input: args.input,
+        team: args.team,
+        engines: args.engines,
+        fitnessCmd: args.test,
+        rounds: args.rounds,
+        tribunalMode: args.tribunalMode,
+        members: args.members,
+        cwd: args.cwd,
+        engineTimeout: args.timeout,
+        strategy: args.strategy,
+        lead: args.lead,
+      });
+    } catch (err) {
+      exitWithFailure(err instanceof Error ? err.message : String(err));
+    }
 
     const script = process.argv[1];
     if (!script) {
-      fail('Unable to resolve current Agon CLI entry script.');
-      process.exit(1);
+      exitWithFailure('Unable to resolve current Agon CLI entry script.');
     }
 
     if (!args.jsonl) {

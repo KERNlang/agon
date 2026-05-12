@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
@@ -292,7 +292,8 @@ describe('Engine Registry Integration', () => {
     registry.load(join(process.cwd(), 'engines'));
 
     const ids = registry.listIds();
-    expect(ids.length).toBeGreaterThanOrEqual(10);
+    const engineConfigCount = readdirSync(join(process.cwd(), 'engines')).filter((f) => f.endsWith('.json')).length;
+    expect(ids.length).toBe(engineConfigCount);
     expect(ids).toContain('claude');
     expect(ids).toContain('codex');
     expect(ids).toContain('gemini');

@@ -38,6 +38,7 @@ function requireInput(workflow: string, input: string | undefined): string {
 function exitWithFailure(message: string): never {
   fail(message);
   process.exit(1);
+  throw new Error('process.exit returned unexpectedly');
 }
 
 export function normalizeCallWorkflow(workflow: string): string {

@@ -1061,6 +1061,109 @@ describe('Forge E2E', () => {
     }
   });
 
+  it('does not rank empty brainstorm replies as usable drafts', async () => {
+    const agonHome = setupTestAgonHome('brainstorm-empty-draft');
+    const outputDir = join(tmpdir(), `agon-brainstorm-empty-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(outputDir, { recursive: true });
+
+    const adapter: EngineAdapter = {
+      dispatch: async (options): Promise<DispatchResult> => {
+        if (options.prompt.includes('Multiple AI engines analyzed this')) {
+          return { exitCode: 0, stdout: 'synthesized answer', stderr: '', durationMs: 1, timedOut: false };
+        }
+        if (options.engine.id === 'empty') {
+          return { exitCode: 0, stdout: '', stderr: '', durationMs: 1, timedOut: false };
+        }
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ approach: 'Use a queue', reasoning: 'It decouples work', confidence: 80 }),
+          stderr: '',
+          durationMs: 1,
+          timedOut: false,
+        };
+      },
+      isAvailable: async () => true,
+      getVersion: async () => 'test',
+    };
+
+    try {
+      vi.resetModules();
+      const { EngineRegistry } = await import('../../packages/core/src/index.js');
+      const { runBrainstorm } = await import('../../packages/forge/src/index.js');
+      const registry = new EngineRegistry();
+      registry.register(makeEngine('empty'));
+      registry.register(makeEngine('solid'));
+
+      const result = await runBrainstorm({
+        question: 'How should jobs run?',
+        engines: ['empty', 'solid'],
+        registry,
+        adapter,
+        timeout: 5,
+        outputDir,
+      });
+
+      expect(result.winner).toBe('solid');
+      expect(result.response).toBe('synthesized answer');
+      expect(result.bids.find((b) => b.engineId === 'empty')?.confidence).toBe(0);
+    } finally {
+      cleanupTestAgonHome(agonHome);
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to debate text when tribunal summary engine returns empty output', async () => {
+    const agonHome = setupTestAgonHome('tribunal-empty-summary');
+    const outputDir = join(tmpdir(), `agon-tribunal-empty-summary-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(outputDir, { recursive: true });
+    const callsByEngine = new Map<string, number>();
+
+    const adapter: EngineAdapter = {
+      dispatch: async (options): Promise<DispatchResult> => {
+        const calls = (callsByEngine.get(options.engine.id) ?? 0) + 1;
+        callsByEngine.set(options.engine.id, calls);
+        if (options.engine.id === 'empty-summary' && calls > 1) {
+          return { exitCode: 0, stdout: '', stderr: '', durationMs: 1, timedOut: false };
+        }
+        return {
+          exitCode: 0,
+          stdout: `${options.engine.id} argues that the deterministic path should ship first.`,
+          stderr: '',
+          durationMs: 1,
+          timedOut: false,
+        };
+      },
+      isAvailable: async () => true,
+      getVersion: async () => 'test',
+    };
+
+    try {
+      vi.resetModules();
+      const { EngineRegistry } = await import('../../packages/core/src/index.js');
+      const { runTribunal } = await import('../../packages/forge/src/index.js');
+      const registry = new EngineRegistry();
+      registry.register(makeEngine('empty-summary'));
+      registry.register(makeEngine('arguer'));
+
+      const result = await runTribunal({
+        question: 'Should we ship narrative reviews first?',
+        engines: ['empty-summary', 'arguer'],
+        rounds: 1,
+        registry,
+        adapter,
+        timeout: 5,
+        outputDir,
+      });
+
+      expect(result.summary).toContain('**empty-summary');
+      expect(result.summary).toContain('deterministic path should ship first');
+      expect(result.rounds[0].positions).toHaveLength(2);
+    } finally {
+      cleanupTestAgonHome(agonHome);
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
   it('runs multiline node -e fitness checks that contain markdown fences', async () => {
     const repoDir = createRepo('node-e-markdown-fence');
     const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);

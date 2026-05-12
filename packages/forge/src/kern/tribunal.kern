@@ -1,5 +1,5 @@
 import from="node:crypto" names="randomUUID"
-import from="@agon/core" names="EngineAdapter,EngineDefinition,ForgeEvent" types=true
+import from="@agon/core" names="EngineAdapter,EngineDefinition,ForgeEvent,DispatchResult" types=true
 import from="@agon/core" names="EngineRegistry,buildTribunalPrompt,createSidechainLogger,updateGlickoRanked,classifyTask,loadConfig"
 import from="./tribunal-modes.js" names="TribunalMode,TribunalModeConfig" types=true
 import from="./tribunal-modes.js" names="getModeConfig,buildModePrompt,buildModeSummaryPrompt"
@@ -25,6 +25,25 @@ fn name=buildFallbackSummary params="positions:TribunalPosition[]" returns="stri
     return positions
       .map((p) => `**${p.engineId} (${p.position})**: ${p.arguments[p.arguments.length - 1]?.slice(0, 200) ?? '(no response)'}...`)
       .join('\n\n');
+  >>>
+
+fn name=requireNonEmptyDispatchText params="result:DispatchResult, phase:string" returns=string
+  handler <<<
+    const cleaned = String(result.stdout ?? '').trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+    if (result.exitCode !== 0) {
+      const detail = result.stderr?.trim() || `exit ${result.exitCode}`;
+      throw Object.assign(new Error(`${phase} failed: ${detail}`), {
+        stdout: result.stdout,
+        stderr: result.stderr,
+      });
+    }
+    if (!cleaned) {
+      throw Object.assign(new Error(`${phase} returned empty response`), {
+        stdout: result.stdout,
+        stderr: result.stderr,
+      });
+    }
+    return cleaned;
   >>>
 
 fn name=runTribunal async=true params="opts:{question:string, engines:string[], rounds:number, mode?:TribunalMode, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void, signal?:AbortSignal}" returns="Promise<TribunalResult>"
@@ -106,7 +125,7 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
             outputDir,
             signal,
           });
-          const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+          const cleaned = requireNonEmptyDispatchText(result, `tribunal ${pos.engineId} round ${round}`);
           return { engineId: pos.engineId, argument: cleaned };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -167,7 +186,7 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
         timeout,
         outputDir,
       });
-      summary = summaryResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+      summary = requireNonEmptyDispatchText(summaryResult, 'tribunal summary');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const snippet = (err as any)?.stdout

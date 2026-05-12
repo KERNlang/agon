@@ -17,43 +17,60 @@ const name=ORCHESTRATION_TOOLS type="Array<{name:string,description:string,input
     ([
       {
         name: 'Tribunal',
-        description: 'Delegate to AI tribunal debate — engines argue positions, produce a verdict. After calling: STOP responding.',
+        description: 'Run or delegate an AI tribunal debate. Outside an active Agon session this executes agon tribunal/team-tribunal and returns JSON output; inside Agon it signals Cesar, then you STOP responding.',
         inputSchema: {
           type: 'object',
           properties: {
             question: { type: 'string', description: 'The question to debate' },
             mode: { type: 'string', description: 'Debate mode: adversarial, synthesis, steelman, socratic, red-team, or postmortem', enum: ['adversarial', 'synthesis', 'steelman', 'socratic', 'red-team', 'postmortem'] },
             team: { type: 'boolean', description: 'Solo (false) or team-tribunal (true). Defaults to false.' },
+            engines: { type: 'array', items: { type: 'string' }, description: 'Optional engine IDs, e.g. ["codex","claude","gemini"].' },
+            rounds: { type: 'number', description: 'Optional number of debate rounds. Defaults to 2.' },
+            members: { type: 'number', description: 'Team members per side when team is true. Defaults to 2.' },
+            cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' },
+            timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' },
+            engineTimeout: { type: 'number', description: 'Per-engine timeout in seconds.' },
           },
           required: ['question'],
         },
       },
       {
         name: 'Brainstorm',
-        description: 'Delegate to multi-AI brainstorm — multiple engines provide competing perspectives. After calling: STOP responding.',
+        description: 'Run or delegate multi-AI brainstorm. Outside an active Agon session this executes agon brainstorm/team-brainstorm and returns JSON output; inside Agon it signals Cesar, then you STOP responding.',
         inputSchema: {
           type: 'object',
           properties: {
             question: { type: 'string', description: 'The question to brainstorm on' },
             team: { type: 'boolean', description: 'Solo (false) or team-brainstorm (true). Defaults to false.' },
+            engines: { type: 'array', items: { type: 'string' }, description: 'Optional engine IDs, e.g. ["codex","claude","gemini"].' },
+            members: { type: 'number', description: 'Team members per side when team is true. Defaults to 2.' },
+            cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' },
+            timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' },
+            engineTimeout: { type: 'number', description: 'Per-engine timeout in seconds.' },
           },
           required: ['question'],
         },
       },
       {
         name: 'Campfire',
-        description: 'Open a campfire discussion — all AIs think together collaboratively. After calling: STOP responding.',
+        description: 'Run or delegate campfire discussion. Outside an active Agon session this executes agon campfire and returns JSON output; inside Agon it signals Cesar, then you STOP responding.',
         inputSchema: {
           type: 'object',
           properties: {
             topic: { type: 'string', description: 'The topic for open discussion' },
+            engines: { type: 'array', items: { type: 'string' }, description: 'Optional engine IDs, e.g. ["codex","claude","gemini"].' },
+            strategy: { type: 'string', description: 'Campfire strategy: lead-first or all-respond', enum: ['lead-first', 'all-respond'] },
+            lead: { type: 'string', description: 'Lead engine for lead-first strategy.' },
+            cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' },
+            timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' },
+            engineTimeout: { type: 'number', description: 'Per-engine timeout in seconds.' },
           },
           required: ['topic'],
         },
       },
       {
         name: 'Forge',
-        description: 'Delegate to competitive forge — multiple engines solve independently, best wins. After calling: STOP responding.',
+        description: 'Run or delegate competitive forge. Outside an active Agon session this executes agon forge/team-forge and returns JSON output; inside Agon it signals Cesar, then you STOP responding.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -61,31 +78,43 @@ const name=ORCHESTRATION_TOOLS type="Array<{name:string,description:string,input
             fitnessCmd: { type: 'string', description: 'Test command for fitness evaluation' },
             hardened: { type: 'boolean', description: 'Set true for gauntlet verification' },
             team: { type: 'boolean', description: 'Solo (false) or team-forge (true). Defaults to false.' },
+            engines: { type: 'array', items: { type: 'string' }, description: 'Optional engine IDs, e.g. ["codex","claude","gemini"].' },
+            members: { type: 'number', description: 'Team members per side when team is true. Defaults to 2.' },
+            cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' },
+            timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' },
+            engineTimeout: { type: 'number', description: 'Per-engine timeout in seconds.' },
           },
           required: ['task'],
         },
       },
       {
         name: 'Pipeline',
-        description: 'Delegate to full pipeline: brainstorm → forge → tribunal. After calling: STOP responding.',
+        description: 'Run or delegate the full pipeline: brainstorm → forge → tribunal. Outside an active Agon session this executes the CLI stages and returns JSON output; inside Agon it signals Cesar, then you STOP responding.',
         inputSchema: {
           type: 'object',
           properties: {
             task: { type: 'string', description: 'The task description' },
             fitnessCmd: { type: 'string', description: 'Test command for fitness evaluation' },
+            engines: { type: 'array', items: { type: 'string' }, description: 'Optional engine IDs, e.g. ["codex","claude","gemini"].' },
+            mode: { type: 'string', description: 'Tribunal mode for the final pipeline review.', enum: ['adversarial', 'synthesis', 'steelman', 'socratic', 'red-team', 'postmortem'] },
+            cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' },
+            timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' },
+            engineTimeout: { type: 'number', description: 'Per-engine timeout in seconds.' },
           },
           required: ['task'],
         },
       },
       {
         name: 'Review',
-        description: 'Delegate to code review. Set engine only when the user explicitly names one; set engines when the user explicitly names multiple reviewers; otherwise omit both and let Agon auto-select. After calling: STOP responding.',
+        description: 'Run or delegate code review. Outside an active Agon session this executes agon review and returns JSON output; inside Agon it signals Cesar, then you STOP responding. Set engine/engines only when explicitly requested.',
         inputSchema: {
           type: 'object',
           properties: {
             target: { type: 'string', description: 'Review target: "uncommitted", "branch:NAME", or "commit:SHA"' },
             engine: { type: 'string', description: 'Specific engine for review, only when explicitly requested by the user' },
             engines: { type: 'array', items: { type: 'string' }, description: 'Multiple specific engines for review, only when explicitly requested by the user' },
+            cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' },
+            timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' },
           },
         },
       },
@@ -246,6 +275,19 @@ fn name=parseOptionalStringList params="value:unknown" returns="string[]" export
     return String(value).split(',').map((v) => v.trim()).filter(Boolean);
   >>>
 
+fn name=parseOptionalBoolean params="value:unknown" returns=boolean export=false
+  handler <<<
+    if (value === true) return true;
+    if (value === false || value == null) return false;
+    return ['1', 'true', 'yes', 'team'].includes(String(value).trim().toLowerCase());
+  >>>
+
+fn name=optionalFlag params="flag:string,value:unknown" returns="string[]" export=false
+  handler <<<
+    const text = value == null ? '' : String(value).trim();
+    return text ? [flag, text] : [];
+  >>>
+
 fn name=buildDirectAgonCommand params="tool:string,args:Record<string,unknown>" returns="{commands:string[][],cwd:string,timeoutMs:number}"
   doc "Translate an external MCP orchestration call into one or more Agon CLI invocations. Used only when the server is running outside an active Agon session."
   handler <<<
@@ -254,31 +296,35 @@ fn name=buildDirectAgonCommand params="tool:string,args:Record<string,unknown>" 
     const timeoutMs = Math.max(1, timeoutSec) * 1000;
     const engines = parseOptionalStringList((args as any).engines ?? (args as any).engine);
     const engineArgs = engines.length > 0 ? ['--engines', engines.join(',')] : [];
+    const team = parseOptionalBoolean((args as any).team);
+    const membersArgs = optionalFlag('--members', (args as any).members ?? (args as any).membersPerSide);
+    const roundsArgs = optionalFlag('--rounds', (args as any).rounds);
+    const modeArgs = optionalFlag('--tribunalMode', (args as any).mode);
+    const engineTimeoutArgs = optionalFlag('--timeout', (args as any).engineTimeout ?? (args as any).timeoutPerEngine);
+    const cwdArgs = optionalFlag('--cwd', cwd);
+    const jsonlArgs = ['--jsonl'];
     const commands: string[][] = [];
 
     if (tool === 'Forge') {
       const task = String((args as any).task ?? '').trim();
       const fitness = String((args as any).fitnessCmd ?? (args as any).fitness ?? 'true').trim() || 'true';
-      commands.push(['forge', task, '--test', fitness, ...engineArgs]);
+      commands.push(['call', team ? 'team-forge' : 'forge', task, '--test', fitness, ...cwdArgs, ...membersArgs, ...engineTimeoutArgs, ...engineArgs, ...jsonlArgs]);
     } else if (tool === 'Brainstorm') {
       const question = String((args as any).question ?? '').trim();
-      commands.push(['brainstorm', question, ...engineArgs]);
+      commands.push(['call', team ? 'team-brainstorm' : 'brainstorm', question, ...cwdArgs, ...membersArgs, ...engineTimeoutArgs, ...engineArgs, ...jsonlArgs]);
     } else if (tool === 'Tribunal') {
       const question = String((args as any).question ?? '').trim();
-      const rounds = String((args as any).rounds ?? '2');
-      commands.push(['tribunal', question, '--rounds', rounds, ...engineArgs]);
+      commands.push(['call', team ? 'team-tribunal' : 'tribunal', question, ...cwdArgs, ...roundsArgs, ...modeArgs, ...membersArgs, ...engineTimeoutArgs, ...engineArgs, ...jsonlArgs]);
     } else if (tool === 'Campfire') {
       const topic = String((args as any).topic ?? '').trim();
-      commands.push(['campfire', topic, ...engineArgs]);
+      commands.push(['call', 'campfire', topic, ...cwdArgs, ...optionalFlag('--strategy', (args as any).strategy), ...optionalFlag('--lead', (args as any).lead), ...engineTimeoutArgs, ...engineArgs, ...jsonlArgs]);
     } else if (tool === 'Pipeline') {
       const task = String((args as any).task ?? '').trim();
       const fitness = String((args as any).fitnessCmd ?? (args as any).fitness ?? 'true').trim() || 'true';
-      commands.push(['brainstorm', task, ...engineArgs]);
-      commands.push(['forge', task, '--test', fitness, ...engineArgs]);
-      commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', '1', ...engineArgs]);
+      commands.push(['call', 'pipeline', task, '--test', fitness, ...cwdArgs, ...roundsArgs, ...modeArgs, ...engineTimeoutArgs, ...engineArgs, ...jsonlArgs]);
     } else if (tool === 'Review') {
       const target = String((args as any).target ?? 'uncommitted').trim();
-      commands.push(['review', target, ...engineArgs]);
+      commands.push(['call', 'review', target, ...cwdArgs, ...engineArgs, ...jsonlArgs]);
     } else {
       throw new Error(`Tool ${tool} cannot run directly outside Agon yet`);
     }
@@ -327,8 +373,8 @@ fn name=runAgonCliDirect params="tool:string,args:Record<string,unknown>" return
         signal: result.signal,
         timedOut: !!result.error && /timed out/i.test(String(result.error.message ?? result.error)),
         durationMs: Date.now() - startedAt,
-        stdout: stdout.slice(-12000),
-        stderr: stderr.slice(-4000),
+        stdout: stdout.slice(-60000),
+        stderr: stderr.slice(-10000),
         error: result.error ? String(result.error.message ?? result.error) : undefined,
       });
       if (result.status !== 0 || result.error) break;

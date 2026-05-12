@@ -66,12 +66,32 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
         signal: opts.signal,
       });
 
-      const draft = parseKernDraft(result.stdout);
-      if (draft) {
-        return { engineId, draft, raw: result.stdout };
+      const raw = String(result.stdout ?? '');
+      if (result.exitCode !== 0 || !raw.trim()) {
+        const detail = result.stderr?.trim()
+          ? `: ${result.stderr.trim().slice(0, 240)}`
+          : (!raw.trim() ? ': empty response' : '');
+        console.warn(`[agon] brainstorm dispatch (${engineId}) returned no usable draft${detail}`);
+        return {
+          engineId,
+          draft: {
+            approach: 'Failed to respond',
+            reasoning: '',
+            tradeoffs: [],
+            confidence: 0,
+            keyFiles: [],
+            steps: [],
+          } satisfies KernDraft,
+          raw,
+        };
       }
 
-      return { engineId, draft: fallbackParse(result.stdout), raw: result.stdout };
+      const draft = parseKernDraft(raw);
+      if (draft) {
+        return { engineId, draft, raw };
+      }
+
+      return { engineId, draft: fallbackParse(raw), raw };
     } catch (err) {
       console.warn(`[agon] brainstorm dispatch (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
       return {
@@ -93,7 +113,7 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
   return rankDrafts(drafts);
 }
 
-// @kern-source: brainstorm:90
+// @kern-source: brainstorm:110
 export function scoutScore(bid: ScoutBid): number {
   let score = 0;
   // Confidence: 40% weight (0-40 points)
@@ -107,7 +127,7 @@ export function scoutScore(bid: ScoutBid): number {
   return score;
 }
 
-// @kern-source: brainstorm:104
+// @kern-source: brainstorm:124
 export async function runScout(opts: {question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}> {
   const count = opts.scoutCount ?? 2;
   const scouts = opts.engines.slice(0, count);
@@ -148,7 +168,7 @@ export async function runScout(opts: {question:string, context?:string, engines:
   };
 }
 
-// @kern-source: brainstorm:145
+// @kern-source: brainstorm:165
 export function fallbackParse(output: string): KernDraft {
   const stripped = output.replace(/\x60\x60\x60(?:json)?\s*/gi, '').replace(/\x60\x60\x60/g, '');
   let depth = 0;
@@ -189,7 +209,7 @@ export function fallbackParse(output: string): KernDraft {
   };
 }
 
-// @kern-source: brainstorm:186
+// @kern-source: brainstorm:206
 export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<BrainstormResult> {
   const brainstormId = randomUUID().slice(0, 8);
   const sidechain = createSidechainLogger({
@@ -271,6 +291,12 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
       outputDir: opts.outputDir,
       signal: opts.signal,
     });
+    if (answerResult.exitCode !== 0 || !String(answerResult.stdout ?? '').trim()) {
+      const detail = answerResult.stderr?.trim()
+        ? answerResult.stderr.trim()
+        : (!String(answerResult.stdout ?? '').trim() ? 'empty response' : `exit ${answerResult.exitCode}`);
+      throw new Error(detail);
+    }
     response = answerResult.stdout;
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);

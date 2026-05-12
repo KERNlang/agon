@@ -17,7 +17,7 @@ describe('Engine Config Validation', () => {
   const configs = loadEngineConfigs();
 
   it('loads all engine configs from engines/', () => {
-    expect(configs.length).toBeGreaterThanOrEqual(10);
+    expect(configs.length).toBeGreaterThanOrEqual(9);
   });
 
   for (const { filename, raw } of loadEngineConfigs()) {

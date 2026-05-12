@@ -16,6 +16,7 @@ Agon AI pits the world's best AI engines against each other to solve your softwa
 - [Installation](#installation)
 - [Core Modes](#core-modes)
 - [Interactive REPL](#interactive-repl)
+- [Using Agon from Other CLIs](#using-agon-from-other-clis)
 - [Engines](#engines)
 - [Cesar Routing](#cesar-routing)
 - [Configuration](#configuration)
@@ -148,6 +149,32 @@ Agon > /forge "Extract the routing logic into a separate module"
 [Forge] Winner: Claude 3.7 Sonnet. Applying patch...
 Agon > 
 ```
+
+## Using Agon from Other CLIs
+
+Agon can also be called from other AI CLIs such as Claude Code, Codex, and Gemini. The fastest path is the shell bridge:
+
+```bash
+agon call tribunal "Should we ship this architecture?" --team --tribunalMode red-team
+agon call brainstorm "How should we design the plugin API?" --team
+agon call review
+agon call forge "Implement the cache layer" --test "npm test" --team
+```
+
+`agon call` streams the underlying Agon workflow into the caller's terminal, so the calling CLI can show live progress and the other engines' output. Use `--jsonl` when the caller wants machine-readable lifecycle events:
+
+```bash
+agon call tribunal "Debate the migration plan" --team --jsonl
+```
+
+For MCP-capable clients, Agon also ships a stdio MCP server:
+
+```bash
+claude mcp add -s user agon -- node /path/to/Agon-AI/plugins/agon-orchestrator/scripts/agon-mcp.js
+codex mcp add agon -- node /path/to/Agon-AI/plugins/agon-orchestrator/scripts/agon-mcp.js
+```
+
+After that, clients can call Agon tools such as Tribunal, Brainstorm, Forge, Campfire, Pipeline, and Review directly.
 
 ## Engines
 

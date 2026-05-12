@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { EngineAdapter, EngineDefinition, ForgeEvent } from '@agon/core';
+import type { EngineAdapter, EngineDefinition, ForgeEvent, DispatchResult } from '@agon/core';
 
 import { EngineRegistry, buildTribunalPrompt, createSidechainLogger, updateGlickoRanked, classifyTask, loadConfig } from '@agon/core';
 
@@ -40,6 +40,25 @@ export function buildFallbackSummary(positions: TribunalPosition[]): string {
 }
 
 // @kern-source: tribunal:30
+export function requireNonEmptyDispatchText(result: DispatchResult, phase: string): string {
+  const cleaned = String(result.stdout ?? '').trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+  if (result.exitCode !== 0) {
+    const detail = result.stderr?.trim() || `exit ${result.exitCode}`;
+    throw Object.assign(new Error(`${phase} failed: ${detail}`), {
+      stdout: result.stdout,
+      stderr: result.stderr,
+    });
+  }
+  if (!cleaned) {
+    throw Object.assign(new Error(`${phase} returned empty response`), {
+      stdout: result.stdout,
+      stderr: result.stderr,
+    });
+  }
+  return cleaned;
+}
+
+// @kern-source: tribunal:49
 export async function runTribunal(opts: {question:string, engines:string[], rounds:number, mode?:TribunalMode, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}): Promise<TribunalResult> {
   const { question, engines, rounds, registry, adapter, timeout, outputDir } = opts;
   const signal = opts.signal;
@@ -118,7 +137,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
           outputDir,
           signal,
         });
-        const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+        const cleaned = requireNonEmptyDispatchText(result, `tribunal ${pos.engineId} round ${round}`);
         return { engineId: pos.engineId, argument: cleaned };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -179,7 +198,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
       timeout,
       outputDir,
     });
-    summary = summaryResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+    summary = requireNonEmptyDispatchText(summaryResult, 'tribunal summary');
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const snippet = (err as any)?.stdout

@@ -5,7 +5,8 @@ import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import type { ForgeEvent } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
-import { runTribunal } from '@agon/forge';
+import { isTribunalMode, runTribunal } from '@agon/forge';
+import type { TribunalMode } from '@agon/forge';
 import { header, success, fail, info, bold, cyan, dim, green, yellow } from '../output.js';
 
 export const tribunalCommand = defineCommand({
@@ -29,6 +30,12 @@ export const tribunalCommand = defineCommand({
       type: 'string',
       alias: 'e',
       description: 'Comma-separated engine list',
+    },
+    mode: {
+      type: 'string',
+      alias: 'm',
+      description: 'Tribunal mode (adversarial, synthesis, steelman, socratic, red-team, postmortem)',
+      default: 'adversarial',
     },
     timeout: {
       type: 'string',
@@ -56,6 +63,12 @@ export const tribunalCommand = defineCommand({
     // Cap at 4 engines for readability
     const engines = available.slice(0, 4);
     const rounds = parseInt(args.rounds, 10);
+    const mode = String(args.mode ?? 'adversarial');
+    if (!isTribunalMode(mode)) {
+      fail(`Invalid tribunal mode: ${mode}`);
+      info('Valid modes: adversarial, synthesis, steelman, socratic, red-team, postmortem');
+      process.exit(1);
+    }
 
     const outputDir = join(RUNS_DIR, `tribunal-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
@@ -63,12 +76,14 @@ export const tribunalCommand = defineCommand({
     header(`Tribunal: ${args.question}`);
     info(`Engines: ${engines.join(', ')}`);
     info(`Rounds: ${rounds}`);
+    info(`Mode: ${mode}`);
     console.log('');
 
     const result = await runTribunal({
       question: args.question,
       engines,
       rounds,
+      mode: mode as TribunalMode,
       registry,
       adapter,
       timeout: parseInt(args.timeout, 10),

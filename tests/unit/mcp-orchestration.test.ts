@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { handleWriteToolCall } from '../../packages/mcp/src/generated/agon-orchestration.js';
+import {
+  ORCHESTRATION_TOOLS,
+  buildDirectAgonCommand,
+  handleWriteToolCall,
+} from '../../packages/mcp/src/generated/agon-orchestration.js';
 
 const tempDirs: string[] = [];
 const OLD_ENV = {
@@ -69,5 +73,94 @@ describe('agon orchestration MCP write tools', () => {
       args: { file_path: target, content: 'hello\n' },
     });
     expect(completion.output).toContain('File written:');
+  });
+});
+
+describe('agon orchestration MCP direct command mapping', () => {
+  it('maps external team tribunal calls with mode, rounds, members, and engines', () => {
+    const result = buildDirectAgonCommand('Tribunal', {
+      question: 'Should Cesar route this through Agon?',
+      team: true,
+      mode: 'red-team',
+      rounds: 3,
+      members: 3,
+      engines: ['codex', 'claude', 'gemini'],
+      cwd: '/tmp/project',
+      timeout: 1200,
+      engineTimeout: 180,
+    });
+
+    expect(result.cwd).toBe('/tmp/project');
+    expect(result.timeoutMs).toBe(1_200_000);
+    expect(result.commands).toEqual([
+      [
+        'call',
+        'team-tribunal',
+        'Should Cesar route this through Agon?',
+        '--cwd',
+        '/tmp/project',
+        '--rounds',
+        '3',
+        '--tribunalMode',
+        'red-team',
+        '--members',
+        '3',
+        '--timeout',
+        '180',
+        '--engines',
+        'codex,claude,gemini',
+        '--jsonl',
+      ],
+    ]);
+  });
+
+  it('maps team forge and team brainstorm to their team subcommands', () => {
+    expect(buildDirectAgonCommand('Forge', {
+      task: 'Implement the bridge',
+      fitnessCmd: 'npm test',
+      team: true,
+      members: 2,
+      cwd: '/tmp/project',
+    }).commands[0]).toEqual([
+      'call',
+      'team-forge',
+      'Implement the bridge',
+      '--test',
+      'npm test',
+      '--cwd',
+      '/tmp/project',
+      '--members',
+      '2',
+      '--jsonl',
+    ]);
+
+    expect(buildDirectAgonCommand('Brainstorm', {
+      question: 'Which API should the bridge expose?',
+      team: 'true',
+      membersPerSide: 2,
+      engines: 'codex,claude',
+    }).commands[0]).toEqual([
+      'call',
+      'team-brainstorm',
+      'Which API should the bridge expose?',
+      '--cwd',
+      process.cwd(),
+      '--members',
+      '2',
+      '--engines',
+      'codex,claude',
+      '--jsonl',
+    ]);
+  });
+
+  it('advertises direct-call controls to external MCP clients', () => {
+    const tribunal = ORCHESTRATION_TOOLS.find((tool) => tool.name === 'Tribunal');
+    const properties = tribunal?.inputSchema.properties as Record<string, unknown>;
+
+    expect(properties.mode).toBeTruthy();
+    expect(properties.team).toBeTruthy();
+    expect(properties.engines).toBeTruthy();
+    expect(properties.cwd).toBeTruthy();
+    expect(properties.engineTimeout).toBeTruthy();
   });
 });

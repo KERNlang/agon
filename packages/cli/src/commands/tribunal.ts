@@ -8,6 +8,7 @@ import { createCliAdapter } from '@agon/adapter-cli';
 import { isTribunalMode, runTribunal } from '@agon/forge';
 import type { TribunalMode } from '@agon/forge';
 import { header, success, fail, info, bold, cyan, dim, green, yellow } from '../output.js';
+import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 
 export const tribunalCommand = defineCommand({
   meta: {
@@ -53,7 +54,7 @@ export const tribunalCommand = defineCommand({
     const adapter = createCliAdapter(registry);
     const available = args.engines
       ? args.engines.split(',').map((s) => s.trim())
-      : registry.activeIds(config);
+      : filterDefaultOrchestrationEngines(registry.activeIds(config));
 
     if (available.length < 2) {
       fail('Tribunal needs at least 2 engines. Only found: ' + (available.join(', ') || 'none'));

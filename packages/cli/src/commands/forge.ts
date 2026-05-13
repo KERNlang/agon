@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
-import type { EngineResult, ForgeEvent } from '@agon/core';
+import type { DispatchMetric, EngineResult, ForgeEvent } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runForge } from '@agon/forge';
 import { header, success, fail, warn, info, table, green, red, yellow, bold, cyan } from '../output.js';
@@ -51,6 +51,10 @@ export const forgeCommand = defineCommand({
       description: 'Show what would happen without executing',
       default: false,
     },
+    finalizeOnScore: {
+      type: 'string',
+      description: 'Finalize forge as soon as any engine PASSES with score >= this threshold (0-100). Aborts in-flight stage-2 engines and proceeds to winner selection. Useful for cost-control and Cesar-driven smart early-exit.',
+    },
   },
   async run({ args }) {
     ensureAgonHome();
@@ -84,6 +88,26 @@ export const forgeCommand = defineCommand({
 
     const engines = args.engines?.split(',').map((s) => s.trim());
 
+    const finalizeOnScoreRaw = args.finalizeOnScore?.trim();
+    const finalizeOnScore = finalizeOnScoreRaw ? Number(finalizeOnScoreRaw) : undefined;
+    if (finalizeOnScoreRaw && (!Number.isFinite(finalizeOnScore!) || finalizeOnScore! < 0 || finalizeOnScore! > 100)) {
+      fail(`--finalize-on-score must be a number in [0,100]; got "${finalizeOnScoreRaw}"`);
+      process.exit(1);
+    }
+    // Caller-driven finalize: pass an onResult predicate that asks runForge
+    // to stop as soon as any engine PASSES at or above the threshold. We only
+    // finalize on pass=true to avoid prematurely cutting off engines that
+    // might have produced a passing patch from the still-running set.
+    const onResult = finalizeOnScore !== undefined
+      ? (_engineId: string, result: EngineResult, _metric: DispatchMetric): 'finalize' | 'continue' => {
+          if (result.pass && result.score >= finalizeOnScore) {
+            info(`Finalize threshold met: score ${result.score} ≥ ${finalizeOnScore} — aborting remaining engines.`);
+            return 'finalize';
+          }
+          return 'continue';
+        }
+      : undefined;
+
     const manifest = await runForge(
       {
         task: args.task,
@@ -94,6 +118,7 @@ export const forgeCommand = defineCommand({
         starter: args.starter,
         engines,
         dryRun: args.dryRun,
+        onResult,
       },
       registry,
       adapter,

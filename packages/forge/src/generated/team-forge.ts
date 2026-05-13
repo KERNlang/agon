@@ -254,6 +254,18 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
     return { engineId: impl.engineId, fitness, worktree: wt, durationMs: implResult.durationMs };
   });
 
+  // Promise.allSettled is INTENTIONAL here — we want every implementer's
+  // patch before picking the best one. Killing a slow implementer would
+  // lose its candidate patch. A 6-engine brainstorm (2026-05-13) split on
+  // whether to add a straggler-abort (50%+done → 60s grace → cancel
+  // remaining): claude/kimi/zai/minimax voted yes; codex voted no
+  // ("risks killing the slow-but-winning engine"); gemini suggested 66%
+  // quorum. Worst-case latency is already bounded by:
+  //   - 90s api-dispatch idle-timeout (api/dispatch.kern:391) catches dead-silence
+  //   - 300s per-engine cap (config.forgeTimeout) is the hard ceiling
+  // so the existing safeguards already address the original "hung engine
+  // blocks the team forever" failure mode. Leave V2 straggler-abort to a
+  // dedicated brainstorm when we have telemetry on real tail latencies.
   const settledImpls = await Promise.allSettled(implPromises);
   const implResults: Array<{ engineId: string; fitness: EngineResult; worktree: WorktreeEntry; durationMs: number }> = [];
   for (let i = 0; i < settledImpls.length; i++) {
@@ -425,7 +437,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
   };
 }
 
-// @kern-source: team-forge:418
+// @kern-source: team-forge:430
 export async function runTeamForge(options: TeamForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent|TeamEvent)=>void): Promise<TeamMatchResult> {
   const config = loadConfig(options.cwd);
   const matchId = randomUUID().slice(0, 8);

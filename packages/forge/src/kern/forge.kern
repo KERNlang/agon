@@ -462,6 +462,24 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
             if (metric) partialStage2Metrics.push(metric);
             manifest.dispatchLog = [...allMetrics, ...partialStage2Metrics];
             try { writeManifest(manifest); } catch { /* best-effort partial write */ }
+            // Eager sidechain log so completed engines leave a per-engine trail
+            // BEFORE Promise.allSettled resolves. Without this, killing forge
+            // mid-await wipes all per-engine progress and the sidechain only
+            // shows forge:init + roles:assigned, even though some engines did
+            // finish and persist their patches/results.
+            if (metric) {
+              try {
+                sidechain.log('dispatch:complete', id, {
+                  phase: metric.phase,
+                  durationMs: metric.dispatchDurationMs,
+                  score: metric.score,
+                  pass: metric.pass,
+                  tokens: metric.tokens,
+                  error: metric.error,
+                  eager: true,
+                });
+              } catch { /* best-effort sidechain write */ }
+            }
           },
         });
 

@@ -233,28 +233,59 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
 }
 
 // @kern-source: stages:227
-export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>void}): Promise<StageResult> {
+export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void, abortControllers?: Map<string,AbortController>}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
   const root = repoRoot(opts.cwd);
 
   const metrics: DispatchMetric[] = [];
   const published = new Set<string>();
+  const abortControllers = opts.abortControllers ?? new Map<string, AbortController>();
+  const finalizeResolvers = new Map<string, () => void>();
+  let finalizeRequested = false;
+  const makeFinalizedAttempt = (engineId: string, elapsedMs: number) => {
+    const error = 'stage2 finalized by caller; engine aborted before it settled';
+    opts.onEvent?.({ type: 'engine:failed' as any, engineId, data: { engineId, phase: 'stage2', error } });
+    const result = makeFailedResult(engineId, error, elapsedMs);
+    const metric: DispatchMetric = {
+      engineId,
+      phase: 'stage2-follower',
+      dispatchDurationMs: elapsedMs,
+      totalDurationMs: elapsedMs,
+      error,
+    };
+    return { result, metric, dispatchResult: null, worktreePath: join(opts.forgeDir, `wt-${engineId}`) };
+  };
+  const requestFinalize = () => {
+    if (finalizeRequested) return;
+    finalizeRequested = true;
+    for (const [engineId, controller] of abortControllers) {
+      if (!controller.signal.aborted) controller.abort();
+      const resolveFinalize = finalizeResolvers.get(engineId);
+      if (resolveFinalize) {
+        finalizeResolvers.delete(engineId);
+        resolveFinalize();
+      }
+    }
+  };
   const publishResult = (engineId: string, result: EngineResult, metric: DispatchMetric) => {
     metrics.push(metric);
     if (!published.has(engineId)) {
       published.add(engineId);
-      opts.onResult?.(engineId, result, metric);
+      const control = opts.onResult?.(engineId, result, metric);
+      if (control === 'finalize') requestFinalize();
     }
   };
 
   const challengerPromises = opts.challengers.map(async (engineId: string) => {
     // Use per-engine specialized prompt if available (role specialization)
+    const engineStart = Date.now();
     const prompt = opts.enginePrompts?.get(engineId) ?? opts.forgePrompt;
     const engine = opts.registry.get(engineId);
     const dispatchTimeout = resolveForgeDispatchTimeout(engine as any, opts.config);
     const hardTimeoutMs = Math.max(5, dispatchTimeout + opts.config.forgeFitnessTimeout + 5) * 1000;
     const engineAbort = new AbortController();
+    abortControllers.set(engineId, engineAbort);
     if (opts.signal) {
       if (opts.signal.aborted) engineAbort.abort();
       else opts.signal.addEventListener('abort', () => engineAbort.abort(), { once: true });
@@ -288,13 +319,26 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
         resolve({ result, metric, dispatchResult: null, worktreePath: join(opts.forgeDir, `wt-${engineId}`) });
       }, hardTimeoutMs);
     });
+    const finalizePromise = new Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}>((resolve) => {
+      const resolveFinalize = () => resolve(makeFinalizedAttempt(engineId, Date.now() - engineStart));
+      finalizeResolvers.set(engineId, resolveFinalize);
+      if (finalizeRequested) {
+        finalizeResolvers.delete(engineId);
+        engineAbort.abort();
+        resolveFinalize();
+      }
+    });
     try {
-      const attempt = await Promise.race([attemptPromise, timeoutPromise]);
+      const attempt = await Promise.race([attemptPromise, timeoutPromise, finalizePromise]);
       if (timeoutHandle) clearTimeout(timeoutHandle);
+      finalizeResolvers.delete(engineId);
+      abortControllers.delete(engineId);
       publishResult(engineId, attempt.result, attempt.metric);
       return attempt.result;
     } catch (err) {
       if (timeoutHandle) clearTimeout(timeoutHandle);
+      finalizeResolvers.delete(engineId);
+      abortControllers.delete(engineId);
       const error = formatDispatchError(err);
       console.warn(`[agon] forge stage2: engine ${engineId} failed: ${error}`);
       opts.onEvent?.({ type: 'engine:failed' as any, engineId, data: { engineId, phase: 'stage2', error } });
@@ -345,7 +389,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:340
+// @kern-source: stages:384
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

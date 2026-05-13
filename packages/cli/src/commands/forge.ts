@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
-import type { DispatchMetric, EngineResult, ForgeEvent } from '@agon/core';
+import type { EngineResult, ForgeEvent } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runForge } from '@agon/forge';
 import { header, success, fail, warn, info, table, green, red, yellow, bold, cyan } from '../output.js';
@@ -99,7 +99,7 @@ export const forgeCommand = defineCommand({
     // finalize on pass=true to avoid prematurely cutting off engines that
     // might have produced a passing patch from the still-running set.
     const onResult = finalizeOnScore !== undefined
-      ? (_engineId: string, result: EngineResult, _metric: DispatchMetric): 'finalize' | 'continue' => {
+      ? (_engineId: string, result: EngineResult): 'finalize' | 'continue' => {
           if (result.pass && result.score >= finalizeOnScore) {
             info(`Finalize threshold met: score ${result.score} ≥ ${finalizeOnScore} — aborting remaining engines.`);
             return 'finalize';

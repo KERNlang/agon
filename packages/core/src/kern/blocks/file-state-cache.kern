@@ -72,20 +72,17 @@ service name=FileStateCache singleton=true
     >>>
 
   method name=get params="filePath:string" returns="FileState|undefined"
-    handler <<<
-      const state = this.cache.get(filePath);
-      if (state) {
-        // Move to end of access order (LRU)
-        this.accessOrder = this.accessOrder.filter(p => p !== filePath);
-        this.accessOrder.push(filePath);
-      }
-      return state;
-    >>>
+    handler lang="kern"
+      let name=state value="this.cache.get(filePath)"
+      if cond="state"
+        comment raw="// Move to end of access order (LRU)"
+        assign target="this.accessOrder" value="this.accessOrder.filter(p => p !== filePath)"
+        do value="this.accessOrder.push(filePath)"
+      return value="state"
 
   method name=set params="filePath:string, state:FileState" returns=void
-    handler <<<
-      this.cache.set(filePath, state);
-    >>>
+    handler lang="kern"
+      do value="this.cache.set(filePath, state)"
 
   method name=has params="filePath:string" returns=boolean
     handler lang="kern"
@@ -106,14 +103,12 @@ service name=FileStateCache singleton=true
       return value="!state.isPartialView"
 
   method name=remove params="filePath:string" returns=void
-    handler <<<
-      this.cache.delete(filePath);
-    >>>
+    handler lang="kern"
+      do value="this.cache.delete(filePath)"
 
   method name=clear returns=void
-    handler <<<
-      this.cache.clear();
-    >>>
+    handler lang="kern"
+      do value="this.cache.clear()"
 
   method name=size returns=number
     handler lang="kern"
@@ -121,10 +116,7 @@ service name=FileStateCache singleton=true
 
   method name=evict returns=void export=false
     handler <<<
-      while (
-        (this.cache.size > MAX_CACHE_ENTRIES || this.totalBytes > MAX_CACHE_BYTES)
-        && this.accessOrder.length > 0
-      ) {
+      while ((this.cache.size > MAX_CACHE_ENTRIES || this.totalBytes > MAX_CACHE_BYTES) && this.accessOrder.length > 0) {
         const oldest = this.accessOrder.shift()!;
         const state = this.cache.get(oldest);
         if (state) {
@@ -170,24 +162,20 @@ fn name=projectCacheFingerprint params="cwd:string" returns="{key:string,fingerp
 
 fn name=getProjectFileStateCache params="cwd:string" returns=FileStateCache export=true
   doc "Return a FileStateCache scoped to the current project. The cache survives across Cesar turns and is invalidated when git HEAD changes."
-  handler <<<
-    const fp = projectCacheFingerprint(cwd);
-    const existing = _projectCaches.get(fp.key);
-    if (existing) {
-      if (existing.fingerprint !== fp.fingerprint) {
-        existing.cache.clear();
-        existing.fingerprint = fp.fingerprint;
-      }
-      return existing.cache;
-    }
-    const cache = new FileStateCache();
-    _projectCaches.set(fp.key, { cache, fingerprint: fp.fingerprint });
-    return cache;
-  >>>
+  handler lang="kern"
+    let name=fp value="projectCacheFingerprint(cwd)"
+    let name=existing value="_projectCaches.get(fp.key)"
+    if cond="existing"
+      if cond="existing.fingerprint !== fp.fingerprint"
+        do value="existing.cache.clear()"
+        assign target="existing.fingerprint" value="fp.fingerprint"
+      return value="existing.cache"
+    let name=cache value="new FileStateCache()"
+    do value="_projectCaches.set(fp.key, { cache, fingerprint: fp.fingerprint })"
+    return value="cache"
 
 fn name=clearProjectFileStateCaches returns=void export=true
   doc "Clear all project-scoped file state caches. Test helper and emergency invalidation hook."
-  handler <<<
-    _projectCaches.clear();
-    _projectFingerprintCache.clear();
-  >>>
+  handler lang="kern"
+    do value="_projectCaches.clear()"
+    do value="_projectFingerprintCache.clear()"

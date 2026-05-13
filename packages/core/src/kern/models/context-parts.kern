@@ -41,7 +41,7 @@ interface name=CompactionSummaryPart
   field name=compactedAt type=number
   field name=messagesCompacted type=number
 
-union name=MessagePart
+union name=MessagePart discriminant=kind
   variant type=TextPart
   variant type=ToolCallPart
   variant type=ToolResultPart

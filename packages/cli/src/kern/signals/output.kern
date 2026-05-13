@@ -81,10 +81,9 @@ fn name=clearPermissionQueue returns=void
 
 fn name=clearThinkingBuffer returns=void
   doc "Drop any buffered thinking-chunk content. Called on interrupt / clear / SIGINT so the next turn doesn't emit stale content as a fresh block."
-  handler <<<
-    _thinkingBuffer.engineId = '';
-    _thinkingBuffer.content = '';
-  >>>
+  handler lang="kern"
+    assign target="_thinkingBuffer.engineId" value="''"
+    assign target="_thinkingBuffer.content" value="''"
 
 // ── Tool-call grouping buffer — bundles consecutive finalized tool-call
 // events into a single compact tool-call-group block, Claude-Code style.
@@ -102,13 +101,8 @@ const name=_pendingFlushTimer type="{ timer: any, actions: any }" value={{ ({ ti
 const name=_liveToolStreams type="Record<string,any>" value={{ {} as Record<string, any> }}
 
 fn name=toolCallKey params="event:any" returns=string export=false
-  handler <<<
-    return [
-      String(event?.engineId ?? ''),
-      String(event?.tool ?? ''),
-      String(event?.input ?? ''),
-    ].join('\u0000');
-  >>>
+  handler lang="kern"
+    return value="[ String(event?.engineId ?? ''), String(event?.tool ?? ''), String(event?.input ?? ''), ].join('\\u0000')"
 
 fn name=flushPendingToolCalls params="actions:OutputActions" returns=void export=true
   doc "Emit any buffered tool-call events as a single tool-call-group block."
@@ -140,7 +134,7 @@ fn name=_drainAutoApproved params="actions:OutputActions" returns=void export=fa
     const cfg = loadConfig();
     const allowed: string[] = (cfg as any).allowedCommands ?? [];
     if (allowed.length === 0) return;
-    // Drain from the front: auto-approve entries matching the allow-list
+    // Drain from the front: auto-approve entries matching the allow-list.
     while (_permissionQueue.length > 0) {
       const head = _permissionQueue[0];
       const base = head.command.trim().split(/\s+/)[0];

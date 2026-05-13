@@ -4,46 +4,23 @@
 import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolDefinition,PermissionDecision,ToolHandler" types=true
 import from="../blocks/process.js" names="spawnWithTimeout,spawnStream"
 
-const name=DANGEROUS_PREFIXES type="readonly string[]"
-  handler <<<
-    [
-      'rm -rf /',
-      'dd if=',
-      'mkfs',
-      '> /dev/',
-      'chmod 777',
-      'curl | sh',
-      'wget | sh',
-    ] as const
-  >>>
+const name=DANGEROUS_PREFIXES type="readonly string[]" value={{ [ 'rm -rf /', 'dd if=', 'mkfs', '> /dev/', 'chmod 777', 'curl | sh', 'wget | sh' ] as const }}
 
-const name=READONLY_COMMANDS type="readonly string[]"
-  handler <<<
-    [
-      'ls', 'cat', 'head', 'tail',
-      'git status', 'git log', 'git diff',
-      'npm test', 'echo', 'pwd', 'which',
-      'find', 'grep', 'wc', 'date',
-    ] as const
-  >>>
+const name=READONLY_COMMANDS type="readonly string[]" value={{ [ 'ls', 'cat', 'head', 'tail', 'git status', 'git log', 'git diff', 'npm test', 'echo', 'pwd', 'which', 'find', 'grep', 'wc', 'date' ] as const }}
 
 fn name=extractBaseCommand params="command:string" returns=string
   doc "Extract the actual command from wrappers like sudo, env, nice."
-  handler <<<
-    let cmd = command.trim();
-    // Strip common wrappers
-    const wrappers = ['sudo', 'env', 'nice', 'nohup', 'time'];
-    for (const w of wrappers) {
-      while (cmd.startsWith(w + ' ')) {
-        cmd = cmd.slice(w.length + 1).trim();
-      }
-    }
-    // Strip env VAR=val prefixes
-    while (/^[A-Z_]+=\S+\s/.test(cmd)) {
-      cmd = cmd.replace(/^[A-Z_]+=\S+\s+/, '');
-    }
-    return cmd;
-  >>>
+  handler lang="kern"
+    let name=cmd kind=let value="command.trim()"
+    comment raw="// Strip common wrappers"
+    let name=wrappers value="['sudo', 'env', 'nice', 'nohup', 'time']"
+    each name=w in="wrappers"
+      while cond="cmd.startsWith(w + ' ')"
+        assign target="cmd" value="cmd.slice(w.length + 1).trim()"
+    comment raw="// Strip env VAR=val prefixes"
+    while cond="/^[A-Z_]+=\\S+\\s/.test(cmd)"
+      assign target="cmd" value="cmd.replace(/^[A-Z_]+=\\S+\\s+/, '')"
+    return value="cmd"
 
 fn name=createBashTool returns=ToolHandler
   doc "Factory: creates the Bash tool handler for shell command execution."

@@ -27,10 +27,9 @@ interface name=ToolLoopResult
 
 fn name=buildToolSystemPrompt params="registry:ToolRegistry" returns=string
   doc "Generate the tool system prompt to inject into any engine's context."
-  handler <<<
-    const handlers = Array.from((registry as any).tools.values()) as ToolHandler[];
-    return generateToolPrompt(handlers);
-  >>>
+  handler lang="kern"
+    let name=handlers value="Array.from((registry as any).tools.values()) as ToolHandler[]"
+    return value="generateToolPrompt(handlers)"
 
 fn name=processToolResponse async=true params="response:string, ctx:ToolContext, registry:ToolRegistry, callbacks?:ToolLoopCallbacks" returns="Promise<{hasTools:boolean, textBefore:string, toolResults:string, textAfter:string, stopped?:boolean}>"
   doc "Process a single engine response: parse tool calls, execute them, format results."

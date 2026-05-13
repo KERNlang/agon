@@ -26,15 +26,12 @@ service name=CommandRegistry singleton=true
     >>>
 
   method name=register params="handler:CommandHandler" returns=void
-    handler <<<
-      const name = handler.definition.name.toLowerCase();
-      this.commands.set(name, handler);
-      if (handler.definition.aliases) {
-        for (const alias of handler.definition.aliases) {
-          this.aliasMap.set(alias.toLowerCase(), name);
-        }
-      }
-    >>>
+    handler lang="kern"
+      let name=name value="handler.definition.name.toLowerCase()"
+      do value="this.commands.set(name, handler)"
+      if cond="handler.definition.aliases"
+        each name=alias in="handler.definition.aliases"
+          do value="this.aliasMap.set(alias.toLowerCase(), name)"
 
   method name=get params="name:string" returns="CommandHandler | undefined"
     handler lang="kern"
@@ -64,29 +61,19 @@ service name=CommandRegistry singleton=true
 
   method name=listForHelp returns="{ cmd: string; desc: string }[]"
     doc "Returns the same shape as the old SLASH_COMMANDS array for backward compat."
-    handler <<<
-      return Array.from(this.commands.values())
-        .map(h => ({
-          cmd: '/' + h.definition.name,
-          desc: h.definition.description,
-        }))
-        .sort((a, b) => a.cmd.localeCompare(b.cmd));
-    >>>
+    handler lang="kern"
+      return value="Array.from(this.commands.values()) .map(h => Object.assign({}, { cmd: '/' + h.definition.name, desc: h.definition.description })) .sort((a, b) => a.cmd.localeCompare(b.cmd))"
 
   method name=names returns="string[]"
     handler lang="kern"
       return value="Array.from(this.commands.keys())"
 
   method name=unregister params="name:string" returns=void
-    handler <<<
-      const lower = name.toLowerCase();
-      const handler = this.commands.get(lower);
-      if (handler) {
-        this.commands.delete(lower);
-        if (handler.definition.aliases) {
-          for (const alias of handler.definition.aliases) {
-            this.aliasMap.delete(alias.toLowerCase());
-          }
-        }
-      }
-    >>>
+    handler lang="kern"
+      let name=lower value="name.toLowerCase()"
+      let name=handler value="this.commands.get(lower)"
+      if cond="handler"
+        do value="this.commands.delete(lower)"
+        if cond="handler.definition.aliases"
+          each name=alias in="handler.definition.aliases"
+            do value="this.aliasMap.delete(alias.toLowerCase())"

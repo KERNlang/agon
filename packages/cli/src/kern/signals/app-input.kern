@@ -34,39 +34,35 @@ fn name=findInputChange params="previous:string, next:string" returns="{start:nu
 
 fn name=navigateHistory params="direction:'up'|'down', currentIndex:number, history:string[]" returns="{index:number, value:string}"
   doc "Navigate input history up/down."
-  handler <<<
-    if (direction === 'up' && history.length > 0) {
-      const newIndex = currentIndex === -1 ? history.length - 1 : Math.max(0, currentIndex - 1);
-      return { index: newIndex, value: history[newIndex] };
-    }
-    if (direction === 'down' && currentIndex >= 0) {
-      const newIndex = currentIndex + 1;
-      if (newIndex >= history.length) {
-        return { index: -1, value: '' };
-      }
-      return { index: newIndex, value: history[newIndex] };
-    }
-    return { index: currentIndex, value: '' };
-  >>>
+  handler lang="kern"
+    if cond="direction === 'up' && history.length > 0"
+      let name=newIndex value="currentIndex === -1 ? history.length - 1 : Math.max(0, currentIndex - 1)"
+      return value="{ index: newIndex, value: history[newIndex] }"
+    if cond="direction === 'down' && currentIndex >= 0"
+      let name=newIndex value="currentIndex + 1"
+      if cond="newIndex >= history.length"
+        return value="{ index: -1, value: '' }"
+      return value="{ index: newIndex, value: history[newIndex] }"
+    return value="{ index: currentIndex, value: '' }"
 
 fn name=appendInputHistory params="history:string[], input:string, maxEntries?:number" returns="string[]"
   doc "Append a submitted composer command with duplicate pruning and a bounded history length."
-  handler <<<
-    const max = Math.max(1, Math.floor(maxEntries ?? 200));
-    const entry = String(input ?? '').trim();
-    if (!entry) return history.slice(-max);
-    const deduped = history.filter((item: string) => item !== entry);
-    return [...deduped, entry].slice(-max);
-  >>>
+  handler lang="kern"
+    let name=max value="Math.max(1, Math.floor(maxEntries ?? 200))"
+    let name=entry value="String(input ?? '').trim()"
+    if cond="!entry"
+      return value="history.slice(-max)"
+    let name=deduped value="history.filter((item: string) => item !== entry)"
+    return value="[...deduped, entry].slice(-max)"
 
 fn name=parseAutoModeCommand params="input:string" returns="'on'|'off'|'toggle'|'status'|null"
   doc "Parse first-class /auto controls. /auto <task> intentionally returns null so normal autonomous task routing still works."
-  handler <<<
-    const trimmed = String(input ?? '').trim().toLowerCase();
-    const match = trimmed.match(/^\/(?:auto|autonomous)(?:\s+(on|off|toggle|status))?$/);
-    if (!match) return null;
-    return (match[1] as 'on'|'off'|'toggle'|'status'|undefined) ?? 'toggle';
-  >>>
+  handler lang="kern"
+    let name=trimmed value="String(input ?? '').trim().toLowerCase()"
+    let name=match value="trimmed.match(/^\\/(?:auto|autonomous)(?:\\s+(on|off|toggle|status))?$/)"
+    if cond="!match"
+      return value="null"
+    return value="(match[1] as 'on' | 'off' | 'toggle' | 'status' | undefined) ?? 'toggle'"
 
 fn name=hasBtwSideChannelTarget params="opts:{replState:string,activePlanState?:string|null,runningJobCount?:number}" returns=boolean export=true
   doc "True when /btw should run as a side-channel instead of falling through to normal command dispatch."
@@ -119,11 +115,12 @@ fn name=getSlashMatches params="filter:string, commands:any[]" returns="any[]"
 
 fn name=movePickerCursor params="direction:'up'|'down', currentIndex:number, itemCount:number" returns=number
   doc "Move a picker cursor with wrap-around."
-  handler <<<
-    if (itemCount <= 0) return 0;
-    if (direction === 'up') return currentIndex <= 0 ? itemCount - 1 : currentIndex - 1;
-    return currentIndex >= itemCount - 1 ? 0 : currentIndex + 1;
-  >>>
+  handler lang="kern"
+    if cond="itemCount <= 0"
+      return value="0"
+    if cond="direction === 'up'"
+      return value="currentIndex <= 0 ? itemCount - 1 : currentIndex - 1"
+    return value="currentIndex >= itemCount - 1 ? 0 : currentIndex + 1"
 
 fn name=shouldQueuePlanModeOnTab params="opts:{replState:string,inputValue:string,activePlanState?:string|null}" returns=boolean
   doc "Only queue plan mode from Tab when the composer is idle and empty."

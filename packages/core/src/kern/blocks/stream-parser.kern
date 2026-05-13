@@ -12,41 +12,34 @@ service name=StreamParser
     >>>
 
   method name=feed params="chunk:string" returns="ParsedChunk[]"
-    handler <<<
-      this.buffer += chunk;
-      const results: ParsedChunk[] = [];
-      const lines = this.buffer.split('\n');
-
-      // Keep the last element — it may be an incomplete line
-      this.buffer = lines.pop() ?? '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        results.push(...this._parseLine(trimmed));
-      }
-
-      return results;
-    >>>
+    handler lang="kern"
+      assign target="this.buffer" op="+=" value="chunk"
+      let name=results type="ParsedChunk[]" value="[]"
+      let name=lines value="this.buffer.split('\\n')"
+      comment raw="// Keep the last element — it may be an incomplete line"
+      assign target="this.buffer" value="lines.pop() ?? ''"
+      each name=line in="lines"
+        let name=trimmed value="line.trim()"
+        if cond="!trimmed"
+          continue
+        do value="results.push(...this._parseLine(trimmed))"
+      return value="results"
 
   method name=flush returns="ParsedChunk[]"
-    handler <<<
-      const results: ParsedChunk[] = [];
-      const remaining = this.buffer.trim();
-      this.buffer = '';
-
-      if (!remaining) return results;
-      results.push(...this._parseLine(remaining));
-      return results;
-    >>>
+    handler lang="kern"
+      let name=results type="ParsedChunk[]" value="[]"
+      let name=remaining value="this.buffer.trim()"
+      assign target="this.buffer" value="''"
+      if cond="!remaining"
+        return value="results"
+      do value="results.push(...this._parseLine(remaining))"
+      return value="results"
 
   method name=_parseLine params="line:string" returns="ParsedChunk[]" private=true
     handler <<<
       const results: ParsedChunk[] = [];
-
       try {
         const msg = JSON.parse(line);
-
         // Claude Code stream-json: assistant message with content blocks
         if (msg.type === 'assistant' && msg.message?.content) {
           for (const block of msg.message.content) {
@@ -56,7 +49,6 @@ service name=StreamParser
           }
           return results;
         }
-
         // Claude Code stream-json: final result
         if (msg.type === 'result') {
           if (msg.result) {
@@ -68,17 +60,15 @@ service name=StreamParser
           }
           return results;
         }
-
         // Claude Code stream-json: system status
         if (msg.type === 'system') {
           if (msg.message) results.push({ type: 'status', content: msg.message });
           return results;
         }
-
-        // Unknown JSON — skip
+        // Unknown JSON: skip.
         return results;
       } catch {
-        // Not JSON — treat as raw text (Codex, Gemini, etc.)
+        // Not JSON: treat as raw text (Codex, Gemini, etc.).
         results.push({ type: 'raw', content: line });
         return results;
       }
@@ -86,9 +76,8 @@ service name=StreamParser
 
 fn name=parseStreamChunk params="chunk:string" returns="ParsedChunk[]"
   doc "Stateless convenience wrapper. For streaming use, prefer StreamParser.feed() + flush()."
-  handler <<<
-    const parser = new StreamParser();
-    const results = parser.feed(chunk);
-    results.push(...parser.flush());
-    return results;
-  >>>
+  handler lang="kern"
+    let name=parser value="new StreamParser()"
+    let name=results value="parser.feed(chunk)"
+    do value="results.push(...parser.flush())"
+    return value="results"

@@ -36,6 +36,41 @@ import from="@agon/core" names="createSpeculator,loadOrCreateActiveThread"
 import from="@agon/core" names="SpeculatorMemberConfig" types=true
 import from="./file-tracker.js" names="listFiles,getFileDiff"
 
+const name=SLASH_ONLY_CESAR_ACTIONS type="Set<string>" value={{ new Set(['forge', 'team-forge', 'brainstorm', 'team-brainstorm', 'tribunal', 'team-tribunal', 'campfire', 'pipeline', 'review']) }}
+
+fn name=slashCommandForOrchestrationAction params="action:string,task:string,fitnessCmd?:string|null,tribunalMode?:string" returns=string
+  handler lang="kern"
+    let name=cleanTask value="String(task || '').replace(/\\s+/g, ' ').trim()"
+    let name=safeTask value="cleanTask || '<task>'"
+    if cond="action === 'forge'"
+      return value="fitnessCmd ? `/forge ${safeTask} test with ${fitnessCmd}` : `/forge ${safeTask}`"
+    if cond="action === 'team-forge'"
+      return value="fitnessCmd ? `/team-forge ${safeTask} test with ${fitnessCmd}` : `/team-forge ${safeTask} test with <cmd>`"
+    if cond="action === 'brainstorm'"
+      return value="`/brainstorm ${safeTask}`"
+    if cond="action === 'team-brainstorm'"
+      return value="`/team-brainstorm ${safeTask}`"
+    if cond="action === 'tribunal'"
+      return value="tribunalMode ? `/tribunal ${tribunalMode} ${safeTask}` : `/tribunal ${safeTask}`"
+    if cond="action === 'team-tribunal'"
+      return value="tribunalMode ? `/team-tribunal ${tribunalMode} ${safeTask}` : `/team-tribunal ${safeTask}`"
+    if cond="action === 'campfire'"
+      return value="`/campfire ${safeTask}`"
+    if cond="action === 'pipeline'"
+      return value="fitnessCmd ? `/pipeline ${safeTask} test with ${fitnessCmd}` : `/pipeline ${safeTask}`"
+    if cond="action === 'review'"
+      return value="`/review ${safeTask === '<task>' ? '' : safeTask}`.trim()"
+    return value="`/${action} ${safeTask}`"
+
+fn name=blockSlashOnlyCesarOrchestration params="action:string,task:string,cb:DispatchCallbacks,fitnessCmd?:string|null,tribunalMode?:string" returns=boolean
+  handler <<<
+    if (!SLASH_ONLY_CESAR_ACTIONS.has(action)) return false;
+    const cmd = slashCommandForOrchestrationAction(action, task, fitnessCmd, tribunalMode);
+    cb.dispatch({ type: 'warning', message: `Blocked automatic ${action}. Orchestration only starts from slash commands now.` });
+    cb.dispatch({ type: 'info', message: `Run ${cmd} if you want to start it.` });
+    return true;
+  >>>
+
 // ── Thread outcome capture helper ─────────────────────────────────────
 // After any non-trivial slash command (forge, brainstorm, tribunal, etc.),
 // append a structured outcome summary to the ContextThread so Cesar has
@@ -154,26 +189,18 @@ interface name=DispatchCallbacks
 
 fn name=absorbReviewResultIntoCesar async=true params="sourceInput:string, cb:DispatchCallbacks, launchInputEpoch?:number, launchUserTurns?:number" returns="Promise<void>"
   doc "After /review or Review() finishes, feed ctx.lastReviewResult back into Cesar so the orchestrator can reason about findings and the fix plan."
-  handler <<<
-    const review = cb.ctx.lastReviewResult;
-    if (!review) return;
-    cb.dispatch({ type: 'info', message: 'Cesar absorbing review findings...' });
-    const prompt = buildReviewAbsorptionPrompt(sourceInput, review);
-    await continueCesarAfterResult(prompt, cb, launchInputEpoch, launchUserTurns);
-  >>>
+  handler lang="kern"
+    let name=review value="cb.ctx.lastReviewResult"
+    if cond="!review"
+      return
+    do value="cb.dispatch({ type: 'info', message: 'Cesar absorbing review findings...' })"
+    let name=prompt value="buildReviewAbsorptionPrompt(sourceInput, review)"
+    do value="await continueCesarAfterResult(prompt, cb, launchInputEpoch, launchUserTurns)"
 
 fn name=buildDelegatedContinuationPrompt params="message:string" returns=string export=true
   doc "Build the prompt that feeds delegated orchestration results back to Cesar for synthesis or follow-up work."
-  handler <<<
-    return [
-      '[DELEGATED RESULT]',
-      message,
-      '',
-      '[CONTINUE]',
-      'Continue from this delegated result. Do not re-run the same Brainstorm, Tribunal, Campfire, Review, Forge, or Agent unless there is a genuinely new subproblem.',
-      'If more work is needed, use direct tools or a different focused delegation now. If the task is complete, synthesize the concrete outcome, recommendation, and remaining risk.',
-    ].join('\n');
-  >>>
+  handler lang="kern"
+    return value="[ '[DELEGATED RESULT]', message, '', '[CONTINUE]', 'Continue from this delegated result. Do not re-run the same Brainstorm, Tribunal, Campfire, Review, Forge, or Agent unless there is a genuinely new subproblem.', 'If more work is needed, use direct tools or a different focused delegation now. If the task is complete, synthesize the concrete outcome, recommendation, and remaining risk.', ].join('\\n')"
 
 fn name=buildBrainstormContinuationMessage params="source:string, question:string|undefined, result:any" returns=string export=true
   doc "Format a Brainstorm winner as a Cesar continuation payload. Brainstorm is an input to Cesar, not a terminal answer."
@@ -193,14 +220,10 @@ fn name=buildBrainstormContinuationMessage params="source:string, question:strin
 
 fn name=collectRecentEngineContext params="ctx:HandlerContext,maxMessages?:number,maxChars?:number" returns=string export=true
   doc "Collect recent engine messages for post-delegation Cesar synthesis."
-  handler <<<
-    const recentChat = ctx.chatSession?.messages?.slice(-(maxMessages ?? 12)) ?? [];
-    const cap = maxChars ?? 1500;
-    return recentChat
-      .filter((m: any) => m.role === 'engine' && m.content)
-      .map((m: any) => `[${m.engineId}]: ${String(m.content).slice(0, cap)}`)
-      .join('\n\n');
-  >>>
+  handler lang="kern"
+    let name=recentChat value="ctx.chatSession?.messages?.slice(-(maxMessages ?? 12)) ?? []"
+    let name=cap value="maxChars ?? 1500"
+    return value="recentChat .filter((m: any) => m.role === 'engine' && m.content) .map((m: any) => `[${m.engineId}]: ${String(m.content).slice(0, cap)}`) .join('\\n\\n')"
 
 fn name=clearPersistedSessionContext params="ctx:HandlerContext" returns="string[]" export=true
   doc "Delete persisted workspace conversation plus per-engine session state/tool caches so /clear and /clean start with a genuinely empty context."
@@ -236,13 +259,16 @@ fn name=clearPersistedSessionContext params="ctx:HandlerContext" returns="string
 
 fn name=shouldAutoContinueDelegatedResult params="launchInputEpoch?:number, launchUserTurns?:number, ctx?:HandlerContext" returns=boolean export=true
   doc "Guard post-delegation Cesar continuation so long-running jobs do not answer an old turn after the user has moved on."
-  handler <<<
-    if (!ctx) return true;
-    if (typeof launchInputEpoch !== 'number' || typeof launchUserTurns !== 'number') return true;
-    if ((ctx.inputEpoch ?? 0) !== launchInputEpoch) return false;
-    if (countTrackedUserTurns(ctx) !== launchUserTurns) return false;
-    return true;
-  >>>
+  handler lang="kern"
+    if cond="!ctx"
+      return value="true"
+    if cond="typeof launchInputEpoch !== 'number' || typeof launchUserTurns !== 'number'"
+      return value="true"
+    if cond="(ctx.inputEpoch ?? 0) !== launchInputEpoch"
+      return value="false"
+    if cond="countTrackedUserTurns(ctx) !== launchUserTurns"
+      return value="false"
+    return value="true"
 
 fn name=continueCesarAfterResult async=true params="message:string, cb:DispatchCallbacks, launchInputEpoch?:number, launchUserTurns?:number" returns="Promise<void>"
   doc "Feed a delegated result back through the full Cesar path, not the lightweight summarizer. This lets Cesar call tools, propose plans, or launch follow-up agents instead of being cut off after another model returns."
@@ -296,14 +322,11 @@ fn name=handleModeSwitch params="intentType:string, topic:string|undefined, ques
 
 fn name=extractExecutionSpec params="input:string" returns="{ task:string; fitnessCmd:string|null }"
   doc "Extract a fitness command from conversational execution input while keeping the task clean."
-  handler <<<
-    const fitnessMatch = FITNESS_PATTERN.exec(input);
-    const fitnessCmd = fitnessMatch ? fitnessMatch[1].trim() : null;
-    const task = fitnessCmd
-      ? input.replace(FITNESS_PATTERN, '').trim()
-      : input.trim();
-    return { task, fitnessCmd };
-  >>>
+  handler lang="kern"
+    let name=fitnessMatch value="FITNESS_PATTERN.exec(input)"
+    let name=fitnessCmd value="fitnessMatch ? fitnessMatch[1].trim() : null"
+    let name=task value="fitnessCmd ? input.replace(FITNESS_PATTERN, '').trim() : input.trim()"
+    return value="{ task, fitnessCmd }"
 
 fn name=formatCesarRecoveryStatus params="stage:'delegation'|'rebuild'|'retry'|'acting'|'failed', subject:string, detail?:string" returns=string export=true
   doc "Compact user-facing Cesar recovery messages. Keep these short because they render in the live status/transcript path during failure handling."
@@ -336,96 +359,73 @@ fn name=normalizeCesarActingFallbackMode params="value:any" returns="'ask'|'auto
     return value="'auto'"
 
 fn name=countTrackedUserTurns params="ctx:HandlerContext" returns=number
-  handler <<<
-    const messages = ctx.chatSession?.messages ?? [];
-    return messages.filter((m: any) => m.role === 'user').length;
-  >>>
+  handler lang="kern"
+    let name=messages value="ctx.chatSession?.messages ?? []"
+    return value="messages.filter((m: any) => m.role === 'user').length"
 
 fn name=shouldAutoResumeAgentResult params="result:any, launchInputEpoch:number, launchUserTurns:number, ctx:HandlerContext" returns=boolean export=true
-  handler <<<
-    if (!result || typeof result !== 'object') return false;
-    const status = String((result as any).status ?? '').trim();
-    if (!status || status === 'cancelled') return false;
-    if ((ctx.inputEpoch ?? 0) !== launchInputEpoch) return false;
-    if (countTrackedUserTurns(ctx) !== launchUserTurns) return false;
-    return true;
-  >>>
+  handler lang="kern"
+    if cond="!result || typeof result !== 'object'"
+      return value="false"
+    let name=status value="String((result as any).status ?? '').trim()"
+    if cond="!status || status === 'cancelled'"
+      return value="false"
+    if cond="(ctx.inputEpoch ?? 0) !== launchInputEpoch"
+      return value="false"
+    if cond="countTrackedUserTurns(ctx) !== launchUserTurns"
+      return value="false"
+    return value="true"
 
 fn name=buildAgentAutoResumePrompt params="originalTask:string, result:any" returns=string export=true
-  handler <<<
-    if (!result || typeof result !== 'object') return '';
-    const kind = String((result as any).kind ?? 'agent');
-    const status = String((result as any).status ?? 'completed');
-    if (!status || status === 'cancelled') return '';
-    const summary = String((result as any).summary ?? '').trim();
-    const taskKind = String((result as any).taskKind ?? 'unknown').trim();
-    const patchPath = String((result as any).patchPath ?? '').trim();
-    const modeLabel = kind === 'team-agent' ? 'team-agent' : 'solo agent';
-    const lines = [
-      `AUTOMATIC FOLLOW-UP: your delegated ${modeLabel} run has finished.`,
-      `Do not ask the user what happened, whether the agent finished, or what needs fixing. Continue from this result.`,
-      '',
-      `Original delegated task:\n${originalTask.trim().slice(0, 4000)}`,
-      '',
-      `Completion status: ${status}`,
-      `Delegation mode: ${modeLabel}`,
-    ];
-    if (taskKind && taskKind !== 'unknown') lines.push(`Task kind: ${taskKind}`);
-    if (summary) lines.push(`Result summary:\n${summary.slice(0, 8000)}`);
-    if (kind === 'team-agent') {
-      lines.push(patchPath
-        ? `Winner patch path (not applied to the main workspace yet): ${patchPath}`
-        : `Important: team-agent edit runs do not automatically modify the main workspace.`);
-      lines.push(`If you need to continue from the team result, inspect/apply the winner patch or use the latest [team-agent] / [agent-team-diff] context instead of asking the user to repeat themselves.`);
-    } else {
-      lines.push(`Important: solo agent runs work directly in the main workspace. Inspect the current files/diff before follow-up edits.`);
-    }
-    lines.push('', `Continue autonomously now. If the task is already complete, summarize the concrete outcome and remaining risk. If more work is needed, do it now.`);
-    return lines.join('\n');
-  >>>
+  handler lang="kern"
+    if cond="!result || typeof result !== 'object'"
+      return value="''"
+    let name=kind value="String((result as any).kind ?? 'agent')"
+    let name=status value="String((result as any).status ?? 'completed')"
+    if cond="!status || status === 'cancelled'"
+      return value="''"
+    let name=summary value="String((result as any).summary ?? '').trim()"
+    let name=taskKind value="String((result as any).taskKind ?? 'unknown').trim()"
+    let name=patchPath value="String((result as any).patchPath ?? '').trim()"
+    let name=modeLabel value="kind === 'team-agent' ? 'team-agent' : 'solo agent'"
+    let name=lines value="[ `AUTOMATIC FOLLOW-UP: your delegated ${modeLabel} run has finished.`, `Do not ask the user what happened, whether the agent finished, or what needs fixing. Continue from this result.`, '', `Original delegated task:\\n${originalTask.trim().slice(0, 4000)}`, '', `Completion status: ${status}`, `Delegation mode: ${modeLabel}`, ]"
+    if cond="taskKind && taskKind !== 'unknown'"
+      do value="lines.push(`Task kind: ${taskKind}`)"
+    if cond="summary"
+      do value="lines.push(`Result summary:\\n${summary.slice(0, 8000)}`)"
+    if cond="kind === 'team-agent'"
+      do value="lines.push(patchPath ? `Winner patch path (not applied to the main workspace yet): ${patchPath}` : `Important: team-agent edit runs do not automatically modify the main workspace.`)"
+      do value="lines.push(`If you need to continue from the team result, inspect/apply the winner patch or use the latest [team-agent] / [agent-team-diff] context instead of asking the user to repeat themselves.`)"
+    else
+      do value="lines.push(`Important: solo agent runs work directly in the main workspace. Inspect the current files/diff before follow-up edits.`)"
+    do value="lines.push('', `Continue autonomously now. If the task is already complete, summarize the concrete outcome and remaining risk. If more work is needed, do it now.`)"
+    return value="lines.join('\\n')"
 
 fn name=resumeCesarAfterAgent async=true params="originalTask:string, launchInputEpoch:number, launchUserTurns:number, result:any, cb:DispatchCallbacks" returns="Promise<void>"
-  handler <<<
-    if (!shouldAutoResumeAgentResult(result, launchInputEpoch, launchUserTurns, cb.ctx)) return;
-    const prompt = buildAgentAutoResumePrompt(originalTask, result);
-    if (!prompt.trim()) return;
-    cb.dispatch({ type: 'info', message: `Cesar continuing after ${String((result as any).kind ?? 'agent')} completion` });
-    await routeWithCesar(prompt, [], cb);
-  >>>
+  handler lang="kern"
+    if cond="!shouldAutoResumeAgentResult(result, launchInputEpoch, launchUserTurns, cb.ctx)"
+      return
+    let name=prompt value="buildAgentAutoResumePrompt(originalTask, result)"
+    if cond="!prompt.trim()"
+      return
+    do value="cb.dispatch({ type: 'info', message: `Cesar continuing after ${String((result as any).kind ?? 'agent')} completion` })"
+    do value="await routeWithCesar(prompt, [], cb)"
 
 fn name=runAgentJobWithAutoResume async=true params="originalTask:string, cb:DispatchCallbacks, runner:()=>Promise<any>" returns="Promise<void>"
-  handler <<<
-    const launchInputEpoch = cb.ctx.inputEpoch ?? 0;
-    const launchUserTurns = countTrackedUserTurns(cb.ctx);
-    const result = await runner();
-    await resumeCesarAfterAgent(originalTask, launchInputEpoch, launchUserTurns, result, cb);
-  >>>
+  handler lang="kern"
+    let name=launchInputEpoch value="cb.ctx.inputEpoch ?? 0"
+    let name=launchUserTurns value="countTrackedUserTurns(cb.ctx)"
+    let name=result value="await runner()"
+    do value="await resumeCesarAfterAgent(originalTask, launchInputEpoch, launchUserTurns, result, cb)"
 
 fn name=buildReviewAbsorptionPrompt params="sourceInput:string, review:{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number }" returns=string export=true
   doc "Build the message used to feed completed review findings back into Cesar so the orchestrator knows what the reviewer found and can propose the fix path."
-  handler <<<
-    const output = String(review.reviewOutput ?? '').trim();
-    const cappedOutput = output.length > 12_000
-      ? `${output.slice(0, 12_000)}\n... [review output truncated]`
-      : output;
-    const label = String(review.label ?? review.target ?? 'uncommitted changes').trim() || 'uncommitted changes';
-    const original = String(sourceInput ?? '').trim() || '(review command)';
-    return [
-      '[REVIEW RESULT]',
-      'A delegated code review just completed. You are Cesar; absorb these findings and respond to the user now.',
-      `Original user request: ${original}`,
-      `Review target: ${label}`,
-      `Review engine: ${String(review.engineId ?? 'unknown')}`,
-      '',
-      '## REVIEW OUTPUT',
-      cappedOutput || '(review output missing)',
-      '',
-      '## YOUR NEXT RESPONSE',
-      'Summarize what the reviewer found, identify which findings you agree are worth fixing, and give a concrete fix plan with files/areas to change.',
-      'Do not say you lack the review output; it is above.',
-      'Do not edit files yet unless the original user request explicitly asked to fix/apply the review findings.',
-    ].join('\n');
-  >>>
+  handler lang="kern"
+    let name=output value="String(review.reviewOutput ?? '').trim()"
+    let name=cappedOutput value="output.length > 12000 ? `${output.slice(0, 12000)}\\n... [review output truncated]` : output"
+    let name=label value="String(review.label ?? review.target ?? 'uncommitted changes').trim() || 'uncommitted changes'"
+    let name=original value="String(sourceInput ?? '').trim() || '(review command)'"
+    return value="[ '[REVIEW RESULT]', 'A delegated code review just completed. You are Cesar; absorb these findings and respond to the user now.', `Original user request: ${original}`, `Review target: ${label}`, `Review engine: ${String(review.engineId ?? 'unknown')}`, '', '## REVIEW OUTPUT', cappedOutput || '(review output missing)', '', '## YOUR NEXT RESPONSE', 'Summarize what the reviewer found, identify which findings you agree are worth fixing, and give a concrete fix plan with files/areas to change.', 'Do not say you lack the review output; it is above.', 'Do not edit files yet unless the original user request explicitly asked to fix/apply the review findings.', ].join('\\n')"
 
 fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[], cb:DispatchCallbacks" returns="Promise<boolean>"
   doc "Unified Cesar brain routing. Returns true if a background job was dispatched."
@@ -556,6 +556,9 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
             : input);
         let taskInput = userContext ? `${baseTask}\n\n${userContext}` : baseTask;
         const fitnessCmd = result.fitnessCmd ?? delegatedSpec.fitnessCmd ?? executionSpec.fitnessCmd;
+        if (blockSlashOnlyCesarOrchestration(routeAction, taskInput, cb, fitnessCmd, tMode)) {
+          return false;
+        }
         const isForgeSlice = routeAction === 'forge' && result.scope === 'slice';
         if (isForgeSlice) {
           taskInput = `Scoped forge only. Solve only the hard subpart below. Do not rewrite the whole task. Cesar will integrate wiring, cleanup, and final verification locally.
@@ -1144,97 +1147,88 @@ You still own the overall task. Integrate the forged slice with the rest of the 
 
 fn name=isCesarPlanApprovalInput params="input:string" returns=boolean export=true
   doc "Return true for natural approval replies users type after Cesar says go/run it."
-  handler <<<
-    const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
-    return /^(?:y|yes|yes go|yes please|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute|ok|okay|sure)$/i.test(text);
-  >>>
+  handler lang="kern"
+    let name=text value="String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\\s+/g, ' ')"
+    return value="/^(?:y|yes|yes go|yes please|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute|ok|okay|sure)$/i.test(text)"
 
 fn name=isStrongCesarPlanApprovalInput params="input:string" returns=boolean export=true
   doc "Return true for approval phrases strong enough to recover a saved pending plan even when no plan panel is active."
-  handler <<<
-    const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
-    return /^(?:yes go|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute)$/i.test(text);
-  >>>
+  handler lang="kern"
+    let name=text value="String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\\s+/g, ' ')"
+    return value="/^(?:yes go|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute)$/i.test(text)"
 
 fn name=findPendingCesarPlan params="ctx:HandlerContext" returns="CesarPlan | null" export=true
   doc "Find the most relevant pending Cesar plan: proposed plan first, active plan second, then latest saved awaiting_approval plan."
-  handler <<<
-    const proposed = ctx.cesar?.proposedPlan as CesarPlan | undefined;
-    if (proposed && proposed.state === 'awaiting_approval') return proposed;
-    const active = ctx.activePlan as CesarPlan | undefined;
-    if (active && active.state === 'awaiting_approval') return active;
-    const saved = listCesarPlans()
-      .filter((p: CesarPlan) => p.state === 'awaiting_approval')
-      .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
-    return saved[0] ?? null;
-  >>>
+  handler lang="kern"
+    let name=proposed value="ctx.cesar?.proposedPlan as CesarPlan | undefined"
+    if cond="proposed && proposed.state === 'awaiting_approval'"
+      return value="proposed"
+    let name=active value="ctx.activePlan as CesarPlan | undefined"
+    if cond="active && active.state === 'awaiting_approval'"
+      return value="active"
+    let name=saved value="listCesarPlans() .filter((p: CesarPlan) => p.state === 'awaiting_approval') .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt))"
+    return value="saved[0] ?? null"
 
 fn name=findResumableCesarPlan params="ctx:HandlerContext" returns="CesarPlan | null" export=true
   doc "Return the in-session paused/running plan if any. No disk fallback — stale persisted plans must be resumed explicitly via `/plan resume <id>` so innocuous words like 'go' or 'continue' cannot resurrect them."
-  handler <<<
-    const active = ctx.activePlan as CesarPlan | undefined;
-    if (active && (active.state === 'paused' || active.state === 'running')) return active;
-    return null;
-  >>>
+  handler lang="kern"
+    let name=active value="ctx.activePlan as CesarPlan | undefined"
+    if cond="active && (active.state === 'paused' || active.state === 'running')"
+      return value="active"
+    return value="null"
 
 fn name=shouldApprovePendingCesarPlanInput params="input:string,ctx:HandlerContext" returns=boolean export=true
   doc "Treat natural approval text as /approve only when a live pending plan is visible in this session."
-  handler <<<
-    const text = String(input ?? '').trim();
-    if (!text || text.startsWith('/')) return false;
-    const proposed = ctx.cesar?.proposedPlan as CesarPlan | undefined;
-    const active = ctx.activePlan as CesarPlan | undefined;
-    const hasLivePending = (proposed && proposed.state === 'awaiting_approval') || (active && active.state === 'awaiting_approval');
-    return !!hasLivePending && isCesarPlanApprovalInput(text);
-  >>>
+  handler lang="kern"
+    let name=text value="String(input ?? '').trim()"
+    if cond="!text || text.startsWith('/')"
+      return value="false"
+    let name=proposed value="ctx.cesar?.proposedPlan as CesarPlan | undefined"
+    let name=active value="ctx.activePlan as CesarPlan | undefined"
+    let name=hasLivePending value="(proposed && proposed.state === 'awaiting_approval') || (active && active.state === 'awaiting_approval')"
+    return value="!!hasLivePending && isCesarPlanApprovalInput(text)"
 
 fn name=isCesarPlanResumeInput params="input:string" returns=boolean export=true
   doc "Return true when the user is clearly telling a paused/running plan to continue."
-  handler <<<
-    const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
-    return /^(?:go|run|resume|continue|proceed|start)(?:\b|$)/i.test(text)
-      || /^(?:do it|do so|keep going|carry on|ok do last part|do last part|last part)$/i.test(text);
-  >>>
+  handler lang="kern"
+    let name=text value="String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\\s+/g, ' ')"
+    return value="/^(?:go|run|resume|continue|proceed|start)(?:\\b|$)/i.test(text) || /^(?:do it|do so|keep going|carry on|ok do last part|do last part|last part)$/i.test(text)"
 
 fn name=isCesarPlanStatusInput params="input:string" returns=boolean export=true
   doc "Return true for short status checks that should be answered from plan state instead of routed to Cesar chat."
-  handler <<<
-    const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
-    return /^(?:done|done yet|status|progress|what happened|what went wrong|what did you do|what yu do|what you do|why stop|why stopped|why did it stop|are you doing something|are you still working|still working|is it running|where are we)$/i.test(text);
-  >>>
+  handler lang="kern"
+    let name=text value="String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\\s+/g, ' ')"
+    return value="/^(?:done|done yet|status|progress|what happened|what went wrong|what did you do|what yu do|what you do|why stop|why stopped|why did it stop|are you doing something|are you still working|still working|is it running|where are we)$/i.test(text)"
 
 fn name=formatCesarPlanRuntimeStatus params="plan:CesarPlan" returns=string export=true
   doc "Render a concise persisted plan status so Cesar chat cannot hallucinate whether a plan is running."
-  handler <<<
-    const total = plan.steps.length;
-    const done = plan.steps.filter((s: any) => s.state === 'done').length;
-    const failed = plan.steps.find((s: any) => s.state === 'failed');
-    const current = plan.steps.find((s: any) => s.state === 'running')
-      ?? plan.steps.find((s: any) => s.state === 'pending')
-      ?? plan.steps.find((s: any) => s.state === 'blocked');
-    const lines = [
-      `Plan ${plan.id.slice(0, 12)} is ${plan.state}: ${done}/${total} steps done.`,
-    ];
-    if (current) lines.push(`Next: ${current.description}`);
-    if (failed) lines.push(`Blocked: ${failed.description}${failed.result?.error ? ` — ${failed.result.error}` : ''}`);
-    if (plan.state === 'paused' || plan.state === 'running') lines.push('Use /plan resume or say "go" to continue it.');
-    return lines.join('\n');
-  >>>
+  handler lang="kern"
+    let name=total value="plan.steps.length"
+    let name=done value="plan.steps.filter((s: any) => s.state === 'done').length"
+    let name=failed value="plan.steps.find((s: any) => s.state === 'failed')"
+    let name=current value="plan.steps.find((s: any) => s.state === 'running') ?? plan.steps.find((s: any) => s.state === 'pending') ?? plan.steps.find((s: any) => s.state === 'blocked')"
+    let name=lines value="[ `Plan ${plan.id.slice(0, 12)} is ${plan.state}: ${done}/${total} steps done.`, ]"
+    if cond="current"
+      do value="lines.push(`Next: ${current.description}`)"
+    if cond="failed"
+      do value="lines.push(`Blocked: ${failed.description}${failed.result?.error ? ` — ${failed.result.error}` : ''}`)"
+    if cond="plan.state === 'paused' || plan.state === 'running'"
+      do value="lines.push('Use /plan resume or say \"go\" to continue it.')"
+    return value="lines.join('\\n')"
 
 fn name=buildResumePromptContext params="plan:CesarPlan" returns="{ doneCount:number; failedCount:number; remainingCount:number; failedStep:any|null; remainingCostUsd:number; remainingTokens:number }" export=true
   doc "Compute resume prompt context: how many steps done/failed/remain, which step failed, and estimated cost to finish."
-  handler <<<
-    const steps = plan.steps ?? [];
-    const doneCount = steps.filter((s: any) => s.state === 'done').length;
-    const failedSteps = steps.filter((s: any) => s.state === 'failed');
-    const failedCount = failedSteps.length;
-    const failedStep = failedSteps[0] ?? null;
-    const remainingSteps = steps.filter((s: any) => s.state !== 'done' && s.state !== 'skipped');
-    const remainingCount = remainingSteps.length;
-    const remainingCostUsd = remainingSteps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
-    const remainingTokens = remainingSteps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
-    return { doneCount, failedCount, remainingCount, failedStep, remainingCostUsd, remainingTokens };
-  >>>
+  handler lang="kern"
+    let name=steps value="plan.steps ?? []"
+    let name=doneCount value="steps.filter((s: any) => s.state === 'done').length"
+    let name=failedSteps value="steps.filter((s: any) => s.state === 'failed')"
+    let name=failedCount value="failedSteps.length"
+    let name=failedStep value="failedSteps[0] ?? null"
+    let name=remainingSteps value="steps.filter((s: any) => s.state !== 'done' && s.state !== 'skipped')"
+    let name=remainingCount value="remainingSteps.length"
+    let name=remainingCostUsd value="remainingSteps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0)"
+    let name=remainingTokens value="remainingSteps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0)"
+    return value="{ doneCount, failedCount, remainingCount, failedStep, remainingCostUsd, remainingTokens }"
 
 fn name=skipCompletedSteps params="plan:CesarPlan" returns=CesarPlan export=true
   doc "Mark done steps as skipped so executePlan skips them on resume. Keeps failed steps as pending (unless review-exhausted)."
@@ -1307,25 +1301,23 @@ fn name=resumeCesarPlan async=true params="plan:CesarPlan, cb:DispatchCallbacks"
 
 fn name=approvePendingCesarPlan async=true params="cb:DispatchCallbacks" returns="Promise<boolean>" export=true
   doc "Approve and execute the pending CesarPlan, if one exists. Backs /approve and natural approval aliases like go."
-  handler <<<
-    const pending = findPendingCesarPlan(cb.ctx);
-    if (!pending) return false;
-    if (cb.ctx.cesar?.proposedPlan?.id === pending.id) cb.ctx.cesar.proposedPlan = undefined;
-
-    const approved = approveCesarPlan(pending);
-    cb.setActivePlan(approved);
-    cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
-    saveCesarPlan(approved);
-    if (approved.planFilePath) {
-      try {
-        writeFileSync(approved.planFilePath, formatCesarPlanMarkdown(approved));
-      } catch (err) {
-        console.warn('[plan] failed to write approved Cesar plan file:', (err as Error).message ?? err);
-      }
-    }
-    await executeApprovedPlan(approved, cb);
-    return true;
-  >>>
+  handler lang="kern"
+    let name=pending value="findPendingCesarPlan(cb.ctx)"
+    if cond="!pending"
+      return value="false"
+    if cond="cb.ctx.cesar?.proposedPlan?.id === pending.id"
+      assign target="cb.ctx.cesar.proposedPlan" value="undefined"
+    let name=approved value="approveCesarPlan(pending)"
+    do value="cb.setActivePlan(approved)"
+    do value="cb.dispatch({ type: 'success', message: 'Plan approved — executing...' })"
+    do value="saveCesarPlan(approved)"
+    if cond="approved.planFilePath"
+      try
+        do value="writeFileSync(approved.planFilePath, formatCesarPlanMarkdown(approved))"
+        catch name=err
+          do value="console.warn('[plan] failed to write approved Cesar plan file:', (err as Error).message ?? err)"
+    do value="await executeApprovedPlan(approved, cb)"
+    return value="true"
 
 fn name=askChoiceQuestion params="cb:DispatchCallbacks,prompt:string,choices:any[],defaultChoiceKey?:string" returns="Promise<string>" export=true
   doc "Ask a keyboard-choice question in the composer instead of falling back to a blank free-text field."
@@ -1732,7 +1724,10 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         cb.dispatch({ type: 'info', message: renderTelemetrySnapshot(snap) });
         break;
       }
-      case 'engines': cb.setEnginePickerOpen(true); break;
+      case 'engines':
+        if ((intent as any).action) await handleEngines(cb.dispatch, cb.ctx, intent as any);
+        else cb.setEnginePickerOpen(true);
+        break;
       case 'discover': await handleDiscover(cb.dispatch, cb.ctx); break;
       case 'provider': await handleProvider(intent.action, intent.args, cb.dispatch, cb.ctx); break;
       case 'config': handleConfig(intent, cb.dispatch, cb.ctx); break;
@@ -2838,13 +2833,14 @@ fn name=buildPlanCallbacks params="initialPlan:CesarPlan, cb:DispatchCallbacks" 
 
 fn name=failedPlanStepIsFallbackRetryable params="step:any" returns=boolean export=true
   doc "Return true when a failed plan step looks like it was interrupted by stall/fallback handling rather than a semantic task failure."
-  handler <<<
-    if (!step || step.state !== 'failed') return false;
-    const result = step.result ?? {};
-    const text = `${String(result.error ?? '')}\n${String(result.output ?? '')}`.toLowerCase();
-    if (!text.trim()) return false;
-    return /\b(cancelled|canceled|aborted|abort|stalled|timeout|timed out|no response|econnreset|socket hang up)\b/.test(text);
-  >>>
+  handler lang="kern"
+    if cond="!step || step.state !== 'failed'"
+      return value="false"
+    let name=result value="step.result ?? {}"
+    let name=text value="`${String(result.error ?? '')}\\n${String(result.output ?? '')}`.toLowerCase()"
+    if cond="!text.trim()"
+      return value="false"
+    return value="/\\b(cancelled|canceled|aborted|abort|stalled|timeout|timed out|no response|econnreset|socket hang up)\\b/.test(text)"
 
 fn name=preparePlanFallbackRetry params="plan:CesarPlan,fallbackEngine:string" returns="CesarPlan|null" export=true
   doc "Reset one retryable failed plan step and bind it to the fallback engine. The caller runs executePlan again with a fresh abort controller."

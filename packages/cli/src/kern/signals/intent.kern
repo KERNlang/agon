@@ -126,24 +126,7 @@ const name=AUTOCREDIT_OFF_KEYWORDS type=RegExp value={{ /\b(?:schalt(?:e|)?\s+(?
 
 const name=AUTOCREDIT_ON_KEYWORDS type=RegExp value={{ /\b(?:schalt(?:e|)?\s+(?:das|es|autoCredit)\s+an|mach(?:e|)?\s+(?:das|es|autoCredit)\s+an|(?:autoCredit|co[\s-]?authored?|contributor)\s+an)\b/i }}
 
-const name=KNOWN_COLLAB_ENGINE_IDS type="Set<string>"
-  handler <<<
-    new Set([
-      'claude',
-      'codex',
-      'gemini',
-      'qwen',
-      'kimi',
-      'opencode',
-      'open-code',
-      'minimax',
-      'zai',
-      'aider',
-      'cursor',
-      'gpt',
-      'openai',
-    ])
-  >>>
+const name=KNOWN_COLLAB_ENGINE_IDS type="Set<string>" value={{ new Set([ 'claude', 'codex', 'gemini', 'qwen', 'kimi', 'opencode', 'open-code', 'minimax', 'zai', 'aider', 'cursor', 'gpt', 'openai' ]) }}
 
 fn name=classifyTask params="input:string" returns="'code'|'question'|'ambiguous'"
   handler lang="kern"
@@ -156,46 +139,38 @@ fn name=classifyTask params="input:string" returns="'code'|'question'|'ambiguous
     return value="'ambiguous'"
 
 fn name=parseForgeInput params="input:string" returns=Intent export=false
-  handler <<<
-    // Only match --hardened as a standalone flag (not inside task text or test args)
-    const hardenedMatch = input.match(/^(--hardened)\s+(.*)$/i) || input.match(/^(.*?)\s+(--hardened)\s*$/i);
-    const hardened = hardenedMatch !== null;
-    const cleaned = hardened
-      ? (hardenedMatch[1] === '--hardened' ? hardenedMatch[2] : hardenedMatch[1]).trim()
-      : input;
-    const fitnessMatch = FITNESS_PATTERN.exec(cleaned);
-    const fitnessCmd = fitnessMatch ? fitnessMatch[1].trim() : null;
-    const task = fitnessCmd
-      ? cleaned.replace(FITNESS_PATTERN, '').trim()
-      : cleaned;
-    return { type: 'forge', task, fitnessCmd, hardened } as Intent;
-  >>>
+  handler lang="kern"
+    comment raw="// Only match --hardened as a standalone flag (not inside task text or test args)"
+    let name=hardenedMatch value="input.match(/^(--hardened)\\s+(.*)$/i) || input.match(/^(.*?)\\s+(--hardened)\\s*$/i)"
+    let name=hardened value="hardenedMatch !== null"
+    let name=cleaned value="hardened ? (hardenedMatch[1] === '--hardened' ? hardenedMatch[2] : hardenedMatch[1]).trim() : input"
+    let name=fitnessMatch value="FITNESS_PATTERN.exec(cleaned)"
+    let name=fitnessCmd value="fitnessMatch ? fitnessMatch[1].trim() : null"
+    let name=task value="fitnessCmd ? cleaned.replace(FITNESS_PATTERN, '').trim() : cleaned"
+    return value="{ type: 'forge', task, fitnessCmd, hardened } as Intent"
 
 fn name=parseAgentShortcut params="input:string" returns="Intent|null" export=false
-  handler <<<
-    const match = input.match(AGENT_TRIGGER_PATTERN);
-    if (!match) return null;
-    const task = (match[1] ?? '').trim();
-    if (!task) return null;
-    return { type: 'agent', input: task } as Intent;
-  >>>
+  handler lang="kern"
+    let name=match value="input.match(AGENT_TRIGGER_PATTERN)"
+    if cond="!match"
+      return value="null"
+    let name=task value="(match[1] ?? '').trim()"
+    if cond="!task"
+      return value="null"
+    return value="{ type: 'agent', input: task } as Intent"
 
 fn name=normalizeEngineToken params="part:string" returns="string|null" export=false
-  handler <<<
-    const cleaned = part
-      .trim()
-      .toLowerCase()
-      .replace(/^@+/, '')
-      .replace(/^[^\w-]+|[^\w-]+$/g, '');
-    if (!cleaned) return null;
-    if (KNOWN_COLLAB_ENGINE_IDS.has(cleaned)) return cleaned;
-    // Let model IDs like kimi-for-coding-k2p6 or zai-coding-plan-glm-5.1
-    // through when they are explicitly introduced by "with"/"ask".
-    if (/^(?:claude|codex|gemini|qwen|kimi|opencode|open-code|minimax|zai|aider|cursor|gpt|openai)[\w.-]*$/i.test(cleaned)) {
-      return cleaned;
-    }
-    return null;
-  >>>
+  handler lang="kern"
+    let name=cleaned value="part .trim() .toLowerCase() .replace(/^@+/, '') .replace(/^[^\\w-]+|[^\\w-]+$/g, '')"
+    if cond="!cleaned"
+      return value="null"
+    if cond="KNOWN_COLLAB_ENGINE_IDS.has(cleaned)"
+      return value="cleaned"
+    comment raw="// Let model IDs like kimi-for-coding-k2p6 or zai-coding-plan-glm-5.1"
+    comment raw="// through when they are explicitly introduced by \"with\"/\"ask\"."
+    if cond="/^(?:claude|codex|gemini|qwen|kimi|opencode|open-code|minimax|zai|aider|cursor|gpt|openai)[\\w.-]*$/i.test(cleaned)"
+      return value="cleaned"
+    return value="null"
 
 fn name=parseExplicitEngineIds params="input:string" returns="string[]" export=false
   handler <<<
@@ -221,103 +196,65 @@ fn name=parseExplicitEngineIds params="input:string" returns="string[]" export=f
   >>>
 
 fn name=parseSemanticReviewShortcut params="input:string" returns="Intent|null" export=false
-  handler <<<
-    const lower = input.toLowerCase();
-    const reviewVerb = /\b(?:review|check|audit|inspect|look\s+over)\b/i.test(input);
-    if (!reviewVerb) return null;
-
-    const hasDelegationShape =
-      /\bwith\s+[a-z0-9@_.-]+/i.test(input) ||
-      /\b(?:ask|have|get)\s+[a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*\s+(?:to\s+)?(?:review|check|audit|look|inspect)\b/i.test(input);
-    if (!hasDelegationShape) return null;
-
-    // Don't short-circuit compound instructions like "fix x then review with codex"
-    // to direct review dispatch — let Cesar handle the full sequence.
-    const IMPLEMENTATION_LEAD_RE = /^(?:fix(?:e[sd]|ing)?|add(?:ed|ing|s)?|implement(?:ed|ing|s)?|build(?:ing|s)?|built|creat(?:e[sd]?|ing)|refactor(?:ed|ing|s)?|rewrit(?:e|es|ing|ten)|migrat(?:e[sd]?|ing)|wir(?:e[sd]?|ing)|chang(?:e[sd]?|ing)|updat(?:e[sd]?|ing)|optimi[sz](?:e[sd]?|ing)|remov(?:e[sd]?|ing)|delet(?:e[sd]?|ing)|patch(?:ed|ing|es)?)\b/i;
-    const normalized = input.trim().replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?/i, '');
-    if (IMPLEMENTATION_LEAD_RE.test(normalized)) return null;
-
-    const engineIds = parseExplicitEngineIds(input);
-    if (engineIds.length === 0) return null;
-
-    const targetMatch = lower.match(/\b(uncommitted|branch:[\w./-]+|commit:[a-f0-9]{4,40})\b/i);
-    const target = targetMatch ? targetMatch[1] : undefined;
-    return { type: 'review', engineId: engineIds[0], engineIds, target } as Intent;
-  >>>
+  handler lang="kern"
+    let name=lower value="input.toLowerCase()"
+    let name=reviewVerb value="/\\b(?:review|check|audit|inspect|look\\s+over)\\b/i.test(input)"
+    if cond="!reviewVerb"
+      return value="null"
+    let name=hasDelegationShape value="/\\bwith\\s+[a-z0-9@_.-]+/i.test(input) || /\\b(?:ask|have|get)\\s+[a-z0-9@_.-]+(?:\\s*(?:,|and|or|plus)\\s*[a-z0-9@_.-]+)*\\s+(?:to\\s+)?(?:review|check|audit|look|inspect)\\b/i.test(input)"
+    if cond="!hasDelegationShape"
+      return value="null"
+    comment raw="// Don't short-circuit compound instructions like \"fix x then review with codex\""
+    comment raw="// to direct review dispatch — let Cesar handle the full sequence."
+    let name=IMPLEMENTATION_LEAD_RE value="/^(?:fix(?:e[sd]|ing)?|add(?:ed|ing|s)?|implement(?:ed|ing|s)?|build(?:ing|s)?|built|creat(?:e[sd]?|ing)|refactor(?:ed|ing|s)?|rewrit(?:e|es|ing|ten)|migrat(?:e[sd]?|ing)|wir(?:e[sd]?|ing)|chang(?:e[sd]?|ing)|updat(?:e[sd]?|ing)|optimi[sz](?:e[sd]?|ing)|remov(?:e[sd]?|ing)|delet(?:e[sd]?|ing)|patch(?:ed|ing|es)?)\\b/i"
+    let name=normalized value="input.trim().replace(/^(?:can\\s+you\\s+|could\\s+you\\s+|please\\s+)?/i, '')"
+    if cond="IMPLEMENTATION_LEAD_RE.test(normalized)"
+      return value="null"
+    let name=engineIds value="parseExplicitEngineIds(input)"
+    if cond="engineIds.length === 0"
+      return value="null"
+    let name=targetMatch value="lower.match(/\\b(uncommitted|branch:[\\w./-]+|commit:[a-f0-9]{4,40})\\b/i)"
+    let name=target value="targetMatch ? targetMatch[1] : undefined"
+    return value="{ type: 'review', engineId: engineIds[0], engineIds, target } as Intent"
 
 fn name=stripCollaborationLeadIn params="input:string" returns=string export=false
-  handler <<<
-    return input
-      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:to\s+)?/i, '')
-      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?what\s+do\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:think\s+about\s+|say\s+about\s+|recommend\s+for\s+)?/i, '')
-      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:talk|think)\s+(?:it|this)?\s*(?:through\s+)?with\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s*/i, '')
-      .trim();
-  >>>
+  handler lang="kern"
+    return value="input .replace(/^(?:can\\s+you\\s+|could\\s+you\\s+|please\\s+)?(?:ask|have|get)\\s+(?:the\\s+)?(?:others|other\\s+engines|team|engines|models|everyone|all\\s+engines)\\s+(?:to\\s+)?/i, '') .replace(/^(?:can\\s+you\\s+|could\\s+you\\s+|please\\s+)?what\\s+do\\s+(?:the\\s+)?(?:others|other\\s+engines|team|engines|models|everyone|all\\s+engines)\\s+(?:think\\s+about\\s+|say\\s+about\\s+|recommend\\s+for\\s+)?/i, '') .replace(/^(?:can\\s+you\\s+|could\\s+you\\s+|please\\s+)?(?:talk|think)\\s+(?:it|this)?\\s*(?:through\\s+)?with\\s+(?:the\\s+)?(?:others|other\\s+engines|team|engines|models|everyone|all\\s+engines)\\s*/i, '') .trim()"
 
 fn name=hasCollaborationAskShape params="input:string" returns=boolean export=false
-  handler <<<
-    return /^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\b/i.test(input)
-      || /^(?:can\s+you\s+|could\s+you\s+|please\s+)?what\s+do\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:think|say|recommend)\b/i.test(input)
-      || /^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:brainstorm|compare|weigh\s+in)\s+(?:this|it)?\s*(?:with\s+)?(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\b/i.test(input);
-  >>>
+  handler lang="kern"
+    return value="/^(?:can\\s+you\\s+|could\\s+you\\s+|please\\s+)?(?:ask|have|get)\\s+(?:the\\s+)?(?:others|other\\s+engines|team|engines|models|everyone|all\\s+engines)\\b/i.test(input) || /^(?:can\\s+you\\s+|could\\s+you\\s+|please\\s+)?what\\s+do\\s+(?:the\\s+)?(?:others|other\\s+engines|team|engines|models|everyone|all\\s+engines)\\s+(?:think|say|recommend)\\b/i.test(input) || /^(?:can\\s+you\\s+|could\\s+you\\s+|please\\s+)?(?:brainstorm|compare|weigh\\s+in)\\s+(?:this|it)?\\s*(?:with\\s+)?(?:the\\s+)?(?:others|other\\s+engines|team|engines|models|everyone|all\\s+engines)\\b/i.test(input)"
 
 fn name=parseSemanticCollaborationShortcut params="input:string" returns="Intent|null" export=false
-  handler <<<
-    const question = stripCollaborationLeadIn(input);
-
-    if (/\b(?:debate|argue|tribunal|red-team|red\s+team)\b/i.test(input)) {
-      const cleaned = input
-        .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:have|get|ask)?\s*(?:the\s+)?(?:others|team|engines|models|everyone|all\s+engines)?\s*(?:to\s+)?(?:debate|argue|tribunal|red-team|red\s+team)\s*/i, '')
-        .trim();
-      return { type: 'tribunal', question: cleaned || input } as Intent;
-    }
-
-    if (/\b(?:campfire|talk\s+(?:it|this)?\s*through|think\s+(?:it|this)?\s*through)\b/i.test(input) && /\b(?:others|team|engines|models|everyone|all\s+engines)\b/i.test(input)) {
-      return { type: 'campfire', topic: question || input } as Intent;
-    }
-
-    if (hasCollaborationAskShape(input)) {
-      return { type: 'brainstorm', question: question || input } as Intent;
-    }
-
-    return null;
-  >>>
+  handler lang="kern"
+    let name=question value="stripCollaborationLeadIn(input)"
+    if cond="/\\b(?:debate|argue|tribunal|red-team|red\\s+team)\\b/i.test(input)"
+      let name=cleaned value="input .replace(/^(?:can\\s+you\\s+|could\\s+you\\s+|please\\s+)?(?:have|get|ask)?\\s*(?:the\\s+)?(?:others|team|engines|models|everyone|all\\s+engines)?\\s*(?:to\\s+)?(?:debate|argue|tribunal|red-team|red\\s+team)\\s*/i, '') .trim()"
+      return value="{ type: 'tribunal', question: cleaned || input } as Intent"
+    if cond="/\\b(?:campfire|talk\\s+(?:it|this)?\\s*through|think\\s+(?:it|this)?\\s*through)\\b/i.test(input) && /\\b(?:others|team|engines|models|everyone|all\\s+engines)\\b/i.test(input)"
+      return value="{ type: 'campfire', topic: question || input } as Intent"
+    if cond="hasCollaborationAskShape(input)"
+      return value="{ type: 'brainstorm', question: question || input } as Intent"
+    return value="null"
 
 fn name=parseSemanticForgeShortcut params="input:string" returns="Intent|null" export=false
-  handler <<<
-    const explicitForgeImperative = /^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\b/i.test(input)
-      && !/^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\s+(?:is|was|seems?|looks?|does|did|can|should|would|will|not|still)\b/i.test(input);
-    const hasForgeShape = explicitForgeImperative
-      || /\b(?:forge\s+this|forge\s+it|have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|competitive\s+(?:build|implementation|fix))\b/i.test(input);
-    if (!hasForgeShape) return null;
-
-    const task = input
-      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?/i, '')
-      .replace(/^forge\s+(?:this|it)\s*/i, '')
-      .replace(/^forge\s+/i, '')
-      .replace(/^have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete\s+(?:on\s+|to\s+)?/i, '')
-      .replace(/^make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete\s+(?:on\s+|to\s+)?/i, '')
-      .trim();
-
-    const parsed = parseForgeInput(task || input);
-    return { ...parsed, type: 'forge', action: 'natural' } as Intent;
-  >>>
+  handler lang="kern"
+    let name=explicitForgeImperative value="/^(?:can\\s+you\\s+|could\\s+you\\s+|please\\s+)?forge\\b/i.test(input) && !/^(?:can\\s+you\\s+|could\\s+you\\s+|please\\s+)?forge\\s+(?:is|was|seems?|looks?|does|did|can|should|would|will|not|still)\\b/i.test(input)"
+    let name=hasForgeShape value="explicitForgeImperative || /\\b(?:forge\\s+this|forge\\s+it|have\\s+(?:the\\s+)?(?:engines|models|team|others)\\s+compete|make\\s+(?:the\\s+)?(?:engines|models|team|others)\\s+compete|competitive\\s+(?:build|implementation|fix))\\b/i.test(input)"
+    if cond="!hasForgeShape"
+      return value="null"
+    let name=task value="input .replace(/^(?:can\\s+you\\s+|could\\s+you\\s+|please\\s+)?/i, '') .replace(/^forge\\s+(?:this|it)\\s*/i, '') .replace(/^forge\\s+/i, '') .replace(/^have\\s+(?:the\\s+)?(?:engines|models|team|others)\\s+compete\\s+(?:on\\s+|to\\s+)?/i, '') .replace(/^make\\s+(?:the\\s+)?(?:engines|models|team|others)\\s+compete\\s+(?:on\\s+|to\\s+)?/i, '') .trim()"
+    let name=parsed value="parseForgeInput(task || input)"
+    return value="{ ...parsed, type: 'forge', action: 'natural' } as Intent"
 
 fn name=parseSemanticDelegationShortcut params="input:string" returns="Intent|null" export=false
-  doc "Cesar owns multi-engine routing. Review-with-X used to short-circuit straight to handleReviewMany via parseSemanticReviewShortcut, which stole Cesar's role of choosing the mode (tribunal vs campfire vs sequential review). The review shortcut is intentionally disabled here so 'review with claude and codex' reaches Cesar instead. Slash form '/review with codex' still works through parseReviewShortcut."
-  handler <<<
-    return parseSemanticForgeShortcut(input)
-      ?? parseSemanticCollaborationShortcut(input);
-  >>>
+  doc "Plain text must not start orchestration. Brainstorm, tribunal, campfire, forge, and review are slash-only from chat input; mention words like 'tribunal' or 'forge' should reach Cesar as normal text unless the user uses /tribunal, /forge, etc."
+  handler lang="kern"
+    return value="null"
 
 fn name=splitReviewArgs params="input:string" returns="string[]" export=false
-  handler <<<
-    return input
-      .split(/\s+/)
-      .flatMap((part) => part.split(','))
-      .map((part) => part.trim())
-      .filter(Boolean);
-  >>>
+  handler lang="kern"
+    return value="input .split(/\\s+/) .flatMap((part) => part.split(',')) .map((part) => part.trim()) .filter(Boolean)"
 
 fn name=isReviewTargetArg params="part:string" returns=boolean export=false
   handler lang="kern"
@@ -365,27 +302,26 @@ fn name=parseReviewInput params="input:string" returns=Intent export=false
   >>>
 
 fn name=parseReviewShortcut params="input:string" returns="Intent|null" export=false
-  handler <<<
-    const match = input.match(/^(?:review|cr)(?:\s+([\s\S]+))?$/i);
-    if (!match) return null;
-
-    const rest = (match[1] ?? '').trim();
-    if (!rest) return parseReviewInput('');
-
-    const parsed = parseReviewInput(rest) as any;
-    const target = String(parsed.target ?? '').toLowerCase();
-    const hasEngines = Array.isArray(parsed.engineIds) && parsed.engineIds.length > 0;
-    const validTarget = !target || isReviewTargetArg(target);
-    if (hasEngines && target && isImplicitReviewSubjectArg(target)) {
-      return { ...parsed, target: undefined } as Intent;
-    }
-    if (hasEngines && validTarget) return parsed;
-    if (!hasEngines && validTarget) return parsed;
-
-    // Let natural-language review requests go through Cesar instead of
-    // mis-parsing "review this code" as an invalid target named "this".
-    return null;
-  >>>
+  handler lang="kern"
+    let name=match value="input.match(/^(?:review|cr)(?:\\s+([\\s\\S]+))?$/i)"
+    if cond="!match"
+      return value="null"
+    let name=rest value="(match[1] ?? '').trim()"
+    if cond="!rest"
+      return value="parseReviewInput('')"
+    let name=parsed value="parseReviewInput(rest) as any"
+    let name=target value="String(parsed.target ?? '').toLowerCase()"
+    let name=hasEngines value="Array.isArray(parsed.engineIds) && parsed.engineIds.length > 0"
+    let name=validTarget value="!target || isReviewTargetArg(target)"
+    if cond="hasEngines && target && isImplicitReviewSubjectArg(target)"
+      return value="{ ...parsed, target: undefined } as Intent"
+    if cond="hasEngines && validTarget"
+      return value="parsed"
+    if cond="!hasEngines && validTarget"
+      return value="parsed"
+    comment raw="// Let natural-language review requests go through Cesar instead of"
+    comment raw="// mis-parsing \"review this code\" as an invalid target named \"this\"."
+    return value="null"
 
 fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=Intent export=false
   handler <<<
@@ -476,8 +412,15 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
       case 'history':
         return { type: 'history', id: rest || undefined } as Intent;
       case 'engines':
-        if (rest === 'discover' || rest === 'scan') return { type: 'discover' } as Intent;
-        return { type: 'engines' } as Intent;
+        {
+          const engineParts = rest.trim().split(/\s+/).filter(Boolean);
+          const engineAction = engineParts[0]?.toLowerCase();
+          if (engineAction === 'discover' || engineAction === 'scan' || engineAction === 'rescan' || engineAction === 'refresh') return { type: 'discover', action: 'scan' } as Intent;
+          if (['hide', 'remove', 'delete', 'unhide', 'restore', 'show', 'list'].includes(engineAction ?? '')) {
+            return { type: 'engines', action: engineAction, id: engineParts[1] } as Intent;
+          }
+          return { type: 'engines' } as Intent;
+        }
       case 'discover':
         return { type: 'discover' } as Intent;
       case 'provider': {
@@ -680,43 +623,37 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
   >>>
 
 fn name=detectIntent params="raw:string, commandRegistry?:any" returns=Intent
-  handler <<<
-    const input = raw.trim();
-    if (!input) return { type: 'unknown', input: '' } as Intent;
-
-    if (input.startsWith('/')) {
-      return parseSlashCommand(input, commandRegistry);
-    }
-
-    if (EXIT_KEYWORDS.test(input)) return { type: 'exit' } as Intent;
-    if (HELP_KEYWORDS.test(input)) return { type: 'help' } as Intent;
-
-    const agentShortcut = parseAgentShortcut(input);
-    if (agentShortcut) return agentShortcut;
-
-    const reviewShortcut = parseReviewShortcut(input);
-    if (reviewShortcut) return reviewShortcut;
-
-    const delegationShortcut = parseSemanticDelegationShortcut(input);
-    if (delegationShortcut) return delegationShortcut;
-
-    // Natural-language toggle for autoCredit (German + English)
-    if (AUTOCREDIT_OFF_KEYWORDS.test(input)) {
-      return { type: 'toggleAutoCredit', autoCredit: false, input } as Intent;
-    }
-    if (AUTOCREDIT_ON_KEYWORDS.test(input)) {
-      return { type: 'toggleAutoCredit', autoCredit: true, input } as Intent;
-    }
-
-    // Only match keyword shortcuts for short, command-like inputs.
-    // Skip if input looks like a natural language sentence (question words, pronouns, >4 words).
-    const isCommandLike = input.split(/\s+/).length <= 4 && !SENTENCE_PREFIX.test(input);
-    if (isCommandLike) {
-      if (LEADERBOARD_KEYWORDS.test(input)) return { type: 'leaderboard' } as Intent;
-      if (HISTORY_KEYWORDS.test(input)) return { type: 'history' } as Intent;
-      if (ENGINES_KEYWORDS.test(input)) return { type: 'engines' } as Intent;
-      if (CONFIG_KEYWORDS.test(input)) return { type: 'config' } as Intent;
-    }
-
-    return { type: 'auto', input, taskClass: classifyTask(input) } as Intent;
-  >>>
+  handler lang="kern"
+    let name=input value="raw.trim()"
+    if cond="!input"
+      return value="{ type: 'unknown', input: '' } as Intent"
+    if cond="input.startsWith('/')"
+      return value="parseSlashCommand(input, commandRegistry)"
+    if cond="EXIT_KEYWORDS.test(input)"
+      return value="{ type: 'exit' } as Intent"
+    if cond="HELP_KEYWORDS.test(input)"
+      return value="{ type: 'help' } as Intent"
+    let name=agentShortcut value="parseAgentShortcut(input)"
+    if cond="agentShortcut"
+      return value="agentShortcut"
+    let name=delegationShortcut value="parseSemanticDelegationShortcut(input)"
+    if cond="delegationShortcut"
+      return value="delegationShortcut"
+    comment raw="// Natural-language toggle for autoCredit (German + English)"
+    if cond="AUTOCREDIT_OFF_KEYWORDS.test(input)"
+      return value="{ type: 'toggleAutoCredit', autoCredit: false, input } as Intent"
+    if cond="AUTOCREDIT_ON_KEYWORDS.test(input)"
+      return value="{ type: 'toggleAutoCredit', autoCredit: true, input } as Intent"
+    comment raw="// Only match keyword shortcuts for short, command-like inputs."
+    comment raw="// Skip if input looks like a natural language sentence (question words, pronouns, >4 words)."
+    let name=isCommandLike value="input.split(/\\s+/).length <= 4 && !SENTENCE_PREFIX.test(input)"
+    if cond="isCommandLike"
+      if cond="LEADERBOARD_KEYWORDS.test(input)"
+        return value="{ type: 'leaderboard' } as Intent"
+      if cond="HISTORY_KEYWORDS.test(input)"
+        return value="{ type: 'history' } as Intent"
+      if cond="ENGINES_KEYWORDS.test(input)"
+        return value="{ type: 'engines' } as Intent"
+      if cond="CONFIG_KEYWORDS.test(input)"
+        return value="{ type: 'config' } as Intent"
+    return value="{ type: 'auto', input, taskClass: classifyTask(input) } as Intent"

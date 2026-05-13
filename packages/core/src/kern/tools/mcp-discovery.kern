@@ -14,134 +14,84 @@ interface name=McpServerConfig
   field name=url type=string optional=true
 
 fn name=_readJsonSafe params="path:string" returns="unknown|null" export=false
-  handler <<<
-    try {
-      if (!existsSync(path)) return null;
-      return JSON.parse(readFileSync(path, 'utf-8'));
-    } catch {
-      return null;
-    }
-  >>>
+  handler lang="kern"
+    try
+      if cond="!existsSync(path)"
+        return value="null"
+      return value="JSON.parse(readFileSync(path, 'utf-8'))"
+      catch name=e
+        return value="null"
 
 fn name=_extractMcpServers params="data:unknown" returns="McpServerConfig[]" export=false
   doc "Extract MCP server definitions from a JSON config. Supports Claude Code format (mcpServers: {name: {command, args, env}}) and array format."
-  handler <<<
-    if (!data || typeof data !== 'object') return [];
-
-    const record = data as Record<string, unknown>;
-
-    // Claude Code / Cursor format: { mcpServers: { serverName: { command, args, env } } }
-    const serversObj = record.mcpServers ?? record.mcp_servers ?? record.servers;
-    if (serversObj && typeof serversObj === 'object' && !Array.isArray(serversObj)) {
-      const result: McpServerConfig[] = [];
-      for (const [name, def] of Object.entries(serversObj as Record<string, unknown>)) {
-        if (!def || typeof def !== 'object') continue;
-        const d = def as Record<string, unknown>;
-        // Skip disabled servers
-        if (d.disabled === true) continue;
-        result.push({
-          name,
-          command: String(d.command ?? ''),
-          args: Array.isArray(d.args) ? d.args.map(String) : undefined,
-          env: d.env && typeof d.env === 'object' ? d.env as Record<string, string> : undefined,
-          url: typeof d.url === 'string' ? d.url : undefined,
-        });
-      }
-      return result.filter(s => s.command || s.url);
-    }
-
-    // Array format: [{ name, command, args, env }]
-    if (Array.isArray(serversObj)) {
-      return serversObj
-        .filter((s: unknown) => s && typeof s === 'object')
-        .map((s: any) => ({
-          name: String(s.name ?? ''),
-          command: String(s.command ?? ''),
-          args: Array.isArray(s.args) ? s.args.map(String) : undefined,
-          env: s.env && typeof s.env === 'object' ? s.env : undefined,
-          url: typeof s.url === 'string' ? s.url : undefined,
-        }))
-        .filter((s: McpServerConfig) => (s.command || s.url) && s.name);
-    }
-
-    return [];
-  >>>
+  handler lang="kern"
+    if cond="!data || typeof data !== 'object'"
+      return value="[]"
+    let name=record value="data as Record<string, unknown>"
+    comment raw="// Claude Code / Cursor format: { mcpServers: { serverName: { command, args, env } } }"
+    let name=serversObj value="record.mcpServers ?? record.mcp_servers ?? record.servers"
+    if cond="serversObj && typeof serversObj === 'object' && !Array.isArray(serversObj)"
+      let name=result type="McpServerConfig[]" value="[]"
+      each pairKey=name pairValue=def in="serversObj as Record<string, unknown>" entries=true
+        if cond="!def || typeof def !== 'object'"
+          continue
+        let name=d value="def as Record<string, unknown>"
+        comment raw="// Skip disabled servers"
+        if cond="d.disabled === true"
+          continue
+        do value="result.push({ name, command: String(d.command ?? ''), args: Array.isArray(d.args) ? d.args.map(String) : undefined, env: d.env && typeof d.env === 'object' ? d.env as Record<string, string> : undefined, url: typeof d.url === 'string' ? d.url : undefined, })"
+      return value="result.filter(s => s.command || s.url)"
+    comment raw="// Array format: [{ name, command, args, env }]"
+    if cond="Array.isArray(serversObj)"
+      return value="serversObj .filter((s: unknown) => s && typeof s === 'object') .map((s: any) => Object.assign({}, { name: String(s.name ?? ''), command: String(s.command ?? ''), args: Array.isArray(s.args) ? s.args.map(String) : undefined, env: s.env && typeof s.env === 'object' ? s.env : undefined, url: typeof s.url === 'string' ? s.url : undefined })) .filter((s: McpServerConfig) => (s.command || s.url) && s.name)"
+    return value="[]"
 
 fn name=discoverMcpServers params="cwd:string" returns="McpServerConfig[]"
   doc "Auto-discover MCP server configs from standard locations. Project-level overrides global. Returns deduplicated list by server name."
-  handler <<<
-    const home = homedir();
-    const servers = new Map<string, McpServerConfig>();
-
-    // ── Global sources (lowest priority) ──
-
-    // 1. ~/.claude/settings.json
-    const claudeSettings = _readJsonSafe(join(home, '.claude', 'settings.json'));
-    if (claudeSettings) {
-      for (const s of _extractMcpServers(claudeSettings)) {
-        servers.set(s.name, s);
-      }
-    }
-
-    // 2. ~/.claude/settings.local.json (overrides global)
-    const claudeLocal = _readJsonSafe(join(home, '.claude', 'settings.local.json'));
-    if (claudeLocal) {
-      for (const s of _extractMcpServers(claudeLocal)) {
-        servers.set(s.name, s);
-      }
-    }
-
-    // ── Project-level sources (highest priority) ──
-
-    // 3. <cwd>/.vscode/mcp.json (VS Code MCP config)
-    const vscodeMcp = _readJsonSafe(join(cwd, '.vscode', 'mcp.json'));
-    if (vscodeMcp) {
-      for (const s of _extractMcpServers(vscodeMcp)) {
-        servers.set(s.name, s);
-      }
-    }
-
-    // 4. <cwd>/.cursor/mcp.json (Cursor IDE)
-    const cursorMcp = _readJsonSafe(join(cwd, '.cursor', 'mcp.json'));
-    if (cursorMcp) {
-      for (const s of _extractMcpServers(cursorMcp)) {
-        servers.set(s.name, s);
-      }
-    }
-
-    // 5. <cwd>/.agon.json (Agon project config — highest priority)
-    const agonProject = _readJsonSafe(join(cwd, '.agon.json'));
-    if (agonProject) {
-      for (const s of _extractMcpServers(agonProject)) {
-        servers.set(s.name, s);
-      }
-    }
-
-    return Array.from(servers.values());
-  >>>
+  handler lang="kern"
+    let name=home value="homedir()"
+    let name=servers value="new Map<string, McpServerConfig>()"
+    comment raw="// ── Global sources (lowest priority) ──"
+    comment raw="// 1. ~/.claude/settings.json"
+    let name=claudeSettings value="_readJsonSafe(join(home, '.claude', 'settings.json'))"
+    if cond="claudeSettings"
+      each name=s in="_extractMcpServers(claudeSettings)"
+        do value="servers.set(s.name, s)"
+    comment raw="// 2. ~/.claude/settings.local.json (overrides global)"
+    let name=claudeLocal value="_readJsonSafe(join(home, '.claude', 'settings.local.json'))"
+    if cond="claudeLocal"
+      each name=s in="_extractMcpServers(claudeLocal)"
+        do value="servers.set(s.name, s)"
+    comment raw="// ── Project-level sources (highest priority) ──"
+    comment raw="// 3. <cwd>/.vscode/mcp.json (VS Code MCP config)"
+    let name=vscodeMcp value="_readJsonSafe(join(cwd, '.vscode', 'mcp.json'))"
+    if cond="vscodeMcp"
+      each name=s in="_extractMcpServers(vscodeMcp)"
+        do value="servers.set(s.name, s)"
+    comment raw="// 4. <cwd>/.cursor/mcp.json (Cursor IDE)"
+    let name=cursorMcp value="_readJsonSafe(join(cwd, '.cursor', 'mcp.json'))"
+    if cond="cursorMcp"
+      each name=s in="_extractMcpServers(cursorMcp)"
+        do value="servers.set(s.name, s)"
+    comment raw="// 5. <cwd>/.agon.json (Agon project config — highest priority)"
+    let name=agonProject value="_readJsonSafe(join(cwd, '.agon.json'))"
+    if cond="agonProject"
+      each name=s in="_extractMcpServers(agonProject)"
+        do value="servers.set(s.name, s)"
+    return value="Array.from(servers.values())"
 
 fn name=mcpDiscoveryFingerprint params="cwd:string" returns=string
   doc "Compute a fingerprint of all MCP config source files. Changes when any config file is modified."
-  handler <<<
-    const home = homedir();
-    const paths = [
-      join(home, '.claude', 'settings.json'),
-      join(home, '.claude', 'settings.local.json'),
-      join(cwd, '.vscode', 'mcp.json'),
-      join(cwd, '.cursor', 'mcp.json'),
-      join(cwd, '.agon.json'),
-    ];
-
-    const parts: string[] = [];
-    for (const p of paths) {
-      try {
-        if (existsSync(p)) {
-          parts.push(`${p}:${statSync(p).mtimeMs}`);
-        }
-      } catch { /* skip */ }
-    }
-    return parts.join('|');
-  >>>
+  handler lang="kern"
+    let name=home value="homedir()"
+    let name=paths value="[ join(home, '.claude', 'settings.json'), join(home, '.claude', 'settings.local.json'), join(cwd, '.vscode', 'mcp.json'), join(cwd, '.cursor', 'mcp.json'), join(cwd, '.agon.json'), ]"
+    let name=parts type="string[]" value="[]"
+    each name=p in="paths"
+      try
+        if cond="existsSync(p)"
+          do value="parts.push(`${p}:${statSync(p).mtimeMs}`)"
+        catch name=e
+    return value="parts.join('|')"
 
 fn name=mcpServersToWireFormat params="servers:McpServerConfig[]" returns="Array<Record<string,unknown>>"
   doc "Convert discovered McpServerConfig[] to the wire format expected by PersistentSessionConfig.mcpServers."

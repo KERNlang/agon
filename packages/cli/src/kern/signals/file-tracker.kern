@@ -100,10 +100,9 @@ fn name=listFiles returns="FileEntry[]" export=true expr={{ return Array.from(_f
 fn name=getFileTrackerVersion returns=number export=true expr={{ return _fileTrackerState.version; }}
 
 fn name=clearFileTracker returns=void export=true
-  handler <<<
-    _fileTrackerState.files.clear();
-    _fileTrackerState.version += 1;
-  >>>
+  handler lang="kern"
+    do value="_fileTrackerState.files.clear()"
+    assign target="_fileTrackerState.version" op="+=" value="1"
 
 const name=_fileTrackerState type="{ files: Map<string, FileEntry>; version: number }" value={{ ({ files: new Map<string, FileEntry>(), version: 0 }) }}
 
@@ -115,18 +114,10 @@ fn name=getFileDiff params="absPath:string, maxLines?:number" returns=string exp
     // invisible in the expanded rail.
     try {
       const cap = maxLines ?? 40;
-      const result = spawnSync('git', ['diff', '--no-color', 'HEAD', '--', absPath], {
-        cwd: dirname(absPath),
-        encoding: 'utf8',
-        timeout: 1500,
-      });
+      const result = spawnSync('git', ['diff', '--no-color', 'HEAD', '--', absPath], { cwd: dirname(absPath), encoding: 'utf8', timeout: 1500 });
       const out = (result.stdout ?? '').trim();
       if (!out) {
-        const tracked = spawnSync('git', ['ls-files', '--error-unmatch', '--', absPath], {
-          cwd: dirname(absPath),
-          encoding: 'utf8',
-          timeout: 1500,
-        });
+        const tracked = spawnSync('git', ['ls-files', '--error-unmatch', '--', absPath], { cwd: dirname(absPath), encoding: 'utf8', timeout: 1500 });
         if (tracked.status === 0 || !existsSync(absPath)) return '';
         const st = statSync(absPath);
         if (!st.isFile()) return '';
@@ -134,11 +125,7 @@ fn name=getFileDiff params="absPath:string, maxLines?:number" returns=string exp
         const contentLines = content.split('\n');
         const shown = contentLines.slice(0, Math.max(1, cap - 1)).map((line: string) => `+${line}`);
         const omitted = Math.max(0, contentLines.length - shown.length);
-        return [
-          '@@ new file @@',
-          ...shown,
-          omitted > 0 ? `… (${omitted} more)` : '',
-        ].filter(Boolean).join('\n');
+        return [ '@@ new file @@', ...shown, omitted > 0 ? `… (${omitted} more)` : '', ].filter(Boolean).join('\n');
       }
       const lines = out.split('\n');
       if (lines.length <= cap) return out;

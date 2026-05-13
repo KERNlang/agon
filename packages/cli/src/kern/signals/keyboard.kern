@@ -29,7 +29,7 @@ interface name=KeyboardCtx
   field name=fileRailExpanded type=boolean
   field name=executionRailFocused type=boolean
 
-union name=KeyboardAction
+union name=KeyboardAction discriminant=type
   variant name=none
   variant name=exit
   variant name=resolveChoice

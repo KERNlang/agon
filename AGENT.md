@@ -4,6 +4,112 @@
 
 Agon is a multi-AI orchestration framework. Engines (Claude, Codex, Gemini, MiniMax, Qwen, etc.) compete via forge, debate via tribunal, ideate via brainstorm. Cesar orchestrates — delegates based on confidence, ELO ratings, and task classification.
 
+## Using Agon From Codex
+
+Codex agents should use Agon when the task benefits from multiple engines, adversarial review, team competition, or confidence-weighted ideation, but interactive chat must never auto-start these modes just because the user mentions "brainstorm", "tribunal", "forge", or "review". In the Agon UI, orchestration starts only from explicit slash commands (`/brainstorm`, `/tribunal`, `/forge`, `/review`, etc.) or from explicit CLI/MCP calls. If the user is speaking normally, suggest the slash command instead of starting the workflow.
+
+For non-interactive Codex shell work, the fastest path is the shell bridge:
+
+```bash
+agon call brainstorm "What approaches should we consider for this migration?"
+agon call tribunal "Should we ship this architecture?" --tribunalMode red-team --rounds 2
+agon call forge "Implement the cache layer" --test "npm test"
+agon call review
+```
+
+If `agon` is not linked in the shell, build/link it first:
+
+```bash
+npm run build
+npm run install:cli
+```
+
+Machine-readable callers should add `--jsonl`:
+
+```bash
+agon call brainstorm "Compare options for this refactor" --jsonl
+```
+
+Use `--cwd <path>` when the target repository is not the current working directory. Use `--engines claude,codex,gemini` to pin participants when needed. Use `--timeout <seconds>` for long-running tasks.
+
+Do not use `qwen`, `opencode`/Kimi, or `ollama` for Agon orchestration unless the user explicitly asks for one of them. Prefer known-good local engines such as `claude`, `codex`, and `gemini` when pinning engines.
+
+### Agon Mode Guide
+
+- `brainstorm`: use for open-ended approaches, architecture options, migration strategy, naming/API design, and "what are we missing?" questions.
+- `team-brainstorm`: use when idea quality matters enough to have teams synthesize and compete. Good for major product/architecture direction.
+- `tribunal`: use for tradeoffs, risky decisions, disagreement, review of a proposed plan, or "argue both sides."
+- `team-tribunal`: use when debate quality matters; teams argue positions and a judge synthesizes.
+- `forge`: use when multiple engines should implement the same bounded coding task and compete under a fitness command.
+- `team-forge`: use for high-value implementation where teams of engines collaborate and compete.
+- `campfire`: use when the problem is fuzzy and needs exploratory discussion before a crisp plan exists.
+- `pipeline`: full sequence: brainstorm, forge, then tribunal review. Use for critical changes where design, implementation, and review all matter.
+- `review`: use for code review of uncommitted changes or a specified target.
+- `agent` / `delegate`: use from the interactive app or MCP tools for bounded specialist help, not full competition.
+- `QuickNero`: use from MCP/Cesar flows for a fast self-challenge before escalating to heavier modes.
+- `plan`: use when the workflow needs staged execution, resumability, approval, or cost visibility.
+
+### Team Modes
+
+Team modes are available through both direct commands and `agon call`:
+
+```bash
+agon call brainstorm "Design plugin loading" --team --members 2
+agon call team-brainstorm "Design plugin loading" --members 3
+agon call forge "Implement session persistence" --team --members 2 --test "npm test"
+agon call team-forge "Implement session persistence" --members 3 --test "npm test"
+agon call tribunal "Pick the safer rollout plan" --team --members 2 --tribunalMode adversarial
+agon call team-tribunal "Pick the safer rollout plan" --members 3 --tribunalMode red-team
+```
+
+Interactive equivalents:
+
+```text
+/team-brainstorm 2v2 <question>
+/team-tribunal 3v3 red-team <question>
+/team-forge 2v2 <task> test with <command>
+```
+
+### Tribunal And Campfire Options
+
+Tribunal modes:
+
+```bash
+agon call tribunal "Question" --tribunalMode adversarial
+agon call tribunal "Question" --tribunalMode synthesis
+agon call tribunal "Question" --tribunalMode steelman
+agon call tribunal "Question" --tribunalMode socratic
+agon call tribunal "Question" --tribunalMode red-team
+agon call tribunal "Question" --tribunalMode postmortem
+```
+
+Campfire strategies:
+
+```bash
+agon call campfire "Explore the failure modes" --strategy all-respond
+agon call campfire "Explore the failure modes" --strategy lead-first --lead claude
+```
+
+### MCP For Codex
+
+Codex can use Agon through MCP instead of shell commands:
+
+```bash
+codex mcp add agon -- node /path/to/Agon-AI/plugins/agon-orchestrator/scripts/agon-mcp.js
+```
+
+Available MCP orchestration tools include `Brainstorm`, `Tribunal`, `Campfire`, `Forge`, `Pipeline`, `Review`, `Agent`, `Delegate`, `QuickNero`, `ReportConfidence`, and `ProposePlan`. When using MCP, call the matching Agon tool directly instead of spawning `agon call`. After starting an orchestration tool other than `Delegate`, `QuickNero`, or `ReportConfidence`, stop and wait for the result.
+
+### Choosing The Right Mode
+
+- If confidence is high and the change is small, stay local and implement.
+- If confidence is medium and the question is open, use `brainstorm`.
+- If confidence is medium and the issue is a tradeoff, use `tribunal`.
+- If confidence is low because the problem is unclear, use `campfire`.
+- If implementation quality matters and a fitness command exists, use `forge`.
+- If the change is high-impact, use `pipeline` or `team-forge`.
+- If the user explicitly asks for teams, competition, "multiple AIs", or "best result", prefer team modes or forge.
+
 ## Confidence First
 
 When answering, always state confidence clearly enough that the user can tell whether the claim is certain, likely, or tentative.
@@ -49,9 +155,10 @@ Add `https://kernlang.dev/api/mcp` to your MCP config for compile, validate, rev
 
 ```bash
 npm run kern:compile   # Compile all KERN sources
-npm run build          # tsc -b --force (all packages)
-npm run test           # vitest run (809 tests)
-npm run typecheck      # tsc -b (type check only)
+npm run kern:test      # Kern runtime tests
+npm run typecheck      # tsc -b
+npm run build          # build CLI and types
+npm test               # Kern tests + vitest
 ```
 
 ## Architecture

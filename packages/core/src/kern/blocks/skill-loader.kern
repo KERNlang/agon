@@ -14,20 +14,18 @@ interface name=Skill
   field name=tools type="string[]" optional=true
 
 fn name=parseFrontmatter params="content:string" returns="{meta:Record<string,string>, body:string}"
-  handler <<<
-    const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/);
-    if (!match) return { meta: {}, body: content };
-    const meta: Record<string, string> = {};
-    for (const line of match[1].split('\n')) {
-      const idx = line.indexOf(':');
-      if (idx > 0) {
-        const key = line.slice(0, idx).trim();
-        const val = line.slice(idx + 1).trim();
-        meta[key] = val;
-      }
-    }
-    return { meta, body: match[2].trim() };
-  >>>
+  handler lang="kern"
+    let name=match value="content.match(/^---\\s*\\n([\\s\\S]*?)\\n---\\s*\\n([\\s\\S]*)$/)"
+    if cond="!match"
+      return value="{ meta: {}, body: content }"
+    let name=meta type="Record<string, string>" value="{}"
+    each name=line in="match[1].split('\\n')"
+      let name=idx value="line.indexOf(':')"
+      if cond="idx > 0"
+        let name=key value="line.slice(0, idx).trim()"
+        let name=val value="line.slice(idx + 1).trim()"
+        assign target="meta[key]" value="val"
+    return value="{ meta, body: match[2].trim() }"
 
 fn name=loadSkillFile params="filePath:string" returns="Skill|null"
   handler <<<
@@ -95,15 +93,10 @@ fn name=loadSkills params="cwd?:string" returns="Skill[]"
   >>>
 
 fn name=findSkill params="trigger:string, skills:Skill[]" returns="Skill|null"
-  handler <<<
-    const normalized = trigger.startsWith('/') ? trigger : `/${trigger}`;
-    return skills.find((s) => s.trigger === normalized) ?? null;
-  >>>
+  handler lang="kern"
+    let name=normalized value="trigger.startsWith('/') ? trigger : `/${trigger}`"
+    return value="skills.find((s) => s.trigger === normalized) ?? null"
 
 fn name=renderSkillPrompt params="skill:Skill, input:string" returns=string
-  handler <<<
-    return skill.prompt
-      .replace(/\{input\}/g, input)
-      .replace(/\{trigger\}/g, skill.trigger)
-      .replace(/\{name\}/g, skill.name);
-  >>>
+  handler lang="kern"
+    return value="skill.prompt .replace(/\\{input\\}/g, input) .replace(/\\{trigger\\}/g, skill.trigger) .replace(/\\{name\\}/g, skill.name)"

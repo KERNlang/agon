@@ -62,58 +62,48 @@ fn name=pruneChats returns="void"
   >>>
 
 fn name=startChatSession params="opts?:{cwd?:string,branch?:string,engineIds?:string[]}" returns="ChatSession"
-  handler <<<
-    ensureChatsDir();
-    pruneChats();
-    const id = `chat-${Date.now()}`;
-    const session: ChatSession = {
-      id,
-      startedAt: new Date().toISOString(),
-      messages: [],
-      cwd: opts?.cwd,
-      branch: opts?.branch,
-      engineIds: opts?.engineIds,
-    };
-    const filePath = join(chatsDir(), `${id}.ndjson`);
-    const header: Record<string, unknown> = {
-      _type: 'header',
-      id,
-      startedAt: session.startedAt,
-    };
-    if (opts?.cwd) header.cwd = opts.cwd;
-    if (opts?.branch) header.branch = opts.branch;
-    if (opts?.engineIds) header.engineIds = opts.engineIds;
-    appendFileSync(filePath, JSON.stringify(header) + '\n');
-    return session;
-  >>>
+  handler lang="kern"
+    do value="ensureChatsDir()"
+    do value="pruneChats()"
+    fmt name=id template="chat-${Date.now()}"
+    let name=session type="ChatSession" value="{ id, startedAt: new Date().toISOString(), messages: [], cwd: opts?.cwd, branch: opts?.branch, engineIds: opts?.engineIds, }"
+    let name=filePath value="join(chatsDir(), `${id}.ndjson`)"
+    let name=header type="Record<string, unknown>" value="{ _type: 'header', id, startedAt: session.startedAt, }"
+    if cond="opts?.cwd"
+      assign target="header.cwd" value="opts.cwd"
+    if cond="opts?.branch"
+      assign target="header.branch" value="opts.branch"
+    if cond="opts?.engineIds"
+      assign target="header.engineIds" value="opts.engineIds"
+    do value="appendFileSync(filePath, JSON.stringify(header) + '\\n')"
+    return value="session"
 
 fn name=appendMessage params="session:ChatSession, msg:ChatMessage" returns="void"
-  handler <<<
-    session.messages.push(msg);
-    const filePath = join(chatsDir(), `${session.id}.ndjson`);
-    appendFileSync(filePath, JSON.stringify(msg) + '\n');
-    if (updateChatSummary(session)) {
-      appendSummaryRecord(session);
-    }
-  >>>
+  handler lang="kern"
+    do value="session.messages.push(msg)"
+    let name=filePath value="join(chatsDir(), `${session.id}.ndjson`)"
+    do value="appendFileSync(filePath, JSON.stringify(msg) + '\\n')"
+    if cond="updateChatSummary(session)"
+      do value="appendSummaryRecord(session)"
 
 fn name=appendUserTurnIfAbsent params="session:ChatSession|null|undefined, input:string" returns="boolean" export=true
   doc "Idempotently persist a user turn. If the last message is already an identical user message, do nothing and return false. Otherwise append and return true. Used by the Cesar fallback ladder — brain, dispatch, and acting-Cesar all try to save the user's message on empty responses, and this helper prevents double-persist when multiple layers fire for the same turn."
-  handler <<<
-    if (!session) return false;
-    if (!session.messages) session.messages = [];
-    const messages = session.messages;
-    const last = messages.length > 0 ? messages[messages.length - 1] : null;
-    if (last && last.role === 'user' && last.content === input) return false;
-    const msg: ChatMessage = { role: 'user', content: input, timestamp: new Date().toISOString() };
-    session.messages.push(msg);
-    const filePath = join(chatsDir(), `${session.id}.ndjson`);
-    appendFileSync(filePath, JSON.stringify(msg) + '\n');
-    if (updateChatSummary(session)) {
-      appendSummaryRecord(session);
-    }
-    return true;
-  >>>
+  handler lang="kern"
+    if cond="!session"
+      return value="false"
+    if cond="!session.messages"
+      assign target="session.messages" value="[]"
+    let name=messages value="session.messages"
+    let name=last value="messages.length > 0 ? messages[messages.length - 1] : null"
+    if cond="last && last.role === 'user' && last.content === input"
+      return value="false"
+    let name=msg type="ChatMessage" value="{ role: 'user', content: input, timestamp: new Date().toISOString() }"
+    do value="session.messages.push(msg)"
+    let name=filePath value="join(chatsDir(), `${session.id}.ndjson`)"
+    do value="appendFileSync(filePath, JSON.stringify(msg) + '\\n')"
+    if cond="updateChatSummary(session)"
+      do value="appendSummaryRecord(session)"
+    return value="true"
 
 fn name=truncateMiddle params="value:string, limit:number" returns=string export=false
   handler <<<
@@ -127,56 +117,45 @@ fn name=truncateMiddle params="value:string, limit:number" returns=string export
   >>>
 
 fn name=compactChatMessage params="msg:ChatMessage" returns=string export=false
-  handler <<<
-    const speaker = msg.role === 'user' ? 'User' : (msg.engineId ? String(msg.engineId) : 'Assistant');
-    const content = String(msg.content ?? '').replace(/\u0000/g, '').replace(/\s+/g, ' ').trim();
-    return `${speaker}: ${truncateMiddle(content, CHAT_SUMMARY_ENTRY_CHARS)}`;
-  >>>
+  handler lang="kern"
+    let name=speaker value="msg.role === 'user' ? 'User' : (msg.engineId ? String(msg.engineId) : 'Assistant')"
+    let name=content value="String(msg.content ?? '').replace(/\\u0000/g, '').replace(/\\s+/g, ' ').trim()"
+    fmt return=true template="${speaker}: ${truncateMiddle(content, CHAT_SUMMARY_ENTRY_CHARS)}"
 
 fn name=trimChatSummary params="summary:string" returns=string export=false
-  handler <<<
-    const text = String(summary ?? '').trim();
-    if (text.length <= CHAT_SUMMARY_MAX_CHARS) return text;
-    const marker = '\n[... earlier chat summary compacted ...]\n';
-    const keep = CHAT_SUMMARY_MAX_CHARS - marker.length;
-    const head = Math.max(800, Math.floor(keep * 0.30));
-    const tail = Math.max(0, keep - head);
-    return text.slice(0, head).trimEnd() + marker + text.slice(text.length - tail).trimStart();
-  >>>
+  handler lang="kern"
+    let name=text value="String(summary ?? '').trim()"
+    if cond="text.length <= CHAT_SUMMARY_MAX_CHARS"
+      return value="text"
+    let name=marker value="'\\n[... earlier chat summary compacted ...]\\n'"
+    let name=keep value="CHAT_SUMMARY_MAX_CHARS - marker.length"
+    let name=head value="Math.max(800, Math.floor(keep * 0.30))"
+    let name=tail value="Math.max(0, keep - head)"
+    return value="text.slice(0, head).trimEnd() + marker + text.slice(text.length - tail).trimStart()"
 
 fn name=appendSummaryRecord params="session:ChatSession" returns=void export=false
-  handler <<<
-    const filePath = join(chatsDir(), `${session.id}.ndjson`);
-    appendFileSync(filePath, JSON.stringify({
-      _type: 'summary',
-      summary: session.summary ?? '',
-      summarizedMessageCount: session.summarizedMessageCount ?? 0,
-      timestamp: new Date().toISOString(),
-    }) + '\n');
-  >>>
+  handler lang="kern"
+    let name=filePath value="join(chatsDir(), `${session.id}.ndjson`)"
+    do value="appendFileSync(filePath, JSON.stringify({ _type: 'summary', summary: session.summary ?? '', summarizedMessageCount: session.summarizedMessageCount ?? 0, timestamp: new Date().toISOString(), }) + '\\n')"
 
 fn name=updateChatSummary params="session:ChatSession" returns=boolean export=true
   doc "Incrementally compact older current-session chat into a bounded summary. The newest tail remains available as raw capped turns; older turns become a compact digest for Cesar/API respawns without replaying the full transcript."
-  handler <<<
-    if (!session || !Array.isArray(session.messages)) return false;
-    const targetCount = Math.max(0, session.messages.length - CHAT_SUMMARY_TAIL_MESSAGES);
-    const already = Math.max(0, session.summarizedMessageCount ?? 0);
-    if (targetCount <= already) return false;
-
-    const additions = session.messages.slice(already, targetCount)
-      .filter((msg: any) => msg && typeof msg.content === 'string' && msg.content.trim())
-      .map((msg: ChatMessage) => compactChatMessage(msg));
-    if (additions.length === 0) {
-      session.summarizedMessageCount = targetCount;
-      return true;
-    }
-
-    const previous = String(session.summary ?? '').trim();
-    const combined = [previous, additions.join('\n')].filter(Boolean).join('\n');
-    session.summary = trimChatSummary(combined);
-    session.summarizedMessageCount = targetCount;
-    return true;
-  >>>
+  handler lang="kern"
+    if cond="!session || !Array.isArray(session.messages)"
+      return value="false"
+    let name=targetCount value="Math.max(0, session.messages.length - CHAT_SUMMARY_TAIL_MESSAGES)"
+    let name=already value="Math.max(0, session.summarizedMessageCount ?? 0)"
+    if cond="targetCount <= already"
+      return value="false"
+    let name=additions value="session.messages.slice(already, targetCount) .filter((msg: any) => msg && typeof msg.content === 'string' && msg.content.trim()) .map((msg: ChatMessage) => compactChatMessage(msg))"
+    if cond="additions.length === 0"
+      assign target="session.summarizedMessageCount" value="targetCount"
+      return value="true"
+    let name=previous value="String(session.summary ?? '').trim()"
+    let name=combined value="[previous, additions.join('\\n')].filter(Boolean).join('\\n')"
+    assign target="session.summary" value="trimChatSummary(combined)"
+    assign target="session.summarizedMessageCount" value="targetCount"
+    return value="true"
 
 fn name=formatChatHistoryForPrompt params="messages:ChatMessage[], opts?:{maxMessages?:number,maxChars?:number,maxMessageChars?:number}" returns=string export=true
   doc "Format recent chat history for prompts with hard token-waste bounds. Keeps newest messages first and truncates oversized turns so fallback/chat prompts cannot replay a huge transcript forever."
@@ -219,43 +198,33 @@ fn name=formatChatHistoryForPrompt params="messages:ChatMessage[], opts?:{maxMes
 
 fn name=formatChatContextForPrompt params="session:ChatSession|null|undefined, opts?:{maxMessages?:number,maxChars?:number,maxMessageChars?:number,maxSummaryChars?:number}" returns=string export=true
   doc "Format compact session context for prompts: rolling summary of older turns plus capped recent turns."
-  handler <<<
-    if (!session) return '';
-    updateChatSummary(session);
-    const parts: string[] = [];
-    const maxSummaryChars = Math.max(0, opts?.maxSummaryChars ?? 5000);
-    const summary = String(session.summary ?? '').trim();
-    if (summary && maxSummaryChars > 0) {
-      parts.push(`[Earlier conversation summary]\n${truncateMiddle(summary, maxSummaryChars)}`);
-    }
-
-    const history = formatChatHistoryForPrompt(session.messages ?? [], {
-      maxMessages: opts?.maxMessages ?? CHAT_SUMMARY_TAIL_MESSAGES,
-      maxChars: opts?.maxChars ?? 8000,
-      maxMessageChars: opts?.maxMessageChars ?? 900,
-    });
-    if (history) parts.push(`[Recent conversation]\n${history}`);
-    return parts.join('\n\n');
-  >>>
+  handler lang="kern"
+    if cond="!session"
+      return value="''"
+    do value="updateChatSummary(session)"
+    let name=parts type="string[]" value="[]"
+    let name=maxSummaryChars value="Math.max(0, opts?.maxSummaryChars ?? 5000)"
+    let name=summary value="String(session.summary ?? '').trim()"
+    if cond="summary && maxSummaryChars > 0"
+      do value="parts.push(`[Earlier conversation summary]\\n${truncateMiddle(summary, maxSummaryChars)}`)"
+    let name=history value="formatChatHistoryForPrompt(session.messages ?? [], { maxMessages: opts?.maxMessages ?? CHAT_SUMMARY_TAIL_MESSAGES, maxChars: opts?.maxChars ?? 8000, maxMessageChars: opts?.maxMessageChars ?? 900, })"
+    if cond="history"
+      do value="parts.push(`[Recent conversation]\\n${history}`)"
+    return value="parts.join('\\n\\n')"
 
 fn name=buildHistoryPrimedPrompt params="session:ChatSession, input:string, maxTurns?:number" returns=string export=true
   doc "Concatenate recent conversation history with the current input so one-shot dispatches keep continuity. Used by fallback paths that bypass PersistentSession — API-only engines (no CLI binary) still get multi-turn context this way. Default: last 10 turns (20 messages)."
-  handler <<<
-    const limit = (maxTurns ?? 10) * 2;
-    const context = formatChatContextForPrompt(session, {
-      maxMessages: limit,
-      maxChars: 12_000,
-      maxMessageChars: 1_200,
-      maxSummaryChars: 5_000,
-    });
-    if (!context) return input;
-    const lines: string[] = ['[Prior conversation]'];
-    lines.push(context);
-    lines.push('');
-    lines.push(`[Current turn]`);
-    lines.push(`User: ${input}`);
-    return lines.join('\n');
-  >>>
+  handler lang="kern"
+    let name=limit value="(maxTurns ?? 10) * 2"
+    let name=context value="formatChatContextForPrompt(session, { maxMessages: limit, maxChars: 12000, maxMessageChars: 1200, maxSummaryChars: 5000, })"
+    if cond="!context"
+      return value="input"
+    let name=lines type="string[]" value="['[Prior conversation]']"
+    do value="lines.push(context)"
+    do value="lines.push('')"
+    do value="lines.push(`[Current turn]`)"
+    do value="lines.push(`User: ${input}`)"
+    return value="lines.join('\\n')"
 
 fn name=loadChatSession params="id:string" returns="ChatSession|null"
   handler <<<
@@ -323,7 +292,6 @@ fn name=listChatSessions params="limit:number" returns="ChatSession[]"
   >>>
 
 fn name=latestChatSession returns="ChatSession|null"
-  handler <<<
-    const sessions = listChatSessions(1);
-    return sessions.length > 0 ? sessions[0] : null;
-  >>>
+  handler lang="kern"
+    let name=sessions value="listChatSessions(1)"
+    return value="sessions.length > 0 ? sessions[0] : null"

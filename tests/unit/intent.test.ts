@@ -224,6 +224,29 @@ describe('Intent Detection — Slash Commands', () => {
     expect(detectIntent('/models engine').type).toBe('engines');
   });
 
+  it('/engines supports persistent hide/remove/restore actions', () => {
+    const hide = detectIntent('/engines hide ollama');
+    expect(hide.type).toBe('engines');
+    if (hide.type === 'engines') {
+      expect(hide.action).toBe('hide');
+      expect(hide.id).toBe('ollama');
+    }
+
+    const remove = detectIntent('/engines remove qwen');
+    expect(remove.type).toBe('engines');
+    if (remove.type === 'engines') {
+      expect(remove.action).toBe('remove');
+      expect(remove.id).toBe('qwen');
+    }
+
+    const restore = detectIntent('/engines restore ollama');
+    expect(restore.type).toBe('engines');
+    if (restore.type === 'engines') {
+      expect(restore.action).toBe('restore');
+      expect(restore.id).toBe('ollama');
+    }
+  });
+
   it('/tokens and aliases', () => {
     expect(detectIntent('/tokens').type).toBe('tokens');
     expect(detectIntent('/usage').type).toBe('tokens');
@@ -332,32 +355,17 @@ describe('Intent Detection — Natural Language', () => {
     if (ambiguous.type === 'auto') expect(ambiguous.taskClass).toBe('ambiguous');
   });
 
-  it('parses command-like review shortcuts without routing through Cesar', () => {
+  it('keeps plain review text as auto; /review is required to start review', () => {
     const r = detectIntent('review with gemini');
-    expect(r.type).toBe('review');
-    if (r.type === 'review') {
-      expect(r.engineId).toBe('gemini');
-      expect(r.engineIds).toEqual(['gemini']);
-      expect(r.target).toBeUndefined();
-    }
+    expect(r.type).toBe('auto');
 
     const branch = detectIntent('review branch:main with claude');
-    expect(branch.type).toBe('review');
-    if (branch.type === 'review') {
-      expect(branch.engineId).toBe('claude');
-      expect(branch.engineIds).toEqual(['claude']);
-      expect(branch.target).toBe('branch:main');
-    }
+    expect(branch.type).toBe('auto');
   });
 
-  it('parses command-like review shortcuts with multiple engines', () => {
+  it('keeps plain multi-engine review text as auto; /review is required', () => {
     const r = detectIntent('review with codex gemini');
-    expect(r.type).toBe('review');
-    if (r.type === 'review') {
-      expect(r.engineId).toBe('codex');
-      expect(r.engineIds).toEqual(['codex', 'gemini']);
-      expect(r.target).toBeUndefined();
-    }
+    expect(r.type).toBe('auto');
   });
 
   it('does not short-circuit compound instructions starting with implementation verbs', () => {
@@ -377,29 +385,13 @@ describe('Intent Detection — Natural Language', () => {
     expect(canYouFix.type).not.toBe('review');
   });
 
-  it('keeps short imperative review shortcuts but routes natural-language review delegation through Cesar', () => {
-    // Short command-like forms still bypass Cesar via parseReviewShortcut
-    // (input begins with "review"). Cesar owns multi-engine routing for
-    // anything more conversational so he can pick tribunal/campfire/etc.
+  it('routes all plain review delegation text through Cesar instead of starting review', () => {
     const r = detectIntent('review it with codex');
-    expect(r.type).toBe('review');
-    if (r.type === 'review') {
-      expect(r.engineId).toBe('codex');
-      expect(r.engineIds).toEqual(['codex']);
-      expect(r.target).toBeUndefined();
-    }
+    expect(r.type).toBe('auto');
 
     const withAnd = detectIntent('review it with codex and gemini');
-    expect(withAnd.type).toBe('review');
-    if (withAnd.type === 'review') {
-      expect(withAnd.engineId).toBe('codex');
-      expect(withAnd.engineIds).toEqual(['codex', 'gemini']);
-      expect(withAnd.target).toBeUndefined();
-    }
+    expect(withAnd.type).toBe('auto');
 
-    // "ask X (and Y) to review it" no longer short-circuits to handleReviewMany.
-    // It must reach Cesar so he chooses the mode (tribunal vs campfire vs
-    // sequential review) instead of always running a sequential code review.
     const ask = detectIntent('ask codex and gemini to review it');
     expect(ask.type).toBe('auto');
 
@@ -407,24 +399,15 @@ describe('Intent Detection — Natural Language', () => {
     expect(canYou.type).toBe('auto');
   });
 
-  it('routes high-confidence collaboration phrases to buddy flows', () => {
+  it('keeps collaboration phrases as auto; slash commands are required for buddy flows', () => {
     const brainstorm = detectIntent('can you ask others whether this design is good');
-    expect(brainstorm.type).toBe('brainstorm');
-    if (brainstorm.type === 'brainstorm') {
-      expect(brainstorm.question).toBe('whether this design is good');
-    }
+    expect(brainstorm.type).toBe('auto');
 
     const tribunal = detectIntent('debate whether REST or GraphQL fits');
-    expect(tribunal.type).toBe('tribunal');
-    if (tribunal.type === 'tribunal') {
-      expect(tribunal.question).toBe('whether REST or GraphQL fits');
-    }
+    expect(tribunal.type).toBe('auto');
 
     const campfire = detectIntent('talk this through with the team');
-    expect(campfire.type).toBe('campfire');
-    if (campfire.type === 'campfire') {
-      expect(campfire.topic).toBe('talk this through with the team');
-    }
+    expect(campfire.type).toBe('auto');
   });
 
   it('does not misroute feature requests that mention engines to brainstorm', () => {
@@ -435,34 +418,19 @@ describe('Intent Detection — Natural Language', () => {
     }
   });
 
-  it('routes high-confidence competition phrases to forge', () => {
+  it('keeps competition phrases as auto; /forge is required', () => {
     const r = detectIntent('make engines compete on fix auth test with npm test');
-    expect(r.type).toBe('forge');
-    if (r.type === 'forge') {
-      expect(r.task).toBe('fix auth');
-      expect(r.fitnessCmd).toBe('npm test');
-    }
+    expect(r.type).toBe('auto');
   });
 
-  it('routes explicit natural-language forge imperatives before Cesar review routing', () => {
+  it('keeps explicit natural-language forge imperatives as auto', () => {
     const r = detectIntent('can you Forge a small CLI UX fix: make forge status labels show synthesizing before final patch review. Fitness: npm run test:ts -- tests/unit/forge-timeout.test.ts tests/integration/forge-e2e.test.ts');
-    expect(r.type).toBe('forge');
-    if (r.type === 'forge') {
-      expect(r.action).toBe('natural');
-      expect(r.task).toContain('small CLI UX fix');
-      expect(r.task).toContain('final patch review');
-      expect(r.fitnessCmd).toBe('npm run test:ts -- tests/unit/forge-timeout.test.ts tests/integration/forge-e2e.test.ts');
-    }
+    expect(r.type).toBe('auto');
   });
 
-  it('lets natural-language forge prompts omit fitness so Cesar can prepare it', () => {
+  it('keeps natural-language forge prompts as auto even without fitness', () => {
     const r = detectIntent('forge a small CLI UX fix for forge status labels');
-    expect(r.type).toBe('forge');
-    if (r.type === 'forge') {
-      expect(r.action).toBe('natural');
-      expect(r.task).toBe('a small CLI UX fix for forge status labels');
-      expect(r.fitnessCmd).toBeNull();
-    }
+    expect(r.type).toBe('auto');
   });
 
   it('does not treat forge status questions as forge jobs', () => {

@@ -19,32 +19,22 @@ service name=EngineHealth singleton=true
 
   method name=mark params="engineId:string, status:'ok'|'auth-failed'|'unreachable'|'timeout'|'failed', reason:string" returns=void
     doc "Record an engine failure. Subsequent calls accumulate failureCount. 'ok' clears the record."
-    handler <<<
-      if (status === 'ok') {
-        this.records.delete(engineId);
-        return;
-      }
-      const existing = this.records.get(engineId);
-      const trimmedReason = reason.length > 200 ? reason.slice(0, 200) + '…' : reason;
-      this.records.set(engineId, {
-        engineId,
-        status,
-        reason: trimmedReason,
-        lastFailureAt: Date.now(),
-        failureCount: (existing?.failureCount ?? 0) + 1,
-      });
-    >>>
+    handler lang="kern"
+      if cond="status === 'ok'"
+        do value="this.records.delete(engineId)"
+        return
+      let name=existing value="this.records.get(engineId)"
+      let name=trimmedReason value="reason.length > 200 ? reason.slice(0, 200) + '…' : reason"
+      do value="this.records.set(engineId, { engineId, status, reason: trimmedReason, lastFailureAt: Date.now(), failureCount: (existing?.failureCount ?? 0) + 1, })"
 
   method name=clear params="engineId:string" returns=void
     doc "Manually rehabilitate an engine (e.g., after the user refreshes a token)."
-    handler <<<
-      this.records.delete(engineId);
-    >>>
+    handler lang="kern"
+      do value="this.records.delete(engineId)"
 
   method name=clearAll returns=void
-    handler <<<
-      this.records.clear();
-    >>>
+    handler lang="kern"
+      do value="this.records.clear()"
 
   method name=isHealthy params="engineId:string" returns=boolean
     handler lang="kern"
@@ -66,23 +56,19 @@ const name=engineHealth value={{ new EngineHealth() }}
 
 fn name=classifyDispatchFailure params="signal:{stderr?:string, exitCode?:number, errorMessage?:string, timedOut?:boolean}" returns="'auth-failed'|'unreachable'|'timeout'|'failed'"
   doc "Heuristic classifier — maps a dispatch failure signal to a health status. Order matters: timeout > auth > unreachable > failed."
-  handler <<<
-    if (signal.timedOut === true) return 'timeout';
-    const haystack = [
-      signal.stderr ?? '',
-      signal.errorMessage ?? '',
-    ].join('\n').toLowerCase();
-    if (!haystack.trim()) return 'failed';
-    // Auth: 401, "invalid api key", "token expired", "unauthorized", "authentication failed", OAuth plan/auth failures
-    if (/\b401\b|invalid api key|invalid access token|token (expired|invalid)|oauth|free tier was discontinued|coding plan|unauthori[sz]ed|authentication (failed|error)|authorized_error|authentication required/.test(haystack)) {
-      return 'auth-failed';
-    }
-    // Unreachable: ENOENT spawn, ENOTFOUND DNS, ECONNREFUSED, ECONNRESET, network unreachable
-    // Use spawn.*enoent instead of spawn[^a-z]+enoent — paths after "spawn"
-    // routinely contain lowercase letters (e.g. "spawn /usr/bin/aider enoent"),
-    // and [^a-z]+ would stop at the first letter, missing the match.
-    if (/spawn.*enoent|enotfound|econnrefused|econnreset|getaddrinfo|network (is )?unreachable|fetch failed|connect (etimedout|timeout)/.test(haystack)) {
-      return 'unreachable';
-    }
-    return 'failed';
-  >>>
+  handler lang="kern"
+    if cond="signal.timedOut === true"
+      return value="'timeout'"
+    let name=haystack value="[ signal.stderr ?? '', signal.errorMessage ?? '', ].join('\\n').toLowerCase()"
+    if cond="!haystack.trim()"
+      return value="'failed'"
+    comment raw="// Auth: 401, \"invalid api key\", \"token expired\", \"unauthorized\", \"authentication failed\", OAuth plan/auth failures"
+    if cond="/\\b401\\b|invalid api key|invalid access token|token (expired|invalid)|oauth|free tier was discontinued|coding plan|unauthori[sz]ed|authentication (failed|error)|authorized_error|authentication required/.test(haystack)"
+      return value="'auth-failed'"
+    comment raw="// Unreachable: ENOENT spawn, ENOTFOUND DNS, ECONNREFUSED, ECONNRESET, network unreachable"
+    comment raw="// Use spawn.*enoent instead of spawn[^a-z]+enoent — paths after \"spawn\""
+    comment raw="// routinely contain lowercase letters (e.g. \"spawn /usr/bin/aider enoent\"),"
+    comment raw="// and [^a-z]+ would stop at the first letter, missing the match."
+    if cond="/spawn.*enoent|enotfound|econnrefused|econnreset|getaddrinfo|network (is )?unreachable|fetch failed|connect (etimedout|timeout)/.test(haystack)"
+      return value="'unreachable'"
+    return value="'failed'"

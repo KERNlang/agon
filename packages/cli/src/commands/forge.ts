@@ -8,6 +8,7 @@ import { createCliAdapter } from '@agon/adapter-cli';
 import { runForge } from '@agon/forge';
 import { header, success, fail, warn, info, table, green, red, yellow, bold, cyan } from '../output.js';
 import { icons } from '../icons.js';
+import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 
 export const forgeCommand = defineCommand({
   meta: {
@@ -60,7 +61,10 @@ export const forgeCommand = defineCommand({
 
     const adapter = createCliAdapter(registry);
 
-    const available = registry.activeIds(config);
+    const allActive = registry.activeIds(config);
+    const available = args.engines
+      ? allActive
+      : filterDefaultOrchestrationEngines(allActive);
     if (available.length === 0) {
       fail('No engines found. Install at least one AI CLI tool.');
       info('Supported: claude, codex, gemini');

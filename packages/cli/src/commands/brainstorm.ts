@@ -8,6 +8,7 @@ import { createCliAdapter } from '@agon/adapter-cli';
 import { runBrainstorm } from '@agon/forge';
 import { header, success, info, table, bold, cyan, green } from '../output.js';
 import { icons } from '../icons.js';
+import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 
 export const brainstormCommand = defineCommand({
   meta: {
@@ -41,7 +42,7 @@ export const brainstormCommand = defineCommand({
     const adapter = createCliAdapter(registry);
     const available = args.engines
       ? args.engines.split(',').map((s) => s.trim())
-      : registry.activeIds(config);
+      : filterDefaultOrchestrationEngines(registry.activeIds(config));
 
     const outputDir = join(RUNS_DIR, `brainstorm-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });

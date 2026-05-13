@@ -387,8 +387,13 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
 
       // Two-tier idle timeout: longer patience before first chunk (queuing/cold start),
       // tighter watchdog once streaming starts. Per-engine config overrides defaults.
+      // IDLE_TIMEOUT was 15s, which killed API engines during silent reasoning or
+      // tool-call phases — a real failure mode observed in agon forge where gemini,
+      // kimi-for-coding, and zai-coding produced zero diff because their stream
+      // went quiet for >15s while internally working. 90s gives coding engines
+      // room to think without breaking the safety net for genuinely hung streams.
       const FIRST_CHUNK_TIMEOUT = config.firstChunkTimeoutMs ?? 60_000;  // 60s default
-      const IDLE_TIMEOUT = config.idleTimeoutMs ?? 15_000;              // 15s default
+      const IDLE_TIMEOUT = config.idleTimeoutMs ?? 90_000;              // 90s default
       const iterator = result.fullStream[Symbol.asyncIterator]();
       let iterDone = false;
       let gotFirstChunk = false;

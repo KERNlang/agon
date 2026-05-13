@@ -3,7 +3,7 @@
 // Teams' final patches scored by existing forge fitness
 
 import from="node:crypto" names="randomUUID"
-import from="node:fs" names="mkdirSync,writeFileSync"
+import from="node:fs" names="mkdirSync,writeFileSync,renameSync"
 import from="@agon/core" names="ForgeOptions,EngineAdapter,EngineResult,ForgeEvent,TaskClass" types=true
 import from="@agon/core" names="TeamSpec,TeamFormat,TeamComposeMode,TeamMember,TeamRoundTrace,TeamSubmission,TeamScoreCard,TeamMatchResult,TeamEvent" types=true
 import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeCreate,worktreeRemoveBestEffort,classifyTask,createSidechainLogger,composeTeams,makeFormat,computeContributionWeights,spawnWithTimeout"
@@ -68,8 +68,13 @@ fn name=writeTeamForgeResultBundle params="matchId:string, options:TeamForgeOpti
       error: errorMessage,
       timestamp: new Date().toISOString(),
     };
-    writeFileSync(bundlePath, JSON.stringify(bundle, null, 2));
-    writeFileSync(readmePath, [
+    // Atomic-as-a-bundle write: README.md FIRST (so it's present when bundle
+    // appears), then bundle.json as the commit marker. Each via .tmp+rename
+    // for per-file atomicity. A reader observing bundle.json can trust README
+    // is already on disk; observing only README means the run is still in
+    // flight. Previous order (bundle then README) left a window where a kill
+    // produced "bundle present, README missing".
+    const readmeBody = [
       `# Team Forge Result ${matchId}`,
       '',
       `Status: ${bundle.status}`,
@@ -87,7 +92,14 @@ fn name=writeTeamForgeResultBundle params="matchId:string, options:TeamForgeOpti
       cleanupCommand,
       '```',
       '',
-    ].join('\n'));
+    ].join('\n');
+    const readmeTmp = readmePath + '.tmp';
+    writeFileSync(readmeTmp, readmeBody);
+    renameSync(readmeTmp, readmePath);
+    const bundleBody = JSON.stringify(bundle, null, 2);
+    const bundleTmp = bundlePath + '.tmp';
+    writeFileSync(bundleTmp, bundleBody);
+    renameSync(bundleTmp, bundlePath);
     return bundlePath;
   >>>
 

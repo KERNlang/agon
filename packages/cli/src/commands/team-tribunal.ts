@@ -1,13 +1,14 @@
 import { defineCommand } from 'citty';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
-import { EngineRegistry, ensureAgonHome, RUNS_DIR } from '@agon/core';
+import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import type { ForgeEvent, TeamEvent } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runTeamTribunal } from '@agon/forge';
 import type { TribunalMode } from '@agon/forge';
 import { header, success, fail, info, bold, dim, green } from '../output.js';
+import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 
 export const teamTribunalCommand = defineCommand({
   meta: {
@@ -55,7 +56,9 @@ export const teamTribunalCommand = defineCommand({
     registry.load(resolveBuiltinEnginesDir());
 
     const adapter = createCliAdapter(registry);
-    const engines = args.engines?.split(',').map((s) => s.trim());
+    const engines = args.engines
+      ? args.engines.split(',').map((s) => s.trim())
+      : filterDefaultOrchestrationEngines(registry.activeIds(loadConfig(process.cwd())));
     const membersPerSide = parseInt(args.members, 10);
     const rounds = parseInt(args.rounds, 10);
     const mode = args.mode as TribunalMode;

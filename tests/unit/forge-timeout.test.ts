@@ -3,18 +3,27 @@ import { resolveForgeDispatchTimeout } from '../../packages/forge/src/generated/
 import { resolveForgeRunTimeout, resolveForgeSynthesisTimeout } from '../../packages/forge/src/generated/forge.js';
 
 describe('forge dispatch timeout selection', () => {
-  const config = { forgeTimeout: 600 } as any;
+  const config = { forgeTimeout: 600, forgeDispatchTimeout: 480 } as any;
 
-  it('does not let short per-engine chat defaults cut off forge work', () => {
-    expect(resolveForgeDispatchTimeout({ id: 'codex', timeout: 120 }, config)).toBe(600);
+  it('raises a short chat-calibrated engine timeout to the forge dispatch floor', () => {
+    expect(resolveForgeDispatchTimeout({ id: 'codex', timeout: 120 }, config)).toBe(480);
   });
 
-  it('honors longer per-engine forge timeouts', () => {
+  it('honors longer per-engine forge timeouts above the floor', () => {
     expect(resolveForgeDispatchTimeout({ id: 'slow', timeout: 900 }, config)).toBe(900);
   });
 
-  it('falls back to forge global timeout when engine has no timeout', () => {
-    expect(resolveForgeDispatchTimeout({ id: 'default' }, config)).toBe(600);
+  it('uses the forge dispatch floor when engine has no timeout', () => {
+    expect(resolveForgeDispatchTimeout({ id: 'default' }, config)).toBe(480);
+  });
+
+  it('falls back to 480s built-in floor when forgeDispatchTimeout is not configured', () => {
+    expect(resolveForgeDispatchTimeout({ id: 'default' }, { forgeTimeout: 600 } as any)).toBe(480);
+  });
+
+  it('does NOT use forgeTimeout (overall-run cap) as the per-engine floor — that was the 30-min hostage bug', () => {
+    expect(resolveForgeDispatchTimeout({ id: 'codex', timeout: 120 }, { forgeTimeout: 1800, forgeDispatchTimeout: 480 } as any)).toBe(480);
+    expect(resolveForgeDispatchTimeout({ id: 'codex', timeout: 120 }, { forgeTimeout: 1800 } as any)).toBe(480);
   });
 });
 

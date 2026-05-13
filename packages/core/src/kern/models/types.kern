@@ -151,6 +151,8 @@ config name=AgonConfig
   field name=debug type=boolean default=false
   field name=timeout type=number default=360
   field name=forgeTimeout type=number default=1800
+  field name=forgeDispatchTimeout type=number default=480
+    doc "Per-engine dispatch timeout in seconds for stage1/stage2 forge dispatches. Used when an engine definition does not set its own timeout. Replaces the previous behavior of flooring every engine to forgeTimeout (1800s), which let one slow/hung engine hold the whole run hostage for 30 min."
   field name=forgeAutoAcceptScore type=number default=88
   field name=forgeClearWinnerSpread type=number default=8
   field name=forgeEnableSynthesis type=boolean default=false

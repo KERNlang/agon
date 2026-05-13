@@ -34,15 +34,15 @@ fn name=makeFailedResult params="engineId:string,error:string,durationMs?:number
   >>>
 
 fn name=resolveForgeDispatchTimeout params="engine:any,config:Required<AgonConfig>" returns=number export=true
-  doc "Forge is a long-running code competition. Per-engine chat defaults such as 120s must not shorten a forge run; use the larger of the engine timeout and forge timeout so useful candidate work is not killed early."
+  doc "Per-engine dispatch timeout for stage1/stage2. Floor: forgeDispatchTimeout (default 480s). Engines whose configured timeout (engines/*.json, calibrated for short chat use) is below the floor get raised to it — forge needs more time than a chat reply. Engines with a genuinely high configured timeout keep it. The previous behavior used forgeTimeout (1800s) as the floor, which let one stuck engine hold the run hostage for 30 min via Promise.allSettled."
   handler <<<
-    const forgeTimeout = Number(config.forgeTimeout ?? 0);
-    const base = Number.isFinite(forgeTimeout) && forgeTimeout > 0 ? forgeTimeout : 1800;
     const engineTimeout = Number(engine?.timeout ?? 0);
+    const floorRaw = Number((config as any).forgeDispatchTimeout ?? 0);
+    const floor = Number.isFinite(floorRaw) && floorRaw > 0 ? floorRaw : 480;
     if (Number.isFinite(engineTimeout) && engineTimeout > 0) {
-      return Math.max(engineTimeout, base);
+      return Math.max(engineTimeout, floor);
     }
-    return base;
+    return floor;
   >>>
 
 fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:string,dispatchMode:'exec'|'review',metricPhase:'stage1'|'stage2-scout'|'stage2-follower',fitnessCmd:string,config:Required<AgonConfig>,registry:EngineRegistry,adapter:EngineAdapter,root:string,baseSha:string,forgeDir:string,worktrees:WorktreeEntry[],onEvent?:ForgeEventCallback,signal?:AbortSignal,eventType:string,eventData?:Record<string,unknown>,worktreePath?:string}" returns="Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}>"

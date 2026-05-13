@@ -144,6 +144,12 @@ export const forgeCommand = defineCommand({
           case 'engine:failed':
             warn(`Engine failed: ${bold(String(event.engineId ?? event.data?.engineId ?? 'unknown'))} (${event.data?.phase ?? 'dispatch'})`);
             break;
+          case 'forge:engine-skipped' as any: {
+            const skippedId = String((event as any).data?.engineId ?? 'unknown');
+            const reason = String((event as any).data?.reason ?? 'unavailable');
+            warn(`Engine skipped: ${bold(skippedId)} — ${reason}`);
+            break;
+          }
           case 'winner:determined':
             if (event.data?.winner) {
               success(`Winner: ${bold(String(event.data.winner))} (score: ${event.data.bestScore})`);

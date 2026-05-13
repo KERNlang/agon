@@ -6,6 +6,7 @@ import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runCampfire } from '@agon/forge';
 import { header, info, bold, dim } from '../output.js';
+import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 
 export const campfireCommand = defineCommand({
   meta: {
@@ -50,7 +51,7 @@ export const campfireCommand = defineCommand({
     const adapter = createCliAdapter(registry);
     const available = args.engines
       ? args.engines.split(',').map((s) => s.trim())
-      : registry.activeIds(config);
+      : filterDefaultOrchestrationEngines(registry.activeIds(config));
 
     const outputDir = join(RUNS_DIR, `campfire-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });

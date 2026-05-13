@@ -1,12 +1,13 @@
 import { defineCommand } from 'citty';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
-import { EngineRegistry, ensureAgonHome, RUNS_DIR } from '@agon/core';
+import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import type { ForgeEvent, TeamEvent } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runTeamForge } from '@agon/forge';
 import { header, success, fail, warn, info, table, green, red, bold, dim } from '../output.js';
+import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 
 export const teamForgeCommand = defineCommand({
   meta: {
@@ -58,7 +59,9 @@ export const teamForgeCommand = defineCommand({
     const forgeDir = join(RUNS_DIR, `team-forge-${Date.now()}`);
     mkdirSync(forgeDir, { recursive: true });
 
-    const engines = args.engines?.split(',').map((s) => s.trim());
+    const engines = args.engines
+      ? args.engines.split(',').map((s) => s.trim())
+      : filterDefaultOrchestrationEngines(registry.activeIds(loadConfig(args.cwd)));
     const membersPerSide = parseInt(args.members, 10);
 
     header(`Team Forge: ${args.task}`);

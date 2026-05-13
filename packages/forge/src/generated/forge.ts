@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 
-import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric } from '@agon/core';
+import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric, EngineResult } from '@agon/core';
 
 import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, extractPatchFilePatterns, tracker, engineHealth } from '@agon/core';
 
@@ -178,7 +178,7 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
 }
 
 // @kern-source: forge:160
-export async function runForge(options: ForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
+export async function runForge(options: ForgeOptions & { onResult?: (engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void }, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const loadedConfig = loadConfig(options.cwd);
   const taskClass = classifyTask(options.task);
   const config = {
@@ -460,6 +460,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       // independent worktree and one terminal result. Stage 1 is retained
       // only for the single-engine legacy path.
       const partialStage2Metrics: DispatchMetric[] = [];
+      const stage2AbortControllers = new Map<string, AbortController>();
       const stage2 = await runStage2({
         challengers: remainingChallengers,
         forgePrompt,
@@ -475,6 +476,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         worktrees,
         onEvent,
         signal: forgeSignal,
+        abortControllers: stage2AbortControllers,
         onResult: (id: string, result: any, metric: DispatchMetric) => {
           manifest.results[id] = result;
           if (result.patchPath) manifest.patches[id] = result.patchPath;
@@ -500,6 +502,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
               });
             } catch { /* best-effort sidechain write */ }
           }
+          return options.onResult?.(id, result, metric);
         },
       });
 

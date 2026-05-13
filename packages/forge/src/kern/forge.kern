@@ -1,6 +1,6 @@
 import from="node:crypto" names="randomUUID"
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync"
-import from="@agon/core" names="ForgeOptions,ForgeManifest,EngineAdapter,ForgeEvent,AgonConfig,DispatchMetric" types=true
+import from="@agon/core" names="ForgeOptions,ForgeManifest,EngineAdapter,ForgeEvent,AgonConfig,DispatchMetric,EngineResult" types=true
 import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeRemoveBestEffort,updateGlickoRanked,classifyTask,createSidechainLogger,assignForgeRoles,buildSpecializedPrompt,recordForgeOutcome,extractPatchFilePatterns,tracker,engineHealth"
 import from="./stages.js" names="runBaseline,runStage1,runStage2"
 import from="@agon/core" names="determineWinner"
@@ -157,7 +157,7 @@ fn name=writeForgeResultBundle params="manifest:ForgeManifest, worktrees:Worktre
     return bundlePath;
   >>>
 
-fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistry, adapter:EngineAdapter, onEvent?:(event:ForgeEvent)=>void" returns="Promise<ForgeManifest>"
+fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void }, registry:EngineRegistry, adapter:EngineAdapter, onEvent?:(event:ForgeEvent)=>void" returns="Promise<ForgeManifest>"
   handler <<<
     const loadedConfig = loadConfig(options.cwd);
     const taskClass = classifyTask(options.task);
@@ -440,6 +440,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
         // independent worktree and one terminal result. Stage 1 is retained
         // only for the single-engine legacy path.
         const partialStage2Metrics: DispatchMetric[] = [];
+        const stage2AbortControllers = new Map<string, AbortController>();
         const stage2 = await runStage2({
           challengers: remainingChallengers,
           forgePrompt,
@@ -455,6 +456,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
           worktrees,
           onEvent,
           signal: forgeSignal,
+          abortControllers: stage2AbortControllers,
           onResult: (id: string, result: any, metric: DispatchMetric) => {
             manifest.results[id] = result;
             if (result.patchPath) manifest.patches[id] = result.patchPath;
@@ -480,6 +482,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
                 });
               } catch { /* best-effort sidechain write */ }
             }
+            return options.onResult?.(id, result, metric);
           },
         });
 

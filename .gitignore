@@ -16,3 +16,12 @@ docs/
 .kern-gaps/
 packages/*/.kern-gaps/
 .mcp.json
+
+# TypeScript build outputs that occasionally leak into src/ when tsc is
+# run with the wrong rootDir/outDir. The canonical outputs live in
+# packages/*/dist/ (already gitignored above). src/ is for hand-written
+# .ts/.tsx and KERN-generated .ts only.
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map

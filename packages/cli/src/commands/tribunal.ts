@@ -7,7 +7,7 @@ import type { ForgeEvent } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { isTribunalMode, runTribunal } from '@agon/forge';
 import type { TribunalMode } from '@agon/forge';
-import { header, success, fail, info, bold, cyan, dim, green, yellow } from '../output.js';
+import { header, success, fail, info, warn, bold, cyan, dim, green, yellow, red } from '../output.js';
 import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 
 export const tribunalCommand = defineCommand({
@@ -80,6 +80,13 @@ export const tribunalCommand = defineCommand({
     info(`Mode: ${mode}`);
     console.log('');
 
+    // Dogfood finding (2026-05-13): round-1 partial failures (e.g. gemini
+    // empty output, kimi timeout) used to scroll past as a single warn
+    // line and the user only saw "(failed to respond)" placeholders in
+    // round 2's display. Collect every engine:failed event so the final
+    // output can surface a clear "Engines that hit errors" section.
+    const failedEngines: Array<{ engineId: string; phase: string; error: string }> = [];
+
     const result = await runTribunal({
       question: args.question,
       engines,
@@ -90,6 +97,15 @@ export const tribunalCommand = defineCommand({
       timeout: parseInt(args.timeout, 10),
       outputDir,
       onEvent: (event: ForgeEvent) => {
+        if ((event.type as string) === 'engine:failed') {
+          const data: any = event.data ?? {};
+          failedEngines.push({
+            engineId: String(data.engineId ?? event.engineId ?? 'unknown'),
+            phase: String(data.phase ?? 'dispatch'),
+            error: String(data.error ?? 'unknown error'),
+          });
+          return;
+        }
         if (event.data?.round) {
           const engineId = event.engineId;
           const position = event.data?.position;
@@ -114,6 +130,27 @@ export const tribunalCommand = defineCommand({
           console.log(`  ${line}`);
         }
         if (arg.length > 500) console.log(`  ${dim('...(truncated)')}`);
+      }
+    }
+
+    // Surface failures before the verdict — easy to miss if buried in
+    // mid-run console.warn output. Dedupe by engineId so an engine that
+    // failed both rounds doesn't double-print.
+    if (failedEngines.length > 0) {
+      const byEngine = new Map<string, Array<{ phase: string; error: string }>>();
+      for (const f of failedEngines) {
+        const arr = byEngine.get(f.engineId) ?? [];
+        arr.push({ phase: f.phase, error: f.error });
+        byEngine.set(f.engineId, arr);
+      }
+      console.log('');
+      header('Engines that hit errors');
+      for (const [engineId, fails] of byEngine.entries()) {
+        warn(`${bold(engineId)} (${fails.length} failure${fails.length > 1 ? 's' : ''})`);
+        for (const f of fails) {
+          const snippet = f.error.length > 160 ? `${f.error.slice(0, 160)}…` : f.error;
+          console.log(`  ${dim(f.phase)}: ${red(snippet)}`);
+        }
       }
     }
 

@@ -66,12 +66,7 @@ fn name=loadExtensionManifest params="dir:string, source:'builtin'|'user'|'repo'
         console.warn(`[agon] skipping extension ${dir}: ${result.error}`);
         return null;
       }
-      return {
-        manifest: result.data,
-        dir,
-        source,
-        loadedAt: Date.now(),
-      };
+      return { manifest: result.data, dir, source, loadedAt: Date.now() };
     } catch (err) {
       console.warn(`[agon] failed to load extension ${dir}: ${(err as Error).message}`);
       return null;
@@ -147,7 +142,6 @@ fn name=registerExtensionEngines params="ext:LoadedExtension, engineRegistry:Eng
     const registered: string[] = [];
     const enginePaths = ext.manifest.contributes?.engines;
     if (!enginePaths || enginePaths.length === 0) return registered;
-
     for (const enginePath of enginePaths) {
       try {
         const fullPath = resolve(ext.dir, enginePath);
@@ -160,7 +154,6 @@ fn name=registerExtensionEngines params="ext:LoadedExtension, engineRegistry:Eng
         console.warn(`[agon] extension '${ext.manifest.id}' engine '${enginePath}': ${(err as Error).message}`);
       }
     }
-
     return registered;
   >>>
 
@@ -235,48 +228,33 @@ fn name=registerExtensionHooks async=true params="ext:LoadedExtension, eventBus:
 
 fn name=initExtensions async=true params="cwd:string, commandRegistry:CommandRegistry, engineRegistry:EngineRegistry, eventBus?:EventBus" returns="Promise<{ extensions: LoadedExtension[]; skills: Skill[]; systemPromptFragments: string[] }>"
   doc "Main entry point — discover, load, and wire all extensions. Called once at app startup."
-  handler <<<
-    const extensions = loadExtensions(cwd);
-    const allSkills: Skill[] = [];
-    const allFragments: string[] = [];
-
-    for (const ext of extensions) {
-      // Commands
-      const cmds = await registerExtensionCommands(ext, commandRegistry);
-      if (cmds.length > 0) {
-        console.log(`[agon] extension '${ext.manifest.id}': registered commands: ${cmds.join(', ')}`);
-      }
-
-      // Engines
-      const engines = registerExtensionEngines(ext, engineRegistry);
-      if (engines.length > 0) {
-        console.log(`[agon] extension '${ext.manifest.id}': registered engines: ${engines.join(', ')}`);
-      }
-
-      // Skills
-      const skills = registerExtensionSkills(ext);
-      allSkills.push(...skills);
-
-      // Hooks
-      if (eventBus) {
-        const hooks = await registerExtensionHooks(ext, eventBus);
-        if (hooks.length > 0) {
-          console.log(`[agon] extension '${ext.manifest.id}': registered hooks: ${hooks.join(', ')}`);
-        }
-      }
-
-      // System prompt fragments
-      if (ext.manifest.contributes?.systemPromptFragments) {
-        allFragments.push(...ext.manifest.contributes.systemPromptFragments);
-      }
-    }
-
-    if (extensions.length > 0) {
-      console.log(`[agon] loaded ${extensions.length} extension(s)`);
-    }
-
-    return { extensions, skills: allSkills, systemPromptFragments: allFragments };
-  >>>
+  handler lang="kern"
+    let name=extensions value="loadExtensions(cwd)"
+    let name=allSkills type="Skill[]" value="[]"
+    let name=allFragments type="string[]" value="[]"
+    each name=ext in="extensions"
+      comment raw="// Commands"
+      let name=cmds value="await registerExtensionCommands(ext, commandRegistry)"
+      if cond="cmds.length > 0"
+        do value="console.log(`[agon] extension '${ext.manifest.id}': registered commands: ${cmds.join(', ')}`)"
+      comment raw="// Engines"
+      let name=engines value="registerExtensionEngines(ext, engineRegistry)"
+      if cond="engines.length > 0"
+        do value="console.log(`[agon] extension '${ext.manifest.id}': registered engines: ${engines.join(', ')}`)"
+      comment raw="// Skills"
+      let name=skills value="registerExtensionSkills(ext)"
+      do value="allSkills.push(...skills)"
+      comment raw="// Hooks"
+      if cond="eventBus"
+        let name=hooks value="await registerExtensionHooks(ext, eventBus)"
+        if cond="hooks.length > 0"
+          do value="console.log(`[agon] extension '${ext.manifest.id}': registered hooks: ${hooks.join(', ')}`)"
+      comment raw="// System prompt fragments"
+      if cond="ext.manifest.contributes?.systemPromptFragments"
+        do value="allFragments.push(...ext.manifest.contributes.systemPromptFragments)"
+    if cond="extensions.length > 0"
+      do value="console.log(`[agon] loaded ${extensions.length} extension(s)`)"
+    return value="{ extensions, skills: allSkills, systemPromptFragments: allFragments }"
 
 fn name=buildExtensionContext params="cb:any, source:string" returns="Record<string, unknown>"
   doc "Build a sandboxed context object for extension command handlers."

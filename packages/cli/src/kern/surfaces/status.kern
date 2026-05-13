@@ -710,6 +710,7 @@ screen name=CesarStatusStrip target=ink memo=true export=named
   prop name=confidence type="number|null" optional=true
   prop name=spinner type="{ message: string; engineId?: string } | null"
   prop name=engines type="EngineProgress[]|null"
+  prop name=jobs type="Job[]" optional=true
   prop name=startTime type=number
   prop name=streamSnippet type="{ engineId: string; line: string } | null" optional=true
   prop name=isActive type=boolean
@@ -751,6 +752,11 @@ screen name=CesarStatusStrip target=ink memo=true export=named
       if (spinner) {
         const msg = spinner.message.replace(/\u2026$/, '').trim();
         activityStr = msg.length > 50 ? msg.slice(0, 50) + '\u2026' : msg;
+      } else if (jobs && jobs.length > 0) {
+        const job = jobs[0];
+        const label = String(job.label ?? job.type ?? '').replace(/\s+/g, ' ').trim();
+        activityStr = `${job.type}: ${label || 'running'}`;
+        if (activityStr.length > 50) activityStr = activityStr.slice(0, 49) + '\u2026';
       }
 
       // Elapsed time (from operation start, not last activity)

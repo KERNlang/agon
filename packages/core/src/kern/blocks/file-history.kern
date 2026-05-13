@@ -27,10 +27,9 @@ interface name=HistoryEntry
   field name=createdAt type=string
 
 fn name=ensureSnapshotsDir returns=void export=false
-  handler <<<
-    ensureAgonHome();
-    mkdirSync(snapshotsDir(), { recursive: true });
-  >>>
+  handler lang="kern"
+    do value="ensureAgonHome()"
+    do value="mkdirSync(snapshotsDir(), { recursive: true })"
 
 fn name=takeSnapshot params="label:string, cwd:string, filePaths:string[]" returns=HistoryEntry
   doc "Snapshot files before modification. Returns entry that can be used for undo."

@@ -28,28 +28,13 @@ const name=TAU type=number value=0.5
 const name=CONVERGENCE_TOLERANCE type=number value=0.000001
 
 fn name=defaultGlickoRating returns=GlickoRating
-  handler <<<
-    return {
-      mu: DEFAULT_MU,
-      phi: DEFAULT_PHI,
-      sigma: DEFAULT_SIGMA,
-      wins: 0,
-      losses: 0,
-      lastActive: new Date().toISOString(),
-    };
-  >>>
+  handler lang="kern"
+    return value="{ mu: DEFAULT_MU, phi: DEFAULT_PHI, sigma: DEFAULT_SIGMA, wins: 0, losses: 0, lastActive: new Date().toISOString(), }"
 
 fn name=defaultEngineMeta returns=EngineMeta
-  handler <<<
-    const now = new Date().toISOString();
-    return {
-      firstSeen: now,
-      lastActive: now,
-      matchCount: 0,
-      derivedFrom: null,
-      versions: [],
-    };
-  >>>
+  handler lang="kern"
+    let name=now value="new Date().toISOString()"
+    return value="{ firstSeen: now, lastActive: now, matchCount: 0, derivedFrom: null, versions: [], }"
 
 fn name=loadRatings returns=RatingRecord
   handler <<<
@@ -70,27 +55,24 @@ fn name=loadRatings returns=RatingRecord
   >>>
 
 fn name=saveRatings params="record:RatingRecord" returns=void
-  handler <<<
-    const path = ratingsPath();
-    mkdirSync(dirname(path), { recursive: true });
-    record.lastUpdated = new Date().toISOString();
-    const tmpPath = path + '.tmp';
-    writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\n');
-    renameSync(tmpPath, path);
-  >>>
+  handler lang="kern"
+    let name=path value="ratingsPath()"
+    do value="mkdirSync(dirname(path), { recursive: true })"
+    assign target="record.lastUpdated" value="new Date().toISOString()"
+    let name=tmpPath value="path + '.tmp'"
+    do value="writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\\n')"
+    do value="renameSync(tmpPath, path)"
 
 fn name=getRatings returns=RatingRecord expr={{ return loadRatings(); }}
   doc "Load current Glicko-2 ratings."
 
 fn name=getEngineGlickoRating params="engineId:string, mode?:string" returns=GlickoRating
   doc "Get a single engine's Glicko-2 rating, optionally for a specific mode."
-  handler <<<
-    const record = loadRatings();
-    if (mode && record.byMode[mode as keyof typeof record.byMode]) {
-      return record.byMode[mode as keyof typeof record.byMode][engineId] ?? defaultGlickoRating();
-    }
-    return record.global[engineId] ?? defaultGlickoRating();
-  >>>
+  handler lang="kern"
+    let name=record value="loadRatings()"
+    if cond="mode && record.byMode[mode as keyof typeof record.byMode]"
+      return value="record.byMode[mode as keyof typeof record.byMode][engineId] ?? defaultGlickoRating()"
+    return value="record.global[engineId] ?? defaultGlickoRating()"
 
 fn name=glickoG params="phi:number" returns=number expr={{ return 1 / Math.sqrt(1 + 3 * phi * phi / (Math.PI * Math.PI)); }}
   doc "Glicko-2 g(phi) function — reduces impact of uncertain opponents."
@@ -230,14 +212,12 @@ fn name=updateGlickoRanked params="ranked:Array<{engineId:string,score:number}>,
 
 fn name=advisorScore params="engineId:string, mode:'forge'|'brainstorm'|'tribunal'" returns=number
   doc "Conservative rating estimate for advisor/starter selection. Returns mu - 2*phi (lower bound of 95% CI)."
-  handler <<<
-    const rating = getEngineGlickoRating(engineId, mode);
-    // Apply inactivity: increase phi if engine hasn't competed recently
-    const daysSinceActive = (Date.now() - new Date(rating.lastActive).getTime()) / 86400000;
-    let phi = rating.phi;
-    if (daysSinceActive > 14) {
-      // Glicko-2 standard: phi grows with inactivity, capped at initial value
-      phi = Math.min(Math.sqrt(phi * phi + rating.sigma * rating.sigma * daysSinceActive), DEFAULT_PHI);
-    }
-    return Math.round(rating.mu - 2 * phi);
-  >>>
+  handler lang="kern"
+    let name=rating value="getEngineGlickoRating(engineId, mode)"
+    comment raw="// Apply inactivity: increase phi if engine hasn't competed recently"
+    let name=daysSinceActive value="(Date.now() - new Date(rating.lastActive).getTime()) / 86400000"
+    let name=phi kind=let value="rating.phi"
+    if cond="daysSinceActive > 14"
+      comment raw="// Glicko-2 standard: phi grows with inactivity, capped at initial value"
+      assign target="phi" value="Math.min(Math.sqrt(phi * phi + rating.sigma * rating.sigma * daysSinceActive), DEFAULT_PHI)"
+    return value="Math.round(rating.mu - 2 * phi)"

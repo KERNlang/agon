@@ -12,28 +12,26 @@ fn name=getPlansDir returns=string export=false
   >>>
 
 fn name=ensurePlansDir returns=void export=false
-  handler <<<
-    ensureAgonHome();
-    mkdirSync(getPlansDir(), { recursive: true });
-  >>>
+  handler lang="kern"
+    do value="ensureAgonHome()"
+    do value="mkdirSync(getPlansDir(), { recursive: true })"
 
 fn name=safePlanPath params="id:string" returns=string export=false
-  handler <<<
-    const sanitized = id.replace(/[^a-zA-Z0-9_-]/g, '');
-    const plansDir = getPlansDir();
-    const full = resolve(plansDir, `${sanitized}.json`);
-    if (!full.startsWith(resolve(plansDir))) throw new Error(`Invalid plan ID: ${id}`);
-    return full;
-  >>>
+  handler lang="kern"
+    let name=sanitized value="id.replace(/[^a-zA-Z0-9_-]/g, '')"
+    let name=plansDir value="getPlansDir()"
+    let name=full value="resolve(plansDir, `${sanitized}.json`)"
+    if cond="!full.startsWith(resolve(plansDir))"
+      throw value="new Error(`Invalid plan ID: ${id}`)"
+    return value="full"
 
 fn name=savePlan params="plan:Plan" returns=void
-  handler <<<
-    ensurePlansDir();
-    const target = safePlanPath(plan.id);
-    const tmpPath = target + '.tmp';
-    writeFileSync(tmpPath, JSON.stringify(plan, null, 2) + '\n');
-    renameSync(tmpPath, target);
-  >>>
+  handler lang="kern"
+    do value="ensurePlansDir()"
+    let name=target value="safePlanPath(plan.id)"
+    let name=tmpPath value="target + '.tmp'"
+    do value="writeFileSync(tmpPath, JSON.stringify(plan, null, 2) + '\\n')"
+    do value="renameSync(tmpPath, target)"
 
 fn name=loadPlan params="id:string" returns="Plan|null"
   handler <<<

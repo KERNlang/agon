@@ -1,6 +1,6 @@
-import from="node:fs" names="readdirSync,readFileSync,existsSync"
+import from="node:fs" names="readdirSync,readFileSync,existsSync,rmSync"
 import from="node:path" names="join"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,getRatings,tracker,loadConfig,configSet,DEFAULT_CONFIG,discoverEngines,addWorkspace,removeWorkspace,switchWorkspace,listWorkspaces,getActiveWorkspace,listChatSessions,loadChatSession"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,getAgonHome,getRatings,tracker,loadConfig,configSet,DEFAULT_CONFIG,discoverEngines,addWorkspace,removeWorkspace,switchWorkspace,listWorkspaces,getActiveWorkspace,listChatSessions,loadChatSession"
 import from="@agon/core" names="AgonConfig,ForgeManifest" types=true
 import from="../signals/intent.js" names="Intent" types=true
 import from="../signals/icons.js" names="icons"
@@ -348,8 +348,59 @@ fn name=handleHistory params="dispatch:Dispatch, id?:string" returns=void
     dispatch({ type: 'info', message: 'Use /history <id> for details' });
   >>>
 
-fn name=handleEngines params="dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>" async=true
+fn name=handleEngines params="dispatch:Dispatch, ctx:HandlerContext, intent?:Intent&{type:'engines'}" returns="Promise<void>" async=true
   handler <<<
+    const action = String((intent as any)?.action ?? '').toLowerCase();
+    if (action && action !== 'list') {
+      const id = String((intent as any)?.id ?? '').trim().toLowerCase();
+      if (!id) {
+        dispatch({ type: 'error', message: 'Usage: /engines hide <id> | /engines remove <id> | /engines restore <id>' });
+        return;
+      }
+
+      const hidden = new Set<string>((ctx.config as any).hiddenEngines ?? []);
+      const enabled = new Set<string>((ctx.config as any).forgeEnabledEngines ?? []);
+
+      if (['hide', 'remove', 'delete'].includes(action)) {
+        hidden.add(id);
+        enabled.delete(id);
+        const hiddenList = Array.from(hidden);
+        const enabledList = Array.from(enabled);
+        configSet('hiddenEngines' as any, hiddenList as any);
+        configSet('forgeEnabledEngines' as any, enabledList as any);
+        (ctx.config as any).hiddenEngines = hiddenList;
+        (ctx.config as any).forgeEnabledEngines = enabledList;
+
+        let removedUserConfig = false;
+        const userConfigPath = join(getAgonHome(), 'engines', `${id}.json`);
+        if ((action === 'remove' || action === 'delete') && existsSync(userConfigPath)) {
+          rmSync(userConfigPath, { force: true });
+          try { (ctx.registry as any).unregister?.(id); } catch { /* best effort */ }
+          removedUserConfig = true;
+        }
+        try { (ctx.registry as any).clearBinaryCache?.(id); } catch { /* older registry */ }
+
+        dispatch({ type: 'success', message: `${id} hidden from Agon${removedUserConfig ? ' and user engine config removed' : ''}. It will not reappear on scan unless restored.` });
+        if (((ctx.config as any).cesarEngine ?? '') === id) {
+          dispatch({ type: 'warning', message: `${id} is still configured as Cesar. Switch with /cesar <engine> if needed.` });
+        }
+        return;
+      }
+
+      if (['unhide', 'restore', 'show'].includes(action)) {
+        hidden.delete(id);
+        const hiddenList = Array.from(hidden);
+        configSet('hiddenEngines' as any, hiddenList as any);
+        (ctx.config as any).hiddenEngines = hiddenList;
+        try { (ctx.registry as any).clearBinaryCache?.(id); } catch { /* older registry */ }
+        dispatch({ type: 'success', message: `${id} restored. Run /engines scan to refresh availability.` });
+        return;
+      }
+
+      dispatch({ type: 'error', message: `Unknown /engines action: ${action}` });
+      return;
+    }
+
     dispatch({ type: 'header', title: 'Engines' });
     dispatch({ type: 'spinner-start', message: 'Scanning...' });
 
@@ -371,6 +422,7 @@ fn name=handleEngines params="dispatch:Dispatch, ctx:HandlerContext" returns="Pr
 
       dispatch({ type: 'spinner-stop' });
 
+      const hidden = new Set((config as any).hiddenEngines ?? []);
       const rows = results.map(({ engine, avail, version, hasBinary, hasApi }: any) => {
         // Show which backends are available
         const ic = icons();
@@ -386,7 +438,7 @@ fn name=handleEngines params="dispatch:Dispatch, ctx:HandlerContext" returns="Pr
         }
         return [
           engine.id,
-          avail ? 'installed' : 'missing',
+          hidden.has(engine.id) ? 'hidden' : avail ? 'installed' : 'missing',
           cli,
           api,
           version,
@@ -395,6 +447,7 @@ fn name=handleEngines params="dispatch:Dispatch, ctx:HandlerContext" returns="Pr
       });
       dispatch({ type: 'table', headers: ['ID', 'Status', 'CLI', 'API', 'Version', ''], rows });
       dispatch({ type: 'info', message: `Backend: ${cesarBackend}. Switch: /cesar <engine> cli|api` });
+      dispatch({ type: 'info', message: 'Hide/delete in Agon: /engines remove <id>. Restore: /engines restore <id>. Rescan PATH: /engines scan' });
     } catch (err) {
       dispatch({ type: 'spinner-stop' });
       throw err;
@@ -407,6 +460,7 @@ fn name=handleDiscover params="dispatch:Dispatch, ctx:HandlerContext" returns="P
     dispatch({ type: 'spinner-start', message: 'Scanning installed engines...' });
 
     try {
+      try { (ctx.registry as any).clearBinaryCache?.(); } catch { /* older registry */ }
       const results = await discoverEngines(ctx.registry, ctx.adapter);
       dispatch({ type: 'spinner-stop', message: `${results.length} engines checked` });
 

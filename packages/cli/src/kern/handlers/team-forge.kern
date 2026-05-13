@@ -3,6 +3,7 @@ import from="node:fs" names="mkdirSync,readFileSync"
 import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage,resolveWorkingDir,loadConfig"
 import from="@agon/forge" names="runTeamForge"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 
 fn name=handleTeamForge params="task:string, fitnessCmd:string|null, dispatch:Dispatch, ctx:HandlerContext, membersPerSide?:number" returns="Promise<void>" async=true
   signal name=teamAbort
@@ -18,7 +19,10 @@ fn name=handleTeamForge params="task:string, fitnessCmd:string|null, dispatch:Di
       return;
     }
 
-    const active = ctx.activeEngines();
+    const allActive = ctx.activeEngines();
+    const active = filterDefaultOrchestrationEngines(allActive);
+    const excluded = allActive.filter((id: string) => !active.includes(id));
+    if (excluded.length > 0) dispatch({ type: 'info', message: `Skipping disabled orchestration engines: ${excluded.join(', ')}` });
     if (active.length < 2) {
       dispatch({ type: 'error', message: `Team forge needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });
       return;

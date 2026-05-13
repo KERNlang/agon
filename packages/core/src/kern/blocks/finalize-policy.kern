@@ -1,0 +1,40 @@
+// Cesar finalize-on-score policy — recommended thresholds per task class.
+//
+// Brainstorm consensus (6 engines, 2026-05-13): "score >= N AND pass === true"
+// is the safe gate; high-scoring failing patches should NEVER trigger early
+// finalize. The thresholds below reflect the trade-off "how good is good
+// enough to stop the council early":
+//
+//   docs/test  → 75 (cheap to verify, low stakes)
+//   bugfix     → 85 (need correctness)
+//   refactor   → 85 (need correctness + behavior preservation)
+//   algorithm  → undefined (high stakes — always wait for full panel)
+//   feature    → undefined (completeness matters — always wait)
+//   other      → undefined (unknown class — conservative default)
+//
+// This is a pure recommendation function. Callers compose it into the
+// onResult callback passed to runForge — see commands/forge.ts for the
+// canonical "score && pass" gate. Lives in @agon/core (not @agon/forge)
+// so the MCP server and forge can both import the canonical version
+// without pulling forge's heavyweight deps into the MCP bundle.
+
+import from="./task-classifier.js" names="classifyTask"
+
+fn name=defaultFinalizeOnScoreForTask params="task:string" returns="number|undefined" export=true
+  doc "Recommend a finalize-on-score threshold based on task class. Returns undefined for high-stakes classes (algorithm/feature) where the full council should always run. Used by MCP Forge tool when caller opts into cesarSmart=true."
+  handler <<<
+    const taskClass = classifyTask(task);
+    switch (taskClass) {
+      case 'docs':
+      case 'test':
+        return 75;
+      case 'bugfix':
+      case 'refactor':
+        return 85;
+      case 'algorithm':
+      case 'feature':
+      case 'other':
+      default:
+        return undefined;
+    }
+  >>>

@@ -10,11 +10,11 @@ const name=GREP_TIMEOUT type=number value=20000
 
 fn name=applyHeadLimit params="text:string, limit:number" returns=string
   doc "Truncate output to the first N lines."
-  handler <<<
-    const lines = text.split('\n');
-    if (lines.length <= limit) return text;
-    return lines.slice(0, limit).join('\n') + `\n\n[Truncated: showing ${limit} of ${lines.length} lines]`;
-  >>>
+  handler lang="kern"
+    let name=lines value="text.split('\\n')"
+    if cond="lines.length <= limit"
+      return value="text"
+    return value="lines.slice(0, limit).join('\\n') + `\\n\\n[Truncated: showing ${limit} of ${lines.length} lines]`"
 
 fn name=createGrepTool returns=ToolHandler
   doc "Factory: creates the Grep tool handler for content search via ripgrep."

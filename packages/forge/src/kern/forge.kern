@@ -237,14 +237,28 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
     }
 
     const enabledEngines = options.engines ?? registry.activeIds(config as any);
+    // Dogfood finding (2026-05-13): when the caller passes -e explicitly,
+    // dropped engines used to vanish silently — user provided 6, agon spun
+    // up 4, the other two were just gone. Track every drop with a reason
+    // so we can warn the user; the warning is louder when the engine was
+    // *explicitly requested* (options.engines was set) since that's almost
+    // certainly a misconfiguration the user wants to see.
+    const explicitlyRequested = options.engines != null;
     const skippedQuarantine: Array<{ id: string; reason: string; status: string }> = [];
+    const droppedEngines: Array<{ id: string; reason: string }> = [];
     const available = enabledEngines.filter((id: string) => {
       try {
         const engine = registry.get(id);
         // API-only engines participate via runApiAgentLoop in dispatchAgent.
         // But only if they have an api config — engines with neither binary nor api can't forge.
-        if (!engine.binary && !engine.api) return false;
-        if (!registry.isAvailable(engine)) return false;
+        if (!engine.binary && !engine.api) {
+          droppedEngines.push({ id, reason: 'no-binary-and-no-api: engine has neither a CLI binary nor an API config' });
+          return false;
+        }
+        if (!registry.isAvailable(engine)) {
+          droppedEngines.push({ id, reason: 'not-available: registry.isAvailable returned false (binary missing, API key missing, or engine disabled)' });
+          return false;
+        }
         // Skip engines previously quarantined this session for auth/unreachable failures.
         // Timeouts and generic failures stay in rotation — they may be transient.
         const health = engineHealth.get(id);
@@ -254,7 +268,9 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
         }
         return true;
       } catch (err) {
-        console.warn(`[agon] engine availability check failed for ${id}: ${err instanceof Error ? err.message : String(err)}`);
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[agon] engine availability check failed for ${id}: ${msg}`);
+        droppedEngines.push({ id, reason: `registry-error: ${msg}` });
         return false;
       }
     });
@@ -262,6 +278,16 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
       for (const skip of skippedQuarantine) {
         console.warn(`[agon] forge: skipping ${skip.id} (${skip.status} — ${skip.reason || 'unknown'})`);
         onEvent?.({ type: 'forge:engine-skipped', data: { engineId: skip.id, status: skip.status, reason: skip.reason } });
+      }
+    }
+    // Surface every silently-dropped engine. Loud when explicitly requested
+    // (clear caller bug), quieter (event-only) when relying on defaults.
+    if (droppedEngines.length > 0) {
+      for (const drop of droppedEngines) {
+        if (explicitlyRequested) {
+          console.warn(`[agon] forge: ${drop.id} requested via -e but dropped — ${drop.reason}`);
+        }
+        onEvent?.({ type: 'forge:engine-skipped', data: { engineId: drop.id, status: 'unavailable', reason: drop.reason } });
       }
     }
 

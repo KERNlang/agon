@@ -9,11 +9,8 @@ import from="../blocks/file-history.js" names="takeSnapshot"
 
 fn name=normalizeCurlyQuotes params="text:string" returns=string export=false
   doc "Replace curly/smart quotes with straight ASCII equivalents."
-  handler <<<
-    return text
-      .replace(/[\u2018\u2019]/g, "'")
-      .replace(/[\u201C\u201D]/g, '"');
-  >>>
+  handler lang="kern"
+    return value="text .replace(/[\\u2018\\u2019]/g, \"'\") .replace(/[\\u201C\\u201D]/g, '\"')"
 
 fn name=countOccurrences params="haystack:string, needle:string" returns=number export=false
   handler <<<

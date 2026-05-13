@@ -11,6 +11,7 @@ import from="node:fs" names="writeFileSync,readFileSync,mkdirSync,existsSync,unl
 import from="node:path" names="join"
 import from="node:readline" names="createInterface"
 import from="node:child_process" names="execSync,spawnSync"
+import from="@agon/core" names="defaultFinalizeOnScoreForTask"
 
 const name=ORCHESTRATION_TOOLS type="Array<{name:string,description:string,inputSchema:Record<string,unknown>}>"
   handler <<<
@@ -83,6 +84,8 @@ const name=ORCHESTRATION_TOOLS type="Array<{name:string,description:string,input
             cwd: { type: 'string', description: 'Working directory for direct external calls. Defaults to current directory.' },
             timeout: { type: 'number', description: 'Overall direct-call timeout in seconds. Defaults to 900.' },
             engineTimeout: { type: 'number', description: 'Per-engine timeout in seconds.' },
+            finalizeOnScore: { type: 'number', description: 'V1 caller-driven finalize: stop the forge as soon as any engine PASSES with score >= this threshold (0-100). Aborts in-flight stage-2 engines to save cost/time. Ignored for team-forge.' },
+            cesarSmart: { type: 'boolean', description: 'When true AND finalizeOnScore is not explicitly set, derive a recommended threshold from the task class (docs/test=75, bugfix/refactor=85, algorithm/feature/other=no early finalize). Lets Cesar pick a sensible cutoff when the external caller does not want to hardcode one.' },
           },
           required: ['task'],
         },
@@ -308,7 +311,20 @@ fn name=buildDirectAgonCommand params="tool:string,args:Record<string,unknown>" 
     if (tool === 'Forge') {
       const task = String((args as any).task ?? '').trim();
       const fitness = String((args as any).fitnessCmd ?? (args as any).fitness ?? 'true').trim() || 'true';
-      commands.push(['call', team ? 'team-forge' : 'forge', task, '--test', fitness, ...cwdArgs, ...membersArgs, ...engineTimeoutArgs, ...engineArgs, ...jsonlArgs]);
+      // finalizeOnScore is forge-only (not team-forge) — V1 caller-driven
+      // finalize. Solo forge with the flag will abort in-flight engines
+      // once any passes at or above the threshold.
+      // cesarSmart opt-in: when caller wants Cesar to pick the threshold and
+      // hasn't passed one explicitly, derive from task class via the
+      // recommended-policy helper. Explicit finalizeOnScore always wins.
+      const explicitFinalize = (args as any).finalizeOnScore;
+      const cesarSmart = parseOptionalBoolean((args as any).cesarSmart);
+      const derivedFinalize = (cesarSmart && (explicitFinalize == null) && !team)
+        ? defaultFinalizeOnScoreForTask(task)
+        : undefined;
+      const finalizeValue = explicitFinalize ?? derivedFinalize;
+      const finalizeOnScoreArgs = team ? [] : optionalFlag('--finalize-on-score', finalizeValue);
+      commands.push(['call', team ? 'team-forge' : 'forge', task, '--test', fitness, ...cwdArgs, ...membersArgs, ...engineTimeoutArgs, ...engineArgs, ...finalizeOnScoreArgs, ...jsonlArgs]);
     } else if (tool === 'Brainstorm') {
       const question = String((args as any).question ?? '').trim();
       commands.push(['call', team ? 'team-brainstorm' : 'brainstorm', question, ...cwdArgs, ...membersArgs, ...engineTimeoutArgs, ...engineArgs, ...jsonlArgs]);

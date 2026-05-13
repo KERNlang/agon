@@ -89,9 +89,5 @@ fn name=runHooks params="event:HookEvent, env?:Record<string,string>" returns="H
 fn name=hooksFailed params="results:HookResult[]" returns=boolean expr={{ return results.some((r) => !r.ok); }}
 
 fn name=hooksOutput params="results:HookResult[]" returns=string
-  handler <<<
-    return results
-      .filter((r) => r.stdout.trim())
-      .map((r) => r.stdout.trim())
-      .join('\n');
-  >>>
+  handler lang="kern"
+    return value="results .filter((r) => r.stdout.trim()) .map((r) => r.stdout.trim()) .join('\\n')"

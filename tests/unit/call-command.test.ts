@@ -50,4 +50,40 @@ describe('agon call command mapping', () => {
       ['review', 'uncommitted'],
     ]);
   });
+
+  it('forwards --finalize-on-score to solo forge', () => {
+    const { commands } = buildCallCommands({
+      workflow: 'forge',
+      input: 'Add a unit test',
+      fitnessCmd: 'npm test',
+      cwd: '/tmp/project',
+      finalizeOnScore: '85',
+    });
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toContain('--finalize-on-score');
+    const idx = commands[0].indexOf('--finalize-on-score');
+    expect(commands[0][idx + 1]).toBe('85');
+  });
+
+  it('does NOT forward --finalize-on-score to team-forge', () => {
+    const { commands } = buildCallCommands({
+      workflow: 'team-forge',
+      input: 'Add a unit test',
+      fitnessCmd: 'npm test',
+      cwd: '/tmp/project',
+      finalizeOnScore: '85',
+    });
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).not.toContain('--finalize-on-score');
+  });
+
+  it('omits --finalize-on-score when not provided', () => {
+    const { commands } = buildCallCommands({
+      workflow: 'forge',
+      input: 'Add a unit test',
+      fitnessCmd: 'npm test',
+      cwd: '/tmp/project',
+    });
+    expect(commands[0]).not.toContain('--finalize-on-score');
+  });
 });

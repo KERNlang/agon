@@ -11,6 +11,7 @@ import from="../models/session-results.js" names="sessionResultStore"
 import from="../cesar/scoreboard.js" names="createScoreboard,scoreboardStartEngine,scoreboardUpdateProgress,scoreboardFinishEngine,scoreboardFailEngine,renderScoreboard"
 import from="../cesar/checkpoint.js" names="buildCheckpoint,recordCheckpoint"
 import from="../../telemetry/index.js" names="recordRun,formatRunSummary"
+import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 
 fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<string,string>, dispatch:Dispatch, ctx:HandlerContext" returns=Plan export=false
   handler <<<
@@ -488,7 +489,10 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${fitness}` });
     }
 
-    const engines = ctx.activeEngines();
+    const allEngines = ctx.activeEngines();
+    const engines = filterDefaultOrchestrationEngines(allEngines);
+    const excluded = allEngines.filter((id: string) => !engines.includes(id));
+    if (excluded.length > 0) dispatch({ type: 'info', message: `Skipping disabled orchestration engines: ${excluded.join(', ')}` });
     if (engines.length === 0) {
       dispatch({ type: 'error', message: 'No engines available. Install at least one AI CLI tool.' });
       return null;

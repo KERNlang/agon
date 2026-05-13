@@ -77,15 +77,13 @@ service name=Semaphore export=true
 
   method name=release returns=void
     doc "Return a permit. If anyone is waiting, hand it directly to them (FIFO). Idempotent in the sense that release() is always safe — but each acquire() must be paired with exactly one release()."
-    handler <<<
-      const next = this.waiters.shift();
-      if (next) {
-        // Hand the permit directly to the next waiter without incrementing permits.
-        next.resolve();
-      } else {
-        this.permits += 1;
-      }
-    >>>
+    handler lang="kern"
+      let name=next value="this.waiters.shift()"
+      if cond="next"
+        comment raw="// Hand the permit directly to the next waiter without incrementing permits."
+        do value="next.resolve()"
+      else
+        assign target="this.permits" op="+=" value="1"
 
   method name=available returns=number
     doc "Diagnostic: current free permit count."

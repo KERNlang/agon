@@ -263,7 +263,10 @@ export async function runForge(options: ForgeOptions & { onResult?: (engineId:st
   // so we can warn the user; the warning is louder when the engine was
   // *explicitly requested* (options.engines was set) since that's almost
   // certainly a misconfiguration the user wants to see.
-  const explicitlyRequested = options.engines != null;
+  // Empty array means "caller passed -e with no usable value" — treat as
+  // default, not explicit, so we don't warn about engines they didn't ask
+  // for. (opencode review 2026-05-13)
+  const explicitlyRequested = options.engines != null && options.engines.length > 0;
   const skippedQuarantine: Array<{ id: string; reason: string; status: string }> = [];
   const droppedEngines: Array<{ id: string; reason: string }> = [];
   const available = enabledEngines.filter((id: string) => {

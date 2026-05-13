@@ -43,10 +43,10 @@ fn name=gitRaw params="args:string[],cwd?:string" returns=string export=false
   >>>
 
 fn name=normalizePatchContent params="patchContent:string" returns=string export=false
-  handler <<<
-    if (!patchContent.trim()) return patchContent;
-    return patchContent.endsWith('\n') ? patchContent : `${patchContent}\n`;
-  >>>
+  handler lang="kern"
+    if cond="!patchContent.trim()"
+      return value="patchContent"
+    return value="patchContent.endsWith('\\n') ? patchContent : `${patchContent}\\n`"
 
 fn name=repoRoot params="cwd:string" returns=string expr={{ return git(['rev-parse', '--show-toplevel'], cwd); }}
 
@@ -322,22 +322,19 @@ fn name=stashSnapshot params="cwd:string" returns=string
 
 fn name=isWorktreeOrRepo params="cwd:string" returns=boolean export=false
   doc "Check if cwd exists AND is a git working tree (so 'git diff --cached' won't silently fall back to --no-index mode and reject the flag)."
-  handler <<<
-    if (!existsSync(cwd)) return false;
-    // git worktrees have a `.git` file (regular file pointing to the registry),
-    // a regular repo has a `.git` directory. Either is enough for diff/index ops.
-    if (existsSync(join(cwd, '.git'))) return true;
-    // Fall back to asking git directly — handles edge cases like submodules.
-    try {
-      execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
-        cwd, encoding: 'utf-8', timeout: 2_000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  >>>
+  handler lang="kern"
+    if cond="!existsSync(cwd)"
+      return value="false"
+    comment raw="// git worktrees have a `.git` file (regular file pointing to the registry),"
+    comment raw="// a regular repo has a `.git` directory. Either is enough for diff/index ops."
+    if cond="existsSync(join(cwd, '.git'))"
+      return value="true"
+    comment raw="// Fall back to asking git directly — handles edge cases like submodules."
+    try
+      do value="execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd, encoding: 'utf-8', timeout: 2000, stdio: ['pipe', 'pipe', 'pipe'], })"
+      return value="true"
+      catch name=e
+        return value="false"
 
 fn name=worktreeDiff params="cwd:string" returns=string
   handler <<<
@@ -390,47 +387,49 @@ fn name=applyPatch params="cwd:string,patchContent:string" returns=void
   handler <<<
     if (!patchContent.trim()) return;
     try {
-      execFileSync('git', ['apply', '--allow-empty', '-'], {
-        cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', timeout: 30_000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-    } catch (err: unknown) {
+      execFileSync('git', ['apply', '--allow-empty', '-'], { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (err) {
       const e = err as { stderr?: string };
       throw new GitError(`Failed to apply patch: ${e.stderr?.trim() ?? 'unknown error'}`);
     }
   >>>
 
 fn name=currentBranch params="cwd:string" returns=string
-  handler <<<
-    try { return git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd); }
-    catch { return 'unknown'; }
-  >>>
+  handler lang="kern"
+    try
+      return value="git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd)"
+      catch name=e
+        return value="'unknown'"
 
 fn name=isDirty params="cwd:string" returns=boolean
-  handler <<<
-    try { return git(['status', '--porcelain'], cwd).length > 0; }
-    catch { return false; }
-  >>>
+  handler lang="kern"
+    try
+      return value="git(['status', '--porcelain'], cwd).length > 0"
+      catch name=e
+        return value="false"
 
 fn name=recentCommits params="cwd:string,count?:number" returns=string
-  handler <<<
-    try { return git(['log', '--oneline', `-${count ?? 10}`], cwd); }
-    catch { return ''; }
-  >>>
+  handler lang="kern"
+    try
+      return value="git(['log', '--oneline', `-${count ?? 10}`], cwd)"
+      catch name=e
+        return value="''"
 
 fn name=gitStatusShort params="cwd:string" returns=string
   doc "Read-only: git status --short. Never mutates the working tree."
-  handler <<<
-    try { return git(['status', '--short'], cwd); }
-    catch { return ''; }
-  >>>
+  handler lang="kern"
+    try
+      return value="git(['status', '--short'], cwd)"
+      catch name=e
+        return value="''"
 
 fn name=gitDiffStat params="cwd:string" returns=string
   doc "Read-only: git diff --stat for unstaged changes. No git add."
-  handler <<<
-    try { return git(['diff', '--stat'], cwd); }
-    catch { return ''; }
-  >>>
+  handler lang="kern"
+    try
+      return value="git(['diff', '--stat'], cwd)"
+      catch name=e
+        return value="''"
 
 fn name=gitChangedFiles params="cwd:string" returns="string[]"
   doc "Read-only: list of changed file paths (unstaged + staged). No git add."
@@ -443,7 +442,9 @@ fn name=gitChangedFiles params="cwd:string" returns="string[]"
         ...staged.split('\n').filter(Boolean),
       ]);
       return [...combined];
-    } catch { return []; }
+    } catch {
+      return [];
+    }
   >>>
 
 // KERN-GAP: lang="kern" — `\n` in template literal inside `return value="..."` is reformatted to a real newline + 2-space indent in generated TS. Same bug as tool-parser.formatToolResult. Reverted to raw body.

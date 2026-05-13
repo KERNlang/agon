@@ -16,13 +16,11 @@ const name=DEFAULT_PRICING type=PricingEntry value={{ { inputPer1k: 0.003, outpu
 
 fn name=getEnginePricing params="engine:EngineDefinition" returns=PricingEntry export=true
   doc "Return per-engine pricing or the conservative default. Reads from engine.api.pricing if available."
-  handler <<<
-    const api = (engine as any).api;
-    if (api && api.pricing && typeof api.pricing.input === 'number' && typeof api.pricing.output === 'number') {
-      return { inputPer1k: api.pricing.input, outputPer1k: api.pricing.output };
-    }
-    return DEFAULT_PRICING;
-  >>>
+  handler lang="kern"
+    let name=api value="(engine as any).api"
+    if cond="api && api.pricing && typeof api.pricing.input === 'number' && typeof api.pricing.output === 'number'"
+      return value="{ inputPer1k: api.pricing.input, outputPer1k: api.pricing.output }"
+    return value="DEFAULT_PRICING"
 
 fn name=tokensToCost params="engine:EngineDefinition,inputTokens:number,outputTokens:number" returns=number export=true
   doc "Convert raw token counts to USD cost using the engine's per-1k pricing. inputTokens and outputTokens are absolute counts (not in 1k units). Returns dollars."

@@ -2679,9 +2679,10 @@ screen name=App target=ink
       return [...mergedBase, ...uniqueSkills];
     >>>
 
-  memo name=availableEngines deps="registry, registryVersion"
+  memo name=availableEngines deps="registry, registryVersion, configVersion"
     handler <<<
-      return registry.availableIds();
+      const hidden = new Set((loadConfig() as any).hiddenEngines ?? []);
+      return registry.availableIds().filter((id: string) => !hidden.has(id));
     >>>
 
   // Memoized loadConfig() — without this, every inline `loadConfig()` call in
@@ -3775,7 +3776,9 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         dispatch, ctx, commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
         runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
           const job = jobManager.create(type, label);
+          chatStartTimeRef.current = Date.now();
           setJobList([...jobManager.list()]);
+          dispatch({ type: 'info', message: `Started background job [${job.id}] ${type}: ${label || type}` } as any);
           // Transition to idle so user can submit new commands while job runs
           // Strip stays active via jobList.some(j => j.state === 'running') check
           setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
@@ -4402,11 +4405,18 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
               const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
               delete nextModels[engineId];
               configSet('engineModels', nextModels as any);
+              const cfg = loadConfig() as any;
+              const hidden = new Set(cfg.hiddenEngines ?? []);
+              hidden.add(engineId);
+              configSet('hiddenEngines', [...hidden] as any);
+              const selected = (cfg.forgeEnabledEngines ?? []).filter((id: string) => id !== engineId);
+              configSet('forgeEnabledEngines', selected as any);
               setConfigVersion((v: number) => v + 1);
               registry.unregister(engineId);
+              registry.clearBinaryCache(engineId);
               setRegistryVersion((v: number) => v + 1);
               setSessionEngines((prev: string[]|null) => prev ? prev.filter((id: string) => id !== engineId) : null);
-              dispatch({ type: 'success', message: `Removed: ${engineId}` } as any);
+              dispatch({ type: 'success', message: `Removed from Agon: ${engineId}. Restore with /engines restore ${engineId}.` } as any);
             }}
             onSetModel={(engineId: string, model: string | null) => {
               const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
@@ -4546,7 +4556,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
             {(() => {
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
-                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
+                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
                 {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} telemetryVitals={telemetryVitals} />}
               </>);
             })()}

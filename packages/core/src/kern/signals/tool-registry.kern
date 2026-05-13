@@ -12,29 +12,26 @@ service name=ToolRegistry singleton=true
     >>>
 
   method name=register params="handler:ToolHandler" returns=void
-    handler <<<
-      this.tools.set(handler.definition.name, handler);
-    >>>
+    handler lang="kern"
+      do value="this.tools.set(handler.definition.name, handler)"
 
   method name=get params="name:string" returns="ToolHandler|undefined"
-    handler <<<
-      return this.tools.get(name)
-        ?? this.tools.get(name.charAt(0).toUpperCase() + name.slice(1))
-        ?? [...this.tools.values()].find(h => h.definition.name.toLowerCase() === name.toLowerCase());
-    >>>
+    handler lang="kern"
+      return value="this.tools.get(name) ?? this.tools.get(name.charAt(0).toUpperCase() + name.slice(1)) ?? [...this.tools.values()].find(h => h.definition.name.toLowerCase() === name.toLowerCase())"
 
   method name=list returns="ToolDefinition[]"
-    handler <<<
-      return Array.from(this.tools.values()).map(h => h.definition);
-    >>>
+    handler lang="kern"
+      return value="Array.from(this.tools.values()).map(h => h.definition)"
 
   method name=has params="name:string" returns=boolean
-    handler <<<
-      if (this.tools.has(name) || this.tools.has(name.charAt(0).toUpperCase() + name.slice(1))) return true;
-      const lower = name.toLowerCase();
-      for (const h of this.tools.values()) { if (h.definition.name.toLowerCase() === lower) return true; }
-      return false;
-    >>>
+    handler lang="kern"
+      if cond="this.tools.has(name) || this.tools.has(name.charAt(0).toUpperCase() + name.slice(1))"
+        return value="true"
+      let name=lower value="name.toLowerCase()"
+      each name=h in="this.tools.values()"
+        if cond="h.definition.name.toLowerCase() === lower"
+          return value="true"
+      return value="false"
 
   method name=names returns="string[]"
     handler lang="kern"

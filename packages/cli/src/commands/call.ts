@@ -15,6 +15,7 @@ export interface CallCommandOptions {
   engineTimeout?: string;
   strategy?: string;
   lead?: string;
+  finalizeOnScore?: string;
 }
 
 export interface BuiltCallCommands {
@@ -88,6 +89,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...(team ? textFlag('--members', opts.members) : []),
       ...timeout,
       ...engines,
+      ...(team ? [] : textFlag('--finalize-on-score', opts.finalizeOnScore)),
     ]);
   } else if (workflow === 'campfire') {
     commands.push([
@@ -226,6 +228,10 @@ export const callCommand = defineCommand({
       description: 'Emit machine-readable JSONL lifecycle and output chunks',
       default: false,
     },
+    finalizeOnScore: {
+      type: 'string',
+      description: 'For solo forge: finalize as soon as any engine PASSES with score >= N',
+    },
   },
   async run({ args }) {
     let built: BuiltCallCommands;
@@ -243,6 +249,7 @@ export const callCommand = defineCommand({
         engineTimeout: args.timeout,
         strategy: args.strategy,
         lead: args.lead,
+        finalizeOnScore: args.finalizeOnScore,
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

@@ -163,4 +163,70 @@ describe('agon orchestration MCP direct command mapping', () => {
     expect(properties.cwd).toBeTruthy();
     expect(properties.engineTimeout).toBeTruthy();
   });
+
+  it('exposes finalizeOnScore and cesarSmart on the Forge tool schema', () => {
+    const forge = ORCHESTRATION_TOOLS.find((tool) => tool.name === 'Forge');
+    const properties = forge?.inputSchema.properties as Record<string, unknown>;
+    expect(properties.finalizeOnScore).toBeTruthy();
+    expect(properties.cesarSmart).toBeTruthy();
+  });
+
+  it('forwards explicit finalizeOnScore as --finalize-on-score for solo forge', () => {
+    const result = buildDirectAgonCommand('Forge', {
+      task: 'Fix the broken validator',
+      fitnessCmd: 'npm test',
+      cwd: '/tmp/project',
+      finalizeOnScore: 80,
+    });
+    const cmd = result.commands[0];
+    expect(cmd).toContain('--finalize-on-score');
+    expect(cmd[cmd.indexOf('--finalize-on-score') + 1]).toBe('80');
+  });
+
+  it('omits --finalize-on-score for team-forge (team variant ignores the flag)', () => {
+    const result = buildDirectAgonCommand('Forge', {
+      task: 'Fix the broken validator',
+      fitnessCmd: 'npm test',
+      team: true,
+      cwd: '/tmp/project',
+      finalizeOnScore: 80,
+    });
+    expect(result.commands[0]).not.toContain('--finalize-on-score');
+  });
+
+  it('derives finalizeOnScore from task class when cesarSmart=true and none explicit', () => {
+    // bugfix → 85 per defaultFinalizeOnScoreForTask
+    const result = buildDirectAgonCommand('Forge', {
+      task: 'fix the off-by-one bug in the loop',
+      fitnessCmd: 'npm test',
+      cwd: '/tmp/project',
+      cesarSmart: true,
+    });
+    const cmd = result.commands[0];
+    expect(cmd).toContain('--finalize-on-score');
+    expect(cmd[cmd.indexOf('--finalize-on-score') + 1]).toBe('85');
+  });
+
+  it('cesarSmart yields no flag for high-stakes feature/algorithm tasks', () => {
+    const result = buildDirectAgonCommand('Forge', {
+      task: 'implement a new feature for authentication',
+      fitnessCmd: 'npm test',
+      cwd: '/tmp/project',
+      cesarSmart: true,
+    });
+    expect(result.commands[0]).not.toContain('--finalize-on-score');
+  });
+
+  it('explicit finalizeOnScore wins over cesarSmart derivation', () => {
+    const result = buildDirectAgonCommand('Forge', {
+      task: 'fix the bug',
+      fitnessCmd: 'npm test',
+      cwd: '/tmp/project',
+      cesarSmart: true,
+      finalizeOnScore: 95,
+    });
+    const cmd = result.commands[0];
+    expect(cmd).toContain('--finalize-on-score');
+    expect(cmd[cmd.indexOf('--finalize-on-score') + 1]).toBe('95');
+  });
 });

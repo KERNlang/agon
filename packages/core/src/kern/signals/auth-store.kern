@@ -20,13 +20,11 @@ fn name=getAuthFile returns=string export=false
 fn name=loadAuthStore returns=AuthStore
   handler <<<
     const authFile = getAuthFile();
-    if (!existsSync(authFile)) {
-      return { entries: {} };
-    }
+    if (!existsSync(authFile)) return { entries: {} };
     try {
       const data = JSON.parse(readFileSync(authFile, 'utf-8'));
       return { entries: data ?? {} };
-    } catch (_e) {
+    } catch {
       return { entries: {} };
     }
   >>>

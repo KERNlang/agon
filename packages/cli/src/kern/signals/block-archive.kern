@@ -13,11 +13,10 @@ const name=ARCHIVE_BATCH type=number value=100
 
 fn name=makeBlockArchivePath params="sessionStartTime:number" returns=string
   doc "Per-session archive path under RUNS_DIR. Safe to call repeatedly — same sessionStartTime yields the same path."
-  handler <<<
-    const dir = join(RUNS_DIR, `live-${sessionStartTime}`);
-    mkdirSync(dir, { recursive: true });
-    return join(dir, 'transcript.ndjson');
-  >>>
+  handler lang="kern"
+    let name=dir value="join(RUNS_DIR, `live-${sessionStartTime}`)"
+    do value="mkdirSync(dir, { recursive: true })"
+    return value="join(dir, 'transcript.ndjson')"
 
 fn name=archiveBlocks params="archivePath:string, blocks:OutputBlock[]" returns=void
   doc "Append blocks as NDJSON. Fire-and-forget: logs a warning on failure but never throws."
@@ -35,10 +34,10 @@ fn name=archiveBlocks params="archivePath:string, blocks:OutputBlock[]" returns=
 // Pure helper — shared by addBlock / flushStream in app.kern.
 // Returns the next React-state array; overflow (if any) goes to disk.
 fn name=appendBlockWithCap params="prev:OutputBlock[], block:OutputBlock, archivePath:string" returns="OutputBlock[]"
-  handler <<<
-    const next = [...prev, block];
-    if (next.length <= MAX_LIVE_BLOCKS) return next;
-    const overflow = next.length - MAX_LIVE_BLOCKS + ARCHIVE_BATCH;
-    archiveBlocks(archivePath, next.slice(0, overflow));
-    return next.slice(overflow);
-  >>>
+  handler lang="kern"
+    let name=next value="[...prev, block]"
+    if cond="next.length <= MAX_LIVE_BLOCKS"
+      return value="next"
+    let name=overflow value="next.length - MAX_LIVE_BLOCKS + ARCHIVE_BATCH"
+    do value="archiveBlocks(archivePath, next.slice(0, overflow))"
+    return value="next.slice(overflow)"

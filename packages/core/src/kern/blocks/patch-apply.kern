@@ -18,10 +18,10 @@ interface name=ApplyPreflight
   field name=dirtyTree type=boolean
 
 fn name=normalizePatchContent params="patchContent:string" returns=string export=false
-  handler <<<
-    if (!patchContent.trim()) return patchContent;
-    return patchContent.endsWith('\n') ? patchContent : `${patchContent}\n`;
-  >>>
+  handler lang="kern"
+    if cond="!patchContent.trim()"
+      return value="patchContent"
+    return value="patchContent.endsWith('\\n') ? patchContent : `${patchContent}\\n`"
 
 fn name=getUndoDir returns=string export=false
   handler <<<
@@ -98,31 +98,22 @@ fn name=applyPatchToTree params="cwd:string, patchContent:string" returns="{ ok:
   >>>
 
 fn name=preflightApply params="cwd:string, patchPath:string|null, manifestPath:string|null" returns="ApplyPreflight"
-  handler <<<
-    const dirtyTree = isTreeDirty(cwd);
-
-    let patch: PatchInfo | null = null;
-    if (patchPath) {
-      patch = readPatchFromPath(patchPath);
-    } else if (manifestPath) {
-      patch = readPatchFromManifest(manifestPath);
-    }
-
-    if (!patch) {
-      return { ok: false, error: 'No patch found. Run /forge first or provide a path.', dirtyTree };
-    }
-
-    if (dirtyTree) {
-      return { ok: false, error: 'Working tree has uncommitted changes. Commit or stash first, or use /apply --force.', patch, dirtyTree };
-    }
-
-    const dryRun = dryRunApply(cwd, patch.content);
-    if (!dryRun.ok) {
-      return { ok: false, error: `Patch would not apply cleanly: ${dryRun.error}`, patch, dirtyTree };
-    }
-
-    return { ok: true, patch, dirtyTree };
-  >>>
+  handler lang="kern"
+    let name=dirtyTree value="isTreeDirty(cwd)"
+    let name=patch type="PatchInfo | null" kind=let value="null"
+    if cond="patchPath"
+      assign target="patch" value="readPatchFromPath(patchPath)"
+    else
+      if cond="manifestPath"
+        assign target="patch" value="readPatchFromManifest(manifestPath)"
+    if cond="!patch"
+      return value="{ ok: false, error: 'No patch found. Run /forge first or provide a path.', dirtyTree }"
+    if cond="dirtyTree"
+      return value="{ ok: false, error: 'Working tree has uncommitted changes. Commit or stash first, or use /apply --force.', patch, dirtyTree }"
+    let name=dryRun value="dryRunApply(cwd, patch.content)"
+    if cond="!dryRun.ok"
+      return value="{ ok: false, error: `Patch would not apply cleanly: ${dryRun.error}`, patch, dirtyTree }"
+    return value="{ ok: true, patch, dirtyTree }"
 
 fn name=applyPatchWithUndo params="cwd:string, patchContent:string" returns="{ ok:boolean, error?:string, undoToken?:string }"
   doc "Apply patch and save an inverse for undo."

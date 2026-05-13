@@ -6,13 +6,17 @@ import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../../telemetry/index.js" names="recordRun,formatRunSummary"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
+import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 
 fn name=handleCampfire params="topic:string, dispatch:Dispatch, ctx:HandlerContext, opts?:{seedPlan?:string, observerStrategy?:'lead-first'|'all-respond', leadEngine?:string}" returns="Promise<void>" async=true
   signal name=cfAbort
   handler <<<
     ensureAgonHome();
 
-    const engines = ctx.activeEngines();
+    const allEngines = ctx.activeEngines();
+    const engines = filterDefaultOrchestrationEngines(allEngines);
+    const excluded = allEngines.filter((id: string) => !engines.includes(id));
+    if (excluded.length > 0) dispatch({ type: 'info', message: `Skipping disabled orchestration engines: ${excluded.join(', ')}` });
     if (engines.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
       return;

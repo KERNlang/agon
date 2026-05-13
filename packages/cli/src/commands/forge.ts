@@ -51,6 +51,10 @@ export const forgeCommand = defineCommand({
       description: 'Show what would happen without executing',
       default: false,
     },
+    finalizeOnScore: {
+      type: 'string',
+      description: 'Finalize forge as soon as any engine PASSES with score >= this threshold (0-100). Aborts in-flight stage-2 engines and proceeds to winner selection. Useful for cost-control and Cesar-driven smart early-exit.',
+    },
   },
   async run({ args }) {
     ensureAgonHome();
@@ -84,6 +88,26 @@ export const forgeCommand = defineCommand({
 
     const engines = args.engines?.split(',').map((s) => s.trim());
 
+    const finalizeOnScoreRaw = args.finalizeOnScore?.trim();
+    const finalizeOnScore = finalizeOnScoreRaw ? Number(finalizeOnScoreRaw) : undefined;
+    if (finalizeOnScoreRaw && (!Number.isFinite(finalizeOnScore!) || finalizeOnScore! < 0 || finalizeOnScore! > 100)) {
+      fail(`--finalize-on-score must be a number in [0,100]; got "${finalizeOnScoreRaw}"`);
+      process.exit(1);
+    }
+    // Caller-driven finalize: pass an onResult predicate that asks runForge
+    // to stop as soon as any engine PASSES at or above the threshold. We only
+    // finalize on pass=true to avoid prematurely cutting off engines that
+    // might have produced a passing patch from the still-running set.
+    const onResult = finalizeOnScore !== undefined
+      ? (_engineId: string, result: EngineResult): 'finalize' | 'continue' => {
+          if (result.pass && result.score >= finalizeOnScore) {
+            info(`Finalize threshold met: score ${result.score} ≥ ${finalizeOnScore} — aborting remaining engines.`);
+            return 'finalize';
+          }
+          return 'continue';
+        }
+      : undefined;
+
     const manifest = await runForge(
       {
         task: args.task,
@@ -94,6 +118,7 @@ export const forgeCommand = defineCommand({
         starter: args.starter,
         engines,
         dryRun: args.dryRun,
+        onResult,
       },
       registry,
       adapter,
@@ -119,6 +144,12 @@ export const forgeCommand = defineCommand({
           case 'engine:failed':
             warn(`Engine failed: ${bold(String(event.engineId ?? event.data?.engineId ?? 'unknown'))} (${event.data?.phase ?? 'dispatch'})`);
             break;
+          case 'forge:engine-skipped' as any: {
+            const skippedId = String((event as any).data?.engineId ?? 'unknown');
+            const reason = String((event as any).data?.reason ?? 'unavailable');
+            warn(`Engine skipped: ${bold(skippedId)} — ${reason}`);
+            break;
+          }
           case 'winner:determined':
             if (event.data?.winner) {
               success(`Winner: ${bold(String(event.data.winner))} (score: ${event.data.bestScore})`);

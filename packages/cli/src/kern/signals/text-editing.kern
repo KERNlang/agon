@@ -4,40 +4,38 @@
 // hand-maintained.
 
 fn name=isWordChar params="char:string|undefined" returns=boolean export=false
-  handler <<<
-    return !!char && /[A-Za-z0-9_]/.test(char);
-  >>>
+  handler lang="kern"
+    return value="!!char && /[A-Za-z0-9_]/.test(char)"
 
 fn name=charClass params="char:string|undefined" returns="'space'|'word'|'punct'|'none'" export=false
-  handler <<<
-    if (!char) return 'none';
-    if (/\s/.test(char)) return 'space';
-    if (isWordChar(char)) return 'word';
-    return 'punct';
-  >>>
+  handler lang="kern"
+    if cond="!char"
+      return value="'none'"
+    if cond="/\s/.test(char)"
+      return value="'space'"
+    if cond="isWordChar(char)"
+      return value="'word'"
+    return value="'punct'"
 
 fn name=classifyDeleteInput params="input:string,key:{backspace?:boolean;delete?:boolean}" returns="'none'|'backward'|'forward'" export=true
-  handler <<<
-    if (input === '\x1b[3~') return 'forward';
-    if (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08') {
-      return 'backward';
-    }
-    return 'none';
-  >>>
+  handler lang="kern"
+    if cond="input === String.fromCharCode(0x1b) + '[3~'"
+      return value="'forward'"
+    if cond="key.backspace || key.delete || input === String.fromCharCode(0x7f) || input === String.fromCharCode(0x08)"
+      return value="'backward'"
+    return value="'none'"
 
 fn name=findLineStart params="value:string,cursorOffset:number" returns=number export=true
-  handler <<<
-    const bounded = Math.max(0, Math.min(cursorOffset, value.length));
-    const lineBreak = value.lastIndexOf('\n', bounded - 1);
-    return lineBreak === -1 ? 0 : lineBreak + 1;
-  >>>
+  handler lang="kern"
+    let name=bounded value="Math.max(0, Math.min(cursorOffset, value.length))"
+    let name=lineBreak value="value.lastIndexOf('\n', bounded - 1)"
+    return value="lineBreak === -1 ? 0 : lineBreak + 1"
 
 fn name=findLineEnd params="value:string,cursorOffset:number" returns=number export=true
-  handler <<<
-    const bounded = Math.max(0, Math.min(cursorOffset, value.length));
-    const lineBreak = value.indexOf('\n', bounded);
-    return lineBreak === -1 ? value.length : lineBreak;
-  >>>
+  handler lang="kern"
+    let name=bounded value="Math.max(0, Math.min(cursorOffset, value.length))"
+    let name=lineBreak value="value.indexOf('\n', bounded)"
+    return value="lineBreak === -1 ? value.length : lineBreak"
 
 fn name=findWordBoundaryLeft params="value:string,cursorOffset:number" returns=number export=true
   handler <<<
@@ -103,20 +101,13 @@ fn name=applyInlineInputEdits params="value:string,cursorOffset:number,input:str
   >>>
 
 fn name=syncControlledInputCursor params="previousState:{cursorOffset:number;cursorWidth:number},value:string,opts:{focus:boolean;showCursor:boolean;lastCommittedValue:string}" returns="{cursorOffset:number;cursorWidth:number}" export=true
-  handler <<<
-    if (!opts.focus || !opts.showCursor) return previousState;
-
-    if (value !== opts.lastCommittedValue) {
-      return { cursorOffset: value.length, cursorWidth: 0 };
-    }
-
-    if (previousState.cursorOffset > value.length) {
-      return { cursorOffset: value.length, cursorWidth: 0 };
-    }
-
-    if (previousState.cursorWidth !== 0) {
-      return { ...previousState, cursorWidth: 0 };
-    }
-
-    return previousState;
-  >>>
+  handler lang="kern"
+    if cond="!opts.focus || !opts.showCursor"
+      return value="previousState"
+    if cond="value !== opts.lastCommittedValue"
+      return value="{ cursorOffset: value.length, cursorWidth: 0 }"
+    if cond="previousState.cursorOffset > value.length"
+      return value="{ cursorOffset: value.length, cursorWidth: 0 }"
+    if cond="previousState.cursorWidth !== 0"
+      return value="{ ...previousState, cursorWidth: 0 }"
+    return value="previousState"

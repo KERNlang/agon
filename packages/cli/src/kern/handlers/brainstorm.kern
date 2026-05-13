@@ -9,6 +9,7 @@ import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgr
 import from="../cesar/scoreboard.js" names="createScoreboard,scoreboardStartEngine,scoreboardFinishEngine,scoreboardFailEngine,renderScoreboard"
 import from="../cesar/checkpoint.js" names="buildCheckpoint,recordCheckpoint"
 import from="../../telemetry/index.js" names="recordRun,formatRunSummary"
+import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 
 fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<{winner:string, bids:{engineId:string,reasoning:string,approach:string,score:number}[], response:string}|null>" async=true
   signal name=bsAbort
@@ -20,7 +21,10 @@ fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:Handler
       return null;
     }
 
-    const engines = ctx.activeEngines();
+    const allEngines = ctx.activeEngines();
+    const engines = filterDefaultOrchestrationEngines(allEngines);
+    const excluded = allEngines.filter((id: string) => !engines.includes(id));
+    if (excluded.length > 0) dispatch({ type: 'info', message: `Skipping disabled orchestration engines: ${excluded.join(', ')}` });
     if (engines.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
       return null;

@@ -7,6 +7,7 @@ import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgr
 import from="../cesar/scoreboard.js" names="createScoreboard,scoreboardStartEngine,scoreboardFinishEngine,scoreboardFailEngine,renderScoreboard"
 import from="../cesar/checkpoint.js" names="buildCheckpoint,recordCheckpoint"
 import from="../../telemetry/index.js" names="recordRun,formatRunSummary"
+import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 
 fn name=handleTribunal params="question:string, dispatch:Dispatch, ctx:HandlerContext, tribunalMode?:string" returns="Promise<void>" async=true
   signal name=tribunalAbort
@@ -19,7 +20,10 @@ fn name=handleTribunal params="question:string, dispatch:Dispatch, ctx:HandlerCo
       return;
     }
 
-    const active = ctx.activeEngines();
+    const allActive = ctx.activeEngines();
+    const active = filterDefaultOrchestrationEngines(allActive);
+    const excluded = allActive.filter((id: string) => !active.includes(id));
+    if (excluded.length > 0) dispatch({ type: 'info', message: `Skipping disabled orchestration engines: ${excluded.join(', ')}` });
     if (active.length < 2) {
       dispatch({ type: 'error', message: `Tribunal needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });
       return;

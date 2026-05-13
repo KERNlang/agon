@@ -143,8 +143,7 @@ fn name=pruneRuns returns=void
   >>>
 
 fn name=ensureAgonHome returns=void
-  handler <<<
-    mkdirSync(getAgonHome(), { recursive: true });
-    mkdirSync(agonPath('runs'), { recursive: true });
-    pruneRuns();
-  >>>
+  handler lang="kern"
+    do value="mkdirSync(getAgonHome(), { recursive: true })"
+    do value="mkdirSync(agonPath('runs'), { recursive: true })"
+    do value="pruneRuns()"

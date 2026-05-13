@@ -3,11 +3,7 @@ import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 const name=RUN_DANGEROUS type="readonly string[]" value={{ ['rm -rf /', 'dd if=', 'mkfs', '> /dev/', 'chmod 777', 'curl | sh', 'wget | sh'] }}
 
-const name=RUN_SAFE type="readonly string[]"
-  handler <<<
-    ['ls', 'cat', 'head', 'tail', 'echo', 'pwd', 'which', 'date', 'wc', 'find', 'grep', 'tree',
-     'git status', 'git log', 'git diff', 'git branch', 'npm test', 'npm run']
-  >>>
+const name=RUN_SAFE type="readonly string[]" value={{ ['ls', 'cat', 'head', 'tail', 'echo', 'pwd', 'which', 'date', 'wc', 'find', 'grep', 'tree', 'git status', 'git log', 'git diff', 'git branch', 'npm test', 'npm run'] }}
 
 fn name=handleRun params="command:string, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>" async=true
   handler <<<

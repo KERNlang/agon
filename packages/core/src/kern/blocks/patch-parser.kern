@@ -77,35 +77,35 @@ fn name=patchSummary params="files:PatchFile[]" returns=string
 
 fn name=invertPatch params="content:string" returns=string
   doc "Swap +/- lines to produce an inverse patch for undo."
-  handler <<<
-    const lines = content.split('\n');
-    const result: string[] = [];
-
-    for (const line of lines) {
-      if (line.startsWith('--- a/')) {
-        result.push(line.replace('--- a/', '--- b/'));
-      } else if (line.startsWith('+++ b/')) {
-        result.push(line.replace('+++ b/', '+++ a/'));
-      } else if (line.startsWith('--- /dev/null')) {
-        result.push('+++ /dev/null');
-      } else if (line.startsWith('+++ /dev/null')) {
-        result.push('--- /dev/null');
-      } else if (line.startsWith('@@')) {
-        // Swap the hunk header ranges
-        const match = line.match(/@@ -(\d+(?:,\d+)?) \+(\d+(?:,\d+)?) @@(.*)/);
-        if (match) {
-          result.push(`@@ -${match[2]} +${match[1]} @@${match[3]}`);
-        } else {
-          result.push(line);
-        }
-      } else if (line.startsWith('+') && !line.startsWith('+++')) {
-        result.push('-' + line.slice(1));
-      } else if (line.startsWith('-') && !line.startsWith('---')) {
-        result.push('+' + line.slice(1));
-      } else {
-        result.push(line);
-      }
-    }
-
-    return result.join('\n');
-  >>>
+  handler lang="kern"
+    let name=lines value="content.split('\\n')"
+    let name=result type="string[]" value="[]"
+    each name=line in="lines"
+      if cond="line.startsWith('--- a/')"
+        do value="result.push(line.replace('--- a/', '--- b/'))"
+      else
+        if cond="line.startsWith('+++ b/')"
+          do value="result.push(line.replace('+++ b/', '+++ a/'))"
+        else
+          if cond="line.startsWith('--- /dev/null')"
+            do value="result.push('+++ /dev/null')"
+          else
+            if cond="line.startsWith('+++ /dev/null')"
+              do value="result.push('--- /dev/null')"
+            else
+              if cond="line.startsWith('@@')"
+                comment raw="// Swap the hunk header ranges"
+                let name=match value="line.match(/@@ -(\\d+(?:,\\d+)?) \\+(\\d+(?:,\\d+)?) @@(.*)/)"
+                if cond="match"
+                  do value="result.push(`@@ -${match[2]} +${match[1]} @@${match[3]}`)"
+                else
+                  do value="result.push(line)"
+              else
+                if cond="line.startsWith('+') && !line.startsWith('+++')"
+                  do value="result.push('-' + line.slice(1))"
+                else
+                  if cond="line.startsWith('-') && !line.startsWith('---')"
+                    do value="result.push('+' + line.slice(1))"
+                  else
+                    do value="result.push(line)"
+    return value="result.join('\\n')"

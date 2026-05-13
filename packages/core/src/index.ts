@@ -4,6 +4,7 @@ export { loadConfig, configGet, configSet, ensureAgonHome, getAgonHome, agonPath
 export { computeScore, tiebreak, DEFAULT_WEIGHTS } from './scoring.js';
 export { updateGlicko, updateGlickoRanked, getRatings, getEngineGlickoRating, advisorScore } from './glicko.js';
 export { classifyTask } from './task-classifier.js';
+export { defaultFinalizeOnScoreForTask } from './generated/blocks/finalize-policy.js';
 export {
   repoRoot, headSha, worktreePrune, worktreeCreate, worktreeRemove,
   worktreeRemoveBestEffort, worktreePruneAll, stashSnapshot,

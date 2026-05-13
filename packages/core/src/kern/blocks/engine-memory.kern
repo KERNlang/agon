@@ -56,27 +56,25 @@ fn name=saveEngineMemory params="record:EngineMemoryRecord" returns=void export=
   >>>
 
 fn name=ensureProfile params="record:EngineMemoryRecord, engineId:string" returns=EngineProfile export=false
-  handler <<<
-    if (!record.engines[engineId]) {
-      record.engines[engineId] = { strengths: [], weaknesses: [], tendencies: [], notes: [] };
-    }
-    return record.engines[engineId];
-  >>>
+  handler lang="kern"
+    if cond="!record.engines[engineId]"
+      assign target="record.engines[engineId]" value="{ strengths: [], weaknesses: [], tendencies: [], notes: [] }"
+    return value="record.engines[engineId]"
 
 fn name=uniqueStrings params="values:string[], limit?:number" returns="string[]" export=false
-  handler <<<
-    const seen = new Set<string>();
-    const out: string[] = [];
-    const max = limit ?? 20;
-    for (const value of values) {
-      const clean = String(value ?? '').trim();
-      if (!clean || seen.has(clean)) continue;
-      seen.add(clean);
-      out.push(clean);
-      if (out.length >= max) break;
-    }
-    return out;
-  >>>
+  handler lang="kern"
+    let name=seen value="new Set<string>()"
+    let name=out type="string[]" value="[]"
+    let name=max value="limit ?? 20"
+    each name=value in="values"
+      let name=clean value="String(value ?? '').trim()"
+      if cond="!clean || seen.has(clean)"
+        continue
+      do value="seen.add(clean)"
+      do value="out.push(clean)"
+      if cond="out.length >= max"
+        break
+    return value="out"
 
 fn name=filePathToMemoryPattern params="path:string" returns=string export=true
   doc "Collapse a touched file path to a reusable routing-memory pattern."
@@ -103,72 +101,60 @@ fn name=filePathToMemoryPattern params="path:string" returns=string export=true
 
 fn name=extractPatchFilePatterns params="patch:string" returns="string[]" export=true
   doc "Extract stable file-scope patterns from a unified diff for engine memory."
-  handler <<<
-    const paths: string[] = [];
-    for (const line of String(patch ?? '').split('\n')) {
-      const diffMatch = line.match(/^diff --git\s+a\/(.+?)\s+b\/(.+)$/);
-      if (diffMatch) {
-        paths.push(diffMatch[1], diffMatch[2]);
-        continue;
-      }
-      const markerMatch = line.match(/^(?:---|\+\+\+)\s+(?:a\/|b\/)?(.+)$/);
-      if (markerMatch) paths.push(markerMatch[1]);
-    }
-    return uniqueStrings(paths.map(filePathToMemoryPattern).filter(Boolean), 12);
-  >>>
+  handler lang="kern"
+    let name=paths type="string[]" value="[]"
+    each name=line in="String(patch ?? '').split('\\n')"
+      let name=diffMatch value="line.match(/^diff --git\\s+a\\/(.+?)\\s+b\\/(.+)$/)"
+      if cond="diffMatch"
+        do value="paths.push(diffMatch[1], diffMatch[2])"
+        continue
+      let name=markerMatch value="line.match(/^(?:---|\\+\\+\\+)\\s+(?:a\\/|b\\/)?(.+)$/)"
+      if cond="markerMatch"
+        do value="paths.push(markerMatch[1])"
+    return value="uniqueStrings(paths.map(filePathToMemoryPattern).filter(Boolean), 12)"
 
 fn name=addEngineNote params="engineId:string, taskClass:TaskClass, observation:string, forgeId?:string, filePatterns?:string[]" returns=void
-  handler <<<
-    const record = loadEngineMemory();
-    const profile = ensureProfile(record, engineId);
-    const note = {
-      taskClass,
-      observation,
-      timestamp: new Date().toISOString(),
-      forgeId,
-    } as EngineNote;
-    const patterns = uniqueStrings(filePatterns ?? [], 12);
-    if (patterns.length > 0) note.filePatterns = patterns;
-    profile.notes.push(note);
-    // Keep only last 50 notes per engine
-    if (profile.notes.length > 50) {
-      profile.notes = profile.notes.slice(-50);
-    }
-    saveEngineMemory(record);
-  >>>
+  handler lang="kern"
+    let name=record value="loadEngineMemory()"
+    let name=profile value="ensureProfile(record, engineId)"
+    let name=note value="{ taskClass, observation, timestamp: new Date().toISOString(), forgeId, } as EngineNote"
+    let name=patterns value="uniqueStrings(filePatterns ?? [], 12)"
+    if cond="patterns.length > 0"
+      assign target="note.filePatterns" value="patterns"
+    do value="profile.notes.push(note)"
+    comment raw="// Keep only last 50 notes per engine"
+    if cond="profile.notes.length > 50"
+      assign target="profile.notes" value="profile.notes.slice(-50)"
+    do value="saveEngineMemory(record)"
 
 fn name=setEngineStrengths params="engineId:string, strengths:string[]" returns=void
-  handler <<<
-    const record = loadEngineMemory();
-    const profile = ensureProfile(record, engineId);
-    profile.strengths = strengths;
-    saveEngineMemory(record);
-  >>>
+  handler lang="kern"
+    let name=record value="loadEngineMemory()"
+    let name=profile value="ensureProfile(record, engineId)"
+    assign target="profile.strengths" value="strengths"
+    do value="saveEngineMemory(record)"
 
 fn name=setEngineWeaknesses params="engineId:string, weaknesses:string[]" returns=void
-  handler <<<
-    const record = loadEngineMemory();
-    const profile = ensureProfile(record, engineId);
-    profile.weaknesses = weaknesses;
-    saveEngineMemory(record);
-  >>>
+  handler lang="kern"
+    let name=record value="loadEngineMemory()"
+    let name=profile value="ensureProfile(record, engineId)"
+    assign target="profile.weaknesses" value="weaknesses"
+    do value="saveEngineMemory(record)"
 
 fn name=addEngineTendency params="engineId:string, tendency:string" returns=void
-  handler <<<
-    const record = loadEngineMemory();
-    const profile = ensureProfile(record, engineId);
-    if (!profile.tendencies.includes(tendency)) {
-      profile.tendencies.push(tendency);
-      if (profile.tendencies.length > 10) profile.tendencies = profile.tendencies.slice(-10);
-    }
-    saveEngineMemory(record);
-  >>>
+  handler lang="kern"
+    let name=record value="loadEngineMemory()"
+    let name=profile value="ensureProfile(record, engineId)"
+    if cond="!profile.tendencies.includes(tendency)"
+      do value="profile.tendencies.push(tendency)"
+      if cond="profile.tendencies.length > 10"
+        assign target="profile.tendencies" value="profile.tendencies.slice(-10)"
+    do value="saveEngineMemory(record)"
 
 fn name=getEngineProfile params="engineId:string" returns="EngineProfile|null"
-  handler <<<
-    const record = loadEngineMemory();
-    return record.engines[engineId] ?? null;
-  >>>
+  handler lang="kern"
+    let name=record value="loadEngineMemory()"
+    return value="record.engines[engineId] ?? null"
 
 fn name=buildRolePrompt params="engineId:string, taskClass:TaskClass" returns=string
   handler <<<
@@ -208,65 +194,35 @@ fn name=buildRolePrompt params="engineId:string, taskClass:TaskClass" returns=st
   >>>
 
 fn name=recordForgeOutcome params="winnerId:string, loserIds:string[], taskClass:TaskClass, forgeId:string, winnerScore:number, loserScores:Record<string,number>, filePatterns?:string[]" returns=void
-  handler <<<
-    // Auto-populate notes from forge outcomes
-    const patterns = uniqueStrings(filePatterns ?? [], 12);
-    const scope = patterns.length > 0 ? ` on ${patterns.slice(0, 4).join(', ')}` : '';
-    addEngineNote(winnerId, taskClass, `Won ${taskClass} forge${scope} (score ${winnerScore})`, forgeId, patterns);
-    for (const loserId of loserIds) {
-      const score = loserScores[loserId] ?? 0;
-      if (score === 0) {
-        addEngineNote(loserId, taskClass, `Failed ${taskClass} forge${scope} (did not pass fitness)`, forgeId, patterns);
-      } else {
-        addEngineNote(loserId, taskClass, `Lost ${taskClass} forge${scope} (score ${score} vs winner ${winnerScore})`, forgeId, patterns);
-      }
-    }
-  >>>
+  handler lang="kern"
+    comment raw="// Auto-populate notes from forge outcomes"
+    let name=patterns value="uniqueStrings(filePatterns ?? [], 12)"
+    let name=scope value="patterns.length > 0 ? ` on ${patterns.slice(0, 4).join(', ')}` : ''"
+    do value="addEngineNote(winnerId, taskClass, `Won ${taskClass} forge${scope} (score ${winnerScore})`, forgeId, patterns)"
+    each name=loserId in="loserIds"
+      let name=score value="loserScores[loserId] ?? 0"
+      if cond="score === 0"
+        do value="addEngineNote(loserId, taskClass, `Failed ${taskClass} forge${scope} (did not pass fitness)`, forgeId, patterns)"
+      else
+        do value="addEngineNote(loserId, taskClass, `Lost ${taskClass} forge${scope} (score ${score} vs winner ${winnerScore})`, forgeId, patterns)"
 
 fn name=recordForgeJudgment params="judgedWinnerId:string, automaticWinnerId:string|null, engineIds:string[], taskClass:TaskClass, forgeId:string, summary:string, strengths?:EngineStrengthObservation[], filePatterns?:string[]" returns=void
   doc "Record Cesar's final forge judgment so future routing learns from scorer overrides and per-engine strengths."
-  handler <<<
-    const patterns = uniqueStrings(filePatterns ?? [], 12);
-    const cleanSummary = String(summary ?? '').replace(/\s+/g, ' ').trim();
-    const clippedSummary = cleanSummary.length > 240
-      ? cleanSummary.slice(0, 237) + '...'
-      : cleanSummary;
-    const summarySuffix = clippedSummary ? `: ${clippedSummary}` : '';
-
-    if (engineIds.includes(judgedWinnerId)) {
-      const overrideSuffix = automaticWinnerId && automaticWinnerId !== judgedWinnerId
-        ? ` (overrode automatic winner ${automaticWinnerId})`
-        : '';
-      addEngineNote(
-        judgedWinnerId,
-        taskClass,
-        `Cesar judged this as the best forge result${overrideSuffix}${summarySuffix}`,
-        forgeId,
-        patterns,
-      );
-    }
-
-    if (automaticWinnerId && automaticWinnerId !== judgedWinnerId && engineIds.includes(automaticWinnerId)) {
-      addEngineNote(
-        automaticWinnerId,
-        taskClass,
-        `Cesar overrode this automatic forge winner in favor of ${judgedWinnerId}${summarySuffix}`,
-        forgeId,
-        patterns,
-      );
-    }
-
-    for (const strength of strengths ?? []) {
-      if (!strength?.engineId || !engineIds.includes(strength.engineId)) continue;
-      const category = String(strength.category ?? 'strength').replace(/\s+/g, ' ').trim() || 'strength';
-      const reason = String(strength.reason ?? '').replace(/\s+/g, ' ').trim();
-      if (!reason) continue;
-      addEngineNote(
-        strength.engineId,
-        taskClass,
-        `Cesar noted strength (${category}): ${reason}`,
-        forgeId,
-        patterns,
-      );
-    }
-  >>>
+  handler lang="kern"
+    let name=patterns value="uniqueStrings(filePatterns ?? [], 12)"
+    let name=cleanSummary value="String(summary ?? '').replace(/\\s+/g, ' ').trim()"
+    let name=clippedSummary value="cleanSummary.length > 240 ? cleanSummary.slice(0, 237) + '...' : cleanSummary"
+    let name=summarySuffix value="clippedSummary ? `: ${clippedSummary}` : ''"
+    if cond="engineIds.includes(judgedWinnerId)"
+      let name=overrideSuffix value="automaticWinnerId && automaticWinnerId !== judgedWinnerId ? ` (overrode automatic winner ${automaticWinnerId})` : ''"
+      do value="addEngineNote(judgedWinnerId, taskClass, `Cesar judged this as the best forge result${overrideSuffix}${summarySuffix}`, forgeId, patterns)"
+    if cond="automaticWinnerId && automaticWinnerId !== judgedWinnerId && engineIds.includes(automaticWinnerId)"
+      do value="addEngineNote(automaticWinnerId, taskClass, `Cesar overrode this automatic forge winner in favor of ${judgedWinnerId}${summarySuffix}`, forgeId, patterns)"
+    each name=strength in="strengths ?? []"
+      if cond="!strength?.engineId || !engineIds.includes(strength.engineId)"
+        continue
+      let name=category value="String(strength.category ?? 'strength').replace(/\\s+/g, ' ').trim() || 'strength'"
+      let name=reason value="String(strength.reason ?? '').replace(/\\s+/g, ' ').trim()"
+      if cond="!reason"
+        continue
+      do value="addEngineNote(strength.engineId, taskClass, `Cesar noted strength (${category}): ${reason}`, forgeId, patterns)"

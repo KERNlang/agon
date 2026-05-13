@@ -72,7 +72,16 @@ describe('Auto-Router', () => {
     it('slash commands bypass auto-routing', () => {
       expect(detectIntent('/build fix it').type).toBe('build');
       expect(detectIntent('/forge fix it').type).toBe('forge');
+      expect(detectIntent('/tribunal should we use REST').type).toBe('tribunal');
+      expect(detectIntent('/review with codex').type).toBe('review');
       expect(detectIntent('/chat hello').type).toBe('chat');
+    });
+
+    it('plain orchestration words stay in auto instead of starting jobs', () => {
+      expect(detectIntent('forge fix it').type).toBe('auto');
+      expect(detectIntent('debate whether REST fits').type).toBe('auto');
+      expect(detectIntent('review with codex').type).toBe('auto');
+      expect(detectIntent('can you ask others what they think').type).toBe('auto');
     });
 
     it('keyword shortcuts still work', () => {

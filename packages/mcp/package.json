@@ -15,5 +15,8 @@
     "prebuild": "npm run kern:compile",
     "build": "tsc -b",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agon/core": "*"
   }
 }

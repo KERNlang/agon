@@ -29,75 +29,12 @@ interface name=IconSet
   field name=cross type=string
   field name=spinner type=string
 
-const name=ROMAN_ICONS type=IconSet
-  handler <<<
-    ({
-      read:      '\u039e',
-      edit:      '\u270e',
-      write:     '\u2712',
-      bash:      '\u03df',
-      search:    '\u2609',
-      find:      '\u2295',
-      tool:      '\u2692',
-      campfire:  '\u2632',
-      brainstorm:'\u2609',
-      tribunal:  '\u2696',
-      image:     '\u229e',
-      queue:     '\u231b',
-      prompt:    '\u25bb',
-      winner:    '\u2605',
-      success:   '\u2714',
-      fail:      '\u2718',
-      warning:   '\u26a0',
-      header:    '\u25b8',
-      nero:      '\u2020',
-      dotOn:     '\u25c6',
-      dotOff:    '\u25c7',
-      play:      '\u25b6',
-      refresh:   '\u21bb',
-      flag:      '\u2691',
-      check:     '\u2714',
-      cross:     '\u2718',
-      spinner:   '\u25d0',
-    })
-  >>>
+const name=ROMAN_ICONS type=IconSet value={{ ({ read: '\u039e', edit: '\u270e', write: '\u2712', bash: '\u03df', search: '\u2609', find: '\u2295', tool: '\u2692', campfire: '\u2632', brainstorm: '\u2609', tribunal: '\u2696', image: '\u229e', queue: '\u231b', prompt: '\u25bb', winner: '\u2605', success: '\u2714', fail: '\u2718', warning: '\u26a0', header: '\u25b8', nero: '\u2020', dotOn: '\u25c6', dotOff: '\u25c7', play: '\u25b6', refresh: '\u21bb', flag: '\u2691', check: '\u2714', cross: '\u2718', spinner: '\u25d0' }) }}
 
-const name=CLASSIC_ICONS type=IconSet
-  handler <<<
-    ({
-      read:      '\ud83d\udcc4',
-      edit:      '\u270f\ufe0f',
-      write:     '\ud83d\udcdd',
-      bash:      '\u26a1',
-      search:    '\ud83d\udd0d',
-      find:      '\ud83d\udcc2',
-      tool:      '\ud83d\udd27',
-      campfire:  '\ud83d\udd25',
-      brainstorm:'\ud83d\udca1',
-      tribunal:  '\u2696',
-      image:     '\ud83d\udcce',
-      queue:     '\u23f3',
-      prompt:    '\u276f',
-      winner:    '\u2605',
-      success:   '\u2714',
-      fail:      '\u2718',
-      warning:   '\u26a0',
-      header:    '\u25b8',
-      nero:      '\u2694',
-      dotOn:     '\u25cf',
-      dotOff:    '\u25cb',
-      play:      '\u25b6',
-      refresh:   '\u21bb',
-      flag:      '\u2691',
-      check:     '\u2714',
-      cross:     '\u2718',
-      spinner:   '\u25d0',
-    })
-  >>>
+const name=CLASSIC_ICONS type=IconSet value={{ ({ read: '\ud83d\udcc4', edit: '\u270f\ufe0f', write: '\ud83d\udcdd', bash: '\u26a1', search: '\ud83d\udd0d', find: '\ud83d\udcc2', tool: '\ud83d\udd27', campfire: '\ud83d\udd25', brainstorm: '\ud83d\udca1', tribunal: '\u2696', image: '\ud83d\udcce', queue: '\u23f3', prompt: '\u276f', winner: '\u2605', success: '\u2714', fail: '\u2718', warning: '\u26a0', header: '\u25b8', nero: '\u2694', dotOn: '\u25cf', dotOff: '\u25cb', play: '\u25b6', refresh: '\u21bb', flag: '\u2691', check: '\u2714', cross: '\u2718', spinner: '\u25d0' }) }}
 
 fn name=icons returns=IconSet
   doc "Resolve icon set from config. Call once per render cycle."
-  handler <<<
-    const theme = loadConfig().iconTheme ?? 'roman';
-    return theme === 'classic' ? CLASSIC_ICONS : ROMAN_ICONS;
-  >>>
+  handler lang="kern"
+    let name=theme value="loadConfig().iconTheme ?? 'roman'"
+    return value="theme === 'classic' ? CLASSIC_ICONS : ROMAN_ICONS"

@@ -400,13 +400,8 @@ fn name=parseToolCalls params="text:string" returns=ParseResult
 
 fn name=toolCallsToApiFormat params="parsed:ParsedToolCall[]" returns="ToolCall[]"
   doc "Convert parsed text-based tool calls to ToolCall format for the executor."
-  handler <<<
-    return parsed.map((tc, i) => ({
-      id: `tc_${Date.now()}_${i}`,
-      name: tc.name,
-      input: tc.input,
-    }));
-  >>>
+  handler lang="kern"
+    return value="parsed.map((tc, i) => Object.assign({}, { id: `tc_${Date.now()}_${i}`, name: tc.name, input: tc.input }))"
 
 // KERN-GAP: lang="kern" — `\n` inside template literal in `return value="..."` becomes a real newline + 2-space indentation in generated TS, prefixing every reinjected tool result line. Reverted to raw body until value=-strings stop reformatting embedded templates.
 fn name=formatToolResult params="toolName:string, result:string, isError?:boolean" returns=string

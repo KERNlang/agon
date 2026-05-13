@@ -11,37 +11,34 @@ service name=SessionContext
 
   method name=get params="cwd:string, extra?:string, format?:'plain'|'kern'" returns=string
     doc "Returns memoized context. Only recomputes if cwd, extra, or format changes, or if cache is stale (>5 min)."
-    handler <<<
-      const extraVal = extra ?? null;
-      const formatVal = format ?? null;
-      const stale = this.capturedAt !== null && (Date.now() - this.capturedAt) > 300_000;
-      if (this.cache !== null && this.cachedCwd === cwd && this.cachedExtra === extraVal && this.cachedFormat === formatVal && !stale) {
-        return this.cache;
-      }
-      this.cache = scanProjectContext(cwd, extra, format);
-      this.cachedCwd = cwd;
-      this.cachedExtra = extraVal;
-      this.cachedFormat = formatVal;
-      this.capturedAt = Date.now();
-      return this.cache;
-    >>>
+    handler lang="kern"
+      let name=extraVal value="extra ?? null"
+      let name=formatVal value="format ?? null"
+      let name=stale value="this.capturedAt !== null && (Date.now() - this.capturedAt) > 300000"
+      if cond="this.cache !== null && this.cachedCwd === cwd && this.cachedExtra === extraVal && this.cachedFormat === formatVal && !stale"
+        return value="this.cache"
+      assign target="this.cache" value="scanProjectContext(cwd, extra, format)"
+      assign target="this.cachedCwd" value="cwd"
+      assign target="this.cachedExtra" value="extraVal"
+      assign target="this.cachedFormat" value="formatVal"
+      assign target="this.capturedAt" value="Date.now()"
+      return value="this.cache"
 
   method name=invalidate returns=void
     doc "Force re-capture on next get() call."
-    handler <<<
-      this.cache = null;
-      this.cachedCwd = null;
-      this.cachedExtra = null;
-      this.cachedFormat = null;
-      this.capturedAt = null;
-    >>>
+    handler lang="kern"
+      assign target="this.cache" value="null"
+      assign target="this.cachedCwd" value="null"
+      assign target="this.cachedExtra" value="null"
+      assign target="this.cachedFormat" value="null"
+      assign target="this.capturedAt" value="null"
 
   method name=age returns=number
     doc "Milliseconds since context was captured. Returns Infinity if never captured."
-    handler <<<
-      if (this.capturedAt === null) return Infinity;
-      return Date.now() - this.capturedAt;
-    >>>
+    handler lang="kern"
+      if cond="this.capturedAt === null"
+        return value="Infinity"
+      return value="Date.now() - this.capturedAt"
 
   method name=isStale params="maxAgeMs?:number" returns=boolean
     doc "Returns true if context is older than maxAgeMs (default 5 minutes)."

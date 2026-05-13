@@ -30,43 +30,11 @@ interface name=CliProviderGroup
 // ── Engine binary → models.dev provider mapping ──
 // This is the only static config needed: which CLI binary maps to which API provider.
 
-const name=ENGINE_PROVIDER_MAP type="Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[]}>"
-  handler <<<
-    ({
-      anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'] },
-      openai:    { providerId: 'openai',    engineId: 'codex',  engineBinary: 'codex',  versionCmd: ['--version'] },
-      google:    { providerId: 'google',    engineId: 'gemini', engineBinary: 'gemini', versionCmd: ['--version'] },
-      mistral:   { providerId: 'mistral',   engineId: 'mistral',engineBinary: 'mistral', versionCmd: ['--version'] },
-      openrouter:{ providerId: 'openrouter',engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] },
-    })
-  >>>
+const name=ENGINE_PROVIDER_MAP type="Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[]}>" value={{ ({ anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'] }, openai: { providerId: 'openai', engineId: 'codex', engineBinary: 'codex', versionCmd: ['--version'] }, google: { providerId: 'google', engineId: 'gemini', engineBinary: 'gemini', versionCmd: ['--version'] }, mistral: { providerId: 'mistral', engineId: 'mistral', engineBinary: 'mistral', versionCmd: ['--version'] }, openrouter: { providerId: 'openrouter', engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] } }) }}
 
 // ── Minimal fallback when API is unreachable ──
 
-const name=FALLBACK_MODELS type="Record<string, {id:string, name:string, contextWindow?:number, toolCall?:boolean, reasoning?:boolean}[]>"
-  handler <<<
-    ({
-      anthropic: [
-        { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextWindow: 200000, toolCall: true, reasoning: true },
-        { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', contextWindow: 200000, toolCall: true, reasoning: true },
-      ],
-      openai: [
-        { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, toolCall: true, reasoning: false },
-        { id: 'o4-mini', name: 'o4-mini', contextWindow: 200000, toolCall: true, reasoning: true },
-      ],
-      google: [
-        { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', contextWindow: 1048576, toolCall: true, reasoning: true },
-        { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', contextWindow: 1048576, toolCall: true, reasoning: true },
-      ],
-      mistral: [
-        { id: 'mistral-large-latest', name: 'Mistral Large', contextWindow: 128000, toolCall: true, reasoning: false },
-        { id: 'codestral-latest', name: 'Codestral', contextWindow: 256000, toolCall: true, reasoning: false },
-      ],
-      openrouter: [
-        { id: 'auto', name: 'Auto (best for task)', toolCall: true, reasoning: false },
-      ],
-    })
-  >>>
+const name=FALLBACK_MODELS type="Record<string, {id:string, name:string, contextWindow?:number, toolCall?:boolean, reasoning?:boolean}[]>" value={{ ({ anthropic: [ { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextWindow: 200000, toolCall: true, reasoning: true }, { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', contextWindow: 200000, toolCall: true, reasoning: true } ], openai: [ { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'o4-mini', name: 'o4-mini', contextWindow: 200000, toolCall: true, reasoning: true } ], google: [ { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', contextWindow: 1048576, toolCall: true, reasoning: true } ], mistral: [ { id: 'mistral-large-latest', name: 'Mistral Large', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'codestral-latest', name: 'Codestral', contextWindow: 256000, toolCall: true, reasoning: false } ], openrouter: [ { id: 'auto', name: 'Auto (best for task)', toolCall: true, reasoning: false } ] }) }}
 
 fn name=getCacheDir returns=string
   handler <<<
@@ -122,8 +90,9 @@ fn name=findBinary params="binary:string" returns="string|null" export=true
     try {
       const result = execSync(`which ${binary}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
       if (result) return result;
-    } catch { /* not found via which */ }
-
+    } catch {
+      // Fall through to common user-local binary paths.
+    }
     const home = homedir();
     const searchPaths = [
       join(home, '.local', 'bin'),
@@ -138,110 +107,54 @@ fn name=findBinary params="binary:string" returns="string|null" export=true
   >>>
 
 fn name=getBinaryVersion params="binary:string, versionCmd:string[]" returns="string|null" export=true
-  handler lang="kern"
-    if cond="!versionCmd.length"
-      return value="null"
-    try
-      let name=result value="execSync(`${binary} ${versionCmd.join(' ')}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim()"
-      return value="result || null"
-      catch name=e
-        return value="null"
+  handler <<<
+    if (!versionCmd.length) return null;
+    try {
+      const result = execSync(`${binary} ${versionCmd.join(' ')}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      return result || null;
+    } catch {
+      return null;
+    }
+  >>>
 
 fn name=buildCliModelGroups returns="CliProviderGroup[]" export=true
   doc "Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync."
-  handler <<<
-    const groups: CliProviderGroup[] = [];
-    for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
-      const binaryPath = findBinary(eng.engineBinary);
-      const installed = binaryPath !== null;
-      const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
-      const fallbackModels = FALLBACK_MODELS[key] ?? [];
-      const models: CliModelEntry[] = fallbackModels.map((m: any) => ({
-        id: m.id,
-        name: m.name,
-        providerId: eng.providerId,
-        providerName: key.charAt(0).toUpperCase() + key.slice(1),
-        engineId: eng.engineId,
-        engineBinary: eng.engineBinary,
-        contextWindow: m.contextWindow,
-        toolCall: m.toolCall,
-        reasoning: m.reasoning,
-      }));
-      groups.push({
-        providerId: eng.providerId,
-        providerName: key.charAt(0).toUpperCase() + key.slice(1),
-        engineId: eng.engineId,
-        engineBinary: eng.engineBinary,
-        installed,
-        version,
-        models,
-      });
-    }
-    return groups;
-  >>>
+  handler lang="kern"
+    let name=groups type="CliProviderGroup[]" value="[]"
+    each pairKey=key pairValue=eng in="ENGINE_PROVIDER_MAP" entries=true
+      let name=binaryPath value="findBinary(eng.engineBinary)"
+      let name=installed value="binaryPath !== null"
+      let name=version value="installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null"
+      let name=fallbackModels value="FALLBACK_MODELS[key] ?? []"
+      let name=models type="CliModelEntry[]" value="fallbackModels.map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }))"
+      do value="groups.push({ providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, })"
+    return value="groups"
 
 fn name=buildCliModelGroupsAsync async=true returns="Promise<CliProviderGroup[]>" export=true
   doc "Build CLI provider groups with latest models from models.dev API. Falls back to static list on failure."
-  handler <<<
-    let registry: Record<string, any> | null = null;
-    try {
-      registry = await fetchCliModelsRegistry();
-    } catch { registry = null; }
-
-    const groups: CliProviderGroup[] = [];
-    for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
-      const binaryPath = findBinary(eng.engineBinary);
-      const installed = binaryPath !== null;
-      const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
-
-      let models: CliModelEntry[] = [];
-
-      // Try to get models from the API registry
-      if (registry && registry[eng.providerId]) {
-        const provider = registry[eng.providerId];
-        const providerName = provider.name ?? (key.charAt(0).toUpperCase() + key.slice(1));
-        const apiModels = provider.models ?? {};
-        models = Object.values(apiModels).map((m: any) => ({
-          id: m.id,
-          name: m.name,
-          providerId: eng.providerId,
-          providerName,
-          engineId: eng.engineId,
-          engineBinary: eng.engineBinary,
-          contextWindow: m.limit?.context,
-          toolCall: m.tool_call ?? false,
-          reasoning: m.reasoning ?? false,
-        }));
-      }
-
-      // Fallback to static list
-      if (models.length === 0) {
-        const fallbackModels = FALLBACK_MODELS[key] ?? [];
-        models = fallbackModels.map((m: any) => ({
-          id: m.id,
-          name: m.name,
-          providerId: eng.providerId,
-          providerName: key.charAt(0).toUpperCase() + key.slice(1),
-          engineId: eng.engineId,
-          engineBinary: eng.engineBinary,
-          contextWindow: m.contextWindow,
-          toolCall: m.toolCall,
-          reasoning: m.reasoning,
-        }));
-      }
-
-      // Determine display name
-      const displayName = registry?.[eng.providerId]?.name ?? (key.charAt(0).toUpperCase() + key.slice(1));
-
-      groups.push({
-        providerId: eng.providerId,
-        providerName: displayName,
-        engineId: eng.engineId,
-        engineBinary: eng.engineBinary,
-        installed,
-        version,
-        models,
-      });
-    }
-    return groups;
-  >>>
+  handler lang="kern"
+    let name=registry type="Record<string, any> | null" kind=let value="null"
+    try
+      assign target="registry" value="await fetchCliModelsRegistry()"
+      catch name=e
+        assign target="registry" value="null"
+    let name=groups type="CliProviderGroup[]" value="[]"
+    each pairKey=key pairValue=eng in="ENGINE_PROVIDER_MAP" entries=true
+      let name=binaryPath value="findBinary(eng.engineBinary)"
+      let name=installed value="binaryPath !== null"
+      let name=version value="installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null"
+      let name=models type="CliModelEntry[]" kind=let value="[]"
+      comment raw="// Try to get models from the API registry"
+      if cond="registry && registry[eng.providerId]"
+        let name=provider value="registry[eng.providerId]"
+        let name=providerName value="provider.name ?? (key.charAt(0).toUpperCase() + key.slice(1))"
+        let name=apiModels value="provider.models ?? {}"
+        assign target="models" value="Object.values(apiModels).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.limit?.context, toolCall: m.tool_call ?? false, reasoning: m.reasoning ?? false }))"
+      comment raw="// Fallback to static list"
+      if cond="models.length === 0"
+        let name=fallbackModels value="FALLBACK_MODELS[key] ?? []"
+        assign target="models" value="fallbackModels.map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }))"
+      comment raw="// Determine display name"
+      let name=displayName value="registry?.[eng.providerId]?.name ?? (key.charAt(0).toUpperCase() + key.slice(1))"
+      do value="groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, })"
+    return value="groups"

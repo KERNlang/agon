@@ -7,6 +7,7 @@ import from="node:fs" names="mkdirSync,readFileSync,statSync"
 import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,scanProjectContext,resolveWorkingDir,rankByTaskClass"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 
 fn name=resolveReviewTarget params="target:string|undefined, cwd:string" returns="{diff:string, label:string}"
   handler <<<
@@ -93,7 +94,8 @@ fn name=resolveReviewTarget params="target:string|undefined, cwd:string" returns
 
 fn name=selectReviewEngine params="requestedEngine:string|undefined, ctx:HandlerContext" returns=string
   handler <<<
-    const active = ctx.activeEngines();
+    const allActive = ctx.activeEngines();
+    const active = requestedEngine ? allActive : filterDefaultOrchestrationEngines(allActive);
 
     if (requestedEngine) {
       if (!active.includes(requestedEngine)) {

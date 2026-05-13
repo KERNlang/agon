@@ -4,6 +4,7 @@ import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,track
 import from="@agon/forge" names="runTeamTribunal"
 import from="@agon/forge" names="TribunalMode" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 
 fn name=handleTeamTribunal params="question:string, dispatch:Dispatch, ctx:HandlerContext, tribunalMode?:string, membersPerSide?:number" returns="Promise<void>" async=true
   signal name=teamAbort
@@ -16,7 +17,10 @@ fn name=handleTeamTribunal params="question:string, dispatch:Dispatch, ctx:Handl
       return;
     }
 
-    const active = ctx.activeEngines();
+    const allActive = ctx.activeEngines();
+    const active = filterDefaultOrchestrationEngines(allActive);
+    const excluded = allActive.filter((id: string) => !active.includes(id));
+    if (excluded.length > 0) dispatch({ type: 'info', message: `Skipping disabled orchestration engines: ${excluded.join(', ')}` });
     if (active.length < 2) {
       dispatch({ type: 'error', message: `Team tribunal needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });
       return;

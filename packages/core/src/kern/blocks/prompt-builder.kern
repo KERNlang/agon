@@ -10,68 +10,43 @@ interface name=PromptBlock
 
 fn name=splitPromptBlocks params="prompt:string" returns="PromptBlock[]"
   doc "Split a prompt into cacheable blocks by ## section headers. Sections like CONSTRAINTS and INSTRUCTIONS are stable and cacheable; TASK, DIFF, QUESTION are dynamic."
-  handler <<<
-    const STABLE_HEADERS = /^##\s*(CONSTRAINTS|INSTRUCTIONS|FITNESS TEST|REVIEW REQUEST)/i;
-    const sections = prompt.split(/(?=^## )/m);
-    const blocks: PromptBlock[] = [];
-
-    for (const section of sections) {
-      const trimmed = section.trim();
-      if (!trimmed) continue;
-      const isStable = STABLE_HEADERS.test(trimmed);
-      blocks.push({
-        role: isStable ? 'system' : 'user',
-        content: trimmed,
-        cacheable: isStable,
-      });
-    }
-
-    // If no sections found, return whole prompt as a single user block
-    if (blocks.length === 0) {
-      blocks.push({ role: 'user', content: prompt, cacheable: false });
-    }
-
-    return blocks;
-  >>>
+  handler lang="kern"
+    let name=STABLE_HEADERS value="/^##\\s*(CONSTRAINTS|INSTRUCTIONS|FITNESS TEST|REVIEW REQUEST)/i"
+    let name=sections value="prompt.split(/(?=^## )/m)"
+    let name=blocks type="PromptBlock[]" value="[]"
+    each name=section in="sections"
+      let name=trimmed value="section.trim()"
+      if cond="!trimmed"
+        continue
+      let name=isStable value="STABLE_HEADERS.test(trimmed)"
+      do value="blocks.push({ role: isStable ? 'system' : 'user', content: trimmed, cacheable: isStable, })"
+    comment raw="// If no sections found, return whole prompt as a single user block"
+    if cond="blocks.length === 0"
+      do value="blocks.push({ role: 'user', content: prompt, cacheable: false })"
+    return value="blocks"
 
 fn name=mergeBlocksByRole params="blocks:PromptBlock[]" returns="{system:string, user:string}"
   doc "Merge prompt blocks into system (cacheable) and user (dynamic) strings for APIs that support system/user message separation."
-  handler <<<
-    const systemParts: string[] = [];
-    const userParts: string[] = [];
-
-    for (const block of blocks) {
-      if (block.role === 'system') {
-        systemParts.push(block.content);
-      } else {
-        userParts.push(block.content);
-      }
-    }
-
-    return {
-      system: systemParts.join('\n\n'),
-      user: userParts.join('\n\n'),
-    };
-  >>>
+  handler lang="kern"
+    let name=systemParts type="string[]" value="[]"
+    let name=userParts type="string[]" value="[]"
+    each name=block in="blocks"
+      if cond="block.role === 'system'"
+        do value="systemParts.push(block.content)"
+      else
+        do value="userParts.push(block.content)"
+    return value="{ system: systemParts.join('\\n\\n'), user: userParts.join('\\n\\n'), }"
 
 fn name=buildForgePrompt params="opts:{task:string;fitnessCmd:string;context?:string;agentMode?:boolean}" returns=string
-  handler <<<
-    const sections = [
-      `## TASK\n${opts.task}`,
-      `## FITNESS TEST\nRun this command to verify your work passes:\n\`\`\`\n${opts.fitnessCmd}\n\`\`\``,
-    ];
-    if (opts.context) sections.push(`## CONTEXT\n${opts.context}`);
-    if (opts.agentMode) {
-      sections.push(
-        `## CONSTRAINTS\n- You have full tool access. Read files, edit code, run commands directly.\n- Fitness may already pass on the baseline. Do not treat a pre-existing pass as completion; inspect and implement the requested task first.\n- A forge candidate must produce a meaningful task-specific patch unless the requested change is already fully implemented.\n- If the requested change is already fully implemented, say that explicitly and leave the worktree clean.\n- Run the fitness test command to verify your work passes.\n- Iterate until the fitness test passes — read errors, fix them, re-run.\n- Modify only the files necessary to complete the task.\n- Exit when the task is implemented and the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
-      );
-    } else {
-      sections.push(
-        `## CONSTRAINTS\n- Write code, not plans. Implement the solution directly.\n- Fitness may already pass on the baseline. Do not treat a pre-existing pass as completion; inspect and implement the requested task first.\n- A forge candidate must produce a meaningful task-specific patch unless the requested change is already fully implemented.\n- If the requested change is already fully implemented, say that explicitly and leave the worktree clean.\n- Modify only the files necessary to complete the task.\n- Run the fitness test command to verify your work passes.\n- Exit when the task is implemented and the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
-      );
-    }
-    return sections.join('\n\n');
-  >>>
+  handler lang="kern"
+    let name=sections value="[ `## TASK\\n${opts.task}`, `## FITNESS TEST\\nRun this command to verify your work passes:\\n\\`\\`\\`\\n${opts.fitnessCmd}\\n\\`\\`\\``, ]"
+    if cond="opts.context"
+      do value="sections.push(`## CONTEXT\\n${opts.context}`)"
+    if cond="opts.agentMode"
+      do value="sections.push(`## CONSTRAINTS\\n- You have full tool access. Read files, edit code, run commands directly.\\n- Fitness may already pass on the baseline. Do not treat a pre-existing pass as completion; inspect and implement the requested task first.\\n- A forge candidate must produce a meaningful task-specific patch unless the requested change is already fully implemented.\\n- If the requested change is already fully implemented, say that explicitly and leave the worktree clean.\\n- Run the fitness test command to verify your work passes.\\n- Iterate until the fitness test passes — read errors, fix them, re-run.\\n- Modify only the files necessary to complete the task.\\n- Exit when the task is implemented and the fitness test passes.\\n- Do not ask questions — make reasonable assumptions.`)"
+    else
+      do value="sections.push(`## CONSTRAINTS\\n- Write code, not plans. Implement the solution directly.\\n- Fitness may already pass on the baseline. Do not treat a pre-existing pass as completion; inspect and implement the requested task first.\\n- A forge candidate must produce a meaningful task-specific patch unless the requested change is already fully implemented.\\n- If the requested change is already fully implemented, say that explicitly and leave the worktree clean.\\n- Modify only the files necessary to complete the task.\\n- Run the fitness test command to verify your work passes.\\n- Exit when the task is implemented and the fitness test passes.\\n- Do not ask questions — make reasonable assumptions.`)"
+    return value="sections.join('\\n\\n')"
 
 fn name=buildCritiquePrompt params="opts:{winnerEngine:string;diff:string;maxCritiques:number}" returns=string
   handler <<<
@@ -103,27 +78,16 @@ fn name=buildReviewPrompt params="opts:{prompt:string;diff:string}" returns=stri
 
 fn name=buildForgePromptWithContext params="opts:{task:string;fitnessCmd:string;context?:string;agentMode?:boolean;stageContexts?:StageContext[]}" returns=string
   doc "Enhanced forge prompt builder that includes typed StageContext from prior stages."
-  handler <<<
-    const sections = [
-      `## TASK\n${opts.task}`,
-      `## FITNESS TEST\nRun this command to verify your work passes:\n\`\`\`\n${opts.fitnessCmd}\n\`\`\``,
-    ];
-    if (opts.context) sections.push(`## CONTEXT\n${opts.context}`);
-
-    // Inject StageContexts from prior engine runs
-    if (opts.stageContexts && opts.stageContexts.length > 0) {
-      const ctxSections = opts.stageContexts.map((ctx: StageContext) => renderStageContext(ctx));
-      sections.push(ctxSections.join('\n\n---\n\n'));
-    }
-
-    if (opts.agentMode) {
-      sections.push(
-        `## CONSTRAINTS\n- You have full tool access. Read files, edit code, run commands directly.\n- Fitness may already pass on the baseline. Do not treat a pre-existing pass as completion; inspect and implement the requested task first.\n- A forge candidate must produce a meaningful task-specific patch unless the requested change is already fully implemented.\n- If the requested change is already fully implemented, say that explicitly and leave the worktree clean.\n- Run the fitness test command to verify your work passes.\n- Iterate until the fitness test passes — read errors, fix them, re-run.\n- Modify only the files necessary to complete the task.\n- Exit when the task is implemented and the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
-      );
-    } else {
-      sections.push(
-        `## CONSTRAINTS\n- Write code, not plans. Implement the solution directly.\n- Fitness may already pass on the baseline. Do not treat a pre-existing pass as completion; inspect and implement the requested task first.\n- A forge candidate must produce a meaningful task-specific patch unless the requested change is already fully implemented.\n- If the requested change is already fully implemented, say that explicitly and leave the worktree clean.\n- Modify only the files necessary to complete the task.\n- Run the fitness test command to verify your work passes.\n- Exit when the task is implemented and the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
-      );
-    }
-    return sections.join('\n\n');
-  >>>
+  handler lang="kern"
+    let name=sections value="[ `## TASK\\n${opts.task}`, `## FITNESS TEST\\nRun this command to verify your work passes:\\n\\`\\`\\`\\n${opts.fitnessCmd}\\n\\`\\`\\``, ]"
+    if cond="opts.context"
+      do value="sections.push(`## CONTEXT\\n${opts.context}`)"
+    comment raw="// Inject StageContexts from prior engine runs"
+    if cond="opts.stageContexts && opts.stageContexts.length > 0"
+      let name=ctxSections value="opts.stageContexts.map((ctx: StageContext) => renderStageContext(ctx))"
+      do value="sections.push(ctxSections.join('\\n\\n---\\n\\n'))"
+    if cond="opts.agentMode"
+      do value="sections.push(`## CONSTRAINTS\\n- You have full tool access. Read files, edit code, run commands directly.\\n- Fitness may already pass on the baseline. Do not treat a pre-existing pass as completion; inspect and implement the requested task first.\\n- A forge candidate must produce a meaningful task-specific patch unless the requested change is already fully implemented.\\n- If the requested change is already fully implemented, say that explicitly and leave the worktree clean.\\n- Run the fitness test command to verify your work passes.\\n- Iterate until the fitness test passes — read errors, fix them, re-run.\\n- Modify only the files necessary to complete the task.\\n- Exit when the task is implemented and the fitness test passes.\\n- Do not ask questions — make reasonable assumptions.`)"
+    else
+      do value="sections.push(`## CONSTRAINTS\\n- Write code, not plans. Implement the solution directly.\\n- Fitness may already pass on the baseline. Do not treat a pre-existing pass as completion; inspect and implement the requested task first.\\n- A forge candidate must produce a meaningful task-specific patch unless the requested change is already fully implemented.\\n- If the requested change is already fully implemented, say that explicitly and leave the worktree clean.\\n- Modify only the files necessary to complete the task.\\n- Run the fitness test command to verify your work passes.\\n- Exit when the task is implemented and the fitness test passes.\\n- Do not ask questions — make reasonable assumptions.`)"
+    return value="sections.join('\\n\\n')"

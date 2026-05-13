@@ -20,27 +20,24 @@ interface name=PasteStoreResult
   field name=lineCount type=number
 
 fn name=ensurePasteDir returns=void export=false
-  handler <<<
-    ensureAgonHome();
-    mkdirSync(getPasteStoreDir(), { recursive: true });
-  >>>
+  handler lang="kern"
+    do value="ensureAgonHome()"
+    do value="mkdirSync(getPasteStoreDir(), { recursive: true })"
 
 service name=PasteStore singleton=true
   doc "Content-addressed storage for large pastes. SHA-256 hash as filename."
 
   method name=store params="text:string" returns=PasteStoreResult
     doc "Store a large paste and return its hash + preview."
-    handler <<<
-      ensurePasteDir();
-      const hash = createHash('sha256').update(text).digest('hex');
-      const filePath = join(getPasteStoreDir(), `${hash}.txt`);
-      if (!existsSync(filePath)) {
-        writeFileSync(filePath, text);
-      }
-      const lines = text.split('\n');
-      const preview = text.slice(0, 200).replace(/\n/g, ' ').trim();
-      return { hash, preview, lineCount: lines.length };
-    >>>
+    handler lang="kern"
+      do value="ensurePasteDir()"
+      let name=hash value="createHash('sha256').update(text).digest('hex')"
+      let name=filePath value="join(getPasteStoreDir(), `${hash}.txt`)"
+      if cond="!existsSync(filePath)"
+        do value="writeFileSync(filePath, text)"
+      let name=lines value="text.split('\\n')"
+      let name=preview value="text.slice(0, 200).replace(/\\n/g, ' ').trim()"
+      return value="{ hash, preview, lineCount: lines.length }"
 
   method name=retrieve params="hash:string" returns="string|null"
     doc "Retrieve a stored paste by hash. Returns null if missing."

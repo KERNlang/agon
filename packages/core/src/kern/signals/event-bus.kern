@@ -23,20 +23,19 @@ service name=EventBus singleton=true
 
   method name=on params="event:string, handler:(payload: EventPayload) => Promise<void> | void, priority?:number, source?:string" returns=void
     doc "Register a listener for an event. Lower priority runs first."
-    handler <<<
-      const listener: EventListener = { event, handler, priority: priority ?? 100, source };
-      const list = this.listeners.get(event) || [];
-      list.push(listener);
-      list.sort((a, b) => a.priority - b.priority);
-      this.listeners.set(event, list);
-    >>>
+    handler lang="kern"
+      let name=listener type="EventListener" value="{ event, handler, priority: priority ?? 100, source }"
+      let name=list value="this.listeners.get(event) || []"
+      do value="list.push(listener)"
+      do value="list.sort((a, b) => a.priority - b.priority)"
+      do value="this.listeners.set(event, list)"
 
   method name=off params="event:string, handler:(payload: EventPayload) => Promise<void> | void" returns=void
-    handler <<<
-      const list = this.listeners.get(event);
-      if (!list) return;
-      this.listeners.set(event, list.filter(l => l.handler !== handler));
-    >>>
+    handler lang="kern"
+      let name=list value="this.listeners.get(event)"
+      if cond="!list"
+        return
+      do value="this.listeners.set(event, list.filter(l => l.handler !== handler))"
 
   method name=emit async=true params="event:string, data?:Record<string, unknown>" returns="Promise<void>"
     doc "Emit an event to all listeners. Pre-events run sequentially; post-events run in parallel."

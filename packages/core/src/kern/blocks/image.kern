@@ -5,18 +5,7 @@ import from="../models/types.js" names="ImageAttachment" types=true
 
 const name=IMAGE_EXTENSIONS type="Set<string>" value={{ new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp']) }}
 
-const name=MIME_MAP type="Record<string,string>"
-  handler <<<
-    ({
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.gif': 'image/gif',
-      '.webp': 'image/webp',
-      '.svg': 'image/svg+xml',
-      '.bmp': 'image/bmp',
-    })
-  >>>
+const name=MIME_MAP type="Record<string,string>" value={{ ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.bmp': 'image/bmp' }) }}
 
 const name=IMAGE_PATH_REGEX type=RegExp value={{ /(?:^|\s)((?:\/[\w.\-]+)+\.(?:png|jpe?g|gif|webp|svg|bmp)|~\/[\w.\-\/]+\.(?:png|jpe?g|gif|webp|svg|bmp)|\.{1,2}\/[\w.\-\/]+\.(?:png|jpe?g|gif|webp|svg|bmp))/gi }}
 
@@ -28,10 +17,9 @@ fn name=isImagePath params="filePath:string" returns="boolean"
     return value="IMAGE_EXTENSIONS.has(ext)"
 
 fn name=mimeFromExt params="filePath:string" returns="string"
-  handler <<<
-    const ext = extname(filePath).toLowerCase();
-    return MIME_MAP[ext] ?? 'application/octet-stream';
-  >>>
+  handler lang="kern"
+    let name=ext value="extname(filePath).toLowerCase()"
+    return value="MIME_MAP[ext] ?? 'application/octet-stream'"
 
 fn name=resolveImagePath params="rawPath:string, cwd:string" returns="string|null"
   handler <<<
@@ -47,15 +35,11 @@ fn name=resolveImagePath params="rawPath:string, cwd:string" returns="string|nul
   >>>
 
 fn name=buildImageAttachment params="rawPath:string, cwd:string" returns="ImageAttachment|null"
-  handler <<<
-    const resolved = resolveImagePath(rawPath.trim(), cwd);
-    if (!resolved) return null;
-    return {
-      path: resolved,
-      filename: basename(resolved),
-      mimeType: mimeFromExt(resolved),
-    };
-  >>>
+  handler lang="kern"
+    let name=resolved value="resolveImagePath(rawPath.trim(), cwd)"
+    if cond="!resolved"
+      return value="null"
+    return value="{ path: resolved, filename: basename(resolved), mimeType: mimeFromExt(resolved), }"
 
 fn name=extractImagesFromInput params="input:string, cwd:string" returns="{text:string, images:ImageAttachment[]}"
   handler <<<

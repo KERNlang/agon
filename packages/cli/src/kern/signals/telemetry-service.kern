@@ -55,7 +55,6 @@ service name=TelemetryService export=true singleton=true
       this.samplerTask = null;
       this.recentFallbacks = [];
       this.pidusageLoader = null;
-
       const now = Date.now();
       const engines: EngineVitals[] = [];
       for (const id of opts.registry.listIds()) {
@@ -86,9 +85,8 @@ service name=TelemetryService export=true singleton=true
     >>>
 
   method name=stop returns=void
-    handler <<<
-      this.running = false;
-    >>>
+    handler lang="kern"
+      assign target="this.running" value="false"
 
   method name=isRunning returns=boolean
     handler lang="kern"
@@ -105,25 +103,16 @@ service name=TelemetryService export=true singleton=true
     >>>
 
   method name=getSnapshot returns=TelemetrySnapshot
-    handler <<<
-      return {
-        timestamp: this.snapshot.timestamp,
-        engines: this.snapshot.engines.map((v: EngineVitals) => ({ ...v })),
-        overallHealth: this.snapshot.overallHealth,
-        activeRuns: this.snapshot.activeRuns,
-        recentFallbacks: this.snapshot.recentFallbacks.map((fb: any) => ({ ...fb })),
-      };
-    >>>
+    handler lang="kern"
+      return value="{ timestamp: this.snapshot.timestamp, engines: this.snapshot.engines.map((v: EngineVitals) => Object.assign({}, v)), overallHealth: this.snapshot.overallHealth, activeRuns: this.snapshot.activeRuns, recentFallbacks: this.snapshot.recentFallbacks.map((fb: any) => Object.assign({}, fb)), }"
 
   method name=probeNow async=true returns="Promise<TelemetrySnapshot>"
-    handler <<<
-      if (this.opts.isPaused && this.opts.isPaused()) {
-        return this.getSnapshot();
-      }
-      const snap = await this.collectSnapshot();
-      this.publish(snap);
-      return this.getSnapshot();
-    >>>
+    handler lang="kern"
+      if cond="this.opts.isPaused && this.opts.isPaused()"
+        return value="this.getSnapshot()"
+      let name=snap value="await this.collectSnapshot()"
+      do value="this.publish(snap)"
+      return value="this.getSnapshot()"
 
   method name=sampler async=true stream=true returns="TelemetrySnapshot, void, void" private=true
     handler <<<
@@ -147,67 +136,38 @@ service name=TelemetryService export=true singleton=true
     >>>
 
   method name=collectSnapshot async=true returns="Promise<TelemetrySnapshot>" private=true
-    handler <<<
-      const ids = this.opts.registry.listIds();
-      const assignmentMap = this.buildAssignmentMap();
-      const nextVitals: EngineVitals[] = [];
-
-      for (const id of ids) {
-        const prior = this.vitals.get(id) ?? createEngineVitals(id, { state: 'idle' as EngineVitalState });
-        const assignment = assignmentMap.get(id);
-        let sampled = await this.sampleOneEngine(id, prior, assignment);
-
-        const wasStalled = this.stalledIds.has(id);
-        const isStalled = sampled.state === 'stalled';
-
-        if (isStalled && !wasStalled) {
-          this.stalledIds.add(id);
-          this.emitEvent('engine:stall-detected', {
-            source: 'telemetry-service',
-            engineId: id,
-            at: Date.now(),
-            stallDurationMs: sampled.stallDurationMs ?? 0,
-          });
-
-          const candidate = this.pickFallbackCandidate(id);
-          if (candidate) {
-            const reason = `stall>${this.stallThresholdMs}ms`;
-            sampled = { ...sampled, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason };
-            this.recentFallbacks = [...this.recentFallbacks.slice(-7), { from: id, to: candidate, reason, at: Date.now() }];
-            this.emitEvent('engine:fallback', {
-              source: 'telemetry-service',
-              from: id,
-              to: candidate,
-              reason,
-              at: Date.now(),
-            });
-          }
-        } else if (!isStalled && wasStalled) {
-          this.stalledIds.delete(id);
-        }
-
-        this.vitals.set(id, sampled);
-        nextVitals.push(sampled);
-      }
-
-      // Drop vitals for engines that were removed from registry.
-      const liveIds = new Set(ids);
-      for (const id of Array.from(this.vitals.keys())) {
-        if (!liveIds.has(id)) {
-          this.vitals.delete(id);
-          this.stalledIds.delete(id);
-        }
-      }
-
-      const snapshot: TelemetrySnapshot = {
-        timestamp: Date.now(),
-        engines: nextVitals,
-        overallHealth: computeOverallHealth(nextVitals),
-        activeRuns: this.runningJobCount(),
-        recentFallbacks: this.recentFallbacks.slice(-8),
-      };
-      return snapshot;
-    >>>
+    handler lang="kern"
+      let name=ids value="this.opts.registry.listIds()"
+      let name=assignmentMap value="this.buildAssignmentMap()"
+      let name=nextVitals type="EngineVitals[]" value="[]"
+      each name=id in="ids"
+        let name=prior value="this.vitals.get(id) ?? createEngineVitals(id, { state: 'idle' as EngineVitalState })"
+        let name=assignment value="assignmentMap.get(id)"
+        let name=sampled kind=let value="await this.sampleOneEngine(id, prior, assignment)"
+        let name=wasStalled value="this.stalledIds.has(id)"
+        let name=isStalled value="sampled.state === 'stalled'"
+        if cond="isStalled && !wasStalled"
+          do value="this.stalledIds.add(id)"
+          do value="this.emitEvent('engine:stall-detected', { source: 'telemetry-service', engineId: id, at: Date.now(), stallDurationMs: sampled.stallDurationMs ?? 0, })"
+          let name=candidate value="this.pickFallbackCandidate(id)"
+          if cond="candidate"
+            fmt name=reason template="stall>${this.stallThresholdMs}ms"
+            assign target="sampled" value="{ ...sampled, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason }"
+            assign target="this.recentFallbacks" value="[...this.recentFallbacks.slice(-7), { from: id, to: candidate, reason, at: Date.now() }]"
+            do value="this.emitEvent('engine:fallback', { source: 'telemetry-service', from: id, to: candidate, reason, at: Date.now(), })"
+        else
+          if cond="!isStalled && wasStalled"
+            do value="this.stalledIds.delete(id)"
+        do value="this.vitals.set(id, sampled)"
+        do value="nextVitals.push(sampled)"
+      comment raw="// Drop vitals for engines that were removed from registry."
+      let name=liveIds value="new Set(ids)"
+      each name=staleId in="Array.from(this.vitals.keys())"
+        if cond="!liveIds.has(staleId)"
+          do value="this.vitals.delete(staleId)"
+          do value="this.stalledIds.delete(staleId)"
+      let name=snapshot type="TelemetrySnapshot" value="{ timestamp: Date.now(), engines: nextVitals, overallHealth: computeOverallHealth(nextVitals), activeRuns: this.runningJobCount(), recentFallbacks: this.recentFallbacks.slice(-8), }"
+      return value="snapshot"
 
   method name=sampleOneEngine async=true params="engineId:string,prior:EngineVitals,assignment?:string" returns="Promise<EngineVitals>" private=true
     handler <<<
@@ -318,10 +278,9 @@ service name=TelemetryService export=true singleton=true
     >>>
 
   method name=runningJobCount returns=number private=true
-    handler <<<
-      const jobs = this.opts.jobManager?.running?.();
-      return Array.isArray(jobs) ? jobs.length : 0;
-    >>>
+    handler lang="kern"
+      let name=jobs value="this.opts.jobManager?.running?.()"
+      return value="Array.isArray(jobs) ? jobs.length : 0"
 
   method name=pickFallbackCandidate params="engineId:string" returns="string|undefined" private=true
     handler <<<
@@ -440,10 +399,10 @@ service name=TelemetryService export=true singleton=true
     >>>
 
   method name=emitEvent params="event:string,data:Record<string,unknown>" returns=void private=true
-    handler <<<
-      if (!this.opts.eventBus) return;
-      this.opts.eventBus.emit(event, data).catch(() => {});
-    >>>
+    handler lang="kern"
+      if cond="!this.opts.eventBus"
+        return
+      do value="this.opts.eventBus.emit(event, data).catch(() => { })"
 
   method name=sleep params="ms:number" returns="Promise<void>" private=true
     handler <<<

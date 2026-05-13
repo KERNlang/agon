@@ -53,13 +53,12 @@ interface name=FlowRecord
 fn name=ensureFlowsDir params="" returns=void export=false expr={{ mkdirSync(getFlowsDir(), { recursive: true }); }}
 
 fn name=logFlow params="record:FlowRecord" returns=string
-  handler <<<
-    ensureFlowsDir();
-    const filename = `flow-${record.id}.json`;
-    const filepath = join(getFlowsDir(), filename);
-    writeFileSync(filepath, JSON.stringify(record, null, 2));
-    return filepath;
-  >>>
+  handler lang="kern"
+    do value="ensureFlowsDir()"
+    fmt name=filename template="flow-${record.id}.json"
+    let name=filepath value="join(getFlowsDir(), filename)"
+    do value="writeFileSync(filepath, JSON.stringify(record, null, 2))"
+    return value="filepath"
 
 fn name=readFlows params="limit?:number" returns="FlowRecord[]"
   handler <<<

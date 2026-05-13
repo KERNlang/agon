@@ -22,21 +22,7 @@ const name=_formatNormalizedSet type="Set<string>" value={{ new Set<string>() }}
 // Cloudflare AI Gateway, enterprise Anthropic proxies, or Bedrock's
 // Anthropic-compatible endpoints, so the list stays narrow — add
 // providers only after confirming they truly don't speak /messages.
-const name=_OPENAI_COMPAT_ONLY_HOST_SUFFIXES type="string[]"
-  handler <<<
-    [
-      'api.kimi.com',
-      'moonshot.cn',
-      'moonshot.ai',
-      'api.groq.com',
-      'together.xyz',
-      'together.ai',
-      'api.deepinfra.com',
-      'openrouter.ai',
-      'api.deepseek.com',
-      'api.perplexity.ai',
-    ]
-  >>>
+const name=_OPENAI_COMPAT_ONLY_HOST_SUFFIXES type="string[]" value={{ [ 'api.kimi.com', 'moonshot.cn', 'moonshot.ai', 'api.groq.com', 'together.xyz', 'together.ai', 'api.deepinfra.com', 'openrouter.ai', 'api.deepseek.com', 'api.perplexity.ai' ] }}
 
 fn name=normalizeEngineFormat params="raw:any, fileLabel:string" returns=void export=false
   doc "Narrow normalization: if api.format='anthropic' but the baseUrl host is on the known-OpenAI-compat-only allowlist (Kimi/Moonshot, Groq, Together, DeepInfra, OpenRouter), rewrite to 'openai'. Every other non-Anthropic host is left alone — arbitrary Anthropic-compatible proxies are valid configurations and must not be silently coerced. Skips /coding/ API paths which are specialised endpoints that choose their own wire format. Mutates raw in place; logs once per engine id."
@@ -114,22 +100,29 @@ service name=EngineRegistry
     >>>
 
   method name=load params="builtinDir:string" returns=void
-    handler <<<
-      this.loadDir(this.resolveBuiltinDir(builtinDir), 'builtin');
-      const agonEnginesDir = getAgonEnginesDir();
-      if (existsSync(agonEnginesDir)) this.loadDir(agonEnginesDir, 'user');
-    >>>
+    handler lang="kern"
+      do value="this.loadDir(this.resolveBuiltinDir(builtinDir), 'builtin')"
+      let name=agonEnginesDir value="getAgonEnginesDir()"
+      if cond="existsSync(agonEnginesDir)"
+        do value="this.loadDir(agonEnginesDir, 'user')"
 
   method name=register params="engine:EngineDefinition" returns=void
-    handler <<<
-      normalizeEngineFormat(engine, engine.id);
-      this.engines.set(engine.id, engine);
-    >>>
+    handler lang="kern"
+      do value="normalizeEngineFormat(engine, engine.id)"
+      do value="this.engines.set(engine.id, engine)"
 
   method name=unregister params="id:string" returns=void
-    handler <<<
-      this.engines.delete(id);
-    >>>
+    handler lang="kern"
+      do value="this.engines.delete(id)"
+      do value="this.binaryCache.delete(id)"
+
+  method name=clearBinaryCache params="id?:string" returns=void
+    doc "Clear cached binary lookup results. Used after users install or remove CLIs while Agon is already running so /discover and /engines see the new PATH state."
+    handler lang="kern"
+      if cond="id"
+        do value="this.binaryCache.delete(id)"
+        return
+      do value="this.binaryCache.clear()"
 
   method name=get params="id:string" returns=EngineDefinition
     handler lang="kern"
@@ -186,46 +179,40 @@ service name=EngineRegistry
       return value="engine.modes?.includes(mode) ?? false"
 
   method name=agentCapableIds params="config?:Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'|'hiddenEngines'>" returns="string[]"
-    handler <<<
-      return this.activeEngines(config)
-        .filter((e: EngineDefinition) => !!e.agent && !!e.binary && this.findBinary(e) !== null)
-        .map((e: EngineDefinition) => e.id);
-    >>>
+    handler lang="kern"
+      return value="this.activeEngines(config) .filter((e: EngineDefinition) => !!e.agent && !!e.binary && this.findBinary(e) !== null) .map((e: EngineDefinition) => e.id)"
 
   method name=availableEngines returns="EngineDefinition[]"
-    handler <<<
-      return this.list().filter((e: EngineDefinition) => this.isAvailable(e));
-    >>>
+    handler lang="kern"
+      return value="this.list().filter((e: EngineDefinition) => this.isAvailable(e))"
 
   method name=availableIds returns="string[]"
-    handler <<<
-      return this.availableEngines().map((e: EngineDefinition) => e.id);
-    >>>
+    handler lang="kern"
+      return value="this.availableEngines().map((e: EngineDefinition) => e.id)"
 
   method name=activeEngines params="config?:Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'|'hiddenEngines'>" returns="EngineDefinition[]"
     doc "Available engines filtered through user activation settings. hiddenEngines are removed from routing in every mode. In auto mode every non-hidden available engine is active; in explicit mode only non-hidden forgeEnabledEngines are active."
-    handler <<<
-      const hidden = new Set(config?.hiddenEngines ?? []);
-      const available = this.availableEngines().filter((e: EngineDefinition) => !hidden.has(e.id));
-      if (!config || config.engineActivationMode !== 'explicit') return available;
-      const selected = new Set(config.forgeEnabledEngines ?? []);
-      return available.filter((e: EngineDefinition) => selected.has(e.id));
-    >>>
+    handler lang="kern"
+      let name=hidden value="new Set(config?.hiddenEngines ?? [])"
+      let name=available value="this.availableEngines().filter((e: EngineDefinition) => !hidden.has(e.id))"
+      if cond="!config || config.engineActivationMode !== 'explicit'"
+        return value="available"
+      let name=selected value="new Set(config.forgeEnabledEngines ?? [])"
+      return value="available.filter((e: EngineDefinition) => selected.has(e.id))"
 
   method name=activeIds params="config?:Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'|'hiddenEngines'>" returns="string[]"
-    handler <<<
-      return this.activeEngines(config).map((e: EngineDefinition) => e.id);
-    >>>
+    handler lang="kern"
+      return value="this.activeEngines(config).map((e: EngineDefinition) => e.id)"
 
   method name=pickStarter params="available:string[], strategy:'fixed'|'rotate', preferred?:string" returns=string
-    handler <<<
-      if (available.length === 0) throw new EngineNotFoundError('(any)', 'No engines available');
-      if (strategy === 'fixed') {
-        if (preferred && available.includes(preferred)) return preferred;
-        return available[0];
-      }
-      return available[Math.floor(Date.now() / 1000) % available.length];
-    >>>
+    handler lang="kern"
+      if cond="available.length === 0"
+        throw value="new EngineNotFoundError('(any)', 'No engines available')"
+      if cond="strategy === 'fixed'"
+        if cond="preferred && available.includes(preferred)"
+          return value="preferred"
+        return value="available[0]"
+      return value="available[Math.floor(Date.now() / 1000) % available.length]"
 
   method name=getFallbackChain params="sourceId:string, taskClass?:string, candidateIds?:string[]" returns="string[]"
     doc "Return ranked candidate engines for fallback from sourceId, excluding source itself. Uses Glicko-2 ratings when available; falls back to available order."
@@ -247,7 +234,6 @@ service name=EngineRegistry
 
   method name=getFallbackCandidate params="sourceId:string, taskClass?:string, candidateIds?:string[]" returns="string|undefined"
     doc "Top fallback candidate for sourceId, or undefined if none available."
-    handler <<<
-      const chain = this.getFallbackChain(sourceId, taskClass, candidateIds);
-      return chain[0];
-    >>>
+    handler lang="kern"
+      let name=chain value="this.getFallbackChain(sourceId, taskClass, candidateIds)"
+      return value="chain[0]"

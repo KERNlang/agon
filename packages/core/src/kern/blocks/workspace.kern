@@ -38,69 +38,61 @@ fn name=loadState returns=WorkspaceState export=false
   >>>
 
 fn name=saveState params="state:WorkspaceState" returns=void export=false
-  handler <<<
-    const WORKSPACES_PATH = getWorkspacesPath();
-    const tmpPath = WORKSPACES_PATH + '.tmp';
-    writeFileSync(tmpPath, JSON.stringify(state, null, 2) + '\n');
-    renameSync(tmpPath, WORKSPACES_PATH);
-  >>>
+  handler lang="kern"
+    let name=WORKSPACES_PATH value="getWorkspacesPath()"
+    let name=tmpPath value="WORKSPACES_PATH + '.tmp'"
+    do value="writeFileSync(tmpPath, JSON.stringify(state, null, 2) + '\\n')"
+    do value="renameSync(tmpPath, WORKSPACES_PATH)"
 
 fn name=addWorkspace params="rawPath:string" returns=Workspace
-  handler <<<
-    const path = resolve(rawPath);
-    const state = loadState();
-    const existing = state.workspaces.find((w) => w.path === path);
-    if (existing) return existing;
-
-    const id = basename(path).toLowerCase().replace(/[^a-z0-9-]/g, '-');
-    const name = basename(path);
-    const ws: Workspace = { id, path, name, isKern: isKernProject(path), addedAt: Date.now() };
-    state.workspaces.push(ws);
-    if (state.workspaces.length === 1) state.active = ws.id;
-    saveState(state);
-    return ws;
-  >>>
+  handler lang="kern"
+    let name=path value="resolve(rawPath)"
+    let name=state value="loadState()"
+    let name=existing value="state.workspaces.find((w) => w.path === path)"
+    if cond="existing"
+      return value="existing"
+    let name=id value="basename(path).toLowerCase().replace(/[^a-z0-9-]/g, '-')"
+    let name=name value="basename(path)"
+    let name=ws type="Workspace" value="{ id, path, name, isKern: isKernProject(path), addedAt: Date.now() }"
+    do value="state.workspaces.push(ws)"
+    if cond="state.workspaces.length === 1"
+      assign target="state.active" value="ws.id"
+    do value="saveState(state)"
+    return value="ws"
 
 fn name=removeWorkspace params="idOrPath:string" returns=boolean
-  handler <<<
-    const state = loadState();
-    const idx = state.workspaces.findIndex(
-      (w) => w.id === idOrPath || w.path === resolve(idOrPath),
-    );
-    if (idx === -1) return false;
-    const removed = state.workspaces.splice(idx, 1)[0];
-    if (state.active === removed.id) state.active = state.workspaces[0]?.id ?? '';
-    saveState(state);
-    return true;
-  >>>
+  handler lang="kern"
+    let name=state value="loadState()"
+    let name=idx value="state.workspaces.findIndex((w) => w.id === idOrPath || w.path === resolve(idOrPath))"
+    if cond="idx === -1"
+      return value="false"
+    let name=removed value="state.workspaces.splice(idx, 1)[0]"
+    if cond="state.active === removed.id"
+      assign target="state.active" value="state.workspaces[0]?.id ?? ''"
+    do value="saveState(state)"
+    return value="true"
 
 fn name=listWorkspaces returns="Workspace[]" expr={{ return loadState().workspaces; }}
 
 fn name=getActiveWorkspace returns="Workspace|null"
-  handler <<<
-    const state = loadState();
-    return state.workspaces.find((w) => w.id === state.active) ?? null;
-  >>>
+  handler lang="kern"
+    let name=state value="loadState()"
+    return value="state.workspaces.find((w) => w.id === state.active) ?? null"
 
 fn name=switchWorkspace params="idOrPath:string" returns="Workspace|null"
-  handler <<<
-    const state = loadState();
-    const ws = state.workspaces.find(
-      (w) => w.id === idOrPath || w.path === resolve(idOrPath) || w.name === idOrPath,
-    );
-    if (!ws) return null;
-    state.active = ws.id;
-    saveState(state);
-    return ws;
-  >>>
+  handler lang="kern"
+    let name=state value="loadState()"
+    let name=ws value="state.workspaces.find((w) => w.id === idOrPath || w.path === resolve(idOrPath) || w.name === idOrPath)"
+    if cond="!ws"
+      return value="null"
+    assign target="state.active" value="ws.id"
+    do value="saveState(state)"
+    return value="ws"
 
 fn name=getWorkspace params="idOrPath:string" returns="Workspace|null"
-  handler <<<
-    const state = loadState();
-    return state.workspaces.find(
-      (w) => w.id === idOrPath || w.path === resolve(idOrPath) || w.name === idOrPath,
-    ) ?? null;
-  >>>
+  handler lang="kern"
+    let name=state value="loadState()"
+    return value="state.workspaces.find((w) => w.id === idOrPath || w.path === resolve(idOrPath) || w.name === idOrPath) ?? null"
 
 fn name=snapshotWorkspace params="ws:Workspace" returns=WorkspaceSnapshot
   handler <<<
@@ -130,16 +122,13 @@ fn name=resolveWorkingDir returns=string
   >>>
 
 fn name=ensureCurrentWorkspace params="cwd:string" returns=Workspace
-  handler <<<
-    const state = loadState();
-    const path = resolve(cwd);
-    const existing = state.workspaces.find((w) => w.path === path);
-    if (existing) {
-      if (state.active !== existing.id) {
-        state.active = existing.id;
-        saveState(state);
-      }
-      return existing;
-    }
-    return addWorkspace(cwd);
-  >>>
+  handler lang="kern"
+    let name=state value="loadState()"
+    let name=path value="resolve(cwd)"
+    let name=existing value="state.workspaces.find((w) => w.path === path)"
+    if cond="existing"
+      if cond="state.active !== existing.id"
+        assign target="state.active" value="existing.id"
+        do value="saveState(state)"
+      return value="existing"
+    return value="addWorkspace(cwd)"

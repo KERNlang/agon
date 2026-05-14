@@ -7,9 +7,8 @@ service name=ToolRegistry singleton=true
   field name=tools type="Map<string, ToolHandler>"
 
   constructor
-    handler <<<
-      this.tools = new Map();
-    >>>
+    handler lang="kern"
+      assign target="this.tools" value="new Map()"
 
   method name=register params="handler:ToolHandler" returns=void
     handler lang="kern"

@@ -20,10 +20,9 @@ service name=CommandRegistry singleton=true
   field name=aliasMap type="Map<string, string>"
 
   constructor
-    handler <<<
-      this.commands = new Map();
-      this.aliasMap = new Map();
-    >>>
+    handler lang="kern"
+      assign target="this.commands" value="new Map()"
+      assign target="this.aliasMap" value="new Map()"
 
   method name=register params="handler:CommandHandler" returns=void
     handler lang="kern"

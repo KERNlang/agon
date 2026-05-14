@@ -72,12 +72,10 @@ fn name=getSessionAllowList returns="string[]" export=true expr={{ return _sessi
 
 fn name=clearPermissionQueue returns=void
   doc "Reject all queued permissions and clear the queue. Called on interrupt/cancel."
-  handler <<<
-    while (_permissionQueue.length > 0) {
-      const entry = _permissionQueue.shift()!;
-      entry.resolve(false);
-    }
-  >>>
+  handler lang="kern"
+    while cond="_permissionQueue.length > 0"
+      let name=entry value="_permissionQueue.shift()!"
+      do value="entry.resolve(false)"
 
 fn name=clearThinkingBuffer returns=void
   doc "Drop any buffered thinking-chunk content. Called on interrupt / clear / SIGINT so the next turn doesn't emit stale content as a fresh block."
@@ -130,22 +128,20 @@ fn name=schedulePendingFlush params="actions:OutputActions" returns=void
 
 fn name=_drainAutoApproved params="actions:OutputActions" returns=void export=false
   doc "Auto-approve queued permissions whose base command is already in allowedCommands."
-  handler <<<
-    const cfg = loadConfig();
-    const allowed: string[] = (cfg as any).allowedCommands ?? [];
-    if (allowed.length === 0) return;
-    // Drain from the front: auto-approve entries matching the allow-list.
-    while (_permissionQueue.length > 0) {
-      const head = _permissionQueue[0];
-      const base = head.command.trim().split(/\s+/)[0];
-      if (base && allowed.some((a: string) => base.toLowerCase().startsWith(a.toLowerCase()))) {
-        _permissionQueue.shift();
-        head.resolve(true);
-      } else {
-        break;
-      }
-    }
-  >>>
+  handler lang="kern"
+    let name=cfg value="loadConfig()"
+    let name=allowed type="string[]" value="(cfg as any).allowedCommands ?? []"
+    if cond="allowed.length === 0"
+      return
+    comment raw="// Drain from the front: auto-approve entries matching the allow-list."
+    while cond="_permissionQueue.length > 0"
+      let name=head value="_permissionQueue[0]"
+      let name=base value="head.command.trim().split(/\\s+/)[0]"
+      if cond="base && allowed.some((a: string) => base.toLowerCase().startsWith(a.toLowerCase()))"
+        do value="_permissionQueue.shift()"
+        do value="head.resolve(true)"
+      else
+        break
 
 fn name=_showNextPermission params="actions:OutputActions" returns=void export=false
   handler <<<

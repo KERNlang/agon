@@ -3,19 +3,17 @@ error name=AgonError extends=Error
 error name=EngineNotFoundError extends=AgonError
   field name=engineId type=string
   field name=installHint type=string optional=true
-  handler <<<
-    const hint = installHint ? `. Install: ${installHint}` : '';
-    super(`Engine "${engineId}" not found${hint}`);
-    this.name = 'EngineNotFoundError';
-  >>>
+  handler lang="kern"
+    let name=hint value="installHint ? `. Install: ${installHint}` : ''"
+    do value="super(`Engine \"${engineId}\" not found${hint}`)"
+    assign target="this.name" value="'EngineNotFoundError'"
 
 error name=EngineTimeoutError extends=AgonError
   field name=engineId type=string
   field name=timeoutMs type=number
-  handler <<<
-    super(`Engine "${engineId}" timed out after ${Math.round(timeoutMs / 1000)}s`);
-    this.name = 'EngineTimeoutError';
-  >>>
+  handler lang="kern"
+    do value="super(`Engine \"${engineId}\" timed out after ${Math.round(timeoutMs / 1000)}s`)"
+    assign target="this.name" value="'EngineTimeoutError'"
 
 error name=FitnessError extends=AgonError
   field name=message type=string

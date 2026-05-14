@@ -23,11 +23,11 @@ service name=Semaphore export=true
   field name=waiters type="Array<{resolve:()=>void, reject:(err:Error)=>void, onAbort?:()=>void, signal?:AbortSignal}>" private=true
 
   constructor params="permits:number"
-    handler <<<
-      if (permits < 1) throw new Error(`Semaphore permits must be >= 1 (got ${permits})`);
-      this.permits = permits;
-      this.waiters = [];
-    >>>
+    handler lang="kern"
+      if cond="permits < 1"
+        throw value="new Error(`Semaphore permits must be >= 1 (got ${permits})`)"
+      assign target="this.permits" value="permits"
+      assign target="this.waiters" value="[]"
 
   method name=acquire async=true params="signal?:AbortSignal" returns="Promise<void>"
     doc "Block until a permit is available. Returns when one has been granted (caller MUST call release() exactly once after the gated work completes — wrap in try/finally). If signal is provided and aborts while waiting, the promise rejects with an AbortError and the waiter is removed from the queue."

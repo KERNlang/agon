@@ -162,37 +162,24 @@ fn name=buildStageContext params="opts:{engineId:string, pass:boolean, score:num
 
 fn name=renderStageContext params="ctx:StageContext" returns="string"
   doc "Render StageContext as readable text for injection into forge prompts."
-  handler <<<
-    const sections: string[] = [
-      `## PRIOR APPROACH (${ctx.engineId} — ${ctx.pass ? 'PASSED' : 'FAILED'}${ctx.score !== null ? `, score: ${ctx.score}` : ''})`,
-    ];
-
-    sections.push(`**Goal:** ${ctx.goal}`);
-
-    if (ctx.filesModified.length > 0) {
-      sections.push(`**Files modified:** ${ctx.filesModified.join(', ')}`);
-    }
-    if (ctx.filesDiscovered.length > 0 && ctx.filesDiscovered.some((f: string) => !ctx.filesModified.includes(f))) {
-      const readOnly = ctx.filesDiscovered.filter((f: string) => !ctx.filesModified.includes(f));
-      if (readOnly.length > 0) sections.push(`**Files explored:** ${readOnly.join(', ')}`);
-    }
-    if (ctx.patternsFound.length > 0) {
-      sections.push(`**Patterns found:** ${ctx.patternsFound.join('; ')}`);
-    }
-    if (ctx.decisions.length > 0) {
-      sections.push(`**Key decisions:**\n${ctx.decisions.map((d: {choice:string,reason:string}) => `- ${d.choice}${d.reason ? ` (${d.reason})` : ''}`).join('\n')}`);
-    }
-    if (ctx.toolResultRefs.length > 0) {
-      sections.push(`**Tool usage:** ${ctx.toolResultRefs.map((r: {toolName:string,summary:string}) => r.summary).join(', ')}`);
-    }
-    if (ctx.diffSummary) {
-      sections.push(`**Diff preview:**\n\`\`\`diff\n${ctx.diffSummary.slice(0, 1500)}\n\`\`\``);
-    }
-    if (ctx.fitnessLogPath) {
-      sections.push(`**Fitness log:** ${ctx.fitnessLogPath} (Read this file for test output details)`);
-    }
-
-    sections.push(`\nUse this as context but find your own solution. You may improve on their approach or take a completely different path.`);
-
-    return sections.join('\n');
-  >>>
+  handler lang="kern"
+    let name=sections type="string[]" value="[ `## PRIOR APPROACH (${ctx.engineId} — ${ctx.pass ? 'PASSED' : 'FAILED'}${ctx.score !== null ? `, score: ${ctx.score}` : ''})`, ]"
+    do value="sections.push(`**Goal:** ${ctx.goal}`)"
+    if cond="ctx.filesModified.length > 0"
+      do value="sections.push(`**Files modified:** ${ctx.filesModified.join(', ')}`)"
+    if cond="ctx.filesDiscovered.length > 0 && ctx.filesDiscovered.some((f: string) => !ctx.filesModified.includes(f))"
+      let name=readOnly value="ctx.filesDiscovered.filter((f: string) => !ctx.filesModified.includes(f))"
+      if cond="readOnly.length > 0"
+        do value="sections.push(`**Files explored:** ${readOnly.join(', ')}`)"
+    if cond="ctx.patternsFound.length > 0"
+      do value="sections.push(`**Patterns found:** ${ctx.patternsFound.join('; ')}`)"
+    if cond="ctx.decisions.length > 0"
+      do value="sections.push(`**Key decisions:**\\n${ctx.decisions.map((d: { choice: string, reason: string }) => `- ${d.choice}${d.reason ? ` (${d.reason})` : ''}`).join('\\n')}`)"
+    if cond="ctx.toolResultRefs.length > 0"
+      do value="sections.push(`**Tool usage:** ${ctx.toolResultRefs.map((r: { toolName: string, summary: string }) => r.summary).join(', ')}`)"
+    if cond="ctx.diffSummary"
+      do value="sections.push(`**Diff preview:**\\n\\`\\`\\`diff\\n${ctx.diffSummary.slice(0, 1500)}\\n\\`\\`\\``)"
+    if cond="ctx.fitnessLogPath"
+      do value="sections.push(`**Fitness log:** ${ctx.fitnessLogPath} (Read this file for test output details)`)"
+    do value="sections.push(`\\nUse this as context but find your own solution. You may improve on their approach or take a completely different path.`)"
+    return value="sections.join('\\n')"

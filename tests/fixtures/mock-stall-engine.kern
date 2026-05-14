@@ -17,11 +17,10 @@ service name=MockStallEngine implements=EngineAdapter export=true
   field name=stallStart type=number private=true
 
   constructor params="opts:MockStallEngineOptions"
-    handler <<<
-      this.opts = opts;
-      this.stalling = false;
-      this.stallStart = 0;
-    >>>
+    handler lang="kern"
+      assign target="this.opts" value="opts"
+      assign target="this.stalling" value="false"
+      assign target="this.stallStart" value="0"
 
   method name=dispatch async=true params="options:DispatchOptions" returns="Promise<DispatchResult>"
     handler <<<
@@ -48,33 +47,23 @@ service name=MockStallEngine implements=EngineAdapter export=true
     >>>
 
   method name=dispatchAgent async=true params="options:DispatchOptions" returns="Promise<AgentDispatchResult>"
-    handler <<<
-      const result = await this.dispatch(options);
-      return {
-        ...result,
-        diff: '',
-        diffLines: 0,
-        filesChanged: 0,
-      };
-    >>>
+    handler lang="kern"
+      let name=result value="await this.dispatch(options)"
+      return value="{ ...result, diff: '', diffLines: 0, filesChanged: 0, }"
 
   method name=isAvailable async=true params="engine:EngineDefinition" returns="Promise<boolean>"
-    handler <<<
-      return true;
-    >>>
+    handler lang="kern"
+      return value="true"
 
   method name=getVersion async=true params="engine:EngineDefinition" returns="Promise<string|null>"
-    handler <<<
-      return 'mock-stall-engine 1.0.0';
-    >>>
+    handler lang="kern"
+      return value="'mock-stall-engine 1.0.0'"
 
   method name=isStalling returns=boolean
-    handler <<<
-      return this.stalling;
-    >>>
+    handler lang="kern"
+      return value="this.stalling"
 
   method name=reset returns=void
-    handler <<<
-      this.stalling = false;
-      this.stallStart = 0;
-    >>>
+    handler lang="kern"
+      assign target="this.stalling" value="false"
+      assign target="this.stallStart" value="0"

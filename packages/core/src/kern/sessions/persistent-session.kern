@@ -47,32 +47,22 @@ interface name=PersistentSession
 
 fn name=createPersistentSession params="config:PersistentSessionConfig" returns="PersistentSession"
   doc "Factory: picks the right session implementation based on engine config."
-  handler <<<
-    const engine = config.engine;
-
-    // API path: engine has API config and no binary path provided → use stateless resume session
-    if (engine.api && !config.binaryPath) {
-      return createResumeSession(config);
-    }
-
-    // Stream-JSON companion (Claude): bidirectional NDJSON pipe
-    if ((engine.companion?.protocol === 'stream-json' || engine.id === 'claude' || engine.binary === 'claude') && config.binaryPath) {
-      return createStreamJsonSession(config);
-    }
-
-    // Engines with ACP protocol (OpenCode, Gemini)
-    if (engine.companion && engine.companion.protocol === 'acp') {
-      return createAcpSession(config);
-    }
-
-    // Engines with JSONRPC companion (Codex)
-    if (engine.companion && engine.companion.protocol === 'jsonrpc') {
-      return createCompanionSession(config);
-    }
-
-    // Fallback: resume-based (spawn per turn with --resume/--continue)
-    return createResumeSession(config);
-  >>>
+  handler lang="kern"
+    let name=engine value="config.engine"
+    comment raw="// API path: engine has API config and no binary path provided → use stateless resume session"
+    if cond="engine.api && !config.binaryPath"
+      return value="createResumeSession(config)"
+    comment raw="// Stream-JSON companion (Claude): bidirectional NDJSON pipe"
+    if cond="(engine.companion?.protocol === 'stream-json' || engine.id === 'claude' || engine.binary === 'claude') && config.binaryPath"
+      return value="createStreamJsonSession(config)"
+    comment raw="// Engines with ACP protocol (OpenCode, Gemini)"
+    if cond="engine.companion && engine.companion.protocol === 'acp'"
+      return value="createAcpSession(config)"
+    comment raw="// Engines with JSONRPC companion (Codex)"
+    if cond="engine.companion && engine.companion.protocol === 'jsonrpc'"
+      return value="createCompanionSession(config)"
+    comment raw="// Fallback: resume-based (spawn per turn with --resume/--continue)"
+    return value="createResumeSession(config)"
 
 // ─── CompanionSession (Codex) ────────────────────────────────────────
 

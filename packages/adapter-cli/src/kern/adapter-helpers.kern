@@ -4,24 +4,18 @@ import from="node:fs" names="statSync"
 
 fn name=recordDispatchHealth params="engineId:string, result:{exitCode?:number,stderr?:string,timedOut?:boolean}" returns=void
   doc "Centralized engine-health recording for any dispatch return point. exitCode 0 + not timed out → mark ok (clears prior quarantine). Otherwise classify and quarantine only on auth-failed/unreachable — timeouts and generic failures stay in rotation since they may be transient."
-  handler <<<
-    const exitCode = result.exitCode ?? 0;
-    if (exitCode === 0 && !result.timedOut) {
-      engineHealth.mark(engineId, 'ok', '');
-      return;
-    }
-    const status = classifyDispatchFailure({ stderr: result.stderr, exitCode, timedOut: result.timedOut });
-    if (status === 'auth-failed' || status === 'unreachable') {
-      engineHealth.mark(engineId, status, (result.stderr || '').split('\n')[0]);
-    }
-  >>>
+  handler lang="kern"
+    let name=exitCode value="result.exitCode ?? 0"
+    if cond="exitCode === 0 && !result.timedOut"
+      do value="engineHealth.mark(engineId, 'ok', '')"
+      return
+    let name=status value="classifyDispatchFailure({ stderr: result.stderr, exitCode, timedOut: result.timedOut })"
+    if cond="status === 'auth-failed' || status === 'unreachable'"
+      do value="engineHealth.mark(engineId, status, (result.stderr || '').split('\\n')[0])"
 
 fn name=resolveArgs params="template:string[], vars:Record<string,string>" returns="string[]"
-  handler <<<
-    return template.map((arg) =>
-      arg.replace(/\{(\w+)\}/g, (_: string, key: string) => vars[key] ?? ''),
-    );
-  >>>
+  handler lang="kern"
+    return value="template.map((arg) => arg.replace(/\\{(\\w+)\\}/g, (_: string, key: string) => vars[key] ?? ''))"
 
 fn name=resolveModel params="engine:EngineDefinition,cwd?:string" returns="string|null"
   handler <<<
@@ -163,16 +157,14 @@ fn name=stripStreamJson params="stdout:string" returns=string
 
 fn name=usesStreamJson params="engine:EngineDefinition" returns=boolean
   doc "Check if engine exec mode outputs stream-json NDJSON."
-  handler <<<
-    const args = engine.exec?.args ?? [];
-    return args.includes('stream-json') || args.some((a: string) => a === '--output-format' && args[args.indexOf(a) + 1] === 'stream-json');
-  >>>
+  handler lang="kern"
+    let name=args value="engine.exec?.args ?? []"
+    return value="args.includes('stream-json') || args.some((a: string) => a === '--output-format' && args[args.indexOf(a) + 1] === 'stream-json')"
 
 fn name=shouldUseCompanionForAgent params="engine:EngineDefinition" returns=boolean export=true
   doc "Only Codex-style JSON-RPC app-server is reliable for one-shot forge agent dispatch. Claude stream-json and Gemini ACP are reliable as persistent Cesar sessions, but the one-shot companion wrapper can hang or return empty, so forge should use their direct non-interactive CLI agent commands."
-  handler <<<
-    return engine.companion?.protocol === 'jsonrpc';
-  >>>
+  handler lang="kern"
+    return value="engine.companion?.protocol === 'jsonrpc'"
 
 fn name=checkEnvVars params="engine:EngineDefinition" returns="string|null"
   handler <<<

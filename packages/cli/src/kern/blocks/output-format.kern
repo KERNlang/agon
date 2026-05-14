@@ -66,28 +66,28 @@ fn name=gradientText params="text:string, colors:number[]" returns=string
   >>>
 
 fn name=header params="text:string" returns=void
-  handler <<<
-    const { header: h } = icons();
-    console.log(`\n${BOLD}${CYAN}${h} ${text}${RESET}`);
-  >>>
+  handler lang="kern"
+    destructure kind=const source="icons()"
+      binding name=h key=header
+    do value="console.log(`\\n${BOLD}${CYAN}${h} ${text}${RESET}`)"
 
 fn name=success params="text:string" returns=void
-  handler <<<
-    const { success: s } = icons();
-    console.log(`${GREEN}${s}${RESET} ${text}`);
-  >>>
+  handler lang="kern"
+    destructure kind=const source="icons()"
+      binding name=s key=success
+    do value="console.log(`${GREEN}${s}${RESET} ${text}`)"
 
 fn name=fail params="text:string" returns=void
-  handler <<<
-    const { fail: f } = icons();
-    console.log(`${RED}${f}${RESET} ${text}`);
-  >>>
+  handler lang="kern"
+    destructure kind=const source="icons()"
+      binding name=f key=fail
+    do value="console.log(`${RED}${f}${RESET} ${text}`)"
 
 fn name=warn params="text:string" returns=void
-  handler <<<
-    const { warning: w } = icons();
-    console.log(`${YELLOW}${w}${RESET} ${text}`);
-  >>>
+  handler lang="kern"
+    destructure kind=const source="icons()"
+      binding name=w key=warning
+    do value="console.log(`${YELLOW}${w}${RESET} ${text}`)"
 
 fn name=info params="text:string" returns=void expr={{ console.log(`${DIM}${text}${RESET}`); }}
 

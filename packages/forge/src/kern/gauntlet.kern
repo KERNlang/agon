@@ -6,120 +6,59 @@ import from="@agon/core" names="EngineRegistry,loadConfig,worktreeCreate,worktre
 import from="./fitness.js" names="runFitness"
 
 fn name=buildBreakerPrompt params="task:string, winnerDiff:string, engineId:string" returns=string
-  handler <<<
-    return [
-      `## BREAKER MODE`,
-      `You are in breaker mode. Your job is to BREAK the winning patch below.`,
-      `Write a minimal, deterministic test script that exposes a bug, edge case, or vulnerability in this patch.`,
-      ``,
-      `Rules:`,
-      `- The test MUST fail when the patch is applied`,
-      `- The test SHOULD pass on the original code (before the patch) — this proves you're testing the right thing`,
-      `- The test must be deterministic — no randomness, no timing dependencies, no network calls`,
-      `- Output a single executable test file. Use the project's existing test framework if possible.`,
-      `- Focus on: edge cases, null/undefined inputs, boundary conditions, concurrency issues, type coercion bugs`,
-      ``,
-      `## ORIGINAL TASK`,
-      task,
-      ``,
-      `## WINNING PATCH TO BREAK`,
-      '```diff',
-      winnerDiff.slice(0, 8000),
-      '```',
-      ``,
-      `Write ONLY the test file content. No explanations.`,
-    ].join('\n');
-  >>>
+  handler lang="kern"
+    return value="[ `## BREAKER MODE`, `You are in breaker mode. Your job is to BREAK the winning patch below.`, `Write a minimal, deterministic test script that exposes a bug, edge case, or vulnerability in this patch.`, ``, `Rules:`, `- The test MUST fail when the patch is applied`, `- The test SHOULD pass on the original code (before the patch) — this proves you're testing the right thing`, `- The test must be deterministic — no randomness, no timing dependencies, no network calls`, `- Output a single executable test file. Use the project's existing test framework if possible.`, `- Focus on: edge cases, null/undefined inputs, boundary conditions, concurrency issues, type coercion bugs`, ``, `## ORIGINAL TASK`, task, ``, `## WINNING PATCH TO BREAK`, '```diff', winnerDiff.slice(0, 8000), '```', ``, `Write ONLY the test file content. No explanations.`, ].join('\\n')"
 
 fn name=buildRepairPrompt params="task:string, breakerTests:string" returns=string
-  handler <<<
-    return [
-      `## REPAIR MODE`,
-      `Your patch was attacked by breaker engines. The following tests expose real bugs in your code.`,
-      `Fix your implementation so ALL breaker tests pass while keeping the original fitness test passing.`,
-      ``,
-      `## ORIGINAL TASK`,
-      task,
-      ``,
-      `## BREAKER TESTS THAT BREAK YOUR CODE`,
-      breakerTests,
-      ``,
-      `Fix the bugs. Be minimal — only change what's needed to pass the breaker tests.`,
-    ].join('\n');
-  >>>
+  handler lang="kern"
+    return value="[ `## REPAIR MODE`, `Your patch was attacked by breaker engines. The following tests expose real bugs in your code.`, `Fix your implementation so ALL breaker tests pass while keeping the original fitness test passing.`, ``, `## ORIGINAL TASK`, task, ``, `## BREAKER TESTS THAT BREAK YOUR CODE`, breakerTests, ``, `Fix the bugs. Be minimal — only change what's needed to pass the breaker tests.`, ].join('\\n')"
 
 fn name=validateBreakerArtifact async=true params="opts:{artifact:BreakerArtifact, winnerWorktree:string, cleanWorktree:string, fitnessTimeout:number, fitnessCmd?:string}" returns="Promise<BreakerArtifact>"
-  handler <<<
-    const { artifact, winnerWorktree, cleanWorktree, fitnessTimeout, fitnessCmd } = opts;
-    const testRunner = fitnessCmd ?? 'npx vitest run';
-
-    // Write test script to both worktrees
-    const testFileName = `breaker-${artifact.engineId}-${Date.now()}.test.ts`;
-    const winnerTestPath = join(winnerWorktree, testFileName);
-    const cleanTestPath = join(cleanWorktree, testFileName);
-
-    writeFileSync(winnerTestPath, artifact.testScript);
-    writeFileSync(cleanTestPath, artifact.testScript);
-
-    // Run 1: Must FAIL on winner's patched code
-    const runCmd = `${testRunner} ${testFileName} 2>&1 || exit 1`;
-    let failsOnWinner = false;
-    try {
-      const result1 = await spawnWithTimeout({
-        command: '/bin/sh',
-        args: ['-c', runCmd],
-        cwd: winnerWorktree,
-        timeout: fitnessTimeout * 1000,
-      });
-      failsOnWinner = result1.exitCode !== 0;
-    } catch {
-      failsOnWinner = true;
-    }
-
-    if (!failsOnWinner) {
-      return { ...artifact, validated: false, deterministic: false };
-    }
-
-    // Run 2: Determinism check — run again, must fail again
-    let failsAgain = false;
-    try {
-      const result2 = await spawnWithTimeout({
-        command: '/bin/sh',
-        args: ['-c', runCmd],
-        cwd: winnerWorktree,
-        timeout: fitnessTimeout * 1000,
-      });
-      failsAgain = result2.exitCode !== 0;
-    } catch {
-      failsAgain = true;
-    }
-
-    if (!failsAgain) {
-      return { ...artifact, validated: false, deterministic: false };
-    }
-
-    // Run 3: Must PASS on clean (unpatched) code — proves the test targets the patch, not a pre-existing issue
-    let passesOnClean = false;
-    try {
-      const result3 = await spawnWithTimeout({
-        command: '/bin/sh',
-        args: ['-c', runCmd],
-        cwd: cleanWorktree,
-        timeout: fitnessTimeout * 1000,
-      });
-      passesOnClean = result3.exitCode === 0;
-    } catch {
-      passesOnClean = false;
-    }
-
-    if (!passesOnClean) {
-      // Test fails on clean code too — it's not targeting the patch, it's a false positive
-      return { ...artifact, validated: false, deterministic: true };
-    }
-
-    // Fails on winner, passes on clean, deterministic — validated
-    return { ...artifact, validated: true, deterministic: true, testPath: winnerTestPath };
-  >>>
+  handler lang="kern"
+    destructure kind=const source="opts"
+      binding name=artifact
+      binding name=winnerWorktree
+      binding name=cleanWorktree
+      binding name=fitnessTimeout
+      binding name=fitnessCmd
+    let name=testRunner value="fitnessCmd ?? 'npx vitest run'"
+    comment raw="// Write test script to both worktrees"
+    fmt name=testFileName template="breaker-${artifact.engineId}-${Date.now()}.test.ts"
+    let name=winnerTestPath value="join(winnerWorktree, testFileName)"
+    let name=cleanTestPath value="join(cleanWorktree, testFileName)"
+    do value="writeFileSync(winnerTestPath, artifact.testScript)"
+    do value="writeFileSync(cleanTestPath, artifact.testScript)"
+    comment raw="// Run 1: Must FAIL on winner's patched code"
+    fmt name=runCmd template="${testRunner} ${testFileName} 2>&1 || exit 1"
+    let name=failsOnWinner kind=let value="false"
+    try
+      let name=result1 value="await spawnWithTimeout({ command: '/bin/sh', args: ['-c', runCmd], cwd: winnerWorktree, timeout: fitnessTimeout * 1000, })"
+      assign target="failsOnWinner" value="result1.exitCode !== 0"
+      catch name=e
+        assign target="failsOnWinner" value="true"
+    if cond="!failsOnWinner"
+      return value="{ ...artifact, validated: false, deterministic: false }"
+    comment raw="// Run 2: Determinism check — run again, must fail again"
+    let name=failsAgain kind=let value="false"
+    try
+      let name=result2 value="await spawnWithTimeout({ command: '/bin/sh', args: ['-c', runCmd], cwd: winnerWorktree, timeout: fitnessTimeout * 1000, })"
+      assign target="failsAgain" value="result2.exitCode !== 0"
+      catch name=e
+        assign target="failsAgain" value="true"
+    if cond="!failsAgain"
+      return value="{ ...artifact, validated: false, deterministic: false }"
+    comment raw="// Run 3: Must PASS on clean (unpatched) code — proves the test targets the patch, not a pre-existing issue"
+    let name=passesOnClean kind=let value="false"
+    try
+      let name=result3 value="await spawnWithTimeout({ command: '/bin/sh', args: ['-c', runCmd], cwd: cleanWorktree, timeout: fitnessTimeout * 1000, })"
+      assign target="passesOnClean" value="result3.exitCode === 0"
+      catch name=e
+        assign target="passesOnClean" value="false"
+    if cond="!passesOnClean"
+      comment raw="// Test fails on clean code too — it's not targeting the patch, it's a false positive"
+      return value="{ ...artifact, validated: false, deterministic: true }"
+    comment raw="// Fails on winner, passes on clean, deterministic — validated"
+    return value="{ ...artifact, validated: true, deterministic: true, testPath: winnerTestPath }"
 
 fn name=runGauntlet async=true params="opts:{winnerId:string, losers:string[], task:string, winnerWorktree:string, fitnessCmd:string, taskClass:TaskClass, forgeDir:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, fitnessTimeout:number, maxBreakers:number, repairTimeout:number, cwd:string, baseSha:string, onEvent?:(event:ForgeEvent)=>void, signal?:AbortSignal}" returns="Promise<GauntletResult>"
   handler <<<

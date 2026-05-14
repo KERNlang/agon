@@ -85,27 +85,24 @@ fn name=createFileSnapshot params="rootDir:string" returns=FileSnapshot export=t
 
 fn name=snapshotRead params="snap:FileSnapshot,absPath:string" returns="string|null"
   doc "Read a file from the snapshot. Populates cache on first access. Returns null if the file doesn't exist."
-  handler <<<
-    const key = resolve(absPath);
-    if (snap.cache.has(key)) return snap.cache.get(key) ?? null;
-    try {
-      if (!existsSync(key)) {
-        snap.cache.set(key, null);
-        return null;
-      }
-      const st = statSync(key);
-      if (!st.isFile()) {
-        snap.cache.set(key, null);
-        return null;
-      }
-      const content = readFileSync(key, 'utf-8');
-      snap.cache.set(key, content);
-      return content;
-    } catch {
-      snap.cache.set(key, null);
-      return null;
-    }
-  >>>
+  handler lang="kern"
+    let name=key value="resolve(absPath)"
+    if cond="snap.cache.has(key)"
+      return value="snap.cache.get(key) ?? null"
+    try
+      if cond="!existsSync(key)"
+        do value="snap.cache.set(key, null)"
+        return value="null"
+      let name=st value="statSync(key)"
+      if cond="!st.isFile()"
+        do value="snap.cache.set(key, null)"
+        return value="null"
+      let name=content value="readFileSync(key, 'utf-8')"
+      do value="snap.cache.set(key, content)"
+      return value="content"
+      catch name=e
+        do value="snap.cache.set(key, null)"
+        return value="null"
 
 fn name=snapshotList params="snap:FileSnapshot,absDir:string" returns="string[]"
   doc "List files in a directory from the snapshot (non-recursive). Returns absolute paths."
@@ -135,20 +132,18 @@ service name=VirtualFS export=true
   field name=onChange type="((path:string)=>void)|undefined" private=true
 
   constructor params="snapshot:FileSnapshot,engineId:string,runId:string,onChange?:((path:string)=>void)"
-    handler <<<
-      this.snapshot = snapshot;
-      this.overlay = new Map();
-      this.engineId = engineId;
-      this.runId = runId;
-      this.startedAt = Date.now();
-      this.onChange = onChange;
-    >>>
+    handler lang="kern"
+      assign target="this.snapshot" value="snapshot"
+      assign target="this.overlay" value="new Map()"
+      assign target="this.engineId" value="engineId"
+      assign target="this.runId" value="runId"
+      assign target="this.startedAt" value="Date.now()"
+      assign target="this.onChange" value="onChange"
 
   method name=setOnChange params="onChange?:((path:string)=>void)" returns=void
     doc "Register a best-effort change callback. Called after overlay writes/deletes with the changed path. Callers can choose whether to materialize an EffectPackage."
-    handler <<<
-      this.onChange = onChange;
-    >>>
+    handler lang="kern"
+      assign target="this.onChange" value="onChange"
 
   method name=notifyChange params="absPath:string" returns=void
     handler <<<
@@ -168,21 +163,21 @@ service name=VirtualFS export=true
 
   method name=write params="absPath:string,content:string" returns=void
     doc "Write (create or overwrite) a file in the overlay. Does NOT touch disk."
-    handler <<<
-      const key = resolve(absPath);
-      const previous = this.overlay.has(key) ? (this.overlay.get(key) ?? null) : snapshotRead(this.snapshot, key);
-      this.overlay.set(key, content);
-      if (previous !== content) this.notifyChange(key);
-    >>>
+    handler lang="kern"
+      let name=key value="resolve(absPath)"
+      let name=previous value="this.overlay.has(key) ? (this.overlay.get(key) ?? null) : snapshotRead(this.snapshot, key)"
+      do value="this.overlay.set(key, content)"
+      if cond="previous !== content"
+        do value="this.notifyChange(key)"
 
   method name=delete params="absPath:string" returns=void
     doc "Mark a file as deleted in the overlay. Does NOT touch disk. Returns null from read() after this."
-    handler <<<
-      const key = resolve(absPath);
-      const previous = this.overlay.has(key) ? (this.overlay.get(key) ?? null) : snapshotRead(this.snapshot, key);
-      this.overlay.set(key, null);
-      if (previous !== null) this.notifyChange(key);
-    >>>
+    handler lang="kern"
+      let name=key value="resolve(absPath)"
+      let name=previous value="this.overlay.has(key) ? (this.overlay.get(key) ?? null) : snapshotRead(this.snapshot, key)"
+      do value="this.overlay.set(key, null)"
+      if cond="previous !== null"
+        do value="this.notifyChange(key)"
 
   method name=exists params="absPath:string" returns=boolean
     handler lang="kern"
@@ -316,31 +311,30 @@ fn name=relocateEffectPackage params="pkg:EffectPackage,fromDir:string,toDir:str
 
 fn name=effectPackageDiff params="pkg:EffectPackage" returns=string export=true
   doc "Render an EffectPackage as a unified diff string for display and scoring. Lines are prefixed with + (added) or - (removed)."
-  handler <<<
-    const lines: string[] = [];
-    for (const effect of pkg.effects) {
-      if (effect.kind === 'write') {
-        lines.push(`--- ${effect.path} (original)`);
-        lines.push(`+++ ${effect.path} (modified)`);
-        const origLines = (effect.originalContent ?? '').split('\n');
-        const newLines = effect.content.split('\n');
-        // Simple line-by-line diff (LCS-free for speed)
-        const origSet = new Set(origLines);
-        const newSet = new Set(newLines);
-        for (const l of origLines) {
-          if (!newSet.has(l)) lines.push(`-${l}`);
-        }
-        for (const l of newLines) {
-          if (!origSet.has(l)) lines.push(`+${l}`);
-        }
-      } else if (effect.kind === 'delete') {
-        lines.push(`--- ${effect.path} (deleted)`);
-      } else if (effect.kind === 'rename') {
-        lines.push(`rename ${effect.from} → ${effect.to}`);
-      }
-    }
-    return lines.join('\n');
-  >>>
+  handler lang="kern"
+    let name=lines type="string[]" value="[]"
+    each name=effect in="pkg.effects"
+      if cond="effect.kind === 'write'"
+        do value="lines.push(`--- ${effect.path} (original)`)"
+        do value="lines.push(`+++ ${effect.path} (modified)`)"
+        let name=origLines value="(effect.originalContent ?? '').split('\\n')"
+        let name=newLines value="effect.content.split('\\n')"
+        comment raw="// Simple line-by-line diff (LCS-free for speed)"
+        let name=origSet value="new Set(origLines)"
+        let name=newSet value="new Set(newLines)"
+        each name=oldLine in="origLines"
+          if cond="!newSet.has(oldLine)"
+            do value="lines.push(`-${oldLine}`)"
+        each name=newLine in="newLines"
+          if cond="!origSet.has(newLine)"
+            do value="lines.push(`+${newLine}`)"
+      else
+        if cond="effect.kind === 'delete'"
+          do value="lines.push(`--- ${effect.path} (deleted)`)"
+        else
+          if cond="effect.kind === 'rename'"
+            do value="lines.push(`rename ${effect.from} → ${effect.to}`)"
+    return value="lines.join('\\n')"
 
 fn name=scoreEffectPackage params="pkg:EffectPackage,taskKeywords?:string[]" returns=number export=true
   doc "Heuristic score for an EffectPackage. Higher is better. Used by Speculator.selectWinner() before full tribunal scoring. Based on: non-zero effects (baseline), response quality, tool call efficiency, file change count. This is a fast pre-filter — not a replacement for full fitness checks."

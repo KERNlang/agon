@@ -13,9 +13,8 @@ service name=EngineHealth singleton=true
   field name=records type="Map<string, EngineHealthRecord>"
 
   constructor
-    handler <<<
-      this.records = new Map();
-    >>>
+    handler lang="kern"
+      assign target="this.records" value="new Map()"
 
   method name=mark params="engineId:string, status:'ok'|'auth-failed'|'unreachable'|'timeout'|'failed', reason:string" returns=void
     doc "Record an engine failure. Subsequent calls accumulate failureCount. 'ok' clears the record."

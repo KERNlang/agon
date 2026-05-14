@@ -5,18 +5,18 @@ const name=DEFAULT_EXCLUDED_ORCHESTRATION_ENGINE_EXACT type="string[]" value={{ 
   doc "Engine IDs that are excluded from default orchestration ONLY when matched exactly. Vanilla 'kimi' and 'minimax' have OAuth/key issues and are superseded by 'kimi-for-coding-k2p6' and 'minimax-coding-plan-minimax-m2.7-highspeed' which must stay enabled."
 
 fn name=isDefaultOrchestrationEngineAllowed params="engineId:string" returns=boolean export=true
-  handler <<<
-    const id = String(engineId ?? '').trim().toLowerCase();
-    if (!id) return false;
-    if (DEFAULT_EXCLUDED_ORCHESTRATION_ENGINE_EXACT.includes(id)) return false;
-    return !DEFAULT_EXCLUDED_ORCHESTRATION_ENGINE_PREFIXES.some((prefix) => id === prefix || id.startsWith(`${prefix}-`));
-  >>>
+  handler lang="kern"
+    let name=id value="String(engineId ?? '').trim().toLowerCase()"
+    if cond="!id"
+      return value="false"
+    if cond="DEFAULT_EXCLUDED_ORCHESTRATION_ENGINE_EXACT.includes(id)"
+      return value="false"
+    return value="!DEFAULT_EXCLUDED_ORCHESTRATION_ENGINE_PREFIXES.some((prefix) => id === prefix || id.startsWith(`${prefix}-`))"
 
 fn name=filterDefaultOrchestrationEngines params="engineIds:string[]" returns="string[]" export=true
-  handler <<<
-    const filtered: string[] = [];
-    for (const id of engineIds ?? []) {
-      if (isDefaultOrchestrationEngineAllowed(id) && !filtered.includes(id)) filtered.push(id);
-    }
-    return filtered;
-  >>>
+  handler lang="kern"
+    let name=filtered type="string[]" value="[]"
+    each name=id in="engineIds ?? []"
+      if cond="isDefaultOrchestrationEngineAllowed(id) && !filtered.includes(id)"
+        do value="filtered.push(id)"
+    return value="filtered"

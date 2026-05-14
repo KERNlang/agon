@@ -26,18 +26,10 @@ fn name=runLint async=true params="cwd:string" returns="Promise<number>"
   >>>
 
 fn name=runStyleCheck async=true params="cwd:string" returns="Promise<number>"
-  handler <<<
-    try {
-      const result = await spawnWithTimeout({
-        command: 'npx',
-        args: ['prettier', '--check', '.'],
-        cwd,
-        timeout: 30_000,
-      });
-
-      return result.exitCode === 0 ? 100 : 80;
-    } catch (_prettierErr) {
-      // Prettier not installed — assume style is fine
-      return 100;
-    }
-  >>>
+  handler lang="kern"
+    try
+      let name=result value="await spawnWithTimeout({ command: 'npx', args: ['prettier', '--check', '.'], cwd, timeout: 30000, })"
+      return value="result.exitCode === 0 ? 100 : 80"
+      catch name=_prettierErr
+        comment raw="// Prettier not installed — assume style is fine"
+        return value="100"

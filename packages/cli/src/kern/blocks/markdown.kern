@@ -151,18 +151,16 @@ fn name=truncateCodeLine params="line:string, maxWidth:number" returns=string
     return value="line.slice(0, maxWidth - 1) + `…+${overflow}`"
 
 fn name=extractCodexStructured params="text:string" returns="string|null" export=false
-  handler <<<
-    const summaryMatch = text.match(/summary:\s*"([\s\S]*?)"\s*(?:sections\s*\{|$)/);
-    const contentMatches = [...text.matchAll(/content:\s*"([\s\S]*?)"\s*\}/g)];
-    if (!summaryMatch || contentMatches.length === 0) return null;
-
-    const parts: string[] = [summaryMatch[1]];
-    const sectionMatches = [...text.matchAll(/\d+:\s*"([^"]+)"\s*\{\s*content:\s*"([\s\S]*?)"\s*\}/g)];
-    for (const m of sectionMatches) {
-      parts.push(`\n## ${m[1]}\n${m[2]}`);
-    }
-    return parts.join('\n').replace(/\\n/g, '\n').trim();
-  >>>
+  handler lang="kern"
+    let name=summaryMatch value="text.match(/summary:\\s*\"([\\s\\S]*?)\"\\s*(?:sections\\s*\\{|$)/)"
+    let name=contentMatches value="[...text.matchAll(/content:\\s*\"([\\s\\S]*?)\"\\s*\\}/g)]"
+    if cond="!summaryMatch || contentMatches.length === 0"
+      return value="null"
+    let name=parts type="string[]" value="[summaryMatch[1]]"
+    let name=sectionMatches value="[...text.matchAll(/\\d+:\\s*\"([^\"]+)\"\\s*\\{\\s*content:\\s*\"([\\s\\S]*?)\"\\s*\\}/g)]"
+    each name=m in="sectionMatches"
+      do value="parts.push(`\\n## ${m[1]}\\n${m[2]}`)"
+    return value="parts.join('\\n').replace(/\\\\n/g, '\\n').trim()"
 
 fn name=parseStreamJsonLine params="trimmed:string" returns="{action:'use'|'skip'|'keep', content?:string}" export=false
   handler <<<
@@ -232,27 +230,24 @@ fn name=deduplicateInline params="line:string" returns=string export=false
 
 fn name=deduplicateParagraphs params="text:string" returns=string export=false
   doc "Remove consecutive duplicate paragraphs/sentences from buddy streaming output."
-  handler <<<
-    // First: deduplicate within each line (streaming chunk concatenation artifacts)
-    const lines = text.split('\n');
-    const dedupedLines = lines.map((l: string) => deduplicateInline(l));
-    const joined = dedupedLines.join('\n');
-
-    // Then: deduplicate consecutive paragraphs
-    const paragraphs = joined.split(/\n{2,}/);
-    const seen = new Set<string>();
-    const deduped: string[] = [];
-
-    for (const para of paragraphs) {
-      const normalized = para.trim().replace(/\s+/g, ' ');
-      if (!normalized) continue;
-      if (seen.has(normalized)) continue;
-      seen.add(normalized);
-      deduped.push(para.trim());
-    }
-
-    return deduped.join('\n\n');
-  >>>
+  handler lang="kern"
+    comment raw="// First: deduplicate within each line (streaming chunk concatenation artifacts)"
+    let name=lines value="text.split('\\n')"
+    let name=dedupedLines value="lines.map((l: string) => deduplicateInline(l))"
+    let name=joined value="dedupedLines.join('\\n')"
+    comment raw="// Then: deduplicate consecutive paragraphs"
+    let name=paragraphs value="joined.split(/\\n{2,}/)"
+    let name=seen value="new Set<string>()"
+    let name=deduped type="string[]" value="[]"
+    each name=para in="paragraphs"
+      let name=normalized value="para.trim().replace(/\\s+/g, ' ')"
+      if cond="!normalized"
+        continue
+      if cond="seen.has(normalized)"
+        continue
+      do value="seen.add(normalized)"
+      do value="deduped.push(para.trim())"
+    return value="deduped.join('\\n\\n')"
 
 fn name=stripBuddyThinkingNoise params="text:string" returns=string export=false
   doc "Strip progressive thinking/status updates that duplicate as streaming chunks."
@@ -385,60 +380,51 @@ fn name=addParagraphBreaks params="text:string" returns=string export=false
 const name=_cleanCache type="Map<string, string>" value={{ new Map() }}
 
 fn name=cleanEngineOutput params="raw:string" returns=string
-  handler <<<
-    // Key by raw content — different streams can share lengths, so length alone collides.
-    const cached = _cleanCache.get(raw);
-    if (cached !== undefined) return cached;
-
-    const lines = raw.split('\n');
-    const cleaned: string[] = [];
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (cleaned.length === 0 && !trimmed) continue;
-
-      if (trimmed.startsWith('{') && trimmed.includes('"type"')) {
-        const result = parseStreamJsonLine(trimmed);
-        if (result.action === 'skip') continue;
-        if (result.action === 'use') { cleaned.push(result.content!); continue; }
-      }
-
-      cleaned.push(line);
-    }
-
-    let result = cleaned.join('\n').trim();
-    const codexResult = extractCodexStructured(result);
-    if (codexResult) result = codexResult;
-
-    // Strip XML tool tags — engines embed <tool>, <tool_result>, <invoke> in text
-    result = result.replace(/<tool\s+name="[^"]*">[\s\S]*?<\/tool>/g, '');
-    result = result.replace(/<tool\s+name="[^"]*">[\s\S]*?<\/invoke>(\s*<\/[a-zA-Z_:]+>)*/g, '');
-    result = result.replace(/<tool_result[\s\S]*?<\/tool_result>/g, '');
-    result = result.replace(/<\/minimax:tool_call>/g, '');
-    result = result.replace(/<parameter\s+name="[^"]*">[^<]*<\/parameter>/g, '');
-    result = result.replace(/<tool_calls>[\s\S]*?<\/tool_calls>/gi, '');
-    result = result.replace(/<(Read|Write|Edit|Bash|Grep|Glob|LS|ListPlans|Retrieve)\b[\s\S]*?<\/\1>/g, '');
-    result = result.replace(/<\/?(file_path|path|pattern|command|query|content|old_string|new_string|start_line|end_line|id)>\s*/g, '');
-
-    // Strip reasoning tags from models that use <think>...</think> (MiniMax, DeepSeek, Qwen, etc.)
-    result = result.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
-
-    // R7: Strip narration stems — companion engines narrate their research process
-    result = result.replace(/^(I'm checking|I'm looking|I'm reading|I'm searching|I'm inspecting|Let me check|Let me look|Let me read|Let me search|Let me inspect|I've confirmed|I've verified|I've checked|I'll now|I will now|Now I'm|Now let me|First,? I'll|First,? let me|Next,? I'll|Next,? let me)\b[^.\n]*[.\n]\s*/gim, '');
-
-    // Clean buddy streaming artifacts
-    result = stripBuddyThinkingNoise(result);
-    result = deduplicateParagraphs(result);
-
-    // Break dense walls of text into paragraphs at sentence boundaries
-    result = addParagraphBreaks(result);
-
-    // Shorten absolute file paths → relative, backtick-wrapped for purple styling
-    result = shortenFilePaths(result);
-
-    // Cache and evict old entries
-    if (_cleanCache.size > 200) _cleanCache.clear();
-    _cleanCache.set(raw, result);
-
-    return result;
-  >>>
+  handler lang="kern"
+    comment raw="// Key by raw content — different streams can share lengths, so length alone collides."
+    let name=cached value="_cleanCache.get(raw)"
+    if cond="cached !== undefined"
+      return value="cached"
+    let name=lines value="raw.split('\\n')"
+    let name=cleaned type="string[]" value="[]"
+    each name=line in="lines"
+      let name=trimmed value="line.trim()"
+      if cond="cleaned.length === 0 && !trimmed"
+        continue
+      if cond="trimmed.startsWith('{') && trimmed.includes('\"type\"')"
+        let name=result value="parseStreamJsonLine(trimmed)"
+        if cond="result.action === 'skip'"
+          continue
+        if cond="result.action === 'use'"
+          do value="cleaned.push(result.content!)"
+          continue
+      do value="cleaned.push(line)"
+    let name=result kind=let value="cleaned.join('\\n').trim()"
+    let name=codexResult value="extractCodexStructured(result)"
+    if cond="codexResult"
+      assign target="result" value="codexResult"
+    comment raw="// Strip XML tool tags — engines embed <tool>, <tool_result>, <invoke> in text"
+    assign target="result" value="result.replace(/<tool\\s+name=\"[^\"]*\">[\\s\\S]*?<\\/tool>/g, '')"
+    assign target="result" value="result.replace(/<tool\\s+name=\"[^\"]*\">[\\s\\S]*?<\\/invoke>(\\s*<\\/[a-zA-Z_:]+>)*/g, '')"
+    assign target="result" value="result.replace(/<tool_result[\\s\\S]*?<\\/tool_result>/g, '')"
+    assign target="result" value="result.replace(/<\\/minimax:tool_call>/g, '')"
+    assign target="result" value="result.replace(/<parameter\\s+name=\"[^\"]*\">[^<]*<\\/parameter>/g, '')"
+    assign target="result" value="result.replace(/<tool_calls>[\\s\\S]*?<\\/tool_calls>/gi, '')"
+    assign target="result" value="result.replace(/<(Read|Write|Edit|Bash|Grep|Glob|LS|ListPlans|Retrieve)\\b[\\s\\S]*?<\\/\\1>/g, '')"
+    assign target="result" value="result.replace(/<\\/?(file_path|path|pattern|command|query|content|old_string|new_string|start_line|end_line|id)>\\s*/g, '')"
+    comment raw="// Strip reasoning tags from models that use <think>...</think> (MiniMax, DeepSeek, Qwen, etc.)"
+    assign target="result" value="result.replace(/<think>[\\s\\S]*?<\\/think>\\s*/gi, '')"
+    comment raw="// R7: Strip narration stems — companion engines narrate their research process"
+    assign target="result" value="result.replace(/^(I'm checking|I'm looking|I'm reading|I'm searching|I'm inspecting|Let me check|Let me look|Let me read|Let me search|Let me inspect|I've confirmed|I've verified|I've checked|I'll now|I will now|Now I'm|Now let me|First,? I'll|First,? let me|Next,? I'll|Next,? let me)\\b[^.\\n]*[.\\n]\\s*/gim, '')"
+    comment raw="// Clean buddy streaming artifacts"
+    assign target="result" value="stripBuddyThinkingNoise(result)"
+    assign target="result" value="deduplicateParagraphs(result)"
+    comment raw="// Break dense walls of text into paragraphs at sentence boundaries"
+    assign target="result" value="addParagraphBreaks(result)"
+    comment raw="// Shorten absolute file paths → relative, backtick-wrapped for purple styling"
+    assign target="result" value="shortenFilePaths(result)"
+    comment raw="// Cache and evict old entries"
+    if cond="_cleanCache.size > 200"
+      do value="_cleanCache.clear()"
+    do value="_cleanCache.set(raw, result)"
+    return value="result"

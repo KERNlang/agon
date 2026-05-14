@@ -76,18 +76,8 @@ fn name=makeAssistantChunk params="engineId:string,text:string" returns=AgentEve
 
 fn name=makeToolCall params="engineId:string,toolName:string,status:'running'|'ok'|'error'|'rejected',opts?:{toolCallId?:string,input?:Record<string,unknown>,output?:string,error?:string}" returns=AgentEvent export=true
   doc "Build a tool_call event. Status semantics: running=started, ok=completed successfully, error=tool threw, rejected=user or permission system blocked."
-  handler <<<
-    return {
-      kind: 'tool_call',
-      engineId,
-      toolName,
-      status,
-      toolCallId: opts?.toolCallId,
-      input: opts?.input,
-      output: opts?.output,
-      error: opts?.error,
-    };
-  >>>
+  handler lang="kern"
+    return value="{ kind: 'tool_call', engineId, toolName, status, toolCallId: opts?.toolCallId, input: opts?.input, output: opts?.output, error: opts?.error, }"
 
 fn name=makeTurnComplete params="engineId:string,stopReason:string,usage?:AgentUsage|null" returns=AgentEvent export=true expr={{ return { kind: 'turn_complete', engineId, stopReason, usage: usage ?? null }; }}
   doc "Build a turn_complete event. Usage is null for CLI engines that don't report it, or an AgentUsage struct for API engines with SDK usage."
@@ -175,29 +165,16 @@ fn name=normalizeSessionChunk params="chunk:RawSessionChunk,engineId:string" ret
 
 fn name=buildApiTurnEvents params="engineId:string,response:string,toolCalls:number,stopReason:string,usage?:AgentUsage|null" returns="AgentEvent[]" export=true
   doc "Build a canonical event sequence from an ApiAgentResult. Used when real-time callbacks weren't wired and we need to reconstruct the turn post-hoc."
-  handler <<<
-    const events: AgentEvent[] = [];
-    if (response) {
-      events.push({ kind: 'assistant_chunk', engineId, text: response });
-    }
-    // We don't know per-tool details from the aggregated result; emit a
-    // single summary event. Real-time callers should use makeToolCall directly.
-    if (toolCalls > 0) {
-      events.push({
-        kind: 'tool_call',
-        engineId,
-        toolName: `<${toolCalls} tool calls>`,
-        status: 'ok',
-      });
-    }
-    events.push({
-      kind: 'turn_complete',
-      engineId,
-      stopReason,
-      usage: usage ?? null,
-    });
-    return events;
-  >>>
+  handler lang="kern"
+    let name=events type="AgentEvent[]" value="[]"
+    if cond="response"
+      do value="events.push({ kind: 'assistant_chunk', engineId, text: response })"
+    comment raw="// We don't know per-tool details from the aggregated result; emit a"
+    comment raw="// single summary event. Real-time callers should use makeToolCall directly."
+    if cond="toolCalls > 0"
+      do value="events.push({ kind: 'tool_call', engineId, toolName: `<${toolCalls} tool calls>`, status: 'ok', })"
+    do value="events.push({ kind: 'turn_complete', engineId, stopReason, usage: usage ?? null, })"
+    return value="events"
 
 // ── Usage helpers ─────────────────────────────────────────────────
 
@@ -206,13 +183,7 @@ fn name=unavailableUsage params="" returns=AgentUsage export=true expr={{ return
 
 fn name=estimatedUsage params="promptText:string,responseText:string" returns=AgentUsage export=true
   doc "Build an estimated AgentUsage using the char/4 heuristic (matches TokenTracker.estimateTokens). Phase 1 AgentSession uses this for CLI engines until Phase 3 protocol parsers emit real usage."
-  handler <<<
-    const promptTokens = Math.ceil(promptText.length / 4);
-    const completionTokens = Math.ceil(responseText.length / 4);
-    return {
-      promptTokens,
-      completionTokens,
-      totalTokens: promptTokens + completionTokens,
-      source: 'estimated',
-    };
-  >>>
+  handler lang="kern"
+    let name=promptTokens value="Math.ceil(promptText.length / 4)"
+    let name=completionTokens value="Math.ceil(responseText.length / 4)"
+    return value="{ promptTokens, completionTokens, totalTokens: promptTokens + completionTokens, source: 'estimated', }"

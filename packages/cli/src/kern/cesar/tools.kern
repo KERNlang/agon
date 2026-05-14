@@ -4,48 +4,36 @@ import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 fn name=createCesarToolRegistry params="engineId?:string" returns="ToolRegistry"
   doc "Create and populate the standard Cesar tool registry. Single source of truth — no more duplication."
-  handler <<<
-    const toolRegistry = new ToolRegistry();
-    toolRegistry.register(createReadTool());
-    toolRegistry.register(createEditTool());
-    toolRegistry.register(createWriteTool());
-    toolRegistry.register(createBashTool());
-    toolRegistry.register(createGrepTool());
-    toolRegistry.register(createGlobTool());
-    toolRegistry.register(createForgeTool());
-    toolRegistry.register(createBrainstormTool());
-    toolRegistry.register(createTribunalTool());
-    toolRegistry.register(createCampfireTool());
-    toolRegistry.register(createPipelineTool());
-    toolRegistry.register(createReviewTool());
-    toolRegistry.register(createDelegateTool());
-    toolRegistry.register(createAgentTool());
-    toolRegistry.register(createReportConfidenceTool());
-    toolRegistry.register(createQuickNeroTool());
-    toolRegistry.register(createProposePlanTool());
-    toolRegistry.register(createListPlansTool());
-    toolRegistry.register(createRetrieveResultTool(engineId));
-    return toolRegistry;
-  >>>
+  handler lang="kern"
+    let name=toolRegistry value="new ToolRegistry()"
+    do value="toolRegistry.register(createReadTool())"
+    do value="toolRegistry.register(createEditTool())"
+    do value="toolRegistry.register(createWriteTool())"
+    do value="toolRegistry.register(createBashTool())"
+    do value="toolRegistry.register(createGrepTool())"
+    do value="toolRegistry.register(createGlobTool())"
+    do value="toolRegistry.register(createForgeTool())"
+    do value="toolRegistry.register(createBrainstormTool())"
+    do value="toolRegistry.register(createTribunalTool())"
+    do value="toolRegistry.register(createCampfireTool())"
+    do value="toolRegistry.register(createPipelineTool())"
+    do value="toolRegistry.register(createReviewTool())"
+    do value="toolRegistry.register(createDelegateTool())"
+    do value="toolRegistry.register(createAgentTool())"
+    do value="toolRegistry.register(createReportConfidenceTool())"
+    do value="toolRegistry.register(createQuickNeroTool())"
+    do value="toolRegistry.register(createProposePlanTool())"
+    do value="toolRegistry.register(createListPlansTool())"
+    do value="toolRegistry.register(createRetrieveResultTool(engineId))"
+    return value="toolRegistry"
 
 fn name=createEagerToolContext params="ctx:HandlerContext, config:any, signal:AbortSignal, dispatch:Dispatch" returns="ToolContext"
   doc "Create a shared ToolContext for eager tool execution during streaming."
-  handler <<<
-    const cwd = resolveWorkingDir();
-    const fsc = getProjectFileStateCache(cwd);
-    const explorationMode = (ctx as any).explorationMode ?? false;
-    return {
-      cwd,
-      readFileState: (fsc as any).cache,
-      abortSignal: signal,
-      permissionMode: (config as any).permissionMode ?? 'ask',
-      explorationMode,
-      allowedCommands: (config as any).allowedCommands ?? [],
-      toolPermissions: (config as any).toolPermissions ?? {},
-      source: 'orchestrator' as const,
-      onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
-    };
-  >>>
+  handler lang="kern"
+    let name=cwd value="resolveWorkingDir()"
+    let name=fsc value="getProjectFileStateCache(cwd)"
+    let name=explorationMode value="(ctx as any).explorationMode ?? false"
+    return value="{ cwd, readFileState: (fsc as any).cache, abortSignal: signal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), }"
 
 fn name=parseEagerToolInput params="toolName:string,input:unknown" returns="{ok:boolean,input?:Record<string,unknown>,error?:string,raw:string}" export=true
   doc "Parse a streaming tool input into a JSON object. Malformed input is returned as an explicit retryable error instead of being silently coerced."

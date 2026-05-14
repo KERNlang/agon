@@ -43,11 +43,11 @@ interface name=AgentContinuationResult
   field name=workspaceChangedInPlace type=boolean
 
 fn name=clipAgentText params="text:string|null|undefined, limit:number" returns=string
-  handler <<<
-    const raw = String(text ?? '').trim();
-    if (!raw) return '';
-    return raw.length > limit ? raw.slice(0, limit) + `\n\n[... ${raw.length - limit} more chars truncated]` : raw;
-  >>>
+  handler lang="kern"
+    let name=raw value="String(text ?? '').trim()"
+    if cond="!raw"
+      return value="''"
+    return value="raw.length > limit ? raw.slice(0, limit) + `\\n\\n[... ${raw.length - limit} more chars truncated]` : raw"
 
 fn name=buildAgentApprovalCallback params="dispatch:Dispatch, ctx:HandlerContext, engineId:string" returns="(tool:string, command:string, reason?:string)=>Promise<boolean|string>" export=true
   doc "Shared approval callback for delegated agent runs. Applies config-level allow/deny rules first, then falls back to the UI permission prompt."

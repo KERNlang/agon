@@ -46,13 +46,12 @@ fn name=loadTeamElo returns=TeamEloRecord
   >>>
 
 fn name=saveTeamElo params="record:TeamEloRecord" returns=void
-  handler <<<
-    mkdirSync(dirname(TEAM_ELO_PATH), { recursive: true });
-    record.lastUpdated = new Date().toISOString();
-    const tmpPath = TEAM_ELO_PATH + '.tmp';
-    writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\n');
-    renameSync(tmpPath, TEAM_ELO_PATH);
-  >>>
+  handler lang="kern"
+    do value="mkdirSync(dirname(TEAM_ELO_PATH), { recursive: true })"
+    assign target="record.lastUpdated" value="new Date().toISOString()"
+    let name=tmpPath value="TEAM_ELO_PATH + '.tmp'"
+    do value="writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\\n')"
+    do value="renameSync(tmpPath, TEAM_ELO_PATH)"
 
 fn name=expectedScore params="rA:number, rB:number" returns=number expr={{ return 1 / (1 + 10 ** ((rB - rA) / 400)); }}
 

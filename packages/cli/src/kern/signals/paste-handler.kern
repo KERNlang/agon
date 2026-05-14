@@ -32,24 +32,21 @@ fn name=recordPastePlaceholder params="hashMap:Map<string,string>, placeholder:s
   >>>
 
 fn name=processPasteContent params="raw:string" returns=PasteResult
-  handler <<<
-    const normalized = raw.replace(/\r\n/g, '\n');
-    const content = normalized.trimEnd();
-    if (!content) return { type: 'empty' };
-    const charCount = content.length;
-    const isLong = charCount > 500;
-    if (isLong) {
-      try {
-        const result = pasteStore.store(content);
-        const tag = result.hash.slice(0, 8);
-        const placeholder = `[Pasted Content ${charCount} chars]`;
-        return { type: 'stored', tag, fullHash: result.hash, placeholder };
-      } catch {
-        // Fall through to direct content if the paste store is unavailable.
-      }
-    }
-    return { type: 'direct', content: normalized };
-  >>>
+  handler lang="kern"
+    let name=normalized value="raw.replace(/\\r\\n/g, '\\n')"
+    let name=content value="normalized.trimEnd()"
+    if cond="!content"
+      return value="{ type: 'empty' }"
+    let name=charCount value="content.length"
+    let name=isLong value="charCount > 500"
+    if cond="isLong"
+      try
+        let name=result value="pasteStore.store(content)"
+        let name=tag value="result.hash.slice(0, 8)"
+        fmt name=placeholder template="[Pasted Content ${charCount} chars]"
+        return value="{ type: 'stored', tag, fullHash: result.hash, placeholder }"
+        catch name=e
+    return value="{ type: 'direct', content: normalized }"
 
 fn name=expandPastePlaceholders params="input:string, hashMap:Map<string,string>" returns=string
   handler <<<

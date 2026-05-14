@@ -30,13 +30,15 @@ fn name=truncateLeft params="s:string, max:number" returns=string export=true
     return value="'…' + s.slice(s.length - max + 1)"
 
 fn name=resolveFileRailExpandedFile params="files:FileEntry[], selectedIndex:number|undefined, expandedPath:string|null|undefined, autoExpandSelected:boolean|undefined" returns="FileEntry|undefined" export=true
-  handler <<<
-    if (files.length === 0) return undefined;
-    if (expandedPath) return files.find((f: FileEntry) => f.path === expandedPath);
-    if (!autoExpandSelected) return undefined;
-    const sel = Math.max(0, Math.min(files.length - 1, selectedIndex ?? 0));
-    return files[sel];
-  >>>
+  handler lang="kern"
+    if cond="files.length === 0"
+      return value="undefined"
+    if cond="expandedPath"
+      return value="files.find((f: FileEntry) => f.path === expandedPath)"
+    if cond="!autoExpandSelected"
+      return value="undefined"
+    let name=sel value="Math.max(0, Math.min(files.length - 1, selectedIndex ?? 0))"
+    return value="files[sel]"
 
 fn name=fileRailDetailRows params="maxRows:number, hasDetail:boolean" returns=number export=true
   handler lang="kern"

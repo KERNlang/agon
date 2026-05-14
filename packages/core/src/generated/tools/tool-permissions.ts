@@ -28,40 +28,39 @@ export const SAFE_SHELL_WRAPPERS: string[] = ['timeout', 'time', 'nice', 'nohup'
 // @kern-source: tool-permissions:23
 export const READONLY_COMMANDS: Set<string> = new Set(['ls', 'cat', 'head', 'tail', 'less', 'more', 'wc', 'file', 'stat', 'pwd', 'echo', 'printf', 'date', 'which', 'whereis', 'type', 'find', 'grep', 'rg', 'ag', 'fd', 'fzf', 'git status', 'git log', 'git diff', 'git branch', 'git show', 'git blame', 'npm test', 'npm run test', 'npx vitest', 'npx tsc', 'node --version', 'npm --version', 'python --version', 'agon --help', 'agon config --help', 'agon config list', 'agon config get', 'tree', 'du', 'df']);
 
-// @kern-source: tool-permissions:27
+// ── Module: ShellParsing ──
+
 export function stripShellWrappers(command: string): string {
   return command.trim().replace(/^(?:(?:timeout|time|nice|nohup|env|command)(?:\s+-\S+)*)\s+/, '');
 }
 
-// @kern-source: tool-permissions:31
 export function extractBaseCommand(command: string): string {
   return stripShellWrappers(command).split(/\s+/)[0] ?? '';
 }
 
-// @kern-source: tool-permissions:35
 export function stripShellRedirections(command: string): string {
   return command.replace(/\s+\d*(?:>>?|<<?)\s*\S+/g, '').replace(/\s+\d*(?:>&|<&)\s*\S+/g, '').trim();
 }
 
-// @kern-source: tool-permissions:39
 export function isDangerousCommand(command: string): boolean {
   return ((lower) => DANGEROUS_COMMANDS.some((dangerous: string) => lower.includes(dangerous)) || DANGEROUS_PREFIXES.some((prefix: string) => lower.startsWith(prefix)))(command.toLowerCase().trim());
 }
 
-// @kern-source: tool-permissions:43
 export function isReadOnlyCommand(command: string): boolean {
   return ((readonlyCommand, commandSeparator) => ((readonlyCommand.includes('&&') || readonlyCommand.includes('||') || readonlyCommand.includes(commandSeparator) || /&(?!&)/.test(readonlyCommand)) && !/^\|/.test(readonlyCommand)) ? readonlyCommand.replace(/&&|\|\||&(?!&)/g, commandSeparator).split(commandSeparator).every((p: string) => p.trim() && isReadOnlyCommand(p.trim())) : (readonlyCommand.includes('|') ? readonlyCommand.split('|').map((p: string) => p.trim()).every((p: string) => p && isReadOnlyCommand(p)) : [...READONLY_COMMANDS].some((safe: string) => readonlyCommand === safe || readonlyCommand.startsWith(safe + ' '))))(stripShellRedirections(stripShellWrappers(command)).trim(), String.fromCharCode(59));
 }
 
-// @kern-source: tool-permissions:49
+
+// @kern-source: tool-permissions:50
 export const _gitDirtyCache: {files:Set<string>|null,cwd:string|null,expiry:number} = { files: null, cwd: null, expiry: 0 };
 
-// @kern-source: tool-permissions:51
+// @kern-source: tool-permissions:52
 export const GIT_DIRTY_CACHE_TTL: number = 2000  // 2 seconds;
 
-// @kern-source: tool-permissions:53
+// ── Module: GitDirtyCache ──
+
 export function getGitDirtyFiles(cwd: string): Set<string> {
-  const now = performance.now();
+  const now = Date.now();
   if (_gitDirtyCache.files && _gitDirtyCache.cwd === cwd && now < _gitDirtyCache.expiry) {
     return _gitDirtyCache.files;
   }
@@ -82,14 +81,19 @@ export function getGitDirtyFiles(cwd: string): Set<string> {
   return _gitDirtyCache.files;
 }
 
-// @kern-source: tool-permissions:76
 export function invalidateGitDirtyCache() {
   _gitDirtyCache.files = null;
   _gitDirtyCache.cwd = null;
   _gitDirtyCache.expiry = 0;
 }
 
-// @kern-source: tool-permissions:82
+export function isGitDirtyFile(filePath: string, cwd: string): boolean {
+  return ((dirty, fileName) => [...dirty].some((dirtyPath: string) => filePath.endsWith(dirtyPath) || dirtyPath.endsWith(fileName)))(getGitDirtyFiles(cwd), filePath.split('/').pop() ?? filePath);
+}
+
+
+// ── Module: PermissionChecks ──
+
 export function isSessionAllowed(command: string, ctx: ToolContext): boolean {
   if (!ctx.sessionAllowList || ctx.sessionAllowList.length === 0) {
     return false;
@@ -98,17 +102,10 @@ export function isSessionAllowed(command: string, ctx: ToolContext): boolean {
   return ctx.sessionAllowList.some(ac => command.startsWith(ac) || sessionBase === ac);
 }
 
-// @kern-source: tool-permissions:89
-export function isGitDirtyFile(filePath: string, cwd: string): boolean {
-  return ((dirty, fileName) => [...dirty].some((dirtyPath: string) => filePath.endsWith(dirtyPath) || dirtyPath.endsWith(fileName)))(getGitDirtyFiles(cwd), filePath.split('/').pop() ?? filePath);
-}
-
-// @kern-source: tool-permissions:93
 export function checkBashPermission(command: string, ctx: ToolContext): PermissionDecision {
   return isDangerousCommand(command) ? { behavior: 'deny', message: `Dangerous command blocked: ${command.slice(0, 50)}`, reason: 'dangerous_pattern' } : ((ctx.permissionMode === 'deny-all') ? { behavior: 'deny', message: 'All tool execution is denied' } : ((ctx.toolPermissions?.['Bash'] === 'allow') ? { behavior: 'allow' } : ((ctx.toolPermissions?.['Bash'] === 'deny') ? { behavior: 'deny', message: 'Bash denied in settings' } : (isReadOnlyCommand(command) ? { behavior: 'allow' } : (ctx.allowedCommands?.some(ac => command.startsWith(ac) || command.trim().split(/\s+/)[0] === ac) ? { behavior: 'allow' } : ((ctx.permissionMode === 'smart') ? ((isSessionAllowed(command, ctx) || ctx.source === 'orchestrator') ? { behavior: 'allow' } : { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' }) : ((ctx.permissionMode === 'auto') ? { behavior: 'allow' } : { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' })))))));
 }
 
-// @kern-source: tool-permissions:97
 export function isPathUnderCwd(filePath: string, cwd: string): boolean {
   const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
   // Resolve symlinks to prevent traversal via symlinks
@@ -129,7 +126,6 @@ export function isPathUnderCwd(filePath: string, cwd: string): boolean {
   return !rel.startsWith('..');
 }
 
-// @kern-source: tool-permissions:118
 export function checkFileReadPermission(filePath: string, ctx: ToolContext): PermissionDecision {
   if (ctx.permissionMode === 'deny-all') {
     return { behavior: 'deny', message: 'All tool execution is denied' };
@@ -151,7 +147,6 @@ export function checkFileReadPermission(filePath: string, ctx: ToolContext): Per
   return { behavior: 'ask', message: `Read file outside workspace: ${readResolved}` };
 }
 
-// @kern-source: tool-permissions:134
 export function checkFileWritePermission(filePath: string, ctx: ToolContext): PermissionDecision {
   if (ctx.permissionMode === 'deny-all') {
     return { behavior: 'deny', message: 'All tool execution is denied' };

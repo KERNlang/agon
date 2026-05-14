@@ -181,7 +181,7 @@ export function parseInlineSpans(text: string): InlineSpan[] {
 }
 
 // @kern-source: rich-text:165
-function visibleLength(spans: InlineSpan[]): number {
+function spansVisibleLength(spans: InlineSpan[]): number {
   return spans.reduce((sum, s) => sum + s.text.length, 0);
 }
 
@@ -190,7 +190,7 @@ export function richWrap(spans: InlineSpan[], width: number): InlineSpan[][] {
   if (width <= 0) return [spans];
 
   // Fast path: fits on one line
-  if (visibleLength(spans) <= width) return [spans];
+  if (spansVisibleLength(spans) <= width) return [spans];
 
   // Flatten to plain text, word-wrap it, then map spans back
   const fullText = spans.map(s => s.text).join('');

@@ -223,7 +223,9 @@ fn name=loadCesarPlan params="planId:string" returns="CesarPlan|null" export=tru
       try
         let name=plan value="JSON.parse(readFileSync(entry.filePath, 'utf-8')) as CesarPlan"
         let name=fallbackMarkdownPath value="cesarPlanMarkdownPath(plan.id)"
-        let name=planFilePath value="plan.planFilePath ?? (entry.canonical || existsSync(fallbackMarkdownPath) ? fallbackMarkdownPath : undefined)"
+        let name=hasFallback value="entry.canonical || existsSync(fallbackMarkdownPath)"
+        let name=fallbackPath value="hasFallback ? fallbackMarkdownPath : undefined"
+        let name=planFilePath value="plan.planFilePath ?? fallbackPath"
         return value="planFilePath ? { ...plan, planFilePath } : plan"
         catch name=e
     return value="null"

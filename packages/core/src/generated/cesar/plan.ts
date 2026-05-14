@@ -265,7 +265,9 @@ export function loadCesarPlan(planId: string): CesarPlan|null {
     try {
       const plan = JSON.parse(readFileSync(entry.filePath, 'utf-8')) as CesarPlan;
       const fallbackMarkdownPath = cesarPlanMarkdownPath(plan.id);
-      const planFilePath = plan.planFilePath ?? (entry.canonical || existsSync(fallbackMarkdownPath)) ? fallbackMarkdownPath : undefined;
+      const hasFallback = entry.canonical || existsSync(fallbackMarkdownPath);
+      const fallbackPath = hasFallback ? fallbackMarkdownPath : undefined;
+      const planFilePath = plan.planFilePath ?? fallbackPath;
       return planFilePath ? { ...plan, planFilePath: planFilePath } : plan;
     } catch (e) {
     }
@@ -276,7 +278,7 @@ export function loadCesarPlan(planId: string): CesarPlan|null {
 /**
  * List persisted CesarPlans from ~/.agon/plans, with legacy ~/.agon/runs fallback.
  */
-// @kern-source: plan:231
+// @kern-source: plan:233
 export function listCesarPlans(): CesarPlan[] {
   const byId = new Map<string, CesarPlan>();
   const readFromDir = (dir: string, canonical: boolean) => {

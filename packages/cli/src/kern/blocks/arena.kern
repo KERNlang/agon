@@ -15,13 +15,15 @@ fn name=forgeBar params="pct:number, width:number" returns=string export=false
   handler lang="kern"
     let name=filled value="Math.round(pct * width)"
     let name=half value="pct > 0 && filled < width ? 1 : 0"
-    return value="'\\u2588'.repeat(filled) + (half ? '\\u2592' : '') + '\\u2591'.repeat(Math.max(0, width - filled - half))"
+    let name=halfChar value="half ? '\\u2592' : ''"
+    return value="'\\u2588'.repeat(filled) + halfChar + '\\u2591'.repeat(Math.max(0, width - filled - half))"
 
 fn name=forgeSummary params="engines:EngineProgress[]" returns=string export=false
   handler lang="kern"
     let name=doneCount value="engines.filter((e: EngineProgress) => e.done).length"
     let name=failedCount value="engines.filter((e: EngineProgress) => e.failed).length"
-    return value="' ' + doneCount + '/' + engines.length + ' done' + (failedCount ? ' · ' + failedCount + ' failed' : '')"
+    let name=failedSuffix value="failedCount ? ' · ' + failedCount + ' failed' : ''"
+    return value="' ' + doneCount + '/' + engines.length + ' done' + failedSuffix"
 
 fn name=renderForgeRows params="engines:EngineProgress[]" returns="React.ReactNode" export=false
   handler <<<

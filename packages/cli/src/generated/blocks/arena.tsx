@@ -10,7 +10,7 @@ import { engineColor } from './rendering.js';
 
 import { icons } from '../signals/icons.js';
 
-// @kern-source: arena:61
+// @kern-source: arena:63
 export function ForgeArena({ engines }: { engines:EngineProgress[] }) {
   return (
     <Box flexDirection="column" paddingLeft={2}>
@@ -23,7 +23,7 @@ export function ForgeArena({ engines }: { engines:EngineProgress[] }) {
   );
 }
 
-// @kern-source: arena:80
+// @kern-source: arena:82
 export function BrainstormStorm({ engines }: { engines:EngineProgress[] }) {
   const elapsed = engines[0]?.elapsed ?? 0;
   const frame = elapsed % STORM_BOLTS.length;
@@ -61,7 +61,7 @@ export function BrainstormStorm({ engines }: { engines:EngineProgress[] }) {
   );
 }
 
-// @kern-source: arena:124
+// @kern-source: arena:126
 export function CampfireFire({ engines }: { engines:EngineProgress[] }) {
   const elapsed = engines[0]?.elapsed ?? 0;
   const frame = elapsed % FIRE_FRAMES.length;
@@ -114,7 +114,7 @@ export function CampfireFire({ engines }: { engines:EngineProgress[] }) {
   );
 }
 
-// @kern-source: arena:183
+// @kern-source: arena:185
 export function TribunalCourt({ engines }: { engines:EngineProgress[] }) {
   const elapsed = engines[0]?.elapsed ?? 0;
   const frame = elapsed % SCALES_FRAMES.length;
@@ -164,17 +164,19 @@ export function TribunalCourt({ engines }: { engines:EngineProgress[] }) {
 function forgeBar(pct: number, width: number): string {
   const filled = Math.round(pct * width);
   const half = (pct > 0 && filled < width) ? 1 : 0;
-  return '█'.repeat(filled) + half ? '▒' : '' + '░'.repeat(Math.max(0, width - filled - half));
+  const halfChar = half ? '▒' : '';
+  return '█'.repeat(filled) + halfChar + '░'.repeat(Math.max(0, width - filled - half));
 }
 
-// @kern-source: arena:20
+// @kern-source: arena:21
 function forgeSummary(engines: EngineProgress[]): string {
   const doneCount = engines.filter((e: EngineProgress) => e.done).length;
   const failedCount = engines.filter((e: EngineProgress) => e.failed).length;
-  return ' ' + doneCount + '/' + engines.length + ' done' + failedCount ? (' · ' + failedCount + ' failed') : '';
+  const failedSuffix = failedCount ? (' · ' + failedCount + ' failed') : '';
+  return ' ' + doneCount + '/' + engines.length + ' done' + failedSuffix;
 }
 
-// @kern-source: arena:26
+// @kern-source: arena:28
 function renderForgeRows(engines: EngineProgress[]): React.ReactNode {
   const maxElapsed = 120;
   const leader = engines.reduce((acc: { leaderId: string; bestPct: number }, e: EngineProgress) => {
@@ -209,14 +211,14 @@ function renderForgeRows(engines: EngineProgress[]): React.ReactNode {
   });
 }
 
-// @kern-source: arena:76
+// @kern-source: arena:78
 export const STORM_BOLTS: string[] = ['⚡    ⚡      ⚡', '   ⚡      ⚡   ', '⚡      ⚡    ⚡', '  ⚡   ⚡      '];
 
-// @kern-source: arena:78
+// @kern-source: arena:80
 export const STORM_CLOUDS: string[] = ['  ╱╲╱╲╱╲╱╲╱╲╱╲', ' ╲╱╲╱╲╱╲╱╲╱╲╱╲'];
 
-// @kern-source: arena:122
+// @kern-source: arena:124
 export const FIRE_FRAMES: string[][] = [['       (  ) (  )  ', '      (    )(   ) ', '       )  (  ) (  ', '      ╱░▒▓██▓▒░╲ '], ['      ( )(  )( )  ', '       (   )(  )  ', '      ( )( )(  )  ', '      ╱░▒▓██▓▒░╲ '], ['        (  )(  )  ', '      (  )(   )(  ', '       ( . )( )   ', '      ╱░▒▓██▓▒░╲ ']];
 
-// @kern-source: arena:181
+// @kern-source: arena:183
 export const SCALES_FRAMES: string[] = ['  ⚖════ T R I B U N A L ════⚖', '  ⚖══✦═ T R I B U N A L ═✦══⚖', '  ⚖════ T R I B U N A L ════⚖'];

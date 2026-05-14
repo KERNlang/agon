@@ -27,30 +27,20 @@ function formatDispatchError(err: unknown): string {
 
 // @kern-source: stages:22
 function makeFailedResult(engineId: string, error: string, durationMs?: number): EngineResult {
-  return {
-    engineId,
-    pass: false,
-    score: 0,
-    diffLines: 0,
-    filesChanged: 0,
-    durationSec: Math.max(0, Math.round((durationMs ?? 0) / 1000)),
-    lintWarnings: 0,
-    styleScore: 0,
-    dispatchStdout: `ERROR: ${error}`,
-  };
+  return { engineId, pass: false, score: 0, diffLines: 0, filesChanged: 0, durationSec: Math.max(0, Math.round((durationMs ?? 0) / 1000)), lintWarnings: 0, styleScore: 0, dispatchStdout: `ERROR: ${error}` };
 }
 
-// @kern-source: stages:37
+// @kern-source: stages:24
 function emitForgeEvent(onEvent: any, type: string, engineId?: string, data?: Record<string,unknown>) {
   if (onEvent) {
-    onEvent({ type, engineId, data });
+    onEvent({ type: type, engineId: engineId, data: data });
   }
 }
 
 /**
  * Per-engine dispatch timeout for stage1/stage2. Floor: forgeDispatchTimeout (default 480s). Engines whose configured timeout (engines/*.json, calibrated for short chat use) is below the floor get raised to it — forge needs more time than a chat reply. Engines with a genuinely high configured timeout keep it. The previous behavior used forgeTimeout (1800s) as the floor, which let one stuck engine hold the run hostage for 30 min via Promise.allSettled.
  */
-// @kern-source: stages:44
+// @kern-source: stages:29
 export function resolveForgeDispatchTimeout(engine: any, config: Required<AgonConfig>): number {
   const engineTimeout = Number(engine?.timeout ?? 0);
   const floorRaw = Number(config.forgeDispatchTimeout ?? 0);
@@ -61,7 +51,7 @@ export function resolveForgeDispatchTimeout(engine: any, config: Required<AgonCo
   return floor;
 }
 
-// @kern-source: stages:54
+// @kern-source: stages:39
 export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string,dispatchMode:'exec'|'review',metricPhase:'stage1'|'stage2-scout'|'stage2-follower',fitnessCmd:string,config:Required<AgonConfig>,registry:EngineRegistry,adapter:EngineAdapter,root:string,baseSha:string,forgeDir:string,worktrees:WorktreeEntry[],onEvent?:ForgeEventCallback,signal?:AbortSignal,eventType:string,eventData?:Record<string,unknown>,worktreePath?:string}): Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}> {
   const engine = opts.registry.get(opts.engineId);
   const dispatchTimeout = resolveForgeDispatchTimeout(engine, opts.config);
@@ -149,7 +139,7 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
   return { result, metric, dispatchResult, worktreePath: wtPath };
 }
 
-// @kern-source: stages:142
+// @kern-source: stages:127
 export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}): Promise<boolean> {
   opts.onEvent?.({ type: 'baseline:start' });
 
@@ -173,7 +163,7 @@ export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:
   }
 }
 
-// @kern-source: stages:166
+// @kern-source: stages:151
 export async function runStage1(opts: {starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, taskClass?:string, enginePrompts?:Map<string,string>}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
   const root = repoRoot(opts.cwd);
@@ -203,7 +193,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
   return { engineResults: engineResults, accepted: accepted, winner: result?.pass ? result.engineId : null, metrics: metrics };
 }
 
-// @kern-source: stages:193
+// @kern-source: stages:178
 export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void, abortControllers?: Map<string,AbortController>}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
@@ -360,7 +350,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:350
+// @kern-source: stages:335
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

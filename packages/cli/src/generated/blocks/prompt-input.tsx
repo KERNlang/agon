@@ -35,7 +35,7 @@ export interface PromptViewport {
   hiddenBelow: number;
 }
 
-// @kern-source: prompt-input:267
+// @kern-source: prompt-input:263
 const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder, focus, showCursor, highlightPastedText, ghostText, width, maxVisibleLines, onChange, onSubmit, onCtrlShortcut, onPaste }: { value:string; placeholder:string|undefined; focus:boolean|undefined; showCursor:boolean|undefined; highlightPastedText:boolean|undefined; ghostText:string|undefined; width:number; maxVisibleLines:number|undefined; onChange:(value:string) => void; onSubmit:((value:string) => void)|undefined; onCtrlShortcut:((shortcut:string) => void)|undefined; onPaste:((raw:string) => string)|undefined }) {
   const originalValue = value;
   const resolvedPlaceholder = placeholder ?? '';
@@ -302,25 +302,26 @@ function stripMouseReportInput(input: string): string {
 // @kern-source: prompt-input:49
 export function wrapPromptText(value: string, width: number): string[] {
   const safeWidth = Math.max(1, width);
-  const lines = [''];
+  let lines: string[] = [''];
   let col = 0;
   for (const char of value) {
     if (char === '\n') {
       lines.push('');
       col = 0;
-      continue;
     }
-    if (col === safeWidth) {
+    if (char !== '\n' && col === safeWidth) {
       lines.push('');
       col = 0;
     }
-    lines[lines.length - 1] += char;
-    col += 1;
+    if (char !== '\n') {
+      lines[lines.length - 1] = lines[lines.length - 1] + char;
+      col = col + 1;
+    }
   }
   return lines;
 }
 
-// @kern-source: prompt-input:70
+// @kern-source: prompt-input:66
 export function locatePromptCursor(value: string, width: number, cursorOffset: number): {column:number, line:number, synthetic:boolean} {
   const safeWidth = Math.max(1, width);
   const boundedOffset = Math.max(0, Math.min(cursorOffset, value.length));
@@ -355,7 +356,7 @@ export function locatePromptCursor(value: string, width: number, cursorOffset: n
   return { line, column: col, synthetic: true };
 }
 
-// @kern-source: prompt-input:105
+// @kern-source: prompt-input:101
 export function selectPromptViewport(totalLines: number, cursorLine: number, maxVisibleLines: number): PromptViewport {
   const safeVisibleLines = Math.max(1, maxVisibleLines);
   const boundedCursor = Math.max(0, Math.min(cursorLine, Math.max(0, totalLines - 1)));
@@ -375,7 +376,7 @@ export function selectPromptViewport(totalLines: number, cursorLine: number, max
   return { start: start, end: end, hiddenAbove: start, hiddenBelow: totalLines - end };
 }
 
-// @kern-source: prompt-input:121
+// @kern-source: prompt-input:117
 function renderToken(token: PromptToken): string {
   if (token.kind === 'cursor') {
     return chalk.inverse(' ');
@@ -392,7 +393,7 @@ function renderToken(token: PromptToken): string {
   return token.text;
 }
 
-// @kern-source: prompt-input:133
+// @kern-source: prompt-input:129
 function buildPlaceholderLines(placeholder: string, width: number, opts: {focus:boolean, showCursor:boolean}): {cursorLine:number, lines:PromptLine[]} {
   const safeWidth = Math.max(1, width);
   const lines: PromptLine[] = [{ tokens: [] }];
@@ -432,7 +433,7 @@ function buildPlaceholderLines(placeholder: string, width: number, opts: {focus:
   return { lines, cursorLine };
 }
 
-// @kern-source: prompt-input:173
+// @kern-source: prompt-input:169
 function buildValueLines(value: string, width: number, opts: {cursorOffset:number, cursorWidth:number, focus:boolean, highlightPastedText:boolean, showCursor:boolean}): {cursorLine:number, lines:PromptLine[]} {
   const safeWidth = Math.max(1, width);
     const lines: PromptLine[] = [{ tokens: [] }];
@@ -507,22 +508,22 @@ function buildValueLines(value: string, width: number, opts: {cursorOffset:numbe
   return { lines, cursorLine };
 }
 
-// @kern-source: prompt-input:248
+// @kern-source: prompt-input:244
 function lineLength(line: PromptLine): number {
   return line.tokens.length;
 }
 
-// @kern-source: prompt-input:250
+// @kern-source: prompt-input:246
 function pluralizeLines(count: number): string {
   return count === 1 ? 'line' : 'lines';
 }
 
-// @kern-source: prompt-input:252
+// @kern-source: prompt-input:248
 export function isDelegatedCtrlShortcut(input: string): boolean {
   return ['b', 'c', 'e', 'g', 'i', 'j', 'l', 'r', 't', 'y'].includes(input);
 }
 
-// @kern-source: prompt-input:255
+// @kern-source: prompt-input:251
 export function shouldAdoptPromptValue(originalValue: string, pendingEchoValue: string|null): boolean {
   if (pendingEchoValue === null) {
     return true;

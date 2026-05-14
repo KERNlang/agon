@@ -78,29 +78,18 @@ export function resolveForgeRunTimeout(config: AgonConfig, explicitTimeout: numb
 // @kern-source: forge:54
 export function completeMissingForgeResults(manifest: ForgeManifest, engineIds: string[], reason: string): ForgeManifest {
   for (const id of engineIds) {
-    if ((manifest.results as any)[id]) continue;
-    (manifest.results as any)[id] = {
-      engineId: id,
-      pass: false,
-      score: 0,
-      diffLines: 0,
-      filesChanged: 0,
-      durationSec: 0,
-      lintWarnings: 0,
-      styleScore: 0,
-      dispatchStdout: `ERROR: ${reason}`,
-    };
+    if (!(manifest.results as any)[id]) {
+      (manifest.results as any)[id] = { engineId: id, pass: false, score: 0, diffLines: 0, filesChanged: 0, durationSec: 0, lintWarnings: 0, styleScore: 0, dispatchStdout: `ERROR: ${reason}` };
+    }
   }
-  manifest.enginesDispatched = Object.keys(manifest.results ?? {})
-    .filter((id) => id !== 'synthesis')
-    .length;
+  manifest.enginesDispatched = Object.keys(manifest.results ?? {}).filter((id) => id !== 'synthesis').length;
   return manifest;
 }
 
 /**
  * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
  */
-// @kern-source: forge:77
+// @kern-source: forge:63
 export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: WorktreeEntry[], options: ForgeOptions, repoRootPath: string, baseSha: string, sidechainPath: string, errorMessage?: string): string {
   const cleanupCommand = buildForgeCleanupCommand(repoRootPath, manifest.forgeDir);
   const bundlePath = `${manifest.forgeDir}/result.json`;
@@ -180,7 +169,7 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
   return bundlePath;
 }
 
-// @kern-source: forge:158
+// @kern-source: forge:144
 export async function runForge(options: ForgeOptions & { onResult?: (engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void }, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const loadedConfig = loadConfig(options.cwd);
   const taskClass = classifyTask(options.task);

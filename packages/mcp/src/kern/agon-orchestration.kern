@@ -34,10 +34,7 @@ module name=SignalIO
       } catch { /* signal write failed — not critical */ }
     >>>
 
-  fn name=hasSignalTransport returns=boolean export=false
-    handler <<<
-      return !!(process.env.AGON_SIGNAL_DIR && process.env.AGON_SESSION_ID);
-    >>>
+  fn name=hasSignalTransport returns=boolean export=false expr={{ return !!(process.env.AGON_SIGNAL_DIR && process.env.AGON_SESSION_ID); }}
 
 module name=ArgParsers
   fn name=parseOptionalStringList params="value:unknown" returns="string[]" export=false

@@ -161,11 +161,7 @@ fn name=extractFitnessCommandFromCesarOutput params="output:string" returns="str
     return candidate;
   >>>
 
-fn name=extractGithubLiterals params="text:string" returns="string[]" export=false
-  handler <<<
-    const matches = String(text ?? '').match(/(?:https?:\/\/)?github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/g) ?? [];
-    return [...new Set(matches.map((m: string) => m.replace(/^https?:\/\//, '').replace(/[).,;:'"`\]]+$/g, '')))];
-  >>>
+fn name=extractGithubLiterals params="text:string" returns="string[]" export=false expr={{ return [...new Set((String(text ?? '').match(/(?:https?:\/\/)?github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/g) ?? []).map((m: string) => m.replace(/^https?:\/\//, '').replace(/[).,;:'"`\]]+$/g, '')))]; }}
 
 fn name=repairFitnessCommandTaskLiterals params="task:string, command:string" returns="string" export=true
   doc "Keep literal GitHub repo URLs in Cesar-generated fitness commands aligned with the user's task. Prevents small hallucinated typos from making all engines optimize for the wrong marker."

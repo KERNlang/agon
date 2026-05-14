@@ -2,11 +2,10 @@
 
 // @kern-source: output-manager:1
 export function formatSpinnerFrame(frames: string[], index: number, text: string): string {
-  const frame = frames[index % frames.length];
-  return `  \x1b[38;5;214m${frame}\x1b[0m \x1b[2m${text}\x1b[0m`;
+  return `  \x1b[38;5;214m${frames[index % frames.length]}\x1b[0m \x1b[2m${text}\x1b[0m`;
 }
 
-// @kern-source: output-manager:7
+// @kern-source: output-manager:3
 export function formatEngineBlock(engineId: string, color: number, lines: string[], maxWidth: number): string[] {
   const result: string[] = [];
   const colorStart = `\x1b[38;5;${color}m`;
@@ -26,7 +25,7 @@ export function formatEngineBlock(engineId: string, color: number, lines: string
   return result;
 }
 
-// @kern-source: output-manager:27
+// @kern-source: output-manager:23
 export function formatStatusLine(engineId: string, color: number, status: string, elapsed: number): string {
   const colorStart = `\x1b[38;5;${color}m`;
   const bold = '\x1b[1m';
@@ -52,7 +51,7 @@ export function formatStatusLine(engineId: string, color: number, status: string
   return `  ${dim}\u25cb${reset} ${dim}${paddedId}${reset} ${dim}${status}${reset}`;
 }
 
-// @kern-source: output-manager:53
+// @kern-source: output-manager:49
 export function clearLinesSequence(count: number): string {
   let seq = '';
   for (let i = 0; i < count; i++) {
@@ -61,13 +60,12 @@ export function clearLinesSequence(count: number): string {
   return seq;
 }
 
-// @kern-source: output-manager:62
+// @kern-source: output-manager:58
 export function cursorUpSequence(count: number): string {
-  if (count <= 0) return '';
-  return `\x1b[${count}A`;
+  return count <= 0 ? '' : `\x1b[${count}A`;
 }
 
-// @kern-source: output-manager:68
+// @kern-source: output-manager:60
 export function clearLineSequence(): string {
   return '\r\x1b[2K';
 }

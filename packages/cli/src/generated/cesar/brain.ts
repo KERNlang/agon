@@ -1648,6 +1648,22 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             dispatch({ type: 'spinner-stop' });
             const cleanFinalAnswer = finalAnswer.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
             if (cleanFinalAnswer) {
+              // Gemini review (2026-05-13): if the recovery response contains
+              // a handoff tool call (Forge/Brainstorm/Tribunal/Campfire/etc.),
+              // route to commitTurnAndDelegate instead of displaying the raw
+              // XML as text — otherwise the user sees "<tool name=Forge>..."
+              // and the delegation never fires.
+              try {
+                const parsedHandoff = parseToolCalls(cleanFinalAnswer);
+                if (parsedHandoff.hasToolCalls) {
+                  for (const call of parsedHandoff.toolCalls) {
+                    if (shouldStopAfterXmlToolCall(call.name)) {
+                      const del = extractDelegation(call.name, call.input);
+                      return await commitTurnAndDelegate(del, input, response, cesarEngineId, false, dispatch, ctx, buildToolTelemetry());
+                    }
+                  }
+                }
+              } catch { /* if parse fails, fall through to text display */ }
               dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: cleanFinalAnswer });
               response = _trimmedResponse ? `${_trimmedResponse}\n\n${cleanFinalAnswer}` : cleanFinalAnswer;
               wasStreamed = false;
@@ -1686,6 +1702,21 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             dispatch({ type: 'spinner-stop' });
             const cleanFinalAction = finalAction.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
             if (cleanFinalAction) {
+              // Gemini review (2026-05-13): the recovery prompt above explicitly
+              // invites a handoff ("call Brainstorm/Tribunal/Forge/Agent if
+              // that's the right next step"), so handle it. Without this, the
+              // user sees raw XML and the delegation never starts.
+              try {
+                const parsedHandoff = parseToolCalls(cleanFinalAction);
+                if (parsedHandoff.hasToolCalls) {
+                  for (const call of parsedHandoff.toolCalls) {
+                    if (shouldStopAfterXmlToolCall(call.name)) {
+                      const del = extractDelegation(call.name, call.input);
+                      return await commitTurnAndDelegate(del, input, response, cesarEngineId, false, dispatch, ctx, buildToolTelemetry());
+                    }
+                  }
+                }
+              } catch { /* if parse fails, fall through to text display */ }
               dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: cleanFinalAction });
               response = cleanFinalAction;
               wasStreamed = false;

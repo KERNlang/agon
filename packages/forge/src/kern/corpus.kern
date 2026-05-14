@@ -21,13 +21,12 @@ fn name=loadCorpus returns=CorpusRecord
   >>>
 
 fn name=saveCorpus params="record:CorpusRecord" returns=void
-  handler <<<
-    mkdirSync(dirname(CORPUS_PATH), { recursive: true });
-    record.lastUpdated = new Date().toISOString();
-    const tmpPath = CORPUS_PATH + '.tmp';
-    writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\n');
-    renameSync(tmpPath, CORPUS_PATH);
-  >>>
+  handler lang="kern"
+    do value="mkdirSync(dirname(CORPUS_PATH), { recursive: true })"
+    assign target="record.lastUpdated" value="new Date().toISOString()"
+    let name=tmpPath value="CORPUS_PATH + '.tmp'"
+    do value="writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\\n')"
+    do value="renameSync(tmpPath, CORPUS_PATH)"
 
 fn name=addToCorpus params="forgeId:string, taskClass:TaskClass, artifacts:BreakerArtifact[]" returns=number
   handler <<<
@@ -133,38 +132,21 @@ fn name=getCorpusForReplay params="taskClass:TaskClass, limit:number" returns="C
   >>>
 
 fn name=getGapPatterns params="taskClass?:TaskClass, threshold?:number" returns="GapPattern[]"
-  handler <<<
-    const record = loadCorpus();
-    const minFreq = threshold ?? 3;
-
-    return record.patterns
-      .filter((p) => p.frequency >= minFreq && !p.skillProposed)
-      .filter((p) => !taskClass || p.taskClass === taskClass)
-      .sort((a, b) => b.frequency - a.frequency);
-  >>>
+  handler lang="kern"
+    let name=record value="loadCorpus()"
+    let name=minFreq value="threshold ?? 3"
+    return value="record.patterns .filter((p) => p.frequency >= minFreq && !p.skillProposed) .filter((p) => !taskClass || p.taskClass === taskClass) .sort((a, b) => b.frequency - a.frequency)"
 
 fn name=markPatternSkillProposed params="pattern:string, taskClass:TaskClass, skillPath:string" returns=void
-  handler <<<
-    const record = loadCorpus();
-    const gap = record.patterns.find(
-      (p) => p.pattern === pattern && p.taskClass === taskClass,
-    );
-    if (gap) {
-      gap.skillProposed = true;
-      gap.skillPath = skillPath;
-      saveCorpus(record);
-    }
-  >>>
+  handler lang="kern"
+    let name=record value="loadCorpus()"
+    let name=gap value="record.patterns.find((p) => p.pattern === pattern && p.taskClass === taskClass)"
+    if cond="gap"
+      assign target="gap.skillProposed" value="true"
+      assign target="gap.skillPath" value="skillPath"
+      do value="saveCorpus(record)"
 
 fn name=getCorpusStats returns="{ totalEntries: number, totalPatterns: number, topPatterns: { pattern: string, frequency: number, taskClass: string }[] }"
-  handler <<<
-    const record = loadCorpus();
-    return {
-      totalEntries: record.entries.length,
-      totalPatterns: record.patterns.length,
-      topPatterns: record.patterns
-        .sort((a, b) => b.frequency - a.frequency)
-        .slice(0, 10)
-        .map((p) => ({ pattern: p.pattern, frequency: p.frequency, taskClass: p.taskClass })),
-    };
-  >>>
+  handler lang="kern"
+    let name=record value="loadCorpus()"
+    return value="{ totalEntries: record.entries.length, totalPatterns: record.patterns.length, topPatterns: record.patterns .sort((a, b) => b.frequency - a.frequency) .slice(0, 10) .map((p) => Object.assign({}, { pattern: p.pattern, frequency: p.frequency, taskClass: p.taskClass })), }"

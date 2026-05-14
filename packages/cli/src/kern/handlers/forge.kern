@@ -114,22 +114,18 @@ fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<strin
   >>>
 
 fn name=applyForgePatchToWorkspace params="winnerId:string, patchContent:string, dispatch:Dispatch" returns=boolean export=false
-  handler <<<
-    if (!patchContent.trim()) {
-      dispatch({ type: 'info', message: `Winner ${winnerId} produced an empty patch.` });
-      return true;
-    }
-
-    const result = applyPatchWithUndo(resolveWorkingDir(), patchContent);
-    if (result.ok) {
-      dispatch({ type: 'success', message: `Applied winner patch from ${winnerId}` });
-      if (result.undoToken) dispatch({ type: 'info', message: 'Undo available: /undo' });
-      return true;
-    }
-
-    dispatch({ type: 'warning', message: `Winner patch not applied automatically: ${result.error ?? 'unknown error'}` });
-    return false;
-  >>>
+  handler lang="kern"
+    if cond="!patchContent.trim()"
+      do value="dispatch({ type: 'info', message: `Winner ${winnerId} produced an empty patch.` })"
+      return value="true"
+    let name=result value="applyPatchWithUndo(resolveWorkingDir(), patchContent)"
+    if cond="result.ok"
+      do value="dispatch({ type: 'success', message: `Applied winner patch from ${winnerId}` })"
+      if cond="result.undoToken"
+        do value="dispatch({ type: 'info', message: 'Undo available: /undo' })"
+      return value="true"
+    do value="dispatch({ type: 'warning', message: `Winner patch not applied automatically: ${result.error ?? 'unknown error'}` })"
+    return value="false"
 
 fn name=extractFitnessCommandFromCesarOutput params="output:string" returns="string|null" export=true
   doc "Parse Cesar's command-only fitness response. Accepts strict JSON first, then a plain one-line command."
@@ -195,56 +191,57 @@ fn name=repairFitnessCommandTaskLiterals params="task:string, command:string" re
   >>>
 
 fn name=normalizeGithubRemoteLiteral params="remote:string" returns="string|null" export=true
-  handler <<<
-    const raw = String(remote ?? '').trim();
-    if (!raw) return null;
-    const cleaned = raw.replace(/\.git$/, '');
-    const ssh = cleaned.match(/^git@github\.com:([^/]+)\/(.+)$/);
-    if (ssh) return `github.com/${ssh[1]}/${ssh[2]}`;
-    const https = cleaned.match(/^https?:\/\/github\.com\/([^/]+)\/(.+)$/);
-    if (https) return `github.com/${https[1]}/${https[2]}`;
-    return null;
-  >>>
+  handler lang="kern"
+    let name=raw value="String(remote ?? '').trim()"
+    if cond="!raw"
+      return value="null"
+    let name=cleaned value="raw.replace(/\\.git$/, '')"
+    let name=ssh value="cleaned.match(/^git@github\\.com:([^/]+)\\/(.+)$/)"
+    if cond="ssh"
+      fmt return=true template="github.com/${ssh[1]}/${ssh[2]}"
+    let name=https value="cleaned.match(/^https?:\\/\\/github\\.com\\/([^/]+)\\/(.+)$/)"
+    if cond="https"
+      fmt return=true template="github.com/${https[1]}/${https[2]}"
+    return value="null"
 
 fn name=detectGithubRemoteLiteral params="cwd:string" returns="string|null" export=false
-  handler <<<
-    try {
-      const remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
-      return normalizeGithubRemoteLiteral(remote);
-    } catch {
-      return null;
-    }
-  >>>
+  handler lang="kern"
+    try
+      let name=remote value="execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim()"
+      return value="normalizeGithubRemoteLiteral(remote)"
+      catch name=e
+        return value="null"
 
 fn name=repairFitnessCommandRepositoryLiteral params="command:string, repoLiteral:string|null" returns="string" export=true
   doc "For current-repository README/docs checks, prefer the actual git origin over stale chat examples or old repo names."
-  handler <<<
-    if (!repoLiteral) return command;
-    let repaired = command;
-    for (const cmdUrl of extractGithubLiterals(command)) {
-      if (cmdUrl === repoLiteral) continue;
-      repaired = repaired.split(cmdUrl).join(repoLiteral);
-    }
-    return repaired;
-  >>>
+  handler lang="kern"
+    if cond="!repoLiteral"
+      return value="command"
+    let name=repaired kind=let value="command"
+    each name=cmdUrl in="extractGithubLiterals(command)"
+      if cond="cmdUrl === repoLiteral"
+        continue
+      assign target="repaired" value="repaired.split(cmdUrl).join(repoLiteral)"
+    return value="repaired"
 
 fn name=taskExplicitlyMentionsLiteral params="task:string,literal:string" returns=boolean export=false
-  handler <<<
-    const taskLower = String(task ?? '').toLowerCase();
-    const literalLower = String(literal ?? '').toLowerCase();
-    if (!literalLower) return false;
-    if (taskLower.includes(literalLower)) return true;
-    const escaped = literalLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`\\b(?:no|avoid|without|forbid|exclude|do not mention)\\s+${escaped}\\b`, 'i').test(taskLower);
-  >>>
+  handler lang="kern"
+    let name=taskLower value="String(task ?? '').toLowerCase()"
+    let name=literalLower value="String(literal ?? '').toLowerCase()"
+    if cond="!literalLower"
+      return value="false"
+    if cond="taskLower.includes(literalLower)"
+      return value="true"
+    let name=escaped value="literalLower.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')"
+    return value="new RegExp(`\\\\b(?:no|avoid|without|forbid|exclude|do not mention)\\\\s+${escaped}\\\\b`, 'i').test(taskLower)"
 
 fn name=taskWantsRepositoryLinkCheck params="task:string" returns=boolean export=true
   doc "Decide whether a fitness command may assert a GitHub/repository URL. This is semantic intent, not literal echoing: public README/footer/link tasks can check the local git origin; normal local docs tasks should not."
-  handler <<<
-    const t = String(task ?? '').toLowerCase();
-    if (/github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+/i.test(t)) return true;
-    return /\b(?:github|repo(?:sitory)?\s+(?:url|link)|project\s+(?:url|link)|source\s+(?:url|link)|footer\s+(?:with|containing|link)|public\s+(?:repo|repository|link|url))\b/i.test(t);
-  >>>
+  handler lang="kern"
+    let name=t value="String(task ?? '').toLowerCase()"
+    if cond="/github\\.com\\/[a-z0-9_.-]+\\/[a-z0-9_.-]+/i.test(t)"
+      return value="true"
+    return value="/\\b(?:github|repo(?:sitory)?\\s+(?:url|link)|project\\s+(?:url|link)|source\\s+(?:url|link)|footer\\s+(?:with|containing|link)|public\\s+(?:repo|repository|link|url))\\b/i.test(t)"
 
 fn name=repairOverbroadForbiddenLiterals params="task:string,command:string,repoLiteral:string|null" returns=string export=true
   doc "Remove forbidden literals that are local identity facts rather than internal details. Example: avoid KERN compilation must not become forbidden=['KERNlang'] when KERNlang is the GitHub owner."
@@ -306,68 +303,59 @@ fn name=repairContradictoryFitnessLiterals params="command:string" returns=strin
 
 fn name=validateFitnessCommandIntent params="task:string,command:string,repoLiteral:string|null" returns="{ok:boolean,reason?:string}" export=true
   doc "Reject Cesar-generated fitness checks that drift from task intent. Fitness may inspect local files and exact requested literals, but should not add GitHub/repo assertions unless the task semantically asks for a public repo link."
-  handler <<<
-    const cmd = String(command ?? '');
-    if (!cmd.trim()) return { ok: false, reason: 'empty fitness command' };
-
-    const githubLiterals = extractGithubLiterals(cmd);
-    if (githubLiterals.length > 0 && !taskWantsRepositoryLinkCheck(task)) {
-      return { ok: false, reason: `fitness added repository URL check without repo-link intent: ${githubLiterals.join(', ')}` };
-    }
-
-    const required = extractFitnessStringArray(cmd, 'required');
-    const forbidden = extractFitnessStringArray(cmd, 'forbidden');
-    for (const r of required) {
-      const req = r.toLowerCase();
-      for (const f of forbidden) {
-        const forb = f.toLowerCase();
-        if (req.includes(forb) || forb.includes(req)) {
-          return { ok: false, reason: `fitness requires and forbids overlapping literal "${f}"` };
-        }
-      }
-    }
-
-    if (repoLiteral) {
-      const owner = repoLiteral.split('/')[1] ?? '';
-      if (owner) {
-        const overbroad = forbidden.find((f: string) => f.toLowerCase() === owner.toLowerCase() && !taskExplicitlyMentionsLiteral(task, f));
-        if (overbroad) return { ok: false, reason: `fitness forbids local repo identity "${overbroad}" without explicit task intent` };
-      }
-    }
-
-    return { ok: true };
-  >>>
+  handler lang="kern"
+    let name=cmd value="String(command ?? '')"
+    if cond="!cmd.trim()"
+      return value="{ ok: false, reason: 'empty fitness command' }"
+    let name=githubLiterals value="extractGithubLiterals(cmd)"
+    if cond="githubLiterals.length > 0 && !taskWantsRepositoryLinkCheck(task)"
+      return value="{ ok: false, reason: `fitness added repository URL check without repo-link intent: ${githubLiterals.join(', ')}` }"
+    let name=required value="extractFitnessStringArray(cmd, 'required')"
+    let name=forbidden value="extractFitnessStringArray(cmd, 'forbidden')"
+    each name=r in="required"
+      let name=req value="r.toLowerCase()"
+      each name=f in="forbidden"
+        let name=forb value="f.toLowerCase()"
+        if cond="req.includes(forb) || forb.includes(req)"
+          return value="{ ok: false, reason: `fitness requires and forbids overlapping literal \"${f}\"` }"
+    if cond="repoLiteral"
+      let name=owner value="repoLiteral.split('/')[1] ?? ''"
+      if cond="owner"
+        let name=overbroad value="forbidden.find((f: string) => f.toLowerCase() === owner.toLowerCase() && !taskExplicitlyMentionsLiteral(task, f))"
+        if cond="overbroad"
+          return value="{ ok: false, reason: `fitness forbids local repo identity \"${overbroad}\" without explicit task intent` }"
+    return value="{ ok: true }"
 
 fn name=repairForgeTaskRepositoryLiteral params="task:string, cwd:string" returns="string" export=true
   doc "Normalize current-repository GitHub literals in a forge task before displaying the plan or sending the prompt to engines."
-  handler <<<
-    const repoLiteral = detectGithubRemoteLiteral(cwd);
-    return repairFitnessCommandRepositoryLiteral(task, repoLiteral);
-  >>>
+  handler lang="kern"
+    let name=repoLiteral value="detectGithubRemoteLiteral(cwd)"
+    return value="repairFitnessCommandRepositoryLiteral(task, repoLiteral)"
 
 fn name=describeProjectFitnessOptions params="cwd:string" returns="string" export=false
-  handler <<<
-    const lines: string[] = [];
-    const packageJsonPath = join(cwd, 'package.json');
-    if (existsSync(packageJsonPath)) {
-      try {
-        const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-        const scripts = pkg && typeof pkg === 'object' && pkg.scripts && typeof pkg.scripts === 'object'
-          ? Object.keys(pkg.scripts as Record<string, unknown>).sort()
-          : [];
-        if (scripts.length > 0) lines.push(`package.json scripts: ${scripts.join(', ')}`);
-      } catch {
-        lines.push('package.json exists but could not be parsed');
-      }
-    }
-    if (existsSync(join(cwd, 'Cargo.toml'))) lines.push('Cargo.toml present');
-    if (existsSync(join(cwd, 'go.mod'))) lines.push('go.mod present');
-    if (existsSync(join(cwd, 'pyproject.toml'))) lines.push('pyproject.toml present');
-    if (existsSync(join(cwd, 'README.md'))) lines.push('README.md present');
-    const repoLiteral = detectGithubRemoteLiteral(cwd);
-    if (repoLiteral) lines.push(`git origin: ${repoLiteral}`);
-    return lines.length > 0 ? lines.join('\n') : 'No common project test metadata found.';
-  >>>
+  handler lang="kern"
+    let name=lines type="string[]" value="[]"
+    let name=packageJsonPath value="join(cwd, 'package.json')"
+    if cond="existsSync(packageJsonPath)"
+      try
+        let name=pkg value="JSON.parse(readFileSync(packageJsonPath, 'utf8'))"
+        let name=scripts value="pkg && typeof pkg === 'object' && pkg.scripts && typeof pkg.scripts === 'object' ? Object.keys(pkg.scripts as Record<string, unknown>).sort() : []"
+        if cond="scripts.length > 0"
+          do value="lines.push(`package.json scripts: ${scripts.join(', ')}`)"
+        catch name=e
+          do value="lines.push('package.json exists but could not be parsed')"
+    if cond="existsSync(join(cwd, 'Cargo.toml'))"
+      do value="lines.push('Cargo.toml present')"
+    if cond="existsSync(join(cwd, 'go.mod'))"
+      do value="lines.push('go.mod present')"
+    if cond="existsSync(join(cwd, 'pyproject.toml'))"
+      do value="lines.push('pyproject.toml present')"
+    if cond="existsSync(join(cwd, 'README.md'))"
+      do value="lines.push('README.md present')"
+    let name=repoLiteral value="detectGithubRemoteLiteral(cwd)"
+    if cond="repoLiteral"
+      do value="lines.push(`git origin: ${repoLiteral}`)"
+    return value="lines.length > 0 ? lines.join('\\n') : 'No common project test metadata found.'"
 
 fn name=prepareForgeFitnessCommand params="task:string, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<string|null>" async=true export=true
   doc "Ask Cesar to prepare a task-specific fitness command when a forge call omitted one. This keeps UX non-interactive without hardcoding task-specific checks in the handler."

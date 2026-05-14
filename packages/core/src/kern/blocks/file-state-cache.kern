@@ -65,11 +65,10 @@ service name=FileStateCache singleton=true
   field name=accessOrder type="string[]"
 
   constructor
-    handler <<<
-      this.totalBytes = 0;
-      this.accessOrder = [];
-      this.cache = createTrackedFileStateMap(this);
-    >>>
+    handler lang="kern"
+      assign target="this.totalBytes" value="0"
+      assign target="this.accessOrder" value="[]"
+      assign target="this.cache" value="createTrackedFileStateMap(this)"
 
   method name=get params="filePath:string" returns="FileState|undefined"
     handler lang="kern"
@@ -115,16 +114,13 @@ service name=FileStateCache singleton=true
       return value="this.cache.size"
 
   method name=evict returns=void export=false
-    handler <<<
-      while ((this.cache.size > MAX_CACHE_ENTRIES || this.totalBytes > MAX_CACHE_BYTES) && this.accessOrder.length > 0) {
-        const oldest = this.accessOrder.shift()!;
-        const state = this.cache.get(oldest);
-        if (state) {
-          this.totalBytes -= state.content.length;
-          this.cache.delete(oldest);
-        }
-      }
-    >>>
+    handler lang="kern"
+      while cond="(this.cache.size > MAX_CACHE_ENTRIES || this.totalBytes > MAX_CACHE_BYTES) && this.accessOrder.length > 0"
+        let name=oldest value="this.accessOrder.shift()!"
+        let name=state value="this.cache.get(oldest)"
+        if cond="state"
+          assign target="this.totalBytes" op="-=" value="state.content.length"
+          do value="this.cache.delete(oldest)"
 
 // ── Project-scoped Cesar cache ─────────────────────────────────────
 // A plain FileStateCache is still useful for isolated tests and one-off loops,

@@ -63,26 +63,21 @@ import from="../../stable-input.js" names="useStableInput"
 import from="../blocks/rich-text.js" names="parseProseToRichLines"
 
 fn name=isMutatingToolCall params="event:any" returns=boolean
-  handler <<<
-    if (!event || event.type !== 'tool-call') return false;
-    const toolKey = String(event.tool ?? '').toLowerCase();
-    if (['edit', 'write', 'update', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)) return true;
-    if (['read', 'grep', 'search', 'glob', 'find', 'bash', 'run', 'agonbash', 'reportconfidence', 'quicknero'].includes(toolKey)) return false;
-    if (typeof event.input !== 'string' || !event.input.trim().startsWith('{')) return false;
-    try {
-      const parsed = JSON.parse(event.input);
-      return !!(
-        parsed.content ||
-        parsed.new_string ||
-        parsed.newString ||
-        parsed.old_string ||
-        parsed.oldString ||
-        (parsed.path && (parsed.content || parsed.new_string || parsed.newString || parsed.old_string || parsed.oldString))
-      );
-    } catch {
-      return false;
-    }
-  >>>
+  handler lang="kern"
+    if cond="!event || event.type !== 'tool-call'"
+      return value="false"
+    let name=toolKey value="String(event.tool ?? '').toLowerCase()"
+    if cond="['edit', 'write', 'update', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)"
+      return value="true"
+    if cond="['read', 'grep', 'search', 'glob', 'find', 'bash', 'run', 'agonbash', 'reportconfidence', 'quicknero'].includes(toolKey)"
+      return value="false"
+    if cond="typeof event.input !== 'string' || !event.input.trim().startsWith('{')"
+      return value="false"
+    try
+      let name=parsed value="JSON.parse(event.input)"
+      return value="!!(parsed.content || parsed.new_string || parsed.newString || parsed.old_string || parsed.oldString || (parsed.path && (parsed.content || parsed.new_string || parsed.newString || parsed.old_string || parsed.oldString)))"
+      catch name=e
+        return value="false"
 
 fn name=shortToolPath params="filePath:string" returns=string expr={{ return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~'); }}
 
@@ -209,63 +204,41 @@ fn name=probeEngineVitals async=true params="registry:any,engineId:string,sessio
   >>>
 
 fn name=parseToolCallPayload params="event:any" returns=any confidence=0.85
-  handler <<<
-    const rawInput = String(event?.input ?? '');
-    let parsed: Record<string, unknown> = {};
-    try {
-      if (rawInput.trim().startsWith('{')) parsed = JSON.parse(rawInput);
-    } catch {
-      parsed = {};
-    }
-    return {
-      rawInput,
-      parsed,
-      toolKey: String(event?.tool ?? '').toLowerCase(),
-    };
-  >>>
+  handler lang="kern"
+    let name=rawInput value="String(event?.input ?? '')"
+    let name=parsed type="Record<string, unknown>" kind=let value="{}"
+    try
+      if cond="rawInput.trim().startsWith('{')"
+        assign target="parsed" value="JSON.parse(rawInput)"
+      catch name=e
+        assign target="parsed" value="{}"
+    return value="{ rawInput, parsed, toolKey: String(event?.tool ?? '').toLowerCase(), }"
 
 fn name=formatConfidenceToolLabel params="parsed:any, rawInput:string" returns=string
-  handler <<<
-    const rawValue = parsed?.value ?? parsed?.confidence ?? parsed?.score;
-    let value = Number(rawValue);
-    if (!Number.isFinite(value)) {
-      const text = String(rawInput ?? '');
-      const match = text.match(/"value"\s*:\s*(\d{1,3}(?:\.\d+)?)/) || text.match(/(\d{1,3})\s*%/);
-      if (match) value = Number(match[1]);
-    }
-    if (Number.isFinite(value)) {
-      const pct = value <= 1 && value > 0 ? Math.round(value * 100) : Math.round(value);
-      if (pct >= 0 && pct <= 100) {
-        const reasoning = String(parsed?.reasoning ?? parsed?.reason ?? parsed?.thought ?? '').replace(/\s+/g, ' ').trim();
-        return reasoning ? `${pct}% confidence · ${reasoning}` : `${pct}% confidence`;
-      }
-    }
-    return 'confidence';
-  >>>
+  handler lang="kern"
+    let name=rawValue value="parsed?.value ?? parsed?.confidence ?? parsed?.score"
+    let name=value kind=let value="Number(rawValue)"
+    if cond="!Number.isFinite(value)"
+      let name=text value="String(rawInput ?? '')"
+      let name=match value="text.match(/\"value\"\\s*:\\s*(\\d{1,3}(?:\\.\\d+)?)/) || text.match(/(\\d{1,3})\\s*%/)"
+      if cond="match"
+        assign target="value" value="Number(match[1])"
+    if cond="Number.isFinite(value)"
+      let name=pct value="value <= 1 && value > 0 ? Math.round(value * 100) : Math.round(value)"
+      if cond="pct >= 0 && pct <= 100"
+        let name=reasoning value="String(parsed?.reasoning ?? parsed?.reason ?? parsed?.thought ?? '').replace(/\\s+/g, ' ').trim()"
+        return value="reasoning ? `${pct}% confidence · ${reasoning}` : `${pct}% confidence`"
+    return value="'confidence'"
 
 fn name=extractPatchText params="rawInput:string, parsed:any" returns=string
-  handler <<<
-    const values = [
-      parsed?.patch,
-      parsed?.content,
-      parsed?.diff,
-      parsed?.input,
-    ].filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0);
-    const fromParsed = values.find((value: string) =>
-      value.includes('*** Begin Patch') ||
-      value.includes('diff --git') ||
-      value.split('\n').some((line: string) => line.startsWith('@@'))
-    );
-    if (fromParsed) return fromParsed;
-    if (
-      rawInput.includes('*** Begin Patch') ||
-      rawInput.includes('diff --git') ||
-      rawInput.split('\n').some((line: string) => line.startsWith('@@'))
-    ) {
-      return rawInput;
-    }
-    return values[0] ?? '';
-  >>>
+  handler lang="kern"
+    let name=values value="[ parsed?.patch, parsed?.content, parsed?.diff, parsed?.input, ].filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)"
+    let name=fromParsed value="values.find((value: string) => value.includes('*** Begin Patch') || value.includes('diff --git') || value.split('\\n').some((line: string) => line.startsWith('@@')))"
+    if cond="fromParsed"
+      return value="fromParsed"
+    if cond="rawInput.includes('*** Begin Patch') || rawInput.includes('diff --git') || rawInput.split('\\n').some((line: string) => line.startsWith('@@'))"
+      return value="rawInput"
+    return value="values[0] ?? ''"
 
 fn name=parsePatchPreview params="rawInput:string, parsed:any" returns="{ files:string[]; lines:string[]; additions:number; deletions:number }"
   handler <<<
@@ -317,42 +290,38 @@ fn name=parsePatchPreview params="rawInput:string, parsed:any" returns="{ files:
   >>>
 
 fn name=toolPreviewWindow params="lineCount:number, expanded:boolean" returns=any
-  handler <<<
-    if (lineCount <= 0) return { head: 0, tail: 0, skipped: 0 };
-    if (expanded) return { head: lineCount, tail: 0, skipped: 0 };
-    const headLimit = expanded ? 10 : 3;
-    const tailLimit = expanded && lineCount > 18 ? 4 : 0;
-    const showTail = tailLimit > 0 && lineCount > headLimit + tailLimit;
-    const head = expanded
-      ? Math.min(lineCount, showTail ? headLimit : lineCount)
-      : Math.min(lineCount, headLimit);
-    const tail = showTail ? tailLimit : 0;
-    return {
-      head,
-      tail,
-      skipped: Math.max(0, lineCount - head - tail),
-    };
-  >>>
+  handler lang="kern"
+    if cond="lineCount <= 0"
+      return value="{ head: 0, tail: 0, skipped: 0 }"
+    if cond="expanded"
+      return value="{ head: lineCount, tail: 0, skipped: 0 }"
+    let name=headLimit value="expanded ? 10 : 3"
+    let name=tailLimit value="expanded && lineCount > 18 ? 4 : 0"
+    let name=showTail value="tailLimit > 0 && lineCount > headLimit + tailLimit"
+    let name=head value="expanded ? Math.min(lineCount, showTail ? headLimit : lineCount) : Math.min(lineCount, headLimit)"
+    let name=tail value="showTail ? tailLimit : 0"
+    return value="{ head, tail, skipped: Math.max(0, lineCount - head - tail), }"
 
 fn name=toolCallSupportsDetailView params="event:any" returns=boolean
-  handler <<<
-    if (!event || event.type !== 'tool-call') return false;
-    const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
-    if (['edit', 'update', 'write', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)) return true;
-
-    const outputText = String(event.output ?? '');
-    const outputLines = outputText ? outputText.split('\n').length : 0;
-
-    if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
-      const command = String((parsed.command as string) || rawInput || '');
-      return command.split('\n').length > 3 || outputLines > 12 || outputText.length > 500;
-    }
-    if (toolKey === 'read') return outputLines > 12 || outputText.length > 500;
-    if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
-      return outputLines > 10 || outputText.length > 400;
-    }
-    return rawInput.length > 160 || outputText.length > 400;
-  >>>
+  handler lang="kern"
+    if cond="!event || event.type !== 'tool-call'"
+      return value="false"
+    destructure kind=const source="parseToolCallPayload(event)"
+      binding name=rawInput
+      binding name=parsed
+      binding name=toolKey
+    if cond="['edit', 'update', 'write', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)"
+      return value="true"
+    let name=outputText value="String(event.output ?? '')"
+    let name=outputLines value="outputText ? outputText.split('\\n').length : 0"
+    if cond="toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash'"
+      let name=command value="String((parsed.command as string) || rawInput || '')"
+      return value="command.split('\\n').length > 3 || outputLines > 12 || outputText.length > 500"
+    if cond="toolKey === 'read'"
+      return value="outputLines > 12 || outputText.length > 500"
+    if cond="toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find'"
+      return value="outputLines > 10 || outputText.length > 400"
+    return value="rawInput.length > 160 || outputText.length > 400"
 
 fn name=detailViewerSupportsEvent params="event:any" returns=boolean
   handler lang="kern"
@@ -441,17 +410,14 @@ const name=COMPOSER_HISTORY_LIMIT type=number value=200
 fn name=composerHistoryPath params="" returns=string expr={{ return join(getAgonHome(), 'composer-history.json'); }}
 
 fn name=loadComposerInputHistory params="" returns="string[]"
-  handler <<<
-    try {
-      const parsed = JSON.parse(readFileSync(composerHistoryPath(), 'utf-8'));
-      if (!Array.isArray(parsed)) return [];
-      return parsed
-        .filter((entry: any) => typeof entry === 'string' && entry.trim().length > 0)
-        .slice(-COMPOSER_HISTORY_LIMIT);
-    } catch {
-      return [];
-    }
-  >>>
+  handler lang="kern"
+    try
+      let name=parsed value="JSON.parse(readFileSync(composerHistoryPath(), 'utf-8'))"
+      if cond="!Array.isArray(parsed)"
+        return value="[]"
+      return value="parsed .filter((entry: any) => typeof entry === 'string' && entry.trim().length > 0) .slice(-COMPOSER_HISTORY_LIMIT)"
+      catch name=e
+        return value="[]"
 
 fn name=saveComposerInputHistory params="history:string[]" returns=void
   handler <<<
@@ -720,11 +686,10 @@ const name=_lastSigintAt type="{ value: number }" value={{ { value: 0 } }}
 const name=_pauseState type="{ value: PauseState | null }" value={{ { value: null } }}
 
 fn name=createInitialRegistry returns=EngineRegistry
-  handler <<<
-    const reg = new EngineRegistry();
-    reg.load(resolveBuiltinEnginesDir());
-    return reg;
-  >>>
+  handler lang="kern"
+    let name=reg value="new EngineRegistry()"
+    do value="reg.load(resolveBuiltinEnginesDir())"
+    return value="reg"
 
 fn name=drainStdinBuffer returns=void
   handler <<<
@@ -738,77 +703,56 @@ fn name=drainStdinBuffer returns=void
 fn name=maxScrollOffsetForRowCount params="rowCount:number, rowBudget:number" returns=number expr={{ return Math.max(0, rowCount - Math.max(1, rowBudget)); }}
 
 fn name=nextWheelAnimationStep params="pending:number" returns="{step:number,remaining:number}" export=true
-  handler <<<
-    if (!Number.isFinite(pending) || pending === 0) return { step: 0, remaining: 0 };
-    const direction = pending > 0 ? 1 : -1;
-    const magnitude = Math.abs(pending);
-    const stepSize = magnitude >= 16 ? 6 : magnitude >= 10 ? 5 : magnitude >= 6 ? 4 : magnitude >= 3 ? 2 : 1;
-    const step = direction * Math.min(stepSize, magnitude);
-    return { step, remaining: pending - step };
-  >>>
+  handler lang="kern"
+    if cond="!Number.isFinite(pending) || pending === 0"
+      return value="{ step: 0, remaining: 0 }"
+    let name=direction value="pending > 0 ? 1 : -1"
+    let name=magnitude value="Math.abs(pending)"
+    let name=stepSize value="magnitude >= 16 ? 6 : magnitude >= 10 ? 5 : magnitude >= 6 ? 4 : magnitude >= 3 ? 2 : 1"
+    let name=step value="direction * Math.min(stepSize, magnitude)"
+    return value="{ step, remaining: pending - step }"
 
 fn name=clampNumber params="value:number, min:number, max:number" returns=number expr={{ return Math.min(max, Math.max(min, value)); }}
 
 fn name=charDisplayWidth params="char:string" returns=number
-  handler <<<
-    if (!char) return 0;
-    const codePoint = char.codePointAt(0) ?? 0;
-    if (codePoint === 0) return 0;
-    if (codePoint < 32 || (codePoint >= 0x7f && codePoint < 0xa0)) return 0;
-    if (
-      (codePoint >= 0x0300 && codePoint <= 0x036f)
-      || (codePoint >= 0x1ab0 && codePoint <= 0x1aff)
-      || (codePoint >= 0x1dc0 && codePoint <= 0x1dff)
-      || (codePoint >= 0x20d0 && codePoint <= 0x20ff)
-      || (codePoint >= 0xfe20 && codePoint <= 0xfe2f)
-    ) {
-      return 0;
-    }
-    if (
-      codePoint === 0x2329
-      || codePoint === 0x232a
-      || (codePoint >= 0x1100 && codePoint <= 0x115f)
-      || (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f)
-      || (codePoint >= 0xac00 && codePoint <= 0xd7a3)
-      || (codePoint >= 0xf900 && codePoint <= 0xfaff)
-      || (codePoint >= 0xfe10 && codePoint <= 0xfe19)
-      || (codePoint >= 0xfe30 && codePoint <= 0xfe6f)
-      || (codePoint >= 0xff00 && codePoint <= 0xff60)
-      || (codePoint >= 0xffe0 && codePoint <= 0xffe6)
-      || (codePoint >= 0x1f300 && codePoint <= 0x1f64f)
-      || (codePoint >= 0x1f900 && codePoint <= 0x1f9ff)
-      || (codePoint >= 0x20000 && codePoint <= 0x3fffd)
-    ) {
-      return 2;
-    }
-    return 1;
-  >>>
+  handler lang="kern"
+    if cond="!char"
+      return value="0"
+    let name=codePoint value="char.codePointAt(0) ?? 0"
+    if cond="codePoint === 0"
+      return value="0"
+    if cond="codePoint < 32 || (codePoint >= 0x7f && codePoint < 0xa0)"
+      return value="0"
+    if cond="(codePoint >= 0x0300 && codePoint <= 0x036f) || (codePoint >= 0x1ab0 && codePoint <= 0x1aff) || (codePoint >= 0x1dc0 && codePoint <= 0x1dff) || (codePoint >= 0x20d0 && codePoint <= 0x20ff) || (codePoint >= 0xfe20 && codePoint <= 0xfe2f)"
+      return value="0"
+    if cond="codePoint === 0x2329 || codePoint === 0x232a || (codePoint >= 0x1100 && codePoint <= 0x115f) || (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f) || (codePoint >= 0xac00 && codePoint <= 0xd7a3) || (codePoint >= 0xf900 && codePoint <= 0xfaff) || (codePoint >= 0xfe10 && codePoint <= 0xfe19) || (codePoint >= 0xfe30 && codePoint <= 0xfe6f) || (codePoint >= 0xff00 && codePoint <= 0xff60) || (codePoint >= 0xffe0 && codePoint <= 0xffe6) || (codePoint >= 0x1f300 && codePoint <= 0x1f64f) || (codePoint >= 0x1f900 && codePoint <= 0x1f9ff) || (codePoint >= 0x20000 && codePoint <= 0x3fffd)"
+      return value="2"
+    return value="1"
 
 fn name=stringDisplayWidth params="text:string" returns=number export=true
-  handler <<<
-    let width = 0;
-    for (const char of Array.from(String(text ?? ''))) {
-      width += charDisplayWidth(char);
-    }
-    return width;
-  >>>
+  handler lang="kern"
+    let name=width kind=let value="0"
+    each name=char in="Array.from(String(text ?? ''))"
+      assign target="width" op="+=" value="charDisplayWidth(char)"
+    return value="width"
 
 fn name=displayColumnToStringIndex params="text:string, targetColumn:number" returns=number export=true
-  handler <<<
-    const value = String(text ?? '');
-    if (!Number.isFinite(targetColumn) || targetColumn <= 0) return 0;
-    let displayColumn = 0;
-    let stringIndex = 0;
-    for (const char of Array.from(value)) {
-      const width = charDisplayWidth(char);
-      const nextDisplayColumn = displayColumn + width;
-      if (targetColumn < nextDisplayColumn) return stringIndex;
-      stringIndex += char.length;
-      if (targetColumn === nextDisplayColumn) return stringIndex;
-      displayColumn = nextDisplayColumn;
-    }
-    return value.length;
-  >>>
+  handler lang="kern"
+    let name=value value="String(text ?? '')"
+    if cond="!Number.isFinite(targetColumn) || targetColumn <= 0"
+      return value="0"
+    let name=displayColumn kind=let value="0"
+    let name=stringIndex kind=let value="0"
+    each name=char in="Array.from(value)"
+      let name=width value="charDisplayWidth(char)"
+      let name=nextDisplayColumn value="displayColumn + width"
+      if cond="targetColumn < nextDisplayColumn"
+        return value="stringIndex"
+      assign target="stringIndex" op="+=" value="char.length"
+      if cond="targetColumn === nextDisplayColumn"
+        return value="stringIndex"
+      assign target="displayColumn" value="nextDisplayColumn"
+    return value="value.length"
 
 fn name=normalizeRowSelection params="anchor:number|null, focus:number|null" returns="{start:number,end:number}|null"
   handler lang="kern"
@@ -829,47 +773,48 @@ fn name=normalizeTextSelection params="anchorRow:number|null, anchorCol:number|n
     return value="{ startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol }"
 
 fn name=richLineToPlainText params="line:any" returns=string
-  handler <<<
-    if (!line) return '';
-    if (line.kind === 'blank') return '';
-    if (line.kind === 'hr') return '─'.repeat(40);
-
-    const spanText = Array.isArray(line.spans)
-      ? line.spans.map((span: any) => `${span.text ?? ''}${span?.style?.linkUrl ? ` (${span.style.linkUrl})` : ''}`).join('')
-      : '';
-    const indent = line.indent > 0 ? '  '.repeat(line.indent) : '';
-
-    if (line.kind === 'h1') return `${indent}# ${spanText}`;
-    if (line.kind === 'h2') return `${indent}## ${spanText}`;
-    if (line.kind === 'h3') return `${indent}### ${spanText}`;
-    if (line.kind === 'blockquote') return `${indent}| ${spanText}`;
-
-    const marker = line.marker ?? '';
-    const listIndent = (line.kind === 'bullet' || line.kind === 'ordered') && !indent ? ' ' : '';
-    return `${indent}${listIndent}${marker}${spanText}`;
-  >>>
+  handler lang="kern"
+    if cond="!line"
+      return value="''"
+    if cond="line.kind === 'blank'"
+      return value="''"
+    if cond="line.kind === 'hr'"
+      return value="'─'.repeat(40)"
+    let name=spanText value="Array.isArray(line.spans) ? line.spans.map((span: any) => `${span.text ?? ''}${span?.style?.linkUrl ? ` (${span.style.linkUrl})` : ''}`).join('') : ''"
+    let name=indent value="line.indent > 0 ? '  '.repeat(line.indent) : ''"
+    if cond="line.kind === 'h1'"
+      fmt return=true template="${indent}# ${spanText}"
+    if cond="line.kind === 'h2'"
+      fmt return=true template="${indent}## ${spanText}"
+    if cond="line.kind === 'h3'"
+      fmt return=true template="${indent}### ${spanText}"
+    if cond="line.kind === 'blockquote'"
+      fmt return=true template="${indent}| ${spanText}"
+    let name=marker value="line.marker ?? ''"
+    let name=listIndent value="(line.kind === 'bullet' || line.kind === 'ordered') && !indent ? ' ' : ''"
+    fmt return=true template="${indent}${listIndent}${marker}${spanText}"
 
 fn name=transcriptRowToPlainText params="row:any" returns=string
-  handler <<<
-    if (!row) return '';
-    if (row.kind === 'spacer') return '';
-    if (row.kind === 'gradient') return String(row.text ?? '');
-    if (row.kind === 'rich') return richLineToPlainText(row.richLine);
-    if (row.kind === 'segments') {
-      return Array.isArray(row.segments) ? row.segments.map((segment: any) => segment?.text ?? '').join('') : '';
-    }
-
-    const prefix = String(row.prefixText ?? '');
-    const text = String(row.text ?? '');
-    return `${prefix}${text}`;
-  >>>
+  handler lang="kern"
+    if cond="!row"
+      return value="''"
+    if cond="row.kind === 'spacer'"
+      return value="''"
+    if cond="row.kind === 'gradient'"
+      return value="String(row.text ?? '')"
+    if cond="row.kind === 'rich'"
+      return value="richLineToPlainText(row.richLine)"
+    if cond="row.kind === 'segments'"
+      return value="Array.isArray(row.segments) ? row.segments.map((segment: any) => segment?.text ?? '').join('') : ''"
+    let name=prefix value="String(row.prefixText ?? '')"
+    let name=text value="String(row.text ?? '')"
+    fmt return=true template="${prefix}${text}"
 
 fn name=transcriptRowTextStartColumn params="row:any" returns=number
-  handler <<<
-    const paddingLeft = Math.max(0, Number(row?.paddingLeft ?? 0));
-    const borderColumns = row?.borderColor ? 2 : 0;
-    return paddingLeft + borderColumns + 2;
-  >>>
+  handler lang="kern"
+    let name=paddingLeft value="Math.max(0, Number(row?.paddingLeft ?? 0))"
+    let name=borderColumns value="row?.borderColor ? 2 : 0"
+    return value="paddingLeft + borderColumns + 2"
 
 fn name=resolveTranscriptColumnFromMouse params="mouseX:number, row:any" returns=number
   handler lang="kern"
@@ -916,24 +861,21 @@ fn name=resolveTranscriptRowFromMouse params="mouseY:number, viewportTopLine:num
     return value="firstVisibleRow + clamped"
 
 fn name=estimateVisibleBlockBudget params="rows:number, mode:string, overlayReservedRows:number" returns=number
-  handler <<<
-    // Chat mode keeps 7 rows for the composer/status chrome at minimum:
-    // margin + bordered composer (3) + Cesar strip + two-line status bar.
-    // Using 6 makes the startup dashboard overflow by one line.
-    const reservedRows = (mode === 'chat' ? 7 : 8) + Math.max(0, overlayReservedRows);
-    return Math.max(1, rows - reservedRows);
-  >>>
+  handler lang="kern"
+    comment raw="// Chat mode keeps 7 rows for the composer/status chrome at minimum:"
+    comment raw="// margin + bordered composer (3) + Cesar strip + two-line status bar."
+    comment raw="// Using 6 makes the startup dashboard overflow by one line."
+    let name=reservedRows value="(mode === 'chat' ? 7 : 8) + Math.max(0, overlayReservedRows)"
+    return value="Math.max(1, rows - reservedRows)"
 
 fn name=estimateWrappedRowCount params="text:string, wrapWidth:number" returns=number export=true
-  handler <<<
-    const safeWidth = Math.max(1, wrapWidth);
-    const lines = String(text ?? '').split('\n');
-    let rowCount = 0;
-    for (const line of lines) {
-      rowCount += Math.max(1, Math.ceil(stringDisplayWidth(line) / safeWidth));
-    }
-    return Math.max(1, rowCount);
-  >>>
+  handler lang="kern"
+    let name=safeWidth value="Math.max(1, wrapWidth)"
+    let name=lines value="String(text ?? '').split('\\n')"
+    let name=rowCount kind=let value="0"
+    each name=line in="lines"
+      assign target="rowCount" op="+=" value="Math.max(1, Math.ceil(stringDisplayWidth(line) / safeWidth))"
+    return value="Math.max(1, rowCount)"
 
 fn name=estimateQuestionReservedRows params="questionState:any, termWidth:number" returns=number export=true
   doc "Reserve extra transcript rows when the bottom composer is showing a multi-line question or permission card, so short terminals do not clip the actionable keys."
@@ -971,14 +913,16 @@ fn name=estimateQuestionReservedRows params="questionState:any, termWidth:number
 
 fn name=estimateBottomChromeExtraRows params="mode:string, questionState:any, termWidth:number, pendingImageCount:number, inputQueueCount:number, hasLiveSpinner:boolean" returns=number export=true
   doc "Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and chat spinner rows."
-  handler <<<
-    let extraRows = 0;
-    if (pendingImageCount > 0) extraRows += 1;
-    if (inputQueueCount > 0) extraRows += 1;
-    if (mode === 'chat' && hasLiveSpinner && !questionState) extraRows += 1;
-    extraRows += estimateQuestionReservedRows(questionState, termWidth);
-    return extraRows;
-  >>>
+  handler lang="kern"
+    let name=extraRows kind=let value="0"
+    if cond="pendingImageCount > 0"
+      assign target="extraRows" op="+=" value="1"
+    if cond="inputQueueCount > 0"
+      assign target="extraRows" op="+=" value="1"
+    if cond="mode === 'chat' && hasLiveSpinner && !questionState"
+      assign target="extraRows" op="+=" value="1"
+    assign target="extraRows" op="+=" value="estimateQuestionReservedRows(questionState, termWidth)"
+    return value="extraRows"
 
 fn name=summarizeBtwTranscriptEvent params="event:any" returns="string|null" export=false
   handler <<<
@@ -1034,13 +978,12 @@ fn name=buildDashboardBlock params="enabledOverride:string[]|null" returns=Outpu
   >>>
 
 fn name=estimatePinnedLiveRows params="mode:string, hasStream:boolean, hasProgress:boolean, agentCount:number, toolStreamCount?:number" returns=number
-  handler <<<
-    const streamRows = hasStream ? (mode === 'chat' ? 3 : 6) : 0;
-    const progressRows = hasProgress ? (mode === 'chat' ? 3 : 5) : 0;
-    const agentRows = agentCount > 0 ? Math.min(18, agentCount * 7) : 0;
-    const toolRows = toolStreamCount && toolStreamCount > 0 ? Math.min(10, 1 + toolStreamCount * 2) : 0;
-    return streamRows + progressRows + agentRows + toolRows;
-  >>>
+  handler lang="kern"
+    let name=streamRows value="hasStream ? (mode === 'chat' ? 3 : 6) : 0"
+    let name=progressRows value="hasProgress ? (mode === 'chat' ? 3 : 5) : 0"
+    let name=agentRows value="agentCount > 0 ? Math.min(18, agentCount * 7) : 0"
+    let name=toolRows value="toolStreamCount && toolStreamCount > 0 ? Math.min(10, 1 + toolStreamCount * 2) : 0"
+    return value="streamRows + progressRows + agentRows + toolRows"
 
 fn name=estimateWrappedRows params="text:string, width:number" returns=number
   handler <<<
@@ -1053,77 +996,70 @@ fn name=estimateWrappedRows params="text:string, width:number" returns=number
   >>>
 
 fn name=estimateToolCallRows params="event:any, toolOutputExpanded:boolean, codeWidth:number" returns=number
-  handler <<<
-    if (!event || event.type !== 'tool-call') return 0;
-    if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return 0;
-
-    const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
-    const collapsed = !toolOutputExpanded;
-    if (collapsed && !['edit', 'write', 'update', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)) return 1;
-
-    if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
-      const cmd = (parsed.command as string) || rawInput || '';
-      const cmdLineCount = cmd ? cmd.split('\n').length : 0;
-      let rows = 1;
-      if (cmdLineCount > 0) {
-        rows += collapsed
-          ? Math.min(3, cmdLineCount) + (cmdLineCount > 3 ? 1 : 0) + 1
-          : cmdLineCount + 1;
-      }
-      if (event.output && event.status !== 'running') {
-        const outputLineCount = event.output.split('\n').length;
-        if (!collapsed) return rows + 1 + outputLineCount;
-        const maxHead = outputLineCount > 80 ? 30 : 50;
-        const tailCount = 5;
-        const showTail = outputLineCount > maxHead + tailCount;
-        rows += 1 + Math.min(outputLineCount, maxHead);
-        if (showTail) rows += 1 + tailCount;
-      }
-      return rows;
-    }
-
-    if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') {
-      const oldStr = (parsed.old_string as string) || (parsed.oldString as string) || '';
-      const newStr = (parsed.new_string as string) || (parsed.newString as string) || '';
-      const oldLines = oldStr ? oldStr.split('\n') : [];
-      const newLines = newStr ? newStr.split('\n') : [];
-      const oldWindow = toolPreviewWindow(oldLines.length, !collapsed);
-      const newWindow = toolPreviewWindow(newLines.length, !collapsed);
-      return 1
-        + oldWindow.head + oldWindow.tail + (oldWindow.skipped > 0 ? 1 : 0)
-        + newWindow.head + newWindow.tail + (newWindow.skipped > 0 ? 1 : 0);
-    }
-
-    if (toolKey === 'write' || toolKey === 'agonwrite') {
-      const content = (parsed.content as string) || '';
-      const lines = content ? content.split('\n') : [];
-      const window = toolPreviewWindow(lines.length, !collapsed);
-      return 1 + window.head + window.tail + (window.skipped > 0 ? 1 : 0);
-    }
-
-    if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
-      const patch = parsePatchPreview(rawInput, parsed);
-      const window = toolPreviewWindow(patch.lines.length, !collapsed);
-      return 1 + window.head + window.tail + (window.skipped > 0 ? 1 : 0);
-    }
-
-    if (toolKey === 'read') {
-      if (collapsed) return 1;
-      const lineCount = event.output ? String(event.output).split('\n').length : 0;
-      return 1 + lineCount;
-    }
-
-    if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
-      if (collapsed) return 1;
-      const lineCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
-      return 1 + lineCount;
-    }
-
-    let rows = 1;
-    if (rawInput) rows += Math.min(3, estimateWrappedRows(rawInput, codeWidth));
-    if (event.output && event.status === 'done') rows += 1 + Math.min(6, estimateWrappedRows(event.output, codeWidth));
-    return rows;
-  >>>
+  handler lang="kern"
+    if cond="!event || event.type !== 'tool-call'"
+      return value="0"
+    if cond="!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')"
+      return value="0"
+    destructure kind=const source="parseToolCallPayload(event)"
+      binding name=rawInput
+      binding name=parsed
+      binding name=toolKey
+    let name=collapsed value="!toolOutputExpanded"
+    if cond="collapsed && !['edit', 'write', 'update', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)"
+      return value="1"
+    if cond="toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash'"
+      let name=cmd value="(parsed.command as string) || rawInput || ''"
+      let name=cmdLineCount value="cmd ? cmd.split('\\n').length : 0"
+      let name=rows kind=let value="1"
+      if cond="cmdLineCount > 0"
+        let name=overflowRow value="cmdLineCount > 3 ? 1 : 0"
+        let name=cmdRows value="collapsed ? Math.min(3, cmdLineCount) + overflowRow + 1 : cmdLineCount + 1"
+        assign target="rows" op="+=" value="cmdRows"
+      if cond="event.output && event.status !== 'running'"
+        let name=outputLineCount value="event.output.split('\\n').length"
+        if cond="!collapsed"
+          return value="rows + 1 + outputLineCount"
+        let name=maxHead value="outputLineCount > 80 ? 30 : 50"
+        let name=tailCount value="5"
+        let name=showTail value="outputLineCount > maxHead + tailCount"
+        assign target="rows" op="+=" value="1 + Math.min(outputLineCount, maxHead)"
+        if cond="showTail"
+          assign target="rows" op="+=" value="1 + tailCount"
+      return value="rows"
+    if cond="toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit'"
+      let name=oldStr value="(parsed.old_string as string) || (parsed.oldString as string) || ''"
+      let name=newStr value="(parsed.new_string as string) || (parsed.newString as string) || ''"
+      let name=oldLines value="oldStr ? oldStr.split('\\n') : []"
+      let name=newLines value="newStr ? newStr.split('\\n') : []"
+      let name=oldWindow value="toolPreviewWindow(oldLines.length, !collapsed)"
+      let name=newWindow value="toolPreviewWindow(newLines.length, !collapsed)"
+      return value="1 + oldWindow.head + oldWindow.tail + (oldWindow.skipped > 0 ? 1 : 0) + newWindow.head + newWindow.tail + (newWindow.skipped > 0 ? 1 : 0)"
+    if cond="toolKey === 'write' || toolKey === 'agonwrite'"
+      let name=content value="(parsed.content as string) || ''"
+      let name=lines value="content ? content.split('\\n') : []"
+      let name=window value="toolPreviewWindow(lines.length, !collapsed)"
+      return value="1 + window.head + window.tail + (window.skipped > 0 ? 1 : 0)"
+    if cond="toolKey === 'applypatch' || toolKey === 'apply_patch'"
+      let name=patch value="parsePatchPreview(rawInput, parsed)"
+      let name=window value="toolPreviewWindow(patch.lines.length, !collapsed)"
+      return value="1 + window.head + window.tail + (window.skipped > 0 ? 1 : 0)"
+    if cond="toolKey === 'read'"
+      if cond="collapsed"
+        return value="1"
+      let name=lineCount value="event.output ? String(event.output).split('\\n').length : 0"
+      return value="1 + lineCount"
+    if cond="toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find'"
+      if cond="collapsed"
+        return value="1"
+      let name=lineCount value="event.output ? String(event.output).split('\\n').filter((line: string) => line.trim()).length : 0"
+      return value="1 + lineCount"
+    let name=rows kind=let value="1"
+    if cond="rawInput"
+      assign target="rows" op="+=" value="Math.min(3, estimateWrappedRows(rawInput, codeWidth))"
+    if cond="event.output && event.status === 'done'"
+      assign target="rows" op="+=" value="1 + Math.min(6, estimateWrappedRows(event.output, codeWidth))"
+    return value="rows"
 
 fn name=estimateOutputEventRows params="event:OutputEvent, mode:string, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number
   handler <<<
@@ -1231,18 +1167,16 @@ fn name=estimateOutputEventRows params="event:OutputEvent, mode:string, toolOutp
   >>>
 
 fn name=buildDisplayItems params="blocks:OutputBlock[], toolOutputExpanded:boolean" returns="OutputBlock[]"
-  handler <<<
-    // Keep collapse as a per-block display concern, not a synthetic grouped
-    // scroll unit. Grouped tool summaries make wheel scrolling jump because
-    // one collapsed row can stand in for many logical rows.
-    return blocks;
-  >>>
+  handler lang="kern"
+    comment raw="// Keep collapse as a per-block display concern, not a synthetic grouped"
+    comment raw="// scroll unit. Grouped tool summaries make wheel scrolling jump because"
+    comment raw="// one collapsed row can stand in for many logical rows."
+    return value="blocks"
 
 fn name=isToolCallLikeBlock params="block:OutputBlock" returns=boolean export=true
-  handler <<<
-    const type = (block?.event as any)?.type;
-    return type === 'tool-call' || type === 'tool-call-group';
-  >>>
+  handler lang="kern"
+    let name=type value="(block?.event as any)?.type"
+    return value="type === 'tool-call' || type === 'tool-call-group'"
 
 fn name=coalesceToolCallBlocks params="blocks:OutputBlock[]" returns="OutputBlock[]" export=true
   doc "Merge adjacent tool-call and tool-call-group blocks into one group so native/live renderers do not show repeated collapsed tool summaries."
@@ -1326,17 +1260,17 @@ fn name=effectiveNativeArchiveBlockCount params="blocks:OutputBlock[], baseArchi
 fn name=estimateDisplayItemRows params="item:OutputBlock, mode:string, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number expr={{ return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded); }}
 
 fn name=historyBlocksForTranscript params="blocks:OutputBlock[]" returns="OutputBlock[]"
-  handler <<<
-    if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
-    return blocks;
-  >>>
+  handler lang="kern"
+    if cond="blocks.length === 1 && blocks[0]?.event?.type === 'dashboard'"
+      return value="[]"
+    return value="blocks"
 
 fn name=nativeTranscriptBlocksForStatic params="blocks:OutputBlock[]" returns="OutputBlock[]" export=true
   doc "Native transcript history. While idle, the startup dashboard is live chrome. Once the first real transcript row exists, keep the dashboard as the first chat-history block so the AGON header scrolls with the conversation instead of disappearing."
-  handler <<<
-    if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
-    return blocks;
-  >>>
+  handler lang="kern"
+    if cond="blocks.length === 1 && blocks[0]?.event?.type === 'dashboard'"
+      return value="[]"
+    return value="blocks"
 
 fn name=nativeArchiveBlockCount params="blocks:OutputBlock[], mode:string, rowBudget:number, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number export=true
   doc "Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender while older rows remain in terminal scrollback."
@@ -1419,58 +1353,32 @@ fn name=fileRailMaxRowsForTerminal params="termHeight:number, terminalMode:strin
 
 fn name=buildTerminalReplaySnapshot params="blocks:OutputBlock[], opts:any" returns="{terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number}" export=true
   doc "Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY."
-  handler <<<
-    const terminalMode = normalizeTerminalMode(opts?.terminalMode);
-    const mode = String(opts?.mode ?? 'chat');
-    const termWidth = Math.max(40, Math.floor(Number(opts?.termWidth) || 100));
-    const termHeight = Math.max(8, Math.floor(Number(opts?.termHeight) || 24));
-    const toolOutputExpanded = opts?.toolOutputExpanded !== false;
-    const thinkingExpanded = opts?.thinkingExpanded !== false;
-    const questionState = opts?.questionState ?? null;
-    const pendingImageCount = Math.max(0, Math.floor(Number(opts?.pendingImageCount) || 0));
-    const inputQueueCount = Math.max(0, Math.floor(Number(opts?.inputQueueCount) || 0));
-    const hasLiveSpinner = !!opts?.hasLiveSpinner;
-    const hasStream = !!opts?.hasStream;
-    const hasProgress = !!opts?.hasProgress;
-    const agentCount = Math.max(0, Math.floor(Number(opts?.agentCount) || 0));
-    const bottomChromeExtraRows = estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner);
-    const pinnedLiveRows = estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount, Math.max(0, Math.floor(Number(opts?.toolStreamCount) || 0)));
-    const visibleBudget = estimateVisibleBlockBudget(termHeight, mode, bottomChromeExtraRows + pinnedLiveRows);
-
-    const transcriptBlocks = terminalMode === 'native'
-      ? nativeTranscriptBlocksForStatic(blocks)
-      : historyBlocksForTranscript(blocks);
-    const staticBlockCount = terminalMode === 'native'
-      ? nativeArchiveBlockCount(transcriptBlocks, mode, visibleBudget, toolOutputExpanded, thinkingExpanded)
-      : 0;
-    const liveBlocks = terminalMode === 'native'
-      ? transcriptBlocks.slice(staticBlockCount)
-      : transcriptBlocks;
-    const transcriptRowCount = withContentWidthOverride(
-      termWidth,
-      () => buildTranscriptRows(liveBlocks, mode, toolOutputExpanded, thinkingExpanded).length,
-    );
-
-    const fileRailOpen = !!opts?.fileRailOpen;
-    const fileRailExpanded = !!opts?.fileRailExpanded;
-    const fileRailWidth = fileRailOpen ? fileRailWidthForTerminal(termWidth, fileRailExpanded) : 0;
-    const fileRailRows = fileRailOpen ? fileRailMaxRowsForTerminal(termHeight, terminalMode, fileRailExpanded) : 0;
-
-    return {
-      terminalMode,
-      mode,
-      termWidth,
-      termHeight,
-      visibleBudget,
-      transcriptRowCount,
-      staticBlockCount,
-      liveBlockCount: liveBlocks.length,
-      fileRailWidth,
-      fileRailRows,
-      headerRows: 1,
-      lowerChromeRows: (mode === 'chat' ? 7 : 8) + bottomChromeExtraRows,
-    };
-  >>>
+  handler lang="kern"
+    let name=terminalMode value="normalizeTerminalMode(opts?.terminalMode)"
+    let name=mode value="String(opts?.mode ?? 'chat')"
+    let name=termWidth value="Math.max(40, Math.floor(Number(opts?.termWidth) || 100))"
+    let name=termHeight value="Math.max(8, Math.floor(Number(opts?.termHeight) || 24))"
+    let name=toolOutputExpanded value="opts?.toolOutputExpanded !== false"
+    let name=thinkingExpanded value="opts?.thinkingExpanded !== false"
+    let name=questionState value="opts?.questionState ?? null"
+    let name=pendingImageCount value="Math.max(0, Math.floor(Number(opts?.pendingImageCount) || 0))"
+    let name=inputQueueCount value="Math.max(0, Math.floor(Number(opts?.inputQueueCount) || 0))"
+    let name=hasLiveSpinner value="!!opts?.hasLiveSpinner"
+    let name=hasStream value="!!opts?.hasStream"
+    let name=hasProgress value="!!opts?.hasProgress"
+    let name=agentCount value="Math.max(0, Math.floor(Number(opts?.agentCount) || 0))"
+    let name=bottomChromeExtraRows value="estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner)"
+    let name=pinnedLiveRows value="estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount, Math.max(0, Math.floor(Number(opts?.toolStreamCount) || 0)))"
+    let name=visibleBudget value="estimateVisibleBlockBudget(termHeight, mode, bottomChromeExtraRows + pinnedLiveRows)"
+    let name=transcriptBlocks value="terminalMode === 'native' ? nativeTranscriptBlocksForStatic(blocks) : historyBlocksForTranscript(blocks)"
+    let name=staticBlockCount value="terminalMode === 'native' ? nativeArchiveBlockCount(transcriptBlocks, mode, visibleBudget, toolOutputExpanded, thinkingExpanded) : 0"
+    let name=liveBlocks value="terminalMode === 'native' ? transcriptBlocks.slice(staticBlockCount) : transcriptBlocks"
+    let name=transcriptRowCount value="withContentWidthOverride(termWidth, () => buildTranscriptRows(liveBlocks, mode, toolOutputExpanded, thinkingExpanded).length)"
+    let name=fileRailOpen value="!!opts?.fileRailOpen"
+    let name=fileRailExpanded value="!!opts?.fileRailExpanded"
+    let name=fileRailWidth value="fileRailOpen ? fileRailWidthForTerminal(termWidth, fileRailExpanded) : 0"
+    let name=fileRailRows value="fileRailOpen ? fileRailMaxRowsForTerminal(termHeight, terminalMode, fileRailExpanded) : 0"
+    return value="{ terminalMode, mode, termWidth, termHeight, visibleBudget, transcriptRowCount, staticBlockCount, liveBlockCount: liveBlocks.length, fileRailWidth, fileRailRows, headerRows: 1, lowerChromeRows: (mode === 'chat' ? 7 : 8) + bottomChromeExtraRows, }"
 
 fn name=parseMarkdownToRows params="baseKey:string, text:string, wrapWidth:number, paddingLeft:number, borderColor:string" returns="any[]"
   handler <<<
@@ -2666,18 +2574,15 @@ screen name=App target=ink
 
   // ── Derived ──
   memo name=allSlashCommands deps="dynamicSkills, extensionSkills, commandRegistry"
-    handler <<<
-      const builtinCmds = SLASH_COMMANDS;
-      const registryCmds = commandRegistry.listForHelp();
-      const skillCmds = [...dynamicSkills, ...extensionSkills].map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
-      // Dedupe across builtins, registry-provided commands, and dynamic skills.
-      const mergedBase = [...builtinCmds, ...registryCmds].filter((cmd: any, index: number, all: any[]) =>
-        all.findIndex((other: any) => other.cmd === cmd.cmd) === index
-      );
-      const seen = new Set(mergedBase.map((c: any) => c.cmd));
-      const uniqueSkills = skillCmds.filter((s: any) => !seen.has(s.cmd));
-      return [...mergedBase, ...uniqueSkills];
-    >>>
+    handler lang="kern"
+      let name=builtinCmds value="SLASH_COMMANDS"
+      let name=registryCmds value="commandRegistry.listForHelp()"
+      let name=skillCmds value="[...dynamicSkills, ...extensionSkills].map((s: {trigger:string,description?:string,name:string}) => Object.assign({}, { cmd: s.trigger, desc: s.description || s.name }))"
+      comment raw="// Dedupe across builtins, registry-provided commands, and dynamic skills."
+      let name=mergedBase value="[...builtinCmds, ...registryCmds].filter((cmd: any, index: number, all: any[]) => all.findIndex((other: any) => other.cmd === cmd.cmd) === index)"
+      let name=seen value="new Set(mergedBase.map((c: any) => c.cmd))"
+      let name=uniqueSkills value="skillCmds.filter((s: any) => !seen.has(s.cmd))"
+      return value="[...mergedBase, ...uniqueSkills]"
 
   memo name=availableEngines deps="registry, registryVersion, configVersion"
     handler <<<
@@ -2691,19 +2596,16 @@ screen name=App target=ink
   // component trigger a re-read; external configSet() won't, but the render
   // tree doesn't need to reflect those mid-interaction.
   memo name=config deps="configVersion"
-    handler <<<
-      return loadConfig();
-    >>>
+    handler lang="kern"
+      return value="loadConfig()"
 
   memo name=terminalMode deps="config"
-    handler <<<
-      return normalizeTerminalMode((config as any).terminalMode);
-    >>>
+    handler lang="kern"
+      return value="normalizeTerminalMode((config as any).terminalMode)"
 
   memo name=nativeTranscriptBlocks deps="outputBlocks"
-    handler <<<
-      return nativeTranscriptBlocksForStatic(outputBlocks);
-    >>>
+    handler lang="kern"
+      return value="nativeTranscriptBlocksForStatic(outputBlocks)"
 
   memo name=statusCwd deps="workspacePath"
     handler <<<
@@ -2711,181 +2613,140 @@ screen name=App target=ink
     >>>
 
   memo name=statusBranch deps="workspacePath"
-    handler <<<
-      try { return currentBranch(workspacePath); }
-      catch { return ''; }
-    >>>
+    handler lang="kern"
+      try
+        return value="currentBranch(workspacePath)"
+        catch name=e
+          return value="''"
 
   memo name=statusStats deps="outputBlocks,chatSession,replState,config"
-    handler <<<
-      const stats = tracker.getStats();
-      const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-      return {
-        cesarId,
-        chatMessageCount: chatSession.messages.length,
-        totalTokens: stats.totalTokens,
-        totalCostUsd: stats.totalCostUsd,
-      };
-    >>>
+    handler lang="kern"
+      let name=stats value="tracker.getStats()"
+      let name=cesarId value="(config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude'"
+      return value="{ cesarId, chatMessageCount: chatSession.messages.length, totalTokens: stats.totalTokens, totalCostUsd: stats.totalCostUsd, }"
 
   memo name=runningJobs deps="jobList"
-    handler <<<
-      return jobList.filter((j: Job) => j.state === 'running');
-    >>>
+    handler lang="kern"
+      return value="jobList.filter((j: Job) => j.state === 'running')"
 
   memo name=activeStream deps="streamingText"
-    handler <<<
-      const entries = Object.values(streamingText);
-      if (entries.length === 0) return null;
-      let latest: StreamingEntry | null = null;
-      for (const e of entries) {
-        if (!latest || e.startedAt > latest.startedAt) latest = e;
-      }
-      return latest;
-    >>>
+    handler lang="kern"
+      let name=entries value="Object.values(streamingText)"
+      if cond="entries.length === 0"
+        return value="null"
+      let name=latest type="StreamingEntry | null" kind=let value="null"
+      each name=e in="entries"
+        if cond="!latest || e.startedAt > latest.startedAt"
+          assign target="latest" value="e"
+      return value="latest"
 
   memo name=streamSnippet deps="activeStream"
-    handler <<<
-      if (!activeStream || !activeStream.content) return null;
-      const cleaned = cleanEngineOutput(activeStream.content);
-      const lines = cleaned.split('\n').filter((l: string) => l.trim());
-      if (lines.length === 0) return null;
-      return { engineId: activeStream.engineId, line: lines[lines.length - 1].trim() };
-    >>>
+    handler lang="kern"
+      if cond="!activeStream || !activeStream.content"
+        return value="null"
+      let name=cleaned value="cleanEngineOutput(activeStream.content)"
+      let name=lines value="cleaned.split('\\n').filter((l: string) => l.trim())"
+      if cond="lines.length === 0"
+        return value="null"
+      return value="{ engineId: activeStream.engineId, line: lines[lines.length - 1].trim() }"
 
   memo name=latestToolEvent deps="outputBlocks"
-    handler <<<
-      return findLatestToolEvent(outputBlocks);
-    >>>
+    handler lang="kern"
+      return value="findLatestToolEvent(outputBlocks)"
 
   memo name=executionRailStats deps="outputBlocks,fileRailVersion,inputQueue"
-    handler <<<
-      return buildExecutionRailStats(outputBlocks, listFiles(), inputQueue.length);
-    >>>
+    handler lang="kern"
+      return value="buildExecutionRailStats(outputBlocks, listFiles(), inputQueue.length)"
 
   memo name=overlayReservedRows deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, btwPanel, termHeight"
-    handler <<<
-      if (toolDetailEvent) return toolDetailViewportRows(termHeight) + 5;
-      if (btwPanel) return 9;
-      return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent ? 4 : 0;
-    >>>
+    handler lang="kern"
+      if cond="toolDetailEvent"
+        return value="toolDetailViewportRows(termHeight) + 5"
+      if cond="btwPanel"
+        return value="9"
+      return value="enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent ? 4 : 0"
 
   memo name=bottomChromeReservedRows deps="mode,questionState,termWidth,pendingImages,inputQueue,liveSpinner"
-    handler <<<
-      return estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !!liveSpinner);
-    >>>
+    handler lang="kern"
+      return value="estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !!liveSpinner)"
 
   memo name=overlayActive deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent"
-    handler <<<
-      return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent || !!toolDetailEvent;
-    >>>
+    handler lang="kern"
+      return value="enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent || !!toolDetailEvent"
 
   memo name=toolDetailView deps="toolDetailEvent, termWidth"
-    handler <<<
-      return toolDetailEvent ? buildToolDetailView(toolDetailEvent) : null;
-    >>>
+    handler lang="kern"
+      return value="toolDetailEvent ? buildToolDetailView(toolDetailEvent) : null"
 
   memo name=startupOnly deps="outputBlocks,activeStream,liveProgress,agentProgress,liveToolStreams"
-    handler <<<
-      return outputBlocks.length === 1
-        && outputBlocks[0]?.event?.type === 'dashboard'
-        && !activeStream
-        && !liveProgress
-        && Object.keys(liveToolStreams).length === 0
-        && Object.keys(agentProgress).length === 0;
-    >>>
+    handler lang="kern"
+      return value="outputBlocks.length === 1 && outputBlocks[0]?.event?.type === 'dashboard' && !activeStream && !liveProgress && Object.keys(liveToolStreams).length === 0 && Object.keys(agentProgress).length === 0"
 
   memo name=historyBlocks deps="outputBlocks"
-    handler <<<
-      return historyBlocksForTranscript(outputBlocks);
-    >>>
+    handler lang="kern"
+      return value="historyBlocksForTranscript(outputBlocks)"
 
   memo name=displayBlocks deps="startupOnly,outputBlocks,historyBlocks"
-    handler <<<
-      return startupOnly ? outputBlocks : historyBlocks;
-    >>>
+    handler lang="kern"
+      return value="startupOnly ? outputBlocks : historyBlocks"
 
   memo name=livePaneVisible deps="activeStream, liveProgress, liveToolStreams, agentProgress, startupOnly"
-    handler <<<
-      if (startupOnly) return false;
-      return !!activeStream || !!liveProgress || Object.keys(liveToolStreams).length > 0 || Object.keys(agentProgress).length > 0;
-    >>>
+    handler lang="kern"
+      if cond="startupOnly"
+        return value="false"
+      return value="!!activeStream || !!liveProgress || Object.keys(liveToolStreams).length > 0 || Object.keys(agentProgress).length > 0"
 
   memo name=currentVisibleRowBudget deps="termHeight, mode, overlayReservedRows, bottomChromeReservedRows, livePaneVisible, activeStream, liveProgress, liveToolStreams, agentProgress"
-    handler <<<
-      const pinnedLiveRows = livePaneVisible
-        ? estimatePinnedLiveRows(mode, !!activeStream, !!liveProgress, Object.keys(agentProgress).length, Object.keys(liveToolStreams).length)
-        : 0;
-      const viewportRows = Math.max(1, termHeight - pinnedLiveRows);
-      return estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows + bottomChromeReservedRows);
-    >>>
+    handler lang="kern"
+      let name=pinnedLiveRows value="livePaneVisible ? estimatePinnedLiveRows(mode, !!activeStream, !!liveProgress, Object.keys(agentProgress).length, Object.keys(liveToolStreams).length) : 0"
+      let name=viewportRows value="Math.max(1, termHeight - pinnedLiveRows)"
+      return value="estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows + bottomChromeReservedRows)"
 
   memo name=nativeArchiveTarget deps="nativeTranscriptBlocks,mode,currentVisibleRowBudget,toolOutputExpanded,thinkingExpanded"
-    handler <<<
-      return nativeArchiveBlockCount(nativeTranscriptBlocks, mode, currentVisibleRowBudget, toolOutputExpanded, thinkingExpanded);
-    >>>
+    handler lang="kern"
+      return value="nativeArchiveBlockCount(nativeTranscriptBlocks, mode, currentVisibleRowBudget, toolOutputExpanded, thinkingExpanded)"
 
   memo name=effectiveNativeArchiveCount deps="nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks,toolOutputExpanded"
-    handler <<<
-      const baseArchiveCount = nativeTranscriptBlocks.length < nativeTranscriptBlockCountRef.current ? 0 : nativeArchiveCount;
-      return effectiveNativeArchiveBlockCount(nativeTranscriptBlocks, baseArchiveCount, nativeArchiveTarget, toolOutputExpanded);
-    >>>
+    handler lang="kern"
+      let name=baseArchiveCount value="nativeTranscriptBlocks.length < nativeTranscriptBlockCountRef.current ? 0 : nativeArchiveCount"
+      return value="effectiveNativeArchiveBlockCount(nativeTranscriptBlocks, baseArchiveCount, nativeArchiveTarget, toolOutputExpanded)"
 
   memo name=nativeArchiveBlocks deps="nativeTranscriptBlocks,effectiveNativeArchiveCount"
-    handler <<<
-      return coalesceToolCallBlocks(nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount));
-    >>>
+    handler lang="kern"
+      return value="coalesceToolCallBlocks(nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount))"
 
   memo name=nativeLiveBlocks deps="nativeTranscriptBlocks,effectiveNativeArchiveCount"
-    handler <<<
-      return nativeTranscriptBlocks.slice(effectiveNativeArchiveCount);
-    >>>
+    handler lang="kern"
+      return value="nativeTranscriptBlocks.slice(effectiveNativeArchiveCount)"
 
   memo name=displayRows deps="displayBlocks, mode, toolOutputExpanded, thinkingExpanded"
-    handler <<<
-      return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
-    >>>
+    handler lang="kern"
+      return value="buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded)"
 
   memo name=nativeLiveRows deps="nativeLiveBlocks,mode,toolOutputExpanded,thinkingExpanded"
-    handler <<<
-      return buildTranscriptRows(nativeLiveBlocks, mode, toolOutputExpanded, thinkingExpanded);
-    >>>
+    handler lang="kern"
+      return value="buildTranscriptRows(nativeLiveBlocks, mode, toolOutputExpanded, thinkingExpanded)"
 
   memo name=totalDisplayRows deps="displayRows"
-    handler <<<
-      return displayRows.length;
-    >>>
+    handler lang="kern"
+      return value="displayRows.length"
 
   memo name=selectedRowRange deps="mouseSelection"
-    handler <<<
-      const range = normalizeTextSelection(
-        mouseSelection.anchorRow,
-        mouseSelection.anchorCol,
-        mouseSelection.focusRow,
-        mouseSelection.focusCol,
-      );
-      return range ? { start: range.startRow, end: range.endRow } : null;
-    >>>
+    handler lang="kern"
+      let name=range value="normalizeTextSelection(mouseSelection.anchorRow, mouseSelection.anchorCol, mouseSelection.focusRow, mouseSelection.focusCol)"
+      return value="range ? { start: range.startRow, end: range.endRow } : null"
 
   memo name=selectedTextRange deps="mouseSelection"
-    handler <<<
-      return normalizeTextSelection(
-        mouseSelection.anchorRow,
-        mouseSelection.anchorCol,
-        mouseSelection.focusRow,
-        mouseSelection.focusCol,
-      );
-    >>>
+    handler lang="kern"
+      return value="normalizeTextSelection(mouseSelection.anchorRow, mouseSelection.anchorCol, mouseSelection.focusRow, mouseSelection.focusCol)"
 
   memo name=startupFitsViewport deps="startupOnly, totalDisplayRows, currentVisibleRowBudget"
-    handler <<<
-      return startupOnly && totalDisplayRows <= currentVisibleRowBudget;
-    >>>
+    handler lang="kern"
+      return value="startupOnly && totalDisplayRows <= currentVisibleRowBudget"
 
   memo name=startupUseDashboardView deps="startupFitsViewport, termWidth"
-    handler <<<
-      return startupFitsViewport && termWidth >= 100;
-    >>>
+    handler lang="kern"
+      return value="startupFitsViewport && termWidth >= 100"
 
   // ── Load extensions on startup + workspace switch ──
   effect deps="workspacePath"
@@ -2900,19 +2761,16 @@ screen name=App target=ink
     >>>
 
   effect deps="mode"
-    handler <<<
-      modeRef.current = mode;
-    >>>
+    handler lang="kern"
+      assign target="modeRef.current" value="mode"
 
   effect deps="mouseSelection"
-    handler <<<
-      mouseSelectionRef.current = mouseSelection;
-    >>>
+    handler lang="kern"
+      assign target="mouseSelectionRef.current" value="mouseSelection"
 
   effect deps="activePlan"
-    handler <<<
-      activePlanRef.current = activePlan;
-    >>>
+    handler lang="kern"
+      assign target="activePlanRef.current" value="activePlan"
 
   effect deps="activePlan,setActivePlanWrapped"
     handler <<<
@@ -2970,32 +2828,27 @@ screen name=App target=ink
     >>>
 
   effect deps="terminalMode,nativeTranscriptBlocks"
-    handler <<<
-      const nextCount = nativeTranscriptBlocks.length;
-      if (terminalMode !== 'native') {
-        nativeTranscriptBlockCountRef.current = nextCount;
-        return;
-      }
-      const previousCount = nativeTranscriptBlockCountRef.current;
-      if (nextCount < previousCount) {
-        setNativeStaticEpoch((epoch: number) => epoch + 1);
-        setNativeArchiveCount(0);
-      }
-      nativeTranscriptBlockCountRef.current = nextCount;
-    >>>
+    handler lang="kern"
+      let name=nextCount value="nativeTranscriptBlocks.length"
+      if cond="terminalMode !== 'native'"
+        assign target="nativeTranscriptBlockCountRef.current" value="nextCount"
+        return
+      let name=previousCount value="nativeTranscriptBlockCountRef.current"
+      if cond="nextCount < previousCount"
+        do value="setNativeStaticEpoch((epoch: number) => epoch + 1)"
+        do value="setNativeArchiveCount(0)"
+      assign target="nativeTranscriptBlockCountRef.current" value="nextCount"
 
   effect deps="terminalMode,effectiveNativeArchiveCount,nativeArchiveCount"
-    handler <<<
-      if (terminalMode !== 'native') return;
-      if (effectiveNativeArchiveCount !== nativeArchiveCount) {
-        setNativeArchiveCount(effectiveNativeArchiveCount);
-      }
-    >>>
+    handler lang="kern"
+      if cond="terminalMode !== 'native'"
+        return
+      if cond="effectiveNativeArchiveCount !== nativeArchiveCount"
+        do value="setNativeArchiveCount(effectiveNativeArchiveCount)"
 
   effect deps="lastReviewResult"
-    handler <<<
-      lastReviewResultRef.current = lastReviewResult;
-    >>>
+    handler lang="kern"
+      assign target="lastReviewResultRef.current" value="lastReviewResult"
 
   // ── TTL pruner for completed agentProgress snapshots ──
   // After an agent-step-end event sets `completedAt`, leave the panel visible
@@ -3080,22 +2933,21 @@ screen name=App target=ink
     >>>
 
   callback name=trackAbort params="abort:AbortController|null"
-    handler <<<
-      if (activeAbortRef.current) _activeAborts.delete(activeAbortRef.current);
-      activeAbortRef.current = abort;
-      if (abort) _activeAborts.add(abort);
-      setActiveAbort(abort);
-    >>>
+    handler lang="kern"
+      if cond="activeAbortRef.current"
+        do value="_activeAborts.delete(activeAbortRef.current)"
+      assign target="activeAbortRef.current" value="abort"
+      if cond="abort"
+        do value="_activeAborts.add(abort)"
+      do value="setActiveAbort(abort)"
 
   callback name=setCesarSessionWrapped params="session:PersistentSession|null" deps="chatSession,config"
-    handler <<<
-      const previous = _cesarSessionRef.session;
-      if (previous && previous !== session && (config as any).sessionContinuity === true) {
-        saveCesarConversationSnapshot(previous, chatSession);
-      }
-      _cesarSessionRef.session = session;
-      setCesarSession(session);
-    >>>
+    handler lang="kern"
+      let name=previous value="_cesarSessionRef.session"
+      if cond="previous && previous !== session && (config as any).sessionContinuity === true"
+        do value="saveCesarConversationSnapshot(previous, chatSession)"
+      assign target="_cesarSessionRef.session" value="session"
+      do value="setCesarSession(session)"
 
   callback name=activeEngines params="" deps="registry,sessionEngines,config"
     handler <<<
@@ -3104,12 +2956,11 @@ screen name=App target=ink
     >>>
 
   callback name=setPersistentAutoMode params="enabled:boolean" deps=""
-    handler <<<
-      configSet('cesarAutoMode' as any, enabled as any);
-      configSet('cesarAutoModePrompted' as any, true as any);
-      setAutoModeQueued(enabled);
-      setConfigVersion((v: number) => v + 1);
-    >>>
+    handler lang="kern"
+      do value="configSet('cesarAutoMode' as any, enabled as any)"
+      do value="configSet('cesarAutoModePrompted' as any, true as any)"
+      do value="setAutoModeQueued(enabled)"
+      do value="setConfigVersion((v: number) => v + 1)"
 
   callback name=setActivePlanWrapped params="plan:any" deps=""
     handler <<<
@@ -3233,30 +3084,27 @@ screen name=App target=ink
     >>>
 
   callback name=dispatch params="event:OutputEvent" deps="mode"
-    handler <<<
-      const et = (event as any).type;
-      if (et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
-        lastActivityTimeRef.current = Date.now();
-      }
-      // Feed FileTracker: only tool-call events with file-touching tools
-      // actually populate it (others are no-ops inside the tracker).
-      if (et === 'tool-call') {
-        const tc = event as any;
-        recordToolCall(tc.tool, tc.input, tc.status);
-        setFileRailVersion(getFileTrackerVersion());
-      }
-      if (et === 'engine-pid') {
-        const engineId = String((event as any).engineId ?? '').trim();
-        const pid = Number((event as any).pid ?? 0);
-        if (engineId && Number.isFinite(pid) && pid > 0) activeEnginePidsRef.current.set(engineId, pid);
-      }
-      if (et === 'engine-pid-clear') {
-        const engineId = String((event as any).engineId ?? '').trim();
-        if (engineId) activeEnginePidsRef.current.delete(engineId);
-      }
-      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, liveToolStreams: liveToolStreamsRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} };
-      handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
-    >>>
+    handler lang="kern"
+      let name=et value="(event as any).type"
+      if cond="et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update'"
+        assign target="lastActivityTimeRef.current" value="Date.now()"
+      comment raw="// Feed FileTracker: only tool-call events with file-touching tools"
+      comment raw="// actually populate it (others are no-ops inside the tracker)."
+      if cond="et === 'tool-call'"
+        let name=tc value="event as any"
+        do value="recordToolCall(tc.tool, tc.input, tc.status)"
+        do value="setFileRailVersion(getFileTrackerVersion())"
+      if cond="et === 'engine-pid'"
+        let name=engineId value="String((event as any).engineId ?? '').trim()"
+        let name=pid value="Number((event as any).pid ?? 0)"
+        if cond="engineId && Number.isFinite(pid) && pid > 0"
+          do value="activeEnginePidsRef.current.set(engineId, pid)"
+      if cond="et === 'engine-pid-clear'"
+        let name=engineId value="String((event as any).engineId ?? '').trim()"
+        if cond="engineId"
+          do value="activeEnginePidsRef.current.delete(engineId)"
+      let name=state type="OutputState" value="{ liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, liveToolStreams: liveToolStreamsRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} }"
+      do value="handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current)"
 
   callback name=askQuestion params="prompt:string" deps="dispatch"
     handler <<<
@@ -3264,41 +3112,41 @@ screen name=App target=ink
     >>>
 
   callback name=interruptActiveRun params="message:string, clearChat:boolean" deps="replState,dispatch,trackAbort,outputActions"
-    handler <<<
-      const abort = activeAbortRef.current;
-      if (abort) abort.abort();
-      trackAbort(null);
-      setLiveSpinner(null);
-      setLiveProgress(null);
-      // Commit any in-flight streams before wiping. In main-buffer mode the
-      // partial text has already been written to the terminal; dropping it
-      // from React state without flushing causes logUpdate.eraseLines to
-      // wipe visible output the user was just reading.
-      outputActions.flushStream();
-      clearPermissionQueue();
-      clearThinkingBuffer();
-      setQuestionState(null);
-      setQuestionAnswer('');
-      setPendingPlanProposal(null);
-      setSlashPickerOpen(false);
-      setEnginePickerOpen(false);
-      setModelPickerOpen(false);
-      setCesarPickerOpen(false);
-      setReviewEvent(null);
-      const pendingPlan = activePlanRef.current;
-      if (pendingPlan && ['planning', 'awaiting_approval'].includes(String(pendingPlan.state ?? ''))) {
-        try { saveCesarPlan(cancelCesarPlan(pendingPlan)); } catch (_err) {}
-        activePlanRef.current = null;
-        setActivePlan(null);
-      }
-
-      if (replState !== 'idle') {
-        if (message) dispatch({ type: 'warning', message } as any);
-        setReplState((prev: any) => prev === 'idle' ? prev : cancelReplState({ state: prev }).state);
-      }
-
-      if (clearChat) dispatch({ type: 'clear' } as any);
-    >>>
+    handler lang="kern"
+      let name=abort value="activeAbortRef.current"
+      if cond="abort"
+        do value="abort.abort()"
+      do value="trackAbort(null)"
+      do value="setLiveSpinner(null)"
+      do value="setLiveProgress(null)"
+      comment raw="// Commit any in-flight streams before wiping. In main-buffer mode the"
+      comment raw="// partial text has already been written to the terminal; dropping it"
+      comment raw="// from React state without flushing causes logUpdate.eraseLines to"
+      comment raw="// wipe visible output the user was just reading."
+      do value="outputActions.flushStream()"
+      do value="clearPermissionQueue()"
+      do value="clearThinkingBuffer()"
+      do value="setQuestionState(null)"
+      do value="setQuestionAnswer('')"
+      do value="setPendingPlanProposal(null)"
+      do value="setSlashPickerOpen(false)"
+      do value="setEnginePickerOpen(false)"
+      do value="setModelPickerOpen(false)"
+      do value="setCesarPickerOpen(false)"
+      do value="setReviewEvent(null)"
+      let name=pendingPlan value="activePlanRef.current"
+      if cond="pendingPlan && ['planning', 'awaiting_approval'].includes(String(pendingPlan.state ?? ''))"
+        try
+          do value="saveCesarPlan(cancelCesarPlan(pendingPlan))"
+          catch name=_err
+        assign target="activePlanRef.current" value="null"
+        do value="setActivePlan(null)"
+      if cond="replState !== 'idle'"
+        if cond="message"
+          do value="dispatch({ type: 'warning', message } as any)"
+        do value="setReplState((prev: any) => prev === 'idle' ? prev : cancelReplState({ state: prev }).state)"
+      if cond="clearChat"
+        do value="dispatch({ type: 'clear' } as any)"
 
   callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped"
     handler <<<
@@ -3514,84 +3362,63 @@ screen name=App target=ink
   // is fine because every call into handleInputChange reads it before
   // React applies the next setInputValue anyway.
   effect deps="inputValue"
-    handler <<<
-      inputValueRef.current = inputValue;
-    >>>
+    handler lang="kern"
+      assign target="inputValueRef.current" value="inputValue"
 
   // ── Input handlers ──
   callback name=handlePasteInput params="raw:string" deps=""
-    handler <<<
-      const result = processPasteContent(String(raw ?? ''));
-      if (result.type === 'empty') {
-        return '';
-      }
-
-      if (result.type === 'stored') {
-        recordPastePlaceholder(pasteHashesRef.current, result.placeholder, result.fullHash);
-      }
-
-      const replacement = result.type === 'stored' ? result.placeholder : result.content;
-      pendingPasteTransformRef.current = replacement.length > 0;
-      return replacement;
-    >>>
+    handler lang="kern"
+      let name=result value="processPasteContent(String(raw ?? ''))"
+      if cond="result.type === 'empty'"
+        return value="''"
+      if cond="result.type === 'stored'"
+        do value="recordPastePlaceholder(pasteHashesRef.current, result.placeholder, result.fullHash)"
+      let name=replacement value="result.type === 'stored' ? result.placeholder : result.content"
+      assign target="pendingPasteTransformRef.current" value="replacement.length > 0"
+      return value="replacement"
 
   callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued"
-    handler <<<
-      // Swallow input while a choice question is active — the keyboard handler
-      // resolves the choice on a single keypress.
-      if (questionState && questionState.choices) return;
-
-      // Reject value changes caused by Ctrl+key shortcuts (the input hooks already handled them,
-      // but TextInput still fires onChange with the raw character)
-      if (ctrlKeyHandledRef.current) {
-        ctrlKeyHandledRef.current = false;
-        return;
-      }
-
-      const nextValue = cleanInputValue(value);
-      const prevValue = inputValueRef.current;
-      const change = findInputChange(prevValue, nextValue);
-      const cameFromPasteTransform = pendingPasteTransformRef.current;
-      if (cameFromPasteTransform) {
-        pendingPasteTransformRef.current = false;
-      }
-
-      // "/" typed into empty input → open slash picker, swallow the character
-      if (!prevValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !cameFromPasteTransform) {
-        if (planModeQueued) setPlanModeQueued(false);
-        setSlashPickerOpen(true);
-        return;
-      }
-
-      // When slash picker is open, don't update inputValue — picker manages its own filter
-      if (slashPickerOpen) {
-        return;
-      }
-
-      const looksLikePaste = value !== nextValue || change.inserted.length > 1;
-
-      if (cameFromPasteTransform || !looksLikePaste || !change.inserted) {
-        inputValueRef.current = nextValue;
-        setInputValue(nextValue);
-        return;
-      }
-
-      const result = processPasteContent(change.inserted);
-      if (result.type === 'empty') {
-        inputValueRef.current = nextValue;
-        setInputValue(nextValue);
-        return;
-      }
-
-      if (result.type === 'stored') {
-        recordPastePlaceholder(pasteHashesRef.current, result.placeholder, result.fullHash);
-      }
-
-      const replacement = result.type === 'stored' ? result.placeholder : result.content;
-      const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
-      inputValueRef.current = updatedValue;
-      setInputValue(updatedValue);
-    >>>
+    handler lang="kern"
+      comment raw="// Swallow input while a choice question is active — the keyboard handler"
+      comment raw="// resolves the choice on a single keypress."
+      if cond="questionState && questionState.choices"
+        return
+      comment raw="// Reject value changes caused by Ctrl+key shortcuts (the input hooks already handled them,"
+      comment raw="// but TextInput still fires onChange with the raw character)"
+      if cond="ctrlKeyHandledRef.current"
+        assign target="ctrlKeyHandledRef.current" value="false"
+        return
+      let name=nextValue value="cleanInputValue(value)"
+      let name=prevValue value="inputValueRef.current"
+      let name=change value="findInputChange(prevValue, nextValue)"
+      let name=cameFromPasteTransform value="pendingPasteTransformRef.current"
+      if cond="cameFromPasteTransform"
+        assign target="pendingPasteTransformRef.current" value="false"
+      comment raw="// \"/\" typed into empty input → open slash picker, swallow the character"
+      if cond="!prevValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !cameFromPasteTransform"
+        if cond="planModeQueued"
+          do value="setPlanModeQueued(false)"
+        do value="setSlashPickerOpen(true)"
+        return
+      comment raw="// When slash picker is open, don't update inputValue — picker manages its own filter"
+      if cond="slashPickerOpen"
+        return
+      let name=looksLikePaste value="value !== nextValue || change.inserted.length > 1"
+      if cond="cameFromPasteTransform || !looksLikePaste || !change.inserted"
+        assign target="inputValueRef.current" value="nextValue"
+        do value="setInputValue(nextValue)"
+        return
+      let name=result value="processPasteContent(change.inserted)"
+      if cond="result.type === 'empty'"
+        assign target="inputValueRef.current" value="nextValue"
+        do value="setInputValue(nextValue)"
+        return
+      if cond="result.type === 'stored'"
+        do value="recordPastePlaceholder(pasteHashesRef.current, result.placeholder, result.fullHash)"
+      let name=replacement value="result.type === 'stored' ? result.placeholder : result.content"
+      let name=updatedValue value="nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length)"
+      assign target="inputValueRef.current" value="updatedValue"
+      do value="setInputValue(updatedValue)"
 
   callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks"
     handler <<<
@@ -3813,12 +3640,13 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
     >>>
 
   callback name=handleReviewActionCb params="action:'apply'|'edit'|'reject'|'copy'" deps="reviewEvent,dispatch"
-    handler <<<
-      if (!reviewEvent) return;
-      const token = handleReviewAction({ type: action }, reviewEvent, dispatch);
-      if (token) setLastUndoToken(token);
-      setReviewEvent(null);
-    >>>
+    handler lang="kern"
+      if cond="!reviewEvent"
+        return
+      let name=token value="handleReviewAction({ type: action }, reviewEvent, dispatch)"
+      if cond="token"
+        do value="setLastUndoToken(token)"
+      do value="setReviewEvent(null)"
 
   callback name=openCliModelPicker params="engineId:string" deps="registry,dispatch"
     handler <<<
@@ -3901,51 +3729,46 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
     >>>
 
   callback name=openLatestToolDetail params="" deps="outputBlocks,dispatch"
-    handler <<<
-      const event = findLatestToolDetailEvent(outputBlocks);
-      if (!event) {
-        dispatch({ type: 'info', message: 'No large tool output or approval command to open yet.' } as any);
-        return;
-      }
-      setToolDetailEvent(event);
-    >>>
+    handler lang="kern"
+      let name=event value="findLatestToolDetailEvent(outputBlocks)"
+      if cond="!event"
+        do value="dispatch({ type: 'info', message: 'No large tool output or approval command to open yet.' } as any)"
+        return
+      do value="setToolDetailEvent(event)"
 
   callback name=draftLatestFailedToolRetry params="" deps="outputBlocks,dispatch"
-    handler <<<
-      const event = findLatestFailedToolEvent(outputBlocks);
-      if (!event) {
-        dispatch({ type: 'info', message: 'No failed tool call to retry/edit yet.' } as any);
-        return;
-      }
-      const draft = buildFailedToolRetryDraft(event);
-      if (!draft) {
-        dispatch({ type: 'info', message: 'No retry draft available for the latest failed tool.' } as any);
-        return;
-      }
-      inputValueRef.current = draft;
-      setInputValue(draft);
-      setHistoryIndex(-1);
-      dispatch({ type: 'info', message: 'Drafted failed-tool retry in the composer. Edit it, then press Enter.' } as any);
-    >>>
+    handler lang="kern"
+      let name=event value="findLatestFailedToolEvent(outputBlocks)"
+      if cond="!event"
+        do value="dispatch({ type: 'info', message: 'No failed tool call to retry/edit yet.' } as any)"
+        return
+      let name=draft value="buildFailedToolRetryDraft(event)"
+      if cond="!draft"
+        do value="dispatch({ type: 'info', message: 'No retry draft available for the latest failed tool.' } as any)"
+        return
+      assign target="inputValueRef.current" value="draft"
+      do value="setInputValue(draft)"
+      do value="setHistoryIndex(-1)"
+      do value="dispatch({ type: 'info', message: 'Drafted failed-tool retry in the composer. Edit it, then press Enter.' } as any)"
 
   callback name=handleSlashSelect params="cmd:string"
-    handler <<<
-      setPlanModeQueued(false);
-      setSlashPickerOpen(false);
-      setInputValue(cmd + ' ');
-    >>>
+    handler lang="kern"
+      do value="setPlanModeQueued(false)"
+      do value="setSlashPickerOpen(false)"
+      do value="setInputValue(cmd + ' ')"
 
   // Stable ref for ComposerView's slash-cancel — without this, an inline
   // arrow would create a new function each App render, defeating the memo.
   callback name=handleSlashCancel
-    handler <<<
-      setSlashPickerOpen(false);
-    >>>
+    handler lang="kern"
+      do value="setSlashPickerOpen(false)"
 
   callback name=handleQuestionAnswer params="answer:string" deps="questionState"
-    handler <<<
-      if (questionState) { questionState.resolve(answer); setQuestionState(null); setQuestionAnswer(''); }
-    >>>
+    handler lang="kern"
+      if cond="questionState"
+        do value="questionState.resolve(answer)"
+        do value="setQuestionState(null)"
+        do value="setQuestionAnswer('')"
 
   callback name=handleCancelOrExit deps="questionState,replState,inputValue,dispatch"
     handler <<<

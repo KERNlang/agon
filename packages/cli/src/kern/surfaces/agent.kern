@@ -55,16 +55,17 @@ fn name=progressBar params="pct:number,width:number" returns=string export=false
 
 fn name=formatElapsed params="ms:number" returns=string export=false
   doc "Human-readable elapsed time (e.g. '42s', '3m12s', '1h04m')."
-  handler <<<
-    const secs = Math.floor(ms / 1000);
-    if (secs < 60) return `${secs}s`;
-    const mins = Math.floor(secs / 60);
-    const rem = secs % 60;
-    if (mins < 60) return `${mins}m${rem.toString().padStart(2, '0')}s`;
-    const hours = Math.floor(mins / 60);
-    const mrem = mins % 60;
-    return `${hours}h${mrem.toString().padStart(2, '0')}m`;
-  >>>
+  handler lang="kern"
+    let name=secs value="Math.floor(ms / 1000)"
+    if cond="secs < 60"
+      fmt return=true template="${secs}s"
+    let name=mins value="Math.floor(secs / 60)"
+    let name=rem value="secs % 60"
+    if cond="mins < 60"
+      fmt return=true template="${mins}m${rem.toString().padStart(2, '0')}s"
+    let name=hours value="Math.floor(mins / 60)"
+    let name=mrem value="mins % 60"
+    fmt return=true template="${hours}h${mrem.toString().padStart(2, '0')}m"
 
 fn name=formatTokens params="tokens:number" returns=string export=false
   doc "Render token count as 1.2k, 45k, 1.4M."

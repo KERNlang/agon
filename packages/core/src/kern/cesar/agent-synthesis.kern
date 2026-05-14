@@ -511,14 +511,10 @@ interface name=SynthesisBiasSignal
 
 fn name=detectSynthesisInsightMention params="opts:{responseExcerpt:string, loserEngineIds:string[]}" returns=SynthesisBiasSignal export=true
   doc "Scan the synthesis response excerpt for mentions of the loser engineIds. This is a WEAK heuristic — the model might paraphrase (e.g. 'codex's approach' → 'the alternative factoring') without naming the engine — but non-zero mentions is a positive signal that the humility frame was followed. Zero mentions combined with a non-no-op diff is the bias warning signal the caller surfaces."
-  handler <<<
-    const excerpt = opts.responseExcerpt.toLowerCase();
-    const mentioned: string[] = [];
-    for (const id of opts.loserEngineIds) {
-      if (excerpt.includes(id.toLowerCase())) mentioned.push(id);
-    }
-    return {
-      hasAnyMention: mentioned.length > 0,
-      mentionedEngineIds: mentioned,
-    };
-  >>>
+  handler lang="kern"
+    let name=excerpt value="opts.responseExcerpt.toLowerCase()"
+    let name=mentioned type="string[]" value="[]"
+    each name=id in="opts.loserEngineIds"
+      if cond="excerpt.includes(id.toLowerCase())"
+        do value="mentioned.push(id)"
+    return value="{ hasAnyMention: mentioned.length > 0, mentionedEngineIds: mentioned, }"

@@ -22,64 +22,33 @@ const name=MUTATING_STEP_TYPES type="Set<string>" value={{ new Set(['forge', 'te
 
 fn name=applyAutoApprovePolicy params="plan:CesarPlan, config:AgonConfig" returns=AutoApproveDecision export=true
   doc "Decide whether a plan qualifies for autonomous execution without user confirmation."
-  handler <<<
-    const mode = (config as any).cesarAutoApproveMode ?? 'safe-only';
-    const maxCostUsd = (config as any).cesarAutoApproveMaxCostUsd as number | undefined;
-
-    // Gate 0: global off switch
-    if (mode === 'off') {
-      return { approve: false, reason: 'autoApprove disabled (cesarAutoApproveMode=off)', adjustedCostUsd: plan.totalEstimatedCostUsd };
-    }
-
-    // Gate 1: plan must opt in
-    if (plan.autoApprove !== true) {
-      return { approve: false, reason: 'plan did not request autoApprove', adjustedCostUsd: plan.totalEstimatedCostUsd };
-    }
-
-    // Gate 2: whitelist floor — safe-only rejects any mutating step type
-    const mutatingSteps = plan.steps.filter((s) => MUTATING_STEP_TYPES.has(s.type));
-    if (mode === 'safe-only' && mutatingSteps.length > 0) {
-      const types = Array.from(new Set(mutatingSteps.map((s) => s.type))).join(', ');
-      return {
-        approve: false,
-        reason: `safe-only mode rejects mutating step types: ${types}`,
-        adjustedCostUsd: plan.totalEstimatedCostUsd,
-      };
-    }
-
-    // Gate 3: fitnessCmd interlock — shell commands need user inspect
-    // unless the user explicitly opted into 'always'
-    const fitnessSteps = plan.steps.filter((s) => s.fitnessCmd && s.fitnessCmd.trim().length > 0);
-    if (mode !== 'always' && fitnessSteps.length > 0) {
-      return {
-        approve: false,
-        reason: `fitnessCmd present in ${fitnessSteps.length} step(s); user must inspect before auto-approve`,
-        adjustedCostUsd: plan.totalEstimatedCostUsd,
-      };
-    }
-
-    // Gate 4: cost ceiling, with review cycles folded in
-    let adjustedCostUsd = plan.totalEstimatedCostUsd;
-    const wantsReview = plan.selfReview !== false && mutatingSteps.length > 0;
-    if (wantsReview) {
-      const reviewEstimate = planCostEstimator.estimate('review', []);
-      adjustedCostUsd += 2 * reviewEstimate.costUsd;
-    }
-
-    if ((mode === 'cost-bounded' || mode === 'always') && maxCostUsd != null) {
-      if (adjustedCostUsd > maxCostUsd) {
-        return {
-          approve: false,
-          reason: `estimated cost $${adjustedCostUsd.toFixed(2)} exceeds ceiling $${maxCostUsd.toFixed(2)}`,
-          adjustedCostUsd,
-        };
-      }
-    }
-
-    // cost-bounded with no ceiling configured = same as 'always' but explicit
-    return {
-      approve: true,
-      reason: `${mode} policy passed (cost $${adjustedCostUsd.toFixed(4)})`,
-      adjustedCostUsd,
-    };
-  >>>
+  handler lang="kern"
+    let name=mode value="(config as any).cesarAutoApproveMode ?? 'safe-only'"
+    let name=maxCostUsd value="(config as any).cesarAutoApproveMaxCostUsd as number | undefined"
+    comment raw="// Gate 0: global off switch"
+    if cond="mode === 'off'"
+      return value="{ approve: false, reason: 'autoApprove disabled (cesarAutoApproveMode=off)', adjustedCostUsd: plan.totalEstimatedCostUsd }"
+    comment raw="// Gate 1: plan must opt in"
+    if cond="plan.autoApprove !== true"
+      return value="{ approve: false, reason: 'plan did not request autoApprove', adjustedCostUsd: plan.totalEstimatedCostUsd }"
+    comment raw="// Gate 2: whitelist floor — safe-only rejects any mutating step type"
+    let name=mutatingSteps value="plan.steps.filter((s) => MUTATING_STEP_TYPES.has(s.type))"
+    if cond="mode === 'safe-only' && mutatingSteps.length > 0"
+      let name=types value="Array.from(new Set(mutatingSteps.map((s) => s.type))).join(', ')"
+      return value="{ approve: false, reason: `safe-only mode rejects mutating step types: ${types}`, adjustedCostUsd: plan.totalEstimatedCostUsd, }"
+    comment raw="// Gate 3: fitnessCmd interlock — shell commands need user inspect"
+    comment raw="// unless the user explicitly opted into 'always'"
+    let name=fitnessSteps value="plan.steps.filter((s) => s.fitnessCmd && s.fitnessCmd.trim().length > 0)"
+    if cond="mode !== 'always' && fitnessSteps.length > 0"
+      return value="{ approve: false, reason: `fitnessCmd present in ${fitnessSteps.length} step(s); user must inspect before auto-approve`, adjustedCostUsd: plan.totalEstimatedCostUsd, }"
+    comment raw="// Gate 4: cost ceiling, with review cycles folded in"
+    let name=adjustedCostUsd kind=let value="plan.totalEstimatedCostUsd"
+    let name=wantsReview value="plan.selfReview !== false && mutatingSteps.length > 0"
+    if cond="wantsReview"
+      let name=reviewEstimate value="planCostEstimator.estimate('review', [])"
+      assign target="adjustedCostUsd" op="+=" value="2 * reviewEstimate.costUsd"
+    if cond="(mode === 'cost-bounded' || mode === 'always') && maxCostUsd != null"
+      if cond="adjustedCostUsd > maxCostUsd"
+        return value="{ approve: false, reason: `estimated cost $${adjustedCostUsd.toFixed(2)} exceeds ceiling $${maxCostUsd.toFixed(2)}`, adjustedCostUsd, }"
+    comment raw="// cost-bounded with no ceiling configured = same as 'always' but explicit"
+    return value="{ approve: true, reason: `${mode} policy passed (cost $${adjustedCostUsd.toFixed(4)})`, adjustedCostUsd, }"

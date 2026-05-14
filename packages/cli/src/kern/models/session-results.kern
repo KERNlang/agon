@@ -4,9 +4,8 @@ service name=SessionResultStore
   field name=results type="SessionResult[]" default="[]"
 
   method name=add params="result:SessionResult" returns=void
-    handler <<<
-      this.results.push(result);
-    >>>
+    handler lang="kern"
+      do value="this.results.push(result)"
 
   method name=getResults returns="SessionResult[]"
     handler lang="kern"
@@ -17,13 +16,11 @@ service name=SessionResultStore
       return value="this.results.length > 0"
 
   method name=getLatest returns="SessionResult|null"
-    handler <<<
-      return this.results.length > 0 ? this.results[this.results.length - 1] : null;
-    >>>
+    handler lang="kern"
+      return value="this.results.length > 0 ? this.results[this.results.length - 1] : null"
 
   method name=clear returns=void
-    handler <<<
-      this.results = [];
-    >>>
+    handler lang="kern"
+      assign target="this.results" value="[]"
 
   singleton name=sessionResultStore

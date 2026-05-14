@@ -196,45 +196,30 @@ fn name=composeTeams params="engineIds:string[], membersPerSide:number, mode:Tea
   >>>
 
 fn name=computeContributionWeights params="team:TeamSpec, trace:TeamRoundTrace[]" returns="Record<string,number>"
-  handler <<<
-    // Start with default weights from role assignment
-    const weights: Record<string, number> = {};
-    for (const m of team.members) {
-      weights[m.engineId] = m.weight;
-    }
-
-    // Adjust based on trace: penalize engines that needed review loops
-    const rejectCounts: Record<string, number> = {};
-    for (const t of trace) {
-      if (t.action === 'reviewed-reject') {
-        // Find who was rejected (the implementer in the previous round)
-        const prevImpl = trace.find(
-          (prev) => prev.round === t.round && prev.role === 'implementer',
-        );
-        if (prevImpl) {
-          rejectCounts[prevImpl.actor] = (rejectCounts[prevImpl.actor] ?? 0) + 1;
-        }
-      }
-    }
-
-    // Each rejection shifts 0.05 weight from implementer to reviewer
-    for (const [engineId, rejections] of Object.entries(rejectCounts)) {
-      const shift = Math.min(rejections * 0.05, weights[engineId] * 0.5);
-      weights[engineId] -= shift;
-      // Find reviewer and boost them
-      const reviewer = team.members.find((m) => m.role === 'reviewer');
-      if (reviewer) {
-        weights[reviewer.engineId] = (weights[reviewer.engineId] ?? 0) + shift;
-      }
-    }
-
-    // Normalize to sum to 1.0
-    const total = Object.values(weights).reduce((s, w) => s + w, 0);
-    if (total > 0) {
-      for (const key of Object.keys(weights)) {
-        weights[key] /= total;
-      }
-    }
-
-    return weights;
-  >>>
+  handler lang="kern"
+    comment raw="// Start with default weights from role assignment"
+    let name=weights type="Record<string, number>" value="{}"
+    each name=m in="team.members"
+      assign target="weights[m.engineId]" value="m.weight"
+    comment raw="// Adjust based on trace: penalize engines that needed review loops"
+    let name=rejectCounts type="Record<string, number>" value="{}"
+    each name=t in="trace"
+      if cond="t.action === 'reviewed-reject'"
+        comment raw="// Find who was rejected (the implementer in the previous round)"
+        let name=prevImpl value="trace.find((prev) => prev.round === t.round && prev.role === 'implementer')"
+        if cond="prevImpl"
+          assign target="rejectCounts[prevImpl.actor]" value="(rejectCounts[prevImpl.actor] ?? 0) + 1"
+    comment raw="// Each rejection shifts 0.05 weight from implementer to reviewer"
+    each pairKey=engineId pairValue=rejections in="rejectCounts" entries=true
+      let name=shift value="Math.min(rejections * 0.05, weights[engineId] * 0.5)"
+      assign target="weights[engineId]" op="-=" value="shift"
+      comment raw="// Find reviewer and boost them"
+      let name=reviewer value="team.members.find((m) => m.role === 'reviewer')"
+      if cond="reviewer"
+        assign target="weights[reviewer.engineId]" value="(weights[reviewer.engineId] ?? 0) + shift"
+    comment raw="// Normalize to sum to 1.0"
+    let name=total value="Object.values(weights).reduce((s, w) => s + w, 0)"
+    if cond="total > 0"
+      each name=key in="Object.keys(weights)"
+        assign target="weights[key]" op="/=" value="total"
+    return value="weights"

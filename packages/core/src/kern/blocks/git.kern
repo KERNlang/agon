@@ -384,15 +384,14 @@ fn name=diffFileCount params="cwd:string" returns=number
   >>>
 
 fn name=applyPatch params="cwd:string,patchContent:string" returns=void
-  handler <<<
-    if (!patchContent.trim()) return;
-    try {
-      execFileSync('git', ['apply', '--allow-empty', '-'], { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] });
-    } catch (err) {
-      const e = err as { stderr?: string };
-      throw new GitError(`Failed to apply patch: ${e.stderr?.trim() ?? 'unknown error'}`);
-    }
-  >>>
+  handler lang="kern"
+    if cond="!patchContent.trim()"
+      return
+    try
+      do value="execFileSync('git', ['apply', '--allow-empty', '-'], { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] })"
+      catch name=err
+        let name=e value="err as { stderr?: string }"
+        throw value="new GitError(`Failed to apply patch: ${e.stderr?.trim() ?? 'unknown error'}`)"
 
 fn name=currentBranch params="cwd:string" returns=string
   handler lang="kern"
@@ -433,29 +432,25 @@ fn name=gitDiffStat params="cwd:string" returns=string
 
 fn name=gitChangedFiles params="cwd:string" returns="string[]"
   doc "Read-only: list of changed file paths (unstaged + staged). No git add."
-  handler <<<
-    try {
-      const unstaged = git(['diff', '--name-only'], cwd);
-      const staged = git(['diff', '--cached', '--name-only'], cwd);
-      const combined = new Set([
-        ...unstaged.split('\n').filter(Boolean),
-        ...staged.split('\n').filter(Boolean),
-      ]);
-      return [...combined];
-    } catch {
-      return [];
-    }
-  >>>
+  handler lang="kern"
+    try
+      let name=unstaged value="git(['diff', '--name-only'], cwd)"
+      let name=staged value="git(['diff', '--cached', '--name-only'], cwd)"
+      let name=combined value="new Set([ ...unstaged.split('\\n').filter(Boolean), ...staged.split('\\n').filter(Boolean), ])"
+      return value="[...combined]"
+      catch name=e
+        return value="[]"
 
 // KERN-GAP: lang="kern" — `\n` in template literal inside `return value="..."` is reformatted to a real newline + 2-space indent in generated TS. Same bug as tool-parser.formatToolResult. Reverted to raw body.
 fn name=gitTruncatedDiff params="cwd:string,maxLines?:number" returns=string
   doc "Read-only: truncated git diff (unstaged). Caps output. No git add."
-  handler <<<
-    try {
-      const diff = git(['diff'], cwd);
-      const lines = diff.split('\n');
-      const limit = maxLines ?? 200;
-      if (lines.length <= limit) return diff;
-      return lines.slice(0, limit).join('\n') + `\n... (${lines.length - limit} more lines)`;
-    } catch { return ''; }
-  >>>
+  handler lang="kern"
+    try
+      let name=diff value="git(['diff'], cwd)"
+      let name=lines value="diff.split('\\n')"
+      let name=limit value="maxLines ?? 200"
+      if cond="lines.length <= limit"
+        return value="diff"
+      return value="lines.slice(0, limit).join('\\n') + `\\n... (${lines.length - limit} more lines)`"
+      catch name=e
+        return value="''"

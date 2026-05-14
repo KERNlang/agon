@@ -228,49 +228,20 @@ fn name=handleCesarReport params="dispatch:Dispatch" returns=void
   >>>
 
 fn name=handleCesarHints params="input:string, dispatch:Dispatch, ctx:HandlerContext" returns=void
-  handler <<<
-    const trimmed = input.trim();
-    if (!trimmed) {
-      dispatch({ type: 'error', message: 'Usage: /cesar-hints <task>' });
-      return;
-    }
-
-    const hints = deriveRoutingHints(trimmed, ctx);
-    dispatch({ type: 'header', title: 'Cesar Hints' });
-    dispatch({ type: 'text', content: trimmed });
-    dispatch({
-      type: 'table',
-      headers: ['Task Class', 'Intake', 'Flow', 'Uncertainty', 'Escalation', 'Breadth'],
-      rows: [[
-        String(hints.taskClass),
-        String(hints.intakeKind),
-        String(hints.recommendedFlow),
-        String(hints.uncertaintyFamily),
-        String(hints.escalationHint),
-        String(hints.recommendedBreadth),
-      ]],
-    });
-
-    dispatch({ type: 'text', content: `Flow reason: ${hints.flowReason}` });
-
-    dispatch({
-      type: 'table',
-      headers: ['Input Tokens', 'Changed Files', 'Dir Spread', 'Forge Scope', 'Fanout', 'Review', 'Engine Mention'],
-      rows: [[
-        String(hints.inputTokens),
-        String(hints.scopeFileCount),
-        String(hints.scopeDirSpread),
-        String(hints.recommendedForgeScope),
-        hints.fanoutLikely ? 'yes' : 'no',
-        hints.reviewLikely ? 'yes' : 'no',
-        hints.explicitEngineMention ? 'yes' : 'no',
-      ]],
-    });
-
-    const routingCtx = buildRoutingContext(trimmed, ctx);
-    dispatch({ type: 'separator' });
-    dispatch({ type: 'text', content: routingCtx });
-  >>>
+  handler lang="kern"
+    let name=trimmed value="input.trim()"
+    if cond="!trimmed"
+      do value="dispatch({ type: 'error', message: 'Usage: /cesar-hints <task>' })"
+      return
+    let name=hints value="deriveRoutingHints(trimmed, ctx)"
+    do value="dispatch({ type: 'header', title: 'Cesar Hints' })"
+    do value="dispatch({ type: 'text', content: trimmed })"
+    do value="dispatch({ type: 'table', headers: ['Task Class', 'Intake', 'Flow', 'Uncertainty', 'Escalation', 'Breadth'], rows: [[ String(hints.taskClass), String(hints.intakeKind), String(hints.recommendedFlow), String(hints.uncertaintyFamily), String(hints.escalationHint), String(hints.recommendedBreadth), ]], })"
+    do value="dispatch({ type: 'text', content: `Flow reason: ${hints.flowReason}` })"
+    do value="dispatch({ type: 'table', headers: ['Input Tokens', 'Changed Files', 'Dir Spread', 'Forge Scope', 'Fanout', 'Review', 'Engine Mention'], rows: [[ String(hints.inputTokens), String(hints.scopeFileCount), String(hints.scopeDirSpread), String(hints.recommendedForgeScope), hints.fanoutLikely ? 'yes' : 'no', hints.reviewLikely ? 'yes' : 'no', hints.explicitEngineMention ? 'yes' : 'no', ]], })"
+    let name=routingCtx value="buildRoutingContext(trimmed, ctx)"
+    do value="dispatch({ type: 'separator' })"
+    do value="dispatch({ type: 'text', content: routingCtx })"
 
 fn name=showRunDetail params="dispatch:Dispatch, id:string" returns=void export=false
   handler <<<
@@ -546,36 +517,33 @@ fn name=handleConfig params="intent:Intent&{type:'config'}, dispatch:Dispatch, c
   >>>
 
 fn name=handleUse params="engineIds:string[], dispatch:Dispatch, ctx:HandlerContext, setSessionEngines:(engines:string[]|null)=>void" returns=void
-  handler <<<
-    if (engineIds.length === 0 || (engineIds.length === 1 && engineIds[0] === 'all')) {
-      setSessionEngines(null);
-      configSet('engineActivationMode' as any, 'auto' as any);
-      const active = ctx.registry.activeIds({ ...(ctx.config as any), engineActivationMode: 'auto' } as any);
-      configSet('forgeEnabledEngines', active);
-      dispatch({ type: 'success', message: 'Using all available engines' });
-      dispatch({ type: 'info', message: active.join(', ') });
-      return;
-    }
-
-    const available = ctx.registry.availableIds();
-    const valid: string[] = [];
-    const invalid: string[] = [];
-    for (const id of engineIds) {
-      if (available.includes(id)) valid.push(id);
-      else invalid.push(id);
-    }
-    if (invalid.length > 0) dispatch({ type: 'warning', message: `Not available: ${invalid.join(', ')}` });
-    if (valid.length === 0) {
-      dispatch({ type: 'error', message: `No valid engines selected. Available: ${available.join(', ')}` });
-      return;
-    }
-    setSessionEngines(valid);
-    configSet('engineActivationMode' as any, 'explicit' as any);
-    configSet('forgeEnabledEngines', valid);
-
-    dispatch({ type: 'success', message: `Active engines: ${valid.join(', ')}` });
-    dispatch({ type: 'info', message: 'Saved — persists across sessions. Use /cesar <engine> to change Cesar brain separately.' });
-  >>>
+  handler lang="kern"
+    if cond="engineIds.length === 0 || (engineIds.length === 1 && engineIds[0] === 'all')"
+      do value="setSessionEngines(null)"
+      do value="configSet('engineActivationMode' as any, 'auto' as any)"
+      let name=active value="ctx.registry.activeIds({ ...(ctx.config as any), engineActivationMode: 'auto' } as any)"
+      do value="configSet('forgeEnabledEngines', active)"
+      do value="dispatch({ type: 'success', message: 'Using all available engines' })"
+      do value="dispatch({ type: 'info', message: active.join(', ') })"
+      return
+    let name=available value="ctx.registry.availableIds()"
+    let name=valid type="string[]" value="[]"
+    let name=invalid type="string[]" value="[]"
+    each name=id in="engineIds"
+      if cond="available.includes(id)"
+        do value="valid.push(id)"
+      else
+        do value="invalid.push(id)"
+    if cond="invalid.length > 0"
+      do value="dispatch({ type: 'warning', message: `Not available: ${invalid.join(', ')}` })"
+    if cond="valid.length === 0"
+      do value="dispatch({ type: 'error', message: `No valid engines selected. Available: ${available.join(', ')}` })"
+      return
+    do value="setSessionEngines(valid)"
+    do value="configSet('engineActivationMode' as any, 'explicit' as any)"
+    do value="configSet('forgeEnabledEngines', valid)"
+    do value="dispatch({ type: 'success', message: `Active engines: ${valid.join(', ')}` })"
+    do value="dispatch({ type: 'info', message: 'Saved — persists across sessions. Use /cesar <engine> to change Cesar brain separately.' })"
 
 fn name=handleCesar params="engineId:string, dispatch:Dispatch, ctx:HandlerContext" returns=void
   handler <<<
@@ -788,27 +756,18 @@ fn name=handleChats params="dispatch:Dispatch, sessionId?:string" returns=void
   >>>
 
 fn name=handleModels params="dispatch:Dispatch, ctx:HandlerContext" returns=void
-  handler <<<
-    dispatch({ type: 'header', title: 'Models & Engines' });
-
-    const config = ctx.config;
-    const available = ctx.registry.availableIds();
-    const enabled = ctx.registry.activeIds(config as any);
-
-    const rows = available.map((id: string) => [
-      enabled.includes(id) ? icons().dotOn : icons().dotOff,
-      id,
-      enabled.includes(id) ? 'active' : 'inactive',
-    ]);
-    dispatch({ type: 'table', headers: ['', 'Engine', 'Status'], rows });
-
-    const configuredDefault = config.forgeFixedStarter ?? '';
-    const defaultEngine = configuredDefault && enabled.includes(configuredDefault) ? configuredDefault : enabled[0] ?? 'none';
-    dispatch({ type: 'info', message: `Default chat engine: ${defaultEngine}` });
-    dispatch({ type: 'info', message: `Activation mode: ${(config as any).engineActivationMode ?? 'auto'}` });
-
-    dispatch({ type: 'separator' });
-    dispatch({ type: 'info', message: 'Change engines:  /use claude,codex    (persists across sessions)' });
-    dispatch({ type: 'info', message: 'Reset to auto:   /use all' });
-    dispatch({ type: 'info', message: 'Set chat default: /config set forgeFixedStarter claude' });
-  >>>
+  handler lang="kern"
+    do value="dispatch({ type: 'header', title: 'Models & Engines' })"
+    let name=config value="ctx.config"
+    let name=available value="ctx.registry.availableIds()"
+    let name=enabled value="ctx.registry.activeIds(config as any)"
+    let name=rows value="available.map((id: string) => [ enabled.includes(id) ? icons().dotOn : icons().dotOff, id, enabled.includes(id) ? 'active' : 'inactive', ])"
+    do value="dispatch({ type: 'table', headers: ['', 'Engine', 'Status'], rows })"
+    let name=configuredDefault value="config.forgeFixedStarter ?? ''"
+    let name=defaultEngine value="configuredDefault && enabled.includes(configuredDefault) ? configuredDefault : enabled[0] ?? 'none'"
+    do value="dispatch({ type: 'info', message: `Default chat engine: ${defaultEngine}` })"
+    do value="dispatch({ type: 'info', message: `Activation mode: ${(config as any).engineActivationMode ?? 'auto'}` })"
+    do value="dispatch({ type: 'separator' })"
+    do value="dispatch({ type: 'info', message: 'Change engines:  /use claude,codex    (persists across sessions)' })"
+    do value="dispatch({ type: 'info', message: 'Reset to auto:   /use all' })"
+    do value="dispatch({ type: 'info', message: 'Set chat default: /config set forgeFixedStarter claude' })"

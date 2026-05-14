@@ -18,17 +18,7 @@ import from="./plan-view.js" names="PlanProposalView,PlanExecutionView"
 
 const name=BRAND type="readonly string[]" value={{ ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const }}
 
-const name=LOGO_LINES type="string[]"
-  handler <<<
-    [
-      '    \u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2557   \u2588\u2588\u2557',
-      '   \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551',
-      '   \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2588\u2557\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2588\u2588\u2557 \u2588\u2588\u2551',
-      '   \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551\u255a\u2588\u2588\u2557\u2588\u2588\u2551',
-      '   \u2588\u2588\u2551  \u2588\u2588\u2551\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551 \u255a\u2588\u2588\u2588\u2588\u2551',
-      '   \u255a\u2550\u255d  \u255a\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d',
-    ]
-  >>>
+const name=LOGO_LINES type="string[]" value={{ ['    █████╗  ██████╗  ██████╗ ███╗   ██╗', '   ██╔══██╗██╔════╝ ██╔═══██╗████╗  ██║', '   ███████║██║  ███╗██║   ██║██╔██╗ ██║', '   ██╔══██╗██║   ██╗██║   ██║██║╚██╗██║', '   ██║  ██║╚██████╔╝╚██████╔╝██║ ╚████║', '   ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝'] }}
 
 const name=VERSION type=string value={{ '0.1.0' }}
 
@@ -40,60 +30,42 @@ fn name=isCesarTelemetryLine params="message:string" returns=boolean
     return value="text.startsWith('Cesar route:') || text.startsWith('What happened:')"
 
 fn name=parseToolInputPayload params="input:string" returns=any
-  handler <<<
-    const rawInput = String(input ?? '');
-    let parsed: Record<string, unknown> = {};
-    try {
-      if (rawInput.trim().startsWith('{')) parsed = JSON.parse(rawInput);
-    } catch {
-      parsed = {};
-    }
-    return { rawInput, parsed };
-  >>>
+  handler lang="kern"
+    let name=rawInput value="String(input ?? '')"
+    let name=parsed type="Record<string, unknown>" kind=let value="{}"
+    try
+      if cond="rawInput.trim().startsWith('{')"
+        assign target="parsed" value="JSON.parse(rawInput)"
+      catch name=e
+        assign target="parsed" value="{}"
+    return value="{ rawInput, parsed }"
 
 fn name=formatConfidenceToolLabel params="parsed:any, rawInput:string" returns=string
-  handler <<<
-    const rawValue = parsed?.value ?? parsed?.confidence ?? parsed?.score;
-    let value = Number(rawValue);
-    if (!Number.isFinite(value)) {
-      const text = String(rawInput ?? '');
-      const match = text.match(/"value"\s*:\s*(\d{1,3}(?:\.\d+)?)/) || text.match(/(\d{1,3})\s*%/);
-      if (match) value = Number(match[1]);
-    }
-    if (Number.isFinite(value)) {
-      const pct = value <= 1 && value > 0 ? Math.round(value * 100) : Math.round(value);
-      if (pct >= 0 && pct <= 100) {
-        const reasoning = String(parsed?.reasoning ?? parsed?.reason ?? parsed?.thought ?? '').replace(/\s+/g, ' ').trim();
-        const shortReasoning = reasoning.length > 180 ? `${reasoning.slice(0, 177)}\u2026` : reasoning;
-        return shortReasoning ? `${pct}% confidence \u00b7 ${shortReasoning}` : `${pct}% confidence`;
-      }
-    }
-    return 'confidence';
-  >>>
+  handler lang="kern"
+    let name=rawValue value="parsed?.value ?? parsed?.confidence ?? parsed?.score"
+    let name=value kind=let value="Number(rawValue)"
+    if cond="!Number.isFinite(value)"
+      let name=text value="String(rawInput ?? '')"
+      let name=match value="text.match(/\"value\"\\s*:\\s*(\\d{1,3}(?:\\.\\d+)?)/) || text.match(/(\\d{1,3})\\s*%/)"
+      if cond="match"
+        assign target="value" value="Number(match[1])"
+    if cond="Number.isFinite(value)"
+      let name=pct value="value <= 1 && value > 0 ? Math.round(value * 100) : Math.round(value)"
+      if cond="pct >= 0 && pct <= 100"
+        let name=reasoning value="String(parsed?.reasoning ?? parsed?.reason ?? parsed?.thought ?? '').replace(/\\s+/g, ' ').trim()"
+        let name=shortReasoning value="reasoning.length > 180 ? `${reasoning.slice(0, 177)}\\u2026` : reasoning"
+        return value="shortReasoning ? `${pct}% confidence \\u00b7 ${shortReasoning}` : `${pct}% confidence`"
+    return value="'confidence'"
 
 fn name=extractPatchText params="rawInput:string, parsed:any" returns=string
-  handler <<<
-    const values = [
-      parsed?.patch,
-      parsed?.content,
-      parsed?.diff,
-      parsed?.input,
-    ].filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0);
-    const fromParsed = values.find((value: string) =>
-      value.includes('*** Begin Patch') ||
-      value.includes('diff --git') ||
-      value.split('\n').some((line: string) => line.startsWith('@@'))
-    );
-    if (fromParsed) return fromParsed;
-    if (
-      rawInput.includes('*** Begin Patch') ||
-      rawInput.includes('diff --git') ||
-      rawInput.split('\n').some((line: string) => line.startsWith('@@'))
-    ) {
-      return rawInput;
-    }
-    return values[0] ?? '';
-  >>>
+  handler lang="kern"
+    let name=values value="[ parsed?.patch, parsed?.content, parsed?.diff, parsed?.input, ].filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)"
+    let name=fromParsed value="values.find((value: string) => value.includes('*** Begin Patch') || value.includes('diff --git') || value.split('\\n').some((line: string) => line.startsWith('@@')))"
+    if cond="fromParsed"
+      return value="fromParsed"
+    if cond="rawInput.includes('*** Begin Patch') || rawInput.includes('diff --git') || rawInput.split('\\n').some((line: string) => line.startsWith('@@'))"
+      return value="rawInput"
+    return value="values[0] ?? ''"
 
 fn name=parsePatchPreview params="rawInput:string, parsed:any" returns="{ files:string[]; lines:string[]; additions:number; deletions:number }"
   handler <<<
@@ -1144,16 +1116,15 @@ screen name=ToolCallGroup target=ink memo=true
 // ── Helper: extract first meaningful sentence from engine output ──
 
 fn name=extractSummary params="text:string, maxLen:number" returns=string
-  handler <<<
-    let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
-    s = s.replace(/^#+\s+.+\n/gm, '');
-    s = s.replace(/^\s*[-*]\s+/gm, '');
-    s = s.replace(/\*\*/g, '');
-    s = s.trim();
-    const firstSentence = s.match(/^[^.!?\n]{10,}[.!?]/);
-    const summary = firstSentence ? firstSentence[0] : s.slice(0, maxLen);
-    return summary.length > maxLen ? summary.slice(0, maxLen - 1) + '\u2026' : summary;
-  >>>
+  handler lang="kern"
+    let name=s kind=let value="text.replace(/<think>[\\s\\S]*?<\\/think>\\s*/gi, '')"
+    assign target="s" value="s.replace(/^#+\\s+.+\\n/gm, '')"
+    assign target="s" value="s.replace(/^\\s*[-*]\\s+/gm, '')"
+    assign target="s" value="s.replace(/\\*\\*/g, '')"
+    assign target="s" value="s.trim()"
+    let name=firstSentence value="s.match(/^[^.!?\\n]{10,}[.!?]/)"
+    let name=summary value="firstSentence ? firstSentence[0] : s.slice(0, maxLen)"
+    return value="summary.length > maxLen ? summary.slice(0, maxLen - 1) + '\\u2026' : summary"
 
 // ── Screen: DebateGroup — collapsed summary for tribunal rounds ──
 

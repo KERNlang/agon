@@ -386,13 +386,13 @@ fn name=buildRoutingContext params="input:string, ctx:HandlerContext" returns=st
 
 fn name=shouldUseAgentTeam params="input:string, ctx:HandlerContext" returns=boolean export=true
   doc "Pure, zero-LLM-cost classification: should this /agent request run as a team (parallel engines) rather than solo? Returns true when the task pattern suggests cross-module fan-out AND at least 2 API engines are available. Based on the same FANOUT_RE/scopeDirSpread signals that buildRoutingContext includes in the Cesar prompt — but exported so dispatch can use them without a full brain call."
-  handler <<<
-    // Need at least 2 active engines for team mode to make sense.
-    const available = ctx.activeEngines();
-    if (available.length < 2) return false;
-    const hints = deriveRoutingHints(input, ctx);
-    return hints.recommendedBreadth === 'team';
-  >>>
+  handler lang="kern"
+    comment raw="// Need at least 2 active engines for team mode to make sense."
+    let name=available value="ctx.activeEngines()"
+    if cond="available.length < 2"
+      return value="false"
+    let name=hints value="deriveRoutingHints(input, ctx)"
+    return value="hints.recommendedBreadth === 'team'"
 
 fn name=shouldSpeculate params="hints:CesarRoutingHints, config:Required<AgonConfig>" returns=boolean export=true
   doc "Cost-aware speculation gate. Returns true only when: (1) estimated step cost exceeds speculativeThresholdUsd, (2) uncertainty is not 'none', (3) ELO spread between top engines is below speculativeEloSpreadThreshold. Prevents wasteful scout+parallel runs on cheap, sure, or lopsided tasks."

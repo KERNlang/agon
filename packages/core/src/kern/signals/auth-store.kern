@@ -18,16 +18,15 @@ fn name=getAuthFile returns=string export=false
   >>>
 
 fn name=loadAuthStore returns=AuthStore
-  handler <<<
-    const authFile = getAuthFile();
-    if (!existsSync(authFile)) return { entries: {} };
-    try {
-      const data = JSON.parse(readFileSync(authFile, 'utf-8'));
-      return { entries: data ?? {} };
-    } catch {
-      return { entries: {} };
-    }
-  >>>
+  handler lang="kern"
+    let name=authFile value="getAuthFile()"
+    if cond="!existsSync(authFile)"
+      return value="{ entries: {} }"
+    try
+      let name=data value="JSON.parse(readFileSync(authFile, 'utf-8'))"
+      return value="{ entries: data ?? {} }"
+      catch name=e
+        return value="{ entries: {} }"
 
 fn name=saveAuthStore params="store:AuthStore" returns=void
   handler <<<

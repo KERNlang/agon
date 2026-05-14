@@ -57,11 +57,10 @@ fn name=color256toHex params="code:number" returns=string
   >>>
 
 fn name=engineColor params="id:string" returns=string
-  handler <<<
-    // Match known engines by prefix (e.g. "zai-coding-plan-glm-5.1" → "zai")
-    const prefix = id.split('-')[0];
-    return color256toHex(ENGINE_COLORS[id] ?? ENGINE_COLORS[prefix] ?? 124);
-  >>>
+  handler lang="kern"
+    comment raw="// Match known engines by prefix (e.g. \"zai-coding-plan-glm-5.1\" → \"zai\")"
+    let name=prefix value="id.split('-')[0]"
+    return value="color256toHex(ENGINE_COLORS[id] ?? ENGINE_COLORS[prefix] ?? 124)"
 
 // ── Code Block Constants ────────────────────────────────────────────
 
@@ -87,28 +86,9 @@ const name=SYN_PUNCT type=string value={{ '#94a3b8' }}
 
 const name=SYN_FN type=string value={{ '#fbbf24' }}
 
-const name=KEYWORDS type="Set<string>"
-  handler <<<
-    new Set([
-      'const','let','var','function','return','if','else','for','while','do','switch','case','break','continue',
-      'class','extends','implements','new','this','super','import','export','from','default','async','await',
-      'try','catch','finally','throw','typeof','instanceof','in','of','yield','void','delete',
-      'interface','type','enum','namespace','abstract','private','public','protected','static','readonly',
-      'fn','struct','impl','pub','mod','use','crate','self','mut','ref','match','loop','move',
-      'def','elif','pass','with','as','is','not','and','or','lambda','nonlocal','global',
-      'true','false','null','undefined','nil','None','True','False',
-    ])
-  >>>
+const name=KEYWORDS type="Set<string>" value={{ new Set(['const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'break', 'continue', 'class', 'extends', 'implements', 'new', 'this', 'super', 'import', 'export', 'from', 'default', 'async', 'await', 'try', 'catch', 'finally', 'throw', 'typeof', 'instanceof', 'in', 'of', 'yield', 'void', 'delete', 'interface', 'type', 'enum', 'namespace', 'abstract', 'private', 'public', 'protected', 'static', 'readonly', 'fn', 'struct', 'impl', 'pub', 'mod', 'use', 'crate', 'self', 'mut', 'ref', 'match', 'loop', 'move', 'def', 'elif', 'pass', 'with', 'as', 'is', 'not', 'and', 'or', 'lambda', 'nonlocal', 'global', 'true', 'false', 'null', 'undefined', 'nil', 'None', 'True', 'False']) }}
 
-const name=TYPES type="Set<string>"
-  handler <<<
-    new Set([
-      'string','number','boolean','object','any','void','never','unknown','bigint','symbol',
-      'String','Number','Boolean','Object','Array','Map','Set','Promise','Record','Partial',
-      'int','float','double','char','long','short','byte','i32','u32','i64','u64','f64','f32','usize','isize','bool',
-      'str','Vec','Option','Result','Box','Rc','Arc',
-    ])
-  >>>
+const name=TYPES type="Set<string>" value={{ new Set(['string', 'number', 'boolean', 'object', 'any', 'void', 'never', 'unknown', 'bigint', 'symbol', 'String', 'Number', 'Boolean', 'Object', 'Array', 'Map', 'Set', 'Promise', 'Record', 'Partial', 'int', 'float', 'double', 'char', 'long', 'short', 'byte', 'i32', 'u32', 'i64', 'u64', 'f64', 'f32', 'usize', 'isize', 'bool', 'str', 'Vec', 'Option', 'Result', 'Box', 'Rc', 'Arc']) }}
 
 // ── Syntax Tokenizer ────────────────────────────────────────────────
 

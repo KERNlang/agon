@@ -302,27 +302,22 @@ HARD RULE: Your turn MUST end with a ProposePlan call. If you respond with text 
 
 fn name=buildCesarConversationSnapshot params="session:PersistentSession|null, chatSession:any" returns="Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>" export=true
   doc "Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript."
-  handler <<<
-    const directHistory = session?.getMessageHistory?.() ?? [];
-    if (directHistory.length > 0) {
-      return directHistory.filter((msg: any) => msg && typeof msg.role === 'string');
-    }
-
-    const transcript = Array.isArray(chatSession?.messages) ? chatSession.messages : [];
-    const snapshot: Array<{role:string,content:any}> = [];
-    for (const msg of transcript.slice(-80)) {
-      if (!msg || typeof msg.content !== 'string' || !msg.content.trim()) continue;
-      if (msg.role === 'user') {
-        snapshot.push({ role: 'user', content: msg.content });
-        continue;
-      }
-      if (msg.role === 'engine') {
-        const prefix = msg.engineId && msg.engineId !== 'cesar' ? `[${msg.engineId}] ` : '';
-        snapshot.push({ role: 'assistant', content: `${prefix}${msg.content}` });
-      }
-    }
-    return snapshot;
-  >>>
+  handler lang="kern"
+    let name=directHistory value="session?.getMessageHistory?.() ?? []"
+    if cond="directHistory.length > 0"
+      return value="directHistory.filter((msg: any) => msg && typeof msg.role === 'string')"
+    let name=transcript value="Array.isArray(chatSession?.messages) ? chatSession.messages : []"
+    let name=snapshot type="Array<{role:string,content:any}>" value="[]"
+    each name=msg in="transcript.slice(-80)"
+      if cond="!msg || typeof msg.content !== 'string' || !msg.content.trim()"
+        continue
+      if cond="msg.role === 'user'"
+        do value="snapshot.push({ role: 'user', content: msg.content })"
+        continue
+      if cond="msg.role === 'engine'"
+        let name=prefix value="msg.engineId && msg.engineId !== 'cesar' ? `[${msg.engineId}] ` : ''"
+        do value="snapshot.push({ role: 'assistant', content: `${prefix}${msg.content}` })"
+    return value="snapshot"
 
 fn name=saveCesarConversationSnapshot params="session:PersistentSession|null, chatSession:any" returns=void export=true
   doc "Persist the active Cesar conversation before the session is discarded."

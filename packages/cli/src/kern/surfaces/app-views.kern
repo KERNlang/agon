@@ -33,41 +33,46 @@ fn name=renderSelectedText params="text:string,start:number,end:number,keyPrefix
 
 fn name=buildPlanChromeSummary params="activePlan:any,activePlanState?:string|null,planModeQueued?:boolean,autoModeQueued?:boolean" returns=any export=true
   doc "Compact sticky plan chip for the top chrome. Keeps plan progress out of the noisy bottom status strip."
-  handler <<<
-    const gauge = buildPlanPhaseGauge(activePlan, 8);
-    const displayState = gauge.visible && gauge.phase === 'complete' ? 'done' : String(activePlanState ?? '');
-    const visible = !!(planModeQueued || gauge.visible || ['planning', 'awaiting_approval', 'running', 'paused', 'done'].includes(displayState));
-    if (!visible) return { visible: false };
-
-    let label = '';
-    if (planModeQueued) label = 'ready';
-    else if (displayState === 'planning') label = 'thinking';
-    else if (displayState === 'awaiting_approval') label = 'approval';
-    else if (displayState === 'running') label = 'running';
-    else if (displayState === 'paused') label = 'paused';
-    else if (displayState === 'done') label = 'done';
-    else label = displayState || 'plan';
-
-    let action = '';
-    if (displayState === 'awaiting_approval') action = 'go/yes';
-    else if (displayState === 'paused') action = '/plan resume';
-    else if (displayState === 'running') action = 'Ctrl+G rail';
-    else if (planModeQueued) action = 'type task';
-
-    const failed = Number(gauge.failed ?? 0);
-    return {
-      visible: true,
-      label,
-      color: gauge.visible ? gauge.color : '#c084fc',
-      shortId: gauge.shortId ?? '',
-      bar: gauge.bar ?? '',
-      pct: Number(gauge.pct ?? 0),
-      stepLabel: gauge.label ?? '',
-      current: gauge.current ?? '',
-      failed,
-      action,
-    };
-  >>>
+  handler lang="kern"
+    let name=gauge value="buildPlanPhaseGauge(activePlan, 8)"
+    let name=displayState value="gauge.visible && gauge.phase === 'complete' ? 'done' : String(activePlanState ?? '')"
+    let name=visible value="!!(planModeQueued || gauge.visible || ['planning', 'awaiting_approval', 'running', 'paused', 'done'].includes(displayState))"
+    if cond="!visible"
+      return value="{ visible: false }"
+    let name=label kind=let value="''"
+    if cond="planModeQueued"
+      assign target="label" value="'ready'"
+    else
+      if cond="displayState === 'planning'"
+        assign target="label" value="'thinking'"
+      else
+        if cond="displayState === 'awaiting_approval'"
+          assign target="label" value="'approval'"
+        else
+          if cond="displayState === 'running'"
+            assign target="label" value="'running'"
+          else
+            if cond="displayState === 'paused'"
+              assign target="label" value="'paused'"
+            else
+              if cond="displayState === 'done'"
+                assign target="label" value="'done'"
+              else
+                assign target="label" value="displayState || 'plan'"
+    let name=action kind=let value="''"
+    if cond="displayState === 'awaiting_approval'"
+      assign target="action" value="'go/yes'"
+    else
+      if cond="displayState === 'paused'"
+        assign target="action" value="'/plan resume'"
+      else
+        if cond="displayState === 'running'"
+          assign target="action" value="'Ctrl+G rail'"
+        else
+          if cond="planModeQueued"
+            assign target="action" value="'type task'"
+    let name=failed value="Number(gauge.failed ?? 0)"
+    return value="{ visible: true, label, color: gauge.visible ? gauge.color : '#c084fc', shortId: gauge.shortId ?? '', bar: gauge.bar ?? '', pct: Number(gauge.pct ?? 0), stepLabel: gauge.label ?? '', current: gauge.current ?? '', failed, action, }"
 
 // ── ChromeBar — compact session strip ──
 screen name=ChromeBar target=ink memo=true

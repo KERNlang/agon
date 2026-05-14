@@ -9,34 +9,34 @@ import from="./session.js" names="CESAR_SYSTEM_PROMPT"
 
 type name=QuickNeroDecision values="self|tribunal|brainstorm|campfire|forge"
 
-fn name=parseQuickNeroDecision params="text:string" returns="{decision:QuickNeroDecision, team:boolean, scope:'slice'|'full'|'none', rationale:string}"
+type name=QuickNeroScope values="slice|full|none"
+
+fn name=parseQuickNeroDecision params="text:string" returns="{decision:QuickNeroDecision, team:boolean, scope:QuickNeroScope, rationale:string}"
   doc "Parse structured guidance from Quick Nero self-check output."
-  handler <<<
-    const cleaned = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
-    const decisionMatch = cleaned.match(/(?:^|\n)\s*DECISION:\s*(self|tribunal|brainstorm|campfire|forge)\b/i);
-    const breadthMatch = cleaned.match(/(?:^|\n)\s*BREADTH:\s*(solo|team)\b/i);
-    const scopeMatch = cleaned.match(/(?:^|\n)\s*(?:FORGE_SCOPE|SCOPE):\s*(none|slice|full)\b/i);
-    const whyMatch = cleaned.match(/(?:^|\n)\s*WHY:\s*([\s\S]*?)(?:\n[A-Z_]+:|$)/i);
-    const decision = (decisionMatch?.[1]?.toLowerCase() ?? 'self') as QuickNeroDecision;
-    const breadth = (breadthMatch?.[1]?.toLowerCase() ?? 'solo') === 'team';
-    const scope = (scopeMatch?.[1]?.toLowerCase() ?? 'none') as 'slice' | 'full' | 'none';
-    const rationale = (whyMatch?.[1] ?? cleaned).trim();
-    return { decision, team: breadth, scope, rationale };
-  >>>
+  handler lang="kern"
+    let name=cleaned value="text.replace(/<think>[\\s\\S]*?<\\/think>\\s*/gi, '').trim()"
+    let name=decisionMatch value="cleaned.match(/(?:^|\\n)\\s*DECISION:\\s*(self|tribunal|brainstorm|campfire|forge)\\b/i)"
+    let name=breadthMatch value="cleaned.match(/(?:^|\\n)\\s*BREADTH:\\s*(solo|team)\\b/i)"
+    let name=scopeMatch value="cleaned.match(/(?:^|\\n)\\s*(?:FORGE_SCOPE|SCOPE):\\s*(none|slice|full)\\b/i)"
+    let name=whyMatch value="cleaned.match(/(?:^|\\n)\\s*WHY:\\s*([\\s\\S]*?)(?:\\n[A-Z_]+:|$)/i)"
+    let name=decision value="(decisionMatch?.[1]?.toLowerCase() ?? 'self') as QuickNeroDecision"
+    let name=breadth value="(breadthMatch?.[1]?.toLowerCase() ?? 'solo') === 'team'"
+    let name=scope value="(scopeMatch?.[1]?.toLowerCase() ?? 'none') as QuickNeroScope"
+    let name=rationale value="(whyMatch?.[1] ?? cleaned).trim()"
+    return value="{ decision, team: breadth, scope, rationale }"
 
 fn name=pickBestAdvisor params="input:string, ctx:HandlerContext" returns="{engineId:string, color:number}|null"
   doc "Pick the highest-ELO engine for this task class (excluding Cesar) as advisor."
-  handler <<<
-    const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
-    const otherEngines = ctx.activeEngines().filter((id: string) => id !== cesarEngineId);
-    if (otherEngines.length === 0) return null;
-
-    // Rank by task class ELO — best engine for THIS type of task
-    const taskClass = classifyTask(input);
-    const ranked = rankByTaskClass(otherEngines, taskClass);
-    const advisorId = ranked.length > 0 ? ranked[0].engineId : otherEngines[0];
-    return { engineId: advisorId, color: ENGINE_COLORS[advisorId] ?? 124 };
-  >>>
+  handler lang="kern"
+    let name=cesarEngineId value="(ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude'"
+    let name=otherEngines value="ctx.activeEngines().filter((id: string) => id !== cesarEngineId)"
+    if cond="otherEngines.length === 0"
+      return value="null"
+    comment raw="// Rank by task class ELO — best engine for THIS type of task"
+    let name=taskClass value="classifyTask(input)"
+    let name=ranked value="rankByTaskClass(otherEngines, taskClass)"
+    let name=advisorId value="ranked.length > 0 ? ranked[0].engineId : otherEngines[0]"
+    return value="{ engineId: advisorId, color: ENGINE_COLORS[advisorId] ?? 124 }"
 
 fn name=fireAdvisor async=true params="input:string, cesarResponse:string, parsedConfidence:number|null, ctx:HandlerContext, abort:AbortController" returns="Promise<{stdout:string, engineId:string, color:number}|null>"
   doc "At <70% confidence, dispatch the best-ranked engine as advisor with a focused advisory prompt."
@@ -235,27 +235,24 @@ fn name=handleSecondOpinion async=true params="secondResult:{stdout:string, engi
 
 fn name=activateNero params="ctx:HandlerContext, dispatch:Dispatch" returns=void
   doc "Auto-activate Nero mode — kill session so next turn reboots with Nero system prompt."
-  handler <<<
-    if (!ctx.neroMode && ctx.setNeroMode) {
-      ctx.setNeroMode(true);
-      ctx.neroMode = true;
-      ctx.cesar!.autoNero = true;
-      // No longer kill session — same-turn escalation handles challenges.
-      // Session stays alive for manual /nero toggle (system prompt injection).
-      dispatch({ type: 'info', message: `${icons().nero} Nero mode active` });
-      ctx.eventBus?.emit('cesar:nero', { active: true }).catch(() => {});
-    }
-  >>>
+  handler lang="kern"
+    if cond="!ctx.neroMode && ctx.setNeroMode"
+      do value="ctx.setNeroMode(true)"
+      assign target="ctx.neroMode" value="true"
+      assign target="ctx.cesar!.autoNero" value="true"
+      comment raw="// No longer kill session — same-turn escalation handles challenges."
+      comment raw="// Session stays alive for manual /nero toggle (system prompt injection)."
+      do value="dispatch({ type: 'info', message: `${icons().nero} Nero mode active` })"
+      do value="ctx.eventBus?.emit('cesar:nero', { active: true }).catch(() => { })"
 
 fn name=deactivateNero params="ctx:HandlerContext, dispatch:Dispatch" returns=void
   doc "Auto-deactivate Nero when confidence recovers."
-  handler <<<
-    ctx.setNeroMode(false);
-    ctx.neroMode = false;
-    ctx.cesar!.autoNero = false;
-    dispatch({ type: 'info', message: `${icons().nero} Nero deactivated — confidence recovered` });
-    ctx.eventBus?.emit('cesar:nero', { active: false }).catch(() => {});
-  >>>
+  handler lang="kern"
+    do value="ctx.setNeroMode(false)"
+    assign target="ctx.neroMode" value="false"
+    assign target="ctx.cesar!.autoNero" value="false"
+    do value="dispatch({ type: 'info', message: `${icons().nero} Nero deactivated — confidence recovered` })"
+    do value="ctx.eventBus?.emit('cesar:nero', { active: false }).catch(() => { })"
 
 
 fn name=promptDelegation async=true params="action:string, dispatch:Dispatch, hardened?:boolean, tribunalMode?:string, team?:boolean" returns="Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}>"

@@ -12,10 +12,9 @@ service name=JobManager singleton=true
   field name=nextId type=number private=true
 
   constructor
-    handler <<<
-      this.jobs = new Map();
-      this.nextId = 1;
-    >>>
+    handler lang="kern"
+      assign target="this.jobs" value="new Map()"
+      assign target="this.nextId" value="1"
 
   method name=create params="type:string,label:string" returns=Job
     handler <<<

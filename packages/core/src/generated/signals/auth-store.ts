@@ -25,7 +25,7 @@ function getAuthFile(): string {
   return join(home, 'auth.json');
 }
 
-// @kern-source: auth-store:20
+// @kern-source: auth-store:19
 export function loadAuthStore(): AuthStore {
   const authFile = getAuthFile();
   if (!existsSync(authFile)) {
@@ -39,7 +39,7 @@ export function loadAuthStore(): AuthStore {
   }
 }
 
-// @kern-source: auth-store:31
+// @kern-source: auth-store:30
 export function saveAuthStore(store: AuthStore): void {
   const authFile = getAuthFile();
   const dir = dirname(authFile);
@@ -48,7 +48,7 @@ export function saveAuthStore(store: AuthStore): void {
   try { chmodSync(authFile, 0o600); } catch (_e) { /* best effort */ }
 }
 
-// @kern-source: auth-store:40
+// @kern-source: auth-store:39
 export function setAuthKey(envVar: string, key: string, providerName?: string): void {
   const store = loadAuthStore();
   store.entries[envVar] = { type: 'api', key, provider: providerName };
@@ -57,14 +57,14 @@ export function setAuthKey(envVar: string, key: string, providerName?: string): 
   process.env[envVar] = key;
 }
 
-// @kern-source: auth-store:49
+// @kern-source: auth-store:48
 export function removeAuthKey(envVar: string): void {
   const store = loadAuthStore();
   delete store.entries[envVar];
   saveAuthStore(store);
 }
 
-// @kern-source: auth-store:56
+// @kern-source: auth-store:55
 export function getAuthKey(envVar: string): string|null {
   // 1. Check process env first (explicit export takes precedence)
   if (process.env[envVar]) return process.env[envVar]!;
@@ -82,7 +82,7 @@ export function getAuthKey(envVar: string): string|null {
 /**
  * Load all stored keys into process.env at startup. Call once during init.
  */
-// @kern-source: auth-store:71
+// @kern-source: auth-store:70
 export function loadAllAuthKeys(): void {
   const store = loadAuthStore();
   for (const [envVar, entry] of Object.entries(store.entries)) {
@@ -93,7 +93,7 @@ export function loadAllAuthKeys(): void {
   }
 }
 
-// @kern-source: auth-store:83
+// @kern-source: auth-store:82
 export function listStoredProviders(): Array<{envVar:string, provider?:string}> {
   const store = loadAuthStore();
   return Object.entries(store.entries).map(([envVar, entry]) => ({

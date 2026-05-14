@@ -188,7 +188,7 @@ export function runAgonCliDirect(tool: string, args: Record<string,unknown>): st
 /**
  * Handle an MCP tool call — write signal and return delegation message.
  */
-// @kern-source: agon-orchestration:178
+// @kern-source: agon-orchestration:175
 export function handleToolCall(name: string, args: Record<string,unknown>): string {
   const NON_BREAKING = new Set(['ReportConfidence', 'QuickNero']);
   const BREAK_AND_RESUME = new Set(['Delegate']);
@@ -266,7 +266,7 @@ async function pollPermissionResponse(id: string, timeoutMs: number): Promise<{a
 /**
  * Handle write tool calls with permission — request approval, wait, execute.
  */
-// @kern-source: agon-orchestration:256
+// @kern-source: agon-orchestration:253
 export async function handleWriteToolCall(name: string, args: Record<string,unknown>): Promise<string> {
   const requestId = `pr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const toolMap: Record<string, string> = { AgonBash: 'Bash', AgonEdit: 'Edit', AgonWrite: 'Write' };
@@ -333,7 +333,7 @@ export async function handleWriteToolCall(name: string, args: Record<string,unkn
 /**
  * Start the Agon orchestration MCP server on stdio. Line-delimited JSONRPC 2.0.
  */
-// @kern-source: agon-orchestration:321
+// @kern-source: agon-orchestration:318
 export function startMcpServer() {
   const rl = createInterface({ input: process.stdin, terminal: false });
 

@@ -53,27 +53,20 @@ const name=GIT_DIRTY_CACHE_TTL type=number value={{ 2000  // 2 seconds }}
 
 module name=GitDirtyCache
   fn name=getGitDirtyFiles params="cwd:string" returns="Set<string>" export=true
-    handler <<<
-      const now = Date.now();
-      if (_gitDirtyCache.files && _gitDirtyCache.cwd === cwd && now < _gitDirtyCache.expiry) {
-        return _gitDirtyCache.files;
-      }
-      try {
-        const raw = execSync('git diff --name-only HEAD 2>/dev/null && git diff --cached --name-only 2>/dev/null', {
-          cwd,
-          encoding: 'utf-8',
-          timeout: 2000,
-        });
-        _gitDirtyCache.files = new Set(raw.split('\n').filter(Boolean));
-        _gitDirtyCache.cwd = cwd;
-        _gitDirtyCache.expiry = now + GIT_DIRTY_CACHE_TTL;
-      } catch {
-        _gitDirtyCache.files = new Set();
-        _gitDirtyCache.cwd = cwd;
-        _gitDirtyCache.expiry = now + GIT_DIRTY_CACHE_TTL;
-      }
-      return _gitDirtyCache.files;
-    >>>
+    handler lang="kern"
+      let name=now value="Date.now()"
+      if cond="_gitDirtyCache.files && _gitDirtyCache.cwd === cwd && now < _gitDirtyCache.expiry"
+        return value="_gitDirtyCache.files"
+      try
+        let name=raw value="execSync('git diff --name-only HEAD 2>/dev/null && git diff --cached --name-only 2>/dev/null', { cwd, encoding: 'utf-8', timeout: 2000 })"
+        assign target="_gitDirtyCache.files" value="new Set(raw.split('\\n').filter(Boolean))"
+        assign target="_gitDirtyCache.cwd" value="cwd"
+        assign target="_gitDirtyCache.expiry" value="now + GIT_DIRTY_CACHE_TTL"
+        catch name=e
+          assign target="_gitDirtyCache.files" value="new Set()"
+          assign target="_gitDirtyCache.cwd" value="cwd"
+          assign target="_gitDirtyCache.expiry" value="now + GIT_DIRTY_CACHE_TTL"
+      return value="_gitDirtyCache.files"
 
   fn name=invalidateGitDirtyCache export=true
     handler lang="kern"

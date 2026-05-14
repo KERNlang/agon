@@ -65,15 +65,11 @@ export function getGitDirtyFiles(cwd: string): Set<string> {
     return _gitDirtyCache.files;
   }
   try {
-    const raw = execSync('git diff --name-only HEAD 2>/dev/null && git diff --cached --name-only 2>/dev/null', {
-      cwd,
-      encoding: 'utf-8',
-      timeout: 2000,
-    });
+    const raw = execSync('git diff --name-only HEAD 2>/dev/null && git diff --cached --name-only 2>/dev/null', { cwd: cwd, encoding: 'utf-8', timeout: 2000 });
     _gitDirtyCache.files = new Set(raw.split('\n').filter(Boolean));
     _gitDirtyCache.cwd = cwd;
     _gitDirtyCache.expiry = now + GIT_DIRTY_CACHE_TTL;
-  } catch {
+  } catch (e) {
     _gitDirtyCache.files = new Set();
     _gitDirtyCache.cwd = cwd;
     _gitDirtyCache.expiry = now + GIT_DIRTY_CACHE_TTL;

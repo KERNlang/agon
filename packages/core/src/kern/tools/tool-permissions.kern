@@ -24,25 +24,26 @@ const name=READONLY_COMMANDS type="Set<string>" value={{ new Set(['ls', 'cat', '
 
 // ── Core Permission Functions ─────────────────────────────────
 
-fn name=stripShellWrappers params="command:string" returns=string
-  handler lang="kern"
-    return value="command.trim().replace(/^(?:(?:timeout|time|nice|nohup|env|command)(?:\\s+-\\S+)*)\\s+/, '')"
+module name=ShellParsing
+  fn name=stripShellWrappers params="command:string" returns=string
+    handler lang="kern"
+      return value="command.trim().replace(/^(?:(?:timeout|time|nice|nohup|env|command)(?:\\s+-\\S+)*)\\s+/, '')"
 
-fn name=extractBaseCommand params="command:string" returns=string
-  handler lang="kern"
-    return value="stripShellWrappers(command).split(/\\s+/)[0] ?? ''"
+  fn name=extractBaseCommand params="command:string" returns=string
+    handler lang="kern"
+      return value="stripShellWrappers(command).split(/\\s+/)[0] ?? ''"
 
-fn name=stripShellRedirections params="command:string" returns=string
-  handler lang="kern"
-    return value="command .replace(/\\s+\\d*(?:>>?|<<?)\\s*\\S+/g, '') .replace(/\\s+\\d*(?:>&|<&)\\s*\\S+/g, '') .trim()"
+  fn name=stripShellRedirections params="command:string" returns=string
+    handler lang="kern"
+      return value="command .replace(/\\s+\\d*(?:>>?|<<?)\\s*\\S+/g, '') .replace(/\\s+\\d*(?:>&|<&)\\s*\\S+/g, '') .trim()"
 
-fn name=isDangerousCommand params="command:string" returns=boolean
-  handler lang="kern"
-    return value="((lower) => DANGEROUS_COMMANDS.some((dangerous: string) => lower.includes(dangerous)) || DANGEROUS_PREFIXES.some((prefix: string) => lower.startsWith(prefix)))(command.toLowerCase().trim())"
+  fn name=isDangerousCommand params="command:string" returns=boolean
+    handler lang="kern"
+      return value="((lower) => DANGEROUS_COMMANDS.some((dangerous: string) => lower.includes(dangerous)) || DANGEROUS_PREFIXES.some((prefix: string) => lower.startsWith(prefix)))(command.toLowerCase().trim())"
 
-fn name=isReadOnlyCommand params="command:string" returns=boolean
-  handler lang="kern"
-    return value="((readonlyCommand, commandSeparator) => ((readonlyCommand.includes('&&') || readonlyCommand.includes('||') || readonlyCommand.includes(commandSeparator) || /&(?!&)/.test(readonlyCommand)) && !/^\\|/.test(readonlyCommand)) ? readonlyCommand.replace(/&&|\\|\\||&(?!&)/g, commandSeparator).split(commandSeparator).every((p: string) => p.trim() && isReadOnlyCommand(p.trim())) : readonlyCommand.includes('|') ? readonlyCommand.split('|').map((p: string) => p.trim()).every((p: string) => p && isReadOnlyCommand(p)) : [...READONLY_COMMANDS].some((safe: string) => readonlyCommand === safe || readonlyCommand.startsWith(safe + ' ')))(stripShellRedirections(stripShellWrappers(command)).trim(), String.fromCharCode(59))"
+  fn name=isReadOnlyCommand params="command:string" returns=boolean
+    handler lang="kern"
+      return value="((readonlyCommand, commandSeparator) => ((readonlyCommand.includes('&&') || readonlyCommand.includes('||') || readonlyCommand.includes(commandSeparator) || /&(?!&)/.test(readonlyCommand)) && !/^\\|/.test(readonlyCommand)) ? readonlyCommand.replace(/&&|\\|\\||&(?!&)/g, commandSeparator).split(commandSeparator).every((p: string) => p.trim() && isReadOnlyCommand(p.trim())) : readonlyCommand.includes('|') ? readonlyCommand.split('|').map((p: string) => p.trim()).every((p: string) => p && isReadOnlyCommand(p)) : [...READONLY_COMMANDS].some((safe: string) => readonlyCommand === safe || readonlyCommand.startsWith(safe + ' ')))(stripShellRedirections(stripShellWrappers(command)).trim(), String.fromCharCode(59))"
 
 // ── Git-Dirty File Cache (for smart mode) ─────────────────────────
 
@@ -50,111 +51,113 @@ const name=_gitDirtyCache type="{files:Set<string>|null,cwd:string|null,expiry:n
 
 const name=GIT_DIRTY_CACHE_TTL type=number value={{ 2000  // 2 seconds }}
 
-fn name=getGitDirtyFiles params="cwd:string" returns="Set<string>" export=true
-  handler <<<
-    const now = performance.now();
-    if (_gitDirtyCache.files && _gitDirtyCache.cwd === cwd && now < _gitDirtyCache.expiry) {
+module name=GitDirtyCache
+  fn name=getGitDirtyFiles params="cwd:string" returns="Set<string>" export=true
+    handler <<<
+      const now = Date.now();
+      if (_gitDirtyCache.files && _gitDirtyCache.cwd === cwd && now < _gitDirtyCache.expiry) {
+        return _gitDirtyCache.files;
+      }
+      try {
+        const raw = execSync('git diff --name-only HEAD 2>/dev/null && git diff --cached --name-only 2>/dev/null', {
+          cwd,
+          encoding: 'utf-8',
+          timeout: 2000,
+        });
+        _gitDirtyCache.files = new Set(raw.split('\n').filter(Boolean));
+        _gitDirtyCache.cwd = cwd;
+        _gitDirtyCache.expiry = now + GIT_DIRTY_CACHE_TTL;
+      } catch {
+        _gitDirtyCache.files = new Set();
+        _gitDirtyCache.cwd = cwd;
+        _gitDirtyCache.expiry = now + GIT_DIRTY_CACHE_TTL;
+      }
       return _gitDirtyCache.files;
-    }
-    try {
-      const raw = execSync('git diff --name-only HEAD 2>/dev/null && git diff --cached --name-only 2>/dev/null', {
-        cwd,
-        encoding: 'utf-8',
-        timeout: 2000,
-      });
-      _gitDirtyCache.files = new Set(raw.split('\n').filter(Boolean));
-      _gitDirtyCache.cwd = cwd;
-      _gitDirtyCache.expiry = now + GIT_DIRTY_CACHE_TTL;
-    } catch {
-      _gitDirtyCache.files = new Set();
-      _gitDirtyCache.cwd = cwd;
-      _gitDirtyCache.expiry = now + GIT_DIRTY_CACHE_TTL;
-    }
-    return _gitDirtyCache.files;
-  >>>
+    >>>
 
-fn name=invalidateGitDirtyCache export=true
-  handler lang="kern"
-    assign target="_gitDirtyCache.files" value="null"
-    assign target="_gitDirtyCache.cwd" value="null"
-    assign target="_gitDirtyCache.expiry" value="0"
+  fn name=invalidateGitDirtyCache export=true
+    handler lang="kern"
+      assign target="_gitDirtyCache.files" value="null"
+      assign target="_gitDirtyCache.cwd" value="null"
+      assign target="_gitDirtyCache.expiry" value="0"
 
-fn name=isSessionAllowed params="command:string, ctx:ToolContext" returns=boolean
-  handler lang="kern"
-    if cond="!ctx.sessionAllowList || ctx.sessionAllowList.length === 0"
-      return value="false"
-    let name=sessionBase value="command.trim().split(/\\s+/)[0]"
-    return value="ctx.sessionAllowList.some(ac => command.startsWith(ac) || sessionBase === ac)"
+  fn name=isGitDirtyFile params="filePath:string, cwd:string" returns=boolean
+    handler lang="kern"
+      return value="((dirty, fileName) => [...dirty].some((dirtyPath: string) => filePath.endsWith(dirtyPath) || dirtyPath.endsWith(fileName)))(getGitDirtyFiles(cwd), filePath.split('/').pop() ?? filePath)"
 
-fn name=isGitDirtyFile params="filePath:string, cwd:string" returns=boolean
-  handler lang="kern"
-    return value="((dirty, fileName) => [...dirty].some((dirtyPath: string) => filePath.endsWith(dirtyPath) || dirtyPath.endsWith(fileName)))(getGitDirtyFiles(cwd), filePath.split('/').pop() ?? filePath)"
+module name=PermissionChecks
+  fn name=isSessionAllowed params="command:string, ctx:ToolContext" returns=boolean
+    handler lang="kern"
+      if cond="!ctx.sessionAllowList || ctx.sessionAllowList.length === 0"
+        return value="false"
+      let name=sessionBase value="command.trim().split(/\\s+/)[0]"
+      return value="ctx.sessionAllowList.some(ac => command.startsWith(ac) || sessionBase === ac)"
 
-fn name=checkBashPermission params="command:string, ctx:ToolContext" returns=PermissionDecision
-  handler lang="kern"
-    return value="isDangerousCommand(command) ? { behavior: 'deny', message: `Dangerous command blocked: ${command.slice(0, 50)}`, reason: 'dangerous_pattern' } : ctx.permissionMode === 'deny-all' ? { behavior: 'deny', message: 'All tool execution is denied' } : ctx.toolPermissions?.['Bash'] === 'allow' ? { behavior: 'allow' } : ctx.toolPermissions?.['Bash'] === 'deny' ? { behavior: 'deny', message: 'Bash denied in settings' } : isReadOnlyCommand(command) ? { behavior: 'allow' } : ctx.allowedCommands?.some(ac => command.startsWith(ac) || command.trim().split(/\\s+/)[0] === ac) ? { behavior: 'allow' } : ctx.permissionMode === 'smart' ? (isSessionAllowed(command, ctx) || ctx.source === 'orchestrator' ? { behavior: 'allow' } : { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' }) : ctx.permissionMode === 'auto' ? { behavior: 'allow' } : { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' }"
+  fn name=checkBashPermission params="command:string, ctx:ToolContext" returns=PermissionDecision
+    handler lang="kern"
+      return value="isDangerousCommand(command) ? { behavior: 'deny', message: `Dangerous command blocked: ${command.slice(0, 50)}`, reason: 'dangerous_pattern' } : ctx.permissionMode === 'deny-all' ? { behavior: 'deny', message: 'All tool execution is denied' } : ctx.toolPermissions?.['Bash'] === 'allow' ? { behavior: 'allow' } : ctx.toolPermissions?.['Bash'] === 'deny' ? { behavior: 'deny', message: 'Bash denied in settings' } : isReadOnlyCommand(command) ? { behavior: 'allow' } : ctx.allowedCommands?.some(ac => command.startsWith(ac) || command.trim().split(/\\s+/)[0] === ac) ? { behavior: 'allow' } : ctx.permissionMode === 'smart' ? (isSessionAllowed(command, ctx) || ctx.source === 'orchestrator' ? { behavior: 'allow' } : { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' }) : ctx.permissionMode === 'auto' ? { behavior: 'allow' } : { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' }"
 
-fn name=isPathUnderCwd params="filePath:string, cwd:string" returns=boolean
-  handler <<<
-    const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
-    // Resolve symlinks to prevent traversal via symlinks
-    let realPath: string;
-    let realCwd: string;
-    try {
-      realPath = realpathSync(resolved);
-    } catch {
-      // File doesn't exist yet — use unresolved path (safe for new files)
-      realPath = resolved;
-    }
-    try {
-      realCwd = realpathSync(cwd);
-    } catch {
-      realCwd = cwd;
-    }
-    const rel = relative(realCwd, realPath);
-    return !rel.startsWith('..');
-  >>>
+  fn name=isPathUnderCwd params="filePath:string, cwd:string" returns=boolean
+    handler <<<
+      const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
+      // Resolve symlinks to prevent traversal via symlinks
+      let realPath: string;
+      let realCwd: string;
+      try {
+        realPath = realpathSync(resolved);
+      } catch {
+        // File doesn't exist yet — use unresolved path (safe for new files)
+        realPath = resolved;
+      }
+      try {
+        realCwd = realpathSync(cwd);
+      } catch {
+        realCwd = cwd;
+      }
+      const rel = relative(realCwd, realPath);
+      return !rel.startsWith('..');
+    >>>
 
-fn name=checkFileReadPermission params="filePath:string, ctx:ToolContext" returns=PermissionDecision
-  handler lang="kern"
-    if cond="ctx.permissionMode === 'deny-all'"
-      return value="{ behavior: 'deny', message: 'All tool execution is denied' }"
-    comment raw="// Check per-tool permission from settings.json"
-    if cond="ctx.toolPermissions?.['Read'] === 'deny'"
-      return value="{ behavior: 'deny', message: 'Read denied in settings' }"
-    let name=readResolved value="isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath)"
-    if cond="isPathUnderCwd(readResolved, ctx.cwd)"
-      return value="{ behavior: 'allow' }"
-    if cond="ctx.toolPermissions?.['Read'] === 'ask'"
+  fn name=checkFileReadPermission params="filePath:string, ctx:ToolContext" returns=PermissionDecision
+    handler lang="kern"
+      if cond="ctx.permissionMode === 'deny-all'"
+        return value="{ behavior: 'deny', message: 'All tool execution is denied' }"
+      comment raw="// Check per-tool permission from settings.json"
+      if cond="ctx.toolPermissions?.['Read'] === 'deny'"
+        return value="{ behavior: 'deny', message: 'Read denied in settings' }"
+      let name=readResolved value="isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath)"
+      if cond="isPathUnderCwd(readResolved, ctx.cwd)"
+        return value="{ behavior: 'allow' }"
+      if cond="ctx.toolPermissions?.['Read'] === 'ask'"
+        return value="{ behavior: 'ask', message: `Read file outside workspace: ${readResolved}` }"
+      if cond="ctx.permissionMode === 'auto'"
+        return value="{ behavior: 'allow' }"
       return value="{ behavior: 'ask', message: `Read file outside workspace: ${readResolved}` }"
-    if cond="ctx.permissionMode === 'auto'"
-      return value="{ behavior: 'allow' }"
-    return value="{ behavior: 'ask', message: `Read file outside workspace: ${readResolved}` }"
 
-fn name=checkFileWritePermission params="filePath:string, ctx:ToolContext" returns=PermissionDecision
-  handler lang="kern"
-    if cond="ctx.permissionMode === 'deny-all'"
-      return value="{ behavior: 'deny', message: 'All tool execution is denied' }"
-    comment raw="// Check per-tool permission from settings.json"
-    if cond="ctx.toolPermissions?.['Edit']"
-      let name=editPermission value="ctx.toolPermissions['Edit']"
-      if cond="editPermission === 'deny'"
-        return value="{ behavior: 'deny', message: 'Edit/Write denied in settings' }"
-      if cond="editPermission === 'ask'"
-        return value="{ behavior: 'ask', message: `Edit requires approval: ${filePath}` }"
-    let name=writeResolved value="isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath)"
-    comment raw="// Block writing to sensitive files"
-    let name=basename value="writeResolved.split('/').pop() ?? ''"
-    let name=sensitivePatterns value="['.env', 'credentials', 'secrets', '.pem', '.key', 'id_rsa']"
-    if cond="sensitivePatterns.some((pat: string) => basename.includes(pat))"
-      return value="{ behavior: 'ask', message: `Write to sensitive file: ${basename}` }"
-    if cond="isPathUnderCwd(writeResolved, ctx.cwd)"
-      return value="{ behavior: 'allow' }"
-    comment raw="// Smart mode: auto-approve git-dirty files, orchestrator edits"
-    if cond="ctx.permissionMode === 'smart'"
-      if cond="isGitDirtyFile(writeResolved, ctx.cwd)"
+  fn name=checkFileWritePermission params="filePath:string, ctx:ToolContext" returns=PermissionDecision
+    handler lang="kern"
+      if cond="ctx.permissionMode === 'deny-all'"
+        return value="{ behavior: 'deny', message: 'All tool execution is denied' }"
+      comment raw="// Check per-tool permission from settings.json"
+      if cond="ctx.toolPermissions?.['Edit']"
+        let name=editPermission value="ctx.toolPermissions['Edit']"
+        if cond="editPermission === 'deny'"
+          return value="{ behavior: 'deny', message: 'Edit/Write denied in settings' }"
+        if cond="editPermission === 'ask'"
+          return value="{ behavior: 'ask', message: `Edit requires approval: ${filePath}` }"
+      let name=writeResolved value="isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath)"
+      comment raw="// Block writing to sensitive files"
+      let name=basename value="writeResolved.split('/').pop() ?? ''"
+      let name=sensitivePatterns value="['.env', 'credentials', 'secrets', '.pem', '.key', 'id_rsa']"
+      if cond="sensitivePatterns.some((pat: string) => basename.includes(pat))"
+        return value="{ behavior: 'ask', message: `Write to sensitive file: ${basename}` }"
+      if cond="isPathUnderCwd(writeResolved, ctx.cwd)"
         return value="{ behavior: 'allow' }"
-      if cond="ctx.source === 'orchestrator'"
-        return value="{ behavior: 'allow' }"
-      return value="{ behavior: 'ask', message: `Write to new file requires approval: ${writeResolved}` }"
-    return value="{ behavior: 'ask', message: `Write file outside workspace: ${writeResolved}` }"
+      comment raw="// Smart mode: auto-approve git-dirty files, orchestrator edits"
+      if cond="ctx.permissionMode === 'smart'"
+        if cond="isGitDirtyFile(writeResolved, ctx.cwd)"
+          return value="{ behavior: 'allow' }"
+        if cond="ctx.source === 'orchestrator'"
+          return value="{ behavior: 'allow' }"
+        return value="{ behavior: 'ask', message: `Write to new file requires approval: ${writeResolved}` }"
+      return value="{ behavior: 'ask', message: `Write file outside workspace: ${writeResolved}` }"

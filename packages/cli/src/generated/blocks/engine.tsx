@@ -12,7 +12,7 @@ import { parseProseToRichLines } from './rich-text.js';
 
 import type { RichLine } from './rich-text.js';
 
-import { ENGINE_COLORS } from './output-format.js';
+import { ENGINE_COLORS, shortToolPath, isCesarTelemetryLine, formatConfidenceToolLabel } from './output-format.js';
 
 import { icons } from '../signals/icons.js';
 
@@ -26,13 +26,13 @@ import { ForgeArena, BrainstormStorm, CampfireFire, TribunalCourt } from './aren
 
 import { PlanProposalView, PlanExecutionView } from './plan-view.js';
 
-// @kern-source: engine:121
+// @kern-source: engine:97
 export interface OutputBlock {
   id: number;
   event: OutputEvent;
 }
 
-// @kern-source: engine:127
+// @kern-source: engine:103
 export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]; mode?:string }) {
   // Use explicit mode if it's an arena mode, otherwise detect from status text
   const arenaModes = ['forge', 'brainstorm', 'campfire', 'tribunal'];
@@ -71,7 +71,7 @@ export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]
   );
 }
 
-// @kern-source: engine:171
+// @kern-source: engine:147
 const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }: { engineId:string; color:number; content:string }) {
   const wrapWidth = contentWidth(8);
   const cleaned = cleanEngineOutput(content);
@@ -100,7 +100,7 @@ const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }
 });
 export { EngineBlock };
 
-// @kern-source: engine:205
+// @kern-source: engine:181
 const ConversationalResponse = React.memo(function ConversationalResponse({ engineId, content }: { engineId:string; content:string }) {
   const wrapWidth = contentWidth(2);
   const cleaned = cleanEngineOutput(content);
@@ -117,7 +117,7 @@ const ConversationalResponse = React.memo(function ConversationalResponse({ engi
 });
 export { ConversationalResponse };
 
-// @kern-source: engine:226
+// @kern-source: engine:202
 const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:OutputEvent & { type: 'cesar-recap' } }) {
   const files = Array.isArray((event as any).files) ? (event as any).files : [];
   const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
@@ -184,7 +184,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
 });
 export { CesarRecapBlock };
 
-// @kern-source: engine:296
+// @kern-source: engine:272
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -252,7 +252,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-// @kern-source: engine:368
+// @kern-source: engine:344
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -276,7 +276,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:397
+// @kern-source: engine:373
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -887,7 +887,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:1014
+// @kern-source: engine:990
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -988,7 +988,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1131
+// @kern-source: engine:1107
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1014,7 +1014,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1160
+// @kern-source: engine:1136
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -1054,17 +1054,6 @@ export const LOGO_LINES: string[] = ['    █████╗  ██████
 export const VERSION: string = '0.1.0';
 
 // @kern-source: engine:25
-export function shortToolPath(filePath: string): string {
-  return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~');
-}
-
-// @kern-source: engine:27
-export function isCesarTelemetryLine(message: string): boolean {
-  const text = String(message ?? '').trim();
-  return text.startsWith('Cesar route:') || text.startsWith('What happened:');
-}
-
-// @kern-source: engine:32
 export function parseToolInputPayload(input: string): any {
   const rawInput = String(input ?? '');
   let parsed: Record<string, unknown> = {};
@@ -1078,29 +1067,7 @@ export function parseToolInputPayload(input: string): any {
   return { rawInput: rawInput, parsed: parsed };
 }
 
-// @kern-source: engine:43
-export function formatConfidenceToolLabel(parsed: any, rawInput: string): string {
-  const rawValue = parsed?.value ?? parsed?.confidence ?? parsed?.score;
-  let value = Number(rawValue);
-  if (!Number.isFinite(value)) {
-    const text = String(rawInput ?? '');
-    const match = text.match(/"value"\s*:\s*(\d{1,3}(?:\.\d+)?)/) || text.match(/(\d{1,3})\s*%/);
-    if (match) {
-      value = Number(match[1]);
-    }
-  }
-  if (Number.isFinite(value)) {
-    const pct = (value <= 1 && value > 0) ? Math.round(value * 100) : Math.round(value);
-    if (pct >= 0 && pct <= 100) {
-      const reasoning = String(parsed?.reasoning ?? parsed?.reason ?? parsed?.thought ?? '').replace(/\s+/g, ' ').trim();
-      const shortReasoning = (reasoning.length > 180) ? `${reasoning.slice(0, 177)}…` : reasoning;
-      return shortReasoning ? `${pct}% confidence · ${shortReasoning}` : `${pct}% confidence`;
-    }
-  }
-  return 'confidence';
-}
-
-// @kern-source: engine:60
+// @kern-source: engine:36
 export function extractPatchText(rawInput: string, parsed: any): string {
   const values = [parsed?.patch, parsed?.content, parsed?.diff, parsed?.input].filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0);
   const fromParsed = values.find((value: string) => value.includes('*** Begin Patch') || value.includes('diff --git') || value.split('\n').some((line: string) => line.startsWith('@@')));
@@ -1113,7 +1080,7 @@ export function extractPatchText(rawInput: string, parsed: any): string {
   return values[0] ?? '';
 }
 
-// @kern-source: engine:70
+// @kern-source: engine:46
 export function parsePatchPreview(rawInput: string, parsed: any): { files:string[]; lines:string[]; additions:number; deletions:number } {
   const patchText = extractPatchText(rawInput, parsed);
   const files: string[] = [];
@@ -1162,7 +1129,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: engine:1118
+// @kern-source: engine:1094
 export function extractSummary(text: string, maxLen: number): string {
   let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   s = s.replace(/^#+\s+.+\n/gm, '');

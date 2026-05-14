@@ -162,14 +162,14 @@ fn name=parseInlineSpans params="text:string" returns="InlineSpan[]"
     return merged.length > 0 ? merged : [{ text, style: DEFAULT_STYLE }];
   >>>
 
-fn name=visibleLength params="spans:InlineSpan[]" returns=number export=false expr={{ return spans.reduce((sum, s) => sum + s.text.length, 0); }}
+fn name=spansVisibleLength params="spans:InlineSpan[]" returns=number export=false expr={{ return spans.reduce((sum, s) => sum + s.text.length, 0); }}
 
 fn name=richWrap params="spans:InlineSpan[], width:number" returns="InlineSpan[][]"
   handler <<<
     if (width <= 0) return [spans];
 
     // Fast path: fits on one line
-    if (visibleLength(spans) <= width) return [spans];
+    if (spansVisibleLength(spans) <= width) return [spans];
 
     // Flatten to plain text, word-wrap it, then map spans back
     const fullText = spans.map(s => s.text).join('');

@@ -8,6 +8,7 @@
     "test:sidecar": "node tests/smoke.mjs",
     "test:classifier": "node tests/classifier-smoke.mjs",
     "test:history-search": "node tests/history-search-smoke.mjs",
-    "test:all-sidecars": "npm run test:sidecar && npm run test:classifier && npm run test:history-search"
+    "test:syntax-validator": "node tests/syntax-validator-smoke.mjs",
+    "test:all-sidecars": "npm run test:sidecar && npm run test:classifier && npm run test:history-search && npm run test:syntax-validator"
   }
 }

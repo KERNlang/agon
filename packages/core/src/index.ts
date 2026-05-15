@@ -6,6 +6,10 @@ export { updateGlicko, updateGlickoRanked, getRatings, getEngineGlickoRating, ad
 export { classifyTask } from './task-classifier.js';
 export { searchHistorySemantic } from './history-search.js';
 export type { HistorySearchItem, HistorySearchHit } from './history-search.js';
+export { validateSyntax, detectLanguageFromPath } from './syntax-validator.js';
+export type {
+  SyntaxValidatorInput, SyntaxValidatorResult, SyntaxError,
+} from './syntax-validator.js';
 export { defaultFinalizeOnScoreForTask } from './generated/blocks/finalize-policy.js';
 export {
   repoRoot, headSha, worktreePrune, worktreeCreate, worktreeRemove,

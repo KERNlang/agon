@@ -2,7 +2,7 @@ import from="node:crypto" names="randomUUID"
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync"
 import from="@agon/core" names="ForgeOptions,ForgeManifest,EngineAdapter,ForgeEvent,AgonConfig,DispatchMetric,EngineResult" types=true
 import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeRemoveBestEffort,updateGlickoRanked,classifyTask,createSidechainLogger,assignForgeRoles,buildSpecializedPrompt,recordForgeOutcome,extractPatchFilePatterns,tracker,engineHealth"
-import from="./stages.js" names="runBaseline,runStage1,runStage2"
+import from="./stages.js" names="runBaseline,runStage1,runStage2,resolveForgeMode,resolveForgeRequireDiff,resolveForgeAcceptReviewOutput"
 import from="@agon/core" names="determineWinner"
 import from="./synthesis.js" names="runSynthesis"
 import from="./gauntlet.js" names="runGauntlet"
@@ -60,6 +60,10 @@ fn name=completeMissingForgeResults params="manifest:ForgeManifest, engineIds:st
         engineId: id,
         pass: false,
         score: 0,
+        status: 'failed',
+        fitnessPassed: false,
+        engineCompleted: false,
+        reason,
         diffLines: 0,
         filesChanged: 0,
         durationSec: 0,
@@ -72,6 +76,19 @@ fn name=completeMissingForgeResults params="manifest:ForgeManifest, engineIds:st
       .filter((id) => id !== 'synthesis')
       .length;
     return manifest;
+  >>>
+
+fn name=summarizeNoDiffForgeResults params="results:Record<string,EngineResult>" returns="{status:string,count:number,toolLoopLimit:number,usefulReports:number}" export=true
+  doc "Summarize zero-diff Forge outcomes for CLI/UI reporting. Distinguishes tool-loop exhaustion from useful validate/improve reports."
+  handler <<<
+    const values = Object.values(results ?? {}) as any[];
+    const noDiff = values.filter((r) => Number(r?.diffLines ?? 0) === 0);
+    const toolLoopLimit = noDiff.filter((r) => r?.status === 'no_patch_tool_limit' || r?.reason === 'tool_loop_limit').length;
+    const usefulReports = noDiff.filter((r) => r?.status === 'no_diff_but_report' || r?.status === 'no_op_validation').length;
+    let status = 'no_candidate_diff';
+    if (noDiff.length > 0 && toolLoopLimit === noDiff.length) status = 'no_patch_tool_limit';
+    else if (usefulReports > 0) status = 'no_diff_but_report';
+    return { status, count: noDiff.length, toolLoopLimit, usefulReports };
   >>>
 
 fn name=writeForgeResultBundle params="manifest:ForgeManifest, worktrees:WorktreeEntry[], options:ForgeOptions, repoRootPath:string, baseSha:string, sidechainPath:string, errorMessage?:string" returns=string export=true
@@ -94,17 +111,25 @@ fn name=writeForgeResultBundle params="manifest:ForgeManifest, worktrees:Worktre
         diffLines: r.diffLines,
         filesChanged: r.filesChanged,
         durationSec: r.durationSec,
+        status: r.status,
+        fitnessPassed: r.fitnessPassed,
+        engineCompleted: r.engineCompleted,
+        reason: r.reason,
       }]),
     );
     const bundle = {
       type: 'forge',
       forgeId: manifest.forgeId,
-      status: errorMessage
+      status: manifest.status ?? (errorMessage
         ? 'failed'
         : (manifest.alreadySatisfied
             ? 'already-satisfied'
-            : (manifest.winner ? 'completed' : 'no-winner')),
+            : (manifest.winner ? 'completed' : 'no-winner'))),
       winner: manifest.winner,
+      mode: manifest.mode,
+      requireDiff: manifest.requireDiff,
+      acceptReviewOutput: manifest.acceptReviewOutput,
+      noDiffSummary: manifest.noDiffSummary,
       failedEngines,
       task: manifest.task,
       cwd: options.cwd,
@@ -167,6 +192,10 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
     const forgeId = randomUUID();
     const forgeDir = options.forgeDir;
     const worktrees: WorktreeEntry[] = [];
+    const forgeMode = resolveForgeMode(options.mode);
+    const requireDiff = resolveForgeRequireDiff(forgeMode, options.requireDiff);
+    const acceptReviewOutput = resolveForgeAcceptReviewOutput(forgeMode, options.acceptReviewOutput);
+    const baselineMayPass = options.baselineMayPass === true || forgeMode !== 'implement' || requireDiff === false;
 
     // Internal abort controller — fires before worktree cleanup so any
     // in-flight engine dispatches get SIGTERM/SIGKILL'd through their own
@@ -216,6 +245,10 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
         baselinePasses: false,
         starter: 'none',
         enginesDispatched: 0,
+        mode: forgeMode,
+        requireDiff,
+        acceptReviewOutput,
+        status: 'failed',
       };
       // Persist error onto the manifest BEFORE writing — otherwise the
       // saved manifest.json is missing the failure context that resume/
@@ -309,6 +342,10 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
         baselinePasses: false,
         starter: 'none',
         enginesDispatched: 0,
+        mode: forgeMode,
+        requireDiff,
+        acceptReviewOutput,
+        status: 'failed',
       };
       manifest.error = error;
       try {
@@ -380,6 +417,10 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
       baselinePasses: false,
       starter,
       enginesDispatched: 0,
+      mode: forgeMode,
+      requireDiff,
+      acceptReviewOutput,
+      status: options.dryRun ? 'dry-run' : 'running',
     };
     manifest.dispatchLog = [];
     // Persist the run skeleton before any long dispatch work. If an engine
@@ -408,7 +449,7 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
         // gates that pass before the requested change exists. Forge still must
         // dispatch engines so the user gets a real competition.
         if (manifest.baselinePasses) {
-          sidechain.log('forge:baseline-nondiscriminating', undefined, { baselinePasses: true });
+          sidechain.log('forge:baseline-nondiscriminating', undefined, { baselinePasses: true, mode: forgeMode, requireDiff, baselineMayPass });
         }
       }
 
@@ -429,6 +470,10 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
             signal: forgeSignal,
             taskClass,
             enginePrompts,
+            forgeMode,
+            requireDiff,
+            baselinePasses: manifest.baselinePasses,
+            acceptReviewOutput,
           })
         : { engineResults: new Map(), accepted: false, winner: null, metrics: [] };
 
@@ -452,6 +497,7 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
       if (shouldRunStarterGate && stage1.accepted) {
         manifest.stage1Accepted = true;
         manifest.winner = stage1.winner;
+        manifest.status = 'completed';
         manifest.dispatchLog = allMetrics;
         writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path);
         writeManifest(manifest);
@@ -483,6 +529,10 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
           worktrees,
           onEvent,
           signal: forgeSignal,
+          forgeMode,
+          requireDiff,
+          baselinePasses: manifest.baselinePasses,
+          acceptReviewOutput,
           abortControllers: stage2AbortControllers,
           onResult: (id: string, result: any, metric: DispatchMetric) => {
             manifest.results[id] = result;
@@ -534,6 +584,15 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
         );
         manifest.winner = winner;
         manifest.closeCall = closeCall;
+        const noDiffSummary = summarizeNoDiffForgeResults(manifest.results);
+        if (!winner && stage2.engineResults.size > 0 && noDiffSummary.count === stage2.engineResults.size) {
+          manifest.noDiffSummary = noDiffSummary;
+          manifest.status = noDiffSummary.status;
+          sidechain.log('forge:no-candidate-diff', undefined, noDiffSummary);
+          onEvent?.({ type: 'forge:no-candidate-diff' as any, data: noDiffSummary });
+        } else {
+          manifest.status = winner ? 'completed' : 'no-winner';
+        }
         // Persist the winner immediately. Synthesis/gauntlet are optional
         // refinement phases and must not make a completed competition look
         // like it still has no winner.
@@ -679,6 +738,7 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
         }
       } else {
         manifest.winner = stage1.winner;
+        manifest.status = manifest.winner ? 'completed' : 'no-winner';
       }
 
       const eloWinner = manifest.winner === 'synthesis'
@@ -764,6 +824,9 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
       }
 
       completeMissingForgeResults(manifest, available, 'forge ended before this engine produced a result');
+      if (!manifest.status || manifest.status === 'running') {
+        manifest.status = manifest.winner ? 'completed' : 'no-winner';
+      }
       manifest.dispatchLog = allMetrics;
       writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path);
       writeManifest(manifest);
@@ -784,6 +847,7 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
       // Set error onto manifest BEFORE persisting so the saved bundle reflects
       // the failure cause for resume/inspection.
       manifest.error = error;
+      manifest.status = 'failed';
       try {
         completeMissingForgeResults(manifest, available, `forge failed before this engine produced a result: ${error}`);
         writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path, error);

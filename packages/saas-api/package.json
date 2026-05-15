@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "kern:compile": "node ../../scripts/run-kern-compile.mjs src/kern/ src/generated/ --target=fastapi --recursive && node scripts/fix-python-header.mjs",
+    "kern:compile:gaps": "node ../../scripts/run-kern-compile.mjs scripts/kern/ scripts/generated/ --target=lib --recursive",
+    "check:gaps": "npm run kern:compile:gaps && node --experimental-strip-types -e \"import('./scripts/generated/check-fastapi-gaps.ts').then((m) => process.exitCode = m.checkFastApiGeneratedCli('src/generated'))\"",
     "build": "npm run kern:compile",
     "typecheck": "echo 'saas-api emits Python; no TS typecheck'"
   },

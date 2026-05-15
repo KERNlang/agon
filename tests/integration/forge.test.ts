@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { determineWinner } from '../../packages/forge/src/stages.js';
+import {
+  classifyNoDiffForgeResult,
+  determineWinner,
+  resolveForgeAcceptReviewOutput,
+  resolveForgeMode,
+  resolveForgeRequireDiff,
+} from '../../packages/forge/src/stages.js';
 import { classifyTask } from '../../packages/core/src/task-classifier.js';
 import { buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt, buildBrainstormPrompt, buildTribunalPrompt } from '../../packages/core/src/prompt-builder.js';
 import type { EngineResult, Critique } from '../../packages/core/src/types.js';
@@ -65,6 +71,56 @@ describe('Forge Integration', () => {
 
       const { winner } = determineWinner(results);
       expect(winner).toBe('codex'); // fewer lint warnings
+    });
+  });
+
+  describe('no-diff forge classification', () => {
+    it('keeps API tool-loop exhaustion distinct from validation no-ops', () => {
+      const result = classifyNoDiffForgeResult({
+        stdout: 'API engine reached the 40-step tool loop limit after 40 tool calls; evaluating any candidate worktree changes with fitness.',
+        timedOut: false,
+        exitCode: 0,
+        fitnessPassed: true,
+        baselinePasses: true,
+        mode: 'improve',
+        requireDiff: false,
+        acceptReviewOutput: true,
+      });
+
+      expect(result).toMatchObject({
+        status: 'no_patch_tool_limit',
+        pass: false,
+        score: 0,
+        engineCompleted: false,
+        reason: 'tool_loop_limit',
+      });
+    });
+
+    it('accepts useful no-diff reports in validate mode', () => {
+      const result = classifyNoDiffForgeResult({
+        stdout: 'The review covers module exports, use-from semantics, external boundaries, and test gaps; it recommends keeping the implementation as-is because all checked behaviors pass.',
+        timedOut: false,
+        exitCode: 0,
+        fitnessPassed: true,
+        baselinePasses: true,
+        mode: 'validate',
+        requireDiff: false,
+        acceptReviewOutput: true,
+      });
+
+      expect(result.status).toBe('no_diff_but_report');
+      expect(result.pass).toBe(true);
+      expect(result.score).toBeGreaterThan(0);
+    });
+
+    it('defaults implement to require diff and validate to allow no diff', () => {
+      expect(resolveForgeMode('VALIDATE')).toBe('validate');
+      expect(resolveForgeMode('unknown')).toBe('implement');
+      expect(resolveForgeRequireDiff('implement')).toBe(true);
+      expect(resolveForgeRequireDiff('validate')).toBe(false);
+      expect(resolveForgeRequireDiff('validate', true)).toBe(true);
+      expect(resolveForgeAcceptReviewOutput('implement')).toBe(false);
+      expect(resolveForgeAcceptReviewOutput('improve')).toBe(true);
     });
   });
 

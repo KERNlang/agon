@@ -23,6 +23,16 @@ uvicorn agon.saas_api.health:app --host 0.0.0.0 --port 3030
 
 (Exact module path depends on transpiler output structure.)
 
+## Gap Check
+
+The FastAPI output has a KERN-authored checker that turns the documented Python gaps into executable checks:
+
+```bash
+npm run check:gaps -w packages/saas-api
+```
+
+This is expected to fail while the upstream `@kernlang/fastapi` gaps below remain open. When it passes, the local workaround and `KERN-GAP` comments can be removed.
+
 ## Roadmap
 
 Synthesized from the 6-engine brainstorm + recheck (Codex / Claude / Gemini / Kimi / Minimax / Z.AI).

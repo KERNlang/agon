@@ -25,6 +25,10 @@ fn name=makeFailedResult params="engineId:string,error:string,durationMs?:number
       engineId,
       pass: false,
       score: 0,
+      status: 'dispatch_failed',
+      fitnessPassed: false,
+      engineCompleted: false,
+      reason: error,
       diffLines: 0,
       filesChanged: 0,
       durationSec: Math.max(0, Math.round((durationMs ?? 0) / 1000)),
@@ -32,6 +36,61 @@ fn name=makeFailedResult params="engineId:string,error:string,durationMs?:number
       styleScore: 0,
       dispatchStdout: `ERROR: ${error}`,
     };
+  >>>
+
+fn name=resolveForgeMode params="mode?:string" returns="'implement'|'improve'|'validate'" export=true
+  doc "KERN-GAP workaround: kern v3.5.0 mangles nested single quotes in `value=` attributes (e.g. `return value=\"value as 'improve'|'validate'\"` codegens as `'validat;`). Using <<<>>> raw handler avoids the parser bug."
+  handler <<<
+    const value = String(mode ?? 'implement').toLowerCase();
+    if (value === 'improve' || value === 'validate') {
+      return value as 'improve' | 'validate';
+    }
+    return 'implement';
+  >>>
+
+fn name=resolveForgeRequireDiff params="mode:'implement'|'improve'|'validate', requireDiff?:boolean" returns=boolean export=true
+  handler lang="kern"
+    if cond="typeof requireDiff === 'boolean'"
+      return value="requireDiff"
+    return value="mode === 'implement'"
+
+fn name=resolveForgeAcceptReviewOutput params="mode:'implement'|'improve'|'validate', acceptReviewOutput?:boolean" returns=boolean export=true
+  handler lang="kern"
+    if cond="typeof acceptReviewOutput === 'boolean'"
+      return value="acceptReviewOutput"
+    return value="mode !== 'implement'"
+
+fn name=classifyNoDiffForgeResult params="opts:{stdout:string, timedOut:boolean, exitCode:number, fitnessPassed:boolean, baselinePasses:boolean, mode:'implement'|'improve'|'validate', requireDiff:boolean, acceptReviewOutput:boolean}" returns="{status:string,pass:boolean,score:number,engineCompleted:boolean,reason:string}" export=true
+  doc "Classify a zero-diff forge attempt. Keeps validation/no-op outcomes distinct from failed dispatch/tool-loop exhaustion."
+  handler <<<
+    const stdout = String(opts.stdout ?? '');
+    const normalized = stdout.replace(/\s+/g, ' ').trim();
+    const lower = normalized.toLowerCase();
+    const toolLoopLimit = /tool loop limit|step tool loop limit|maximum tool loop|reached the \d+[- ]step tool loop limit/i.test(normalized);
+    const engineCompleted = !opts.timedOut && Number(opts.exitCode) === 0 && !toolLoopLimit;
+    const usefulReport = normalized.length >= 80;
+    const noOpText = /\b(already|no changes?|nothing to change|no patch needed|already implemented|looks good|validated|no action needed)\b/i.test(normalized);
+
+    if (toolLoopLimit) {
+      return { status: 'no_patch_tool_limit', pass: false, score: 0, engineCompleted: false, reason: 'tool_loop_limit' };
+    }
+    if (!engineCompleted) {
+      return { status: 'no_candidate_diff', pass: false, score: 0, engineCompleted: false, reason: opts.timedOut ? 'dispatch_timeout' : `dispatch_exit_${opts.exitCode}` };
+    }
+    if (!opts.fitnessPassed) {
+      return { status: 'fitness_failed_no_diff', pass: false, score: 0, engineCompleted: true, reason: 'fitness_failed' };
+    }
+    if (noOpText && opts.baselinePasses) {
+      const pass = !opts.requireDiff;
+      return { status: 'no_op_validation', pass, score: pass ? 65 : 0, engineCompleted: true, reason: 'baseline_already_satisfied' };
+    }
+    if (usefulReport && (opts.acceptReviewOutput || opts.mode === 'validate')) {
+      return { status: 'no_diff_but_report', pass: true, score: 60, engineCompleted: true, reason: 'review_output' };
+    }
+    if (!opts.requireDiff) {
+      return { status: 'no_candidate_diff', pass: true, score: 50, engineCompleted: true, reason: 'diff_not_required' };
+    }
+    return { status: 'no_candidate_diff', pass: false, score: 0, engineCompleted: true, reason: 'diff_required' };
   >>>
 
 fn name=emitForgeEvent params="onEvent:any,type:string,engineId?:string,data?:Record<string,unknown>" export=false
@@ -51,9 +110,12 @@ fn name=resolveForgeDispatchTimeout params="engine:any,config:Required<AgonConfi
       return value="Math.max(engineTimeout, floor)"
     return value="floor"
 
-fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:string,dispatchMode:'exec'|'review',metricPhase:'stage1'|'stage2-scout'|'stage2-follower',fitnessCmd:string,config:Required<AgonConfig>,registry:EngineRegistry,adapter:EngineAdapter,root:string,baseSha:string,forgeDir:string,worktrees:WorktreeEntry[],onEvent?:ForgeEventCallback,signal?:AbortSignal,eventType:string,eventData?:Record<string,unknown>,worktreePath?:string}" returns="Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}>"
+fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:string,dispatchMode:'exec'|'review',metricPhase:'stage1'|'stage2-scout'|'stage2-follower',fitnessCmd:string,config:Required<AgonConfig>,registry:EngineRegistry,adapter:EngineAdapter,root:string,baseSha:string,forgeDir:string,worktrees:WorktreeEntry[],onEvent?:ForgeEventCallback,signal?:AbortSignal,eventType:string,eventData?:Record<string,unknown>,worktreePath?:string,forgeMode?:'implement'|'improve'|'validate',requireDiff?:boolean,baselinePasses?:boolean,acceptReviewOutput?:boolean}" returns="Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}>"
   handler <<<
     const engine = opts.registry.get(opts.engineId);
+    const forgeMode = resolveForgeMode(opts.forgeMode);
+    const requireDiff = resolveForgeRequireDiff(forgeMode, opts.requireDiff);
+    const acceptReviewOutput = resolveForgeAcceptReviewOutput(forgeMode, opts.acceptReviewOutput);
     const dispatchTimeout = resolveForgeDispatchTimeout(engine, opts.config);
     const wtPath = opts.worktreePath ?? join(opts.forgeDir, `wt-${opts.engineId}`);
     worktreeCreate(opts.root, wtPath, opts.baseSha);
@@ -118,8 +180,30 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
       fitnessCmd: opts.fitnessCmd,
       timeout: opts.config.forgeFitnessTimeout,
       forgeDir: opts.forgeDir,
+      requireDiff,
     });
     const fitnessDurationMs = Date.now() - fitnessStart;
+    if (result.diffLines === 0) {
+      const noDiff = classifyNoDiffForgeResult({
+        stdout: String(dispatchResult?.stdout ?? ''),
+        timedOut: dispatchResult?.timedOut ?? false,
+        exitCode: typeof dispatchResult?.exitCode === 'number' ? dispatchResult.exitCode : 0,
+        fitnessPassed: result.fitnessPassed === true,
+        baselinePasses: opts.baselinePasses === true,
+        mode: forgeMode,
+        requireDiff,
+        acceptReviewOutput,
+      });
+      result.status = noDiff.status;
+      result.pass = noDiff.pass;
+      result.score = noDiff.score;
+      result.engineCompleted = noDiff.engineCompleted;
+      result.reason = noDiff.reason;
+    } else {
+      result.status = result.pass ? 'passed' : 'fitness_failed';
+      result.engineCompleted = !(dispatchResult?.timedOut ?? false);
+      result.reason = result.pass ? undefined : 'fitness_failed';
+    }
     opts.onEvent?.({ type: opts.metricPhase.includes('stage1') ? 'stage1:score' : 'stage2:score', engineId: opts.engineId, data: { engineId: opts.engineId, score: result.score, pass: result.pass, worktreePath: wtPath } });
 
     const promptTokens = estimateTokens(opts.prompt);
@@ -163,14 +247,14 @@ fn name=runBaseline async=true params="opts:{cwd:string, baseSha:string, fitness
     }
   >>>
 
-fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, taskClass?:string, enginePrompts?:Map<string,string>}" returns="Promise<StageResult>"
+fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, taskClass?:string, enginePrompts?:Map<string,string>, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean}" returns="Promise<StageResult>"
   handler lang="kern"
     do value="opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter })"
     let name=root value="repoRoot(opts.cwd)"
     let name=engineResults value="new Map<string, EngineResult>()"
     let name=metrics type="DispatchMetric[]" value="[]"
     try
-      let name=attempt value="await runForgeEngineAttempt({ engineId: opts.starter, prompt: opts.forgePrompt, dispatchMode: 'exec', metricPhase: 'stage1', fitnessCmd: opts.fitnessCmd, config: opts.config, registry: opts.registry, adapter: opts.adapter, root, baseSha: opts.baseSha, forgeDir: opts.forgeDir, worktrees: opts.worktrees, onEvent: opts.onEvent, signal: opts.signal, eventType: 'stage1:dispatch', })"
+      let name=attempt value="await runForgeEngineAttempt({ engineId: opts.starter, prompt: opts.forgePrompt, dispatchMode: 'exec', metricPhase: 'stage1', fitnessCmd: opts.fitnessCmd, config: opts.config, registry: opts.registry, adapter: opts.adapter, root, baseSha: opts.baseSha, forgeDir: opts.forgeDir, worktrees: opts.worktrees, onEvent: opts.onEvent, signal: opts.signal, eventType: 'stage1:dispatch', forgeMode: opts.forgeMode, requireDiff: opts.requireDiff, baselinePasses: opts.baselinePasses, acceptReviewOutput: opts.acceptReviewOutput, })"
       do value="engineResults.set(opts.starter, attempt.result)"
       do value="metrics.push(attempt.metric)"
       catch name=err
@@ -190,7 +274,7 @@ fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, f
       do value="opts.onEvent?.({ type: 'stage1:accepted', engineId: result!.engineId, data: { score: result.score }, })"
     return value="{ engineResults, accepted, winner: result?.pass ? result.engineId : null, metrics }"
 
-fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void, abortControllers?:Map<string,AbortController>}" returns="Promise<StageResult>"
+fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void, abortControllers?:Map<string,AbortController>, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean}" returns="Promise<StageResult>"
   handler <<<
     opts.onEvent?.({ type: 'stage2:start' });
 
@@ -265,6 +349,10 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
         onEvent: opts.onEvent,
         signal: engineAbort.signal,
         eventType: 'stage2:dispatch',
+        forgeMode: opts.forgeMode,
+        requireDiff: opts.requireDiff,
+        baselinePasses: opts.baselinePasses,
+        acceptReviewOutput: opts.acceptReviewOutput,
       });
       let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
       const timeoutPromise = new Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}>((resolve) => {
@@ -347,7 +435,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
     return { engineResults: allResults, accepted: false, winner: null, metrics };
   >>>
 
-fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}" returns="Promise<StageResult>"
+fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean}" returns="Promise<StageResult>"
   handler <<<
     if (opts.challengers.length <= 1) {
       // Only one challenger — no peek possible, use normal stage2
@@ -391,6 +479,10 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
         eventType: 'stage2:dispatch',
         eventData: { phase: 'scout' },
         worktreePath: scoutWt,
+        forgeMode: opts.forgeMode,
+        requireDiff: opts.requireDiff,
+        baselinePasses: opts.baselinePasses,
+        acceptReviewOutput: opts.acceptReviewOutput,
       });
       scoutDispatchResult = scoutAttempt.dispatchResult;
       scoutResult = scoutAttempt.result;
@@ -453,6 +545,10 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
         signal: opts.signal,
         eventType: 'stage2:dispatch',
         eventData: { phase: 'follower', hasPeek: !!peekContext },
+        forgeMode: opts.forgeMode,
+        requireDiff: opts.requireDiff,
+        baselinePasses: opts.baselinePasses,
+        acceptReviewOutput: opts.acceptReviewOutput,
       });
       metrics.push(attempt.metric);
       return attempt.result;

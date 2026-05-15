@@ -269,6 +269,10 @@ interface name=ForgeOptions
   field name=fitnessCmd type=string
   field name=cwd type=string
   field name=forgeDir type=string
+  field name=mode type="'implement'|'improve'|'validate'" optional=true
+  field name=requireDiff type=boolean optional=true
+  field name=baselineMayPass type=boolean optional=true
+  field name=acceptReviewOutput type=boolean optional=true
   field name=context type=string optional=true
   field name=seedPlan type=string optional=true
   field name=timeout type=number optional=true
@@ -283,6 +287,10 @@ interface name=EngineResult
   field name=engineId type=string
   field name=pass type=boolean
   field name=score type=number
+  field name=status type=string optional=true
+  field name=fitnessPassed type=boolean optional=true
+  field name=engineCompleted type=boolean optional=true
+  field name=reason type=string optional=true
   field name=diffLines type=number
   field name=filesChanged type=number
   field name=durationSec type=number
@@ -318,6 +326,11 @@ interface name=ForgeManifest
   field name=closeCall type=boolean
   field name=stage1Accepted type=boolean
   field name=baselinePasses type=boolean
+  field name=mode type="'implement'|'improve'|'validate'" optional=true
+  field name=requireDiff type=boolean optional=true
+  field name=acceptReviewOutput type=boolean optional=true
+  field name=status type=string optional=true
+  field name=noDiffSummary type="{status:string,count:number,toolLoopLimit:number,usefulReports:number}" optional=true
   field name=alreadySatisfied type=boolean optional=true
   field name=singleSurvivor type=boolean optional=true
   field name=error type=string optional=true
@@ -356,6 +369,7 @@ event name=ForgeEvent
   type name="engine:failed" data="{ engineId: string, phase: string, error: string }"
   type name="engine:worktree" data="{ engineId: string, worktreePath: string, phase: string }"
   type name="winner:determined" data="{ winner: string, bestScore: number }"
+  type name="forge:no-candidate-diff" data="{ status: string, count: number, toolLoopLimit: number, usefulReports: number }"
   type name="synthesis:start"
   type name="synthesis:critique" data="{ engineId: string }"
   type name="synthesis:refine"

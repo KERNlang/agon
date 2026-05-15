@@ -5,7 +5,7 @@ test name="Forge stage contracts" target="../../src/kern/stages.kern"
     expect no=codegenErrors
 
   it name="dispatch failure results stay deterministic"
-    expect fn=makeFailedResult args={{["codex", "dispatch failed", 1250]}} equals={{ { engineId: "codex", pass: false, score: 0, diffLines: 0, filesChanged: 0, durationSec: 1, lintWarnings: 0, styleScore: 0, dispatchStdout: "ERROR: dispatch failed" } }}
+    expect fn=makeFailedResult args={{["codex", "dispatch failed", 1250]}} equals={{ { engineId: "codex", pass: false, score: 0, status: "dispatch_failed", fitnessPassed: false, engineCompleted: false, reason: "dispatch failed", diffLines: 0, filesChanged: 0, durationSec: 1, lintWarnings: 0, styleScore: 0, dispatchStdout: "ERROR: dispatch failed" } }}
 
   it name="stage orchestration keeps typed public shape"
     expect node=fn name=formatDispatchError prop=returns is=string

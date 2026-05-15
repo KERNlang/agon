@@ -38,7 +38,7 @@ export function normalizeFitnessCommandForShell(command: string): string {
 }
 
 // @kern-source: fitness:32
-export async function runFitness(opts: {engineId:string, worktreePath:string, fitnessCmd:string, timeout:number, forgeDir:string}): Promise<EngineResult> {
+export async function runFitness(opts: {engineId:string, worktreePath:string, fitnessCmd:string, timeout:number, forgeDir:string, requireDiff?:boolean}): Promise<EngineResult> {
   const startTime = Date.now();
   const fitnessCmd = normalizeFitnessCommandForShell(opts.fitnessCmd);
 
@@ -86,7 +86,7 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
   const patchPath = join(opts.forgeDir, `${opts.engineId}-patch.diff`);
   writeFileSync(patchPath, diff);
 
-  const requiresCandidateDiff = opts.engineId !== 'baseline';
+  const requiresCandidateDiff = opts.engineId !== 'baseline' && opts.requireDiff !== false;
   const diffGatePass = !requiresCandidateDiff || diffLines > 0;
   const pass = commandPass && diffGatePass;
 
@@ -129,12 +129,19 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
   };
 
   const components = computeScore(fitness);
+  if (pass && diffLines === 0 && opts.engineId !== 'baseline' && opts.requireDiff === false) {
+    // Validation/improvement mode can legitimately produce no patch. Keep
+    // it selectable without pretending it is a code-change score.
+    components.composite = 60;
+  }
   fitness.compositeScore = components.composite;
 
   return {
     engineId: opts.engineId,
     pass,
     score: components.composite,
+    status: pass ? 'passed' : (diffGatePass ? 'fitness_failed' : 'no_candidate_diff'),
+    fitnessPassed: commandPass,
     diffLines,
     filesChanged,
     durationSec,

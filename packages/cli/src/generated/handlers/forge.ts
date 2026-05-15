@@ -40,7 +40,7 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
     case 'baseline:done':
       plan = mergeStepResult(plan, 'baseline', { state: 'completed' });
       if (event.data?.passes) {
-        dispatch({ type: 'warning', message: 'Baseline passes — fitness test may be non-discriminating' });
+        dispatch({ type: 'warning', message: 'Baseline passes — fitness may be non-discriminating. Add a failing regression test, use forge validate mode, or allow no-diff validation.' });
       }
       break;
     case 'stage1:dispatch':
@@ -111,6 +111,16 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
       }
       break;
     }
+    case 'forge:no-candidate-diff': {
+      const count = Number(event.data?.count ?? 0);
+      const toolLoopLimit = Number(event.data?.toolLoopLimit ?? 0);
+      if (toolLoopLimit > 0) {
+        dispatch({ type: 'warning', message: `Forge produced no candidate diff: ${toolLoopLimit}/${count} engine(s) hit the tool-loop limit before producing a patch.` });
+      } else {
+        dispatch({ type: 'warning', message: `Forge produced no candidate diff from ${count} engine(s).` });
+      }
+      break;
+    }
     case 'synthesis:start': {
       plan = mergeStepResult(plan, 'synthesis', { state: 'running', attempts: [{ startedAt: new Date().toISOString() }] });
       const winnerId = id || engineStatus['__winner'] || '';
@@ -128,7 +138,7 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
   return plan;
 }
 
-// @kern-source: forge:116
+// @kern-source: forge:126
 function applyForgePatchToWorkspace(winnerId: string, patchContent: string, dispatch: Dispatch): boolean {
   if (!patchContent.trim()) {
     dispatch({ type: 'info', message: `Winner ${winnerId} produced an empty patch.` });
@@ -149,7 +159,7 @@ function applyForgePatchToWorkspace(winnerId: string, patchContent: string, disp
 /**
  * Parse Cesar's command-only fitness response. Accepts strict JSON first, then a plain one-line command.
  */
-// @kern-source: forge:130
+// @kern-source: forge:140
 export function extractFitnessCommandFromCesarOutput(output: string): string|null {
   let text = String(output ?? '').trim();
   if (!text) return null;
@@ -182,7 +192,7 @@ export function extractFitnessCommandFromCesarOutput(output: string): string|nul
   return candidate;
 }
 
-// @kern-source: forge:164
+// @kern-source: forge:174
 function extractGithubLiterals(text: string): string[] {
   return [...new Set((String(text ?? '').match(/(?:https?:\/\/)?github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/g) ?? []).map((m: string) => m.replace(/^https?:\/\//, '').replace(/[).,;:'"`\]]+$/g, '')))];
 }
@@ -190,7 +200,7 @@ function extractGithubLiterals(text: string): string[] {
 /**
  * Keep literal GitHub repo URLs in Cesar-generated fitness commands aligned with the user's task. Prevents small hallucinated typos from making all engines optimize for the wrong marker.
  */
-// @kern-source: forge:166
+// @kern-source: forge:176
 export function repairFitnessCommandTaskLiterals(task: string, command: string): string {
   const taskUrls = extractGithubLiterals(task);
   if (taskUrls.length === 0) return command;
@@ -212,7 +222,7 @@ export function repairFitnessCommandTaskLiterals(task: string, command: string):
   return repaired;
 }
 
-// @kern-source: forge:189
+// @kern-source: forge:199
 export function normalizeGithubRemoteLiteral(remote: string): string|null {
   const raw = String(remote ?? '').trim();
   if (!raw) {
@@ -230,7 +240,7 @@ export function normalizeGithubRemoteLiteral(remote: string): string|null {
   return null;
 }
 
-// @kern-source: forge:203
+// @kern-source: forge:213
 function detectGithubRemoteLiteral(cwd: string): string|null {
   try {
     const remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
@@ -243,7 +253,7 @@ function detectGithubRemoteLiteral(cwd: string): string|null {
 /**
  * For current-repository README/docs checks, prefer the actual git origin over stale chat examples or old repo names.
  */
-// @kern-source: forge:211
+// @kern-source: forge:221
 export function repairFitnessCommandRepositoryLiteral(command: string, repoLiteral: string|null): string {
   if (!repoLiteral) {
     return command;
@@ -258,7 +268,7 @@ export function repairFitnessCommandRepositoryLiteral(command: string, repoLiter
   return repaired;
 }
 
-// @kern-source: forge:223
+// @kern-source: forge:233
 function taskExplicitlyMentionsLiteral(task: string, literal: string): boolean {
   const taskLower = String(task ?? '').toLowerCase();
   const literalLower = String(literal ?? '').toLowerCase();
@@ -275,7 +285,7 @@ function taskExplicitlyMentionsLiteral(task: string, literal: string): boolean {
 /**
  * Decide whether a fitness command may assert a GitHub/repository URL. This is semantic intent, not literal echoing: public README/footer/link tasks can check the local git origin; normal local docs tasks should not.
  */
-// @kern-source: forge:234
+// @kern-source: forge:244
 export function taskWantsRepositoryLinkCheck(task: string): boolean {
   const t = String(task ?? '').toLowerCase();
   if (/github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+/i.test(t)) {
@@ -287,7 +297,7 @@ export function taskWantsRepositoryLinkCheck(task: string): boolean {
 /**
  * Remove forbidden literals that are local identity facts rather than internal details. Example: avoid KERN compilation must not become forbidden=['KERNlang'] when KERNlang is the GitHub owner.
  */
-// @kern-source: forge:242
+// @kern-source: forge:252
 export function repairOverbroadForbiddenLiterals(task: string, command: string, repoLiteral: string|null): string {
   const forbidden = extractFitnessStringArray(command, 'forbidden');
   if (forbidden.length === 0 || !repoLiteral) return command;
@@ -309,7 +319,7 @@ export function repairOverbroadForbiddenLiterals(task: string, command: string, 
   return command.replace(/forbidden\s*=\s*\[[^\]]*\]/, `forbidden=[${serialized}]`);
 }
 
-// @kern-source: forge:265
+// @kern-source: forge:275
 function extractFitnessStringArray(command: string, name: string): string[] {
   const re = new RegExp(`${name}\\s*=\\s*\\[([^\\]]*)\\]`);
   const match = String(command ?? '').match(re);
@@ -327,7 +337,7 @@ function extractFitnessStringArray(command: string, name: string): string[] {
 /**
  * Remove forbidden string literals that are required as part of another fitness assertion. Cesar sometimes requires github.com/KERNlang/agon and also forbids KERNlang, making the check impossible.
  */
-// @kern-source: forge:280
+// @kern-source: forge:290
 export function repairContradictoryFitnessLiterals(command: string): string {
   const required = extractFitnessStringArray(command, 'required');
   const forbidden = extractFitnessStringArray(command, 'forbidden');
@@ -349,7 +359,7 @@ export function repairContradictoryFitnessLiterals(command: string): string {
 /**
  * Reject Cesar-generated fitness checks that drift from task intent. Fitness may inspect local files and exact requested literals, but should not add GitHub/repo assertions unless the task semantically asks for a public repo link.
  */
-// @kern-source: forge:300
+// @kern-source: forge:310
 export function validateFitnessCommandIntent(task: string, command: string, repoLiteral: string|null): {ok:boolean,reason?:string} {
   const cmd = String(command ?? '');
   if (!cmd.trim()) {
@@ -385,13 +395,13 @@ export function validateFitnessCommandIntent(task: string, command: string, repo
 /**
  * Normalize current-repository GitHub literals in a forge task before displaying the plan or sending the prompt to engines.
  */
-// @kern-source: forge:325
+// @kern-source: forge:335
 export function repairForgeTaskRepositoryLiteral(task: string, cwd: string): string {
   const repoLiteral = detectGithubRemoteLiteral(cwd);
   return repairFitnessCommandRepositoryLiteral(task, repoLiteral);
 }
 
-// @kern-source: forge:331
+// @kern-source: forge:341
 function describeProjectFitnessOptions(cwd: string): string {
   const lines: string[] = [];
   const packageJsonPath = join(cwd, 'package.json');
@@ -428,7 +438,7 @@ function describeProjectFitnessOptions(cwd: string): string {
 /**
  * Ask Cesar to prepare a task-specific fitness command when a forge call omitted one. This keeps UX non-interactive without hardcoding task-specific checks in the handler.
  */
-// @kern-source: forge:356
+// @kern-source: forge:366
 export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   const config = ctx.config;
   const cwd = resolveWorkingDir();
@@ -500,7 +510,7 @@ export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatc
 /**
  * Pick a non-interactive fallback fitness command from the current project when the user or Cesar did not provide one.
  */
-// @kern-source: forge:426
+// @kern-source: forge:436
 export function inferProjectFitnessCommand(cwd: string): string {
   const packageJsonPath = join(cwd, 'package.json');
   if (existsSync(packageJsonPath)) {
@@ -524,7 +534,7 @@ export function inferProjectFitnessCommand(cwd: string): string {
   return 'git diff --check';
 }
 
-// @kern-source: forge:451
+// @kern-source: forge:461
 export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {
@@ -923,7 +933,16 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
         }
       }
     } else {
-      dispatch({ type: 'error', message: 'No winner — all engines failed' });
+      if (manifest.noDiffSummary) {
+        const summary = manifest.noDiffSummary as any;
+        if (Number(summary.toolLoopLimit ?? 0) > 0) {
+          dispatch({ type: 'error', message: `No candidate diff — ${summary.toolLoopLimit}/${summary.count} engine(s) hit the tool-loop limit before producing a patch.` });
+        } else {
+          dispatch({ type: 'warning', message: 'No candidate diff — engines produced no patch. Use validate/improve mode or a more discriminating fitness command for already-passing work.' });
+        }
+      } else {
+        dispatch({ type: 'error', message: 'No winner — all engines failed' });
+      }
     }
     dispatch({ type: 'info', message: `Manifest: ${forgeDir}/manifest.json` });
     dispatch({ type: 'info', message: `Result bundle: ${manifest.resultBundlePath ?? `${forgeDir}/result.json`}` });

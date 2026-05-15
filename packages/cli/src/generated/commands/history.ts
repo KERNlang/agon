@@ -6,9 +6,9 @@ import { readdirSync, readFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { RUNS_DIR, ensureAgonHome } from '@agon/core';
+import { RUNS_DIR, ensureAgonHome, searchHistorySemantic } from '@agon/core';
 
-import type { ForgeManifest } from '@agon/core';
+import type { ForgeManifest, HistorySearchItem } from '@agon/core';
 
 import { header, info, table, bold, green, red, dim } from '../blocks/output-format.js';
 
@@ -84,6 +84,11 @@ export const historyCommand: any = defineCommand({
       type: 'string',
       description: 'Show details for a specific forge ID',
     },
+    query: {
+      type: 'string',
+      alias: 'q',
+      description: 'Semantic search across past run tasks (Python sidecar; falls back to substring)',
+    },
   },
   run({ args }) {
     ensureAgonHome();
@@ -110,45 +115,95 @@ export const historyCommand: any = defineCommand({
       return;
     }
 
-    const limit = parseInt(args.limit, 10);
-    const recent = files.slice(0, limit);
-
-    header(`Recent Forge Runs (${Math.min(limit, files.length)} of ${files.length})`);
-
-    const rows: string[][] = [];
-    for (const file of recent) {
+    // Parse all manifests once (used by both branches).
+    type Loaded = { file: string; manifest: ForgeManifest };
+    const loaded: Loaded[] = [];
+    for (const file of files) {
       try {
         const manifest = JSON.parse(
           readFileSync(join(RUNS_DIR, file), 'utf-8'),
         ) as ForgeManifest;
-
-        const date = new Date(manifest.timestamp).toLocaleString();
-        const task = manifest.task.length > 40
-          ? manifest.task.slice(0, 40) + '...'
-          : manifest.task;
-        const winner = manifest.winner
-          ? green(manifest.winner)
-          : red('none');
-        const engines = manifest.enginesDispatched;
-        const synthesis = manifest.synthesis?.wins ? 'yes' : '-';
-
-        rows.push([
-          date,
-          task,
-          winner,
-          String(engines),
-          synthesis,
-          manifest.forgeId.slice(0, 8),
-        ]);
+        loaded.push({ file, manifest });
       } catch (e) {
         console.warn(`[agon] history: skipped malformed manifest: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 
-    table(
-      ['Date', 'Task', 'Winner', 'Engines', 'Synth', 'ID'],
-      rows,
-    );
+    const limit = parseInt(args.limit, 10);
+    const query: string | undefined = args.query;
+
+    let display: Loaded[];
+    let similarities: Map<string, number> | null = null;
+    let headerLabel: string;
+
+    if (query && query.trim()) {
+      const items: HistorySearchItem[] = loaded.map((l) => ({
+        id: l.manifest.forgeId,
+        // Concatenate the human-readable fields so the embedding sees
+        // intent (`task`) plus context (`fitnessCmd`). Engines list adds
+        // noise more than signal — skipped.
+        text: `${l.manifest.task} — ${l.manifest.fitnessCmd ?? ''}`.trim(),
+      }));
+
+      const hits = searchHistorySemantic(query.trim(), items, limit);
+
+      if (hits && hits.length > 0) {
+        similarities = new Map(hits.map((h) => [h.id, h.similarity]));
+        const byId = new Map(loaded.map((l) => [l.manifest.forgeId, l]));
+        display = hits
+          .map((h) => byId.get(h.id))
+          .filter((x): x is Loaded => x !== undefined);
+        headerLabel = `Semantic match for "${query.trim()}" (${display.length} of ${loaded.length})`;
+      } else if (hits === null) {
+        // Sidecar unavailable — fall back to case-insensitive substring
+        // on `task`. Worse than embeddings, better than nothing.
+        const needle = query.trim().toLowerCase();
+        display = loaded
+          .filter((l) => l.manifest.task.toLowerCase().includes(needle))
+          .slice(0, limit);
+        headerLabel = `Substring match for "${query.trim()}" (${display.length} of ${loaded.length}) ${dim('— Python sidecar unavailable')}`;
+      } else {
+        // Sidecar ran but nothing scored above the noise floor.
+        info(`No runs match "${query.trim()}" semantically. Try \`agon history\` for the full list.`);
+        return;
+      }
+    } else {
+      display = loaded.slice(0, limit);
+      headerLabel = `Recent Forge Runs (${Math.min(limit, loaded.length)} of ${loaded.length})`;
+    }
+
+    header(headerLabel);
+
+    const rows: string[][] = [];
+    for (const { manifest } of display) {
+      const date = new Date(manifest.timestamp).toLocaleString();
+      const task = manifest.task.length > 40
+        ? manifest.task.slice(0, 40) + '...'
+        : manifest.task;
+      const winner = manifest.winner
+        ? green(manifest.winner)
+        : red('none');
+      const engines = manifest.enginesDispatched;
+      const synthesis = manifest.synthesis?.wins ? 'yes' : '-';
+
+      const row = [
+        date,
+        task,
+        winner,
+        String(engines),
+        synthesis,
+        manifest.forgeId.slice(0, 8),
+      ];
+      if (similarities) {
+        const sim = similarities.get(manifest.forgeId);
+        row.push(sim !== undefined ? sim.toFixed(2) : '-');
+      }
+      rows.push(row);
+    }
+
+    const headers = ['Date', 'Task', 'Winner', 'Engines', 'Synth', 'ID'];
+    if (similarities) headers.push('Sim');
+    table(headers, rows);
 
     console.log('');
     info(dim(`Use \`agon history <id>\` for details`));

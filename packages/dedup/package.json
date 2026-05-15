@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "install:python": "python3 -m pip install --user -r requirements.txt",
-    "test:sidecar": "node tests/smoke.mjs"
+    "test:sidecar": "node tests/smoke.mjs",
+    "test:classifier": "node tests/classifier-smoke.mjs",
+    "test:history-search": "node tests/history-search-smoke.mjs",
+    "test:all-sidecars": "npm run test:sidecar && npm run test:classifier && npm run test:history-search"
   }
 }

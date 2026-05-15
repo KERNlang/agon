@@ -39,25 +39,27 @@ Agon isn't just about competition; it's a unified platform for AI collaboration.
 
 - Node.js >= 22
 - A Git repository
-- At least one supported AI CLI installed globally (e.g., Claude Code, Codex, Gemini CLI) or an API key for API-based engines.
+- At least one supported AI CLI installed globally (e.g., Claude Code, Codex, Gemini CLI) or an API key for API-based engines
+- **Optional:** Python 3.10+ to unlock the semantic features that run as sidecars to KERN — semantic history search (`agon history --query`), tree-sitter syntax validation in forge fitness, brainstorm paraphrase dedup, and the task classifier. Agon still runs without Python; these features fall back to substring/regex paths.
 
 ## Installation
 
-Agon is designed to be run from source in its public beta phase. 
-
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/agon-ai.git
-cd agon-ai
+git clone https://github.com/KERNlang/agon.git
+cd agon
 
-# 2. Install dependencies
+# 2. Install dependencies (compiles KERN → TypeScript → JS)
 npm install
 
 # 3. Build and install the global CLI
 npm run install:cli
+
+# 4. (Optional) Install Python sidecars for semantic features
+python3 -m pip install --user -r packages/dedup/requirements.txt
 ```
 
-Once installed, simply run `agon` in any git repository to start the interactive REPL.
+Once installed, run `agon` in any git repository to start the interactive REPL. Run `agon doctor` to verify every engine, the worktree path, and the Python sidecars resolve.
 
 ## Core Modes
 
@@ -130,7 +132,7 @@ Team-based variants of core modes (e.g., 2v2 or 3v3). Includes Team Forge, Team 
 
 Launching `agon` starts a powerful terminal REPL equipped with native scrollback, command history, and a file rail. 
 
-Available commands include: `/forge`, `/brainstorm`, `/tribunal`, `/campfire`, `/pipeline`, `/review`, `/agent`, `/speculate`, `/team-forge`, `/status`, `/leaderboard`, `/history`, `/config`, `/plan`, `/models`, `/engines`, `/help`, and `/exit`.
+Available commands include: `/forge`, `/brainstorm`, `/tribunal`, `/campfire`, `/pipeline`, `/review`, `/agent`, `/speculate`, `/team-forge`, `/status`, `/leaderboard`, `/history`, `/config`, `/plan`, `/models`, `/engines`, `/doctor`, `/help`, and `/exit`.
 
 **Example Session:**
 ```text
@@ -213,7 +215,16 @@ Global configuration, engine selection, model preferences, and telemetry setting
 
 ## Architecture
 
-Agon is built using **KERN**, a structured internal language that compiles down to highly optimized TypeScript. The monorepo consists of `packages/core` (types, config, ELO scoring), `packages/cli` (the interactive REPL, UI surfaces, and command handlers), `packages/forge` (competition and worktree logic), and `packages/adapter-cli` (engine integrations). The entire project leverages ESM, strict TypeScript, and is thoroughly tested with Vitest.
+Agon is built using **KERN**, a structured meta-language that compiles down to optimized TypeScript. Nearly the entire codebase — including Ink screens, signals, blocks, and orchestration logic — is authored in `.kern` files and regenerated via `npm run kern:compile`. The monorepo:
+
+- `packages/core` — types, config, ELO/Glicko-2 scoring, Cesar routing, session state (100% KERN, 69 files)
+- `packages/cli` — the interactive REPL, Ink surfaces, command handlers (~99% KERN, 60+ files)
+- `packages/forge` — competitive worktree orchestration, fitness, M-of-N quorum finalize (100% KERN, 17 files)
+- `packages/adapter-cli` — CLI engine integrations (100% KERN)
+- `packages/dedup` — Python sidecars for semantic features (history search via fastembed/MiniLM, tree-sitter syntax validation, task classifier, brainstorm paraphrase dedup). Bridged from KERN via JSON over stdin/stdout — KERN imports Python where Python is strictly better than a TS/JS port.
+- `packages/mcp` — exposes Agon's orchestration modes as MCP tools so other CLIs (Claude Code, Codex, Gemini) can drive Agon
+
+The entire project is ESM, uses strict TypeScript, and is thoroughly tested with Vitest.
 
 ## License
 

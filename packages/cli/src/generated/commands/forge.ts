@@ -2,11 +2,7 @@
 
 import { defineCommand } from 'citty';
 
-import { join } from 'node:path';
-
-import { mkdirSync } from 'node:fs';
-
-import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
+import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, writeRunStatus, printRunSummary } from '@agon/core';
 
 import type { EngineResult } from '@agon/core';
 
@@ -20,7 +16,7 @@ import { header, success, fail, warn, info, table, green, red, yellow, bold, cya
 
 import { icons } from '../signals/icons.js';
 
-// @kern-source: forge:12
+// @kern-source: forge:10
 export const forgeCommand: any = defineCommand({
   meta: {
     name: 'forge',
@@ -97,6 +93,14 @@ export const forgeCommand: any = defineCommand({
       type: 'string',
       description: 'Per-engine health-check timeout in seconds (default 5). Overrides config.forgeHealthCheckTimeoutSec.',
     },
+    label: {
+      type: 'string',
+      description: 'Human-readable suffix baked into the forge run dir name (orchestrators: distinguish parallel runs without grep).',
+    },
+    quiet: {
+      type: 'boolean',
+      description: 'Suppress streaming output; stdout becomes only the run dir path + final summary.',
+    },
   },
   async run({ args }) {
     ensureAgonHome();
@@ -114,8 +118,12 @@ export const forgeCommand: any = defineCommand({
       process.exit(1);
     }
 
-    const forgeDir = join(RUNS_DIR, `forge-${Date.now()}`);
-    mkdirSync(forgeDir, { recursive: true });
+    if (args.quiet) process.env.AGON_QUIET = '1';
+    const startedAt = new Date().toISOString();
+    const { path: forgeDir } = createRunDir({
+      mode: 'forge',
+      label: args.label,
+    });
 
     const engines = args.engines?.split(',').map((s: string) => s.trim());
     const displayEngines = engines && engines.length > 0 ? engines : available;
@@ -176,13 +184,16 @@ export const forgeCommand: any = defineCommand({
       healthCheckTimeoutSec = parsed;
     }
 
-    header(`Forge: ${args.task}`);
-    info(`Engines: ${displayEngines.join(', ')}`);
-    info(`Fitness: ${args.test}`);
-    info(`Mode: ${mode}`);
+    const quiet = process.env.AGON_QUIET === '1';
+    if (!quiet) {
+      header(`Forge: ${args.task}`);
+      info(`Engines: ${displayEngines.join(', ')}`);
+      info(`Fitness: ${args.test}`);
+      info(`Mode: ${mode}`);
 
-    if (args.dryRun) {
-      warn('Dry-run mode — no engines will be dispatched');
+      if (args.dryRun) {
+        warn('Dry-run mode — no engines will be dispatched');
+      }
     }
 
     const manifest = await runForge(
@@ -207,6 +218,10 @@ export const forgeCommand: any = defineCommand({
       registry,
       adapter,
       (event: any) => {
+        // Quiet mode promises stdout becomes only the run dir + summary.
+        // Per-event narration would break that contract — suppress it
+        // here rather than gating every info/warn/success call below.
+        if (quiet) return;
         switch (event.type) {
           case 'baseline:start':
             info('Running baseline preflight...');
@@ -272,6 +287,53 @@ export const forgeCommand: any = defineCommand({
       },
     );
 
+    // Authoritative outcome record. Codex review 0.90-confidence: the
+    // first draft built engineStatuses from manifest.results, which
+    // EXCLUDES engines the user requested that were dropped by the
+    // health check or never dispatched. That hid "2/3 engines never
+    // ran" behind a misleading "2/2 passed; ok: true". Fix: source
+    // engines from the user's requested list (or displayEngines), and
+    // mark any engine missing from manifest.results as 'skipped' so
+    // the summary surfaces it.
+    const requestedEngines: string[] = displayEngines as string[];
+    const engineStatuses = requestedEngines.map((id) => {
+      const r = (manifest.results as Record<string, any>)[id];
+      if (!r) {
+        return {
+          id,
+          status: 'skipped' as const,
+          detail: 'engine never dispatched (health check, missing CLI, or filtered)',
+        };
+      }
+      return {
+        id,
+        status: (r.pass ? 'ok' : 'error') as 'ok' | 'error',
+        detail: `${r.status ?? (r.pass ? 'PASS' : 'FAIL')} score=${r.score} diff=${r.diffLines} time=${r.durationSec}s`,
+        durationMs: typeof r.durationSec === 'number' ? r.durationSec * 1000 : undefined,
+      };
+    });
+    const passingCount = engineStatuses.filter((e) => e.status === 'ok').length;
+    const dispatchedCount = engineStatuses.filter((e) => e.status !== 'skipped').length;
+    const status = {
+      mode: 'forge',
+      label: args.label,
+      startedAt,
+      endedAt: new Date().toISOString(),
+      engines: engineStatuses,
+      summary: manifest.winner
+        ? `winner=${manifest.winner}; ${passingCount}/${dispatchedCount} passed of ${requestedEngines.length} requested`
+        : `no winner; ${passingCount}/${dispatchedCount} passed of ${requestedEngines.length} requested`,
+      // ok only if a winner exists AND every requested engine actually
+      // ran. A win achieved by silently dropping engines is not "ok".
+      ok: !!manifest.winner && engineStatuses.every((e) => e.status !== 'skipped'),
+    };
+    writeRunStatus(forgeDir, status);
+
+    if (quiet) {
+      printRunSummary(status);
+      return;
+    }
+
     // Summary
     console.log('');
     header('Results');
@@ -303,5 +365,6 @@ export const forgeCommand: any = defineCommand({
       fail('No winner — all engines failed');
     }
     info(`Manifest: ${forgeDir}/manifest.json`);
+    printRunSummary(status);
   },
 });

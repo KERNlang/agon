@@ -1,0 +1,67 @@
+// Spawns @agon/dedup's Python history-search sidecar to rank items by
+// semantic similarity to a query. Returns null on any failure so callers
+// degrade gracefully to chronological / substring fallback.
+
+import from="node:child_process" names="spawnSync"
+import from="../blocks/dedup-resolver.js" names="resolveDedupSidecar"
+
+interface name=HistorySearchItem
+  field name=id type=string
+  field name=text type=string
+
+interface name=HistorySearchHit
+  field name=id type=string
+  field name=similarity type=number
+
+const name=HISTORY_SEARCH_TIMEOUT_MS type=number value=5000
+  doc "Hard cap on the synchronous Python call. Embedding ~50 manifests is ~700ms warm; cap at 5s to cover cold start safely."
+
+const name=HISTORY_SEARCH_DISABLE_ENV type=string value="AGON_DISABLE_HISTORY_SEARCH_SIDECAR"
+  doc "Set this env var to skip the Python sidecar (forces substring fallback). Useful for tests and CI."
+
+fn name=searchHistorySemantic params="query:string, items:HistorySearchItem[], topK:number" returns="HistorySearchHit[] | null"
+  doc "Synchronous Python sidecar call. Returns null ONLY on sidecar unavailability/failure (caller should fall back to substring). Returns [] when the sidecar ran cleanly but had no above-threshold matches, or when there's nothing to search."
+  handler <<<
+    if (process.env[HISTORY_SEARCH_DISABLE_ENV]) return null;
+    // No query / no items: nothing to do, but distinguish this from sidecar
+    // failure so the caller doesn't mislabel UX as "sidecar unavailable".
+    if (!query || !query.trim()) return [];
+    if (!items || items.length === 0) return [];
+
+    const sidecar = resolveDedupSidecar('history-search.py');
+    if (!sidecar) return null;
+
+    const python = process.env.AGON_PYTHON || 'python3';
+
+    let result;
+    try {
+      result = spawnSync(python, [sidecar], {
+        input: JSON.stringify({ query, items, top_k: topK }),
+        timeout: HISTORY_SEARCH_TIMEOUT_MS,
+        encoding: 'utf-8',
+      });
+    } catch {
+      return null;
+    }
+
+    if (result.status !== 0 || !result.stdout) {
+      // Surface fastembed-missing exactly once per session — same convention
+      // as task-classifier.kern.
+      if (result.status === 2 && !(globalThis as any).__agonHistorySearchMissingWarned) {
+        console.warn('[agon] history search: fastembed not installed — install with `npm run install:python -w packages/dedup` (chronological listing still works)');
+        (globalThis as any).__agonHistorySearchMissingWarned = true;
+      }
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(result.stdout);
+      const hits = parsed?.results;
+      if (!Array.isArray(hits)) return null;
+      return hits.filter((h: any) =>
+        h && typeof h.id === 'string' && typeof h.similarity === 'number'
+      ) as HistorySearchHit[];
+    } catch {
+      return null;
+    }
+  >>>

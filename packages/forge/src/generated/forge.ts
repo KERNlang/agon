@@ -8,6 +8,8 @@ import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig
 
 import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, extractPatchFilePatterns, tracker, engineHealth } from '@agon/core';
 
+import { healthCheckEngines, HEALTH_CHECK_DEFAULT_PROMPT } from './health-check.js';
+
 import { runBaseline, runStage1, runStage2, resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput } from './stages.js';
 
 import { determineWinner } from '@agon/core';
@@ -22,21 +24,21 @@ import { writeManifest } from './manifest.js';
 
 import type { WorktreeEntry } from '../types.js';
 
-// @kern-source: forge:13
+// @kern-source: forge:14
 export function shellQuoteForForge(value: string): string {
   const s = String(value ?? '');
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s;
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-// @kern-source: forge:20
+// @kern-source: forge:21
 export function buildForgeCleanupCommand(repoRootPath: string, forgeDir: string): string {
   const repo = shellQuoteForForge(repoRootPath);
   const dir = shellQuoteForForge(forgeDir);
   return `for wt in ${dir}/wt-* ${dir}/synth-worktree; do [ -e "$wt" ] && git -C ${repo} worktree remove --force "$wt"; done; git -C ${repo} worktree prune; rm -rf ${dir}`;
 }
 
-// @kern-source: forge:26
+// @kern-source: forge:27
 function collectForgeFilePatterns(manifest: ForgeManifest): string[] {
   const patchTexts: string[] = [];
   for (const patchPath of Object.values(manifest.patches) as string[]) {
@@ -50,7 +52,7 @@ function collectForgeFilePatterns(manifest: ForgeManifest): string[] {
 /**
  * Synthesis is a refinement phase after a winner already exists. Documentation/content tasks should not spend the full forge timeout here; if synthesis cannot improve quickly, keep the original winner.
  */
-// @kern-source: forge:37
+// @kern-source: forge:38
 export function resolveForgeSynthesisTimeout(config: Required<AgonConfig>, taskClass: string): number {
   const configured = Math.max(1, config.forgeSynthesisTimeout);
   if (taskClass === 'docs') {
@@ -62,7 +64,7 @@ export function resolveForgeSynthesisTimeout(config: Required<AgonConfig>, taskC
 /**
  * Pick the per-engine forge timeout. Explicit user timeout wins; otherwise use the configured Forge timeout without task-class caps. Forge is expected to run until engines finish or the user cancels.
  */
-// @kern-source: forge:45
+// @kern-source: forge:46
 export function resolveForgeRunTimeout(config: AgonConfig, explicitTimeout: number|undefined, taskClass: string): number {
   const explicit = Number(explicitTimeout ?? 0);
   if (Number.isFinite(explicit) && explicit > 0) {
@@ -75,7 +77,7 @@ export function resolveForgeRunTimeout(config: AgonConfig, explicitTimeout: numb
 /**
  * Mark every selected forge engine terminal before persisting a bundle. This keeps aborted, timed-out, or disappearing engines visible instead of leaving the run looking half-open.
  */
-// @kern-source: forge:54
+// @kern-source: forge:55
 export function completeMissingForgeResults(manifest: ForgeManifest, engineIds: string[], reason: string): ForgeManifest {
   for (const id of engineIds) {
     if ((manifest.results as any)[id]) continue;
@@ -104,7 +106,7 @@ export function completeMissingForgeResults(manifest: ForgeManifest, engineIds: 
 /**
  * Summarize zero-diff Forge outcomes for CLI/UI reporting. Distinguishes tool-loop exhaustion from useful validate/improve reports.
  */
-// @kern-source: forge:81
+// @kern-source: forge:82
 export function summarizeNoDiffForgeResults(results: Record<string,EngineResult>): {status:string,count:number,toolLoopLimit:number,usefulReports:number} {
   const values = Object.values(results ?? {}) as any[];
   const noDiff = values.filter((r) => Number(r?.diffLines ?? 0) === 0);
@@ -119,7 +121,7 @@ export function summarizeNoDiffForgeResults(results: Record<string,EngineResult>
 /**
  * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
  */
-// @kern-source: forge:94
+// @kern-source: forge:95
 export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: WorktreeEntry[], options: ForgeOptions, repoRootPath: string, baseSha: string, sidechainPath: string, errorMessage?: string): string {
   const cleanupCommand = buildForgeCleanupCommand(repoRootPath, manifest.forgeDir);
   const bundlePath = `${manifest.forgeDir}/result.json`;
@@ -207,7 +209,7 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
   return bundlePath;
 }
 
-// @kern-source: forge:183
+// @kern-source: forge:184
 export async function runForge(options: ForgeOptions & { onResult?: (engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void }, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const loadedConfig = loadConfig(options.cwd);
   const taskClass = classifyTask(options.task);
@@ -350,6 +352,49 @@ export async function runForge(options: ForgeOptions & { onResult?: (engineId:st
       }
       onEvent?.({ type: 'forge:engine-skipped', data: { engineId: drop.id, status: 'unavailable', reason: drop.reason } });
     }
+  }
+
+  // Pre-flight health check: ping the available engines with a tiny
+  // prompt. Engines that don't respond before forgeHealthCheckTimeoutSec
+  // are filtered out for THIS run only. Catches "binary present, key set,
+  // but the engine itself is hanging today" — the gap registry.isAvailable
+  // misses. Skippable via --no-health-check or by setting
+  // forgeHealthCheckEnabled=false in config.
+  //
+  // Resolution: an explicit options.healthCheckEnabled wins over config,
+  // and only the absence-or-explicit-false combination disables. This
+  // lets `--no-health-check` (option=false) and per-call `true` both
+  // round-trip correctly (Codex review 0.86).
+  const healthCheckEnabled = !options.dryRun && (
+    options.healthCheckEnabled !== undefined
+      ? options.healthCheckEnabled !== false
+      : config.forgeHealthCheckEnabled !== false
+  );
+  if (healthCheckEnabled && available.length > 0) {
+    const hcTimeoutSec = options.healthCheckTimeoutSec
+      ?? config.forgeHealthCheckTimeoutSec
+      ?? 5;
+    onEvent?.({ type: 'forge:health-check-start', data: { engineIds: available.slice(), timeoutSec: hcTimeoutSec } });
+    const summary = await healthCheckEngines(
+      available.slice(),
+      registry,
+      adapter,
+      options.cwd,
+      hcTimeoutSec,
+      HEALTH_CHECK_DEFAULT_PROMPT,
+    );
+    onEvent?.({ type: 'forge:health-check-done', data: { healthy: summary.healthy, unhealthy: summary.unhealthy, totalMs: summary.totalMs } });
+    for (const skip of summary.unhealthy) {
+      console.warn(`[agon] forge: skipping ${skip.engineId} — health check failed (${skip.reason ?? 'unknown'})`);
+      onEvent?.({ type: 'forge:engine-skipped', data: { engineId: skip.engineId, status: 'health-check-failed', reason: skip.reason } });
+    }
+    // Replace `available` with the health-filtered list in place so
+    // downstream `available.xxx` callers see the filtered set without
+    // every site needing to be rewritten. Only mutate when the check
+    // actually ran — dryRun and disabled paths keep the original list.
+    const filtered = summary.healthy.slice();
+    (available as any).length = 0;
+    for (const id of filtered) (available as any).push(id);
   }
 
   if (available.length === 0) {
@@ -561,6 +606,7 @@ export async function runForge(options: ForgeOptions & { onResult?: (engineId:st
         baselinePasses: manifest.baselinePasses,
         acceptReviewOutput,
         abortControllers: stage2AbortControllers,
+        earlyFinalizeCount: options.earlyFinalizeCount,
         onResult: (id: string, result: any, metric: DispatchMetric) => {
           manifest.results[id] = result;
           if (result.patchPath) manifest.patches[id] = result.patchPath;

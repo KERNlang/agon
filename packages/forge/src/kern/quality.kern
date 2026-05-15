@@ -1,4 +1,8 @@
-import from="@agon/core" names="spawnWithTimeout"
+import from="@agon/core" names="spawnWithTimeout,validateSyntax,detectLanguageFromPath"
+import from="@agon/core" names="SyntaxValidatorInput" types=true
+import from="node:fs" names="readFileSync,existsSync,statSync"
+import from="node:path" names="join"
+import from="node:child_process" names="execFileSync"
 
 fn name=runLint async=true params="cwd:string" returns="Promise<number>"
   handler <<<
@@ -33,3 +37,101 @@ fn name=runStyleCheck async=true params="cwd:string" returns="Promise<number>"
       catch name=_prettierErr
         comment raw="// Prettier not installed — assume style is fine"
         return value="100"
+
+interface name=SyntaxCheckResult
+  field name=errors type=number
+  field name=invalidFiles type="string[]"
+
+const name=MAX_SYNTAX_FILE_BYTES type=number value=1048576
+  doc "Skip files larger than 1 MiB to keep the validator fast and avoid pathological payloads. Generated bundles and minified output land here."
+
+fn name=changedFilesIncludingUntracked params="cwd:string" returns="string[]"
+  doc "All changed paths in a worktree: staged + unstaged + untracked. The shared gitChangedFiles helper omits untracked files, but engines frequently create new files that we still need to syntax-check."
+  handler <<<
+    try {
+      // --porcelain=v1 is stable: XY<space>path, with renames as `R  old -> new`.
+      // -z would be cleaner but parsing space-separated v1 keeps the dependency
+      // surface tiny.
+      // -uall expands untracked DIRECTORIES into their individual files,
+      // so an engine that creates `src/new-dir/broken.ts` gets caught
+      // instead of being collapsed to a single `?? src/new-dir/` entry
+      // that we silently skip.
+      const out = execFileSync(
+        'git',
+        ['status', '--porcelain', '-uall'],
+        { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      const paths = new Set<string>();
+      for (const line of out.split('\n')) {
+        if (line.length < 4) continue;
+        // Skip deletions — file no longer exists to check.
+        if (line[0] === 'D' || line[1] === 'D') continue;
+        const rest = line.slice(3);
+        // Defensive: porcelain CAN still emit a trailing `/` if the user
+        // overrode -uall via config. Skip directory entries cleanly.
+        if (rest.endsWith('/')) continue;
+        // Rename: "old -> new" — keep the new path. Use the LAST arrow
+        // so a literal " -> " inside a path doesn't misparse.
+        const arrow = rest.lastIndexOf(' -> ');
+        paths.add(arrow >= 0 ? rest.slice(arrow + 4) : rest);
+      }
+      return [...paths];
+    } catch {
+      return [];
+    }
+  >>>
+
+fn name=runSyntaxCheck params="worktreePath:string" returns=SyntaxCheckResult
+  doc "Parse all changed files in the worktree (staged + unstaged + untracked) via the tree-sitter Python sidecar. Returns {errors, invalidFiles}. Files with unknown extensions are skipped (no false positives on .md/.yaml/.toml/etc). Returns {errors: 0, invalidFiles: []} on any sidecar failure — caller decides whether to penalize unknown."
+  handler <<<
+    if (!existsSync(worktreePath)) {
+      return { errors: 0, invalidFiles: [] };
+    }
+
+    const changed = changedFilesIncludingUntracked(worktreePath);
+    if (changed.length === 0) {
+      return { errors: 0, invalidFiles: [] };
+    }
+
+    const inputs: SyntaxValidatorInput[] = [];
+    for (const rel of changed) {
+      const lang = detectLanguageFromPath(rel);
+      if (!lang) continue; // .md, .yaml, binaries — skip
+      const abs = join(worktreePath, rel);
+      if (!existsSync(abs)) continue; // file deleted in the patch
+      try {
+        const st = statSync(abs);
+        if (!st.isFile() || st.size > MAX_SYNTAX_FILE_BYTES) continue;
+        inputs.push({
+          path: rel,
+          content: readFileSync(abs, 'utf-8'),
+          language: lang,
+        });
+      } catch {
+        // unreadable / permission issue — let the rest of fitness flag it
+        continue;
+      }
+    }
+
+    if (inputs.length === 0) {
+      return { errors: 0, invalidFiles: [] };
+    }
+
+    const results = validateSyntax(inputs);
+    // Reserved null = sidecar missing or failed. Anything else non-array
+    // would be a bug in the bridge, but treat it the same — no signal,
+    // don't fabricate failures.
+    if (!Array.isArray(results)) {
+      return { errors: 0, invalidFiles: [] };
+    }
+
+    let totalErrors = 0;
+    const invalidFiles: string[] = [];
+    for (const r of results) {
+      if (!r || r.valid || r.languageUnsupported) continue;
+      const errs = Array.isArray(r.errors) ? r.errors.length : 1;
+      totalErrors += errs;
+      invalidFiles.push(r.path);
+    }
+    return { errors: totalErrors, invalidFiles };
+  >>>

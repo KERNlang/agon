@@ -2,18 +2,14 @@
 
 import { spawn } from 'node:child_process';
 
-import { dirname, resolve } from 'node:path';
-
-import { fileURLToPath } from 'node:url';
-
-import { existsSync } from 'node:fs';
-
 import type { BrainstormGroup } from '@agon/core';
+
+import { resolveDedupSidecar } from '@agon/core';
 
 /**
  * Cluster paraphrased drafts via the Python embedding sidecar. Returns null on any failure — caller should fall back to no-dedup.
  */
-// @kern-source: dedup-bridge:11
+// @kern-source: dedup-bridge:9
 export async function dedupBrainstormDrafts(drafts: {engineId:string, text:string}[]): Promise<BrainstormGroup[] | null> {
   if (drafts.length < 2) {
     return drafts.map((d) => ({
@@ -23,13 +19,8 @@ export async function dedupBrainstormDrafts(drafts: {engineId:string, text:strin
     }));
   }
 
-  // Resolve sidecar relative to this compiled module:
-  // packages/forge/dist/kern/dedup-bridge.js → ../../../dedup/sidecar.py
-  const here = dirname(fileURLToPath(import.meta.url));
-  const sidecar = resolve(here, '..', '..', '..', 'dedup', 'sidecar.py');
-  if (!existsSync(sidecar)) {
-    return null;
-  }
+  const sidecar = resolveDedupSidecar('sidecar.py');
+  if (!sidecar) return null;
 
   const python = process.env.AGON_PYTHON || 'python3';
 

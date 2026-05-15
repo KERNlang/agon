@@ -22,11 +22,13 @@ const name=HISTORY_SEARCH_DISABLE_ENV type=string value="AGON_DISABLE_HISTORY_SE
   doc "Set this env var to skip the Python sidecar (forces substring fallback). Useful for tests and CI."
 
 fn name=searchHistorySemantic params="query:string, items:HistorySearchItem[], topK:number" returns="HistorySearchHit[] | null"
-  doc "Synchronous Python sidecar call. Returns null on any failure — caller falls back to substring/chronological."
+  doc "Synchronous Python sidecar call. Returns null ONLY on sidecar unavailability/failure (caller should fall back to substring). Returns [] when the sidecar ran cleanly but had no above-threshold matches, or when there's nothing to search."
   handler <<<
     if (process.env[HISTORY_SEARCH_DISABLE_ENV]) return null;
-    if (!query || !query.trim()) return null;
-    if (!items || items.length === 0) return null;
+    // No query / no items: nothing to do, but distinguish this from sidecar
+    // failure so the caller doesn't mislabel UX as "sidecar unavailable".
+    if (!query || !query.trim()) return [];
+    if (!items || items.length === 0) return [];
 
     // Resolve sidecar relative to compiled output:
     // packages/core/dist/generated/sessions/history-search-bridge.js

@@ -200,9 +200,22 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
       result.engineCompleted = noDiff.engineCompleted;
       result.reason = noDiff.reason;
     } else {
-      result.status = result.pass ? 'passed' : 'fitness_failed';
+      // Preserve the diagnostic from runFitness when the worktree contains
+      // unparseable files — otherwise the user-facing reason for failure
+      // gets squashed back into the generic 'fitness_failed'.
+      const syntaxInvalid = Array.isArray(result.syntaxInvalidFiles)
+        && result.syntaxInvalidFiles.length > 0;
+      if (result.pass) {
+        result.status = 'passed';
+        result.reason = undefined;
+      } else if (syntaxInvalid) {
+        result.status = 'syntax_invalid';
+        result.reason = 'syntax_invalid';
+      } else {
+        result.status = 'fitness_failed';
+        result.reason = 'fitness_failed';
+      }
       result.engineCompleted = !(dispatchResult?.timedOut ?? false);
-      result.reason = result.pass ? undefined : 'fitness_failed';
     }
     opts.onEvent?.({ type: opts.metricPhase.includes('stage1') ? 'stage1:score' : 'stage2:score', engineId: opts.engineId, data: { engineId: opts.engineId, score: result.score, pass: result.pass, worktreePath: wtPath } });
 

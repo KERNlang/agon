@@ -46,6 +46,24 @@ const name=forgeCommand type=any
           type: 'string',
           description: 'Engine timeout in seconds',
         },
+        mode: {
+          type: 'string',
+          description: 'Forge mode: implement, improve, or validate',
+          default: 'implement',
+        },
+        requireDiff: {
+          type: 'string',
+          description: 'Require a candidate diff (true/false). Defaults true for implement, false for improve/validate.',
+        },
+        baselineMayPass: {
+          type: 'boolean',
+          description: 'Allow a passing baseline without treating fitness as discriminating.',
+          default: false,
+        },
+        acceptReviewOutput: {
+          type: 'string',
+          description: 'Accept useful no-diff review output as a validation result (true/false).',
+        },
         dryRun: {
           type: 'boolean',
           description: 'Show what would happen without executing',
@@ -73,10 +91,23 @@ const name=forgeCommand type=any
 
         const engines = args.engines?.split(',').map((s: string) => s.trim());
         const displayEngines = engines && engines.length > 0 ? engines : available;
+        const parseOptionalBoolean = (value: unknown): boolean | undefined => {
+          if (value == null || value === '') return undefined;
+          if (typeof value === 'boolean') return value;
+          const text = String(value).trim().toLowerCase();
+          if (['true', '1', 'yes', 'y', 'on'].includes(text)) return true;
+          if (['false', '0', 'no', 'n', 'off'].includes(text)) return false;
+          return undefined;
+        };
+        const requestedMode = String(args.mode ?? 'implement').toLowerCase();
+        const mode = requestedMode === 'improve' || requestedMode === 'validate' ? requestedMode : 'implement';
+        const requireDiff = parseOptionalBoolean(args.requireDiff);
+        const acceptReviewOutput = parseOptionalBoolean(args.acceptReviewOutput);
 
         header(`Forge: ${args.task}`);
         info(`Engines: ${displayEngines.join(', ')}`);
         info(`Fitness: ${args.test}`);
+        info(`Mode: ${mode}`);
 
         if (args.dryRun) {
           warn('Dry-run mode — no engines will be dispatched');
@@ -89,6 +120,10 @@ const name=forgeCommand type=any
             cwd: args.cwd,
             forgeDir,
             timeout: args.timeout ? parseInt(args.timeout, 10) : undefined,
+            mode,
+            requireDiff,
+            baselineMayPass: args.baselineMayPass,
+            acceptReviewOutput,
             starter: args.starter,
             engines,
             dryRun: args.dryRun,
@@ -102,7 +137,7 @@ const name=forgeCommand type=any
                 break;
               case 'baseline:done':
                 if (event.data?.passes) {
-                  warn('Baseline passes — fitness test may be non-discriminating');
+                  warn('Baseline passes — fitness may be non-discriminating. Add a failing regression test, use --mode validate, or set --require-diff=false.');
                 }
                 break;
               case 'stage1:dispatch':
@@ -125,6 +160,13 @@ const name=forgeCommand type=any
                   }
                 } else {
                   fail('No engine passed the fitness test');
+                }
+                break;
+              case 'forge:no-candidate-diff':
+                if (Number(event.data?.toolLoopLimit ?? 0) > 0) {
+                  warn(`No candidate diff: ${event.data.toolLoopLimit}/${event.data.count} engine(s) hit the tool-loop limit before producing a patch.`);
+                } else {
+                  warn(`No candidate diff from ${event.data?.count ?? 0} engine(s).`);
                 }
                 break;
               case 'synthesis:done':
@@ -150,7 +192,7 @@ const name=forgeCommand type=any
 
         const rows = Object.entries(manifest.results).map(([id, r]: [string, any]) => [
           id === manifest.winner ? green(`${icons().winner} ${id}`) : id,
-          r.pass ? green('PASS') : red('FAIL'),
+          r.pass ? green(r.status ?? 'PASS') : red(r.status ?? 'FAIL'),
           String(r.score),
           String(r.diffLines),
           String(r.filesChanged),
@@ -163,6 +205,14 @@ const name=forgeCommand type=any
         if (manifest.winner) {
           success(`Winner: ${bold(manifest.winner)}`);
           info(`Patch: ${manifest.patches[manifest.winner]}`);
+        } else if (manifest.noDiffSummary) {
+          const summary = manifest.noDiffSummary as any;
+          if (summary.toolLoopLimit > 0) {
+            fail(`No candidate diff — ${summary.toolLoopLimit}/${summary.count} engine(s) hit the tool-loop limit.`);
+          } else {
+            warn(`No candidate diff — baseline passed and engines produced no patch.`);
+          }
+          info('Try: add a failing regression fitness command, use --mode validate, or set --require-diff=false.');
         } else {
           fail('No winner — all engines failed');
         }

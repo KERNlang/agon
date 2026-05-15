@@ -25,7 +25,7 @@ fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<strin
       case 'baseline:done':
         plan = mergeStepResult(plan, 'baseline', { state: 'completed' });
         if (event.data?.passes) {
-          dispatch({ type: 'warning', message: 'Baseline passes — fitness test may be non-discriminating' });
+          dispatch({ type: 'warning', message: 'Baseline passes — fitness may be non-discriminating. Add a failing regression test, use forge validate mode, or allow no-diff validation.' });
         }
         break;
       case 'stage1:dispatch':
@@ -93,6 +93,16 @@ fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<strin
           engineStatus[winnerId] = 'done';
           engineStatus[`${winnerId}:score`] = String(event.data.bestScore ?? '?');
           engineStatus['__winner'] = winnerId;
+        }
+        break;
+      }
+      case 'forge:no-candidate-diff': {
+        const count = Number(event.data?.count ?? 0);
+        const toolLoopLimit = Number(event.data?.toolLoopLimit ?? 0);
+        if (toolLoopLimit > 0) {
+          dispatch({ type: 'warning', message: `Forge produced no candidate diff: ${toolLoopLimit}/${count} engine(s) hit the tool-loop limit before producing a patch.` });
+        } else {
+          dispatch({ type: 'warning', message: `Forge produced no candidate diff from ${count} engine(s).` });
         }
         break;
       }
@@ -846,7 +856,16 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
         }
       }
     } else {
-      dispatch({ type: 'error', message: 'No winner — all engines failed' });
+      if (manifest.noDiffSummary) {
+        const summary = manifest.noDiffSummary as any;
+        if (Number(summary.toolLoopLimit ?? 0) > 0) {
+          dispatch({ type: 'error', message: `No candidate diff — ${summary.toolLoopLimit}/${summary.count} engine(s) hit the tool-loop limit before producing a patch.` });
+        } else {
+          dispatch({ type: 'warning', message: 'No candidate diff — engines produced no patch. Use validate/improve mode or a more discriminating fitness command for already-passing work.' });
+        }
+      } else {
+        dispatch({ type: 'error', message: 'No winner — all engines failed' });
+      }
     }
     dispatch({ type: 'info', message: `Manifest: ${forgeDir}/manifest.json` });
     dispatch({ type: 'info', message: `Result bundle: ${manifest.resultBundlePath ?? `${forgeDir}/result.json`}` });

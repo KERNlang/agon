@@ -2,9 +2,51 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { runSyntaxCheck } from '../../packages/forge/src/quality.js';
+
+// Mock the @agon/core bridge so these tests don't need the tree-sitter
+// Python sidecar installed on the runner. The mock mimics the real
+// language detection + a small fake validator that catches the specific
+// invalid inputs the tests use (broken-TS missing-rhs, broken-Python
+// indentation). Real-sidecar behavior is covered by the dedup smoke
+// tests, which fail loudly when tree-sitter isn't installed.
+vi.mock('@agon/core', async (importOriginal) => {
+  const orig = (await importOriginal()) as Record<string, unknown>;
+  const detect = (p: string): string => {
+    if (p.endsWith('.ts') || p.endsWith('.cts') || p.endsWith('.mts')) return 'typescript';
+    if (p.endsWith('.tsx')) return 'tsx';
+    if (p.endsWith('.js') || p.endsWith('.cjs') || p.endsWith('.mjs')) return 'javascript';
+    if (p.endsWith('.jsx')) return 'jsx';
+    if (p.endsWith('.py') || p.endsWith('.pyi')) return 'python';
+    if (p.endsWith('.json')) return 'json';
+    return '';
+  };
+  return {
+    ...orig,
+    detectLanguageFromPath: detect,
+    validateSyntax: (files: Array<{ path: string; content: string; language: string }>) => {
+      if (process.env.AGON_DISABLE_SYNTAX_VALIDATOR_SIDECAR) return null;
+      return files.map((f) => {
+        // Trivial broken-TS detector: dangling `= ;` style.
+        const tsBroken = (f.language === 'typescript' || f.language === 'tsx')
+          && /=\s*;/.test(f.content);
+        // Broken Python: `def name():\n<unindented>...` (no indent after colon).
+        const pyBroken = f.language === 'python'
+          && /:\s*\n[^\s#]/m.test(f.content);
+        const invalid = tsBroken || pyBroken;
+        return {
+          path: f.path,
+          valid: !invalid,
+          language: f.language,
+          errors: invalid ? [{ row: 0, column: 0, message: 'ERROR' }] : [],
+          languageUnsupported: f.language ? undefined : true,
+        };
+      });
+    },
+  };
+});
 
 const tempDirs: string[] = [];
 

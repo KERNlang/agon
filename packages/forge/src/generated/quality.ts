@@ -67,19 +67,27 @@ export function changedFilesIncludingUntracked(cwd: string): string[] {
     // --porcelain=v1 is stable: XY<space>path, with renames as `R  old -> new`.
     // -z would be cleaner but parsing space-separated v1 keeps the dependency
     // surface tiny.
-    const out = execFileSync('git', ['status', '--porcelain'], {
-      cwd,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    // -uall expands untracked DIRECTORIES into their individual files,
+    // so an engine that creates `src/new-dir/broken.ts` gets caught
+    // instead of being collapsed to a single `?? src/new-dir/` entry
+    // that we silently skip.
+    const out = execFileSync(
+      'git',
+      ['status', '--porcelain', '-uall'],
+      { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
     const paths = new Set<string>();
     for (const line of out.split('\n')) {
-      if (!line) continue;
+      if (line.length < 4) continue;
       // Skip deletions — file no longer exists to check.
       if (line[0] === 'D' || line[1] === 'D') continue;
       const rest = line.slice(3);
-      // Rename: "old -> new" — keep the new path only.
-      const arrow = rest.indexOf(' -> ');
+      // Defensive: porcelain CAN still emit a trailing `/` if the user
+      // overrode -uall via config. Skip directory entries cleanly.
+      if (rest.endsWith('/')) continue;
+      // Rename: "old -> new" — keep the new path. Use the LAST arrow
+      // so a literal " -> " inside a path doesn't misparse.
+      const arrow = rest.lastIndexOf(' -> ');
       paths.add(arrow >= 0 ? rest.slice(arrow + 4) : rest);
     }
     return [...paths];
@@ -91,7 +99,7 @@ export function changedFilesIncludingUntracked(cwd: string): string[] {
 /**
  * Parse all changed files in the worktree (staged + unstaged + untracked) via the tree-sitter Python sidecar. Returns {errors, invalidFiles}. Files with unknown extensions are skipped (no false positives on .md/.yaml/.toml/etc). Returns {errors: 0, invalidFiles: []} on any sidecar failure — caller decides whether to penalize unknown.
  */
-// @kern-source: quality:76
+// @kern-source: quality:84
 export function runSyntaxCheck(worktreePath: string): SyntaxCheckResult {
   if (!existsSync(worktreePath)) {
     return { errors: 0, invalidFiles: [] };
@@ -127,18 +135,20 @@ export function runSyntaxCheck(worktreePath: string): SyntaxCheckResult {
   }
 
   const results = validateSyntax(inputs);
-  if (results === null) {
-    // Sidecar missing or failed — no signal, don't fabricate failures.
+  // Reserved null = sidecar missing or failed. Anything else non-array
+  // would be a bug in the bridge, but treat it the same — no signal,
+  // don't fabricate failures.
+  if (!Array.isArray(results)) {
     return { errors: 0, invalidFiles: [] };
   }
 
   let totalErrors = 0;
   const invalidFiles: string[] = [];
   for (const r of results) {
-    if (!r.valid && !r.languageUnsupported) {
-      totalErrors += r.errors.length;
-      invalidFiles.push(r.path);
-    }
+    if (!r || r.valid || r.languageUnsupported) continue;
+    const errs = Array.isArray(r.errors) ? r.errors.length : 1;
+    totalErrors += errs;
+    invalidFiles.push(r.path);
   }
   return { errors: totalErrors, invalidFiles };
 }

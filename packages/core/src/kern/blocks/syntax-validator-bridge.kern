@@ -13,7 +13,8 @@ interface name=SyntaxValidatorInput
   field name=content type=string
   field name=language type=string
 
-interface name=SyntaxError
+// Renamed from `SyntaxError` to avoid shadowing the global JS built-in.
+interface name=SyntaxValidationError
   field name=row type=number
   field name=column type=number
   field name=message type=string
@@ -22,8 +23,9 @@ interface name=SyntaxValidatorResult
   field name=path type=string
   field name=valid type=boolean
   field name=language type=string
-  field name=errors type="SyntaxError[]"
+  field name=errors type="SyntaxValidationError[]"
   field name=languageUnsupported type="boolean | undefined"
+  field name=grammarUnavailable type="boolean | undefined"
 
 const name=SYNTAX_VALIDATOR_TIMEOUT_MS type=number value=8000
   doc "Hard cap on the synchronous Python call. Cold tree-sitter import is ~200ms; batches of ≤50 files parse in well under 1s. 8s covers cold start + a worst-case batch."
@@ -111,6 +113,7 @@ fn name=validateSyntax params="files:SyntaxValidatorInput[]" returns="SyntaxVali
             }))
           : [],
         languageUnsupported: r?.language_unsupported === true ? true : undefined,
+        grammarUnavailable: r?.grammar_unavailable === true ? true : undefined,
       })) as SyntaxValidatorResult[];
     } catch {
       return null;

@@ -74,6 +74,11 @@ LANGUAGE_ALIASES: dict[str, str] = {
 }
 
 
+SUPPORTED_LANGUAGES: frozenset[str] = frozenset({
+    "typescript", "tsx", "javascript", "jsx", "python", "json",
+})
+
+
 def _read_input() -> list[dict[str, str]]:
     raw = sys.stdin.read().strip()
     if not raw:
@@ -104,10 +109,17 @@ def _read_input() -> list[dict[str, str]]:
                 print(f"syntax-validator: files[{i}] missing '{key}'",
                       file=sys.stderr)
                 sys.exit(1)
+            # Reject non-string values explicitly. `str(None)` is "None",
+            # which silently lies about the input — surface the bug here.
+            if not isinstance(raw_item[key], str):
+                print(f"syntax-validator: files[{i}].{key} must be a string "
+                      f"(got {type(raw_item[key]).__name__})",
+                      file=sys.stderr)
+                sys.exit(1)
         normalized.append({
-            "path": str(raw_item["path"]),
-            "content": str(raw_item["content"]),
-            "language": str(raw_item["language"]).lower().strip(),
+            "path": raw_item["path"],
+            "content": raw_item["content"],
+            "language": raw_item["language"].lower().strip(),
         })
     return normalized
 
@@ -169,38 +181,67 @@ def _load_parsers() -> dict[str, Any]:
     return parsers
 
 
-def _collect_errors(node, errors: list[dict[str, Any]], cap: int = 10) -> None:
-    """Walk the AST, collect ERROR/MISSING nodes up to `cap`."""
-    if len(errors) >= cap:
-        return
-    if node.is_error or node.is_missing:
-        msg = "MISSING " + node.type if node.is_missing else "ERROR"
-        errors.append({
-            "row": node.start_point[0],
-            "column": node.start_point[1],
-            "message": msg,
-        })
-        if len(errors) >= cap:
-            return
-    for child in node.children:
-        _collect_errors(child, errors, cap)
-        if len(errors) >= cap:
-            return
+def _collect_errors(root, cap: int = 10) -> list[dict[str, Any]]:
+    """Iteratively walk the AST collecting ERROR/MISSING nodes up to `cap`.
+    Iterative form prevents RecursionError on deeply-nested invalid input
+    (e.g. heavily-nested JSON, long arithmetic chains, large method chains)."""
+    errors: list[dict[str, Any]] = []
+    stack: list[Any] = [root]
+    while stack and len(errors) < cap:
+        node = stack.pop()
+        if node.is_error or node.is_missing:
+            msg = "MISSING " + node.type if node.is_missing else "ERROR"
+            errors.append({
+                "row": node.start_point[0],
+                "column": node.start_point[1],
+                "message": msg,
+            })
+            if len(errors) >= cap:
+                break
+        # Reverse so the depth-first order matches the source order.
+        for child in reversed(node.children):
+            stack.append(child)
+    return errors
+
+
+def _python_indentation_check(content: str) -> list[dict[str, Any]]:
+    """Tree-sitter's Python grammar is forgiving on indentation — it will
+    accept malformed indentation that the CPython parser rejects (e.g.
+    `def f():\nreturn 1`). Supplement tree-sitter with `compile(...)` for
+    Python files so indentation errors are caught."""
+    try:
+        compile(content, "<input>", "exec")
+        return []
+    except SyntaxError as err:
+        return [{
+            "row": (err.lineno or 1) - 1,
+            "column": (err.offset or 1) - 1,
+            "message": f"PYTHON {err.msg or 'syntax error'}".strip(),
+        }]
+    except (ValueError, TypeError) as err:
+        # ValueError: null bytes in source; TypeError: non-str source.
+        return [{
+            "row": 0,
+            "column": 0,
+            "message": f"PYTHON {type(err).__name__}: {err}",
+        }]
 
 
 def _validate(
     files: list[dict[str, str]],
     parsers: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], bool]:
-    """Returns (results, any_unsupported). Unsupported files get
-    valid=true with a 'language_unsupported' marker so the caller can
-    choose to skip them or treat as failure."""
+    """Returns (results, any_unsupported). Files whose language we don't
+    know at all get valid=true with `language_unsupported: true` so the
+    caller can skip them. Files whose language IS known but whose grammar
+    failed to load get valid=false with `grammar_unavailable: true` so the
+    caller doesn't mistake a degraded sidecar for clean code."""
     results: list[dict[str, Any]] = []
     any_unsupported = False
     for f in files:
         lang_raw = f["language"]
         lang = LANGUAGE_ALIASES.get(lang_raw)
-        if lang is None or lang not in parsers:
+        if lang is None or lang not in SUPPORTED_LANGUAGES:
             any_unsupported = True
             results.append({
                 "path": f["path"],
@@ -210,7 +251,24 @@ def _validate(
                 "language_unsupported": True,
             })
             continue
-        parser = parsers[lang]
+        parser = parsers.get(lang)
+        if parser is None:
+            # Known language, but the grammar package isn't installed in
+            # this environment. Surface it as a per-file failure rather
+            # than letting it pass — silent pass-through is the bug
+            # codex flagged at 0.86 confidence.
+            results.append({
+                "path": f["path"],
+                "valid": False,
+                "language": lang,
+                "errors": [{
+                    "row": 0,
+                    "column": 0,
+                    "message": f"grammar-unavailable: install tree-sitter-{lang}",
+                }],
+                "grammar_unavailable": True,
+            })
+            continue
         try:
             tree = parser.parse(bytes(f["content"], "utf-8"))
         except Exception as err:  # noqa: BLE001
@@ -221,13 +279,17 @@ def _validate(
                 "errors": [{
                     "row": 0,
                     "column": 0,
-                    "message": f"parser-threw: {err}",
+                    "message": f"parser-threw: {type(err).__name__}",
                 }],
             })
             continue
         errors: list[dict[str, Any]] = []
         if tree.root_node.has_error:
-            _collect_errors(tree.root_node, errors)
+            errors = _collect_errors(tree.root_node)
+        # Python: tree-sitter accepts malformed indentation that the real
+        # parser rejects. Run CPython's parser as a second pass; merge.
+        if lang == "python" and not errors:
+            errors = _python_indentation_check(f["content"])
         results.append({
             "path": f["path"],
             "valid": not errors,

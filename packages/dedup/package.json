@@ -9,6 +9,7 @@
     "test:classifier": "node tests/classifier-smoke.mjs",
     "test:history-search": "node tests/history-search-smoke.mjs",
     "test:syntax-validator": "node tests/syntax-validator-smoke.mjs",
-    "test:all-sidecars": "npm run test:sidecar && npm run test:classifier && npm run test:history-search && npm run test:syntax-validator"
+    "test:syntax-validator-bridge": "node tests/syntax-validator-bridge-smoke.mjs",
+    "test:all-sidecars": "npm run test:sidecar && npm run test:classifier && npm run test:history-search && npm run test:syntax-validator && npm run test:syntax-validator-bridge"
   }
 }

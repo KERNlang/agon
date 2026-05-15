@@ -26,6 +26,13 @@ const proc = spawn('python3', [sidecar], { stdio: ['pipe', 'pipe', 'inherit'] })
 proc.stdin.write(JSON.stringify(payload));
 proc.stdin.end();
 
+// Without this handler, a missing python3 fires `error` and `close` may not,
+// hanging the test indefinitely.
+proc.on('error', (err) => {
+  console.error(`FAIL: could not spawn python3: ${err.message}`);
+  process.exit(1);
+});
+
 let out = '';
 proc.stdout.on('data', (chunk) => { out += chunk.toString(); });
 proc.on('close', (code) => {

@@ -15,7 +15,7 @@ Protocol:
          "similarity": 0.83},
         ...
       ],
-      "threshold": 0.65,
+      "threshold": 0.55,
       "method": "minilm-cosine"
     }
 
@@ -36,7 +36,7 @@ import sys
 from typing import Any
 
 
-THRESHOLD = 0.65
+THRESHOLD = 0.55
 MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 

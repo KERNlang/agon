@@ -38,10 +38,10 @@ export interface HealthCheckSummary {
 export const HEALTH_CHECK_DEFAULT_PROMPT: string = "Reply with just: ok";
 
 /**
- * Ping a single engine with a tiny prompt and short timeout. Healthy = dispatch returns within timeout with non-empty stdout and exit code 0.
+ * Ping a single engine with a tiny prompt and short timeout. Healthy = dispatch returns within timeout with non-empty stdout and exit code 0. ALWAYS runs in a throwaway scratch dir — never the project cwd — because some configured 'exec' modes are tool-capable and a 'liveness' probe must not alter the user's tree (Codex review 0.94).
  */
 // @kern-source: health-check:35
-export async function healthCheckEngine(engineId: string, registry: EngineRegistry, adapter: EngineAdapter, cwd: string, timeoutSec: number, prompt: string): Promise<HealthCheckResult> {
+export async function healthCheckEngine(engineId: string, registry: EngineRegistry, adapter: EngineAdapter, _cwd: string, timeoutSec: number, prompt: string): Promise<HealthCheckResult> {
   const start = Date.now();
   let engine;
   try {
@@ -56,8 +56,9 @@ export async function healthCheckEngine(engineId: string, registry: EngineRegist
   }
 
   // Disposable scratch dir — the dispatch call needs SOMEWHERE to write
-  // its outputs even though we'll throw them away. Per-engine path so
-  // parallel pings don't collide.
+  // its outputs AND somewhere to be `cwd`. Per-engine path so parallel
+  // pings don't collide. _cwd is accepted by the signature for symmetry
+  // with the rest of the forge call graph but is intentionally unused.
   const scratchDir = join(tmpdir(), `agon-healthcheck-${engineId}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   try {
     mkdirSync(scratchDir, { recursive: true });
@@ -70,16 +71,23 @@ export async function healthCheckEngine(engineId: string, registry: EngineRegist
     };
   }
 
+  // Mirror runForgeEngineAttempt's dispatch selection: agent-capable
+  // engines may have a broken/missing exec mode but a working agent
+  // mode (Codex review 0.89). Probe via the same path forge will use.
+  const useAgent = !!adapter.dispatchAgent && (!!(engine as any).agent || !!(engine as any).api);
   let dispatchResult: any;
   try {
-    dispatchResult = await adapter.dispatch({
+    const opts = {
       engine,
       prompt,
-      cwd: cwd || scratchDir,
-      mode: 'exec',
+      cwd: scratchDir,
+      mode: useAgent ? 'agent' : 'exec',
       timeout: Math.max(1, Math.ceil(timeoutSec)),
       outputDir: scratchDir,
-    } as any);
+    } as any;
+    dispatchResult = useAgent
+      ? await adapter.dispatchAgent!(opts)
+      : await adapter.dispatch(opts);
   } catch (err) {
     try { rmSync(scratchDir, { recursive: true, force: true }); } catch { /* ignore */ }
     const message = err instanceof Error ? err.message : String(err);
@@ -128,7 +136,7 @@ export async function healthCheckEngine(engineId: string, registry: EngineRegist
 /**
  * Ping N engines in parallel. Total wall-clock is max(per-engine duration), not sum. Returns the partition of engineIds into healthy + unhealthy. Short-circuits to 'all healthy' when AGON_DISABLE_FORGE_HEALTH_CHECK is set.
  */
-// @kern-source: health-check:121
+// @kern-source: health-check:129
 export async function healthCheckEngines(engineIds: string[], registry: EngineRegistry, adapter: EngineAdapter, cwd: string, timeoutSec: number, prompt: string): Promise<HealthCheckSummary> {
   const start = Date.now();
   if (process.env[HEALTH_CHECK_DISABLE_ENV]) {

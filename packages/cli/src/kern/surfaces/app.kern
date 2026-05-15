@@ -17,6 +17,7 @@ import from="../signals/job-manager.js" names="Job" types=true
 import from="../blocks/output-format.js" names="ENGINE_COLORS,shortToolPath,isCesarTelemetryLine,formatConfidenceToolLabel"
 import from="../signals/icons.js" names="icons"
 import from="../blocks/markdown.js" names="cleanEngineOutput,parseMarkdownBlocks,truncateCodeLine"
+import from="../blocks/engine.js" names="extractPatchText,parsePatchPreview"
 import from="../../handlers/types.js" names="OutputEvent,HandlerContext" types=true
 import from="../../code-buffer.js" names="codeBlockBuffer"
 import from="../signals/app-state.js" names="startCommandReplState,finishReplState,cancelReplState"
@@ -207,64 +208,9 @@ fn name=parseToolCallPayload params="event:any" returns=any confidence=0.85
         assign target="parsed" value="{}"
     return value="{ rawInput, parsed, toolKey: String(event?.tool ?? '').toLowerCase(), }"
 
-fn name=extractPatchText params="rawInput:string, parsed:any" returns=string
-  handler lang="kern"
-    let name=values value="[ parsed?.patch, parsed?.content, parsed?.diff, parsed?.input, ].filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)"
-    let name=fromParsed value="values.find((value: string) => value.includes('*** Begin Patch') || value.includes('diff --git') || value.split('\\n').some((line: string) => line.startsWith('@@')))"
-    if cond="fromParsed"
-      return value="fromParsed"
-    if cond="rawInput.includes('*** Begin Patch') || rawInput.includes('diff --git') || rawInput.split('\\n').some((line: string) => line.startsWith('@@'))"
-      return value="rawInput"
-    return value="values[0] ?? ''"
-
-fn name=parsePatchPreview params="rawInput:string, parsed:any" returns="{ files:string[]; lines:string[]; additions:number; deletions:number }"
-  handler <<<
-    const patchText = extractPatchText(rawInput, parsed);
-    const files: string[] = [];
-    const lines: string[] = [];
-    let additions = 0;
-    let deletions = 0;
-    const addFile = (filePath: string) => {
-      const clean = filePath.trim().replace(/^["']|["']$/g, '');
-      if (clean && !files.includes(clean)) files.push(clean);
-    };
-
-    for (const line of patchText.split('\n')) {
-      const customFile = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/);
-      if (customFile) {
-        addFile(customFile[1]);
-        continue;
-      }
-      const diffFile = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
-      if (diffFile) {
-        addFile(diffFile[2]);
-        continue;
-      }
-      if (line.startsWith('+++ b/')) {
-        addFile(line.slice('+++ b/'.length));
-        continue;
-      }
-      if (line.startsWith('--- a/')) {
-        addFile(line.slice('--- a/'.length));
-        continue;
-      }
-      if (line.startsWith('@@')) {
-        lines.push(line);
-        continue;
-      }
-      if (line.startsWith('+') && !line.startsWith('+++')) {
-        additions += 1;
-        lines.push(line);
-        continue;
-      }
-      if (line.startsWith('-') && !line.startsWith('---')) {
-        deletions += 1;
-        lines.push(line);
-      }
-    }
-
-    return { files, lines, additions, deletions };
-  >>>
+// extractPatchText + parsePatchPreview live in blocks/engine.kern as the
+// canonical home (imported above) — keep one definition to satisfy
+// kern-guard's duplicate-symbol rule.
 
 fn name=toolPreviewWindow params="lineCount:number, expanded:boolean" returns=any
   handler lang="kern"

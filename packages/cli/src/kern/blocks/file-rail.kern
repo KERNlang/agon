@@ -164,6 +164,8 @@ screen name=FileRail target=ink memo=true
     each name=f in=visible index=i key="f.path"
       let name=idx expr="start + i"
       let name=isSel expr="(focused ?? false) && idx === sel"
+      // kern-ignore-next-line undefined-reference
+      // f, isSel, pathMax are bound by the surrounding each/let/local scope
       handler <<<
         <Box key={f.path}>
           <Text color={isSel ? '#22d3ee' : 'gray'}>{isSel ? '\u25b8' : ' '}</Text>
@@ -175,10 +177,14 @@ screen name=FileRail target=ink memo=true
         </Box>
       >>>
     conditional if="files.length > 0 && start + listBudget < files.length"
+      // kern-ignore-next-line undefined-reference
+      // start, listBudget are local bindings on the enclosing screen
       handler <<<
         <Text dimColor>{`+${files.length - start - listBudget} more`}</Text>
       >>>
     conditional if="expandedFile != null"
+      // kern-ignore-next-line undefined-reference
+      // expandedFile, detailRows are local bindings on the enclosing screen
       handler <<<
         <FileRailDetail expandedFile={expandedFile as FileEntry} maxRows={detailRows} />
       >>>

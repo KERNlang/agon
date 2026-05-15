@@ -1,13 +1,14 @@
 import { defineCommand } from 'citty';
-import { join } from 'node:path';
-import { mkdirSync } from 'node:fs';
-import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
+import {
+  EngineRegistry, ensureAgonHome, loadConfig,
+  createRunDir, writeRunStatus, printRunSummary,
+} from '@agon/core';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
-import type { ForgeEvent } from '@agon/core';
+import type { ForgeEvent, RunStatusEngine } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { isTribunalMode, runTribunal } from '@agon/forge';
 import type { TribunalMode } from '@agon/forge';
-import { header, success, fail, info, warn, bold, cyan, dim, green, yellow, red } from '../output.js';
+import { header, fail, info, warn, bold, dim, red } from '../output.js';
 import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 
 export const tribunalCommand = defineCommand({
@@ -43,6 +44,14 @@ export const tribunalCommand = defineCommand({
       description: 'Timeout per engine in seconds',
       default: '120',
     },
+    label: {
+      type: 'string',
+      description: 'Human-readable suffix baked into the run dir name.',
+    },
+    quiet: {
+      type: 'boolean',
+      description: 'Suppress streaming output; stdout becomes only the run dir path + final summary.',
+    },
   },
   async run({ args }) {
     ensureAgonHome();
@@ -71,14 +80,21 @@ export const tribunalCommand = defineCommand({
       process.exit(1);
     }
 
-    const outputDir = join(RUNS_DIR, `tribunal-${Date.now()}`);
-    mkdirSync(outputDir, { recursive: true });
+    if (args.quiet) process.env.AGON_QUIET = '1';
+    const startedAt = new Date().toISOString();
+    const { path: outputDir } = createRunDir({
+      mode: 'tribunal',
+      label: args.label,
+    });
 
-    header(`Tribunal: ${args.question}`);
-    info(`Engines: ${engines.join(', ')}`);
-    info(`Rounds: ${rounds}`);
-    info(`Mode: ${mode}`);
-    console.log('');
+    const quiet = process.env.AGON_QUIET === '1';
+    if (!quiet) {
+      header(`Tribunal: ${args.question}`);
+      info(`Engines: ${engines.join(', ')}`);
+      info(`Rounds: ${rounds}`);
+      info(`Mode: ${mode}`);
+      console.log('');
+    }
 
     // Dogfood finding (2026-05-13): round-1 partial failures (e.g. gemini
     // empty output, kimi timeout) used to scroll past as a single warn
@@ -97,6 +113,9 @@ export const tribunalCommand = defineCommand({
       timeout: parseInt(args.timeout, 10),
       outputDir,
       onEvent: (event: ForgeEvent) => {
+        // engine:failed must always be collected (status.json depends on it),
+        // but the human-readable round narration is suppressed under quiet
+        // so stdout is only the run dir path + final summary.
         if ((event.type as string) === 'engine:failed') {
           const data: any = event.data ?? {};
           failedEngines.push({
@@ -106,6 +125,7 @@ export const tribunalCommand = defineCommand({
           });
           return;
         }
+        if (quiet) return;
         if (event.data?.round) {
           const engineId = event.engineId;
           const position = event.data?.position;
@@ -115,6 +135,49 @@ export const tribunalCommand = defineCommand({
         }
       },
     });
+
+    // Authoritative outcome record. An engine that produced at least one
+    // non-empty argument is 'ok'; if it appeared in failedEngines (timeout,
+    // dispatch fail, empty output) it's 'error' with the captured detail.
+    const failureByEngine = new Map<string, string>();
+    for (const f of failedEngines) {
+      const prev = failureByEngine.get(f.engineId);
+      const text = `${f.phase}: ${f.error.length > 160 ? f.error.slice(0, 160) + '…' : f.error}`;
+      failureByEngine.set(f.engineId, prev ? `${prev}; ${text}` : text);
+    }
+    const argCountByEngine = new Map<string, number>();
+    for (const round of result.rounds) {
+      for (const pos of round.positions) {
+        const count = (pos.arguments ?? []).filter((a: string) => a && a.trim()).length;
+        argCountByEngine.set(pos.engineId, (argCountByEngine.get(pos.engineId) ?? 0) + count);
+      }
+    }
+    const engineStatuses: RunStatusEngine[] = engines.map((id: string) => {
+      const failureDetail = failureByEngine.get(id);
+      if (failureDetail) {
+        return { id, status: 'error', detail: failureDetail };
+      }
+      const argCount = argCountByEngine.get(id) ?? 0;
+      return argCount > 0
+        ? { id, status: 'ok' as const, detail: `${argCount} arguments` }
+        : { id, status: 'error' as const, detail: 'no arguments produced' };
+    });
+    const okCount = engineStatuses.filter((e) => e.status === 'ok').length;
+    const status = {
+      mode: 'tribunal',
+      label: args.label,
+      startedAt,
+      endedAt: new Date().toISOString(),
+      engines: engineStatuses,
+      summary: `${okCount}/${engines.length} engines argued across ${rounds} round(s) (mode=${mode})`,
+      ok: okCount === engines.length,
+    };
+    writeRunStatus(outputDir, status);
+
+    if (quiet) {
+      printRunSummary(status);
+      return;
+    }
 
     // Display results
     for (const round of result.rounds) {
@@ -161,5 +224,6 @@ export const tribunalCommand = defineCommand({
     console.log(result.summary);
     console.log('');
     info(dim(`Full debate saved: ${outputDir}`));
+    printRunSummary(status);
   },
 });

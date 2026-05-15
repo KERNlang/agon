@@ -11,6 +11,13 @@ export {
   SYNTAX_VALIDATOR_TIMEOUT_MS, SYNTAX_VALIDATOR_DISABLE_ENV,
 } from './syntax-validator.js';
 export { resolveDedupSidecar } from './generated/blocks/dedup-resolver.js';
+export {
+  createRunDir, writeRunStatus, printRunSummary, findLatestRunDir,
+  sanitizeRunLabel,
+} from './run-dir.js';
+export type {
+  CreateRunDirOptions, RunDirHandle, RunStatus, RunStatusEngine,
+} from './run-dir.js';
 export type {
   SyntaxValidatorInput, SyntaxValidatorResult, SyntaxValidationError,
 } from './syntax-validator.js';

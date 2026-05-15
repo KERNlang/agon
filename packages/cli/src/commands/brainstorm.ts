@@ -1,12 +1,13 @@
 import { defineCommand } from 'citty';
-import { join } from 'node:path';
-import { mkdirSync } from 'node:fs';
-import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
+import {
+  EngineRegistry, ensureAgonHome, loadConfig,
+  createRunDir, writeRunStatus, printRunSummary,
+} from '@agon/core';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import type { BrainstormBid } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runBrainstorm } from '@agon/forge';
-import { header, success, info, table, bold, cyan, green } from '../output.js';
+import { header, info, table, bold, green } from '../output.js';
 import { icons } from '../icons.js';
 import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 
@@ -31,6 +32,14 @@ export const brainstormCommand = defineCommand({
       description: 'Timeout in seconds',
       default: '120',
     },
+    label: {
+      type: 'string',
+      description: 'Human-readable suffix baked into the run dir name (orchestrators: distinguish parallel runs without grep).',
+    },
+    quiet: {
+      type: 'boolean',
+      description: 'Suppress streaming output; stdout becomes only the run dir path + final summary.',
+    },
   },
   async run({ args }) {
     ensureAgonHome();
@@ -44,11 +53,18 @@ export const brainstormCommand = defineCommand({
       ? args.engines.split(',').map((s) => s.trim())
       : filterDefaultOrchestrationEngines(registry.activeIds(config));
 
-    const outputDir = join(RUNS_DIR, `brainstorm-${Date.now()}`);
-    mkdirSync(outputDir, { recursive: true });
+    if (args.quiet) process.env.AGON_QUIET = '1';
+    const startedAt = new Date().toISOString();
+    const { path: outputDir } = createRunDir({
+      mode: 'brainstorm',
+      label: args.label,
+    });
 
-    header(`Brainstorm: ${args.question}`);
-    info(`Engines: ${available.join(', ')}`);
+    const quiet = process.env.AGON_QUIET === '1';
+    if (!quiet) {
+      header(`Brainstorm: ${args.question}`);
+      info(`Engines: ${available.join(', ')}`);
+    }
 
     const result = await runBrainstorm({
       question: args.question,
@@ -58,6 +74,33 @@ export const brainstormCommand = defineCommand({
       timeout: parseInt(args.timeout, 10),
       outputDir,
     });
+
+    // Authoritative outcome record. A bid entry counts as 'ok' (engine
+    // participated with a confidence); missing engines collapse to 'error'.
+    const bidByEngine = new Map<string, BrainstormBid>();
+    for (const b of result.bids) bidByEngine.set(b.engineId, b);
+    const engineStatuses = available.map((id: string) => {
+      const bid = bidByEngine.get(id);
+      return bid
+        ? { id, status: 'ok' as const, detail: `confidence=${bid.confidence}` }
+        : { id, status: 'error' as const, detail: 'no bid returned' };
+    });
+    const okCount = engineStatuses.filter((e) => e.status === 'ok').length;
+    const status = {
+      mode: 'brainstorm',
+      label: args.label,
+      startedAt,
+      endedAt: new Date().toISOString(),
+      engines: engineStatuses,
+      summary: `${okCount}/${available.length} bid; winner=${result.winner}`,
+      ok: okCount === available.length,
+    };
+    writeRunStatus(outputDir, status);
+
+    if (quiet) {
+      printRunSummary(status);
+      return;
+    }
 
     console.log('');
     header('Bids');
@@ -71,5 +114,6 @@ export const brainstormCommand = defineCommand({
     console.log('');
     header(`Response from ${bold(result.winner)}`);
     console.log(result.response);
+    printRunSummary(status);
   },
 });

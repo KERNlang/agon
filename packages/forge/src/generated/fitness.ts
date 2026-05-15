@@ -8,7 +8,7 @@ import type { FitnessResult, EngineResult } from '@agon/core';
 
 import { spawnWithTimeout, worktreeDiff, diffLineCount, diffFileCount, computeScore } from '@agon/core';
 
-import { runLint, runStyleCheck } from './quality.js';
+import { runLint, runStyleCheck, runSyntaxCheck } from './quality.js';
 
 /**
  * Normalize fragile `node -e "..."` fitness checks into a quoted heredoc. Shell command substitution inside Markdown fences (```bash) otherwise makes valid candidates fail before Node starts.
@@ -90,16 +90,33 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
   const diffGatePass = !requiresCandidateDiff || diffLines > 0;
   const pass = commandPass && diffGatePass;
 
+  const worktreeExistsForQuality = existsSync(opts.worktreePath);
+  const lintWarnings = worktreeExistsForQuality ? await runLint(opts.worktreePath) : 0;
+  const styleScore = worktreeExistsForQuality ? await runStyleCheck(opts.worktreePath) : 0;
+
+  // Syntax check the changed files via the tree-sitter Python sidecar.
+  // Replaces the old "stdout contains 'validated'" heuristic — engines
+  // that ship unparseable code now fail hard regardless of fitness exit
+  // code. Returns {errors: 0, invalidFiles: []} if the sidecar isn't
+  // installed, so missing tree-sitter doesn't fabricate failures.
+  const syntaxCheck = worktreeExistsForQuality
+    ? runSyntaxCheck(opts.worktreePath)
+    : { errors: 0, invalidFiles: [] };
+
   // Persist fitness stdout/stderr to disk — followers + synthesis can read WHY tests failed
   let fitnessLogPath: string | undefined;
   try {
+    const syntaxLine = syntaxCheck.invalidFiles.length > 0
+      ? `Syntax: INVALID — ${syntaxCheck.errors} parse error(s) in ${syntaxCheck.invalidFiles.length} file(s): ${syntaxCheck.invalidFiles.join(', ')}`
+      : 'Syntax: ok';
     const logContent = [
       `# Fitness Log: ${opts.engineId}`,
       `Exit code: ${fitnessResult.exitCode}`,
       `Timed out: ${fitnessResult.timedOut}`,
       `Command pass: ${commandPass}`,
       `Diff gate: ${requiresCandidateDiff ? (diffGatePass ? 'passed' : 'failed - no candidate changes') : 'not required for baseline'}`,
-      `Pass: ${pass}`,
+      syntaxLine,
+      `Pass: ${pass && syntaxCheck.invalidFiles.length === 0}`,
       `Duration: ${durationSec}s`,
       '',
       '## STDOUT',
@@ -114,33 +131,43 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
     console.warn(`[agon] fitness: failed to write log for ${opts.engineId}: ${logErr instanceof Error ? logErr.message : String(logErr)}`);
   }
 
-  const worktreeExistsForQuality = existsSync(opts.worktreePath);
-  const lintWarnings = worktreeExistsForQuality ? await runLint(opts.worktreePath) : 0;
-  const styleScore = worktreeExistsForQuality ? await runStyleCheck(opts.worktreePath) : 0;
+  const syntaxInvalid = syntaxCheck.invalidFiles.length > 0;
+  const finalPass = pass && !syntaxInvalid;
 
   const fitness: FitnessResult = {
-    pass,
+    pass: finalPass,
     diffLines,
     filesChanged,
     durationSec,
     lintWarnings,
     styleScore,
     compositeScore: 0,
+    syntaxErrors: syntaxCheck.errors,
+    syntaxInvalidFiles: syntaxCheck.invalidFiles,
   };
 
   const components = computeScore(fitness);
-  if (pass && diffLines === 0 && opts.engineId !== 'baseline' && opts.requireDiff === false) {
+  if (syntaxInvalid) {
+    // Hard penalty: unparseable output is never a winner. Zeroing the
+    // composite keeps it selectable for the report (so the user sees WHY
+    // it failed) but ranks it below any clean candidate.
+    components.composite = 0;
+  } else if (finalPass && diffLines === 0 && opts.engineId !== 'baseline' && opts.requireDiff === false) {
     // Validation/improvement mode can legitimately produce no patch. Keep
     // it selectable without pretending it is a code-change score.
     components.composite = 60;
   }
   fitness.compositeScore = components.composite;
 
+  const status = finalPass
+    ? 'passed'
+    : (syntaxInvalid ? 'syntax_invalid' : (diffGatePass ? 'fitness_failed' : 'no_candidate_diff'));
+
   return {
     engineId: opts.engineId,
-    pass,
+    pass: finalPass,
     score: components.composite,
-    status: pass ? 'passed' : (diffGatePass ? 'fitness_failed' : 'no_candidate_diff'),
+    status,
     fitnessPassed: commandPass,
     diffLines,
     filesChanged,
@@ -150,5 +177,7 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
     patchPath,
     worktreePath: opts.worktreePath,
     fitnessLogPath,
+    syntaxErrors: syntaxCheck.errors,
+    syntaxInvalidFiles: syntaxCheck.invalidFiles,
   };
 }

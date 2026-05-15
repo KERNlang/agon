@@ -145,32 +145,43 @@ def _load_parsers() -> dict[str, Any]:
             return
         parsers[name] = Parser(lang)
 
+    # Each grammar package is OPTIONAL — if one isn't installed, the
+    # validator just refuses to parse files of that language (the bridge
+    # then flags them grammar_unavailable). Log the absence to stderr so
+    # `agon doctor` and curious users can see which grammars are missing
+    # rather than silently degrading.
+    def _log_missing_grammar(name: str, err: ImportError) -> None:
+        print(
+            f"syntax-validator: grammar package not installed: {name} ({err})",
+            file=sys.stderr,
+        )
+
     try:
         import tree_sitter_python as tspy
         _try("python", lambda: tspy.language())
-    except ImportError:
-        pass
+    except ImportError as err:
+        _log_missing_grammar("tree_sitter_python", err)
 
     try:
         import tree_sitter_typescript as tsts
         _try("typescript", lambda: tsts.language_typescript())
         _try("tsx", lambda: tsts.language_tsx())
-    except ImportError:
-        pass
+    except ImportError as err:
+        _log_missing_grammar("tree_sitter_typescript", err)
 
     try:
         import tree_sitter_javascript as tsjs
         _try("javascript", lambda: tsjs.language())
         # JS and JSX share a grammar in tree-sitter-javascript.
         _try("jsx", lambda: tsjs.language())
-    except ImportError:
-        pass
+    except ImportError as err:
+        _log_missing_grammar("tree_sitter_javascript", err)
 
     try:
         import tree_sitter_json as tsjson
         _try("json", lambda: tsjson.language())
-    except ImportError:
-        pass
+    except ImportError as err:
+        _log_missing_grammar("tree_sitter_json", err)
 
     if not parsers:
         print("syntax-validator: no grammar packages installed — install via "

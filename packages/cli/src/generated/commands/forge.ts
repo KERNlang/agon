@@ -8,6 +8,8 @@ import { mkdirSync } from 'node:fs';
 
 import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
 
+import type { EngineResult } from '@agon/core';
+
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@agon/adapter-cli';
@@ -18,7 +20,7 @@ import { header, success, fail, warn, info, table, green, red, yellow, bold, cya
 
 import { icons } from '../signals/icons.js';
 
-// @kern-source: forge:11
+// @kern-source: forge:12
 export const forgeCommand: any = defineCommand({
   meta: {
     name: 'forge',
@@ -82,6 +84,19 @@ export const forgeCommand: any = defineCommand({
       type: 'string',
       description: 'Stage2 auto-finalize quorum: stop waiting once M engines pass (score >= forgeEarlyFinalizeMinScore). Overrides config.forgeEarlyFinalizePassingCount. Set to 0 to disable for this run.',
     },
+    finalizeOnScore: {
+      type: 'string',
+      description: 'Single-engine early-finalize: stop as soon as ANY engine PASSES with score >= this threshold (0-100). Caller-driven via onResult. Useful for cost-control. Independent of --early-finalize-count.',
+    },
+    noHealthCheck: {
+      type: 'boolean',
+      description: 'Skip the pre-flight engine health check for this run (default: check enabled). Saves ~timeoutSec of wall-clock but lets known-bad engines waste their full dispatch timeout.',
+      default: false,
+    },
+    healthCheckTimeoutSec: {
+      type: 'string',
+      description: 'Per-engine health-check timeout in seconds (default 5). Overrides config.forgeHealthCheckTimeoutSec.',
+    },
   },
   async run({ args }) {
     ensureAgonHome();
@@ -117,15 +132,48 @@ export const forgeCommand: any = defineCommand({
     const requireDiff = parseOptionalBoolean(args.requireDiff);
     const acceptReviewOutput = parseOptionalBoolean(args.acceptReviewOutput);
 
-    const earlyFinalizeRaw = args.earlyFinalizeCount?.trim();
+    // Use !== undefined so an explicit "0" (the disable sentinel) is
+    // preserved instead of treated as "not provided".
+    const earlyFinalizeRaw = args.earlyFinalizeCount;
     let earlyFinalizeCount: number | undefined;
-    if (earlyFinalizeRaw) {
-      const parsed = Number(earlyFinalizeRaw);
-      if (!Number.isFinite(parsed) || parsed < 0) {
+    if (earlyFinalizeRaw !== undefined && earlyFinalizeRaw.trim() !== '') {
+      const parsed = Number(earlyFinalizeRaw.trim());
+      if (!Number.isInteger(parsed) || parsed < 0) {
         fail(`--early-finalize-count must be a non-negative integer; got "${earlyFinalizeRaw}"`);
         process.exit(1);
       }
       earlyFinalizeCount = parsed;
+    }
+
+    // Restored from pre-facade forge.ts: --finalize-on-score is a
+    // single-engine threshold using the onResult predicate. Coexists
+    // with --early-finalize-count (which is the M-of-N quorum).
+    const finalizeOnScoreRaw = args.finalizeOnScore?.trim();
+    const finalizeOnScore = finalizeOnScoreRaw ? Number(finalizeOnScoreRaw) : undefined;
+    if (finalizeOnScoreRaw && (!Number.isFinite(finalizeOnScore!) || finalizeOnScore! < 0 || finalizeOnScore! > 100)) {
+      fail(`--finalize-on-score must be a number in [0,100]; got "${finalizeOnScoreRaw}"`);
+      process.exit(1);
+    }
+    const onResult = finalizeOnScore !== undefined
+      ? (_engineId: string, result: EngineResult): 'finalize' | 'continue' => {
+          if (result.pass && result.score >= finalizeOnScore) {
+            info(`Finalize threshold met: score ${result.score} >= ${finalizeOnScore} — aborting remaining engines.`);
+            return 'finalize';
+          }
+          return 'continue';
+        }
+      : undefined;
+
+    const healthCheckEnabled = args.noHealthCheck ? false : undefined;
+    const healthCheckTimeoutRaw = args.healthCheckTimeoutSec?.trim();
+    let healthCheckTimeoutSec: number | undefined;
+    if (healthCheckTimeoutRaw) {
+      const parsed = Number(healthCheckTimeoutRaw);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        fail(`--health-check-timeout-sec must be a positive number; got "${healthCheckTimeoutRaw}"`);
+        process.exit(1);
+      }
+      healthCheckTimeoutSec = parsed;
     }
 
     header(`Forge: ${args.task}`);
@@ -152,6 +200,9 @@ export const forgeCommand: any = defineCommand({
         engines,
         dryRun: args.dryRun,
         earlyFinalizeCount,
+        healthCheckEnabled,
+        healthCheckTimeoutSec,
+        onResult,
       },
       registry,
       adapter,
@@ -174,6 +225,16 @@ export const forgeCommand: any = defineCommand({
           case 'stage2:dispatch':
             info(`Stage 2: dispatching ${bold(event.engineId ?? 'challenger')}...`);
             break;
+          case 'forge:auto-finalize':
+            info(`Stage 2: quorum reached (${event.data?.passingCount}/${event.data?.targetCount} passed ≥ ${event.data?.minScore}) — aborting remaining engines`);
+            break;
+          case 'forge:health-check-done': {
+            const unhealthy = (event.data?.unhealthy ?? []) as Array<{engineId: string, reason?: string}>;
+            if (unhealthy.length > 0) {
+              warn(`Health check: ${unhealthy.length} engine(s) skipped — ${unhealthy.map((u) => `${u.engineId} (${u.reason ?? 'unknown'})`).join(', ')}`);
+            }
+            break;
+          }
           case 'engine:failed':
             warn(`Engine failed: ${bold(String(event.engineId ?? event.data?.engineId ?? 'unknown'))} (${event.data?.phase ?? 'dispatch'})`);
             break;

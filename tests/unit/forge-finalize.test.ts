@@ -302,4 +302,61 @@ describe('caller-driven forge finalize', () => {
     // CI jitter while still proving the abort path fired.
     expect(wallClockMs).toBeLessThan(10_000);
   }, 30_000);
+
+  it('treats earlyFinalizeCount=0 as an explicit disable (not "trigger on first")', async () => {
+    process.env.AGON_FINALIZE_TEST_KEY = 'test';
+    const repoDir = makeRepo();
+    // No config overrides — defaults would auto-finalize at 3. The
+    // option override of 0 must trump it.
+    const forgeDir = join(tmpdir(), `agon-forge-finalize-disable-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tempDirs.push(forgeDir);
+    mkdirSync(forgeDir, { recursive: true });
+
+    const registry = new EngineRegistry();
+    const ids = ['e1', 'e2', 'e3', 'e4'];
+    for (const id of ids) {
+      registry.register({
+        id,
+        displayName: id,
+        api: { apiKeyEnv: 'AGON_FINALIZE_TEST_KEY' },
+        timeout: 120,
+        tier: 'user',
+        schemaVersion: 3,
+        isLocal: false,
+        exec: { args: [] },
+        review: { args: [] },
+      } as any);
+    }
+
+    const adapter = {
+      isAvailable: async () => true,
+      getVersion: async () => 'test',
+      dispatch: async ({ engine, cwd }: any) => {
+        // All engines pass fast. With earlyFinalizeCount=0, NONE of them
+        // should trigger auto-abort — every engine must run to completion.
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        writeFileSync(join(cwd, `${engine.id}.txt`), `${engine.id} done\n`);
+        return { exitCode: 0, stdout: `${engine.id} done`, stderr: '', timedOut: false };
+      },
+    };
+
+    const manifest = await runForge(
+      {
+        task: 'write engine-named file',
+        fitnessCmd: 'ls *.txt | head -1',
+        cwd: repoDir,
+        forgeDir,
+        engines: ids,
+        earlyFinalizeCount: 0,
+      } as any,
+      registry,
+      adapter as any,
+    );
+
+    // All 4 engines should have published — none aborted.
+    expect(Object.keys(manifest.results).sort()).toEqual(['e1', 'e2', 'e3', 'e4']);
+    for (const id of ids) {
+      expect(manifest.results[id].pass, `${id} should have completed`).toBe(true);
+    }
+  }, 15_000);
 });

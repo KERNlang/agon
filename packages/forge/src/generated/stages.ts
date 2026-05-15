@@ -347,13 +347,21 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   // M-of-N auto-finalize quorum: when this many engines pass at-or-above
   // the min-score threshold, abort any in-flight challengers. The caller
   // can still explicitly return 'finalize' from onResult — that takes
-  // precedence. Disable by setting forgeEarlyFinalizeEnabled=false.
+  // precedence. Disable by:
+  //   - setting forgeEarlyFinalizeEnabled = false
+  //   - or passing earlyFinalizeCount: 0 / --early-finalize-count 0
+  //   - or setting forgeEarlyFinalizePassingCount: 0
   let passedCount = 0;
-  const EARLY_FINALIZE_ENABLED = opts.config.forgeEarlyFinalizeEnabled !== false;
   const EARLY_FINALIZE_MIN_SCORE = opts.config.forgeEarlyFinalizeMinScore ?? 70;
-  const EARLY_FINALIZE_COUNT = opts.earlyFinalizeCount
-    ?? opts.config.forgeEarlyFinalizePassingCount
-    ?? 3;
+  const rawCount = opts.earlyFinalizeCount !== undefined
+    ? opts.earlyFinalizeCount
+    : (opts.config.forgeEarlyFinalizePassingCount ?? 3);
+  // count <= 0 is the explicit-disable sentinel. We freeze the resolved
+  // count once so a single comparison can decide both "enabled" and
+  // "threshold met".
+  const EARLY_FINALIZE_COUNT = rawCount;
+  const EARLY_FINALIZE_ENABLED = opts.config.forgeEarlyFinalizeEnabled !== false
+    && EARLY_FINALIZE_COUNT > 0;
   const publishResult = (engineId: string, result: EngineResult, metric: DispatchMetric) => {
     metrics.push(metric);
     if (!published.has(engineId)) {
@@ -370,7 +378,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
         && !finalizeRequested
       ) {
         opts.onEvent?.({
-          type: 'forge:auto-finalize' as any,
+          type: 'forge:auto-finalize',
           engineId,
           data: {
             passingCount: passedCount,
@@ -499,7 +507,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:481
+// @kern-source: stages:489
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

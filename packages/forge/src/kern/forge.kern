@@ -2,6 +2,7 @@ import from="node:crypto" names="randomUUID"
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync"
 import from="@agon/core" names="ForgeOptions,ForgeManifest,EngineAdapter,ForgeEvent,AgonConfig,DispatchMetric,EngineResult" types=true
 import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeRemoveBestEffort,updateGlickoRanked,classifyTask,createSidechainLogger,assignForgeRoles,buildSpecializedPrompt,recordForgeOutcome,extractPatchFilePatterns,tracker,engineHealth"
+import from="./health-check.js" names="healthCheckEngines,HEALTH_CHECK_DEFAULT_PROMPT"
 import from="./stages.js" names="runBaseline,runStage1,runStage2,resolveForgeMode,resolveForgeRequireDiff,resolveForgeAcceptReviewOutput"
 import from="@agon/core" names="determineWinner"
 import from="./synthesis.js" names="runSynthesis"
@@ -324,6 +325,40 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
         onEvent?.({ type: 'forge:engine-skipped', data: { engineId: drop.id, status: 'unavailable', reason: drop.reason } });
       }
     }
+
+    // Pre-flight health check: ping the available engines with a tiny
+    // prompt. Engines that don't respond before forgeHealthCheckTimeoutSec
+    // are filtered out for THIS run only. Catches "binary present, key set,
+    // but the engine itself is hanging today" — the gap registry.isAvailable
+    // misses. Skippable via --no-health-check or by setting
+    // forgeHealthCheckEnabled=false in config.
+    const healthCheckEnabled = options.healthCheckEnabled !== false
+      && config.forgeHealthCheckEnabled !== false;
+    let finalAvailable: string[] = available;
+    if (healthCheckEnabled && available.length > 0) {
+      const hcTimeoutSec = options.healthCheckTimeoutSec
+        ?? config.forgeHealthCheckTimeoutSec
+        ?? 5;
+      onEvent?.({ type: 'forge:health-check-start' as any, data: { engineIds: available, timeoutSec: hcTimeoutSec } });
+      const summary = await healthCheckEngines(
+        available,
+        registry,
+        adapter,
+        options.cwd,
+        hcTimeoutSec,
+        HEALTH_CHECK_DEFAULT_PROMPT,
+      );
+      onEvent?.({ type: 'forge:health-check-done' as any, data: { healthy: summary.healthy, unhealthy: summary.unhealthy, totalMs: summary.totalMs } });
+      for (const skip of summary.unhealthy) {
+        console.warn(`[agon] forge: skipping ${skip.engineId} — health check failed (${skip.reason ?? 'unknown'})`);
+        onEvent?.({ type: 'forge:engine-skipped', data: { engineId: skip.engineId, status: 'health-check-failed', reason: skip.reason } });
+      }
+      finalAvailable = summary.healthy;
+    }
+    // Replace `available` with the health-filtered list for the rest of forge.
+    // Done as a reassignment so we don't have to retouch every downstream usage.
+    (available as any).length = 0;
+    for (const id of finalAvailable) (available as any).push(id);
 
     if (available.length === 0) {
       const error = `No available engines for forge. Install/configure at least one CLI or API engine. Enabled: ${enabledEngines.join(', ')}`;

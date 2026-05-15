@@ -24,86 +24,78 @@ interface name=Scoreboard export=true
   field name=overallState type="'running'|'done'|'failed'|'cancelled'"
 
 fn name=createScoreboard params="runId:string,mode:string,engineIds:string[]" returns=Scoreboard export=true
-  handler <<<
-    const now = Date.now();
-    return {
-      runId,
-      mode,
-      startedAt: now,
-      entries: engineIds.map((id) => ({
-        engineId: id,
-        state: 'waiting' as ScoreboardEngineState,
-        progress: 0,
-      })),
-      overallState: 'running',
-    };
-  >>>
+  handler lang="kern"
+    let name=now value="Date.now()"
+    return value="{ runId, mode, startedAt: now, entries: engineIds.map((id) => Object.assign({}, { engineId: id, state: 'waiting' as ScoreboardEngineState, progress: 0 })), overallState: 'running', }"
 
 fn name=scoreboardFind params="board:Scoreboard,engineId:string" returns="ScoreboardEntry|undefined" export=false expr={{ return board.entries.find((e) => e.engineId === engineId); }}
 
 fn name=scoreboardStartEngine params="board:Scoreboard,engineId:string" returns=Scoreboard export=true
-  handler <<<
-    const entry = scoreboardFind(board, engineId);
-    if (!entry) return board;
-    entry.state = 'running';
-    entry.startedAt = Date.now();
-    return board;
-  >>>
+  handler lang="kern"
+    let name=entry value="scoreboardFind(board, engineId)"
+    if cond="!entry"
+      return value="board"
+    assign target="entry.state" value="'running'"
+    assign target="entry.startedAt" value="Date.now()"
+    return value="board"
 
 fn name=scoreboardUpdateProgress params="board:Scoreboard,engineId:string,progress:number" returns=Scoreboard export=true
-  handler <<<
-    const entry = scoreboardFind(board, engineId);
-    if (!entry) return board;
-    entry.progress = Math.max(0, Math.min(100, Math.floor(progress)));
-    return board;
-  >>>
+  handler lang="kern"
+    let name=entry value="scoreboardFind(board, engineId)"
+    if cond="!entry"
+      return value="board"
+    assign target="entry.progress" value="Math.max(0, Math.min(100, Math.floor(progress)))"
+    return value="board"
 
 fn name=scoreboardFinishEngine params="board:Scoreboard,engineId:string,opts?:{score?:number,result?:string}" returns=Scoreboard export=true
-  handler <<<
-    const entry = scoreboardFind(board, engineId);
-    if (!entry) return board;
-    entry.state = 'done';
-    entry.finishedAt = Date.now();
-    entry.progress = 100;
-    if (opts?.score !== undefined) entry.score = opts.score;
-    if (opts?.result !== undefined) entry.result = opts.result;
-    scoreboardRecomputeOverall(board);
-    return board;
-  >>>
+  handler lang="kern"
+    let name=entry value="scoreboardFind(board, engineId)"
+    if cond="!entry"
+      return value="board"
+    assign target="entry.state" value="'done'"
+    assign target="entry.finishedAt" value="Date.now()"
+    assign target="entry.progress" value="100"
+    if cond="opts?.score !== undefined"
+      assign target="entry.score" value="opts.score"
+    if cond="opts?.result !== undefined"
+      assign target="entry.result" value="opts.result"
+    do value="scoreboardRecomputeOverall(board)"
+    return value="board"
 
 fn name=scoreboardFailEngine params="board:Scoreboard,engineId:string,error:string" returns=Scoreboard export=true
-  handler <<<
-    const entry = scoreboardFind(board, engineId);
-    if (!entry) return board;
-    entry.state = 'failed';
-    entry.finishedAt = Date.now();
-    entry.error = error;
-    scoreboardRecomputeOverall(board);
-    return board;
-  >>>
+  handler lang="kern"
+    let name=entry value="scoreboardFind(board, engineId)"
+    if cond="!entry"
+      return value="board"
+    assign target="entry.state" value="'failed'"
+    assign target="entry.finishedAt" value="Date.now()"
+    assign target="entry.error" value="error"
+    do value="scoreboardRecomputeOverall(board)"
+    return value="board"
 
 fn name=scoreboardCancelEngine params="board:Scoreboard,engineId:string" returns=Scoreboard export=true
-  handler <<<
-    const entry = scoreboardFind(board, engineId);
-    if (!entry) return board;
-    entry.state = 'cancelled';
-    entry.finishedAt = Date.now();
-    scoreboardRecomputeOverall(board);
-    return board;
-  >>>
+  handler lang="kern"
+    let name=entry value="scoreboardFind(board, engineId)"
+    if cond="!entry"
+      return value="board"
+    assign target="entry.state" value="'cancelled'"
+    assign target="entry.finishedAt" value="Date.now()"
+    do value="scoreboardRecomputeOverall(board)"
+    return value="board"
 
 fn name=scoreboardRecomputeOverall params="board:Scoreboard" returns=void export=false
-  handler <<<
-    if (board.entries.every((e) => e.state === 'done')) {
-      board.overallState = 'done';
-    } else if (board.entries.every((e) => e.state === 'failed')) {
-      board.overallState = 'failed';
-    } else if (board.entries.every((e) => e.state === 'done' || e.state === 'failed' || e.state === 'cancelled')) {
-      board.overallState = 'done';
-    } else if (board.entries.some((e) => e.state === 'running')) {
-      board.overallState = 'running';
-    }
-  >>>
+  handler lang="kern"
+    if cond="board.entries.every((e) => e.state === 'done')"
+      assign target="board.overallState" value="'done'"
+    else
+      if cond="board.entries.every((e) => e.state === 'failed')"
+        assign target="board.overallState" value="'failed'"
+      else
+        if cond="board.entries.every((e) => e.state === 'done' || e.state === 'failed' || e.state === 'cancelled')"
+          assign target="board.overallState" value="'done'"
+        else
+          if cond="board.entries.some((e) => e.state === 'running')"
+            assign target="board.overallState" value="'running'"
 
 fn name=formatScoreboardLine params="entry:ScoreboardEntry" returns=string export=true
   handler <<<
@@ -128,7 +120,6 @@ fn name=formatScoreboardLine params="entry:ScoreboardEntry" returns=string expor
   >>>
 
 fn name=renderScoreboard params="board:Scoreboard" returns=string export=true
-  handler <<<
-    const lines = board.entries.map((e) => formatScoreboardLine(e));
-    return lines.join('\n');
-  >>>
+  handler lang="kern"
+    let name=lines value="board.entries.map((e) => formatScoreboardLine(e))"
+    return value="lines.join('\\n')"

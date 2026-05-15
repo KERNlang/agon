@@ -1,8 +1,4 @@
-fn name=formatSpinnerFrame params="frames:string[], index:number, text:string" returns="string"
-  handler <<<
-    const frame = frames[index % frames.length];
-    return `  \x1b[38;5;214m${frame}\x1b[0m \x1b[2m${text}\x1b[0m`;
-  >>>
+fn name=formatSpinnerFrame params="frames:string[], index:number, text:string" returns="string" expr={{ return `  \x1b[38;5;214m${frames[index % frames.length]}\x1b[0m \x1b[2m${text}\x1b[0m`; }}
 
 fn name=formatEngineBlock params="engineId:string, color:number, lines:string[], maxWidth:number" returns="string[]"
   handler <<<
@@ -59,10 +55,6 @@ fn name=clearLinesSequence params="count:number" returns="string"
     return seq;
   >>>
 
-fn name=cursorUpSequence params="count:number" returns="string"
-  handler <<<
-    if (count <= 0) return '';
-    return `\x1b[${count}A`;
-  >>>
+fn name=cursorUpSequence params="count:number" returns="string" expr={{ return count <= 0 ? '' : `\x1b[${count}A`; }}
 
 fn name=clearLineSequence params="" returns="string" expr={{ return '\r\x1b[2K'; }}

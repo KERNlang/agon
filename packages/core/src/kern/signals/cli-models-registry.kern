@@ -86,36 +86,29 @@ fn name=fetchCliModelsRegistry async=true returns="Promise<Record<string, any> |
   >>>
 
 fn name=findBinary params="binary:string" returns="string|null" export=true
-  handler <<<
-    try {
-      const result = execSync(`which ${binary}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-      if (result) return result;
-    } catch {
-      // Fall through to common user-local binary paths.
-    }
-    const home = homedir();
-    const searchPaths = [
-      join(home, '.local', 'bin'),
-      join(home, '.npm-global', 'bin'),
-      '/usr/local/bin',
-    ];
-    for (const dir of searchPaths) {
-      const fullPath = join(dir, binary);
-      if (existsSync(fullPath)) return fullPath;
-    }
-    return null;
-  >>>
+  handler lang="kern"
+    try
+      let name=result value="execSync(`which ${binary}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim()"
+      if cond="result"
+        return value="result"
+      catch name=e
+    let name=home value="homedir()"
+    let name=searchPaths value="[ join(home, '.local', 'bin'), join(home, '.npm-global', 'bin'), '/usr/local/bin', ]"
+    each name=dir in="searchPaths"
+      let name=fullPath value="join(dir, binary)"
+      if cond="existsSync(fullPath)"
+        return value="fullPath"
+    return value="null"
 
 fn name=getBinaryVersion params="binary:string, versionCmd:string[]" returns="string|null" export=true
-  handler <<<
-    if (!versionCmd.length) return null;
-    try {
-      const result = execSync(`${binary} ${versionCmd.join(' ')}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-      return result || null;
-    } catch {
-      return null;
-    }
-  >>>
+  handler lang="kern"
+    if cond="!versionCmd.length"
+      return value="null"
+    try
+      let name=result value="execSync(`${binary} ${versionCmd.join(' ')}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim()"
+      return value="result || null"
+      catch name=e
+        return value="null"
 
 fn name=buildCliModelGroups returns="CliProviderGroup[]" export=true
   doc "Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync."

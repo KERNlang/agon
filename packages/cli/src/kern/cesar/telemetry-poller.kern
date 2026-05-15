@@ -58,25 +58,24 @@ service name=TelemetryPoller export=true
   field name=running type=boolean private=true
 
   constructor params="opts:TelemetryPollerOptions"
-    handler <<<
-      this.registry = opts.registry;
-      this.probe = opts.probe;
-      this.intervalMs = opts.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-      this.stallThresholdMs = opts.stallThresholdMs ?? STALL_THRESHOLD_MS;
-      this.probeTimeoutMs = opts.probeTimeoutMs ?? Math.min(5000, this.stallThresholdMs);
-      this.onFallback = opts.onFallback;
-      this.autoFallback = opts.autoFallback ?? 'off';
-      this.onAutoFallback = opts.onAutoFallback;
-      this.taskClass = opts.taskClass;
-      this.activeEngineIds = opts.activeEngineIds;
-      this.vitals = new Map();
-      this.subscribers = new Set();
-      this.stalledIds = new Set();
-      this.timer = undefined;
-      this.tickInFlight = false;
-      this.catchUpTimer = undefined;
-      this.running = false;
-    >>>
+    handler lang="kern"
+      assign target="this.registry" value="opts.registry"
+      assign target="this.probe" value="opts.probe"
+      assign target="this.intervalMs" value="opts.intervalMs ?? DEFAULT_POLL_INTERVAL_MS"
+      assign target="this.stallThresholdMs" value="opts.stallThresholdMs ?? STALL_THRESHOLD_MS"
+      assign target="this.probeTimeoutMs" value="opts.probeTimeoutMs ?? Math.min(5000, this.stallThresholdMs)"
+      assign target="this.onFallback" value="opts.onFallback"
+      assign target="this.autoFallback" value="opts.autoFallback ?? 'off'"
+      assign target="this.onAutoFallback" value="opts.onAutoFallback"
+      assign target="this.taskClass" value="opts.taskClass"
+      assign target="this.activeEngineIds" value="opts.activeEngineIds"
+      assign target="this.vitals" value="new Map()"
+      assign target="this.subscribers" value="new Set()"
+      assign target="this.stalledIds" value="new Set()"
+      assign target="this.timer" value="undefined"
+      assign target="this.tickInFlight" value="false"
+      assign target="this.catchUpTimer" value="undefined"
+      assign target="this.running" value="false"
 
   method name=start returns=void
     doc "Begin polling. Idempotent — calling start() while already running is a no-op. Fires an immediate tick before scheduling the recurring one so the first snapshot is available without waiting a full interval."
@@ -215,63 +214,56 @@ service name=TelemetryPoller export=true
 
   method name=probeNow async=true returns="Promise<void>"
     doc "Run one poll immediately. Public for /status refreshes and deterministic tests; start() still owns the interval loop."
-    handler <<<
-      await this.tick();
-    >>>
+    handler lang="kern"
+      do value="await this.tick()"
 
   method name=isRunning returns=boolean
     doc "Diagnostic: whether start() has been called and stop() hasn't."
-    handler <<<
-      return this.running;
-    >>>
+    handler lang="kern"
+      return value="this.running"
 
   method name=clear returns=void
     doc "Reset all internal state — vitals, stall tracker, subscribers. Does not stop the timer."
-    handler <<<
-      this.vitals.clear();
-      this.stalledIds.clear();
-      this.subscribers.clear();
-    >>>
+    handler lang="kern"
+      do value="this.vitals.clear()"
+      do value="this.stalledIds.clear()"
+      do value="this.subscribers.clear()"
 
   method name=handleAutoFallback async=true params="engineId:string, vitals:EngineVitals" returns="Promise<void>" private=true
     doc "If autoFallback is enabled, pick best candidate and either dispatch immediately (auto) or ask via onAutoFallback (ask)."
-    handler <<<
-      if (this.autoFallback === 'off') return;
-      const candidateIds = this.activeEngineIds ? this.activeEngineIds() : undefined;
-      const chain = this.registry.getFallbackChain(engineId, this.taskClass, candidateIds);
-      if (chain.length === 0) return;
-      const candidate = chain[0];
-      const reason = vitals.task ?? 'stalled';
-      if (this.autoFallback === 'auto') {
-        if (this.onAutoFallback) {
-          const accepted = await this.onAutoFallback(engineId, candidate, reason);
-          if (!accepted) return;
-        }
-        // Immediately mark fallback state on both engines
-        const fromVitals = this.vitals.get(engineId);
-        if (fromVitals) {
-          this.vitals.set(engineId, { ...fromVitals, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason });
-        }
-        const toPrev = this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: Date.now() };
-        this.vitals.set(candidate, { ...toPrev, state: 'busy' as EngineVitalState, task: `fallback from ${engineId}` });
-        this.notify();
-        return;
-      }
-      if (this.autoFallback === 'ask' && this.onAutoFallback) {
-        try {
-          const approved = await this.onAutoFallback(engineId, candidate, reason);
-          if (approved) {
-            const fromVitals = this.vitals.get(engineId);
-            if (fromVitals) {
-              this.vitals.set(engineId, { ...fromVitals, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason });
-            }
-            const toPrev = this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: Date.now() };
-            this.vitals.set(candidate, { ...toPrev, state: 'busy' as EngineVitalState, task: `fallback from ${engineId}` });
-            this.notify();
-          }
-        } catch { /* consent errors must not break poll loop */ }
-      }
-    >>>
+    handler lang="kern"
+      if cond="this.autoFallback === 'off'"
+        return
+      let name=candidateIds value="this.activeEngineIds ? this.activeEngineIds() : undefined"
+      let name=chain value="this.registry.getFallbackChain(engineId, this.taskClass, candidateIds)"
+      if cond="chain.length === 0"
+        return
+      let name=candidate value="chain[0]"
+      let name=reason value="vitals.task ?? 'stalled'"
+      if cond="this.autoFallback === 'auto'"
+        if cond="this.onAutoFallback"
+          let name=accepted value="await this.onAutoFallback(engineId, candidate, reason)"
+          if cond="!accepted"
+            return
+        comment raw="// Immediately mark fallback state on both engines"
+        let name=fromVitals value="this.vitals.get(engineId)"
+        if cond="fromVitals"
+          do value="this.vitals.set(engineId, { ...fromVitals, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason })"
+        let name=toPrev value="this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: Date.now() }"
+        do value="this.vitals.set(candidate, { ...toPrev, state: 'busy' as EngineVitalState, task: `fallback from ${engineId}` })"
+        do value="this.notify()"
+        return
+      if cond="this.autoFallback === 'ask' && this.onAutoFallback"
+        try
+          let name=approved value="await this.onAutoFallback(engineId, candidate, reason)"
+          if cond="approved"
+            let name=fromVitals value="this.vitals.get(engineId)"
+            if cond="fromVitals"
+              do value="this.vitals.set(engineId, { ...fromVitals, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason })"
+            let name=toPrev value="this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: Date.now() }"
+            do value="this.vitals.set(candidate, { ...toPrev, state: 'busy' as EngineVitalState, task: `fallback from ${engineId}` })"
+            do value="this.notify()"
+          catch name=e
 
 // ── Factory ───────────────────────────────────────────────────────────
 

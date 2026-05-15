@@ -107,30 +107,30 @@ fn name=clearFileTracker returns=void export=true
 const name=_fileTrackerState type="{ files: Map<string, FileEntry>; version: number }" value={{ ({ files: new Map<string, FileEntry>(), version: 0 }) }}
 
 fn name=getFileDiff params="absPath:string, maxLines?:number" returns=string export=true
-  handler <<<
-    // Runs `git diff HEAD -- <path>` and returns the raw unified-diff text,
-    // capped at maxLines (default 40) to keep the rail panel tight. For
-    // untracked files, return a small pseudo-diff so created files are not
-    // invisible in the expanded rail.
-    try {
-      const cap = maxLines ?? 40;
-      const result = spawnSync('git', ['diff', '--no-color', 'HEAD', '--', absPath], { cwd: dirname(absPath), encoding: 'utf8', timeout: 1500 });
-      const out = (result.stdout ?? '').trim();
-      if (!out) {
-        const tracked = spawnSync('git', ['ls-files', '--error-unmatch', '--', absPath], { cwd: dirname(absPath), encoding: 'utf8', timeout: 1500 });
-        if (tracked.status === 0 || !existsSync(absPath)) return '';
-        const st = statSync(absPath);
-        if (!st.isFile()) return '';
-        const content = readFileSync(absPath, 'utf8');
-        const contentLines = content.split('\n');
-        const shown = contentLines.slice(0, Math.max(1, cap - 1)).map((line: string) => `+${line}`);
-        const omitted = Math.max(0, contentLines.length - shown.length);
-        return [ '@@ new file @@', ...shown, omitted > 0 ? `… (${omitted} more)` : '', ].filter(Boolean).join('\n');
-      }
-      const lines = out.split('\n');
-      if (lines.length <= cap) return out;
-      return lines.slice(0, cap).join('\n') + `\n\u2026 (${lines.length - cap} more)`;
-    } catch {
-      return '';
-    }
-  >>>
+  handler lang="kern"
+    comment raw="// Runs `git diff HEAD -- <path>` and returns the raw unified-diff text,"
+    comment raw="// capped at maxLines (default 40) to keep the rail panel tight. For"
+    comment raw="// untracked files, return a small pseudo-diff so created files are not"
+    comment raw="// invisible in the expanded rail."
+    try
+      let name=cap value="maxLines ?? 40"
+      let name=result value="spawnSync('git', ['diff', '--no-color', 'HEAD', '--', absPath], { cwd: dirname(absPath), encoding: 'utf8', timeout: 1500 })"
+      let name=out value="(result.stdout ?? '').trim()"
+      if cond="!out"
+        let name=tracked value="spawnSync('git', ['ls-files', '--error-unmatch', '--', absPath], { cwd: dirname(absPath), encoding: 'utf8', timeout: 1500 })"
+        if cond="tracked.status === 0 || !existsSync(absPath)"
+          return value="''"
+        let name=st value="statSync(absPath)"
+        if cond="!st.isFile()"
+          return value="''"
+        let name=content value="readFileSync(absPath, 'utf8')"
+        let name=contentLines value="content.split('\\n')"
+        let name=shown value="contentLines.slice(0, Math.max(1, cap - 1)).map((line: string) => `+${line}`)"
+        let name=omitted value="Math.max(0, contentLines.length - shown.length)"
+        return value="['@@ new file @@', ...shown, omitted > 0 ? `… (${omitted} more)` : '',].filter(Boolean).join('\\n')"
+      let name=lines value="out.split('\\n')"
+      if cond="lines.length <= cap"
+        return value="out"
+      return value="lines.slice(0, cap).join('\\n') + `\\n\\u2026 (${lines.length - cap} more)`"
+      catch name=e
+        return value="''"

@@ -35,18 +35,16 @@ fn name=approvalArgsFromCommand params="tool:string,command:string" returns="Rec
   >>>
 
 fn name=isSensitivePath params="filePath:string" returns=boolean export=false
-  handler <<<
-    const base = basename(filePath).toLowerCase();
-    const sensitive = ['.env', 'credentials', 'secrets', '.pem', '.key', 'id_rsa'];
-    return sensitive.some((pat: string) => base.includes(pat));
-  >>>
+  handler lang="kern"
+    let name=base value="basename(filePath).toLowerCase()"
+    let name=sensitive value="['.env', 'credentials', 'secrets', '.pem', '.key', 'id_rsa']"
+    return value="sensitive.some((pat: string) => base.includes(pat))"
 
 fn name=isInsideCwd params="filePath:string,cwd:string" returns=boolean export=false
-  handler <<<
-    const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
-    const rel = relative(cwd, resolved);
-    return !rel.startsWith('..') && resolve(cwd, rel) === resolved;
-  >>>
+  handler lang="kern"
+    let name=resolved value="isAbsolute(filePath) ? filePath : resolve(cwd, filePath)"
+    let name=rel value="relative(cwd, resolved)"
+    return value="!rel.startsWith('..') && resolve(cwd, rel) === resolved"
 
 fn name=countOccurrences params="haystack:string,needle:string" returns=number export=false
   handler <<<
@@ -63,31 +61,30 @@ fn name=countOccurrences params="haystack:string,needle:string" returns=number e
   >>>
 
 fn name=normalizeApprovalArgs params="args:Record<string,unknown>" returns="Record<string,unknown>" export=false
-  handler <<<
-    const raw = (args ?? {}) as Record<string, unknown>;
-    const nested: Record<string, unknown>[] = [raw];
-    for (const key of ['change', 'fileChange', 'file_change']) {
-      const value = raw[key];
-      if (value && typeof value === 'object' && !Array.isArray(value)) nested.push(value as Record<string, unknown>);
-    }
-    for (const key of ['changes', 'fileChanges', 'file_changes']) {
-      const value = raw[key];
-      if (Array.isArray(value) && value.length === 1 && value[0] && typeof value[0] === 'object') {
-        nested.push(value[0] as Record<string, unknown>);
-      }
-    }
-
-    const src = nested.find((candidate) =>
-      typeof (candidate.file_path ?? candidate.filePath ?? candidate.path) === 'string'
-    ) ?? raw;
-    const out: Record<string, unknown> = { ...src };
-    if (out.file_path === undefined) out.file_path = src.filePath ?? src.path ?? raw.filePath ?? raw.path;
-    if (out.old_string === undefined) out.old_string = src.oldString ?? src.old_string ?? src.old ?? src.previous ?? src.original ?? src.originalContent ?? raw.oldString ?? raw.old;
-    if (out.new_string === undefined) out.new_string = src.newString ?? src.new_string ?? src.new ?? src.next ?? src.replacement ?? raw.newString ?? raw.new;
-    if (out.content === undefined) out.content = src.content ?? src.newContent ?? src.new_content ?? src.after ?? raw.content ?? raw.newContent;
-    if (out.replace_all === undefined) out.replace_all = src.replaceAll ?? src.replace_all ?? raw.replaceAll;
-    return out;
-  >>>
+  handler lang="kern"
+    let name=raw value="(args ?? {}) as Record<string, unknown>"
+    let name=nested type="Record<string, unknown>[]" value="[raw]"
+    each name=changeKey in="['change', 'fileChange', 'file_change']"
+      let name=value value="raw[changeKey]"
+      if cond="value && typeof value === 'object' && !Array.isArray(value)"
+        do value="nested.push(value as Record<string, unknown>)"
+    each name=changesKey in="['changes', 'fileChanges', 'file_changes']"
+      let name=value value="raw[changesKey]"
+      if cond="Array.isArray(value) && value.length === 1 && value[0] && typeof value[0] === 'object'"
+        do value="nested.push(value[0] as Record<string, unknown>)"
+    let name=src value="nested.find((candidate) => typeof (candidate.file_path ?? candidate.filePath ?? candidate.path) === 'string') ?? raw"
+    let name=out type="Record<string, unknown>" value="{ ...src }"
+    if cond="out.file_path === undefined"
+      assign target="out.file_path" value="src.filePath ?? src.path ?? raw.filePath ?? raw.path"
+    if cond="out.old_string === undefined"
+      assign target="out.old_string" value="src.oldString ?? src.old_string ?? src.old ?? src.previous ?? src.original ?? src.originalContent ?? raw.oldString ?? raw.old"
+    if cond="out.new_string === undefined"
+      assign target="out.new_string" value="src.newString ?? src.new_string ?? src.new ?? src.next ?? src.replacement ?? raw.newString ?? raw.new"
+    if cond="out.content === undefined"
+      assign target="out.content" value="src.content ?? src.newContent ?? src.new_content ?? src.after ?? raw.content ?? raw.newContent"
+    if cond="out.replace_all === undefined"
+      assign target="out.replace_all" value="src.replaceAll ?? src.replace_all ?? raw.replaceAll"
+    return value="out"
 
 fn name=estimateChangedTokens params="before:string,after:string" returns=number export=false
   handler <<<
@@ -114,129 +111,85 @@ fn name=estimateChangedTokens params="before:string,after:string" returns=number
 
 fn name=isStaleCachedRead params="filePath:string,cached:any" returns=boolean export=false
   doc "Return true when a cached read is unsafe. Cesar-owned cache entries are verified against disk content so a previous self-approved edit does not force a redundant prompt."
-  handler <<<
-    let mtime = 0;
-    try {
-      mtime = statSync(filePath).mtimeMs;
-    } catch {
-      return true;
-    }
-
-    if (cached?.lastTouchedBy === 'cesar') {
-      try {
-        const current = readFileSync(filePath, 'utf-8');
-        if (current === cached.content) {
-          cached.timestamp = Math.max(Number(cached.timestamp ?? 0), mtime);
-          return false;
-        }
-      } catch {
-        return true;
-      }
-      return true;
-    }
-
-    return mtime > Number(cached?.timestamp ?? 0);
-  >>>
+  handler lang="kern"
+    let name=mtime kind=let value="0"
+    try
+      assign target="mtime" value="statSync(filePath).mtimeMs"
+      catch name=e
+        return value="true"
+    if cond="cached?.lastTouchedBy === 'cesar'"
+      try
+        let name=current value="readFileSync(filePath, 'utf-8')"
+        if cond="current === cached.content"
+          assign target="cached.timestamp" value="Math.max(Number(cached.timestamp ?? 0), mtime)"
+          return value="false"
+        catch name=e
+          return value="true"
+      return value="true"
+    return value="mtime > Number(cached?.timestamp ?? 0)"
 
 fn name=markCesarTouchedCache params="cache:any,filePath:string,cached:any,nextContent:string" returns=void export=false
   doc "Optimistically refresh the read cache after approving a Cesar-owned edit/write. The next approval verifies the expected content against disk."
-  handler <<<
-    const now = Date.now();
-    cache.set(filePath, {
-      ...cached,
-      content: nextContent,
-      timestamp: Math.max(Number(cached?.timestamp ?? 0), now),
-      offset: undefined,
-      limit: undefined,
-      isPartialView: false,
-      lastTouchedBy: 'cesar',
-      lastTouchedAt: now,
-    });
-  >>>
+  handler lang="kern"
+    let name=now value="Date.now()"
+    do value="cache.set(filePath, { ...cached, content: nextContent, timestamp: Math.max(Number(cached?.timestamp ?? 0), now), offset: undefined, limit: undefined, isPartialView: false, lastTouchedBy: 'cesar', lastTouchedAt: now, })"
 
 fn name=applyCesarSelfTurnApproval params="tool:string,args:Record<string,unknown>,toolCtx:ToolContext,config:any" returns="{approve:boolean,reason:string,tool?:string,path?:string,diffTokens?:number}" export=true
   doc "Approve small Cesar-owned Edit/Write operations on already-read files without interrupting the user. Explicit deny modes, exploration/read-only mode, outside-cwd paths, sensitive files, stale reads, unknown files, and large diffs all fall through to the normal approval prompt."
-  handler <<<
-    if ((config as any).cesarSelfTurnAutoApprove === false) {
-      return { approve: false, reason: 'cesarSelfTurnAutoApprove disabled' };
-    }
-    if (toolCtx.permissionMode === 'deny-all') {
-      return { approve: false, reason: 'permissionMode=deny-all' };
-    }
-    if ((toolCtx as any).explorationMode || (toolCtx as any).readOnlyMode) {
-      return { approve: false, reason: 'read-only mode active' };
-    }
-
-    const t = canonicalToolName(tool);
-    if (t !== 'Edit' && t !== 'Write') {
-      return { approve: false, reason: 'not a file edit/write' };
-    }
-    const configured = toolCtx.toolPermissions?.[t];
-    if (configured === 'deny') {
-      return { approve: false, reason: `${t} denied in settings`, tool: t };
-    }
-
-    const normalizedArgs = normalizeApprovalArgs(args);
-    const rawPath = normalizedArgs.file_path;
-    if (typeof rawPath !== 'string' || rawPath.trim().length === 0) {
-      return { approve: false, reason: 'missing file_path', tool: t };
-    }
-    const filePath = isAbsolute(rawPath) ? rawPath : resolve(toolCtx.cwd, rawPath);
-    if (!isInsideCwd(filePath, toolCtx.cwd)) {
-      return { approve: false, reason: 'path outside cwd', tool: t, path: filePath };
-    }
-    if (isSensitivePath(filePath)) {
-      return { approve: false, reason: 'sensitive file', tool: t, path: filePath };
-    }
-
-    const cache = toolCtx.readFileState;
-    const cached = cache.get(filePath);
-    if (!cached) {
-      return { approve: false, reason: 'file was not read in this project cache', tool: t, path: filePath };
-    }
-    if (!existsSync(filePath)) {
-      return { approve: false, reason: 'file does not exist', tool: t, path: filePath };
-    }
-    if (isStaleCachedRead(filePath, cached)) {
-      return { approve: false, reason: 'file changed since last read', tool: t, path: filePath };
-    }
-
-    const maxTokensRaw = Number((config as any).cesarSelfTurnAutoApproveMaxDiffTokens ?? 1200);
-    const maxTokens = Number.isFinite(maxTokensRaw) && maxTokensRaw > 0 ? maxTokensRaw : 1200;
-    let diffTokens = Number.POSITIVE_INFINITY;
-    let nextContent: string | null = null;
-
-    if (t === 'Edit') {
-      const oldString = normalizedArgs.old_string;
-      const newString = normalizedArgs.new_string;
-      if (typeof oldString !== 'string' || typeof newString !== 'string') {
-        return { approve: false, reason: 'Edit missing old_string/new_string', tool: t, path: filePath };
-      }
-      const occurrences = countOccurrences(cached.content, oldString);
-      if (occurrences <= 0) {
-        return { approve: false, reason: 'old_string not found in cached content', tool: t, path: filePath };
-      }
-      const perEditTokens = estimateChangedTokens(oldString, newString);
-      diffTokens = perEditTokens * (((normalizedArgs as any).replace_all === true) ? occurrences : 1);
-      nextContent = ((normalizedArgs as any).replace_all === true)
-        ? cached.content.split(oldString).join(newString)
-        : cached.content.replace(oldString, newString);
-    } else {
-      const content = normalizedArgs.content;
-      if (typeof content !== 'string') {
-        return { approve: false, reason: 'Write missing content', tool: t, path: filePath };
-      }
-      diffTokens = estimateChangedTokens(cached.content, content);
-      nextContent = content;
-    }
-
-    if (diffTokens > maxTokens) {
-      return { approve: false, reason: `diff estimate ${diffTokens} tokens exceeds ${maxTokens}`, tool: t, path: filePath, diffTokens };
-    }
-
-    if (nextContent !== null) {
-      markCesarTouchedCache(cache as Map<string, any>, filePath, cached, nextContent);
-    }
-
-    return { approve: true, reason: `bounded ${t} on previously read file (${diffTokens} tokens)`, tool: t, path: filePath, diffTokens };
-  >>>
+  handler lang="kern"
+    if cond="(config as any).cesarSelfTurnAutoApprove === false"
+      return value="{ approve: false, reason: 'cesarSelfTurnAutoApprove disabled' }"
+    if cond="toolCtx.permissionMode === 'deny-all'"
+      return value="{ approve: false, reason: 'permissionMode=deny-all' }"
+    if cond="(toolCtx as any).explorationMode || (toolCtx as any).readOnlyMode"
+      return value="{ approve: false, reason: 'read-only mode active' }"
+    let name=t value="canonicalToolName(tool)"
+    if cond="t !== 'Edit' && t !== 'Write'"
+      return value="{ approve: false, reason: 'not a file edit/write' }"
+    let name=configured value="toolCtx.toolPermissions?.[t]"
+    if cond="configured === 'deny'"
+      return value="{ approve: false, reason: `${t} denied in settings`, tool: t }"
+    let name=normalizedArgs value="normalizeApprovalArgs(args)"
+    let name=rawPath value="normalizedArgs.file_path"
+    if cond="typeof rawPath !== 'string' || rawPath.trim().length === 0"
+      return value="{ approve: false, reason: 'missing file_path', tool: t }"
+    let name=filePath value="isAbsolute(rawPath) ? rawPath : resolve(toolCtx.cwd, rawPath)"
+    if cond="!isInsideCwd(filePath, toolCtx.cwd)"
+      return value="{ approve: false, reason: 'path outside cwd', tool: t, path: filePath }"
+    if cond="isSensitivePath(filePath)"
+      return value="{ approve: false, reason: 'sensitive file', tool: t, path: filePath }"
+    let name=cache value="toolCtx.readFileState"
+    let name=cached value="cache.get(filePath)"
+    if cond="!cached"
+      return value="{ approve: false, reason: 'file was not read in this project cache', tool: t, path: filePath }"
+    if cond="!existsSync(filePath)"
+      return value="{ approve: false, reason: 'file does not exist', tool: t, path: filePath }"
+    if cond="isStaleCachedRead(filePath, cached)"
+      return value="{ approve: false, reason: 'file changed since last read', tool: t, path: filePath }"
+    let name=maxTokensRaw value="Number((config as any).cesarSelfTurnAutoApproveMaxDiffTokens ?? 1200)"
+    let name=maxTokens value="Number.isFinite(maxTokensRaw) && maxTokensRaw > 0 ? maxTokensRaw : 1200"
+    let name=diffTokens kind=let value="Number.POSITIVE_INFINITY"
+    let name=nextContent type="string | null" kind=let value="null"
+    if cond="t === 'Edit'"
+      let name=oldString value="normalizedArgs.old_string"
+      let name=newString value="normalizedArgs.new_string"
+      if cond="typeof oldString !== 'string' || typeof newString !== 'string'"
+        return value="{ approve: false, reason: 'Edit missing old_string/new_string', tool: t, path: filePath }"
+      let name=occurrences value="countOccurrences(cached.content, oldString)"
+      if cond="occurrences <= 0"
+        return value="{ approve: false, reason: 'old_string not found in cached content', tool: t, path: filePath }"
+      let name=perEditTokens value="estimateChangedTokens(oldString, newString)"
+      let name=editMultiplier value="(normalizedArgs as any).replace_all === true ? occurrences : 1"
+      assign target="diffTokens" value="perEditTokens * editMultiplier"
+      assign target="nextContent" value="((normalizedArgs as any).replace_all === true) ? cached.content.split(oldString).join(newString) : cached.content.replace(oldString, newString)"
+    else
+      let name=content value="normalizedArgs.content"
+      if cond="typeof content !== 'string'"
+        return value="{ approve: false, reason: 'Write missing content', tool: t, path: filePath }"
+      assign target="diffTokens" value="estimateChangedTokens(cached.content, content)"
+      assign target="nextContent" value="content"
+    if cond="diffTokens > maxTokens"
+      return value="{ approve: false, reason: `diff estimate ${diffTokens} tokens exceeds ${maxTokens}`, tool: t, path: filePath, diffTokens }"
+    if cond="nextContent !== null"
+      do value="markCesarTouchedCache(cache as Map<string, any>, filePath, cached, nextContent)"
+    return value="{ approve: true, reason: `bounded ${t} on previously read file (${diffTokens} tokens)`, tool: t, path: filePath, diffTokens }"

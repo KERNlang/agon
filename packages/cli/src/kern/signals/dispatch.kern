@@ -63,13 +63,13 @@ fn name=slashCommandForOrchestrationAction params="action:string,task:string,fit
     return value="`/${action} ${safeTask}`"
 
 fn name=blockSlashOnlyCesarOrchestration params="action:string,task:string,cb:DispatchCallbacks,fitnessCmd?:string|null,tribunalMode?:string" returns=boolean
-  handler <<<
-    if (!SLASH_ONLY_CESAR_ACTIONS.has(action)) return false;
-    const cmd = slashCommandForOrchestrationAction(action, task, fitnessCmd, tribunalMode);
-    cb.dispatch({ type: 'warning', message: `Blocked automatic ${action}. Orchestration only starts from slash commands now.` });
-    cb.dispatch({ type: 'info', message: `Run ${cmd} if you want to start it.` });
-    return true;
-  >>>
+  handler lang="kern"
+    if cond="!SLASH_ONLY_CESAR_ACTIONS.has(action)"
+      return value="false"
+    let name=cmd value="slashCommandForOrchestrationAction(action, task, fitnessCmd, tribunalMode)"
+    do value="cb.dispatch({ type: 'warning', message: `Blocked automatic ${action}. Orchestration only starts from slash commands now.` })"
+    do value="cb.dispatch({ type: 'info', message: `Run ${cmd} if you want to start it.` })"
+    return value="true"
 
 // ── Thread outcome capture helper ─────────────────────────────────────
 // After any non-trivial slash command (forge, brainstorm, tribunal, etc.),

@@ -68,27 +68,23 @@ fn name=threadJournalPath params="projectPath:string,threadId:string" returns=st
 
 fn name=threadFilePath params="projectPath:string,threadId:string" returns=string
   doc "Absolute path for a thread's JSON file. Strictly validates threadId shape and asserts the resolved path stays inside the project's thread directory. Refuses any path traversal attempt or malformed id (red-team findings 2 + 3). Codex P1: uses path.sep alongside '/' so containment check works on Windows."
-  handler <<<
-    if (!THREAD_ID_RE.test(threadId)) throw new Error(`Invalid threadId: ${threadId}`);
-    const dir = threadDirFor(projectPath);
-    const full = resolve(dir, `${threadId}.json`);
-    const resolvedDir = resolve(dir);
-    // Codex P1 fix: check both separators — '/' on POSIX, path.sep on Windows.
-    const nativeSep = join('a', 'b')[1]; // extracts the OS separator at runtime
-    const isContained = full === resolvedDir
-      || full.startsWith(resolvedDir + '/')
-      || full.startsWith(resolvedDir + nativeSep);
-    if (!isContained) {
-      throw new Error(`Invalid thread path (traversal attempt): ${threadId}`);
-    }
-    return full;
-  >>>
+  handler lang="kern"
+    if cond="!THREAD_ID_RE.test(threadId)"
+      throw value="new Error(`Invalid threadId: ${threadId}`)"
+    let name=dir value="threadDirFor(projectPath)"
+    let name=full value="resolve(dir, `${threadId}.json`)"
+    let name=resolvedDir value="resolve(dir)"
+    comment raw="// Codex P1 fix: check both separators — '/' on POSIX, path.sep on Windows."
+    let name=nativeSep value="join('a', 'b')[1]"
+    let name=isContained value="full === resolvedDir || full.startsWith(resolvedDir + '/') || full.startsWith(resolvedDir + nativeSep)"
+    if cond="!isContained"
+      throw value="new Error(`Invalid thread path (traversal attempt): ${threadId}`)"
+    return value="full"
 
 fn name=ensureThreadDir params="projectPath:string" returns=void
-  handler <<<
-    ensureAgonHome();
-    mkdirSync(threadDirFor(projectPath), { recursive: true });
-  >>>
+  handler lang="kern"
+    do value="ensureAgonHome()"
+    do value="mkdirSync(threadDirFor(projectPath), { recursive: true })"
 
 // ── O_EXCL lockfile helpers ──────────────────────────────────────────
 // Proper cross-process mutual exclusion for thread saves. Each save()
@@ -257,58 +253,42 @@ const name=SECRET_PATTERNS type="RegExp[]"
     ] as RegExp[]
   >>>
 
-const name=SECRET_PATH_BLOCKLIST type="string[]"
-  handler <<<
-    [
-      '.env', '.env.local', '.env.production', '.env.staging', '.env.development',
-      'credentials.json', 'secrets.json', 'auth.json',
-      '.ssh/id_rsa', '.ssh/id_ed25519', '.ssh/id_ecdsa',
-      '.aws/credentials', '.docker/config.json',
-      '.netrc', '.pgpass', '.my.cnf',
-    ] as string[]
-  >>>
+const name=SECRET_PATH_BLOCKLIST type="string[]" value={{ ['.env', '.env.local', '.env.production', '.env.staging', '.env.development', 'credentials.json', 'secrets.json', 'auth.json', '.ssh/id_rsa', '.ssh/id_ed25519', '.ssh/id_ecdsa', '.aws/credentials', '.docker/config.json', '.netrc', '.pgpass', '.my.cnf'] as string[] }}
 
 fn name=isSecretPath params="path:string" returns=boolean
   doc "Check if a file path is known to contain secrets. Used by redactSecrets to replace tool-output of forbidden files with a stub before it ever lands in the thread."
-  handler <<<
-    const lower = path.toLowerCase();
-    const name = basename(lower);
-    for (const needle of SECRET_PATH_BLOCKLIST) {
-      if (name === needle || lower.endsWith('/' + needle) || lower.endsWith('\\' + needle)) return true;
-    }
-    return false;
-  >>>
+  handler lang="kern"
+    let name=lower value="path.toLowerCase()"
+    let name=name value="basename(lower)"
+    each name=needle in="SECRET_PATH_BLOCKLIST"
+      if cond="name === needle || lower.endsWith('/' + needle) || lower.endsWith('\\\\' + needle)"
+        return value="true"
+    return value="false"
 
 fn name=redactSecrets params="content:string" returns=string
   doc "Apply the secret-pattern regex set to content, replacing any matches with a '[REDACTED-SECRET]' marker. O(n) per pattern; cheap relative to an LLM call."
-  handler <<<
-    if (!content) return content;
-    let out = content;
-    for (const re of SECRET_PATTERNS) {
-      out = out.replace(re, '[REDACTED-SECRET]');
-    }
-    return out;
-  >>>
+  handler lang="kern"
+    if cond="!content"
+      return value="content"
+    let name=out kind=let value="content"
+    each name=re in="SECRET_PATTERNS"
+      assign target="out" value="out.replace(re, '[REDACTED-SECRET]')"
+    return value="out"
 
 fn name=redactMessage params="msg:ThreadMessage" returns=ThreadMessage
   doc "Redact-in-place pass for a ThreadMessage before it's appended to the thread. Handles content, toolOutput, and path-blocklist short-circuit for Read tool results."
-  handler <<<
-    // Short-circuit: if this is a tool-result for a Read of a blocklisted
-    // file, drop the content entirely and replace with a refusal stub.
-    if (msg.role === 'tool' && msg.toolName === 'Read' && msg.toolInput) {
-      const fp = (msg.toolInput as Record<string,unknown>).file_path;
-      if (typeof fp === 'string' && isSecretPath(fp)) {
-        return {
-          ...msg,
-          content: `[REDACTED — file ${fp} is on the secret-path blocklist; its content is never persisted to thread history]`,
-        };
-      }
-    }
-    // Otherwise run the pattern-based redaction over content.
-    const redacted = redactSecrets(msg.content);
-    if (redacted === msg.content) return msg;
-    return { ...msg, content: redacted };
-  >>>
+  handler lang="kern"
+    comment raw="// Short-circuit: if this is a tool-result for a Read of a blocklisted"
+    comment raw="// file, drop the content entirely and replace with a refusal stub."
+    if cond="msg.role === 'tool' && msg.toolName === 'Read' && msg.toolInput"
+      let name=fp value="(msg.toolInput as Record<string, unknown>).file_path"
+      if cond="typeof fp === 'string' && isSecretPath(fp)"
+        return value="{ ...msg, content: `[REDACTED — file ${fp} is on the secret-path blocklist; its content is never persisted to thread history]`, }"
+    comment raw="// Otherwise run the pattern-based redaction over content."
+    let name=redacted value="redactSecrets(msg.content)"
+    if cond="redacted === msg.content"
+      return value="msg"
+    return value="{ ...msg, content: redacted }"
 
 // ── Token estimation ─────────────────────────────────────────────────
 
@@ -330,64 +310,52 @@ fn name=estimateMessageTokens params="msg:ThreadMessage" returns=number
 
 fn name=truncateContent params="content:string,maxTokens:number" returns=string
   doc "Truncate a string so it fits in maxTokens (at ~4 chars/token). Appends a marker so the reader knows truncation happened."
-  handler <<<
-    const maxChars = Math.max(400, maxTokens * 4);
-    if (content.length <= maxChars) return content;
-    const head = Math.floor(maxChars * 0.7);
-    const tail = Math.floor(maxChars * 0.2);
-    const omitted = content.length - head - tail;
-    return content.slice(0, head)
-      + `\n\n[... ${omitted} chars truncated for context budget ...]\n\n`
-      + content.slice(content.length - tail);
-  >>>
+  handler lang="kern"
+    let name=maxChars value="Math.max(400, maxTokens * 4)"
+    if cond="content.length <= maxChars"
+      return value="content"
+    let name=head value="Math.floor(maxChars * 0.7)"
+    let name=tail value="Math.floor(maxChars * 0.2)"
+    let name=omitted value="content.length - head - tail"
+    return value="content.slice(0, head) + `\\n\\n[... ${omitted} chars truncated for context budget ...]\\n\\n` + content.slice(content.length - tail)"
 
 // ── Format conversions ──────────────────────────────────────────────
 
 fn name=threadMessageToLoop params="msg:ThreadMessage,budgetTokens?:number" returns=LoopMessage
   doc "Convert a ThreadMessage into the loop's native {role,content,tool_calls?,tool_call_id?} shape. If budgetTokens is set and msg would overflow it, content is truncated inline."
-  handler <<<
-    const cap = budgetTokens ?? MAX_PER_MESSAGE_TOKENS;
-    let content: string | null = msg.content ?? '';
-    const est = estimateMessageTokens(msg);
-    if (est > cap && content) {
-      content = truncateContent(content, cap);
-    }
-    const out: LoopMessage = { role: msg.role, content };
-    if (msg.toolCalls && msg.toolCalls.length > 0) {
-      out.tool_calls = msg.toolCalls.map(tc => ({
-        id: tc.id,
-        type: 'function' as const,
-        function: { name: tc.name, arguments: tc.arguments },
-      }));
-      // Assistant messages with tool_calls use content=null per OpenAI convention
-      if (!out.content) out.content = null as any;
-    }
-    if (msg.toolCallId) out.tool_call_id = msg.toolCallId;
-    return out;
-  >>>
+  handler lang="kern"
+    let name=cap value="budgetTokens ?? MAX_PER_MESSAGE_TOKENS"
+    let name=content type="string | null" kind=let value="msg.content ?? ''"
+    let name=est value="estimateMessageTokens(msg)"
+    if cond="est > cap && content"
+      assign target="content" value="truncateContent(content, cap)"
+    let name=out type="LoopMessage" value="{ role: msg.role, content }"
+    if cond="msg.toolCalls && msg.toolCalls.length > 0"
+      assign target="out.tool_calls" value="msg.toolCalls.map(tc => Object.assign({}, { id: tc.id, type: 'function' as const, function: { name: tc.name, arguments: tc.arguments } }))"
+      comment raw="// Assistant messages with tool_calls use content=null per OpenAI convention"
+      if cond="!out.content"
+        assign target="out.content" value="null as any"
+    if cond="msg.toolCallId"
+      assign target="out.tool_call_id" value="msg.toolCallId"
+    return value="out"
 
 fn name=loopEntryToThreadMessage params="entry:Record<string,unknown>,engineId:string,now?:number" returns=ThreadMessage
   doc "Convert a runApiAgentLoop history entry ({role,content,tool_calls?,tool_call_id?}) into a ThreadMessage with provenance. Used by the onHistoryEntry callback."
-  handler <<<
-    const ts = now ?? Date.now();
-    const id = `msg_${ts}_${randomUUID().slice(0, 8)}`;
-    const role = (entry.role as ThreadMessage['role']) ?? 'assistant';
-    const content = typeof entry.content === 'string' ? entry.content : (entry.content == null ? '' : String(entry.content));
-    const msg: ThreadMessage = { id, role, content, engineId, timestamp: ts };
-    const tc = entry.tool_calls as Array<{id:string,type:string,function:{name:string,arguments:string}}> | undefined;
-    if (tc && Array.isArray(tc) && tc.length > 0) {
-      msg.toolCalls = tc.map(x => ({ id: x.id, name: x.function?.name ?? 'unknown', arguments: x.function?.arguments ?? '{}' }));
-    }
-    if (typeof entry.tool_call_id === 'string') {
-      msg.toolCallId = entry.tool_call_id as string;
-      // Try to lift tool_name / tool result role
-      if (role === 'tool') {
-        // content IS the tool result on the 'tool' role
-      }
-    }
-    msg.tokens = estimateMessageTokens(msg);
-    return msg;
-  >>>
+  handler lang="kern"
+    let name=ts value="now ?? Date.now()"
+    fmt name=id template="msg_${ts}_${randomUUID().slice(0, 8)}"
+    let name=role value="(entry.role as ThreadMessage['role']) ?? 'assistant'"
+    let name=content value="typeof entry.content === 'string' ? entry.content : (entry.content == null ? '' : String(entry.content))"
+    let name=msg type="ThreadMessage" value="{ id, role, content, engineId, timestamp: ts }"
+    let name=tc value="entry.tool_calls as Array<{ id: string, type: string, function: { name: string, arguments: string } }> | undefined"
+    if cond="tc && Array.isArray(tc) && tc.length > 0"
+      assign target="msg.toolCalls" value="tc.map(x => Object.assign({}, { id: x.id, name: x.function?.name ?? 'unknown', arguments: x.function?.arguments ?? '{}' }))"
+    if cond="typeof entry.tool_call_id === 'string'"
+      assign target="msg.toolCallId" value="entry.tool_call_id as string"
+      comment raw="// Try to lift tool_name / tool result role"
+      if cond="role === 'tool'"
+    assign target="msg.tokens" value="estimateMessageTokens(msg)"
+    return value="msg"
 
 // ── The service ──────────────────────────────────────────────────────
 
@@ -519,52 +487,41 @@ service name=ContextThread export=true
 
   method name=append params="msg:Omit<ThreadMessage,'id'|'timestamp'|'tokens'>" returns=ThreadMessage
     doc "Append a message. Assigns id + timestamp. Estimates tokens. Marks the thread dirty. Caller must call save() to flush. The message's engineId (if set) updates engineHead so that engine is considered caught up through this message. Rejects role:'system' (red-team finding 2) and runs secret redaction (red-team finding 1)."
-    handler <<<
-      if (msg.role === 'system') {
-        throw new Error('ContextThread: role="system" messages must not be persisted. Pass systemPrompt via constructor config instead.');
-      }
-      const now = Date.now();
-      const id = `msg_${now}_${randomUUID().slice(0, 8)}`;
-      const full: ThreadMessage = redactMessage({ ...msg, id, timestamp: now });
-      full.tokens = estimateMessageTokens(full);
-      this.messages.push(full);
-      // Phase A.5: fast O(1) journal write — append one line to the JSONL
-      // journal so this message is durable even before the next full save().
-      // Concurrent appends are safe: POSIX guarantees atomicity for O_APPEND
-      // writes up to PIPE_BUF bytes (~4KB). Messages larger than that should
-      // be rare (redaction caps content, cache stubs replace large tool results).
-      this.journalMessage(full);
-      // Hard cap with eviction.
-      if (this.messages.length > MAX_MESSAGES_HARD_CAP) {
-        this.evictOldest();
-      }
-      this.updatedAt = now;
-      this.dirty = true;
-      if (full.engineId) {
-        this.engineHead[full.engineId] = full.id;
-      }
-      return full;
-    >>>
+    handler lang="kern"
+      if cond="msg.role === 'system'"
+        throw value="new Error('ContextThread: role=\"system\" messages must not be persisted. Pass systemPrompt via constructor config instead.')"
+      let name=now value="Date.now()"
+      fmt name=id template="msg_${now}_${randomUUID().slice(0, 8)}"
+      let name=full type="ThreadMessage" value="redactMessage({ ...msg, id, timestamp: now })"
+      assign target="full.tokens" value="estimateMessageTokens(full)"
+      do value="this.messages.push(full)"
+      comment raw="// Phase A.5: fast O(1) journal write — append one line to the JSONL"
+      comment raw="// journal so this message is durable even before the next full save()."
+      comment raw="// Concurrent appends are safe: POSIX guarantees atomicity for O_APPEND"
+      comment raw="// writes up to PIPE_BUF bytes (~4KB). Messages larger than that should"
+      comment raw="// be rare (redaction caps content, cache stubs replace large tool results)."
+      do value="this.journalMessage(full)"
+      comment raw="// Hard cap with eviction."
+      if cond="this.messages.length > MAX_MESSAGES_HARD_CAP"
+        do value="this.evictOldest()"
+      assign target="this.updatedAt" value="now"
+      assign target="this.dirty" value="true"
+      if cond="full.engineId"
+        assign target="this.engineHead[full.engineId]" value="full.id"
+      return value="full"
 
   method name=evictOldest returns=void private=true
     doc "Drop the oldest messages down to EVICT_TO, recording a synthetic checkpoint for what was dropped. Called automatically when MAX_MESSAGES_HARD_CAP is exceeded."
-    handler <<<
-      const dropCount = this.messages.length - EVICT_TO;
-      if (dropCount <= 0) return;
-      const dropped = this.messages.slice(0, dropCount);
-      this.messages = this.messages.slice(dropCount);
-      // Build a cheap stub checkpoint for the dropped range.
-      const summary = this.renderTrimMarker(dropCount, dropped);
-      const cp: ThreadCheckpoint = {
-        id: `cp_evict_${Date.now()}_${randomUUID().slice(0, 6)}`,
-        timestamp: Date.now(),
-        label: `auto-evict-${this.checkpoints.length + 1}`,
-        summary,
-        messagesUpToId: this.messages[0]?.id ?? '',
-        approxTokensSaved: dropped.reduce((s: number, m: ThreadMessage) => s + estimateMessageTokens(m), 0),
-      };
-      this.checkpoints.push(cp);
-    >>>
+    handler lang="kern"
+      let name=dropCount value="this.messages.length - EVICT_TO"
+      if cond="dropCount <= 0"
+        return
+      let name=dropped value="this.messages.slice(0, dropCount)"
+      assign target="this.messages" value="this.messages.slice(dropCount)"
+      comment raw="// Build a cheap stub checkpoint for the dropped range."
+      let name=summary value="this.renderTrimMarker(dropCount, dropped)"
+      let name=cp type="ThreadCheckpoint" value="{ id: `cp_evict_${Date.now()}_${randomUUID().slice(0, 6)}`, timestamp: Date.now(), label: `auto-evict-${this.checkpoints.length + 1}`, summary, messagesUpToId: this.messages[0]?.id ?? '', approxTokensSaved: dropped.reduce((s: number, m: ThreadMessage) => s + estimateMessageTokens(m), 0), }"
+      do value="this.checkpoints.push(cp)"
 
   method name=journalMessage params="msg:ThreadMessage" returns=void private=true
     doc "Append one ThreadMessage as a JSONL line to the side-car journal file. O(1) write, crash-safe. Called by append() and appendLoopEntry() before the full save() cycle."
@@ -581,61 +538,51 @@ service name=ContextThread export=true
 
   method name=appendLoopEntry params="entry:Record<string,unknown>,engineId:string" returns="ThreadMessage|null"
     doc "Bridge a runApiAgentLoop history entry directly into the thread. Used by the onHistoryEntry callback wired in AgentSession. Returns null (and skips the append) for role:'system' entries — those must never cross into persistent storage. Runs secret redaction (red-team findings 1 + 2). Phase A.5: strips stale runCacheId cache-reference stubs so old Retrieve markers from prior runApiAgentLoop calls don't confuse new engine calls."
-    handler <<<
-      const rawRole = entry.role;
-      if (rawRole === 'system') {
-        // Silently skip — the inner loop will re-supply the system prompt on
-        // its own next time via runApiAgentLoop's fullSystemPrompt builder.
-        return null;
-      }
-      let msg = redactMessage(loopEntryToThreadMessage(entry, engineId));
-      // Phase A.5 — red-team finding 14: strip stale runCacheId references.
-      // runApiAgentLoop creates a per-call cache ID (`${model}-${uuid8}`) used
-      // by the Retrieve tool. When history is replayed in a new call, old
-      // "[N lines ... cached — call_XXXXX]" markers reference a cache that no
-      // longer exists → model tries Retrieve, gets "not found", hallucinates.
-      // Replace these stubs with a plain "(truncated)" marker so the model
-      // knows the content was large but doesn't try to retrieve it.
-      if (msg.content && msg.role === 'tool') {
-        msg = {
-          ...msg,
-          content: msg.content.replace(
-            /\[(\d+ lines?, \d+ chars?) — cached — [a-zA-Z0-9_-]+\]/g,
-            '[$1 — (truncated, not retrievable in this session)]',
-          ),
-        };
-      }
-      this.messages.push(msg);
-      this.journalMessage(msg);
-      if (this.messages.length > MAX_MESSAGES_HARD_CAP) {
-        this.evictOldest();
-      }
-      this.updatedAt = msg.timestamp;
-      this.dirty = true;
-      this.engineHead[engineId] = msg.id;
-      return msg;
-    >>>
+    handler lang="kern"
+      let name=rawRole value="entry.role"
+      if cond="rawRole === 'system'"
+        comment raw="// Silently skip — the inner loop will re-supply the system prompt on"
+        comment raw="// its own next time via runApiAgentLoop's fullSystemPrompt builder."
+        return value="null"
+      let name=msg kind=let value="redactMessage(loopEntryToThreadMessage(entry, engineId))"
+      comment raw="// Phase A.5 — red-team finding 14: strip stale runCacheId references."
+      comment raw="// runApiAgentLoop creates a per-call cache ID (`${model}-${uuid8}`) used"
+      comment raw="// by the Retrieve tool. When history is replayed in a new call, old"
+      comment raw="// \"[N lines ... cached — call_XXXXX]\" markers reference a cache that no"
+      comment raw="// longer exists → model tries Retrieve, gets \"not found\", hallucinates."
+      comment raw="// Replace these stubs with a plain \"(truncated)\" marker so the model"
+      comment raw="// knows the content was large but doesn't try to retrieve it."
+      if cond="msg.content && msg.role === 'tool'"
+        assign target="msg" value="{ ...msg, content: msg.content.replace(/\\[(\\d+ lines?, \\d+ chars?) — cached — [a-zA-Z0-9_-]+\\]/g, '[$1 — (truncated, not retrievable in this session)]'), }"
+      do value="this.messages.push(msg)"
+      do value="this.journalMessage(msg)"
+      if cond="this.messages.length > MAX_MESSAGES_HARD_CAP"
+        do value="this.evictOldest()"
+      assign target="this.updatedAt" value="msg.timestamp"
+      assign target="this.dirty" value="true"
+      assign target="this.engineHead[engineId]" value="msg.id"
+      return value="msg"
 
   method name=markSeen params="engineId:string,msgId?:string" returns=void
     doc "Mark the given engine as having seen up to msgId (or the latest message if absent). Used when an engine completes a step to advance its head pointer."
-    handler <<<
-      if (this.messages.length === 0) return;
-      const target = msgId ?? this.messages[this.messages.length - 1].id;
-      if (this.engineHead[engineId] !== target) {
-        this.engineHead[engineId] = target;
-        this.dirty = true;
-      }
-    >>>
+    handler lang="kern"
+      if cond="this.messages.length === 0"
+        return
+      let name=target value="msgId ?? this.messages[this.messages.length - 1].id"
+      if cond="this.engineHead[engineId] !== target"
+        assign target="this.engineHead[engineId]" value="target"
+        assign target="this.dirty" value="true"
 
   method name=messagesSince params="engineId:string" returns="ThreadMessage[]"
     doc "Return messages the given engine has NOT yet seen. Empty if engine is caught up. Used when re-routing mid-task so the new engine only processes the delta."
-    handler <<<
-      const head = this.engineHead[engineId];
-      if (!head) return [...this.messages];
-      const idx = this.messages.findIndex(m => m.id === head);
-      if (idx < 0) return [...this.messages];
-      return this.messages.slice(idx + 1);
-    >>>
+    handler lang="kern"
+      let name=head value="this.engineHead[engineId]"
+      if cond="!head"
+        return value="[...this.messages]"
+      let name=idx value="this.messages.findIndex(m => m.id === head)"
+      if cond="idx < 0"
+        return value="[...this.messages]"
+      return value="this.messages.slice(idx + 1)"
 
   method name=messagesFor params="engineId:string,tokenBudget:number,staleFileChecker?:(path:string) => string|null" returns="LoopMessage[]"
     doc "Build a runApiAgentLoop-compatible message array for this engine, compacted to fit within tokenBudget. Applies TOKEN_BUDGET_SAFETY_FACTOR (0.75) against tokenizer-estimator drift (red-team finding 13). Never emits persisted role:'system' messages — only transient systemPrompt (red-team finding 2). Optionally accepts a staleFileChecker callback: if provided, prior Read tool-results pointing at files whose current hash no longer matches get rewritten with a 'file has been modified, re-read' stub (red-team finding 9)."
@@ -725,15 +672,18 @@ service name=ContextThread export=true
 
   method name=annotateStale params="msg:ThreadMessage,staleAnnotations:Map<string,string>" returns=ThreadMessage private=true
     doc "If this message is a Read tool-result for a file listed in the stale map, return a clone with a prefixed stale marker. Otherwise return the original."
-    handler <<<
-      if (staleAnnotations.size === 0) return msg;
-      if (msg.role !== 'tool' || msg.toolName !== 'Read' || !msg.toolInput) return msg;
-      const fp = (msg.toolInput as Record<string,unknown>).file_path;
-      if (typeof fp !== 'string') return msg;
-      const note = staleAnnotations.get(fp);
-      if (!note) return msg;
-      return { ...msg, content: `${note}\n\n--- prior content (stale) ---\n${msg.content}` };
-    >>>
+    handler lang="kern"
+      if cond="staleAnnotations.size === 0"
+        return value="msg"
+      if cond="msg.role !== 'tool' || msg.toolName !== 'Read' || !msg.toolInput"
+        return value="msg"
+      let name=fp value="(msg.toolInput as Record<string, unknown>).file_path"
+      if cond="typeof fp !== 'string'"
+        return value="msg"
+      let name=note value="staleAnnotations.get(fp)"
+      if cond="!note"
+        return value="msg"
+      return value="{ ...msg, content: `${note}\\n\\n--- prior content (stale) ---\\n${msg.content}` }"
 
   method name=renderTrimMarker params="droppedCount:number,dropped:ThreadMessage[]" returns=string private=true
     doc "Render a human-readable stub for messages that got trimmed out of messagesFor(). Summarizes tool calls + file reads without calling an LLM. This is the 'dumb but cheap' summarization from the design-call question."
@@ -766,56 +716,39 @@ service name=ContextThread export=true
 
   method name=touchFile params="path:string,contentHash:string" returns=void
     doc "Record that a file was read (or re-read) during this thread. Used by hasStaleFiles() to warn when a later engine is about to act on content that has since changed on disk."
-    handler <<<
-      const now = Date.now();
-      const existing = this.fileTouches[path];
-      if (existing && existing.contentHash === contentHash) {
-        existing.lastReadAt = now;
-        this.dirty = true;
-        return;
-      }
-      this.fileTouches[path] = {
-        path,
-        contentHash,
-        firstReadAt: existing?.firstReadAt ?? now,
-        lastReadAt: now,
-      };
-      this.dirty = true;
-    >>>
+    handler lang="kern"
+      let name=now value="Date.now()"
+      let name=existing value="this.fileTouches[path]"
+      if cond="existing && existing.contentHash === contentHash"
+        assign target="existing.lastReadAt" value="now"
+        assign target="this.dirty" value="true"
+        return
+      assign target="this.fileTouches[path]" value="{ path, contentHash, firstReadAt: existing?.firstReadAt ?? now, lastReadAt: now, }"
+      assign target="this.dirty" value="true"
 
   method name=staleFiles params="getCurrentHash:(path:string) => string|null" returns="FileTouch[]"
     doc "Return every touched file whose on-disk content hash no longer matches the hash recorded when it was last read. Caller supplies a getCurrentHash callback (async work lives in the caller)."
-    handler <<<
-      const stale: FileTouch[] = [];
-      for (const touch of Object.values(this.fileTouches)) {
-        const current = getCurrentHash(touch.path);
-        if (current != null && current !== touch.contentHash) {
-          stale.push(touch);
-        }
-      }
-      return stale;
-    >>>
+    handler lang="kern"
+      let name=stale type="FileTouch[]" value="[]"
+      each name=touch in="Object.values(this.fileTouches)"
+        let name=current value="getCurrentHash(touch.path)"
+        if cond="current != null && current !== touch.contentHash"
+          do value="stale.push(touch)"
+      return value="stale"
 
   method name=checkpoint params="summary:string,label?:string,messagesUpToId?:string" returns=ThreadCheckpoint
     doc "Create a compaction checkpoint. Older messages are NOT removed from the thread — the checkpoint is metadata that messagesFor() can reference to cheapen older context. Phase A.5 will support hard compaction that drops covered messages."
-    handler <<<
-      const now = Date.now();
-      const upTo = messagesUpToId ?? (this.messages.length > 0 ? this.messages[this.messages.length - 1].id : '');
-      const idx = this.messages.findIndex(m => m.id === upTo);
-      const covered = idx >= 0 ? this.messages.slice(0, idx + 1) : [];
-      const savedTokens = covered.reduce((s, m) => s + estimateMessageTokens(m), 0);
-      const cp: ThreadCheckpoint = {
-        id: `cp_${now}_${randomUUID().slice(0, 6)}`,
-        timestamp: now,
-        label: label ?? `checkpoint-${this.checkpoints.length + 1}`,
-        summary,
-        messagesUpToId: upTo,
-        approxTokensSaved: savedTokens,
-      };
-      this.checkpoints.push(cp);
-      this.dirty = true;
-      return cp;
-    >>>
+    handler lang="kern"
+      let name=now value="Date.now()"
+      let name=lastMessageId value="this.messages.length > 0 ? this.messages[this.messages.length - 1].id : ''"
+      let name=upTo value="messagesUpToId ?? lastMessageId"
+      let name=idx value="this.messages.findIndex(m => m.id === upTo)"
+      let name=covered value="idx >= 0 ? this.messages.slice(0, idx + 1) : []"
+      let name=savedTokens value="covered.reduce((s, m) => s + estimateMessageTokens(m), 0)"
+      let name=cp type="ThreadCheckpoint" value="{ id: `cp_${now}_${randomUUID().slice(0, 6)}`, timestamp: now, label: label ?? `checkpoint-${this.checkpoints.length + 1}`, summary, messagesUpToId: upTo, approxTokensSaved: savedTokens, }"
+      do value="this.checkpoints.push(cp)"
+      assign target="this.dirty" value="true"
+      return value="cp"
 
   method name=size returns=ThreadSize
     handler <<<
@@ -1033,9 +966,8 @@ service name=ContextThread export=true
       return value="[...this.checkpoints]"
 
   method name=getEngineHead params="engineId:string" returns="string|undefined"
-    handler <<<
-      return this.engineHead[engineId];
-    >>>
+    handler lang="kern"
+      return value="this.engineHead[engineId]"
 
 // ── Active-thread pointer management ─────────────────────────────────
 
@@ -1060,14 +992,13 @@ fn name=loadActivePointer returns=ActivePointerMap
   >>>
 
 fn name=saveActivePointer params="pointer:ActivePointerMap" returns=void
-  handler <<<
-    ensureAgonHome();
-    const path = activePointerPath();
-    mkdirSync(threadsDir(), { recursive: true });
-    const tmpPath = path + '.tmp';
-    writeFileSync(tmpPath, JSON.stringify(pointer, null, 2) + '\n', 'utf-8');
-    renameSync(tmpPath, path);
-  >>>
+  handler lang="kern"
+    do value="ensureAgonHome()"
+    let name=path value="activePointerPath()"
+    do value="mkdirSync(threadsDir(), { recursive: true })"
+    let name=tmpPath value="path + '.tmp'"
+    do value="writeFileSync(tmpPath, JSON.stringify(pointer, null, 2) + '\\n', 'utf-8')"
+    do value="renameSync(tmpPath, path)"
 
 // ── Phase A.5: process-exit flush registry ───────────────────────────
 // Keep a WeakRef set of ContextThread instances that were created via
@@ -1116,34 +1047,31 @@ fn name=_registerExitFlush params="thread:ContextThread" returns=void
 
 fn name=loadOrCreateActiveThread params="projectPath:string,systemPrompt?:string" returns=ContextThread export=true
   doc "The canonical entry point for callers. Reads the active-pointer map, finds the current thread for this project (or creates one), hydrates it, and writes the pointer back if a new thread was created. Returns a ready-to-use ContextThread. Phase A.5: registers the thread with the process-exit flush registry so Ctrl+C saves partial work."
-  handler <<<
-    const pointer = loadActivePointer();
-    const sha = projectSha8(projectPath);
-    const existingId = pointer.byProject[sha];
-    const thread = new ContextThread({ projectPath, threadId: existingId, systemPrompt });
-    if (!existingId || existingId !== thread.getThreadId()) {
-      pointer.byProject[sha] = thread.getThreadId();
-      saveActivePointer(pointer);
-    }
-    _registerExitFlush(thread);
-    return thread;
-  >>>
+  handler lang="kern"
+    let name=pointer value="loadActivePointer()"
+    let name=sha value="projectSha8(projectPath)"
+    let name=existingId value="pointer.byProject[sha]"
+    let name=thread value="new ContextThread({ projectPath, threadId: existingId, systemPrompt })"
+    if cond="!existingId || existingId !== thread.getThreadId()"
+      assign target="pointer.byProject[sha]" value="thread.getThreadId()"
+      do value="saveActivePointer(pointer)"
+    do value="_registerExitFlush(thread)"
+    return value="thread"
 
 fn name=forkActiveThread params="projectPath:string,systemPrompt?:string" returns="Promise<ContextThread>" async=true export=true
   doc "Start a new thread for a project (abandoning the previous active pointer). Used when the user explicitly wants a fresh context — e.g. a /agent --new-thread flag. The old thread file remains on disk for history. Review finding #5: await save() fully before updating active.json — otherwise a concurrent loadOrCreateActiveThread could see the new pointer but no file, and fork again, losing the original fork."
-  handler <<<
-    const thread = new ContextThread({ projectPath, systemPrompt });
-    // Ensure the thread file exists on disk BEFORE we repoint active.json.
-    // Fresh threads are !dirty && !hydrated so save() bails early. Force the
-    // initial save by writing an empty snapshot first via saveSync (no lock
-    // needed — file doesn't exist yet).
-    (thread as any).dirty = true;
-    await thread.save();
-    const pointer = loadActivePointer();
-    pointer.byProject[projectSha8(projectPath)] = thread.getThreadId();
-    saveActivePointer(pointer);
-    return thread;
-  >>>
+  handler lang="kern"
+    let name=thread value="new ContextThread({ projectPath, systemPrompt })"
+    comment raw="// Ensure the thread file exists on disk BEFORE we repoint active.json."
+    comment raw="// Fresh threads are !dirty && !hydrated so save() bails early. Force the"
+    comment raw="// initial save by writing an empty snapshot first via saveSync (no lock"
+    comment raw="// needed — file doesn't exist yet)."
+    assign target="(thread as any).dirty" value="true"
+    do value="await thread.save()"
+    let name=pointer value="loadActivePointer()"
+    assign target="pointer.byProject[projectSha8(projectPath)]" value="thread.getThreadId()"
+    do value="saveActivePointer(pointer)"
+    return value="thread"
 
 fn name=listThreadsForProject params="projectPath:string" returns="string[]" export=true
   doc "List every thread-file uuid that exists on disk for this project. Used by a future /threads command to let the user browse or fork past conversations."

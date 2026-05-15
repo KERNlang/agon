@@ -11,23 +11,21 @@ interface name=AuthStore
   field name=entries type="Record<string, AuthEntry>"
 
 fn name=getAuthFile returns=string export=false
-  handler <<<
-    const override = process.env.AGON_HOME?.trim();
-    const home = override ? resolve(override) : join(homedir(), '.agon');
-    return join(home, 'auth.json');
-  >>>
+  handler lang="kern"
+    let name=override value="process.env.AGON_HOME?.trim()"
+    let name=home value="override ? resolve(override) : join(homedir(), '.agon')"
+    return value="join(home, 'auth.json')"
 
 fn name=loadAuthStore returns=AuthStore
-  handler <<<
-    const authFile = getAuthFile();
-    if (!existsSync(authFile)) return { entries: {} };
-    try {
-      const data = JSON.parse(readFileSync(authFile, 'utf-8'));
-      return { entries: data ?? {} };
-    } catch {
-      return { entries: {} };
-    }
-  >>>
+  handler lang="kern"
+    let name=authFile value="getAuthFile()"
+    if cond="!existsSync(authFile)"
+      return value="{ entries: {} }"
+    try
+      let name=data value="JSON.parse(readFileSync(authFile, 'utf-8'))"
+      return value="{ entries: data ?? {} }"
+      catch name=e
+        return value="{ entries: {} }"
 
 fn name=saveAuthStore params="store:AuthStore" returns=void
   handler <<<

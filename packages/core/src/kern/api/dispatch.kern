@@ -63,18 +63,16 @@ fn name=convertToolsForSdk params="tools:Array<{type:string,function:{name:strin
 
 fn name=normalizeToolCallId params="id:string, format?:string" returns=string export=false
   doc "Normalize tool call IDs per provider: Anthropic requires [a-zA-Z0-9_], Mistral max 9 chars."
-  handler <<<
-    if (!id) return `call_${Date.now()}`;
-    if (format === 'anthropic') {
-      // Claude: alphanumeric + underscore only
-      return id.replace(/[^a-zA-Z0-9_]/g, '_');
-    }
-    // Mistral: max 9 chars, alphanumeric only
-    if (format === 'mistral') {
-      return id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 9) || `c${Date.now() % 100000000}`;
-    }
-    return id;
-  >>>
+  handler lang="kern"
+    if cond="!id"
+      fmt return=true template="call_${Date.now()}"
+    if cond="format === 'anthropic'"
+      comment raw="// Claude: alphanumeric + underscore only"
+      return value="id.replace(/[^a-zA-Z0-9_]/g, '_')"
+    comment raw="// Mistral: max 9 chars, alphanumeric only"
+    if cond="format === 'mistral'"
+      return value="id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 9) || `c${Date.now() % 100000000}`"
+    return value="id"
 
 fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, format?:string" returns="any[]"
   doc "Convert Agon message history (OpenAI wire format) to AI SDK CoreMessage format. Handles per-provider normalization."
@@ -283,12 +281,12 @@ fn name=apiDispatch async=true params="config:ApiConfig, prompt:string, timeout:
   >>>
 
 fn name=apiStreamDispatch generator=true async=true params="config:ApiConfig, prompt:string, timeout:number, signal?:AbortSignal, systemPrompt?:string" returns="AsyncGenerator<string, DispatchResult, void>"
-  handler <<<
-    const messages: Array<{role:string, content:string}> = [];
-    if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
-    messages.push({ role: 'user', content: prompt });
-    return yield* apiStreamDispatchWithHistory(config, messages, timeout, signal);
-  >>>
+  handler lang="kern"
+    let name=messages type="Array<{role:string, content:string}>" value="[]"
+    if cond="systemPrompt"
+      do value="messages.push({ role: 'system', content: systemPrompt })"
+    do value="messages.push({ role: 'user', content: prompt })"
+    return value="yield * apiStreamDispatchWithHistory(config, messages, timeout, signal)"
 
 // Rate-limit the format mismatch hint: once we've surfaced it for a given host
 // within a process lifetime, further stalls/errors from the same host return
@@ -300,18 +298,19 @@ const name=_formatHintEmitted type="Set<string>" value={{ new Set<string>() }}
 
 fn name=formatMismatchHint params="config:ApiConfig" returns="string|null" export=false
   doc "Detect a common misconfiguration: format='anthropic' on a non-Anthropic base URL. Moonshot/Kimi/Groq/Together/DeepInfra etc. claim Anthropic compatibility loosely but actually serve OpenAI-shaped /chat/completions. Returns a one-line hint the first time we hit it for a given host, then null on subsequent calls for that host."
-  handler <<<
-    if (config.format !== 'anthropic') return null;
-    try {
-      const host = new URL(config.baseUrl).host.toLowerCase();
-      if (host === 'api.anthropic.com' || host.endsWith('.anthropic.com')) return null;
-      if (_formatHintEmitted.has(host)) return null;
-      _formatHintEmitted.add(host);
-      return `tip: format='anthropic' on '${host}' — many OpenAI-compat providers (Moonshot/Kimi, Groq, Together, DeepInfra) claim Anthropic but serve OpenAI /chat/completions. Try format='openai' (or remove the field) in the engine config.`;
-    } catch {
-      return null;
-    }
-  >>>
+  handler lang="kern"
+    if cond="config.format !== 'anthropic'"
+      return value="null"
+    try
+      let name=host value="new URL(config.baseUrl).host.toLowerCase()"
+      if cond="host === 'api.anthropic.com' || host.endsWith('.anthropic.com')"
+        return value="null"
+      if cond="_formatHintEmitted.has(host)"
+        return value="null"
+      do value="_formatHintEmitted.add(host)"
+      fmt return=true template="tip: format='anthropic' on '${host}' — many OpenAI-compat providers (Moonshot/Kimi, Groq, Together, DeepInfra) claim Anthropic but serve OpenAI /chat/completions. Try format='openai' (or remove the field) in the engine config."
+      catch name=e
+        return value="null"
 
 fn name=apiStreamDispatchWithHistory generator=true async=true params="config:ApiConfig, messages:Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, timeout:number, signal?:AbortSignal, tools?:Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>" returns="AsyncGenerator<string, DispatchResult, void>"
   doc "Streaming dispatch with full message history + optional native function calling. Uses Vercel AI SDK for robust SSE handling and provider abstraction."

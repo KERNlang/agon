@@ -157,12 +157,10 @@ fn name=pruneSnapshots returns=void export=false
   >>>
 
 fn name=getLatestSnapshotId returns="string|null"
-  handler <<<
-    ensureSnapshotsDir();
-    try {
-      const latest = listSnapshots()[0];
-      return latest?.id ?? null;
-    } catch {
-      return null;
-    }
-  >>>
+  handler lang="kern"
+    do value="ensureSnapshotsDir()"
+    try
+      let name=latest value="listSnapshots()[0]"
+      return value="latest?.id ?? null"
+      catch name=e
+        return value="null"

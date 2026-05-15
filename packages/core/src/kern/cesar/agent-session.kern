@@ -76,11 +76,10 @@ interface name=AgentSessionConfig
 
 fn name=makeBudgetError params="kind:'turns'|'tokens'|'duration',detail:string" returns=Error export=true
   doc "Create a typed budget-exceeded error. Kind is attached to error.name for structural matching."
-  handler <<<
-    const err = new Error(`Agent budget exceeded: ${kind} — ${detail}`);
-    err.name = `AgentBudget${kind.charAt(0).toUpperCase() + kind.slice(1)}Exceeded`;
-    return err;
-  >>>
+  handler lang="kern"
+    let name=err value="new Error(`Agent budget exceeded: ${kind} — ${detail}`)"
+    assign target="err.name" value="`AgentBudget${kind.charAt(0).toUpperCase() + kind.slice(1)}Exceeded`"
+    return value="err"
 
 // ── The service ───────────────────────────────────────────────────
 
@@ -419,27 +418,16 @@ service name=AgentSession export=true
 
   method name=complete returns=void
     doc "Mark the session as successfully completed. Caller decides when the agent has finished its work."
-    handler <<<
-      if (this.state === 'cancelled' || this.state === 'failed') return;
-      this.state = 'completed';
-    >>>
+    handler lang="kern"
+      if cond="this.state === 'cancelled' || this.state === 'failed'"
+        return
+      assign target="this.state" value="'completed'"
 
   method name=getStats returns=AgentSessionStats
-    handler <<<
-      const budget = this.config.budget;
-      const elapsed = Date.now() - this.startedAt;
-      return {
-        turnsUsed: this.turnsUsed,
-        turnsRemaining: Math.max(0, budget.maxTurns - this.turnsUsed),
-        tokensUsed: this.tokensUsed,
-        tokensRemaining: budget.maxTokens != null ? Math.max(0, budget.maxTokens - this.tokensUsed) : null,
-        totalToolCalls: this.totalToolCalls,
-        totalCostUsd: this.totalCostUsd,
-        elapsedMs: elapsed,
-        durationRemainingMs: Math.max(0, budget.maxDurationMs - elapsed),
-        state: this.state,
-      };
-    >>>
+    handler lang="kern"
+      let name=budget value="this.config.budget"
+      let name=elapsed value="Date.now() - this.startedAt"
+      return value="{ turnsUsed: this.turnsUsed, turnsRemaining: Math.max(0, budget.maxTurns - this.turnsUsed), tokensUsed: this.tokensUsed, tokensRemaining: budget.maxTokens != null ? Math.max(0, budget.maxTokens - this.tokensUsed) : null, totalToolCalls: this.totalToolCalls, totalCostUsd: this.totalCostUsd, elapsedMs: elapsed, durationRemainingMs: Math.max(0, budget.maxDurationMs - elapsed), state: this.state, }"
 
   method name=getSignal returns=AbortSignal
     doc "Expose the session's abort signal so callers can pass it to nested operations."

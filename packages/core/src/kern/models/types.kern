@@ -384,11 +384,17 @@ interface name=BrainstormBid
   field name=approach type=string
   field name=score type=number optional=true
 
+interface name=BrainstormGroup
+  field name=members type="string[]"
+  field name=representative type=string
+  field name=similarity type=number
+
 interface name=BrainstormResult
   field name=question type=string
   field name=bids type="BrainstormBid[]"
   field name=winner type=string
   field name=response type=string
+  field name=groups type="BrainstormGroup[]" optional=true
 
 interface name=BreakerArtifact
   field name=engineId type=string

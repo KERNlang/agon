@@ -8,40 +8,31 @@ service name=PlanCostEstimator export=true
   field name=history type="{ type: string, tokens: number, costUsd: number }[]" default="[]" private=true
 
   method name=estimate params="stepType:string, engines:string[]" returns=CostEstimate
-    handler <<<
-      const typeHistory = this.history.filter((h) => h.type === stepType);
-      if (typeHistory.length >= 2) {
-        const avgTokens = Math.round(typeHistory.reduce((s, h) => s + h.tokens, 0) / typeHistory.length);
-        const avgCost = typeHistory.reduce((s, h) => s + h.costUsd, 0) / typeHistory.length;
-        return { tokens: avgTokens, costUsd: avgCost };
-      }
-
-      const DEFAULTS: Record<string, number> = {
-        self: 2000, delegate: 5000, brainstorm: 8000, campfire: 6000,
-        tribunal: 10000, forge: 15000, teamforge: 20000, pipeline: 30000,
-        review: 4000, agent: 12000, 'team-agent': 25000,
-      };
-      const perEngine = DEFAULTS[stepType] ?? 5000;
-      const engineCount = Math.max(engines.length, 1);
-      const tokens = perEngine * engineCount;
-      const costPerEngine = engines[0] ? estimateCost(engines[0], perEngine) : estimateCost('claude', perEngine);
-      const costUsd = costPerEngine * engineCount;
-      return { tokens, costUsd };
-    >>>
+    handler lang="kern"
+      let name=typeHistory value="this.history.filter((h) => h.type === stepType)"
+      if cond="typeHistory.length >= 2"
+        let name=avgTokens value="Math.round(typeHistory.reduce((s, h) => s + h.tokens, 0) / typeHistory.length)"
+        let name=avgCost value="typeHistory.reduce((s, h) => s + h.costUsd, 0) / typeHistory.length"
+        return value="{ tokens: avgTokens, costUsd: avgCost }"
+      let name=DEFAULTS type="Record<string, number>" value="{ self: 2000, delegate: 5000, brainstorm: 8000, campfire: 6000, tribunal: 10000, forge: 15000, teamforge: 20000, pipeline: 30000, review: 4000, agent: 12000, 'team-agent': 25000, }"
+      let name=perEngine value="DEFAULTS[stepType] ?? 5000"
+      let name=engineCount value="Math.max(engines.length, 1)"
+      let name=tokens value="perEngine * engineCount"
+      let name=costPerEngine value="engines[0] ? estimateCost(engines[0], perEngine) : estimateCost('claude', perEngine)"
+      let name=costUsd value="costPerEngine * engineCount"
+      return value="{ tokens, costUsd }"
 
   method name=recordStepCompletion params="stepType:string, actualTokens:number, actualCostUsd:number" returns=void
-    handler <<<
-      this.history.push({ type: stepType, tokens: actualTokens, costUsd: actualCostUsd });
-      const typeEntries = this.history.filter((h) => h.type === stepType);
-      if (typeEntries.length > 50) {
-        const oldest = this.history.findIndex((h) => h.type === stepType);
-        if (oldest >= 0) this.history.splice(oldest, 1);
-      }
-    >>>
+    handler lang="kern"
+      do value="this.history.push({ type: stepType, tokens: actualTokens, costUsd: actualCostUsd })"
+      let name=typeEntries value="this.history.filter((h) => h.type === stepType)"
+      if cond="typeEntries.length > 50"
+        let name=oldest value="this.history.findIndex((h) => h.type === stepType)"
+        if cond="oldest >= 0"
+          do value="this.history.splice(oldest, 1)"
 
   method name=reset returns=void
-    handler <<<
-      this.history = [];
-    >>>
+    handler lang="kern"
+      assign target="this.history" value="[]"
 
   singleton name=planCostEstimator

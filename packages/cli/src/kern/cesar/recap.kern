@@ -4,33 +4,21 @@
 // and warnings observed by the runtime during the turn.
 
 fn name=createCesarRecapCapture params="input:string,startedAt?:number" returns=any export=true
-  handler <<<
-    return {
-      input: String(input ?? ''),
-      startedAt: startedAt ?? Date.now(),
-      toolEventsByKey: {} as Record<string, any>,
-      toolOrder: [] as string[],
-      warnings: [] as string[],
-      errors: [] as string[],
-      confidence: null as number | null,
-      confidenceReasoning: '',
-      engineId: '',
-      durationMs: null as number | null,
-    };
-  >>>
+  handler lang="kern"
+    return value="{ input: String(input ?? ''), startedAt: startedAt ?? Date.now(), toolEventsByKey: {} as Record<string, any>, toolOrder: [] as string[], warnings: [] as string[], errors: [] as string[], confidence: null as number | null, confidenceReasoning: '', engineId: '', durationMs: null as number | null, }"
 
 fn name=parseRecapJsonObject params="input:unknown" returns="Record<string,unknown>"
-  handler <<<
-    if (input && typeof input === 'object' && !Array.isArray(input)) return input as Record<string, unknown>;
-    const raw = String(input ?? '').trim();
-    if (!raw.startsWith('{')) return {};
-    try {
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
-    } catch {
-      return {};
-    }
-  >>>
+  handler lang="kern"
+    if cond="input && typeof input === 'object' && !Array.isArray(input)"
+      return value="input as Record<string, unknown>"
+    let name=raw value="String(input ?? '').trim()"
+    if cond="!raw.startsWith('{')"
+      return value="{}"
+    try
+      let name=parsed value="JSON.parse(raw)"
+      return value="parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}"
+      catch name=e
+        return value="{}"
 
 fn name=recapToolLabel params="tool:unknown" returns=string export=true
   handler lang="kern"
@@ -65,42 +53,50 @@ fn name=extractRecapCommand params="tool:unknown,input:unknown" returns=string e
     return value="command"
 
 fn name=classifyRecapCommand params="command:string" returns=string export=true
-  handler <<<
-    const cmd = String(command ?? '').trim();
-    const lower = cmd.toLowerCase();
-    if (!cmd) return 'command';
-    if (/\bkern:compile\b/.test(lower)) return 'compile';
-    if (/\bnpm\s+run\s+typecheck\b|\btsc\s+-b\b/.test(lower)) return 'typecheck';
-    if (/\bnpm\s+run\s+build\b|\bcargo\s+build\b|\bgo\s+build\b/.test(lower)) return 'build';
-    if (/\bnpm\s+run\s+lint\b|\beslint\b/.test(lower)) return 'lint';
-    if (/\bnpm\s+test\b|\bvitest\b|\bpytest\b|\bcargo\s+test\b|\bgo\s+test\b/.test(lower)) return 'tests';
-    if (/\bgit\s+commit\b/.test(lower)) return 'commit';
-    if (/\bgit\s+push\b/.test(lower)) return 'push';
-    if (/\bgit\s+status\b/.test(lower)) return 'git status';
-    return cmd.split(/\s+/).slice(0, 3).join(' ');
-  >>>
+  handler lang="kern"
+    let name=cmd value="String(command ?? '').trim()"
+    let name=lower value="cmd.toLowerCase()"
+    if cond="!cmd"
+      return value="'command'"
+    if cond="/\\bkern:compile\\b/.test(lower)"
+      return value="'compile'"
+    if cond="/\\bnpm\\s+run\\s+typecheck\\b|\\btsc\\s+-b\\b/.test(lower)"
+      return value="'typecheck'"
+    if cond="/\\bnpm\\s+run\\s+build\\b|\\bcargo\\s+build\\b|\\bgo\\s+build\\b/.test(lower)"
+      return value="'build'"
+    if cond="/\\bnpm\\s+run\\s+lint\\b|\\beslint\\b/.test(lower)"
+      return value="'lint'"
+    if cond="/\\bnpm\\s+test\\b|\\bvitest\\b|\\bpytest\\b|\\bcargo\\s+test\\b|\\bgo\\s+test\\b/.test(lower)"
+      return value="'tests'"
+    if cond="/\\bgit\\s+commit\\b/.test(lower)"
+      return value="'commit'"
+    if cond="/\\bgit\\s+push\\b/.test(lower)"
+      return value="'push'"
+    if cond="/\\bgit\\s+status\\b/.test(lower)"
+      return value="'git status'"
+    return value="cmd.split(/\\s+/).slice(0, 3).join(' ')"
 
 fn name=shortenRecapText params="value:unknown,max:number" returns=string
-  handler <<<
-    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
-    if (text.length <= max) return text;
-    return text.slice(0, Math.max(0, max - 1)) + '\u2026';
-  >>>
+  handler lang="kern"
+    let name=text value="String(value ?? '').replace(/\\s+/g, ' ').trim()"
+    if cond="text.length <= max"
+      return value="text"
+    return value="text.slice(0, Math.max(0, max - 1)) + '\\u2026'"
 
 fn name=readRecapConfidence params="input:unknown" returns="{ value:number|null; reasoning:string }" export=true
-  handler <<<
-    const parsed = parseRecapJsonObject(input);
-    const rawValue = parsed.value ?? parsed.confidence ?? parsed.score;
-    let value = Number(rawValue);
-    if (!Number.isFinite(value)) {
-      const match = String(input ?? '').match(/(\d{1,3})(?:\.\d+)?\s*%/);
-      if (match) value = Number(match[1]);
-    }
-    if (Number.isFinite(value) && value <= 1 && value > 0) value = Math.round(value * 100);
-    const normalized = Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : null;
-    const reasoning = shortenRecapText(parsed.reasoning ?? parsed.reason ?? parsed.thought ?? '', 220);
-    return { value: normalized, reasoning };
-  >>>
+  handler lang="kern"
+    let name=parsed value="parseRecapJsonObject(input)"
+    let name=rawValue value="parsed.value ?? parsed.confidence ?? parsed.score"
+    let name=value kind=let value="Number(rawValue)"
+    if cond="!Number.isFinite(value)"
+      let name=match value="String(input ?? '').match(/(\\d{1,3})(?:\\.\\d+)?\\s*%/)"
+      if cond="match"
+        assign target="value" value="Number(match[1])"
+    if cond="Number.isFinite(value) && value <= 1 && value > 0"
+      assign target="value" value="Math.round(value * 100)"
+    let name=normalized value="Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : null"
+    let name=reasoning value="shortenRecapText(parsed.reasoning ?? parsed.reason ?? parsed.thought ?? '', 220)"
+    return value="{ value: normalized, reasoning }"
 
 fn name=recordCesarRecapEvent params="capture:any,event:any" returns=void export=true
   handler <<<
@@ -163,72 +159,56 @@ fn name=recordCesarRecapEvent params="capture:any,event:any" returns=void export
   >>>
 
 fn name=buildRecapTouchedFiles params="beforeFiles:any[],afterFiles:any[]" returns="any[]" export=true
-  handler <<<
-    const before = new Map<string, any>();
-    for (const f of Array.isArray(beforeFiles) ? beforeFiles : []) {
-      if (f?.path) before.set(String(f.path), f);
-    }
-    const touched: any[] = [];
-    for (const f of Array.isArray(afterFiles) ? afterFiles : []) {
-      if (!f?.path) continue;
-      const prev = before.get(String(f.path));
-      const changed = !prev
-        || prev.touchCount !== f.touchCount
-        || prev.lastTouchedAt !== f.lastTouchedAt
-        || prev.status !== f.status;
-      if (!changed) continue;
-      touched.push({
-        path: String(f.path),
-        relPath: String(f.relPath ?? f.path),
-        status: String(f.status ?? 'read'),
-        touchCount: Number(f.touchCount ?? 0),
-      });
-    }
-    touched.sort((a, b) => String(a.status).localeCompare(String(b.status)) || a.relPath.localeCompare(b.relPath));
-    return touched;
-  >>>
+  handler lang="kern"
+    let name=before value="new Map<string, any>()"
+    each name=beforeFile in="Array.isArray(beforeFiles) ? beforeFiles : []"
+      if cond="beforeFile?.path"
+        do value="before.set(String(beforeFile.path), beforeFile)"
+    let name=touched type="any[]" value="[]"
+    each name=afterFile in="Array.isArray(afterFiles) ? afterFiles : []"
+      if cond="!afterFile?.path"
+        continue
+      let name=prev value="before.get(String(afterFile.path))"
+      let name=changed value="!prev || prev.touchCount !== afterFile.touchCount || prev.lastTouchedAt !== afterFile.lastTouchedAt || prev.status !== afterFile.status"
+      if cond="!changed"
+        continue
+      do value="touched.push({ path: String(afterFile.path), relPath: String(afterFile.relPath ?? afterFile.path), status: String(afterFile.status ?? 'read'), touchCount: Number(afterFile.touchCount ?? 0), })"
+    do value="touched.sort((a, b) => String(a.status).localeCompare(String(b.status)) || a.relPath.localeCompare(b.relPath))"
+    return value="touched"
 
 fn name=buildCesarRecapDiffPreview params="files:any[],diffsByPath:Record<string,string>,maxFiles?:number,maxLinesPerFile?:number" returns=any export=true
-  handler <<<
-    const previews: any[] = [];
-    const fileLimit = maxFiles ?? 4;
-    const lineLimit = maxLinesPerFile ?? 6;
-    for (const file of Array.isArray(files) ? files : []) {
-      if (previews.length >= fileLimit) break;
-      const status = String(file?.status ?? '');
-      if (status === 'read') continue;
-      const path = String(file?.path ?? '');
-      const relPath = String(file?.relPath ?? path);
-      const diff = String(diffsByPath?.[path] ?? diffsByPath?.[relPath] ?? '').trim();
-      if (!diff) continue;
-
-      let additions = 0;
-      let deletions = 0;
-      let candidateLines = 0;
-      const visibleLines: string[] = [];
-      for (const line of diff.split('\n')) {
-        if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
-        if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
-        const interesting =
-          line.startsWith('@@') ||
-          (line.startsWith('+') && !line.startsWith('+++')) ||
-          (line.startsWith('-') && !line.startsWith('---'));
-        if (!interesting) continue;
-        candidateLines += 1;
-        if (visibleLines.length < lineLimit) visibleLines.push(shortenRecapText(line, 120));
-      }
-      previews.push({
-        path,
-        relPath,
-        status,
-        additions,
-        deletions,
-        lines: visibleLines,
-        omitted: Math.max(0, candidateLines - visibleLines.length),
-      });
-    }
-    return { files: previews, totalFiles: previews.length };
-  >>>
+  handler lang="kern"
+    let name=previews type="any[]" value="[]"
+    let name=fileLimit value="maxFiles ?? 4"
+    let name=lineLimit value="maxLinesPerFile ?? 6"
+    each name=file in="Array.isArray(files) ? files : []"
+      if cond="previews.length >= fileLimit"
+        break
+      let name=status value="String(file?.status ?? '')"
+      if cond="status === 'read'"
+        continue
+      let name=path value="String(file?.path ?? '')"
+      let name=relPath value="String(file?.relPath ?? path)"
+      let name=diff value="String(diffsByPath?.[path] ?? diffsByPath?.[relPath] ?? '').trim()"
+      if cond="!diff"
+        continue
+      let name=additions kind=let value="0"
+      let name=deletions kind=let value="0"
+      let name=candidateLines kind=let value="0"
+      let name=visibleLines type="string[]" value="[]"
+      each name=line in="diff.split('\\n')"
+        if cond="line.startsWith('+') && !line.startsWith('+++')"
+          assign target="additions" op="+=" value="1"
+        if cond="line.startsWith('-') && !line.startsWith('---')"
+          assign target="deletions" op="+=" value="1"
+        let name=interesting value="line.startsWith('@@') || (line.startsWith('+') && !line.startsWith('+++')) || (line.startsWith('-') && !line.startsWith('---'))"
+        if cond="!interesting"
+          continue
+        assign target="candidateLines" op="+=" value="1"
+        if cond="visibleLines.length < lineLimit"
+          do value="visibleLines.push(shortenRecapText(line, 120))"
+      do value="previews.push({ path, relPath, status, additions, deletions, lines: visibleLines, omitted: Math.max(0, candidateLines - visibleLines.length), })"
+    return value="{ files: previews, totalFiles: previews.length }"
 
 fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[],afterFiles:any[]" returns=any export=true
   handler <<<
@@ -287,13 +267,9 @@ fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[
   >>>
 
 fn name=shouldEmitCesarRecap params="event:any" returns=boolean export=true
-  handler <<<
-    if (!event || event.type !== 'cesar-recap') return false;
-    if (String(event.outcome ?? '').startsWith('Handed off to ')) return true;
-    return Number(event.toolCount ?? 0) > 0
-      || (Array.isArray(event.files) && event.files.length > 0)
-      || (event.diffPreview && Array.isArray(event.diffPreview.files) && event.diffPreview.files.length > 0)
-      || (Array.isArray(event.commands) && event.commands.length > 0)
-      || (Array.isArray(event.warnings) && event.warnings.length > 0)
-      || typeof event.confidence === 'number';
-  >>>
+  handler lang="kern"
+    if cond="!event || event.type !== 'cesar-recap'"
+      return value="false"
+    if cond="String(event.outcome ?? '').startsWith('Handed off to ')"
+      return value="true"
+    return value="Number(event.toolCount ?? 0) > 0 || (Array.isArray(event.files) && event.files.length > 0) || (event.diffPreview && Array.isArray(event.diffPreview.files) && event.diffPreview.files.length > 0) || (Array.isArray(event.commands) && event.commands.length > 0) || (Array.isArray(event.warnings) && event.warnings.length > 0) || typeof event.confidence === 'number'"

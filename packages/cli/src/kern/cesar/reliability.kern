@@ -68,42 +68,15 @@ fn name=readCesarDecisionRecords params="limit?:number" returns="any[]" export=t
 
 fn name=isToolHeavyCesarRecord params="record:any" returns=boolean export=true
   doc "Classify whether a Cesar decision record represents a turn where real tools would normally be expected."
-  handler <<<
-    const flow = String(record?.recommendedFlow ?? record?.flow ?? '').toLowerCase();
-    const intake = String(record?.intakeKind ?? '').toLowerCase();
-    const taskClass = String(record?.taskClass ?? '').toLowerCase();
-    return [
-      'quick-fix', 'bug-fix', 'plan-first', 'forge-slice', 'forge-full', 'review',
-    ].includes(flow)
-      || ['quick-fix', 'bug', 'feature', 'big-feature', 'review'].includes(intake)
-      || ['bugfix', 'feature', 'refactor'].includes(taskClass);
-  >>>
+  handler lang="kern"
+    let name=flow value="String(record?.recommendedFlow ?? record?.flow ?? '').toLowerCase()"
+    let name=intake value="String(record?.intakeKind ?? '').toLowerCase()"
+    let name=taskClass value="String(record?.taskClass ?? '').toLowerCase()"
+    return value="[ 'quick-fix', 'bug-fix', 'plan-first', 'forge-slice', 'forge-full', 'review', ].includes(flow) || ['quick-fix', 'bug', 'feature', 'big-feature', 'review'].includes(intake) || ['bugfix', 'feature', 'refactor'].includes(taskClass)"
 
 fn name=emptyCesarToolReliability params="engineId?:string,backend?:string" returns=CesarToolReliability export=true
-  handler <<<
-    return {
-      engineId: String(engineId ?? 'all'),
-      backend: String(backend ?? 'all'),
-      turns: 0,
-      toolTurns: 0,
-      toolTurnRate: 0,
-      toolHeavyTurns: 0,
-      toolHeavyToolTurns: 0,
-      toolHeavyToolRate: 0,
-      avgTools: 0,
-      nativeToolCalls: 0,
-      mcpToolCalls: 0,
-      xmlToolCalls: 0,
-      narratedToolStalls: 0,
-      stallRate: 0,
-      autoToolExecutions: 0,
-      confidenceToolTurns: 0,
-      confidenceToolRate: 0,
-      topTools: '-',
-      label: 'unknown',
-      reason: 'No Cesar decision records yet.',
-    };
-  >>>
+  handler lang="kern"
+    return value="{ engineId: String(engineId ?? 'all'), backend: String(backend ?? 'all'), turns: 0, toolTurns: 0, toolTurnRate: 0, toolHeavyTurns: 0, toolHeavyToolTurns: 0, toolHeavyToolRate: 0, avgTools: 0, nativeToolCalls: 0, mcpToolCalls: 0, xmlToolCalls: 0, narratedToolStalls: 0, stallRate: 0, autoToolExecutions: 0, confidenceToolTurns: 0, confidenceToolRate: 0, topTools: '-', label: 'unknown', reason: 'No Cesar decision records yet.', }"
 
 fn name=summarizeCesarToolReliability params="records:any[], engineId?:string, backend?:string" returns=CesarToolReliability export=true
   doc "Summarize observed Cesar tool reliability for one engine/backend from decision records."
@@ -226,14 +199,12 @@ fn name=summarizeCesarToolReliability params="records:any[], engineId?:string, b
 
 fn name=readCesarToolReliability params="engineId?:string, backend?:string, limit?:number" returns=CesarToolReliability export=true
   doc "Read and summarize recent Cesar tool reliability, falling back from exact backend to any backend for the same engine."
-  handler <<<
-    const records = readCesarDecisionRecords(limit ?? 200);
-    let summary = summarizeCesarToolReliability(records, engineId, backend);
-    if (summary.turns === 0 && backend && backend !== 'all' && backend !== 'auto') {
-      summary = summarizeCesarToolReliability(records, engineId, undefined);
-    }
-    return summary;
-  >>>
+  handler lang="kern"
+    let name=records value="readCesarDecisionRecords(limit ?? 200)"
+    let name=summary kind=let value="summarizeCesarToolReliability(records, engineId, backend)"
+    if cond="summary.turns === 0 && backend && backend !== 'all' && backend !== 'auto'"
+      assign target="summary" value="summarizeCesarToolReliability(records, engineId, undefined)"
+    return value="summary"
 
 fn name=summarizeAllCesarToolReliability params="limit?:number" returns="CesarToolReliability[]" export=true
   doc "Summarize recent Cesar tool reliability for every observed engine/backend pair."
@@ -251,33 +222,26 @@ fn name=summarizeAllCesarToolReliability params="limit?:number" returns="CesarTo
   >>>
 
 fn name=formatCesarReliabilityLine params="summary:CesarToolReliability" returns=string export=true
-  handler <<<
-    if (!summary || summary.turns <= 0) {
-      const engine = summary?.engineId ?? 'all';
-      const backend = summary?.backend ?? 'all';
-      return `${engine}/${backend}: unknown - no logged turns yet`;
-    }
-    const toolPct = Math.round(summary.toolTurnRate * 100);
-    const heavy = summary.toolHeavyTurns > 0
-      ? `, tool-heavy ${summary.toolHeavyToolTurns}/${summary.toolHeavyTurns}`
-      : '';
-    return `${summary.engineId}/${summary.backend}: ${summary.label} (${summary.toolTurns}/${summary.turns} tool turns, ${toolPct}%${heavy}, stalls ${summary.narratedToolStalls}) - ${summary.reason}`;
-  >>>
+  handler lang="kern"
+    if cond="!summary || summary.turns <= 0"
+      let name=engine value="summary?.engineId ?? 'all'"
+      let name=backend value="summary?.backend ?? 'all'"
+      fmt return=true template="${engine}/${backend}: unknown - no logged turns yet"
+    let name=toolPct value="Math.round(summary.toolTurnRate * 100)"
+    let name=heavy value="summary.toolHeavyTurns > 0 ? `, tool-heavy ${summary.toolHeavyToolTurns}/${summary.toolHeavyTurns}` : ''"
+    fmt return=true template="${summary.engineId}/${summary.backend}: ${summary.label} (${summary.toolTurns}/${summary.turns} tool turns, ${toolPct}%${heavy}, stalls ${summary.narratedToolStalls}) - ${summary.reason}"
 
 fn name=shouldDowngradeCesarToolWork params="summary:CesarToolReliability, intakeKind?:string, recommendedFlow?:string" returns=boolean export=true
   doc "Return true when Cesar should bias away from self-tooling and toward plan/orchestration for this turn."
-  handler <<<
-    const intake = String(intakeKind ?? '').toLowerCase();
-    const flow = String(recommendedFlow ?? '').toLowerCase();
-    const toolHeavy = [
-      'quick-fix', 'bug', 'feature', 'big-feature', 'review',
-    ].includes(intake) || [
-      'quick-fix', 'bug-fix', 'plan-first', 'forge-slice', 'forge-full', 'review',
-    ].includes(flow);
-    if (!toolHeavy) return false;
-    if (summary.label === 'advisory-only') return true;
-    return summary.label === 'watch' && summary.toolHeavyTurns >= 3 && summary.toolHeavyToolRate < 0.35;
-  >>>
+  handler lang="kern"
+    let name=intake value="String(intakeKind ?? '').toLowerCase()"
+    let name=flow value="String(recommendedFlow ?? '').toLowerCase()"
+    let name=toolHeavy value="[ 'quick-fix', 'bug', 'feature', 'big-feature', 'review', ].includes(intake) || [ 'quick-fix', 'bug-fix', 'plan-first', 'forge-slice', 'forge-full', 'review', ].includes(flow)"
+    if cond="!toolHeavy"
+      return value="false"
+    if cond="summary.label === 'advisory-only'"
+      return value="true"
+    return value="summary.label === 'watch' && summary.toolHeavyTurns >= 3 && summary.toolHeavyToolRate < 0.35"
 
 fn name=buildWhatHappenedSummary params="telemetry:Record<string,unknown>" returns=string export=true
   doc "Build a compact visible summary of the actual tools Cesar used this turn."

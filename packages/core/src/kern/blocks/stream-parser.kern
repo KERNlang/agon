@@ -7,9 +7,8 @@ service name=StreamParser
   field name=buffer type=string private=true
 
   constructor
-    handler <<<
-      this.buffer = '';
-    >>>
+    handler lang="kern"
+      assign target="this.buffer" value="''"
 
   method name=feed params="chunk:string" returns="ParsedChunk[]"
     handler lang="kern"
@@ -36,43 +35,35 @@ service name=StreamParser
       return value="results"
 
   method name=_parseLine params="line:string" returns="ParsedChunk[]" private=true
-    handler <<<
-      const results: ParsedChunk[] = [];
-      try {
-        const msg = JSON.parse(line);
-        // Claude Code stream-json: assistant message with content blocks
-        if (msg.type === 'assistant' && msg.message?.content) {
-          for (const block of msg.message.content) {
-            if (block.type === 'text' && block.text) {
-              results.push({ type: 'text', content: block.text });
-            }
-          }
-          return results;
-        }
-        // Claude Code stream-json: final result
-        if (msg.type === 'result') {
-          if (msg.result) {
-            results.push({ type: 'result', content: typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result) });
-          }
-          if (msg.is_error || msg.error) {
-            const errMsg = msg.error ?? msg.result ?? 'Unknown error';
-            results.push({ type: 'status', content: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) });
-          }
-          return results;
-        }
-        // Claude Code stream-json: system status
-        if (msg.type === 'system') {
-          if (msg.message) results.push({ type: 'status', content: msg.message });
-          return results;
-        }
-        // Unknown JSON: skip.
-        return results;
-      } catch {
-        // Not JSON: treat as raw text (Codex, Gemini, etc.).
-        results.push({ type: 'raw', content: line });
-        return results;
-      }
-    >>>
+    handler lang="kern"
+      let name=results type="ParsedChunk[]" value="[]"
+      try
+        let name=msg value="JSON.parse(line)"
+        comment raw="// Claude Code stream-json: assistant message with content blocks"
+        if cond="msg.type === 'assistant' && msg.message?.content"
+          each name=block in="msg.message.content"
+            if cond="block.type === 'text' && block.text"
+              do value="results.push({ type: 'text', content: block.text })"
+          return value="results"
+        comment raw="// Claude Code stream-json: final result"
+        if cond="msg.type === 'result'"
+          if cond="msg.result"
+            do value="results.push({ type: 'result', content: typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result) })"
+          if cond="msg.is_error || msg.error"
+            let name=errMsg value="msg.error ?? msg.result ?? 'Unknown error'"
+            do value="results.push({ type: 'status', content: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) })"
+          return value="results"
+        comment raw="// Claude Code stream-json: system status"
+        if cond="msg.type === 'system'"
+          if cond="msg.message"
+            do value="results.push({ type: 'status', content: msg.message })"
+          return value="results"
+        comment raw="// Unknown JSON: skip."
+        return value="results"
+        catch name=e
+          comment raw="// Not JSON: treat as raw text (Codex, Gemini, etc.)."
+          do value="results.push({ type: 'raw', content: line })"
+          return value="results"
 
 fn name=parseStreamChunk params="chunk:string" returns="ParsedChunk[]"
   doc "Stateless convenience wrapper. For streaming use, prefer StreamParser.feed() + flush()."

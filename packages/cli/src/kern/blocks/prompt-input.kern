@@ -23,25 +23,28 @@ interface name=PromptViewport
   field name=hiddenBelow type=number
 
 fn name=isMouseReportInput params="input:string" returns=boolean export=false
-  handler <<<
-    if (!input) return false;
-    if (/\x1b\[<\d+;\d+;\d+[mM]/.test(input)) return true;
-    if (/\[<\d+;\d+;\d+[mM]/.test(input)) return true;
-    if (/^<\d+;\d+;\d+[mM]$/.test(input)) return true;
-    if (/^\[<\d+;\d+;\d+[mM]$/.test(input)) return true;
-    if (/^(?:\x1b\[)?<\d+;\d+;\d*$/.test(input)) return true;
-    if (/^(?:\x1b\[|\[)?<\d+;\d+;\d*$/.test(input)) return true;
-    return false;
-  >>>
+  handler lang="kern"
+    if cond="!input"
+      return value="false"
+    if cond="/\\x1b\\[<\\d+;\\d+;\\d+[mM]/.test(input)"
+      return value="true"
+    if cond="/\\[<\\d+;\\d+;\\d+[mM]/.test(input)"
+      return value="true"
+    if cond="/^<\\d+;\\d+;\\d+[mM]$/.test(input)"
+      return value="true"
+    if cond="/^\\[<\\d+;\\d+;\\d+[mM]$/.test(input)"
+      return value="true"
+    if cond="/^(?:\\x1b\\[)?<\\d+;\\d+;\\d*$/.test(input)"
+      return value="true"
+    if cond="/^(?:\\x1b\\[|\\[)?<\\d+;\\d+;\\d*$/.test(input)"
+      return value="true"
+    return value="false"
 
 fn name=stripMouseReportInput params="input:string" returns=string export=false
-  handler <<<
-    if (!input) return input;
-    return input
-      .replace(/\x1b\[<\d+;\d+;\d+[mM]/g, '')
-      .replace(/\[<\d+;\d+;\d+[mM]/g, '')
-      .replace(/(?:\x1b\[|\[)?<\d+;\d+;\d*(?:[mM])?/g, '');
-  >>>
+  handler lang="kern"
+    if cond="!input"
+      return value="input"
+    return value="input .replace(/\\x1b\\[<\\d+;\\d+;\\d+[mM]/g, '') .replace(/\\[<\\d+;\\d+;\\d+[mM]/g, '') .replace(/(?:\\x1b\\[|\\[)?<\\d+;\\d+;\\d*(?:[mM])?/g, '')"
 
 fn name=wrapPromptText params="value:string, width:number" returns="string[]"
   handler <<<
@@ -100,25 +103,20 @@ fn name=locatePromptCursor params="value:string, width:number, cursorOffset:numb
   >>>
 
 fn name=selectPromptViewport params="totalLines:number, cursorLine:number, maxVisibleLines:number" returns=PromptViewport
-  handler <<<
-    const safeVisibleLines = Math.max(1, maxVisibleLines);
-    const boundedCursor = Math.max(0, Math.min(cursorLine, Math.max(0, totalLines - 1)));
-    if (totalLines <= safeVisibleLines) {
-      return { start: 0, end: totalLines, hiddenAbove: 0, hiddenBelow: 0 };
-    }
-    const headroom = Math.floor((safeVisibleLines - 1) / 2);
-    let start = boundedCursor - headroom;
-    if (start < 0) start = 0;
-    const maxStart = totalLines - safeVisibleLines;
-    if (start > maxStart) start = maxStart;
-    const end = start + safeVisibleLines;
-    return {
-      start,
-      end,
-      hiddenAbove: start,
-      hiddenBelow: totalLines - end,
-    };
-  >>>
+  handler lang="kern"
+    let name=safeVisibleLines value="Math.max(1, maxVisibleLines)"
+    let name=boundedCursor value="Math.max(0, Math.min(cursorLine, Math.max(0, totalLines - 1)))"
+    if cond="totalLines <= safeVisibleLines"
+      return value="{ start: 0, end: totalLines, hiddenAbove: 0, hiddenBelow: 0 }"
+    let name=headroom value="Math.floor((safeVisibleLines - 1) / 2)"
+    let name=start kind=let value="boundedCursor - headroom"
+    if cond="start < 0"
+      assign target="start" value="0"
+    let name=maxStart value="totalLines - safeVisibleLines"
+    if cond="start > maxStart"
+      assign target="start" value="maxStart"
+    let name=end value="start + safeVisibleLines"
+    return value="{ start, end, hiddenAbove: start, hiddenBelow: totalLines - end, }"
 
 fn name=renderToken params="token:PromptToken" returns=string export=false
   handler lang="kern"
@@ -255,13 +253,16 @@ fn name=isDelegatedCtrlShortcut params="input:string" returns=boolean export=tru
 
 // KERN-GAP: native test runner — `kern test` ReferenceError when calling fns with `lang="kern"` bodies. Reverted to raw body so the existing test suite resolves the fn at runtime.
 fn name=shouldAdoptPromptValue params="originalValue:string, pendingEchoValue:string|null" returns=boolean export=true
-  handler <<<
-    if (pendingEchoValue === null) return true;
-    if (originalValue === pendingEchoValue) return true;
-    if (!originalValue) return true;
-    if (pendingEchoValue.startsWith(originalValue) && originalValue.length < pendingEchoValue.length) return false;
-    return true;
-  >>>
+  handler lang="kern"
+    if cond="pendingEchoValue === null"
+      return value="true"
+    if cond="originalValue === pendingEchoValue"
+      return value="true"
+    if cond="!originalValue"
+      return value="true"
+    if cond="pendingEchoValue.startsWith(originalValue) && originalValue.length < pendingEchoValue.length"
+      return value="false"
+    return value="true"
 
 screen name=PromptTextInput target=ink memo=true export=named
   prop name=value type=string

@@ -21,11 +21,8 @@ interface name=TribunalResult
   field name=mode type=string optional=true
 
 fn name=buildFallbackSummary params="positions:TribunalPosition[]" returns="string"
-  handler <<<
-    return positions
-      .map((p) => `**${p.engineId} (${p.position})**: ${p.arguments[p.arguments.length - 1]?.slice(0, 200) ?? '(no response)'}...`)
-      .join('\n\n');
-  >>>
+  handler lang="kern"
+    return value="positions .map((p) => `**${p.engineId} (${p.position})**: ${p.arguments[p.arguments.length - 1]?.slice(0, 200) ?? '(no response)'}...`) .join('\\n\\n')"
 
 fn name=requireNonEmptyDispatchText params="result:DispatchResult, phase:string" returns=string
   doc "Extracts the engine's visible text from a debate-round dispatch. Reasoning-heavy engines (Claude with extended thinking, DeepSeek-R1, o1-class, Kimi reasoning) often emit only internal <think>...</think> when given a single-turn debate prompt. Previous behavior threw on empty-after-strip, degrading the tribunal to '(no response)' placeholders even when the engine actually thought through the question. Now: if stripping leaves nothing but raw output had substantial thinking, surface a truncated thinking excerpt with a clear banner so the debate can continue with real signal."

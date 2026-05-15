@@ -18,39 +18,37 @@ interface name=RichLine
   field name=marker type="string|undefined"
 
 fn name=classifyLine params="line:string" returns="{kind:RichLine['kind'], content:string, indent:number, marker:string|undefined}"
-  handler <<<
-    const trimmed = line.trimStart();
-    const leadingSpaces = line.length - trimmed.length;
-
-    if (!trimmed) return { kind: 'blank', content: '', indent: 0, marker: undefined };
-
-    // Horizontal rule: ---, ***, ___ (with optional spaces)
-    if (/^[-*_]\s*[-*_]\s*[-*_][\s*_-]*$/.test(trimmed)) {
-      return { kind: 'hr', content: '', indent: 0, marker: undefined };
-    }
-
-    // Headers
-    const h3 = trimmed.match(/^###\s+(.*)/);
-    if (h3) return { kind: 'h3', content: h3[1], indent: 0, marker: '### ' };
-    const h2 = trimmed.match(/^##\s+(.*)/);
-    if (h2) return { kind: 'h2', content: h2[1], indent: 0, marker: '## ' };
-    const h1 = trimmed.match(/^#\s+(.*)/);
-    if (h1) return { kind: 'h1', content: h1[1], indent: 0, marker: '# ' };
-
-    // Blockquote
-    const bq = trimmed.match(/^>\s?(.*)/);
-    if (bq) return { kind: 'blockquote', content: bq[1], indent: 0, marker: '> ' };
-
-    // Unordered list
-    const bullet = trimmed.match(/^[-*+]\s+(.*)/);
-    if (bullet) return { kind: 'bullet', content: bullet[1], indent: Math.floor(leadingSpaces / 2), marker: '• ' };
-
-    // Ordered list
-    const ordered = trimmed.match(/^(\d+)[.)]\s+(.*)/);
-    if (ordered) return { kind: 'ordered', content: ordered[2], indent: Math.floor(leadingSpaces / 2), marker: `${ordered[1]}. ` };
-
-    return { kind: 'plain', content: line, indent: 0, marker: undefined };
-  >>>
+  handler lang="kern"
+    let name=trimmed value="line.trimStart()"
+    let name=leadingSpaces value="line.length - trimmed.length"
+    if cond="!trimmed"
+      return value="{ kind: 'blank', content: '', indent: 0, marker: undefined }"
+    comment raw="// Horizontal rule: ---, ***, ___ (with optional spaces)"
+    if cond="/^[-*_]\\s*[-*_]\\s*[-*_][\\s*_-]*$/.test(trimmed)"
+      return value="{ kind: 'hr', content: '', indent: 0, marker: undefined }"
+    comment raw="// Headers"
+    let name=h3 value="trimmed.match(/^###\\s+(.*)/)"
+    if cond="h3"
+      return value="{ kind: 'h3', content: h3[1], indent: 0, marker: '### ' }"
+    let name=h2 value="trimmed.match(/^##\\s+(.*)/)"
+    if cond="h2"
+      return value="{ kind: 'h2', content: h2[1], indent: 0, marker: '## ' }"
+    let name=h1 value="trimmed.match(/^#\\s+(.*)/)"
+    if cond="h1"
+      return value="{ kind: 'h1', content: h1[1], indent: 0, marker: '# ' }"
+    comment raw="// Blockquote"
+    let name=bq value="trimmed.match(/^>\\s?(.*)/)"
+    if cond="bq"
+      return value="{ kind: 'blockquote', content: bq[1], indent: 0, marker: '> ' }"
+    comment raw="// Unordered list"
+    let name=bullet value="trimmed.match(/^[-*+]\\s+(.*)/)"
+    if cond="bullet"
+      return value="{ kind: 'bullet', content: bullet[1], indent: Math.floor(leadingSpaces / 2), marker: '• ' }"
+    comment raw="// Ordered list"
+    let name=ordered value="trimmed.match(/^(\\d+)[.)]\\s+(.*)/)"
+    if cond="ordered"
+      return value="{ kind: 'ordered', content: ordered[2], indent: Math.floor(leadingSpaces / 2), marker: `${ordered[1]}. ` }"
+    return value="{ kind: 'plain', content: line, indent: 0, marker: undefined }"
 
 fn name=parseInlineSpans params="text:string" returns="InlineSpan[]"
   handler <<<
@@ -164,14 +162,14 @@ fn name=parseInlineSpans params="text:string" returns="InlineSpan[]"
     return merged.length > 0 ? merged : [{ text, style: DEFAULT_STYLE }];
   >>>
 
-fn name=visibleLength params="spans:InlineSpan[]" returns=number export=false expr={{ return spans.reduce((sum, s) => sum + s.text.length, 0); }}
+fn name=spansVisibleLength params="spans:InlineSpan[]" returns=number export=false expr={{ return spans.reduce((sum, s) => sum + s.text.length, 0); }}
 
 fn name=richWrap params="spans:InlineSpan[], width:number" returns="InlineSpan[][]"
   handler <<<
     if (width <= 0) return [spans];
 
     // Fast path: fits on one line
-    if (visibleLength(spans) <= width) return [spans];
+    if (spansVisibleLength(spans) <= width) return [spans];
 
     // Flatten to plain text, word-wrap it, then map spans back
     const fullText = spans.map(s => s.text).join('');

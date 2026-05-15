@@ -11,54 +11,32 @@ interface name=PauseState export=true
   field name=menuIndex type=number
   field name=actions type="PauseMenuAction[]"
 
-const name=PAUSE_MENU_ITEMS type="{label:string,action:PauseMenuAction}[]"
-  handler <<<
-    // Inline icons to avoid loadConfig() dependency at module-eval time
-    [
-      { label: '\u25b6  Resume', action: 'resume' },
-      { label: '\u21bb Retry last step', action: 'retry' },
-      { label: '\u2691  Show checkpoint', action: 'checkpoint' },
-      { label: '\u2718 Cancel run', action: 'cancel' },
-    ]
-  >>>
+// Inline icons to avoid loadConfig() dependency at module-eval time
+const name=PAUSE_MENU_ITEMS type="{label:string,action:PauseMenuAction}[]" value={{ [{ label: '▶  Resume', action: 'resume' as PauseMenuAction }, { label: '↻ Retry last step', action: 'retry' as PauseMenuAction }, { label: '⚑  Show checkpoint', action: 'checkpoint' as PauseMenuAction }, { label: '✘ Cancel run', action: 'cancel' as PauseMenuAction }] }}
 
 fn name=createPauseState params="runId?:string,mode?:string" returns=PauseState export=true
-  handler <<<
-    return {
-      active: true,
-      runId: runId ?? undefined,
-      mode: mode ?? undefined,
-      menuIndex: 0,
-      actions: PAUSE_MENU_ITEMS.map((i) => i.action),
-    };
-  >>>
+  handler lang="kern"
+    return value="{ active: true, runId: runId ?? undefined, mode: mode ?? undefined, menuIndex: 0, actions: PAUSE_MENU_ITEMS.map((i) => i.action), }"
 
 fn name=dismissPauseState returns=PauseState export=true
-  handler <<<
-    return {
-      active: false,
-      menuIndex: 0,
-      actions: [],
-    };
-  >>>
+  handler lang="kern"
+    return value="{ active: false, menuIndex: 0, actions: [], }"
 
 fn name=movePauseCursor params="state:PauseState,direction:'up'|'down'" returns=PauseState export=true
-  handler <<<
-    if (!state.active || state.actions.length === 0) return state;
-    const delta = direction === 'up' ? -1 : 1;
-    const next = state.menuIndex + delta;
-    state.menuIndex = ((next % state.actions.length) + state.actions.length) % state.actions.length;
-    return state;
-  >>>
+  handler lang="kern"
+    if cond="!state.active || state.actions.length === 0"
+      return value="state"
+    let name=delta value="direction === 'up' ? -1 : 1"
+    let name=next value="state.menuIndex + delta"
+    assign target="state.menuIndex" value="((next % state.actions.length) + state.actions.length) % state.actions.length"
+    return value="state"
 
 fn name=selectPauseAction params="state:PauseState" returns="{state:PauseState,action:PauseMenuAction}" export=true
-  handler <<<
-    const action = state.actions[state.menuIndex] ?? 'noop';
-    if (action === 'cancel' || action === 'resume') {
-      return { state: dismissPauseState(), action };
-    }
-    return { state, action };
-  >>>
+  handler lang="kern"
+    let name=action value="state.actions[state.menuIndex] ?? 'noop'"
+    if cond="action === 'cancel' || action === 'resume'"
+      return value="{ state: dismissPauseState(), action }"
+    return value="{ state, action }"
 
 fn name=renderPauseMenu params="state:PauseState" returns=string export=true
   handler <<<

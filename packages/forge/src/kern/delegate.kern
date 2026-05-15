@@ -7,23 +7,11 @@ interface name=DelegateResult export=true
   field name=usage type="DispatchResult['usage']" optional=true
 
 fn name=runDelegate async=true params="opts:{engineId:string,task:string,mode?:string,registry:EngineRegistry,adapter:EngineAdapter,timeout:number,outputDir:string,signal?:AbortSignal}" returns="Promise<DelegateResult>" export=true
-  handler <<<
-    const engine = opts.registry.get(opts.engineId);
-    const result = await opts.adapter.dispatch({
-      engine,
-      prompt: opts.task,
-      cwd: resolveWorkingDir(),
-      mode: (opts.mode ?? 'exec') as any,
-      timeout: opts.timeout,
-      outputDir: opts.outputDir,
-      signal: opts.signal,
-    });
-
-    if (!result.stdout.trim()) {
-      return { engineId: opts.engineId, response: '', usage: result.usage };
-    }
-
-    // Strip <think> blocks
-    const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
-    return { engineId: opts.engineId, response: cleaned, usage: result.usage };
-  >>>
+  handler lang="kern"
+    let name=engine value="opts.registry.get(opts.engineId)"
+    let name=result value="await opts.adapter.dispatch({ engine, prompt: opts.task, cwd: resolveWorkingDir(), mode: (opts.mode ?? 'exec') as any, timeout: opts.timeout, outputDir: opts.outputDir, signal: opts.signal, })"
+    if cond="!result.stdout.trim()"
+      return value="{ engineId: opts.engineId, response: '', usage: result.usage }"
+    comment raw="// Strip <think> blocks"
+    let name=cleaned value="result.stdout.trim().replace(/<think>[\\s\\S]*?<\\/think>\\s*/gi, '').trim()"
+    return value="{ engineId: opts.engineId, response: cleaned, usage: result.usage }"

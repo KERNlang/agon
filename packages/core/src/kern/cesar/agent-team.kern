@@ -41,20 +41,19 @@ import from="./context-thread.js" names="ContextThread" types=true
 
 fn name=makeAgentTeamError params="message:string,cause?:unknown" returns=Error export=true
   doc "Typed error for AgentTeam initialization or runtime failures."
-  handler <<<
-    const err = new Error(`AgentTeam: ${message}`);
-    err.name = 'AgentTeamError';
-    if (cause !== undefined) (err as any).cause = cause;
-    return err;
-  >>>
+  handler lang="kern"
+    let name=err value="new Error(`AgentTeam: ${message}`)"
+    assign target="err.name" value="'AgentTeamError'"
+    if cond="cause !== undefined"
+      assign target="(err as any).cause" value="cause"
+    return value="err"
 
 fn name=makeAgentTeamDisposedError returns=Error export=true
   doc "Thrown by every AgentTeam method after cleanup() runs."
-  handler <<<
-    const err = new Error('AgentTeam: instance has been disposed (cleanup() already ran). Construct a new AgentTeam for further work.');
-    err.name = 'AgentTeamDisposedError';
-    return err;
-  >>>
+  handler lang="kern"
+    let name=err value="new Error('AgentTeam: instance has been disposed (cleanup() already ran). Construct a new AgentTeam for further work.')"
+    assign target="err.name" value="'AgentTeamDisposedError'"
+    return value="err"
 
 // ── Member configuration ──────────────────────────────────────────
 
@@ -136,17 +135,16 @@ service name=AgentTeam export=true
   field name=sharedSemaphore type="Semaphore|null" private=true default="null"
 
   constructor params="config:AgentTeamConfig"
-    handler <<<
-      this.config = config;
-      this.members = {};
-      this.worktrees = {};
-      this.runId = makeRunId();
-      this.baseSha = '';
-      this.startedAt = 0;
-      this.initialized = false;
-      this.disposed = false;
-      this.sharedSemaphore = null;
-    >>>
+    handler lang="kern"
+      assign target="this.config" value="config"
+      assign target="this.members" value="{}"
+      assign target="this.worktrees" value="{}"
+      assign target="this.runId" value="makeRunId()"
+      assign target="this.baseSha" value="''"
+      assign target="this.startedAt" value="0"
+      assign target="this.initialized" value="false"
+      assign target="this.disposed" value="false"
+      assign target="this.sharedSemaphore" value="null"
 
   method name=getRunId returns=string
     doc "Return the per-construction run ID. Used to scope worktree paths and tag agentProgress snapshots."
@@ -164,17 +162,17 @@ service name=AgentTeam export=true
 
   method name=getMemberEngineIds returns="string[]"
     doc "Return engineIds in input order. Used by callers to iterate members for event correlation."
-    handler <<<
-      if (this.disposed) throw makeAgentTeamDisposedError();
-      return this.config.members.map((m: AgentTeamMemberConfig) => m.engineId);
-    >>>
+    handler lang="kern"
+      if cond="this.disposed"
+        throw value="makeAgentTeamDisposedError()"
+      return value="this.config.members.map((m: AgentTeamMemberConfig) => m.engineId)"
 
   method name=getWorktreePath params="engineId:string" returns="string|null"
     doc "Return the worktree path for a given member, or null if isolate=false or the member doesn't exist."
-    handler <<<
-      if (this.disposed) throw makeAgentTeamDisposedError();
-      return this.worktrees[engineId] ?? null;
-    >>>
+    handler lang="kern"
+      if cond="this.disposed"
+        throw value="makeAgentTeamDisposedError()"
+      return value="this.worktrees[engineId] ?? null"
 
   method name=initialize async=true returns="Promise<void>"
     doc "One-time setup: capture base SHA, create worktrees in parallel, instantiate AgentSessions. Throws AgentTeamError on any failure (with rollback of partial state)."

@@ -10,6 +10,10 @@ import { runForge } from '../../packages/forge/src/generated/forge.js';
 vi.mock('../../packages/forge/src/generated/quality.js', () => ({
   runLint: vi.fn(async () => 0),
   runStyleCheck: vi.fn(async () => 100),
+  // Test fixtures write plain .txt files; the real runSyntaxCheck would
+  // return the same shape (skip-by-extension), but mocking keeps the
+  // unit test independent of the tree-sitter Python sidecar install.
+  runSyntaxCheck: vi.fn(() => ({ errors: 0, invalidFiles: [] })),
 }));
 
 const tempDirs: string[] = [];

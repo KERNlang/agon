@@ -78,6 +78,10 @@ export const forgeCommand: any = defineCommand({
       description: 'Show what would happen without executing',
       default: false,
     },
+    earlyFinalizeCount: {
+      type: 'string',
+      description: 'Stage2 auto-finalize quorum: stop waiting once M engines pass (score >= forgeEarlyFinalizeMinScore). Overrides config.forgeEarlyFinalizePassingCount. Set to 0 to disable for this run.',
+    },
   },
   async run({ args }) {
     ensureAgonHome();
@@ -113,6 +117,17 @@ export const forgeCommand: any = defineCommand({
     const requireDiff = parseOptionalBoolean(args.requireDiff);
     const acceptReviewOutput = parseOptionalBoolean(args.acceptReviewOutput);
 
+    const earlyFinalizeRaw = args.earlyFinalizeCount?.trim();
+    let earlyFinalizeCount: number | undefined;
+    if (earlyFinalizeRaw) {
+      const parsed = Number(earlyFinalizeRaw);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        fail(`--early-finalize-count must be a non-negative integer; got "${earlyFinalizeRaw}"`);
+        process.exit(1);
+      }
+      earlyFinalizeCount = parsed;
+    }
+
     header(`Forge: ${args.task}`);
     info(`Engines: ${displayEngines.join(', ')}`);
     info(`Fitness: ${args.test}`);
@@ -136,6 +151,7 @@ export const forgeCommand: any = defineCommand({
         starter: args.starter,
         engines,
         dryRun: args.dryRun,
+        earlyFinalizeCount,
       },
       registry,
       adapter,

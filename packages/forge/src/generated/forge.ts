@@ -360,33 +360,42 @@ export async function runForge(options: ForgeOptions & { onResult?: (engineId:st
   // but the engine itself is hanging today" — the gap registry.isAvailable
   // misses. Skippable via --no-health-check or by setting
   // forgeHealthCheckEnabled=false in config.
-  const healthCheckEnabled = options.healthCheckEnabled !== false
-    && config.forgeHealthCheckEnabled !== false;
-  let finalAvailable: string[] = available;
+  //
+  // Resolution: an explicit options.healthCheckEnabled wins over config,
+  // and only the absence-or-explicit-false combination disables. This
+  // lets `--no-health-check` (option=false) and per-call `true` both
+  // round-trip correctly (Codex review 0.86).
+  const healthCheckEnabled = !options.dryRun && (
+    options.healthCheckEnabled !== undefined
+      ? options.healthCheckEnabled !== false
+      : config.forgeHealthCheckEnabled !== false
+  );
   if (healthCheckEnabled && available.length > 0) {
     const hcTimeoutSec = options.healthCheckTimeoutSec
       ?? config.forgeHealthCheckTimeoutSec
       ?? 5;
-    onEvent?.({ type: 'forge:health-check-start' as any, data: { engineIds: available, timeoutSec: hcTimeoutSec } });
+    onEvent?.({ type: 'forge:health-check-start', data: { engineIds: available.slice(), timeoutSec: hcTimeoutSec } });
     const summary = await healthCheckEngines(
-      available,
+      available.slice(),
       registry,
       adapter,
       options.cwd,
       hcTimeoutSec,
       HEALTH_CHECK_DEFAULT_PROMPT,
     );
-    onEvent?.({ type: 'forge:health-check-done' as any, data: { healthy: summary.healthy, unhealthy: summary.unhealthy, totalMs: summary.totalMs } });
+    onEvent?.({ type: 'forge:health-check-done', data: { healthy: summary.healthy, unhealthy: summary.unhealthy, totalMs: summary.totalMs } });
     for (const skip of summary.unhealthy) {
       console.warn(`[agon] forge: skipping ${skip.engineId} — health check failed (${skip.reason ?? 'unknown'})`);
       onEvent?.({ type: 'forge:engine-skipped', data: { engineId: skip.engineId, status: 'health-check-failed', reason: skip.reason } });
     }
-    finalAvailable = summary.healthy;
+    // Replace `available` with the health-filtered list in place so
+    // downstream `available.xxx` callers see the filtered set without
+    // every site needing to be rewritten. Only mutate when the check
+    // actually ran — dryRun and disabled paths keep the original list.
+    const filtered = summary.healthy.slice();
+    (available as any).length = 0;
+    for (const id of filtered) (available as any).push(id);
   }
-  // Replace `available` with the health-filtered list for the rest of forge.
-  // Done as a reassignment so we don't have to retouch every downstream usage.
-  (available as any).length = 0;
-  for (const id of finalAvailable) (available as any).push(id);
 
   if (available.length === 0) {
     const error = `No available engines for forge. Install/configure at least one CLI or API engine. Enabled: ${enabledEngines.join(', ')}`;

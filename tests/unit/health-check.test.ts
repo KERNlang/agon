@@ -115,6 +115,46 @@ describe('forge pre-flight health check', () => {
     expect(skipped).toEqual(['dead']);
   }, 20_000);
 
+  it('skips the probe entirely when dryRun=true (does not dispatch a single time)', async () => {
+    const repoDir = makeRepo();
+    const forgeDir = join(tmpdir(), `agon-health-dryrun-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tempDirs.push(forgeDir);
+    mkdirSync(forgeDir, { recursive: true });
+
+    const registry = new EngineRegistry();
+    registry.register({
+      id: 'paranoid', displayName: 'paranoid',
+      api: { apiKeyEnv: 'AGON_FINALIZE_TEST_KEY' },
+      timeout: 30, tier: 'user', schemaVersion: 3,
+      isLocal: false, exec: { args: [] }, review: { args: [] },
+    } as any);
+
+    let dispatchCalls = 0;
+    const adapter = {
+      isAvailable: async () => true,
+      getVersion: async () => 'test',
+      dispatch: async () => {
+        dispatchCalls++;
+        throw new Error('dispatch must not be called during dryRun');
+      },
+    };
+
+    await runForge(
+      {
+        task: 'plan only',
+        fitnessCmd: 'true',
+        cwd: repoDir,
+        forgeDir,
+        engines: ['paranoid'],
+        dryRun: true,
+      } as any,
+      registry,
+      adapter as any,
+    );
+
+    expect(dispatchCalls).toBe(0);
+  }, 10_000);
+
   it('does not block forge when ALL engines fail the probe — returns a no-engines manifest', async () => {
     const repoDir = makeRepo();
     const forgeDir = join(tmpdir(), `agon-health-allfail-${Date.now()}-${Math.random().toString(36).slice(2)}`);

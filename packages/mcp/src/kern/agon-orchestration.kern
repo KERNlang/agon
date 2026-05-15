@@ -61,6 +61,9 @@ module name=ArgParsers
 module name=DirectCli
   fn name=buildDirectAgonCommand params="tool:string,args:Record<string,unknown>" returns="{commands:string[][],cwd:string,timeoutMs:number}"
     doc "Translate an external MCP orchestration call into one or more Agon CLI invocations. Used only when the server is running outside an active Agon session."
+    // kern-ignore-next-line undefined-reference
+    // optionalFlag, parseOptionalBoolean, parseOptionalStringList are defined
+    // in the ArgParsers module above — same file, cross-module ref
     handler <<<
       const cwd = String((args as any).cwd ?? process.env.AGON_CWD ?? process.cwd());
       const timeoutSec = Number((args as any).timeout ?? 900);
@@ -252,6 +255,9 @@ module name=PermissionProtocol
 
 fn name=handleWriteToolCall params="name:string, args:Record<string,unknown>" returns="Promise<string>" async=true
   doc "Handle write tool calls with permission — request approval, wait, execute."
+  // kern-ignore-next-line undefined-reference
+  // writePermissionRequest, pollPermissionResponse, writeToolCompletion are
+  // defined in the PermissionBridge module above — same file, cross-module ref
   handler <<<
     const requestId = `pr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const toolMap: Record<string, string> = { AgonBash: 'Bash', AgonEdit: 'Edit', AgonWrite: 'Write' };

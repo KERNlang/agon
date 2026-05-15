@@ -2,6 +2,8 @@
 
 import { defineCommand } from 'citty';
 
+import { spawnSync } from 'node:child_process';
+
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 
 import { tmpdir } from 'node:os';
@@ -10,7 +12,7 @@ import { join, dirname } from 'node:path';
 
 import { fileURLToPath } from 'node:url';
 
-import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort } from '@agon/core';
+import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, resolveDedupSidecar } from '@agon/core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
@@ -22,7 +24,7 @@ import { header, table, info, success, fail, warn, green, red, yellow, dim, bold
 
 import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork } from '../cesar/reliability.js';
 
-// @kern-source: doctor:13
+// @kern-source: doctor:14
 export interface EngineDoctorEntry {
   id: string;
   enabled: boolean;
@@ -32,7 +34,7 @@ export interface EngineDoctorEntry {
   detail: string;
 }
 
-// @kern-source: doctor:21
+// @kern-source: doctor:22
 export interface HarnessDoctorReport {
   headers: string[];
   rows: string[][];
@@ -40,19 +42,19 @@ export interface HarnessDoctorReport {
   ok: boolean;
 }
 
-// @kern-source: doctor:27
+// @kern-source: doctor:28
 export function shellQuoteForDoctor(value: string): string {
   const s = String(value ?? '');
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s;
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-// @kern-source: doctor:34
+// @kern-source: doctor:35
 export function buildDoctorCleanupCommand(repo: string, path: string): string {
   return `git -C ${shellQuoteForDoctor(repo)} worktree prune && rm -rf ${shellQuoteForDoctor(path)}`;
 }
 
-// @kern-source: doctor:36
+// @kern-source: doctor:37
 export function formatDoctorStatus(status: 'ok'|'warn'|'fail'): string {
   if (status === 'ok') {
     return green('ok');
@@ -63,7 +65,7 @@ export function formatDoctorStatus(status: 'ok'|'warn'|'fail'): string {
   return red('fail');
 }
 
-// @kern-source: doctor:44
+// @kern-source: doctor:45
 export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: EngineRegistry, enabledIds: string[]): EngineDoctorEntry {
   const binaryPath = engine.binary ? registry.findBinary(engine) : null;
   const hasApi = !!engine.api;
@@ -126,7 +128,94 @@ export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: En
   };
 }
 
-// @kern-source: doctor:107
+// @kern-source: doctor:108
+export interface PythonDoctorResult {
+  status: 'ok'|'warn'|'fail';
+  detail: string;
+  installCommand?: string;
+}
+
+/**
+ * Every Python file the bridges actually spawn. Doctor confirms ALL of them are reachable through resolveDedupSidecar — a bad package that ships only some is still a problem.
+ */
+// @kern-source: doctor:113
+export const EXPECTED_SIDECARS: string[] = ['history-search.py','syntax-validator.py','classifier.py','sidecar.py'];
+
+/**
+ * Probe whether the Python interpreter exists, every expected sidecar file resolves, and the deps (fastembed, numpy, tree-sitter + grammars) are importable. Fail-soft: not having Python means semantic features fall back, not that agon is broken.
+ */
+// @kern-source: doctor:116
+export function diagnoseDedupPython(): PythonDoctorResult {
+  const python = process.env.AGON_PYTHON || 'python3';
+  // Tiny probe — imports every dep used across the 4 sidecars in one shot.
+  // Exit 0 = all importable; non-zero stderr names the first missing module.
+  const probe = 'import fastembed, numpy, tree_sitter, tree_sitter_python, tree_sitter_typescript, tree_sitter_javascript, tree_sitter_json';
+
+  // Pick a real path for the install command. requirements.txt ships in
+  // @agon/dedup so we resolve it the same way as the .py files — works in
+  // both the monorepo and a published install. Falls back to the
+  // package-name form if resolution somehow fails.
+  const requirementsPath = resolveDedupSidecar('requirements.txt');
+  const pipInstall = requirementsPath
+    ? `python3 -m pip install --user -r ${requirementsPath}`
+    : 'python3 -m pip install --user fastembed numpy tree-sitter tree-sitter-python tree-sitter-typescript tree-sitter-javascript tree-sitter-json';
+
+  let result;
+  try {
+    result = spawnSync(python, ['-c', probe], {
+      encoding: 'utf-8',
+      timeout: 15_000,
+    });
+  } catch (err) {
+    return {
+      status: 'fail',
+      detail: `${python} probe threw: ${err instanceof Error ? err.message : String(err)}`,
+      installCommand: 'Install Python 3.10+ from https://python.org or your package manager, then run the pip install above.',
+    };
+  }
+  if (result.error || result.status === null) {
+    const msg = result.error?.message || `${python} not in PATH`;
+    return {
+      status: 'fail',
+      detail: msg,
+      installCommand: 'Install Python 3.10+ (semantic history, syntax validator, task classifier, brainstorm dedup all degrade without it)',
+    };
+  }
+  if (result.status === 0) {
+    // Confirm EVERY expected sidecar resolves — a partial dedup package
+    // would otherwise pass the probe while still leaving 3 of 4 bridges
+    // broken at runtime.
+    const missing = EXPECTED_SIDECARS.filter((name: string) => !resolveDedupSidecar(name));
+    if (missing.length === EXPECTED_SIDECARS.length) {
+      return {
+        status: 'fail',
+        detail: '@agon/dedup not found in node_modules — Python sidecars unreachable',
+        installCommand: 'reinstall @agon/cli (or its workspace) — the dedup package should land automatically',
+      };
+    }
+    if (missing.length > 0) {
+      return {
+        status: 'fail',
+        detail: `@agon/dedup is partial — missing sidecar(s): ${missing.join(', ')}`,
+        installCommand: 'reinstall @agon/dedup — the published tarball should include all four .py files',
+      };
+    }
+    const sample = resolveDedupSidecar('history-search.py');
+    return { status: 'ok', detail: `all sidecar deps importable via ${python}; all ${EXPECTED_SIDECARS.length} sidecars reachable (e.g. ${sample})` };
+  }
+  // Search the WHOLE stderr — Python emits a Traceback header before the
+  // ModuleNotFoundError line, so first-line-only would miss it.
+  const stderr = String(result.stderr ?? '');
+  const moduleMatch = stderr.match(/No module named ['"]?([^'"\s]+)['"]?/);
+  const missingModule = moduleMatch ? moduleMatch[1] : 'one or more sidecar deps';
+  return {
+    status: 'warn',
+    detail: `${python} OK, but ${missingModule} not installed`,
+    installCommand: pipInstall,
+  };
+}
+
+// @kern-source: doctor:188
 export function checkDoctorWorktree(cwd: string): {ok:boolean; message:string; cleanupCommand:string} {
   let root = '';
   let tempDir = '';
@@ -163,7 +252,7 @@ export function checkDoctorWorktree(cwd: string): {ok:boolean; message:string; c
 /**
  * Diagnose the live Cesar harness: selected engine, backend capability, native/MCP session state, and observed tool reliability.
  */
-// @kern-source: doctor:141
+// @kern-source: doctor:222
 export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, cesar?: any): HarnessDoctorReport {
   const rows: string[][] = [];
   const selected = String((config as any)?.cesarEngine ?? (config as any)?.forgeFixedStarter ?? 'claude');
@@ -235,7 +324,7 @@ export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, 
   };
 }
 
-// @kern-source: doctor:214
+// @kern-source: doctor:295
 export const doctorCommand: any = defineCommand({
   meta: {
     name: 'doctor',
@@ -309,6 +398,19 @@ export const doctorCommand: any = defineCommand({
     } else {
       warn(`worktree check failed: ${worktree.message}`);
       if (worktree.cleanupCommand) info(`Cleanup: ${worktree.cleanupCommand}`);
+    }
+
+    const python = diagnoseDedupPython();
+    console.log('');
+    if (python.status === 'ok') {
+      success(`Python sidecars: ${python.detail}`);
+    } else if (python.status === 'warn') {
+      warn(`Python sidecars: ${python.detail}`);
+      if (python.installCommand) info(`Install: ${python.installCommand}`);
+    } else {
+      warn(`Python sidecars unavailable: ${python.detail}`);
+      if (python.installCommand) info(`Fix: ${python.installCommand}`);
+      info('Agon still works — semantic history, syntax validator, dedup, and task classifier will use fallback paths.');
     }
 
     const failing = entries.filter((entry: EngineDoctorEntry) => entry.status === 'fail');

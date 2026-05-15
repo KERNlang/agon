@@ -1,10 +1,26 @@
 {
   "name": "@agon/dedup",
   "version": "0.1.0",
-  "private": true,
+  "description": "Python sidecars for Agon AI — semantic embeddings (fastembed/MiniLM) and tree-sitter syntax validation. Bridged from KERN via stdin/stdout JSON. Ships .py files that the @agon/core bridges spawn at runtime.",
   "type": "module",
+  "files": [
+    "*.py",
+    "requirements.txt",
+    "README.md"
+  ],
   "scripts": {
     "install:python": "python3 -m pip install --user -r requirements.txt",
-    "test:sidecar": "node tests/smoke.mjs"
-  }
+    "test:sidecar": "node tests/smoke.mjs",
+    "test:classifier": "node tests/classifier-smoke.mjs",
+    "test:history-search": "node tests/history-search-smoke.mjs",
+    "test:syntax-validator": "node tests/syntax-validator-smoke.mjs",
+    "test:syntax-validator-bridge": "node tests/syntax-validator-bridge-smoke.mjs",
+    "test:all-sidecars": "npm run test:sidecar && npm run test:classifier && npm run test:history-search && npm run test:syntax-validator && npm run test:syntax-validator-bridge"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KERNlang/agon.git",
+    "directory": "packages/dedup"
+  },
+  "license": "MIT"
 }

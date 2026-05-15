@@ -4,6 +4,16 @@ export { loadConfig, configGet, configSet, ensureAgonHome, getAgonHome, agonPath
 export { computeScore, tiebreak, DEFAULT_WEIGHTS } from './scoring.js';
 export { updateGlicko, updateGlickoRanked, getRatings, getEngineGlickoRating, advisorScore } from './glicko.js';
 export { classifyTask } from './task-classifier.js';
+export { searchHistorySemantic } from './history-search.js';
+export type { HistorySearchItem, HistorySearchHit } from './history-search.js';
+export {
+  validateSyntax, detectLanguageFromPath,
+  SYNTAX_VALIDATOR_TIMEOUT_MS, SYNTAX_VALIDATOR_DISABLE_ENV,
+} from './syntax-validator.js';
+export { resolveDedupSidecar } from './generated/blocks/dedup-resolver.js';
+export type {
+  SyntaxValidatorInput, SyntaxValidatorResult, SyntaxValidationError,
+} from './syntax-validator.js';
 export { defaultFinalizeOnScoreForTask } from './generated/blocks/finalize-policy.js';
 export {
   repoRoot, headSha, worktreePrune, worktreeCreate, worktreeRemove,

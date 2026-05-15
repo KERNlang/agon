@@ -4,13 +4,9 @@ import type { TaskClass } from '../models/types.js';
 
 import { spawnSync } from 'node:child_process';
 
-import { dirname, resolve } from 'node:path';
+import { resolveDedupSidecar } from './dedup-resolver.js';
 
-import { fileURLToPath } from 'node:url';
-
-import { existsSync } from 'node:fs';
-
-// @kern-source: task-classifier:10
+// @kern-source: task-classifier:8
 export function classifyTaskRegex(description: string): TaskClass {
   const PATTERNS: [RegExp, TaskClass][] = [
     [/\b(doc|readme|comment|changelog)\b/i, 'docs'],
@@ -26,37 +22,33 @@ export function classifyTaskRegex(description: string): TaskClass {
   return 'other';
 }
 
-// @kern-source: task-classifier:29
+// @kern-source: task-classifier:27
 export const CLASSIFIER_CACHE: Map<string, TaskClass> = new Map();
 
 /**
  * Hard cap on the synchronous Python sidecar call. If exceeded, fall back to 'other'. ~500ms cold, ~50ms warm in normal cases.
  */
-// @kern-source: task-classifier:31
+// @kern-source: task-classifier:29
 export const CLASSIFIER_TIMEOUT_MS: number = 2000;
 
 /**
  * Set this env var to any non-empty value to skip the Python escalation entirely (regex-only mode). Useful for tests or when Python is unavailable.
  */
-// @kern-source: task-classifier:34
+// @kern-source: task-classifier:32
 export const CLASSIFIER_DISABLE_ENV: string = "AGON_DISABLE_CLASSIFIER_SIDECAR";
 
 /**
  * Synchronous Python sidecar escalation. Returns null on any failure — caller falls back to 'other'.
  */
-// @kern-source: task-classifier:37
+// @kern-source: task-classifier:35
 export function classifyTaskSemantic(description: string): TaskClass | null {
   if (process.env[CLASSIFIER_DISABLE_ENV]) return null;
 
   const cached = CLASSIFIER_CACHE.get(description);
   if (cached !== undefined) return cached;
 
-  // Resolve sidecar relative to compiled output:
-  // packages/core/dist/kern/blocks/task-classifier.js
-  //   → ../../../../dedup/classifier.py
-  const here = dirname(fileURLToPath(import.meta.url));
-  const sidecar = resolve(here, '..', '..', '..', '..', 'dedup', 'classifier.py');
-  if (!existsSync(sidecar)) return null;
+  const sidecar = resolveDedupSidecar('classifier.py');
+  if (!sidecar) return null;
 
   const python = process.env.AGON_PYTHON || 'python3';
 
@@ -97,7 +89,7 @@ export function classifyTaskSemantic(description: string): TaskClass | null {
 /**
  * Layered task classifier. Regex fast-path catches most cases instantly; Python sidecar escalation catches paraphrased / unusual phrasings. Result cached per session.
  */
-// @kern-source: task-classifier:88
+// @kern-source: task-classifier:82
 export function classifyTask(description: string): TaskClass {
   const fast = classifyTaskRegex(description);
   if (fast !== 'other') return fast;

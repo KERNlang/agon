@@ -1,8 +1,6 @@
 import from="../models/types.js" names="TaskClass" types=true
 import from="node:child_process" names="spawnSync"
-import from="node:path" names="dirname,resolve"
-import from="node:url" names="fileURLToPath"
-import from="node:fs" names="existsSync"
+import from="./dedup-resolver.js" names="resolveDedupSidecar"
 
 // Regex fast-path classifier — instant, but falls through to 'other'
 // often. The semantic escalation below catches those cases via a Python
@@ -42,12 +40,8 @@ fn name=classifyTaskSemantic params="description:string" returns="TaskClass | nu
     const cached = CLASSIFIER_CACHE.get(description);
     if (cached !== undefined) return cached;
 
-    // Resolve sidecar relative to compiled output:
-    // packages/core/dist/kern/blocks/task-classifier.js
-    //   → ../../../../dedup/classifier.py
-    const here = dirname(fileURLToPath(import.meta.url));
-    const sidecar = resolve(here, '..', '..', '..', '..', 'dedup', 'classifier.py');
-    if (!existsSync(sidecar)) return null;
+    const sidecar = resolveDedupSidecar('classifier.py');
+    if (!sidecar) return null;
 
     const python = process.env.AGON_PYTHON || 'python3';
 

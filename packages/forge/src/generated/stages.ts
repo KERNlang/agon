@@ -218,9 +218,22 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
     result.engineCompleted = noDiff.engineCompleted;
     result.reason = noDiff.reason;
   } else {
-    result.status = result.pass ? 'passed' : 'fitness_failed';
+    // Preserve the diagnostic from runFitness when the worktree contains
+    // unparseable files — otherwise the user-facing reason for failure
+    // gets squashed back into the generic 'fitness_failed'.
+    const syntaxInvalid = Array.isArray(result.syntaxInvalidFiles)
+      && result.syntaxInvalidFiles.length > 0;
+    if (result.pass) {
+      result.status = 'passed';
+      result.reason = undefined;
+    } else if (syntaxInvalid) {
+      result.status = 'syntax_invalid';
+      result.reason = 'syntax_invalid';
+    } else {
+      result.status = 'fitness_failed';
+      result.reason = 'fitness_failed';
+    }
     result.engineCompleted = !(dispatchResult?.timedOut ?? false);
-    result.reason = result.pass ? undefined : 'fitness_failed';
   }
   opts.onEvent?.({ type: opts.metricPhase.includes('stage1') ? 'stage1:score' : 'stage2:score', engineId: opts.engineId, data: { engineId: opts.engineId, score: result.score, pass: result.pass, worktreePath: wtPath } });
 
@@ -241,7 +254,7 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
   return { result, metric, dispatchResult, worktreePath: wtPath };
 }
 
-// @kern-source: stages:226
+// @kern-source: stages:239
 export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}): Promise<boolean> {
   opts.onEvent?.({ type: 'baseline:start' });
 
@@ -265,7 +278,7 @@ export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:
   }
 }
 
-// @kern-source: stages:250
+// @kern-source: stages:263
 export async function runStage1(opts: {starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, taskClass?:string, enginePrompts?:Map<string,string>, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
   const root = repoRoot(opts.cwd);
@@ -295,8 +308,8 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
   return { engineResults: engineResults, accepted: accepted, winner: result?.pass ? result.engineId : null, metrics: metrics };
 }
 
-// @kern-source: stages:277
-export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void, abortControllers?: Map<string,AbortController>, forgeMode?: 'implement'|'improve'|'validate', requireDiff?: boolean, baselinePasses?: boolean, acceptReviewOutput?: boolean}): Promise<StageResult> {
+// @kern-source: stages:290
+export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void, abortControllers?: Map<string,AbortController>, forgeMode?: 'implement'|'improve'|'validate', requireDiff?: boolean, baselinePasses?: boolean, acceptReviewOutput?: boolean, earlyFinalizeCount?: number}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
   const root = repoRoot(opts.cwd);
@@ -331,12 +344,50 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
       }
     }
   };
+  // M-of-N auto-finalize quorum: when this many engines pass at-or-above
+  // the min-score threshold, abort any in-flight challengers. The caller
+  // can still explicitly return 'finalize' from onResult — that takes
+  // precedence. Disable by:
+  //   - setting forgeEarlyFinalizeEnabled = false
+  //   - or passing earlyFinalizeCount: 0 / --early-finalize-count 0
+  //   - or setting forgeEarlyFinalizePassingCount: 0
+  let passedCount = 0;
+  const EARLY_FINALIZE_MIN_SCORE = opts.config.forgeEarlyFinalizeMinScore ?? 70;
+  const rawCount = opts.earlyFinalizeCount !== undefined
+    ? opts.earlyFinalizeCount
+    : (opts.config.forgeEarlyFinalizePassingCount ?? 3);
+  // count <= 0 is the explicit-disable sentinel. We freeze the resolved
+  // count once so a single comparison can decide both "enabled" and
+  // "threshold met".
+  const EARLY_FINALIZE_COUNT = rawCount;
+  const EARLY_FINALIZE_ENABLED = opts.config.forgeEarlyFinalizeEnabled !== false
+    && EARLY_FINALIZE_COUNT > 0;
   const publishResult = (engineId: string, result: EngineResult, metric: DispatchMetric) => {
     metrics.push(metric);
     if (!published.has(engineId)) {
       published.add(engineId);
+      if (result.pass && result.score >= EARLY_FINALIZE_MIN_SCORE) {
+        passedCount++;
+      }
       const control = opts.onResult?.(engineId, result, metric);
-      if (control === 'finalize') requestFinalize();
+      if (control === 'finalize') {
+        requestFinalize();
+      } else if (
+        EARLY_FINALIZE_ENABLED
+        && passedCount >= EARLY_FINALIZE_COUNT
+        && !finalizeRequested
+      ) {
+        opts.onEvent?.({
+          type: 'forge:auto-finalize',
+          engineId,
+          data: {
+            passingCount: passedCount,
+            targetCount: EARLY_FINALIZE_COUNT,
+            minScore: EARLY_FINALIZE_MIN_SCORE,
+          },
+        });
+        requestFinalize();
+      }
     }
   };
 
@@ -456,7 +507,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:438
+// @kern-source: stages:489
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

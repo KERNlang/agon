@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { EngineAdapter, BrainstormBid, BrainstormResult, ScoutBid } from '@agon/core';
+import type { EngineAdapter, BrainstormBid, BrainstormResult, BrainstormGroup, ScoutBid } from '@agon/core';
 
 import { EngineRegistry, buildBrainstormPrompt, getRatings, loadConfig, createSidechainLogger, updateGlickoRanked, classifyTask } from '@agon/core';
 
@@ -10,7 +10,9 @@ import { buildKernDraftPrompt, parseKernDraft, buildKernRankPrompt } from '@kern
 
 import type { KernDraft } from '@kernlang/protocol';
 
-// @kern-source: brainstorm:7
+import { dedupBrainstormDrafts } from './dedup-bridge.js';
+
+// @kern-source: brainstorm:8
 export function calibrateConfidence(engineId: string, rawBid: number): number {
   // Use Glicko-2 brainstorm ratings for calibration, fall back to global
   const ratings = getRatings();
@@ -23,7 +25,7 @@ export function calibrateConfidence(engineId: string, rawBid: number): number {
   return Math.round(rawBid * 0.3 + winRate * 100 * 0.7);
 }
 
-// @kern-source: brainstorm:18
+// @kern-source: brainstorm:19
 export function qualityScore(engineId: string, draft: KernDraft): number {
   let score = 0;
   if (draft.approach.length > 10) {
@@ -43,7 +45,7 @@ export function qualityScore(engineId: string, draft: KernDraft): number {
   return score;
 }
 
-// @kern-source: brainstorm:34
+// @kern-source: brainstorm:35
 export function rankDrafts(drafts: {engineId:string, draft:KernDraft, raw:string}[]): {engineId:string, draft:KernDraft, raw:string}[] {
   return [...drafts].sort((a, b) => {
     const scoreA = qualityScore(a.engineId, a.draft);
@@ -52,7 +54,7 @@ export function rankDrafts(drafts: {engineId:string, draft:KernDraft, raw:string
   });
 }
 
-// @kern-source: brainstorm:43
+// @kern-source: brainstorm:44
 export async function collectRankedDrafts(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{engineId:string, draft:KernDraft, raw:string}[]> {
   const draftPrompt = buildKernDraftPrompt({
     question: opts.question,
@@ -121,7 +123,7 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
   return rankDrafts(drafts);
 }
 
-// @kern-source: brainstorm:112
+// @kern-source: brainstorm:113
 export function scoutScore(bid: ScoutBid): number {
   let score = 0;
   // Confidence: 40% weight (0-40 points)
@@ -135,7 +137,7 @@ export function scoutScore(bid: ScoutBid): number {
   return score;
 }
 
-// @kern-source: brainstorm:125
+// @kern-source: brainstorm:126
 export async function runScout(opts: {question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}> {
   const count = opts.scoutCount ?? 2;
   const scouts = opts.engines.slice(0, count);
@@ -149,7 +151,7 @@ export async function runScout(opts: {question:string, context?:string, engines:
   return { rankedBids: bids, leadEngine: (bids.length > 0) ? bids[0].engineId : scouts[0], topConfidence: topConfidence, disagreementSpread: disagreementSpread };
 }
 
-// @kern-source: brainstorm:138
+// @kern-source: brainstorm:139
 export function fallbackParse(output: string): KernDraft {
   const stripped = output.replace(/\x60\x60\x60(?:json)?\s*/gi, '').replace(/\x60\x60\x60/g, '');
   let depth = 0;
@@ -190,7 +192,7 @@ export function fallbackParse(output: string): KernDraft {
   };
 }
 
-// @kern-source: brainstorm:179
+// @kern-source: brainstorm:180
 export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<BrainstormResult> {
   const brainstormId = randomUUID().slice(0, 8);
   const sidechain = createSidechainLogger({
@@ -233,6 +235,14 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
       response: 'No engines were available to brainstorm this question.',
     };
   }
+
+  // Cluster paraphrased drafts via Python embedding sidecar.
+  // Best-effort — null result means caller falls back to no-dedup display.
+  const dedupGroups = bids.length >= 2
+    ? await dedupBrainstormDrafts(
+        ranked.map((d) => ({ engineId: d.engineId, text: d.raw || d.draft.approach || '' }))
+      )
+    : null;
 
   // Update Glicko-2 ratings for all ranked engines
   if (bids.length >= 2) {
@@ -300,5 +310,6 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
     bids,
     winner: winner.engineId,
     response: response.replace(/<think>[\s\S]*?<\/think>\s*/gi, ''),
+    groups: dedupGroups ?? undefined,
   };
 }

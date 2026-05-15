@@ -37,7 +37,7 @@ Output:
     {"members": ["claude", "codex"], "representative": "codex", "similarity": 0.7},
     {"members": ["gemini"], "representative": "gemini", "similarity": 1.0}
   ],
-  "threshold": 0.65,
+  "threshold": 0.55,
   "method": "minilm-cosine"
 }
 ```
@@ -52,7 +52,7 @@ The smoke test feeds three drafts (two paraphrases + one dissent) and asserts th
 
 ## Tuning
 
-`THRESHOLD = 0.65` in `sidecar.py`. Calibration:
+`THRESHOLD = 0.55` in `sidecar.py`. Calibration:
 
 | Pair                                  | MiniLM cosine |
 | ------------------------------------- | ------------- |
@@ -67,10 +67,22 @@ Lower = more aggressive merging (risk: collapsing real disagreement). Higher = m
 
 Per-call subprocess. Agon spawns `python3 sidecar.py` only when it has drafts to dedupe, matching how engine adapters spawn their CLIs. Cold-start is the model load (~500ms). For 6 drafts the full call lands in well under 2s — negligible against an 8-12 minute brainstorm.
 
-## Phase 0 status
+## Status
 
 - [x] Sidecar built and smoke-tested
 - [x] Workspace registered
-- [ ] Wired into `runBrainstorm` so the bids table shows `(N engines agree)` — next commit
-- [ ] Integration test against a real `agon brainstorm` call
+- [x] Wired into `runBrainstorm` (`packages/forge/src/kern/dedup-bridge.kern` spawns the sidecar; result attached as `BrainstormResult.groups`)
+- [x] CLI `agon brainstorm` shows `(N engines agree)` tag in the bids table
+- [ ] Integration test against a real `agon brainstorm` call (manual for now — brainstorms run 8-12 min with 6 engines)
 - [ ] Optional: cache embeddings per session so identical drafts across re-runs reuse vectors
+
+## Failure modes (graceful)
+
+The bridge in `packages/forge` returns `null` and the CLI falls back to the un-deduped bids table when:
+
+- `python3` is missing (or `AGON_PYTHON` env var points at something broken)
+- `packages/dedup/sidecar.py` is missing (e.g., production install only shipped TS)
+- `fastembed` not installed (`exit 2`) — a one-line warning prints with the install command
+- Sidecar emits malformed JSON
+
+In every case agon brainstorm still completes — dedup is purely additive.

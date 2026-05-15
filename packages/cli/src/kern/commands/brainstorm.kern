@@ -61,11 +61,27 @@ const name=brainstormCommand type=any
 
         console.log('');
         header('Bids');
-        const rows = result.bids.map((b: any) => [
-          b.engineId === result.winner ? green(`${icons().winner} ${b.engineId}`) : b.engineId,
-          String(b.confidence),
-          b.reasoning.slice(0, 60),
-        ]);
+        // Build a map: engineId → group info so the bids table can show
+        // "(N engines agree)" tags next to engines that paraphrased others.
+        const groupTagByEngine = new Map<string, string>();
+        if (result.groups && result.groups.length > 0 && result.groups.length < result.bids.length) {
+          for (const g of result.groups) {
+            if (g.members.length < 2) continue;
+            const tag = `(${g.members.length} engines agree)`;
+            for (const m of g.members) groupTagByEngine.set(m, tag);
+          }
+        }
+        const rows = result.bids.map((b: any) => {
+          const tag = groupTagByEngine.get(b.engineId);
+          const reasoningCol = tag
+            ? `${cyan(tag)} ${b.reasoning.slice(0, 60 - tag.length - 1)}`
+            : b.reasoning.slice(0, 60);
+          return [
+            b.engineId === result.winner ? green(`${icons().winner} ${b.engineId}`) : b.engineId,
+            String(b.confidence),
+            reasoningCol,
+          ];
+        });
         table(['Engine', 'Confidence', 'Reasoning'], rows);
 
         console.log('');

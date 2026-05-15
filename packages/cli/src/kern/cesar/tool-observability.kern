@@ -45,43 +45,37 @@ fn name=createCesarTurnId returns=string export=true expr={{ return `cesar-${Dat
   doc "Create a short stable-enough id for joining per-turn tool timeline and approval ledger records."
 
 fn name=looksSensitiveString params="value:string" returns=boolean export=false
-  handler <<<
-    return /(?:secret|token|password|credential|api[_-]?key|private[_-]?key)\s*[:=]/i.test(value)
-      || /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value)
-      || /\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9_]{16,}|AKIA[0-9A-Z]{16})\b/.test(value);
-  >>>
+  handler lang="kern"
+    return value="/(?:secret|token|password|credential|api[_-]?key|private[_-]?key)\\s*[:=]/i.test(value) || /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value) || /\\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9_]{16,}|AKIA[0-9A-Z]{16})\\b/.test(value)"
 
 fn name=summarizeCommandString params="value:string" returns="Record<string,unknown>" export=false
-  handler <<<
-    const raw = String(value ?? '').trim();
-    const first = raw.split(/\s+/)[0] ?? '';
-    const sensitive = looksSensitiveString(raw);
-    const base = first.includes('=') || sensitive ? '[redacted-command]' : first;
-    return {
-      commandBase: base,
-      chars: raw.length,
-      redactedPreview: true,
-      sensitive: sensitive || undefined,
-    };
-  >>>
+  handler lang="kern"
+    let name=raw value="String(value ?? '').trim()"
+    let name=first value="raw.split(/\\s+/)[0] ?? ''"
+    let name=sensitive value="looksSensitiveString(raw)"
+    let name=base value="first.includes('=') || sensitive ? '[redacted-command]' : first"
+    return value="{ commandBase: base, chars: raw.length, redactedPreview: true, sensitive: sensitive || undefined, }"
 
 fn name=summarizeValue params="key:string,value:unknown" returns=unknown export=false
-  handler <<<
-    const lower = key.toLowerCase();
-    if (/(secret|token|password|credential|api[_-]?key|private[_-]?key|content|old_string|new_string)/i.test(lower)) {
-      return typeof value === 'string' ? { redacted: true, chars: value.length } : { redacted: true };
-    }
-    if (typeof value === 'string') {
-      if (lower === 'command' || lower.endsWith('command')) return summarizeCommandString(value);
-      if (looksSensitiveString(value)) return { redacted: true, chars: value.length };
-      if (value.length <= 180) return value;
-      return { preview: value.slice(0, 180), chars: value.length };
-    }
-    if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value;
-    if (Array.isArray(value)) return { type: 'array', length: value.length };
-    if (value && typeof value === 'object') return { type: 'object', keys: Object.keys(value as Record<string, unknown>).slice(0, 20) };
-    return String(value);
-  >>>
+  handler lang="kern"
+    let name=lower value="key.toLowerCase()"
+    if cond="/(secret|token|password|credential|api[_-]?key|private[_-]?key|content|old_string|new_string)/i.test(lower)"
+      return value="typeof value === 'string' ? { redacted: true, chars: value.length } : { redacted: true }"
+    if cond="typeof value === 'string'"
+      if cond="lower === 'command' || lower.endsWith('command')"
+        return value="summarizeCommandString(value)"
+      if cond="looksSensitiveString(value)"
+        return value="{ redacted: true, chars: value.length }"
+      if cond="value.length <= 180"
+        return value="value"
+      return value="{ preview: value.slice(0, 180), chars: value.length }"
+    if cond="typeof value === 'number' || typeof value === 'boolean' || value === null"
+      return value="value"
+    if cond="Array.isArray(value)"
+      return value="{ type: 'array', length: value.length }"
+    if cond="value && typeof value === 'object'"
+      return value="{ type: 'object', keys: Object.keys(value as Record<string, unknown>).slice(0, 20) }"
+    return value="String(value)"
 
 fn name=summarizeToolPayload params="payload:Record<string,unknown>|string|undefined" returns="Record<string,unknown>|undefined" export=true
   doc "Summarize tool input/output payloads for logs without storing full file contents or large blobs."
@@ -108,14 +102,10 @@ fn name=summarizeToolPayload params="payload:Record<string,unknown>|string|undef
   >>>
 
 fn name=appendCesarJsonl params="fileName:string,record:Record<string,unknown>,runsDir?:string" returns=void export=false
-  handler <<<
-    const dir = runsDir ?? RUNS_DIR;
-    mkdirSync(dir, { recursive: true });
-    appendFileSync(join(dir, fileName), JSON.stringify({
-      ts: new Date().toISOString(),
-      ...record,
-    }) + '\n');
-  >>>
+  handler lang="kern"
+    let name=dir value="runsDir ?? RUNS_DIR"
+    do value="mkdirSync(dir, { recursive: true })"
+    do value="appendFileSync(join(dir, fileName), JSON.stringify({ ts: new Date().toISOString(), ...record, }) + '\\n')"
 
 fn name=recordCesarApprovalDecision params="record:CesarApprovalLedgerRecord,runsDir?:string" returns=void export=true
   doc "Append one permission decision to the persistent Cesar approval ledger. Best-effort: failures are swallowed by callers."
@@ -162,28 +152,27 @@ fn name=recordCesarToolTimeline params="record:CesarToolTimelineRecord,runsDir?:
   >>>
 
 fn name=readJsonlRecords params="filePath:string" returns="Array<Record<string,unknown>>" export=false
-  handler <<<
-    if (!existsSync(filePath)) return [];
-    const out: Array<Record<string, unknown>> = [];
-    const text = readFileSync(filePath, 'utf-8');
-    for (const line of text.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) out.push(parsed as Record<string, unknown>);
-      } catch {
-        out.push({ kind: 'parse_error', raw: trimmed.slice(0, 240) });
-      }
-    }
-    return out;
-  >>>
+  handler lang="kern"
+    if cond="!existsSync(filePath)"
+      return value="[]"
+    let name=out type="Array<Record<string, unknown>>" value="[]"
+    let name=text value="readFileSync(filePath, 'utf-8')"
+    each name=line in="text.split('\\n')"
+      let name=trimmed value="line.trim()"
+      if cond="!trimmed"
+        continue
+      try
+        let name=parsed value="JSON.parse(trimmed)"
+        if cond="parsed && typeof parsed === 'object' && !Array.isArray(parsed)"
+          do value="out.push(parsed as Record<string, unknown>)"
+        catch name=e
+          do value="out.push({ kind: 'parse_error', raw: trimmed.slice(0, 240) })"
+    return value="out"
 
 fn name=eventTimeMs params="record:Record<string,unknown>" returns=number export=false
-  handler <<<
-    const ts = typeof record.ts === 'string' ? Date.parse(record.ts) : NaN;
-    return Number.isFinite(ts) ? ts : 0;
-  >>>
+  handler lang="kern"
+    let name=ts value="typeof record.ts === 'string' ? Date.parse(record.ts) : NaN"
+    return value="Number.isFinite(ts) ? ts : 0"
 
 fn name=replayCesarHarnessLogs params="opts?:{runsDir?:string,turnId?:string,limit?:number}" returns=CesarHarnessReplayResult export=true
   doc "Replay the compact Cesar approval ledger and tool timeline into a readable per-turn summary. This is the CLI/UI surface for post-mortem harness debugging."

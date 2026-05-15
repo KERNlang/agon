@@ -7,13 +7,14 @@ import from="../types.js" names="StageResult,ForgeEventCallback,WorktreeEntry" t
 fn name=formatDispatchError params="err:unknown" returns=string export=false
   handler <<<
     const message = err instanceof Error ? err.message : String(err);
-    const snippet = (err as any)?.stdout
-      ? String((err as any).stdout).slice(0, 240).replace(/\s+/g, ' ').trim()
-      : (err as any)?.stderr
-        ? String((err as any).stderr).slice(0, 240).replace(/\s+/g, ' ').trim()
+    const record = err as any;
+    const snippet = record?.stdout
+      ? String(record.stdout).slice(0, 240).replace(/\s+/g, ' ').trim()
+      : record?.stderr
+        ? String(record.stderr).slice(0, 240).replace(/\s+/g, ' ').trim()
         : '';
     if (snippet) {
-      return `${message} | snippet: ${snippet}${(err as any)?.stdout?.length > 240 || (err as any)?.stderr?.length > 240 ? '…' : ''}`;
+      return `${message} | snippet: ${snippet}${record?.stdout?.length > 240 || record?.stderr?.length > 240 ? '…' : ''}`;
     }
     return message;
   >>>
@@ -33,28 +34,33 @@ fn name=makeFailedResult params="engineId:string,error:string,durationMs?:number
     };
   >>>
 
+fn name=emitForgeEvent params="onEvent:any,type:string,engineId?:string,data?:Record<string,unknown>" export=false
+  handler <<<
+    if (onEvent) {
+      onEvent({ type, engineId, data });
+    }
+  >>>
+
 fn name=resolveForgeDispatchTimeout params="engine:any,config:Required<AgonConfig>" returns=number export=true
   doc "Per-engine dispatch timeout for stage1/stage2. Floor: forgeDispatchTimeout (default 480s). Engines whose configured timeout (engines/*.json, calibrated for short chat use) is below the floor get raised to it — forge needs more time than a chat reply. Engines with a genuinely high configured timeout keep it. The previous behavior used forgeTimeout (1800s) as the floor, which let one stuck engine hold the run hostage for 30 min via Promise.allSettled."
-  handler <<<
-    const engineTimeout = Number(engine?.timeout ?? 0);
-    const floorRaw = Number((config as any).forgeDispatchTimeout ?? 0);
-    const floor = Number.isFinite(floorRaw) && floorRaw > 0 ? floorRaw : 480;
-    if (Number.isFinite(engineTimeout) && engineTimeout > 0) {
-      return Math.max(engineTimeout, floor);
-    }
-    return floor;
-  >>>
+  handler lang="kern"
+    let name=engineTimeout value="Number(engine?.timeout ?? 0)"
+    let name=floorRaw value="Number(config.forgeDispatchTimeout ?? 0)"
+    let name=floor value="Number.isFinite(floorRaw) && floorRaw > 0 ? floorRaw : 480"
+    if cond="Number.isFinite(engineTimeout) && engineTimeout > 0"
+      return value="Math.max(engineTimeout, floor)"
+    return value="floor"
 
 fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:string,dispatchMode:'exec'|'review',metricPhase:'stage1'|'stage2-scout'|'stage2-follower',fitnessCmd:string,config:Required<AgonConfig>,registry:EngineRegistry,adapter:EngineAdapter,root:string,baseSha:string,forgeDir:string,worktrees:WorktreeEntry[],onEvent?:ForgeEventCallback,signal?:AbortSignal,eventType:string,eventData?:Record<string,unknown>,worktreePath?:string}" returns="Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}>"
   handler <<<
     const engine = opts.registry.get(opts.engineId);
-    const dispatchTimeout = resolveForgeDispatchTimeout(engine as any, opts.config);
+    const dispatchTimeout = resolveForgeDispatchTimeout(engine, opts.config);
     const wtPath = opts.worktreePath ?? join(opts.forgeDir, `wt-${opts.engineId}`);
     worktreeCreate(opts.root, wtPath, opts.baseSha);
     opts.worktrees.push({ engineId: opts.engineId, path: wtPath, repoRoot: opts.root });
-    opts.onEvent?.({ type: 'engine:worktree' as any, engineId: opts.engineId, data: { engineId: opts.engineId, worktreePath: wtPath, phase: opts.metricPhase } });
+    emitForgeEvent(opts.onEvent, 'engine:worktree', opts.engineId, { engineId: opts.engineId, worktreePath: wtPath, phase: opts.metricPhase });
 
-    opts.onEvent?.({ type: opts.eventType as any, engineId: opts.engineId, data: opts.eventData });
+    emitForgeEvent(opts.onEvent, opts.eventType, opts.engineId, opts.eventData);
 
     const dispatchStart = Date.now();
     let dispatchDurationMs = 0;
@@ -63,11 +69,7 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
     // the tool-using agent loop; plain API chat can only return text and will
     // never modify the worktree.
     const useAgent = !!opts.adapter.dispatchAgent && (!!engine.agent || !!engine.api);
-    const onSpawn = (pid: number) => opts.onEvent?.({
-      type: 'engine:pid' as any,
-      engineId: opts.engineId,
-      data: { engineId: opts.engineId, pid, phase: opts.metricPhase },
-    });
+    const onSpawn = (pid: number) => emitForgeEvent(opts.onEvent, 'engine:pid', opts.engineId, { engineId: opts.engineId, pid, phase: opts.metricPhase });
     try {
       if (useAgent) {
         dispatchResult = await opts.adapter.dispatchAgent!({
@@ -106,7 +108,7 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
       }
     } finally {
       dispatchDurationMs = Date.now() - dispatchStart;
-      opts.onEvent?.({ type: 'engine:pid-clear' as any, engineId: opts.engineId, data: { engineId: opts.engineId, phase: opts.metricPhase } });
+      emitForgeEvent(opts.onEvent, 'engine:pid-clear', opts.engineId, { engineId: opts.engineId, phase: opts.metricPhase });
     }
 
     const fitnessStart = Date.now();
@@ -133,7 +135,7 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
       timedOut: dispatchResult?.timedOut ?? false,
       tokens: { prompt: promptTokens, response: responseTokens, costUsd: estimateCost(opts.engineId, promptTokens + responseTokens) },
     };
-    (result as any).dispatchStdout = dispatchResult?.stdout?.slice(0, 5000) ?? '';
+    result.dispatchStdout = dispatchResult?.stdout?.slice(0, 5000) ?? '';
     return { result, metric, dispatchResult, worktreePath: wtPath };
   >>>
 
@@ -162,67 +164,31 @@ fn name=runBaseline async=true params="opts:{cwd:string, baseSha:string, fitness
   >>>
 
 fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, taskClass?:string, enginePrompts?:Map<string,string>}" returns="Promise<StageResult>"
-  handler <<<
-    opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
-
-    const root = repoRoot(opts.cwd);
-    const engineResults = new Map<string, EngineResult>();
-    const metrics: DispatchMetric[] = [];
-    try {
-      const attempt = await runForgeEngineAttempt({
-        engineId: opts.starter,
-        prompt: opts.forgePrompt,
-        dispatchMode: 'exec',
-        metricPhase: 'stage1',
-        fitnessCmd: opts.fitnessCmd,
-        config: opts.config,
-        registry: opts.registry,
-        adapter: opts.adapter,
-        root,
-        baseSha: opts.baseSha,
-        forgeDir: opts.forgeDir,
-        worktrees: opts.worktrees,
-        onEvent: opts.onEvent,
-        signal: opts.signal,
-        eventType: 'stage1:dispatch',
-      });
-      engineResults.set(opts.starter, attempt.result);
-      metrics.push(attempt.metric);
-    } catch (err) {
-      const error = formatDispatchError(err);
-      const elapsed = 0;
-      console.warn(`[agon] forge stage1: engine ${opts.starter} failed: ${error}`);
-      opts.onEvent?.({ type: 'engine:failed' as any, engineId: opts.starter, data: { engineId: opts.starter, phase: 'stage1', error } });
-      const failed = makeFailedResult(opts.starter, error, elapsed);
-      engineResults.set(opts.starter, failed);
-      metrics.push({
-        engineId: opts.starter,
-        phase: 'stage1',
-        dispatchDurationMs: elapsed,
-        totalDurationMs: elapsed,
-        error,
-      });
-    }
-
-    const successful = [...engineResults.values()].filter((r) => r.pass);
-    const result = successful.sort((a, b) => b.score - a.score)[0] ?? engineResults.get(opts.starter);
-
-    // lintWarnings and styleScore are currently hardcoded (0 and 100) in fitness.kern,
-    // so those checks are no-ops. Gate on what matters: pass + score threshold.
-    const accepted =
-      !!result?.pass &&
-      result.score >= opts.config.forgeAutoAcceptScore;
-
-    if (accepted) {
-      opts.onEvent?.({
-        type: 'stage1:accepted',
-        engineId: result!.engineId,
-        data: { score: result.score },
-      });
-    }
-
-    return { engineResults, accepted, winner: result?.pass ? result.engineId : null, metrics };
-  >>>
+  handler lang="kern"
+    do value="opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter })"
+    let name=root value="repoRoot(opts.cwd)"
+    let name=engineResults value="new Map<string, EngineResult>()"
+    let name=metrics type="DispatchMetric[]" value="[]"
+    try
+      let name=attempt value="await runForgeEngineAttempt({ engineId: opts.starter, prompt: opts.forgePrompt, dispatchMode: 'exec', metricPhase: 'stage1', fitnessCmd: opts.fitnessCmd, config: opts.config, registry: opts.registry, adapter: opts.adapter, root, baseSha: opts.baseSha, forgeDir: opts.forgeDir, worktrees: opts.worktrees, onEvent: opts.onEvent, signal: opts.signal, eventType: 'stage1:dispatch', })"
+      do value="engineResults.set(opts.starter, attempt.result)"
+      do value="metrics.push(attempt.metric)"
+      catch name=err
+        let name=error value="formatDispatchError(err)"
+        let name=elapsed value="0"
+        do value="console.warn(`[agon] forge stage1: engine ${opts.starter} failed: ${error}`)"
+        do value="emitForgeEvent(opts.onEvent, 'engine:failed', opts.starter, { engineId: opts.starter, phase: 'stage1', error })"
+        let name=failed value="makeFailedResult(opts.starter, error, elapsed)"
+        do value="engineResults.set(opts.starter, failed)"
+        do value="metrics.push({ engineId: opts.starter, phase: 'stage1', dispatchDurationMs: elapsed, totalDurationMs: elapsed, error, })"
+    let name=successful value="[...engineResults.values()].filter((r) => r.pass)"
+    let name=result value="successful.sort((a, b) => b.score - a.score)[0] ?? engineResults.get(opts.starter)"
+    comment raw="// lintWarnings and styleScore are currently hardcoded (0 and 100) in fitness.kern,"
+    comment raw="// so those checks are no-ops. Gate on what matters: pass + score threshold."
+    let name=accepted value="!!result?.pass && result.score >= opts.config.forgeAutoAcceptScore"
+    if cond="accepted"
+      do value="opts.onEvent?.({ type: 'stage1:accepted', engineId: result!.engineId, data: { score: result.score }, })"
+    return value="{ engineResults, accepted, winner: result?.pass ? result.engineId : null, metrics }"
 
 fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void, abortControllers?:Map<string,AbortController>}" returns="Promise<StageResult>"
   handler <<<
@@ -237,7 +203,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
     let finalizeRequested = false;
     const makeFinalizedAttempt = (engineId: string, elapsedMs: number) => {
       const error = 'stage2 finalized by caller; engine aborted before it settled';
-      opts.onEvent?.({ type: 'engine:failed' as any, engineId, data: { engineId, phase: 'stage2', error } });
+      emitForgeEvent(opts.onEvent, 'engine:failed', engineId, { engineId, phase: 'stage2', error });
       const result = makeFailedResult(engineId, error, elapsedMs);
       const metric: DispatchMetric = {
         engineId,
@@ -274,7 +240,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
       const engineStart = Date.now();
       const prompt = opts.enginePrompts?.get(engineId) ?? opts.forgePrompt;
       const engine = opts.registry.get(engineId);
-      const dispatchTimeout = resolveForgeDispatchTimeout(engine as any, opts.config);
+      const dispatchTimeout = resolveForgeDispatchTimeout(engine, opts.config);
       const hardTimeoutMs = Math.max(5, dispatchTimeout + opts.config.forgeFitnessTimeout + 5) * 1000;
       const engineAbort = new AbortController();
       abortControllers.set(engineId, engineAbort);
@@ -305,7 +271,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
         timeoutHandle = setTimeout(() => {
           engineAbort.abort();
           const error = `stage2 engine timed out after ${Math.round(hardTimeoutMs / 1000)}s`;
-          opts.onEvent?.({ type: 'engine:failed' as any, engineId, data: { engineId, phase: 'stage2', error } });
+          emitForgeEvent(opts.onEvent, 'engine:failed', engineId, { engineId, phase: 'stage2', error });
           const result = makeFailedResult(engineId, error, hardTimeoutMs);
           const metric: DispatchMetric = { engineId, phase: 'stage2-follower', dispatchDurationMs: hardTimeoutMs, totalDurationMs: hardTimeoutMs, error, timedOut: true };
           resolve({ result, metric, dispatchResult: null, worktreePath: join(opts.forgeDir, `wt-${engineId}`) });
@@ -333,7 +299,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
         abortControllers.delete(engineId);
         const error = formatDispatchError(err);
         console.warn(`[agon] forge stage2: engine ${engineId} failed: ${error}`);
-        opts.onEvent?.({ type: 'engine:failed' as any, engineId, data: { engineId, phase: 'stage2', error } });
+        emitForgeEvent(opts.onEvent, 'engine:failed', engineId, { engineId, phase: 'stage2', error });
         const failed = makeFailedResult(engineId, error);
         const metric: DispatchMetric = {
           engineId,
@@ -362,7 +328,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
         const failedId = opts.challengers[i];
         const error = formatDispatchError(outcome.reason);
         console.warn(`[agon] forge stage2: engine ${failedId} failed: ${error}`);
-        opts.onEvent?.({ type: 'engine:failed' as any, engineId: failedId, data: { engineId: failedId, phase: 'stage2', error } });
+        emitForgeEvent(opts.onEvent, 'engine:failed', failedId, { engineId: failedId, phase: 'stage2', error });
         const failed = makeFailedResult(failedId, error);
         const metric: DispatchMetric = {
           engineId: failedId,
@@ -454,7 +420,7 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
       const error = formatDispatchError(err);
       const elapsed = Date.now() - scoutDispatchStart;
       console.warn(`[agon] forge stage2-peek scout ${scoutId} failed: ${error}`);
-      opts.onEvent?.({ type: 'engine:failed' as any, engineId: scoutId, data: { engineId: scoutId, phase: 'stage2-scout', error } });
+      emitForgeEvent(opts.onEvent, 'engine:failed', scoutId, { engineId: scoutId, phase: 'stage2-scout', error });
       scoutResult = makeFailedResult(scoutId, error, elapsed);
       metrics.push({
         engineId: scoutId,
@@ -506,7 +472,7 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
         const failedId = followers[i];
         const error = formatDispatchError(outcome.reason);
         console.warn(`[agon] forge stage2-peek: engine ${failedId} failed: ${error}`);
-        opts.onEvent?.({ type: 'engine:failed' as any, engineId: failedId, data: { engineId: failedId, phase: 'stage2-follower', error } });
+        emitForgeEvent(opts.onEvent, 'engine:failed', failedId, { engineId: failedId, phase: 'stage2-follower', error });
         allResults.set(failedId, makeFailedResult(failedId, error));
         metrics.push({
           engineId: failedId,

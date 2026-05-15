@@ -1,16 +1,17 @@
 fn name=wordWrap params="text:string, width:number" returns="string[]"
-  handler <<<
-    const result: string[] = [];
-    for (const line of text.split('\n')) {
-      if (line.length <= width) { result.push(line); continue; }
-      let remaining = line;
-      while (remaining.length > width) {
-        let breakAt = remaining.lastIndexOf(' ', width);
-        if (breakAt <= 0) breakAt = width;
-        result.push(remaining.slice(0, breakAt));
-        remaining = remaining.slice(breakAt).trimStart();
-      }
-      if (remaining) result.push(remaining);
-    }
-    return result;
-  >>>
+  handler lang="kern"
+    let name=result type="string[]" value="[]"
+    each name=line in="text.split('\\n')"
+      if cond="line.length <= width"
+        do value="result.push(line)"
+        continue
+      let name=remaining kind=let value="line"
+      while cond="remaining.length > width"
+        let name=breakAt kind=let value="remaining.lastIndexOf(' ', width)"
+        if cond="breakAt <= 0"
+          assign target="breakAt" value="width"
+        do value="result.push(remaining.slice(0, breakAt))"
+        assign target="remaining" value="remaining.slice(breakAt).trimStart()"
+      if cond="remaining"
+        do value="result.push(remaining)"
+    return value="result"

@@ -73,10 +73,9 @@ service name=Speculator export=true
   field name=snapshot type="FileSnapshot|null" private=true
 
   constructor params=""
-    handler <<<
-      this.runId = `spec_${Date.now()}_${randomUUID().slice(0, 8)}`;
-      this.snapshot = null;
-    >>>
+    handler lang="kern"
+      assign target="this.runId" value="`spec_${Date.now()}_${randomUUID().slice(0, 8)}`"
+      assign target="this.snapshot" value="null"
 
   method name=run params="opts:SpeculatorOptions" returns="Promise<SpeculatorResult>" async=true
     doc "Execute the speculative run. When isolate=true (default), each member gets its own git worktree for shell commands and its own VirtualFS for Read/Edit/Write calls. The winner's worktree diff and VirtualFS overlay are applied to the real workspace."

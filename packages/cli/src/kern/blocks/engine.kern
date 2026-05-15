@@ -6,143 +6,26 @@ import from="./markdown.js" names="parseMarkdownBlocks,cleanEngineOutput"
 import from="./markdown.js" names="ContentSegment" types=true
 import from="./rich-text.js" names="parseProseToRichLines"
 import from="./rich-text.js" names="RichLine" types=true
-import from="./output-format.js" names="ENGINE_COLORS"
+import from="./output-format.js" names="ENGINE_COLORS,shortToolPath,isCesarTelemetryLine,formatConfidenceToolLabel"
 import from="../signals/icons.js" names="icons"
 import from="../../handlers/types.js" names="OutputEvent,EngineProgress" types=true
 import from="./rendering.js" names="contentWidth,color256toHex,engineColor,RenderedSegments,RichLineView,DiffLine,SyntaxLine,GradientLine,AnsiLine,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES"
 import from="./markdown.js" names="truncateCodeLine"
 import from="./arena.js" names="ForgeArena,BrainstormStorm,CampfireFire,TribunalCourt"
 import from="./plan-view.js" names="PlanProposalView,PlanExecutionView"
+import from="./engine-helpers.js" names="parseToolInputPayload,extractPatchText,parsePatchPreview,extractSummary"
+
+module name=EngineHelperExports
+  export from="./engine-helpers.js" names="parseToolInputPayload,extractPatchText,parsePatchPreview,extractSummary"
 
 // ── Brand Constants ─────────────────────────────────────────────────
 
 const name=BRAND type="readonly string[]" value={{ ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const }}
 
-const name=LOGO_LINES type="string[]"
-  handler <<<
-    [
-      '    \u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2557   \u2588\u2588\u2557',
-      '   \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551',
-      '   \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2588\u2557\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2588\u2588\u2557 \u2588\u2588\u2551',
-      '   \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551\u255a\u2588\u2588\u2557\u2588\u2588\u2551',
-      '   \u2588\u2588\u2551  \u2588\u2588\u2551\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551 \u255a\u2588\u2588\u2588\u2588\u2551',
-      '   \u255a\u2550\u255d  \u255a\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d',
-    ]
-  >>>
+const name=LOGO_LINES type="string[]" value={{ ['    █████╗  ██████╗  ██████╗ ███╗   ██╗', '   ██╔══██╗██╔════╝ ██╔═══██╗████╗  ██║', '   ███████║██║  ███╗██║   ██║██╔██╗ ██║', '   ██╔══██╗██║   ██╗██║   ██║██║╚██╗██║', '   ██║  ██║╚██████╔╝╚██████╔╝██║ ╚████║', '   ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝'] }}
 
 const name=VERSION type=string value={{ '0.1.0' }}
 
-fn name=shortToolPath params="filePath:string" returns=string expr={{ return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~'); }}
-
-fn name=isCesarTelemetryLine params="message:string" returns=boolean
-  handler lang="kern"
-    let name=text value="String(message ?? '').trim()"
-    return value="text.startsWith('Cesar route:') || text.startsWith('What happened:')"
-
-fn name=parseToolInputPayload params="input:string" returns=any
-  handler <<<
-    const rawInput = String(input ?? '');
-    let parsed: Record<string, unknown> = {};
-    try {
-      if (rawInput.trim().startsWith('{')) parsed = JSON.parse(rawInput);
-    } catch {
-      parsed = {};
-    }
-    return { rawInput, parsed };
-  >>>
-
-fn name=formatConfidenceToolLabel params="parsed:any, rawInput:string" returns=string
-  handler <<<
-    const rawValue = parsed?.value ?? parsed?.confidence ?? parsed?.score;
-    let value = Number(rawValue);
-    if (!Number.isFinite(value)) {
-      const text = String(rawInput ?? '');
-      const match = text.match(/"value"\s*:\s*(\d{1,3}(?:\.\d+)?)/) || text.match(/(\d{1,3})\s*%/);
-      if (match) value = Number(match[1]);
-    }
-    if (Number.isFinite(value)) {
-      const pct = value <= 1 && value > 0 ? Math.round(value * 100) : Math.round(value);
-      if (pct >= 0 && pct <= 100) {
-        const reasoning = String(parsed?.reasoning ?? parsed?.reason ?? parsed?.thought ?? '').replace(/\s+/g, ' ').trim();
-        const shortReasoning = reasoning.length > 180 ? `${reasoning.slice(0, 177)}\u2026` : reasoning;
-        return shortReasoning ? `${pct}% confidence \u00b7 ${shortReasoning}` : `${pct}% confidence`;
-      }
-    }
-    return 'confidence';
-  >>>
-
-fn name=extractPatchText params="rawInput:string, parsed:any" returns=string
-  handler <<<
-    const values = [
-      parsed?.patch,
-      parsed?.content,
-      parsed?.diff,
-      parsed?.input,
-    ].filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0);
-    const fromParsed = values.find((value: string) =>
-      value.includes('*** Begin Patch') ||
-      value.includes('diff --git') ||
-      value.split('\n').some((line: string) => line.startsWith('@@'))
-    );
-    if (fromParsed) return fromParsed;
-    if (
-      rawInput.includes('*** Begin Patch') ||
-      rawInput.includes('diff --git') ||
-      rawInput.split('\n').some((line: string) => line.startsWith('@@'))
-    ) {
-      return rawInput;
-    }
-    return values[0] ?? '';
-  >>>
-
-fn name=parsePatchPreview params="rawInput:string, parsed:any" returns="{ files:string[]; lines:string[]; additions:number; deletions:number }"
-  handler <<<
-    const patchText = extractPatchText(rawInput, parsed);
-    const files: string[] = [];
-    const lines: string[] = [];
-    let additions = 0;
-    let deletions = 0;
-    const addFile = (filePath: string) => {
-      const clean = filePath.trim().replace(/^["']|["']$/g, '');
-      if (clean && !files.includes(clean)) files.push(clean);
-    };
-
-    for (const line of patchText.split('\n')) {
-      const customFile = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/);
-      if (customFile) {
-        addFile(customFile[1]);
-        continue;
-      }
-      const diffFile = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
-      if (diffFile) {
-        addFile(diffFile[2]);
-        continue;
-      }
-      if (line.startsWith('+++ b/')) {
-        addFile(line.slice('+++ b/'.length));
-        continue;
-      }
-      if (line.startsWith('--- a/')) {
-        addFile(line.slice('--- a/'.length));
-        continue;
-      }
-      if (line.startsWith('@@')) {
-        lines.push(line);
-        continue;
-      }
-      if (line.startsWith('+') && !line.startsWith('+++')) {
-        additions += 1;
-        lines.push(line);
-        continue;
-      }
-      if (line.startsWith('-') && !line.startsWith('---')) {
-        deletions += 1;
-        lines.push(line);
-      }
-    }
-
-    return { files, lines, additions, deletions };
-  >>>
 
 // ── Interface: OutputBlock ──────────────────────────────────────────
 
@@ -1143,17 +1026,6 @@ screen name=ToolCallGroup target=ink memo=true
 
 // ── Helper: extract first meaningful sentence from engine output ──
 
-fn name=extractSummary params="text:string, maxLen:number" returns=string
-  handler <<<
-    let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
-    s = s.replace(/^#+\s+.+\n/gm, '');
-    s = s.replace(/^\s*[-*]\s+/gm, '');
-    s = s.replace(/\*\*/g, '');
-    s = s.trim();
-    const firstSentence = s.match(/^[^.!?\n]{10,}[.!?]/);
-    const summary = firstSentence ? firstSentence[0] : s.slice(0, maxLen);
-    return summary.length > maxLen ? summary.slice(0, maxLen - 1) + '\u2026' : summary;
-  >>>
 
 // ── Screen: DebateGroup — collapsed summary for tribunal rounds ──
 

@@ -50,11 +50,10 @@ service name=StreamBridge export=true
   field name=onSwitch type="((sw: EngineSwitch) => void)|undefined" private=true
 
   constructor params="dispatch:(event:Record<string,unknown>)=>void,opts?:{initialEngineId?:string,onSwitch?:(sw:EngineSwitch)=>void}"
-    handler <<<
-      this.dispatch = dispatch;
-      this.activeEngineId = opts?.initialEngineId;
-      this.onSwitch = opts?.onSwitch;
-    >>>
+    handler lang="kern"
+      assign target="this.dispatch" value="dispatch"
+      assign target="this.activeEngineId" value="opts?.initialEngineId"
+      assign target="this.onSwitch" value="opts?.onSwitch"
 
   method name=bridge params="event:AgentEvent" returns=void
     doc "Convert one AgentEvent to its OutputEvent equivalent. Emits engine-switch before the content event whenever the active engine changes."
@@ -122,40 +121,26 @@ service name=StreamBridge export=true
 
   method name=makeOnEvent returns="(event:AgentEvent)=>void"
     doc "Factory: return an onEvent callback compatible with AgentSession.step({ onEvent }) and AgentTeam.step({ onEvent }). This is the drop-in replacement for the inline callbacks in handlers/agent.kern."
-    handler <<<
-      return (event: AgentEvent) => this.bridge(event);
-    >>>
+    handler lang="kern"
+      return value="(event: AgentEvent) => this.bridge(event)"
 
   method name=emitSwitch params="sw:EngineSwitch" returns=void
     doc "Manually emit an engine-switch event without a triggering AgentEvent — used by dispatch when Phase B auto-upgrades solo→team before any step runs."
-    handler <<<
-      this.dispatch({
-        type: 'engine-switch',
-        from: sw.from,
-        to: sw.to,
-        reason: sw.reason,
-        confidence: sw.confidence,
-      });
-      if (this.onSwitch) this.onSwitch(sw);
-      this.activeEngineId = sw.to;
-    >>>
+    handler lang="kern"
+      do value="this.dispatch({ type: 'engine-switch', from: sw.from, to: sw.to, reason: sw.reason, confidence: sw.confidence, })"
+      if cond="this.onSwitch"
+        do value="this.onSwitch(sw)"
+      assign target="this.activeEngineId" value="sw.to"
 
   method name=emitRouting params="mode:'solo'|'team',engines:string[],reason:string" returns=void
     doc "Emit an agent-routing event to show the user what Cesar decided before the step starts."
-    handler <<<
-      this.dispatch({
-        type: 'agent-routing',
-        mode,
-        engines,
-        reason,
-      });
-    >>>
+    handler lang="kern"
+      do value="this.dispatch({ type: 'agent-routing', mode, engines, reason, })"
 
   method name=reset params="newEngineId?:string" returns=void
     doc "Reset active engine tracking. Call at the start of a new session to avoid stale switch events from a prior run."
-    handler <<<
-      this.activeEngineId = newEngineId;
-    >>>
+    handler lang="kern"
+      assign target="this.activeEngineId" value="newEngineId"
 
   method name=getActiveEngineId returns="string|undefined"
     handler lang="kern"

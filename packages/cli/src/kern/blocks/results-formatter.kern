@@ -52,112 +52,90 @@ fn name=formatChatTranscript params="session:ChatSession" returns=string export=
   >>>
 
 fn name=formatBrainstorm params="r:SessionResult, idx:number" returns=string
-  handler <<<
-    const data = r.data as BrainstormResultData;
-    const lines: string[] = [];
-    lines.push(`${BOLD}${CYAN}${RULE}${RESET}`);
-    lines.push(`${BOLD} BRAINSTORM #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}"${r.question}"${RESET}`);
-    lines.push(`${DIM} Engines: ${r.engines.join(', ')}${r.winner ? ` · Winner: ${r.winner}` : ''}${RESET}`);
-    lines.push(`${BOLD}${CYAN}${RULE}${RESET}`);
-    lines.push('');
-
-    for (const bid of data.bids) {
-      const isWinner = bid.engineId === r.winner;
-      const marker = isWinner ? `${GREEN} (winner)${RESET}` : '';
-      const scoreTag = bid.score != null ? `${DIM} [score: ${bid.score}]${RESET}` : '';
-      lines.push(`${BOLD}── ${bid.engineId}${marker}${scoreTag} ──${RESET}`);
-      lines.push(bid.reasoning);
-      if (bid.approach) lines.push(bid.approach);
-      lines.push('');
-    }
-
-    if (data.response) {
-      lines.push(`${BOLD}${GREEN}── Winner's Response ──${RESET}`);
-      lines.push(data.response);
-      lines.push('');
-    }
-
-    return lines.join('\n');
-  >>>
+  handler lang="kern"
+    let name=data value="r.data as BrainstormResultData"
+    let name=lines type="string[]" value="[]"
+    do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
+    do value="lines.push(`${BOLD} BRAINSTORM #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
+    do value="lines.push(`${DIM} Engines: ${r.engines.join(', ')}${r.winner ? ` · Winner: ${r.winner}` : ''}${RESET}`)"
+    do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
+    do value="lines.push('')"
+    each name=bid in="data.bids"
+      let name=isWinner value="bid.engineId === r.winner"
+      let name=marker value="isWinner ? `${GREEN} (winner)${RESET}` : ''"
+      let name=scoreTag value="bid.score != null ? `${DIM} [score: ${bid.score}]${RESET}` : ''"
+      do value="lines.push(`${BOLD}── ${bid.engineId}${marker}${scoreTag} ──${RESET}`)"
+      do value="lines.push(bid.reasoning)"
+      if cond="bid.approach"
+        do value="lines.push(bid.approach)"
+      do value="lines.push('')"
+    if cond="data.response"
+      do value="lines.push(`${BOLD}${GREEN}── Winner's Response ──${RESET}`)"
+      do value="lines.push(data.response)"
+      do value="lines.push('')"
+    return value="lines.join('\\n')"
 
 fn name=formatCampfire params="r:SessionResult, idx:number" returns=string
-  handler <<<
-    const data = r.data as CampfireResultData;
-    const lines: string[] = [];
-    lines.push(`${BOLD}${YELLOW}${RULE}${RESET}`);
-    lines.push(`${BOLD} CAMPFIRE #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}"${r.question}"${RESET}`);
-    lines.push(`${DIM} Engines: ${r.engines.join(', ')}${RESET}`);
-    lines.push(`${BOLD}${YELLOW}${RULE}${RESET}`);
-    lines.push('');
-
-    for (const round of data.rounds) {
-      lines.push(`${BOLD}── ${round.engineId} ──${RESET}`);
-      lines.push(round.content);
-      lines.push('');
-    }
-
-    return lines.join('\n');
-  >>>
+  handler lang="kern"
+    let name=data value="r.data as CampfireResultData"
+    let name=lines type="string[]" value="[]"
+    do value="lines.push(`${BOLD}${YELLOW}${RULE}${RESET}`)"
+    do value="lines.push(`${BOLD} CAMPFIRE #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
+    do value="lines.push(`${DIM} Engines: ${r.engines.join(', ')}${RESET}`)"
+    do value="lines.push(`${BOLD}${YELLOW}${RULE}${RESET}`)"
+    do value="lines.push('')"
+    each name=round in="data.rounds"
+      do value="lines.push(`${BOLD}── ${round.engineId} ──${RESET}`)"
+      do value="lines.push(round.content)"
+      do value="lines.push('')"
+    return value="lines.join('\\n')"
 
 fn name=formatTribunal params="r:SessionResult, idx:number" returns=string
-  handler <<<
-    const data = r.data as TribunalResultData;
-    const lines: string[] = [];
-    lines.push(`${BOLD}${RED}${RULE}${RESET}`);
-    lines.push(`${BOLD} TRIBUNAL #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}"${r.question}"${RESET}`);
-    lines.push(`${DIM} Engines: ${r.engines.join(', ')}${RESET}`);
-    lines.push(`${BOLD}${RED}${RULE}${RESET}`);
-    lines.push('');
-
-    const roundNums = [...new Set(data.rounds.map(r => r.round))].sort();
-    for (const num of roundNums) {
-      lines.push(`${BOLD}${DIM}── Round ${num} ──${RESET}`);
-      const positions = data.rounds.filter(r => r.round === num);
-      for (const pos of positions) {
-        lines.push(`${BOLD}${pos.engineId}${RESET} ${DIM}(${pos.position})${RESET}`);
-        lines.push(pos.argument);
-        lines.push('');
-      }
-    }
-
-    lines.push(`${BOLD}── Verdict ──${RESET}`);
-    lines.push(data.verdict);
-    lines.push('');
-
-    return lines.join('\n');
-  >>>
+  handler lang="kern"
+    let name=data value="r.data as TribunalResultData"
+    let name=lines type="string[]" value="[]"
+    do value="lines.push(`${BOLD}${RED}${RULE}${RESET}`)"
+    do value="lines.push(`${BOLD} TRIBUNAL #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
+    do value="lines.push(`${DIM} Engines: ${r.engines.join(', ')}${RESET}`)"
+    do value="lines.push(`${BOLD}${RED}${RULE}${RESET}`)"
+    do value="lines.push('')"
+    let name=roundNums value="[...new Set(data.rounds.map(r => r.round))].sort()"
+    each name=num in="roundNums"
+      do value="lines.push(`${BOLD}${DIM}── Round ${num} ──${RESET}`)"
+      let name=positions value="data.rounds.filter(r => r.round === num)"
+      each name=pos in="positions"
+        do value="lines.push(`${BOLD}${pos.engineId}${RESET} ${DIM}(${pos.position})${RESET}`)"
+        do value="lines.push(pos.argument)"
+        do value="lines.push('')"
+    do value="lines.push(`${BOLD}── Verdict ──${RESET}`)"
+    do value="lines.push(data.verdict)"
+    do value="lines.push('')"
+    return value="lines.join('\\n')"
 
 fn name=formatForge params="r:SessionResult, idx:number" returns=string
-  handler <<<
-    const data = r.data as ForgeResultData;
-    const lines: string[] = [];
-    lines.push(`${BOLD}${GREEN}${RULE}${RESET}`);
-    lines.push(`${BOLD} FORGE #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}"${r.question}"${RESET}`);
-    lines.push(`${DIM} Engines: ${r.engines.join(', ')}${r.winner ? ` · Winner: ${r.winner}` : ''}${RESET}`);
-    lines.push(`${BOLD}${GREEN}${RULE}${RESET}`);
-    lines.push('');
-
-    const header = `${'Engine'.padEnd(20)} ${'Result'.padEnd(12)} ${'Score'.padEnd(8)} ${'Diff'.padEnd(12)} ${'Files'.padEnd(8)} ${'Time'.padEnd(8)}`;
-    lines.push(`${BOLD}${header}${RESET}`);
-    lines.push(THIN_RULE);
-
-    for (const row of data.scoreboard) {
-      const result = row.pass ? `${GREEN}PASS${RESET}` : `${RED}FAIL${RESET}`;
-      const isWinner = row.engineId === data.winner;
-      const name = isWinner ? `${BOLD}${row.engineId}${RESET}` : row.engineId;
-      const namePad = isWinner ? 28 : 20;
-      lines.push(`${name.padEnd(namePad)} ${result.padEnd(21)} ${String(row.score).padEnd(8)} ${(row.diffLines + ' lines').padEnd(12)} ${String(row.filesChanged).padEnd(8)} ${row.durationSec + 's'}`);
-    }
-
-    if (data.synthesis) {
-      lines.push('');
-      const synthResult = data.synthesis.pass ? `${GREEN}PASS${RESET}` : `${RED}FAIL${RESET}`;
-      lines.push(`${BOLD}Synthesis:${RESET} ${synthResult} (score: ${data.synthesis.score})`);
-    }
-
-    lines.push('');
-    return lines.join('\n');
-  >>>
+  handler lang="kern"
+    let name=data value="r.data as ForgeResultData"
+    let name=lines type="string[]" value="[]"
+    do value="lines.push(`${BOLD}${GREEN}${RULE}${RESET}`)"
+    do value="lines.push(`${BOLD} FORGE #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
+    do value="lines.push(`${DIM} Engines: ${r.engines.join(', ')}${r.winner ? ` · Winner: ${r.winner}` : ''}${RESET}`)"
+    do value="lines.push(`${BOLD}${GREEN}${RULE}${RESET}`)"
+    do value="lines.push('')"
+    fmt name=header template="${'Engine'.padEnd(20)} ${'Result'.padEnd(12)} ${'Score'.padEnd(8)} ${'Diff'.padEnd(12)} ${'Files'.padEnd(8)} ${'Time'.padEnd(8)}"
+    do value="lines.push(`${BOLD}${header}${RESET}`)"
+    do value="lines.push(THIN_RULE)"
+    each name=row in="data.scoreboard"
+      let name=result value="row.pass ? `${GREEN}PASS${RESET}` : `${RED}FAIL${RESET}`"
+      let name=isWinner value="row.engineId === data.winner"
+      let name=name value="isWinner ? `${BOLD}${row.engineId}${RESET}` : row.engineId"
+      let name=namePad value="isWinner ? 28 : 20"
+      do value="lines.push(`${name.padEnd(namePad)} ${result.padEnd(21)} ${String(row.score).padEnd(8)} ${(row.diffLines + ' lines').padEnd(12)} ${String(row.filesChanged).padEnd(8)} ${row.durationSec + 's'}`)"
+    if cond="data.synthesis"
+      do value="lines.push('')"
+      let name=synthResult value="data.synthesis.pass ? `${GREEN}PASS${RESET}` : `${RED}FAIL${RESET}`"
+      do value="lines.push(`${BOLD}Synthesis:${RESET} ${synthResult} (score: ${data.synthesis.score})`)"
+    do value="lines.push('')"
+    return value="lines.join('\\n')"
 
 fn name=formatSessionResults params="results:SessionResult[]" returns=string export=true
   handler <<<

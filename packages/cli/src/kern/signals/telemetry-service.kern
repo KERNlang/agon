@@ -38,38 +38,29 @@ service name=TelemetryService export=true singleton=true
   field name=pidusageLoader type="Promise<any>|null" private=true
 
   constructor params="opts:TelemetryServiceOptions"
-    handler <<<
-      this.opts = opts;
-      if (opts.__test) {
-        this.sampleIntervalMs = Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS);
-        this.stallThresholdMs = Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS);
-      } else {
-        this.sampleIntervalMs = Math.max(250, Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS));
-        this.stallThresholdMs = Math.max(1000, Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS));
-      }
-      this.networkProbeUrl = String(opts.networkProbeUrl ?? DEFAULT_NETWORK_PROBE_URL);
-      this.vitals = new Map();
-      this.subscribers = new Set();
-      this.stalledIds = new Set();
-      this.running = false;
-      this.samplerTask = null;
-      this.recentFallbacks = [];
-      this.pidusageLoader = null;
-      const now = Date.now();
-      const engines: EngineVitals[] = [];
-      for (const id of opts.registry.listIds()) {
-        const vital = createEngineVitals(id, { state: 'idle' as EngineVitalState, lastHeartbeatAt: now });
-        this.vitals.set(id, vital);
-        engines.push(vital);
-      }
-      this.snapshot = {
-        timestamp: now,
-        engines,
-        overallHealth: computeOverallHealth(engines),
-        activeRuns: this.runningJobCount(),
-        recentFallbacks: [],
-      };
-    >>>
+    handler lang="kern"
+      assign target="this.opts" value="opts"
+      if cond="opts.__test"
+        assign target="this.sampleIntervalMs" value="Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS)"
+        assign target="this.stallThresholdMs" value="Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS)"
+      else
+        assign target="this.sampleIntervalMs" value="Math.max(250, Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS))"
+        assign target="this.stallThresholdMs" value="Math.max(1000, Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS))"
+      assign target="this.networkProbeUrl" value="String(opts.networkProbeUrl ?? DEFAULT_NETWORK_PROBE_URL)"
+      assign target="this.vitals" value="new Map()"
+      assign target="this.subscribers" value="new Set()"
+      assign target="this.stalledIds" value="new Set()"
+      assign target="this.running" value="false"
+      assign target="this.samplerTask" value="null"
+      assign target="this.recentFallbacks" value="[]"
+      assign target="this.pidusageLoader" value="null"
+      let name=now value="Date.now()"
+      let name=engines type="EngineVitals[]" value="[]"
+      each name=id in="opts.registry.listIds()"
+        let name=vital value="createEngineVitals(id, { state: 'idle' as EngineVitalState, lastHeartbeatAt: now })"
+        do value="this.vitals.set(id, vital)"
+        do value="engines.push(vital)"
+      assign target="this.snapshot" value="{ timestamp: now, engines, overallHealth: computeOverallHealth(engines), activeRuns: this.runningJobCount(), recentFallbacks: [], }"
 
   method name=start returns=void
     handler <<<
@@ -303,22 +294,17 @@ service name=TelemetryService export=true singleton=true
     >>>
 
   method name=readPidusage async=true params="pid:number" returns="Promise<{ok:boolean,cpuPercent?:number,rssBytes?:number}>" private=true
-    handler <<<
-      try {
-        const pidusage = await this.loadPidusage();
-        if (!pidusage) return { ok: false };
-        const stats = await pidusage(pid);
-        const cpuPercent = Number(stats?.cpu ?? 0);
-        const rssBytes = Number(stats?.memory ?? 0);
-        return {
-          ok: true,
-          cpuPercent: Number.isFinite(cpuPercent) ? cpuPercent : undefined,
-          rssBytes: Number.isFinite(rssBytes) ? Math.max(0, rssBytes) : undefined,
-        };
-      } catch {
-        return { ok: false };
-      }
-    >>>
+    handler lang="kern"
+      try
+        let name=pidusage value="await this.loadPidusage()"
+        if cond="!pidusage"
+          return value="{ ok: false }"
+        let name=stats value="await pidusage(pid)"
+        let name=cpuPercent value="Number(stats?.cpu ?? 0)"
+        let name=rssBytes value="Number(stats?.memory ?? 0)"
+        return value="{ ok: true, cpuPercent: Number.isFinite(cpuPercent) ? cpuPercent : undefined, rssBytes: Number.isFinite(rssBytes) ? Math.max(0, rssBytes) : undefined, }"
+        catch name=e
+          return value="{ ok: false }"
 
   method name=loadPidusage async=true returns="Promise<any>" private=true
     handler <<<

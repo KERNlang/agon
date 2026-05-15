@@ -12,18 +12,18 @@ import from="../signals/icons.js" names="icons"
 // ── Forge ───────────────────────────────────────────────────────────
 
 fn name=forgeBar params="pct:number, width:number" returns=string export=false
-  handler <<<
-    const filled = Math.round(pct * width);
-    const half = pct > 0 && filled < width ? 1 : 0;
-    return '\u2588'.repeat(filled) + (half ? '\u2592' : '') + '\u2591'.repeat(Math.max(0, width - filled - half));
-  >>>
+  handler lang="kern"
+    let name=filled value="Math.round(pct * width)"
+    let name=half value="pct > 0 && filled < width ? 1 : 0"
+    let name=halfChar value="half ? '\\u2592' : ''"
+    return value="'\\u2588'.repeat(filled) + halfChar + '\\u2591'.repeat(Math.max(0, width - filled - half))"
 
 fn name=forgeSummary params="engines:EngineProgress[]" returns=string export=false
-  handler <<<
-    const doneCount = engines.filter((e: EngineProgress) => e.done).length;
-    const failedCount = engines.filter((e: EngineProgress) => e.failed).length;
-    return ` ${doneCount}/${engines.length} done${failedCount ? ` · ${failedCount} failed` : ''}`;
-  >>>
+  handler lang="kern"
+    let name=doneCount value="engines.filter((e: EngineProgress) => e.done).length"
+    let name=failedCount value="engines.filter((e: EngineProgress) => e.failed).length"
+    let name=failedSuffix value="failedCount ? ' · ' + failedCount + ' failed' : ''"
+    return value="' ' + doneCount + '/' + engines.length + ' done' + failedSuffix"
 
 fn name=renderForgeRows params="engines:EngineProgress[]" returns="React.ReactNode" export=false
   handler <<<
@@ -75,23 +75,9 @@ screen name=ForgeArena target=ink
 
 // ── Brainstorm: The Storm ───────────────────────────────────────────
 
-const name=STORM_BOLTS type="string[]"
-  handler <<<
-    [
-      '\u26a1    \u26a1      \u26a1',
-      '   \u26a1      \u26a1   ',
-      '\u26a1      \u26a1    \u26a1',
-      '  \u26a1   \u26a1      ',
-    ]
-  >>>
+const name=STORM_BOLTS type="string[]" value={{ ['⚡    ⚡      ⚡', '   ⚡      ⚡   ', '⚡      ⚡    ⚡', '  ⚡   ⚡      '] }}
 
-const name=STORM_CLOUDS type="string[]"
-  handler <<<
-    [
-      '  \u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572',
-      ' \u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572',
-    ]
-  >>>
+const name=STORM_CLOUDS type="string[]" value={{ ['  ╱╲╱╲╱╲╱╲╱╲╱╲', ' ╲╱╲╱╲╱╲╱╲╱╲╱╲'] }}
 
 screen name=BrainstormStorm target=ink
   prop name=engines type="EngineProgress[]"
@@ -135,23 +121,7 @@ screen name=BrainstormStorm target=ink
 
 // ── Campfire: The Flames ────────────────────────────────────────────
 
-const name=FIRE_FRAMES type="string[][]"
-  handler <<<
-    [
-      ['       (  ) (  )  ',
-       '      (    )(   ) ',
-       '       )  (  ) (  ',
-       '      \u2571\u2591\u2592\u2593\u2588\u2588\u2593\u2592\u2591\u2572 '],
-      ['      ( )(  )( )  ',
-       '       (   )(  )  ',
-       '      ( )( )(  )  ',
-       '      \u2571\u2591\u2592\u2593\u2588\u2588\u2593\u2592\u2591\u2572 '],
-      ['        (  )(  )  ',
-       '      (  )(   )(  ',
-       '       ( . )( )   ',
-       '      \u2571\u2591\u2592\u2593\u2588\u2588\u2593\u2592\u2591\u2572 '],
-    ]
-  >>>
+const name=FIRE_FRAMES type="string[][]" value={{ [['       (  ) (  )  ', '      (    )(   ) ', '       )  (  ) (  ', '      ╱░▒▓██▓▒░╲ '], ['      ( )(  )( )  ', '       (   )(  )  ', '      ( )( )(  )  ', '      ╱░▒▓██▓▒░╲ '], ['        (  )(  )  ', '      (  )(   )(  ', '       ( . )( )   ', '      ╱░▒▓██▓▒░╲ ']] }}
 
 screen name=CampfireFire target=ink
   prop name=engines type="EngineProgress[]"
@@ -210,14 +180,7 @@ screen name=CampfireFire target=ink
 
 // ── Tribunal: The Court ─────────────────────────────────────────────
 
-const name=SCALES_FRAMES type="string[]"
-  handler <<<
-    [
-      '  \u2696\u2550\u2550\u2550\u2550 T R I B U N A L \u2550\u2550\u2550\u2550\u2696',
-      '  \u2696\u2550\u2550\u2726\u2550 T R I B U N A L \u2550\u2726\u2550\u2550\u2696',
-      '  \u2696\u2550\u2550\u2550\u2550 T R I B U N A L \u2550\u2550\u2550\u2550\u2696',
-    ]
-  >>>
+const name=SCALES_FRAMES type="string[]" value={{ ['  ⚖════ T R I B U N A L ════⚖', '  ⚖══✦═ T R I B U N A L ═✦══⚖', '  ⚖════ T R I B U N A L ════⚖'] }}
 
 screen name=TribunalCourt target=ink
   prop name=engines type="EngineProgress[]"

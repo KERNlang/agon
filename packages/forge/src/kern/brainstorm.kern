@@ -1,33 +1,36 @@
 import from="node:crypto" names="randomUUID"
-import from="@agon/core" names="EngineAdapter,BrainstormBid,BrainstormResult,ScoutBid" types=true
+import from="@agon/core" names="EngineAdapter,BrainstormBid,BrainstormResult,BrainstormGroup,ScoutBid" types=true
 import from="@agon/core" names="EngineRegistry,buildBrainstormPrompt,getRatings,loadConfig,createSidechainLogger,updateGlickoRanked,classifyTask"
 import from="@kernlang/protocol" names="buildKernDraftPrompt,parseKernDraft,buildKernRankPrompt"
 import from="@kernlang/protocol" names="KernDraft" types=true
+import from="./dedup-bridge.js" names="dedupBrainstormDrafts"
 
 fn name=calibrateConfidence params="engineId:string, rawBid:number" returns=number
-  handler <<<
-    // Use Glicko-2 brainstorm ratings for calibration, fall back to global
-    const ratings = getRatings();
-    const history = ratings.byMode.brainstorm[engineId] ?? ratings.global[engineId];
-    if (!history || history.wins + history.losses < 3) return rawBid;
-    const winRate = history.wins / (history.wins + history.losses);
-    // Blend: 30% self-reported, 70% track record
-    return Math.round(rawBid * 0.3 + winRate * 100 * 0.7);
-  >>>
+  handler lang="kern"
+    comment raw="// Use Glicko-2 brainstorm ratings for calibration, fall back to global"
+    let name=ratings value="getRatings()"
+    let name=history value="ratings.byMode.brainstorm[engineId] ?? ratings.global[engineId]"
+    if cond="!history || history.wins + history.losses < 3"
+      return value="rawBid"
+    let name=winRate value="history.wins / (history.wins + history.losses)"
+    comment raw="// Blend: 30% self-reported, 70% track record"
+    return value="Math.round(rawBid * 0.3 + winRate * 100 * 0.7)"
 
 fn name=qualityScore params="engineId:string, draft:KernDraft" returns="number"
-  handler <<<
-    let score = 0;
-    if (draft.approach.length > 10) score += 20;
-    if (draft.approach.length > 30) score += 10;
-    if (draft.reasoning.length > 10) score += 15;
-    score += Math.min(draft.steps.length, 7) * 5;
-    score += Math.min(draft.tradeoffs.length, 5) * 5;
-    score += Math.min(draft.keyFiles.length, 5) * 3;
-    // Use calibrated confidence, not raw self-report
-    score += calibrateConfidence(engineId, draft.confidence) * 0.05;
-    return score;
-  >>>
+  handler lang="kern"
+    let name=score kind=let value="0"
+    if cond="draft.approach.length > 10"
+      assign target="score" op="+=" value="20"
+    if cond="draft.approach.length > 30"
+      assign target="score" op="+=" value="10"
+    if cond="draft.reasoning.length > 10"
+      assign target="score" op="+=" value="15"
+    assign target="score" op="+=" value="Math.min(draft.steps.length, 7) * 5"
+    assign target="score" op="+=" value="Math.min(draft.tradeoffs.length, 5) * 5"
+    assign target="score" op="+=" value="Math.min(draft.keyFiles.length, 5) * 3"
+    comment raw="// Use calibrated confidence, not raw self-report"
+    assign target="score" op="+=" value="calibrateConfidence(engineId, draft.confidence) * 0.05"
+    return value="score"
 
 fn name=rankDrafts params="drafts:{engineId:string, draft:KernDraft, raw:string}[]" returns="{engineId:string, draft:KernDraft, raw:string}[]"
   handler <<<
@@ -108,59 +111,30 @@ fn name=collectRankedDrafts async=true params="opts:{question:string, context?:s
   >>>
 
 fn name=scoutScore params="bid:ScoutBid" returns=number
-  handler <<<
-    let score = 0;
-    // Confidence: 40% weight (0-40 points)
-    score += Math.min(bid.confidence, 100) * 0.4;
-    // Key files: 20% weight (0-20 points)
-    score += Math.min(bid.keyFiles.length, 5) * 4;
-    // Steps detail: 20% weight (0-20 points)
-    score += Math.min(bid.steps.length, 5) * 4;
-    // Risk assessment: 20% weight (0-20 points)
-    score += bid.risk === 'low' ? 20 : bid.risk === 'medium' ? 10 : 0;
-    return score;
-  >>>
+  handler lang="kern"
+    let name=score kind=let value="0"
+    comment raw="// Confidence: 40% weight (0-40 points)"
+    assign target="score" op="+=" value="Math.min(bid.confidence, 100) * 0.4"
+    comment raw="// Key files: 20% weight (0-20 points)"
+    assign target="score" op="+=" value="Math.min(bid.keyFiles.length, 5) * 4"
+    comment raw="// Steps detail: 20% weight (0-20 points)"
+    assign target="score" op="+=" value="Math.min(bid.steps.length, 5) * 4"
+    comment raw="// Risk assessment: 20% weight (0-20 points)"
+    assign target="score" op="+=" value="bid.risk === 'low' ? 20 : bid.risk === 'medium' ? 10 : 0"
+    return value="score"
 
 fn name=runScout async=true params="opts:{question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}" returns="Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}>"
-  handler <<<
-    const count = opts.scoutCount ?? 2;
-    const scouts = opts.engines.slice(0, count);
-
-    const ranked = await collectRankedDrafts({
-      question: opts.question,
-      context: opts.context,
-      engines: scouts,
-      registry: opts.registry,
-      adapter: opts.adapter,
-      timeout: Math.min(opts.timeout, 30),
-      outputDir: opts.outputDir,
-      signal: opts.signal,
-    });
-
-    const bids: ScoutBid[] = ranked.map((d) => ({
-      engineId: d.engineId,
-      confidence: calibrateConfidence(d.engineId, d.draft.confidence),
-      approach: d.draft.approach,
-      steps: d.draft.steps,
-      keyFiles: d.draft.keyFiles,
-      risk: d.draft.approach.toLowerCase().includes('risk') || d.draft.tradeoffs.length > 2 ? 'high' as const : d.draft.tradeoffs.length > 0 ? 'medium' as const : 'low' as const,
-      needsCompetition: d.draft.tradeoffs.some((t: string) => /compet|test|verify|compar/i.test(t)),
-    }));
-
-    // Sort by scoutScore
-    bids.sort((a, b) => scoutScore(b) - scoutScore(a));
-
-    const topConfidence = bids.length > 0 ? bids[0].confidence : 0;
-    const secondConfidence = bids.length > 1 ? bids[1].confidence : 0;
-    const disagreementSpread = Math.abs(topConfidence - secondConfidence);
-
-    return {
-      rankedBids: bids,
-      leadEngine: bids.length > 0 ? bids[0].engineId : scouts[0],
-      topConfidence,
-      disagreementSpread,
-    };
-  >>>
+  handler lang="kern"
+    let name=count value="opts.scoutCount ?? 2"
+    let name=scouts value="opts.engines.slice(0, count)"
+    let name=ranked value="await collectRankedDrafts({ question: opts.question, context: opts.context, engines: scouts, registry: opts.registry, adapter: opts.adapter, timeout: Math.min(opts.timeout, 30), outputDir: opts.outputDir, signal: opts.signal, })"
+    let name=bids type="ScoutBid[]" value="ranked.map((d) => Object.assign({}, { engineId: d.engineId, confidence: calibrateConfidence(d.engineId, d.draft.confidence), approach: d.draft.approach, steps: d.draft.steps, keyFiles: d.draft.keyFiles, risk: d.draft.approach.toLowerCase().includes('risk') || d.draft.tradeoffs.length > 2 ? 'high' as const : d.draft.tradeoffs.length > 0 ? 'medium' as const : 'low' as const, needsCompetition: d.draft.tradeoffs.some((t: string) => /compet|test|verify|compar/i.test(t)) }))"
+    comment raw="// Sort by scoutScore"
+    do value="bids.sort((a, b) => scoutScore(b) - scoutScore(a))"
+    let name=topConfidence value="bids.length > 0 ? bids[0].confidence : 0"
+    let name=secondConfidence value="bids.length > 1 ? bids[1].confidence : 0"
+    let name=disagreementSpread value="Math.abs(topConfidence - secondConfidence)"
+    return value="{ rankedBids: bids, leadEngine: bids.length > 0 ? bids[0].engineId : scouts[0], topConfidence, disagreementSpread, }"
 
 fn name=fallbackParse params="output:string" returns="KernDraft"
   handler <<<
@@ -247,6 +221,14 @@ fn name=runBrainstorm async=true params="opts:{question:string, context?:string,
       };
     }
 
+    // Cluster paraphrased drafts via Python embedding sidecar.
+    // Best-effort — null result means caller falls back to no-dedup display.
+    const dedupGroups = bids.length >= 2
+      ? await dedupBrainstormDrafts(
+          ranked.map((d) => ({ engineId: d.engineId, text: d.raw || d.draft.approach || '' }))
+        )
+      : null;
+
     // Update Glicko-2 ratings for all ranked engines
     if (bids.length >= 2) {
       const taskClass = classifyTask(opts.question);
@@ -313,5 +295,6 @@ fn name=runBrainstorm async=true params="opts:{question:string, context?:string,
       bids,
       winner: winner.engineId,
       response: response.replace(/<think>[\s\S]*?<\/think>\s*/gi, ''),
+      groups: dedupGroups ?? undefined,
     };
   >>>

@@ -15,11 +15,11 @@ fn name=getCesarPlansDir returns=string export=true expr={{ return runtimeAgonPa
   doc "Canonical directory for Cesar execution plans. Markdown and JSON live together so the user can inspect and edit the exact plan Cesar proposed."
 
 fn name=safeCesarPlanId params="planId:string" returns=string export=false
-  handler <<<
-    const sanitized = String(planId ?? '').replace(/[^a-zA-Z0-9_-]/g, '');
-    if (!sanitized) throw new Error(`Invalid plan ID: ${planId}`);
-    return sanitized;
-  >>>
+  handler lang="kern"
+    let name=sanitized value="String(planId ?? '').replace(/[^a-zA-Z0-9_-]/g, '')"
+    if cond="!sanitized"
+      throw value="new Error(`Invalid plan ID: ${planId}`)"
+    return value="sanitized"
 
 fn name=cesarPlanJsonPath params="planId:string" returns=string export=true
   doc "Canonical JSON path for a Cesar plan under ~/.agon/plans."
@@ -100,42 +100,18 @@ interface name=CesarPlan
 
 fn name=createCesarPlan params="intent:string,steps:CesarPlanStep[]" returns=CesarPlan
   doc "Create a new CesarPlan in 'planning' state. Steps with dependsOn are marked 'blocked', others 'pending'."
-  handler <<<
-    const id = `cplan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const initializedSteps = steps.map(s => ({
-      ...s,
-      state: (s.dependsOn && s.dependsOn.length > 0 ? 'blocked' : 'pending') as CesarStepState,
-    }));
-    const totalEstimatedTokens = steps.reduce((sum, s) => sum + s.estimatedTokens, 0);
-    const totalEstimatedCostUsd = steps.reduce((sum, s) => sum + s.estimatedCostUsd, 0);
-    const now = new Date().toISOString();
-    return {
-      id,
-      state: 'planning',
-      intent,
-      steps: initializedSteps,
-      totalEstimatedTokens,
-      totalEstimatedCostUsd,
-      totalActualTokens: 0,
-      totalActualCostUsd: 0,
-      stepContext: {},
-      createdAt: now,
-      updatedAt: now,
-      activeStepId: null,
-      currentStepId: null,
-    };
-  >>>
+  handler lang="kern"
+    fmt name=id template="cplan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}"
+    let name=initializedSteps value="steps.map(s => Object.assign({}, s, { state: (s.dependsOn && s.dependsOn.length > 0 ? 'blocked' : 'pending') as CesarStepState }))"
+    let name=totalEstimatedTokens value="steps.reduce((sum, s) => sum + s.estimatedTokens, 0)"
+    let name=totalEstimatedCostUsd value="steps.reduce((sum, s) => sum + s.estimatedCostUsd, 0)"
+    let name=now value="new Date().toISOString()"
+    return value="{ id, state: 'planning', intent, steps: initializedSteps, totalEstimatedTokens, totalEstimatedCostUsd, totalActualTokens: 0, totalActualCostUsd: 0, stepContext: {}, createdAt: now, updatedAt: now, activeStepId: null, currentStepId: null, }"
 
 fn name=approveCesarPlan params="plan:CesarPlan" returns=CesarPlan
   doc "Transition plan from 'awaiting_approval' to 'running', set approvedAt."
-  handler <<<
-    return {
-      ...plan,
-      state: 'running' as CesarPlanState,
-      approvedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-  >>>
+  handler lang="kern"
+    return value="{ ...plan, state: 'running' as CesarPlanState, approvedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), }"
 
 fn name=advanceCesarStep params="plan:CesarPlan,stepId:string,result:CesarStepResult" returns=CesarPlan
   doc "Mark a step done/failed, unblock dependents, determine plan state."
@@ -236,27 +212,23 @@ fn name=saveCesarPlan params="plan:CesarPlan" returns=void export=true
 
 fn name=loadCesarPlan params="planId:string" returns="CesarPlan|null" export=true
   doc "Load a persisted CesarPlan from ~/.agon/plans/<id>.json. Falls back to the legacy ~/.agon/runs path for old sessions."
-  handler <<<
-    let safeId = '';
-    try {
-      safeId = safeCesarPlanId(planId);
-    } catch {
-      return null;
-    }
-    const paths = [
-      { filePath: cesarPlanJsonPath(safeId), canonical: true },
-      { filePath: runtimeAgonPath('runs', `${safeId}.json`), canonical: false },
-    ];
-    for (const entry of paths) {
-      try {
-        const plan = JSON.parse(readFileSync(entry.filePath, 'utf-8')) as CesarPlan;
-        const fallbackMarkdownPath = cesarPlanMarkdownPath(plan.id);
-        const planFilePath = plan.planFilePath ?? (entry.canonical || existsSync(fallbackMarkdownPath) ? fallbackMarkdownPath : undefined);
-        return planFilePath ? { ...plan, planFilePath } : plan;
-      } catch { /* try next location */ }
-    }
-    return null;
-  >>>
+  handler lang="kern"
+    let name=safeId kind=let value="''"
+    try
+      assign target="safeId" value="safeCesarPlanId(planId)"
+      catch name=e
+        return value="null"
+    let name=paths value="[ { filePath: cesarPlanJsonPath(safeId), canonical: true }, { filePath: runtimeAgonPath('runs', `${safeId}.json`), canonical: false }, ]"
+    each name=entry in="paths"
+      try
+        let name=plan value="JSON.parse(readFileSync(entry.filePath, 'utf-8')) as CesarPlan"
+        let name=fallbackMarkdownPath value="cesarPlanMarkdownPath(plan.id)"
+        let name=hasFallback value="entry.canonical || existsSync(fallbackMarkdownPath)"
+        let name=fallbackPath value="hasFallback ? fallbackMarkdownPath : undefined"
+        let name=planFilePath value="plan.planFilePath ?? fallbackPath"
+        return value="planFilePath ? { ...plan, planFilePath } : plan"
+        catch name=e
+    return value="null"
 
 fn name=listCesarPlans params="" returns="CesarPlan[]" export=true
   doc "List persisted CesarPlans from ~/.agon/plans, with legacy ~/.agon/runs fallback."

@@ -37,29 +37,29 @@ const name=XML_TOOL_MARKUP_HOLD_CHARS type=number value=24
 
 fn name=detectNarratedToolStall params="text:string" returns=boolean export=true
   doc "Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling."
-  handler <<<
-    const body = String(text ?? '').trim();
-    if (!body) return false;
-    const tail = body.slice(-700);
-    const FAKE_GATE_RE = /\b(?:need (?:user )?(?:permission|approval)|await(?:ing)? approval|tool (?:keeps )?blocking me|(?:edit|write|bash|command) tool (?:keeps )?blocking me|blocked by (?:the )?(?:edit|write|bash) tool|let me try writing|try writing the full file|since i(?:'ve| have) already read it)\b/i;
-    const READ_INTENT_RE = /\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|see|review|open|view)\s+[`"']?[a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6}[`"']?/i;
-    const SEARCH_INTENT_RE = /\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:search|grep|find|look)\s+(?:for\s+)?[`"']?.+?[`"']?\s*(?:in\s+|$)/i;
-    const DIR_INTENT_RE = /\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:check|see|look at|list|find)\s+(?:what's in |files in |the )?\s*[`"']?[a-zA-Z0-9_./-]+\/[`"']?/i;
-    const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|now (?:let me|i'll)|continu(?:e|ing)|keep (?:reading|investigating|looking)|next[,.]?\s*(?:i|let)|before (?:i can|proceeding|implementing|deciding))\b/i;
-    return FAKE_GATE_RE.test(tail) || READ_INTENT_RE.test(tail) || SEARCH_INTENT_RE.test(tail) || DIR_INTENT_RE.test(tail) || STALL_RE.test(tail);
-  >>>
+  handler lang="kern"
+    let name=body value="String(text ?? '').trim()"
+    if cond="!body"
+      return value="false"
+    let name=tail value="body.slice(-700)"
+    let name=FAKE_GATE_RE value="/\\b(?:need (?:user )?(?:permission|approval)|await(?:ing)? approval|tool (?:keeps )?blocking me|(?:edit|write|bash|command) tool (?:keeps )?blocking me|blocked by (?:the )?(?:edit|write|bash) tool|let me try writing|try writing the full file|since i(?:'ve| have) already read it)\\b/i"
+    let name=READ_INTENT_RE value="/\\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|see|review|open|view)\\s+[`\"']?[a-zA-Z0-9_./-]+\\.[a-zA-Z]{1,6}[`\"']?/i"
+    let name=SEARCH_INTENT_RE value="/\\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:search|grep|find|look)\\s+(?:for\\s+)?[`\"']?.+?[`\"']?\\s*(?:in\\s+|$)/i"
+    let name=DIR_INTENT_RE value="/\\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:check|see|look at|list|find)\\s+(?:what's in |files in |the )?\\s*[`\"']?[a-zA-Z0-9_./-]+\\/[`\"']?/i"
+    let name=STALL_RE value="/\\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|now (?:let me|i'll)|continu(?:e|ing)|keep (?:reading|investigating|looking)|next[,.]?\\s*(?:i|let)|before (?:i can|proceeding|implementing|deciding))\\b/i"
+    return value="FAKE_GATE_RE.test(tail) || READ_INTENT_RE.test(tail) || SEARCH_INTENT_RE.test(tail) || DIR_INTENT_RE.test(tail) || STALL_RE.test(tail)"
 
 fn name=eagerFailedToolNames params="results:ToolCallResult[]" returns="string[]" export=true
   doc "Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed."
-  handler <<<
-    const names: string[] = [];
-    for (const result of results ?? []) {
-      if (result?.result?.ok) continue;
-      const name = String(result?.toolName ?? '').trim();
-      if (name && !names.includes(name)) names.push(name);
-    }
-    return names;
-  >>>
+  handler lang="kern"
+    let name=names type="string[]" value="[]"
+    each name=result in="results ?? []"
+      if cond="result?.result?.ok"
+        continue
+      let name=name value="String(result?.toolName ?? '').trim()"
+      if cond="name && !names.includes(name)"
+        do value="names.push(name)"
+    return value="names"
 
 fn name=shouldRunEagerRepairTool params="toolName:string,meta:any,failedToolNames:string[],usedToolNames:string[]" returns=boolean export=true
   doc "Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch."
@@ -76,49 +76,28 @@ fn name=shouldRunEagerRepairTool params="toolName:string,meta:any,failedToolName
 
 fn name=shouldStopAfterXmlToolCall params="toolName:string" returns=boolean export=true
   doc "Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet."
-  handler <<<
-    const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'ProposePlan']);
-    return HANDOFF_TOOLS.has(String(toolName ?? ''));
-  >>>
+  handler lang="kern"
+    let name=HANDOFF_TOOLS value="new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'ProposePlan'])"
+    return value="HANDOFF_TOOLS.has(String(toolName ?? ''))"
 
 fn name=buildReviewFollowupPrompt params="input:string, ctx:HandlerContext" returns="{ matched: boolean; prompt: string }" export=true
   doc "Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history."
-  handler <<<
-    const trimmed = input.trim();
-    const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
-    const review = ctx.lastReviewResult;
-    if (!match || !review) return { matched: false, prompt: input };
-
-    const ageMs = Date.now() - Number(review.timestamp ?? 0);
-    const maxAgeMs = 30 * 60 * 1000;
-    if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxAgeMs) {
-      return { matched: false, prompt: input };
-    }
-
-    const requestedEngine = match[1]?.toLowerCase();
-    const reviewOutput = String(review.reviewOutput ?? '').trim();
-    const cappedReview = reviewOutput.length > 8_000
-      ? `${reviewOutput.slice(0, 8_000)}\n… [review output truncated]`
-      : reviewOutput;
-    const label = String(review.label ?? review.target ?? 'uncommitted changes').trim() || 'uncommitted changes';
-
-    const prompt = [
-      '[REVIEW FOLLOW-UP]',
-      'The user\'s "fix it" refers to the MOST RECENT code review below.',
-      `Review target: ${label}`,
-      `Review engine: ${String(review.engineId ?? 'unknown')}`,
-      requestedEngine ? `Preferred implementation engine: ${requestedEngine}` : null,
-      'Do not ask which findings they mean. Address the review findings in the current workspace, prioritizing blocking and important issues first.',
-      '',
-      '## REVIEW FINDINGS',
-      cappedReview || '(review output missing)',
-      '',
-      '## USER FOLLOW-UP',
-      trimmed,
-    ].filter(Boolean).join('\n');
-
-    return { matched: true, prompt };
-  >>>
+  handler lang="kern"
+    let name=trimmed value="input.trim()"
+    let name=match value="trimmed.match(/^fix it(?:\\s+with\\s+([a-z0-9._-]+))?[\\s?!.,;:]*$/i)"
+    let name=review value="ctx.lastReviewResult"
+    if cond="!match || !review"
+      return value="{ matched: false, prompt: input }"
+    let name=ageMs value="Date.now() - Number(review.timestamp ?? 0)"
+    let name=maxAgeMs value="30 * 60 * 1000"
+    if cond="!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxAgeMs"
+      return value="{ matched: false, prompt: input }"
+    let name=requestedEngine value="match[1]?.toLowerCase()"
+    let name=reviewOutput value="String(review.reviewOutput ?? '').trim()"
+    let name=cappedReview value="reviewOutput.length > 8000 ? `${reviewOutput.slice(0, 8000)}\\n… [review output truncated]` : reviewOutput"
+    let name=label value="String(review.label ?? review.target ?? 'uncommitted changes').trim() || 'uncommitted changes'"
+    let name=prompt value="[ '[REVIEW FOLLOW-UP]', 'The user\\'s \"fix it\" refers to the MOST RECENT code review below.', `Review target: ${label}`, `Review engine: ${String(review.engineId ?? 'unknown')}`, requestedEngine ? `Preferred implementation engine: ${requestedEngine}` : null, 'Do not ask which findings they mean. Address the review findings in the current workspace, prioritizing blocking and important issues first.', '', '## REVIEW FINDINGS', cappedReview || '(review output missing)', '', '## USER FOLLOW-UP', trimmed, ].filter(Boolean).join('\\n')"
+    return value="{ matched: true, prompt }"
 
 fn name=extractDelegation params="toolName:string, args:Record<string,unknown>" returns="PendingDelegation"
   handler <<<
@@ -157,47 +136,48 @@ fn name=extractDelegation params="toolName:string, args:Record<string,unknown>" 
   >>>
 
 fn name=commitTurnAndDelegate async=true params="pendingDel:PendingDelegation, input:string, response:string, cesarEngineId:string, streaming:boolean, dispatch:Dispatch, ctx:HandlerContext, telemetry?:Record<string,unknown>" returns="Promise<CesarTurnOutcome>"
-  handler <<<
-    if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
-    if (!streaming) dispatch({ type: 'spinner-stop' });
-    await yieldToInk();
-    appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-    appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-    tracker.record(cesarEngineId, { prompt: input, response });
-    const delResult = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team);
-    const happened = buildWhatHappenedSummary(telemetry ?? {});
-    if (happened) dispatch({ type: 'info', message: happened });
-    if (delResult.approved) {
-      const finalAction = delResult.action ?? pendingDel.action;
-      const action = pendingDel.team ? `team-${finalAction}` : finalAction;
-    const mode = finalAction === 'forge' && pendingDel.scope === 'slice' && !(delResult.team ?? pendingDel.team)
-      ? 'forge-slice'
-      : action;
-    const reasoning = delResult.userContext ? `${pendingDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : pendingDel.reasoning;
-    return { mode: mode as any, delegated: true, responded: true, action, task: pendingDel.task, reasoning, decisionReason: 'tool-delegation', scope: pendingDel.scope, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns, ...(telemetry ?? {}) };
-  }
-  return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...(telemetry ?? {}) };
-  >>>
+  handler lang="kern"
+    if cond="streaming"
+      do value="dispatch({ type: 'streaming-end', engineId: cesarEngineId })"
+    if cond="!streaming"
+      do value="dispatch({ type: 'spinner-stop' })"
+    do value="await yieldToInk()"
+    do value="appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() })"
+    do value="appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() })"
+    do value="tracker.record(cesarEngineId, { prompt: input, response })"
+    let name=delResult value="await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team)"
+    let name=happened value="buildWhatHappenedSummary(telemetry ?? {})"
+    if cond="happened"
+      do value="dispatch({ type: 'info', message: happened })"
+    if cond="delResult.approved"
+      let name=finalAction value="delResult.action ?? pendingDel.action"
+      let name=action value="pendingDel.team ? `team-${finalAction}` : finalAction"
+      let name=mode value="finalAction === 'forge' && pendingDel.scope === 'slice' && !(delResult.team ?? pendingDel.team) ? 'forge-slice' : action"
+      let name=reasoning value="delResult.userContext ? `${pendingDel.reasoning ?? ''}\\n\\nUser context: ${delResult.userContext}` : pendingDel.reasoning"
+      return value="{ mode: mode as any, delegated: true, responded: true, action, task: pendingDel.task, reasoning, decisionReason: 'tool-delegation', scope: pendingDel.scope, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns, ...(telemetry ?? {}) }"
+    return value="{ delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...(telemetry ?? {}) }"
 
 fn name=commitTurnAndSuggest async=true params="suggestion:{action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input:string, response:string, cesarEngineId:string, color:number, streaming:boolean, dispatch:Dispatch, ctx:HandlerContext, telemetry?:Record<string,unknown>" returns="Promise<CesarTurnOutcome>"
-  handler <<<
-    if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
-    if (!streaming) dispatch({ type: 'spinner-stop' });
-    await yieldToInk();
-    appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-    appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-    tracker.record(cesarEngineId, { prompt: input, response });
-    if (suggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: suggestion.rest });
-  const delResult = await promptDelegation(suggestion.action, dispatch, suggestion.hardened, suggestion.tribunalMode, suggestion.team);
-  const happened = buildWhatHappenedSummary(telemetry ?? {});
-  if (happened) dispatch({ type: 'info', message: happened });
-  if (delResult.approved) {
-    const finalAction = delResult.action ?? suggestion.action;
-    const reasoning = delResult.userContext ? `${suggestion.rest ?? ''}\n\nUser context: ${delResult.userContext}` : suggestion.rest;
-    return { mode: finalAction as any, delegated: true, responded: true, action: finalAction, task: input, reasoning, decisionReason: 'suggestion-marker', hardened: delResult.hardened ?? suggestion.hardened, tribunalMode: delResult.tribunalMode ?? suggestion.tribunalMode, team: delResult.team ?? suggestion.team, ...(telemetry ?? {}) };
-  }
-  return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...(telemetry ?? {}) };
-  >>>
+  handler lang="kern"
+    if cond="streaming"
+      do value="dispatch({ type: 'streaming-end', engineId: cesarEngineId })"
+    if cond="!streaming"
+      do value="dispatch({ type: 'spinner-stop' })"
+    do value="await yieldToInk()"
+    do value="appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() })"
+    do value="appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() })"
+    do value="tracker.record(cesarEngineId, { prompt: input, response })"
+    if cond="suggestion.rest"
+      do value="dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: suggestion.rest })"
+    let name=delResult value="await promptDelegation(suggestion.action, dispatch, suggestion.hardened, suggestion.tribunalMode, suggestion.team)"
+    let name=happened value="buildWhatHappenedSummary(telemetry ?? {})"
+    if cond="happened"
+      do value="dispatch({ type: 'info', message: happened })"
+    if cond="delResult.approved"
+      let name=finalAction value="delResult.action ?? suggestion.action"
+      let name=reasoning value="delResult.userContext ? `${suggestion.rest ?? ''}\\n\\nUser context: ${delResult.userContext}` : suggestion.rest"
+      return value="{ mode: finalAction as any, delegated: true, responded: true, action: finalAction, task: input, reasoning, decisionReason: 'suggestion-marker', hardened: delResult.hardened ?? suggestion.hardened, tribunalMode: delResult.tribunalMode ?? suggestion.tribunalMode, team: delResult.team ?? suggestion.team, ...(telemetry ?? {}) }"
+    return value="{ delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...(telemetry ?? {}) }"
 
 fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx:HandlerContext, images?:ImageAttachment[]" returns="Promise<CesarTurnOutcome>"
   handler <<<

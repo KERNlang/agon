@@ -3,18 +3,12 @@ import from="@agon/core" names="FlowRecord,FlowFeedback,FlowTelemetry,FlowModeMe
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 fn name=buildTelemetry params="ctx:HandlerContext, startTime:number" returns=FlowTelemetry export=false
-  handler <<<
-    const stats = tracker.getStats();
-    const tokensByEngine: Record<string, {prompt:number, response:number}> = {};
-    for (const [id, e] of Object.entries(stats.byEngine) as [string, any][]) {
-      tokensByEngine[id] = { prompt: e.promptTokens, response: e.responseTokens };
-    }
-    return {
-      engines: ctx.activeEngines(),
-      durationMs: Date.now() - startTime,
-      tokensByEngine,
-    };
-  >>>
+  handler lang="kern"
+    let name=stats value="tracker.getStats()"
+    let name=tokensByEngine type="Record<string, {prompt:number, response:number}>" value="{}"
+    each pairKey=id pairValue=e in="stats.byEngine" entries=true
+      assign target="tokensByEngine[id]" value="{ prompt: e.promptTokens, response: e.responseTokens }"
+    return value="{ engines: ctx.activeEngines(), durationMs: Date.now() - startTime, tokensByEngine, }"
 
 fn name=handleFlowReport params="dispatch:Dispatch, ctx:HandlerContext, sessionMode:string, startTime:number, modeMeta?:FlowModeMeta" returns="Promise<void>" async=true
   handler <<<
@@ -83,33 +77,17 @@ fn name=autoLogFlow params="ctx:HandlerContext, sessionMode:string, startTime:nu
   >>>
 
 fn name=handleFlowAnalysis params="dispatch:Dispatch" returns=void
-  handler <<<
-    const analysis = analyzeFlows(30);
-
-    dispatch({ type: 'header', title: `Flow Analytics — last ${analysis.periodDays} days` });
-
-    if (analysis.totalFlows === 0) {
-      dispatch({ type: 'info', message: 'No flows logged yet. Use /flow to log a session.' });
-      return;
-    }
-
-    dispatch({ type: 'info', message: `${analysis.totalFlows} sessions tracked` });
-
-    const modeRows = analysis.byMode.map((m) => [
-      m.mode,
-      String(m.count),
-      m.avgSatisfaction !== null ? `${m.avgSatisfaction}/5` : '-',
-      `${m.completedRate}%`,
-      `${Math.round(m.avgDurationMs / 1000)}s`,
-      String(m.avgTokens),
-      `${m.followupRate}%`,
-    ]);
-    dispatch({ type: 'table', headers: ['Mode', 'Sessions', 'Satisfaction', 'Completed', 'Avg Time', 'Avg Tokens', 'Followup%'], rows: modeRows });
-
-    if (analysis.topFriction.length > 0) {
-      dispatch({ type: 'separator' });
-      dispatch({ type: 'info', message: 'Top friction:' });
-      const frictionRows = analysis.topFriction.map((f) => [f.tag, String(f.count)]);
-      dispatch({ type: 'table', headers: ['Tag', 'Count'], rows: frictionRows });
-    }
-  >>>
+  handler lang="kern"
+    let name=analysis value="analyzeFlows(30)"
+    do value="dispatch({ type: 'header', title: `Flow Analytics — last ${analysis.periodDays} days` })"
+    if cond="analysis.totalFlows === 0"
+      do value="dispatch({ type: 'info', message: 'No flows logged yet. Use /flow to log a session.' })"
+      return
+    do value="dispatch({ type: 'info', message: `${analysis.totalFlows} sessions tracked` })"
+    let name=modeRows value="analysis.byMode.map((m) => [ m.mode, String(m.count), m.avgSatisfaction !== null ? `${m.avgSatisfaction}/5` : '-', `${m.completedRate}%`, `${Math.round(m.avgDurationMs / 1000)}s`, String(m.avgTokens), `${m.followupRate}%`, ])"
+    do value="dispatch({ type: 'table', headers: ['Mode', 'Sessions', 'Satisfaction', 'Completed', 'Avg Time', 'Avg Tokens', 'Followup%'], rows: modeRows })"
+    if cond="analysis.topFriction.length > 0"
+      do value="dispatch({ type: 'separator' })"
+      do value="dispatch({ type: 'info', message: 'Top friction:' })"
+      let name=frictionRows value="analysis.topFriction.map((f) => [f.tag, String(f.count)])"
+      do value="dispatch({ type: 'table', headers: ['Tag', 'Count'], rows: frictionRows })"

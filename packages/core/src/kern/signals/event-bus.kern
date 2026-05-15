@@ -17,9 +17,8 @@ service name=EventBus singleton=true
   field name=listeners type="Map<string, EventListener[]>"
 
   constructor
-    handler <<<
-      this.listeners = new Map();
-    >>>
+    handler lang="kern"
+      assign target="this.listeners" value="new Map()"
 
   method name=on params="event:string, handler:(payload: EventPayload) => Promise<void> | void, priority?:number, source?:string" returns=void
     doc "Register a listener for an event. Lower priority runs first."

@@ -2,143 +2,102 @@ import from="node:child_process" names="execSync,execFileSync"
 import from="@agon/core" names="loadConfig,resolveWorkingDir,configGet"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
-// KERN-GAP: lang="kern" — strips TS type annotations and casts; `catch (err: any)` becomes `catch (err)` so `err.stdout` fails strict mode.
-//   Reverted this fn to raw TS body until KERN catch supports widening.
 fn name=gitExec params="cmd:string, cwd:string" returns=string export=false
-  handler <<<
-    try {
-      return execSync(cmd, { cwd, encoding: 'utf-8', timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    } catch (err: any) {
-      return err.stdout?.trim() ?? '';
-    }
-  >>>
+  handler lang="kern"
+    try
+      return value="execSync(cmd, { cwd, encoding: 'utf-8', timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] }).trim()"
+      catch name=err type=any
+        return value="err.stdout?.trim() ?? ''"
 
 fn name=classifyChanges params="diff:string" returns=string export=false
-  handler <<<
-    const lower = diff.toLowerCase();
-    if (/\bfix(es|ed)?\b|\bbug\b|\bpatch\b/.test(lower)) return 'fix';
-    if (/\bfeat(ure)?\b|\badd(s|ed)?\b|\bnew\b|\bimplement/.test(lower)) return 'feat';
-    if (/\brefactor\b|\brename\b|\brestructure\b|\bmove\b/.test(lower)) return 'refactor';
-    if (/\btest\b|\bspec\b|\bvitest\b|\bjest\b/.test(lower)) return 'test';
-    if (/\bdoc(s)?\b|\breadme\b|\bchangelog\b/.test(lower)) return 'docs';
-    return 'chore';
-  >>>
+  handler lang="kern"
+    let name=lower value="diff.toLowerCase()"
+    if cond="/\\bfix(es|ed)?\\b|\\bbug\\b|\\bpatch\\b/.test(lower)"
+      return value="'fix'"
+    if cond="/\\bfeat(ure)?\\b|\\badd(s|ed)?\\b|\\bnew\\b|\\bimplement/.test(lower)"
+      return value="'feat'"
+    if cond="/\\brefactor\\b|\\brename\\b|\\brestructure\\b|\\bmove\\b/.test(lower)"
+      return value="'refactor'"
+    if cond="/\\btest\\b|\\bspec\\b|\\bvitest\\b|\\bjest\\b/.test(lower)"
+      return value="'test'"
+    if cond="/\\bdoc(s)?\\b|\\breadme\\b|\\bchangelog\\b/.test(lower)"
+      return value="'docs'"
+    return value="'chore'"
 
 fn name=handleCommit async=true params="message:string|undefined, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>"
-  handler <<<
-    const cwd = resolveWorkingDir();
-
-    dispatch({ type: 'spinner-start', message: 'Analyzing changes...' });
-
-    // Step 1: Parallel git context (like Claude Code)
-    const [status, diff, diffStat, log] = await Promise.all([
-      Promise.resolve(gitExec('git status --short', cwd)),
-      Promise.resolve(gitExec('git diff --cached', cwd) || gitExec('git diff', cwd)),
-      Promise.resolve(gitExec('git diff --stat', cwd)),
-      Promise.resolve(gitExec('git log --oneline -5', cwd)),
-    ]);
-
-    dispatch({ type: 'spinner-stop' });
-
-    if (!status && !diff) {
-      dispatch({ type: 'info', message: 'Nothing to commit — working tree clean.' });
-      return;
-    }
-
-    // Show what would be committed
-    if (diffStat) {
-      dispatch({ type: 'text', content: `**Changes:**\n\`\`\`\n${diffStat}\n\`\`\`` });
-    }
-
-    // Step 2: Check if there are staged changes, if not stage all tracked
-    const hasStaged = gitExec('git diff --cached --name-only', cwd);
-    if (!hasStaged) {
-      dispatch({ type: 'info', message: 'No staged changes. Staging all modified files...' });
-      // Stage tracked modified files only (not untracked)
-      const modifiedFiles = status
-        .split('\n')
-        .filter((l: string) => /^\s*M/.test(l))
-        .map((l: string) => l.trim().replace(/^\S+\s+/, ''));
-      if (modifiedFiles.length === 0) {
-        dispatch({ type: 'warning', message: 'No modified tracked files to commit. Use git add to stage new files.' });
-        return;
-      }
-      for (const f of modifiedFiles) {
-        gitExec(`git add "${f}"`, cwd);
-      }
-      dispatch({ type: 'success', message: `Staged ${modifiedFiles.length} file(s)` });
-    }
-
-    // Step 3: Generate or use provided commit message
-    let commitMsg = message?.trim();
-    let agonGenerated = false;
-    if (!commitMsg) {
-      // Auto-classify from diff
-      const changeType = classifyChanges(diff);
-      const stagedFiles = gitExec('git diff --cached --name-only', cwd);
-      const fileList = stagedFiles.split('\n').filter(Boolean);
-      const shortSummary = fileList.length <= 3
-        ? fileList.join(', ')
-        : `${fileList.length} files`;
-
-      commitMsg = `${changeType}: ${shortSummary}`;
-      agonGenerated = true;
-
-      // Ask user to confirm/edit
-      const answer = await ctx.askQuestion(`Commit message: "${commitMsg}" — ok? (y/edit/n)`);
-      if (answer.toLowerCase() === 'n') {
-        dispatch({ type: 'info', message: 'Commit cancelled.' });
-        return;
-      }
-      if (answer.toLowerCase() !== 'y' && answer.trim()) {
-        commitMsg = answer.trim();
-        agonGenerated = false; // User edited → not purely Agon-generated
-      }
-    }
-
-    // Append Co-authored-by trailer when Agon generated the message and user hasn't disabled it
-    const autoCredit = configGet('autoCredit', cwd) as boolean;
-    if (agonGenerated && autoCredit) {
-      commitMsg += '\n\nCo-authored-by: Agon AI <agon@local>';
-    }
-
-    // Step 4: Commit with HEREDOC (safe for special chars)
-    dispatch({ type: 'spinner-start', message: 'Committing...' });
-
-    try {
-      const result = execFileSync('git', ['commit', '-m', commitMsg],
-        { cwd, encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] },
-      );
-      dispatch({ type: 'spinner-stop' });
-      dispatch({ type: 'success', message: result.trim() || `Committed: ${commitMsg}` });
-    } catch (err: any) {
-      dispatch({ type: 'spinner-stop' });
-      const stderr = err.stderr?.trim() ?? '';
-
-      // Pre-commit hook failure: retry once (Claude Code pattern)
-      if (stderr.includes('hook') || err.status === 1) {
-        dispatch({ type: 'warning', message: `Pre-commit hook failed. Retrying...` });
-
-        // Re-stage (hooks may have modified files)
-        gitExec('git add -u', cwd);
-
-        try {
-          const retry = execFileSync('git', ['commit', '-m', commitMsg],
-            { cwd, encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] },
-          );
-          dispatch({ type: 'success', message: retry.trim() || `Committed: ${commitMsg}` });
-        } catch (err2: any) {
-          dispatch({ type: 'error', message: `Commit failed after retry: ${err2.stderr?.trim() ?? err2.message}` });
-        }
-        return;
-      }
-
-      dispatch({ type: 'error', message: `Commit failed: ${stderr || err.message}` });
-    }
-
-    // Step 5: Post-commit verification
-    const postStatus = gitExec('git log --oneline -1', cwd);
-    if (postStatus) {
-      dispatch({ type: 'info', message: postStatus });
-    }
-  >>>
+  handler lang="kern"
+    let name=cwd value="resolveWorkingDir()"
+    do value="dispatch({ type: 'spinner-start', message: 'Analyzing changes...' })"
+    comment raw="// Step 1: Parallel git context (like Claude Code)"
+    destructure kind=const source="await Promise.all([ Promise.resolve(gitExec('git status --short', cwd)), Promise.resolve(gitExec('git diff --cached', cwd) || gitExec('git diff', cwd)), Promise.resolve(gitExec('git diff --stat', cwd)), Promise.resolve(gitExec('git log --oneline -5', cwd)), ])"
+      element name=status index=0
+      element name=diff index=1
+      element name=diffStat index=2
+      element name=log index=3
+    do value="dispatch({ type: 'spinner-stop' })"
+    if cond="!status && !diff"
+      do value="dispatch({ type: 'info', message: 'Nothing to commit — working tree clean.' })"
+      return
+    comment raw="// Show what would be committed"
+    if cond="diffStat"
+      do value="dispatch({ type: 'text', content: `**Changes:**\\n\\`\\`\\`\\n${diffStat}\\n\\`\\`\\`` })"
+    comment raw="// Step 2: Check if there are staged changes, if not stage all tracked"
+    let name=hasStaged value="gitExec('git diff --cached --name-only', cwd)"
+    if cond="!hasStaged"
+      do value="dispatch({ type: 'info', message: 'No staged changes. Staging all modified files...' })"
+      comment raw="// Stage tracked modified files only (not untracked)"
+      let name=modifiedFiles value="status .split('\\n') .filter((l: string) => /^\\s*M/.test(l)) .map((l: string) => l.trim().replace(/^\\S+\\s+/, ''))"
+      if cond="modifiedFiles.length === 0"
+        do value="dispatch({ type: 'warning', message: 'No modified tracked files to commit. Use git add to stage new files.' })"
+        return
+      each name=f in="modifiedFiles"
+        do value="gitExec(`git add \"${f}\"`, cwd)"
+      do value="dispatch({ type: 'success', message: `Staged ${modifiedFiles.length} file(s)` })"
+    comment raw="// Step 3: Generate or use provided commit message"
+    let name=commitMsg kind=let value="message?.trim()"
+    let name=agonGenerated kind=let value="false"
+    if cond="!commitMsg"
+      comment raw="// Auto-classify from diff"
+      let name=changeType value="classifyChanges(diff)"
+      let name=stagedFiles value="gitExec('git diff --cached --name-only', cwd)"
+      let name=fileList value="stagedFiles.split('\\n').filter(Boolean)"
+      let name=shortSummary value="fileList.length <= 3 ? fileList.join(', ') : `${fileList.length} files`"
+      assign target="commitMsg" value="`${changeType}: ${shortSummary}`"
+      assign target="agonGenerated" value="true"
+      comment raw="// Ask user to confirm/edit"
+      let name=answer value="await ctx.askQuestion(`Commit message: \"${commitMsg}\" — ok? (y/edit/n)`)"
+      if cond="answer.toLowerCase() === 'n'"
+        do value="dispatch({ type: 'info', message: 'Commit cancelled.' })"
+        return
+      if cond="answer.toLowerCase() !== 'y' && answer.trim()"
+        assign target="commitMsg" value="answer.trim()"
+        assign target="agonGenerated" value="false"
+    comment raw="// Append Co-authored-by trailer when Agon generated the message and user hasn't disabled it"
+    let name=autoCredit value="configGet('autoCredit', cwd) as boolean"
+    if cond="agonGenerated && autoCredit"
+      assign target="commitMsg" op="+=" value="'\\n\\nCo-authored-by: Agon AI <agon@local>'"
+    comment raw="// Step 4: Commit with HEREDOC (safe for special chars)"
+    do value="dispatch({ type: 'spinner-start', message: 'Committing...' })"
+    try
+      let name=result value="execFileSync('git', ['commit', '-m', commitMsg], { cwd, encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] })"
+      do value="dispatch({ type: 'spinner-stop' })"
+      do value="dispatch({ type: 'success', message: result.trim() || `Committed: ${commitMsg}` })"
+      catch name=err type=any
+        do value="dispatch({ type: 'spinner-stop' })"
+        let name=stderr value="err.stderr?.trim() ?? ''"
+        comment raw="// Pre-commit hook failure: retry once (Claude Code pattern)"
+        if cond="stderr.includes('hook') || err.status === 1"
+          do value="dispatch({ type: 'warning', message: `Pre-commit hook failed. Retrying...` })"
+          comment raw="// Re-stage (hooks may have modified files)"
+          do value="gitExec('git add -u', cwd)"
+          try
+            let name=retry value="execFileSync('git', ['commit', '-m', commitMsg], { cwd, encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] })"
+            do value="dispatch({ type: 'success', message: retry.trim() || `Committed: ${commitMsg}` })"
+            catch name=err2 type=any
+              do value="dispatch({ type: 'error', message: `Commit failed after retry: ${err2.stderr?.trim() ?? err2.message}` })"
+          return
+        do value="dispatch({ type: 'error', message: `Commit failed: ${stderr || err.message}` })"
+    comment raw="// Step 5: Post-commit verification"
+    let name=postStatus value="gitExec('git log --oneline -1', cwd)"
+    if cond="postStatus"
+      do value="dispatch({ type: 'info', message: postStatus })"

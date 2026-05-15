@@ -8,7 +8,7 @@ import from="react" names="useEffect,useMemo,useState,useRef"
 import from="ink" names="Box,Text,useInput"
 import from="../../generated/blocks/engine.js" names="EngineProgressView,BRAND"
 import from="../../generated/blocks/rendering.js" names="RenderedSegments,contentWidth,engineColor,RichLineView,DiffLine,SyntaxLine,AnsiLine,GradientLine"
-import from="../../generated/surfaces/status.js" names="buildPlanPhaseGauge"
+import from="./status-helpers.js" names="buildPlanPhaseGauge"
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="../signals/job-manager.js" names="Job" types=true
 import from="../blocks/markdown.js" names="parseMarkdownBlocks,cleanEngineOutput"

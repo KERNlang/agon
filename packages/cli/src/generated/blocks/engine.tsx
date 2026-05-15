@@ -26,13 +26,19 @@ import { ForgeArena, BrainstormStorm, CampfireFire, TribunalCourt } from './aren
 
 import { PlanProposalView, PlanExecutionView } from './plan-view.js';
 
-// @kern-source: engine:97
+import { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary } from './engine-helpers.js';
+
+// ── Module: EngineHelperExports ──
+
+export { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary } from './engine-helpers.js';
+
+// @kern-source: engine:32
 export interface OutputBlock {
   id: number;
   event: OutputEvent;
 }
 
-// @kern-source: engine:103
+// @kern-source: engine:38
 export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]; mode?:string }) {
   // Use explicit mode if it's an arena mode, otherwise detect from status text
   const arenaModes = ['forge', 'brainstorm', 'campfire', 'tribunal'];
@@ -71,7 +77,7 @@ export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]
   );
 }
 
-// @kern-source: engine:147
+// @kern-source: engine:82
 const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }: { engineId:string; color:number; content:string }) {
   const wrapWidth = contentWidth(8);
   const cleaned = cleanEngineOutput(content);
@@ -100,7 +106,7 @@ const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }
 });
 export { EngineBlock };
 
-// @kern-source: engine:181
+// @kern-source: engine:116
 const ConversationalResponse = React.memo(function ConversationalResponse({ engineId, content }: { engineId:string; content:string }) {
   const wrapWidth = contentWidth(2);
   const cleaned = cleanEngineOutput(content);
@@ -117,7 +123,7 @@ const ConversationalResponse = React.memo(function ConversationalResponse({ engi
 });
 export { ConversationalResponse };
 
-// @kern-source: engine:202
+// @kern-source: engine:137
 const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:OutputEvent & { type: 'cesar-recap' } }) {
   const files = Array.isArray((event as any).files) ? (event as any).files : [];
   const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
@@ -184,7 +190,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
 });
 export { CesarRecapBlock };
 
-// @kern-source: engine:272
+// @kern-source: engine:207
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -252,7 +258,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-// @kern-source: engine:344
+// @kern-source: engine:279
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -276,7 +282,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:373
+// @kern-source: engine:308
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -887,7 +893,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:990
+// @kern-source: engine:925
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -988,7 +994,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1107
+// @kern-source: engine:1032
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1014,7 +1020,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1136
+// @kern-source: engine:1061
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -1044,99 +1050,11 @@ const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[]
 });
 export { BidGroup };
 
-// @kern-source: engine:19
+// @kern-source: engine:23
 export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const;
 
-// @kern-source: engine:21
+// @kern-source: engine:25
 export const LOGO_LINES: string[] = ['    █████╗  ██████╗  ██████╗ ███╗   ██╗', '   ██╔══██╗██╔════╝ ██╔═══██╗████╗  ██║', '   ███████║██║  ███╗██║   ██║██╔██╗ ██║', '   ██╔══██╗██║   ██╗██║   ██║██║╚██╗██║', '   ██║  ██║╚██████╔╝╚██████╔╝██║ ╚████║', '   ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝'];
 
-// @kern-source: engine:23
+// @kern-source: engine:27
 export const VERSION: string = '0.1.0';
-
-// @kern-source: engine:25
-export function parseToolInputPayload(input: string): any {
-  const rawInput = String(input ?? '');
-  let parsed: Record<string, unknown> = {};
-  try {
-    if (rawInput.trim().startsWith('{')) {
-      parsed = JSON.parse(rawInput);
-    }
-  } catch (e) {
-    parsed = {};
-  }
-  return { rawInput: rawInput, parsed: parsed };
-}
-
-// @kern-source: engine:36
-export function extractPatchText(rawInput: string, parsed: any): string {
-  const values = [parsed?.patch, parsed?.content, parsed?.diff, parsed?.input].filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0);
-  const fromParsed = values.find((value: string) => value.includes('*** Begin Patch') || value.includes('diff --git') || value.split('\n').some((line: string) => line.startsWith('@@')));
-  if (fromParsed) {
-    return fromParsed;
-  }
-  if (rawInput.includes('*** Begin Patch') || rawInput.includes('diff --git') || rawInput.split('\n').some((line: string) => line.startsWith('@@'))) {
-    return rawInput;
-  }
-  return values[0] ?? '';
-}
-
-// @kern-source: engine:46
-export function parsePatchPreview(rawInput: string, parsed: any): { files:string[]; lines:string[]; additions:number; deletions:number } {
-  const patchText = extractPatchText(rawInput, parsed);
-  const files: string[] = [];
-  const lines: string[] = [];
-  let additions = 0;
-  let deletions = 0;
-  const addFile = (filePath: string) => {
-    const clean = filePath.trim().replace(/^["']|["']$/g, '');
-    if (clean && !files.includes(clean)) files.push(clean);
-  };
-
-  for (const line of patchText.split('\n')) {
-    const customFile = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/);
-    if (customFile) {
-      addFile(customFile[1]);
-      continue;
-    }
-    const diffFile = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
-    if (diffFile) {
-      addFile(diffFile[2]);
-      continue;
-    }
-    if (line.startsWith('+++ b/')) {
-      addFile(line.slice('+++ b/'.length));
-      continue;
-    }
-    if (line.startsWith('--- a/')) {
-      addFile(line.slice('--- a/'.length));
-      continue;
-    }
-    if (line.startsWith('@@')) {
-      lines.push(line);
-      continue;
-    }
-    if (line.startsWith('+') && !line.startsWith('+++')) {
-      additions += 1;
-      lines.push(line);
-      continue;
-    }
-    if (line.startsWith('-') && !line.startsWith('---')) {
-      deletions += 1;
-      lines.push(line);
-    }
-  }
-
-  return { files, lines, additions, deletions };
-}
-
-// @kern-source: engine:1094
-export function extractSummary(text: string, maxLen: number): string {
-  let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
-  s = s.replace(/^#+\s+.+\n/gm, '');
-  s = s.replace(/^\s*[-*]\s+/gm, '');
-  s = s.replace(/\*\*/g, '');
-  s = s.trim();
-  const firstSentence = s.match(/^[^.!?\n]{10,}[.!?]/);
-  const summary = firstSentence ? firstSentence[0] : s.slice(0, maxLen);
-  return (summary.length > maxLen) ? (summary.slice(0, maxLen - 1) + '…') : summary;
-}

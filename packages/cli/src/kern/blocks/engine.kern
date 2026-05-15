@@ -13,6 +13,10 @@ import from="./rendering.js" names="contentWidth,color256toHex,engineColor,Rende
 import from="./markdown.js" names="truncateCodeLine"
 import from="./arena.js" names="ForgeArena,BrainstormStorm,CampfireFire,TribunalCourt"
 import from="./plan-view.js" names="PlanProposalView,PlanExecutionView"
+import from="./engine-helpers.js" names="parseToolInputPayload,extractPatchText,parsePatchPreview,extractSummary"
+
+module name=EngineHelperExports
+  export from="./engine-helpers.js" names="parseToolInputPayload,extractPatchText,parsePatchPreview,extractSummary"
 
 // ── Brand Constants ─────────────────────────────────────────────────
 
@@ -22,75 +26,6 @@ const name=LOGO_LINES type="string[]" value={{ ['    █████╗  ██�
 
 const name=VERSION type=string value={{ '0.1.0' }}
 
-fn name=parseToolInputPayload params="input:string" returns=any
-  handler lang="kern"
-    let name=rawInput value="String(input ?? '')"
-    let name=parsed type="Record<string, unknown>" kind=let value="{}"
-    try
-      if cond="rawInput.trim().startsWith('{')"
-        assign target="parsed" value="JSON.parse(rawInput)"
-      catch name=e
-        assign target="parsed" value="{}"
-    return value="{ rawInput, parsed }"
-
-fn name=extractPatchText params="rawInput:string, parsed:any" returns=string
-  handler lang="kern"
-    let name=values value="[ parsed?.patch, parsed?.content, parsed?.diff, parsed?.input, ].filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)"
-    let name=fromParsed value="values.find((value: string) => value.includes('*** Begin Patch') || value.includes('diff --git') || value.split('\\n').some((line: string) => line.startsWith('@@')))"
-    if cond="fromParsed"
-      return value="fromParsed"
-    if cond="rawInput.includes('*** Begin Patch') || rawInput.includes('diff --git') || rawInput.split('\\n').some((line: string) => line.startsWith('@@'))"
-      return value="rawInput"
-    return value="values[0] ?? ''"
-
-fn name=parsePatchPreview params="rawInput:string, parsed:any" returns="{ files:string[]; lines:string[]; additions:number; deletions:number }"
-  handler <<<
-    const patchText = extractPatchText(rawInput, parsed);
-    const files: string[] = [];
-    const lines: string[] = [];
-    let additions = 0;
-    let deletions = 0;
-    const addFile = (filePath: string) => {
-      const clean = filePath.trim().replace(/^["']|["']$/g, '');
-      if (clean && !files.includes(clean)) files.push(clean);
-    };
-
-    for (const line of patchText.split('\n')) {
-      const customFile = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/);
-      if (customFile) {
-        addFile(customFile[1]);
-        continue;
-      }
-      const diffFile = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
-      if (diffFile) {
-        addFile(diffFile[2]);
-        continue;
-      }
-      if (line.startsWith('+++ b/')) {
-        addFile(line.slice('+++ b/'.length));
-        continue;
-      }
-      if (line.startsWith('--- a/')) {
-        addFile(line.slice('--- a/'.length));
-        continue;
-      }
-      if (line.startsWith('@@')) {
-        lines.push(line);
-        continue;
-      }
-      if (line.startsWith('+') && !line.startsWith('+++')) {
-        additions += 1;
-        lines.push(line);
-        continue;
-      }
-      if (line.startsWith('-') && !line.startsWith('---')) {
-        deletions += 1;
-        lines.push(line);
-      }
-    }
-
-    return { files, lines, additions, deletions };
-  >>>
 
 // ── Interface: OutputBlock ──────────────────────────────────────────
 
@@ -1091,16 +1026,6 @@ screen name=ToolCallGroup target=ink memo=true
 
 // ── Helper: extract first meaningful sentence from engine output ──
 
-fn name=extractSummary params="text:string, maxLen:number" returns=string
-  handler lang="kern"
-    let name=s kind=let value="text.replace(/<think>[\\s\\S]*?<\\/think>\\s*/gi, '')"
-    assign target="s" value="s.replace(/^#+\\s+.+\\n/gm, '')"
-    assign target="s" value="s.replace(/^\\s*[-*]\\s+/gm, '')"
-    assign target="s" value="s.replace(/\\*\\*/g, '')"
-    assign target="s" value="s.trim()"
-    let name=firstSentence value="s.match(/^[^.!?\\n]{10,}[.!?]/)"
-    let name=summary value="firstSentence ? firstSentence[0] : s.slice(0, maxLen)"
-    return value="summary.length > maxLen ? summary.slice(0, maxLen - 1) + '\\u2026' : summary"
 
 // ── Screen: DebateGroup — collapsed summary for tribunal rounds ──
 

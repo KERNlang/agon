@@ -20,7 +20,8 @@ import { deriveRoutingHints, buildRoutingContext } from '../cesar/routing.js';
 
 import { summarizeAllCesarToolReliability } from '../cesar/reliability.js';
 
-// @kern-source: info:12
+// ── Module: InfoHandlers ──
+
 export function handleLeaderboard(dispatch: Dispatch): void {
   const ratings = getRatings();
   dispatch({ type: 'header', title: 'Global Leaderboard' });
@@ -54,7 +55,6 @@ export function handleLeaderboard(dispatch: Dispatch): void {
   }
 }
 
-// @kern-source: info:46
 export function handleCesarReport(dispatch: Dispatch): void {
   const reportPath = join(RUNS_DIR, 'cesar-decisions.jsonl');
   if (!existsSync(reportPath)) {
@@ -238,7 +238,6 @@ export function handleCesarReport(dispatch: Dispatch): void {
   dispatch({ type: 'table', headers: ['Recent Mode', 'Intake', 'Flow', 'Tools', 'Stalls', 'Family', 'Hint', 'Breadth', 'Forge Scope'], rows: recentTail });
 }
 
-// @kern-source: info:230
 export function handleCesarHints(input: string, dispatch: Dispatch, ctx: HandlerContext): void {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -256,7 +255,6 @@ export function handleCesarHints(input: string, dispatch: Dispatch, ctx: Handler
   dispatch({ type: 'text', content: routingCtx });
 }
 
-// @kern-source: info:246
 function showRunDetail(dispatch: Dispatch, id: string): void {
   let files: string[];
   try {
@@ -289,7 +287,6 @@ function showRunDetail(dispatch: Dispatch, id: string): void {
   }
 }
 
-// @kern-source: info:279
 export function handleHistory(dispatch: Dispatch, id?: string): void {
   ensureAgonHome();
 
@@ -332,7 +329,6 @@ export function handleHistory(dispatch: Dispatch, id?: string): void {
   dispatch({ type: 'info', message: 'Use /history <id> for details' });
 }
 
-// @kern-source: info:322
 export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, intent?: Intent&{type:'engines'}): Promise<void> {
   const action = String((intent as any)?.action ?? '').toLowerCase();
   if (action && action !== 'list') {
@@ -438,7 +434,6 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
   }
 }
 
-// @kern-source: info:428
 export async function handleDiscover(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   dispatch({ type: 'header', title: 'Engine Discovery' });
   dispatch({ type: 'spinner-start', message: 'Scanning installed engines...' });
@@ -467,7 +462,6 @@ export async function handleDiscover(dispatch: Dispatch, ctx: HandlerContext): P
   }
 }
 
-// @kern-source: info:457
 export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch, ctx?: HandlerContext): void {
   ensureAgonHome();
   const action = (intent as any).action ?? 'list';
@@ -529,7 +523,6 @@ export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch,
   }
 }
 
-// @kern-source: info:519
 export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerContext, setSessionEngines: (engines:string[]|null)=>void): void {
   if (engineIds.length === 0 || engineIds.length === 1 && engineIds[0] === 'all') {
     setSessionEngines(null);
@@ -564,7 +557,6 @@ export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerC
   dispatch({ type: 'info', message: 'Saved — persists across sessions. Use /cesar <engine> to change Cesar brain separately.' });
 }
 
-// @kern-source: info:548
 export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerContext): void {
   // Parse: "/cesar claude api" or "/cesar claude cli" or "/cesar claude" or "/cesar"
   const parts = engineId.trim().split(/\s+/);
@@ -635,7 +627,6 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
   dispatch({ type: 'info', message: 'Conversation context + memory preserved. Forge/tribunal engines unchanged — use /use to change those.' });
 }
 
-// @kern-source: info:619
 export function handleTokens(dispatch: Dispatch): void {
   const stats = tracker.getStats();
   dispatch({ type: 'header', title: 'Token Usage — This Session' });
@@ -688,7 +679,6 @@ export function handleTokens(dispatch: Dispatch): void {
   dispatch({ type: 'info', message: `${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines` });
 }
 
-// @kern-source: info:672
 export function handleWorkspace(action: string, dispatch: Dispatch, ctx: HandlerContext, path?: string): void {
   switch (action) {
     case 'add': {
@@ -740,7 +730,6 @@ export function handleWorkspace(action: string, dispatch: Dispatch, ctx: Handler
   }
 }
 
-// @kern-source: info:724
 export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   if (sessionId) {
     const session = loadChatSession(sessionId);
@@ -774,7 +763,6 @@ export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   dispatch({ type: 'table', headers: ['Session', 'Msgs', 'Date', 'First Message'], rows });
 }
 
-// @kern-source: info:758
 export function handleModels(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'header', title: 'Models & Engines' });
   const config = ctx.config;

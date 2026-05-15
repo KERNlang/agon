@@ -561,6 +561,7 @@ export async function runForge(options: ForgeOptions & { onResult?: (engineId:st
         baselinePasses: manifest.baselinePasses,
         acceptReviewOutput,
         abortControllers: stage2AbortControllers,
+        earlyFinalizeCount: options.earlyFinalizeCount,
         onResult: (id: string, result: any, metric: DispatchMetric) => {
           manifest.results[id] = result;
           if (result.patchPath) manifest.patches[id] = result.patchPath;

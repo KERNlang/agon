@@ -169,6 +169,12 @@ config name=AgonConfig
   field name=forgeEnabledEngines type="string[]" default="['claude','codex','gemini']"
   field name=forgeFitnessTimeout type=number default=120
   field name=forgeSynthesisTimeout type=number default=300
+  field name=forgeEarlyFinalizeEnabled type=boolean default=true
+    doc "When true, forge stage2 auto-finalizes once M engines pass with score >= forgeEarlyFinalizeMinScore, aborting any remaining in-flight engines. Prevents waiting on slow stragglers when quorum is already reached."
+  field name=forgeEarlyFinalizePassingCount type=number default=3
+    doc "Quorum size (M): number of passing engines (each with score >= forgeEarlyFinalizeMinScore) required to trigger auto-finalize. Overridable per-invocation via --early-finalize-count."
+  field name=forgeEarlyFinalizeMinScore type=number default=70
+    doc "Minimum score an engine must achieve to count toward the early-finalize quorum."
   field name=ratingsEnabled type=boolean default=true
   field name=contextSummary type=boolean default=true
   field name=sessionContinuity type=boolean default=false
@@ -284,6 +290,8 @@ interface name=ForgeOptions
   field name=dryRun type=boolean optional=true
   field name=hardened type=boolean optional=true
   field name=signal type=AbortSignal optional=true
+  field name=earlyFinalizeCount type=number optional=true
+    doc "Per-invocation override of config.forgeEarlyFinalizePassingCount — minimum passing engines required to trigger stage2 auto-finalize. Set by --early-finalize-count on the CLI."
 
 interface name=EngineResult
   field name=engineId type=string

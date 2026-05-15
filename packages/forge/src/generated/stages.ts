@@ -309,7 +309,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
 }
 
 // @kern-source: stages:290
-export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void, abortControllers?: Map<string,AbortController>, forgeMode?: 'implement'|'improve'|'validate', requireDiff?: boolean, baselinePasses?: boolean, acceptReviewOutput?: boolean}): Promise<StageResult> {
+export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void, abortControllers?: Map<string,AbortController>, forgeMode?: 'implement'|'improve'|'validate', requireDiff?: boolean, baselinePasses?: boolean, acceptReviewOutput?: boolean, earlyFinalizeCount?: number}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
   const root = repoRoot(opts.cwd);
@@ -344,12 +344,42 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
       }
     }
   };
+  // M-of-N auto-finalize quorum: when this many engines pass at-or-above
+  // the min-score threshold, abort any in-flight challengers. The caller
+  // can still explicitly return 'finalize' from onResult — that takes
+  // precedence. Disable by setting forgeEarlyFinalizeEnabled=false.
+  let passedCount = 0;
+  const EARLY_FINALIZE_ENABLED = opts.config.forgeEarlyFinalizeEnabled !== false;
+  const EARLY_FINALIZE_MIN_SCORE = opts.config.forgeEarlyFinalizeMinScore ?? 70;
+  const EARLY_FINALIZE_COUNT = opts.earlyFinalizeCount
+    ?? opts.config.forgeEarlyFinalizePassingCount
+    ?? 3;
   const publishResult = (engineId: string, result: EngineResult, metric: DispatchMetric) => {
     metrics.push(metric);
     if (!published.has(engineId)) {
       published.add(engineId);
+      if (result.pass && result.score >= EARLY_FINALIZE_MIN_SCORE) {
+        passedCount++;
+      }
       const control = opts.onResult?.(engineId, result, metric);
-      if (control === 'finalize') requestFinalize();
+      if (control === 'finalize') {
+        requestFinalize();
+      } else if (
+        EARLY_FINALIZE_ENABLED
+        && passedCount >= EARLY_FINALIZE_COUNT
+        && !finalizeRequested
+      ) {
+        opts.onEvent?.({
+          type: 'forge:auto-finalize' as any,
+          engineId,
+          data: {
+            passingCount: passedCount,
+            targetCount: EARLY_FINALIZE_COUNT,
+            minScore: EARLY_FINALIZE_MIN_SCORE,
+          },
+        });
+        requestFinalize();
+      }
     }
   };
 
@@ -469,7 +499,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:451
+// @kern-source: stages:481
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

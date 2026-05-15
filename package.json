@@ -8,7 +8,8 @@
     "packages/adapter-cli",
     "packages/cli",
     "packages/mcp",
-    "packages/saas-api"
+    "packages/saas-api",
+    "packages/dedup"
   ],
   "scripts": {
     "postinstall": "patch-package",

@@ -1,0 +1,79 @@
+// `agon last` — print the most recent run directory path.
+//
+// Closes the loop on the orchestrator-UX work: createRunDir maintains a
+// `latest` symlink in ~/.agon/runs, and this command surfaces it. With
+// --engine X, find the most recent run that actually contains that
+// engine's output file (so orchestrators can ask "where did the last
+// codex review go?" without scanning).
+//
+// Output is a bare absolute path so the result composes cleanly:
+//   cat "$(agon last)/status.json"
+//   cat "$(agon last --engine codex)/codex-output.txt"
+//
+// Exit codes: 0 when a path is printed; 1 when no matching run is found.
+
+import from="citty" names="defineCommand"
+import from="@agon/core" names="findLatestRunDir,ensureAgonHome"
+import from="node:fs" names="readFileSync,existsSync"
+import from="node:path" names="join"
+
+const name=lastCommand type=any
+  handler <<<
+    defineCommand({
+      meta: {
+        name: 'last',
+        description: 'Print the path of the most recent run directory (orchestrators: composes with cat/jq)',
+      },
+      args: {
+        engine: {
+          type: 'string',
+          alias: 'e',
+          description: 'Restrict to the most recent run that contains <engineId>-output.txt',
+        },
+        mode: {
+          type: 'string',
+          alias: 'm',
+          description: 'Restrict to the most recent run of a specific mode (brainstorm|forge|tribunal|campfire|review)',
+        },
+        status: {
+          type: 'boolean',
+          description: 'Print status.json contents instead of the path. Exits 1 if status.json is absent.',
+        },
+      },
+      run({ args }) {
+        ensureAgonHome();
+        const filter: { mode?: string; engineId?: string } = {};
+        if (args.mode) filter.mode = String(args.mode).trim();
+        if (args.engine) filter.engineId = String(args.engine).trim();
+        const dir = findLatestRunDir(
+          (filter.mode || filter.engineId) ? filter : undefined,
+        );
+        if (!dir) {
+          process.stderr.write(
+            filter.mode || filter.engineId
+              ? `agon last: no run matches the given filters\n`
+              : `agon last: no runs found in ~/.agon/runs\n`,
+          );
+          process.exit(1);
+          return;
+        }
+        if (args.status) {
+          const statusPath = join(dir, 'status.json');
+          if (!existsSync(statusPath)) {
+            process.stderr.write(`agon last: ${dir}/status.json is missing — run may have crashed before finalizing\n`);
+            process.exit(1);
+            return;
+          }
+          try {
+            process.stdout.write(readFileSync(statusPath, 'utf-8'));
+          } catch (err) {
+            process.stderr.write(`agon last: failed to read ${statusPath}: ${err instanceof Error ? err.message : String(err)}\n`);
+            process.exit(1);
+            return;
+          }
+          return;
+        }
+        process.stdout.write(dir + '\n');
+      },
+    })
+  >>>

@@ -1,6 +1,14 @@
 // ── Re-export from KERN-generated stages ────────────────────────────
 // Source of truth: src/kern/stages.kern
-export { runBaseline, runStage1, runStage2 } from './generated/stages.js';
+export {
+  classifyNoDiffForgeResult,
+  resolveForgeAcceptReviewOutput,
+  resolveForgeMode,
+  resolveForgeRequireDiff,
+  runBaseline,
+  runStage1,
+  runStage2,
+} from './generated/stages.js';
 
 import type { EngineResult } from '@agon/core';
 import { determineWinner as determineWinnerKern } from '@agon/core';

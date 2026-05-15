@@ -1,0 +1,47 @@
+// Resolves a Python sidecar file shipped in the @agon/dedup package.
+// Works in both modes:
+//   1. Production: @agon/dedup is installed in node_modules — resolve via
+//      `require.resolve('@agon/dedup/package.json')` and append the filename.
+//   2. Dev / monorepo: @agon/dedup is symlinked but the require path still
+//      works because npm workspaces creates a real node_modules/@agon/dedup
+//      symlink. The fallback below covers any edge case where neither
+//      path resolves (e.g. if dedup is npm-pack'd standalone).
+//
+// Replaces the 4 bridges' duplicated 4-up relative path math, which
+// silently broke when @agon/cli was installed from npm because the
+// resolver assumed the sidecar lived at `packages/dedup/*.py` next to
+// the installed package — a layout that only exists in the monorepo.
+
+import from="node:module" names="createRequire"
+import from="node:path" names="dirname,resolve"
+import from="node:url" names="fileURLToPath"
+import from="node:fs" names="existsSync"
+
+fn name=resolveDedupSidecar params="filename:string" returns="string | null"
+  doc "Return the absolute path of a Python sidecar shipped in @agon/dedup, or null if not found. `filename` is the bare filename (e.g. 'history-search.py'), not a path."
+  handler <<<
+    // Mode 1 — production install. require.resolve finds package.json by
+    // package-name resolution, dirname gives us the install location.
+    try {
+      const requireFn = createRequire(import.meta.url);
+      const pkgJsonPath = requireFn.resolve('@agon/dedup/package.json');
+      const candidate = resolve(dirname(pkgJsonPath), filename);
+      if (existsSync(candidate)) return candidate;
+    } catch {
+      // Fall through — @agon/dedup not in resolution paths (e.g. bundler
+      // ate the require). Try dev-mode fallback below.
+    }
+    // Mode 2 — dev fallback. This file compiles to
+    //   packages/core/dist/generated/blocks/dedup-resolver.js
+    // and the sidecar lives at packages/dedup/<filename>. Five ups
+    // because dist + generated + blocks adds an extra level vs. the
+    // old src/kern/blocks 4-up math.
+    try {
+      const here = dirname(fileURLToPath(import.meta.url));
+      const fallback = resolve(here, '..', '..', '..', '..', 'dedup', filename);
+      if (existsSync(fallback)) return fallback;
+    } catch {
+      // ignored — both paths failed
+    }
+    return null;
+  >>>

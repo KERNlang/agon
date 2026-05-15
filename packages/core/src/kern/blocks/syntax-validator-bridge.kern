@@ -4,9 +4,8 @@
 // gracefully (no validation > misleading validation).
 
 import from="node:child_process" names="spawnSync"
-import from="node:path" names="dirname,resolve,extname"
-import from="node:url" names="fileURLToPath"
-import from="node:fs" names="existsSync"
+import from="node:path" names="extname"
+import from="./dedup-resolver.js" names="resolveDedupSidecar"
 
 interface name=SyntaxValidatorInput
   field name=path type=string
@@ -66,12 +65,8 @@ fn name=validateSyntax params="files:SyntaxValidatorInput[]" returns="SyntaxVali
     if (process.env[SYNTAX_VALIDATOR_DISABLE_ENV]) return null;
     if (!files || files.length === 0) return [];
 
-    // Resolve sidecar relative to compiled output:
-    // packages/core/dist/generated/blocks/syntax-validator-bridge.js
-    //   → ../../../../dedup/syntax-validator.py
-    const here = dirname(fileURLToPath(import.meta.url));
-    const sidecar = resolve(here, '..', '..', '..', '..', 'dedup', 'syntax-validator.py');
-    if (!existsSync(sidecar)) return null;
+    const sidecar = resolveDedupSidecar('syntax-validator.py');
+    if (!sidecar) return null;
 
     const python = process.env.AGON_PYTHON || 'python3';
 

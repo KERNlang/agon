@@ -3,10 +3,8 @@
 // fastembed not installed, malformed output) so callers degrade silently.
 
 import from="node:child_process" names="spawn"
-import from="node:path" names="dirname,resolve"
-import from="node:url" names="fileURLToPath"
-import from="node:fs" names="existsSync"
 import from="@agon/core" names="BrainstormGroup" types=true
+import from="@agon/core" names="resolveDedupSidecar"
 
 fn name=dedupBrainstormDrafts async=true params="drafts:{engineId:string, text:string}[]" returns="Promise<BrainstormGroup[] | null>"
   doc "Cluster paraphrased drafts via the Python embedding sidecar. Returns null on any failure — caller should fall back to no-dedup."
@@ -19,13 +17,8 @@ fn name=dedupBrainstormDrafts async=true params="drafts:{engineId:string, text:s
       }));
     }
 
-    // Resolve sidecar relative to this compiled module:
-    // packages/forge/dist/kern/dedup-bridge.js → ../../../dedup/sidecar.py
-    const here = dirname(fileURLToPath(import.meta.url));
-    const sidecar = resolve(here, '..', '..', '..', 'dedup', 'sidecar.py');
-    if (!existsSync(sidecar)) {
-      return null;
-    }
+    const sidecar = resolveDedupSidecar('sidecar.py');
+    if (!sidecar) return null;
 
     const python = process.env.AGON_PYTHON || 'python3';
 

@@ -2,27 +2,25 @@
 
 import { spawnSync } from 'node:child_process';
 
-import { dirname, resolve, extname } from 'node:path';
+import { extname } from 'node:path';
 
-import { fileURLToPath } from 'node:url';
+import { resolveDedupSidecar } from './dedup-resolver.js';
 
-import { existsSync } from 'node:fs';
-
-// @kern-source: syntax-validator-bridge:11
+// @kern-source: syntax-validator-bridge:10
 export interface SyntaxValidatorInput {
   path: string;
   content: string;
   language: string;
 }
 
-// @kern-source: syntax-validator-bridge:17
+// @kern-source: syntax-validator-bridge:16
 export interface SyntaxValidationError {
   row: number;
   column: number;
   message: string;
 }
 
-// @kern-source: syntax-validator-bridge:22
+// @kern-source: syntax-validator-bridge:21
 export interface SyntaxValidatorResult {
   path: string;
   valid: boolean;
@@ -35,19 +33,19 @@ export interface SyntaxValidatorResult {
 /**
  * Hard cap on the synchronous Python call. Cold tree-sitter import is ~200ms; batches of ≤50 files parse in well under 1s. 8s covers cold start + a worst-case batch.
  */
-// @kern-source: syntax-validator-bridge:30
+// @kern-source: syntax-validator-bridge:29
 export const SYNTAX_VALIDATOR_TIMEOUT_MS: number = 8000;
 
 /**
  * Set this env var to skip the sidecar (forces null = no validation). Useful for tests and CI.
  */
-// @kern-source: syntax-validator-bridge:33
+// @kern-source: syntax-validator-bridge:32
 export const SYNTAX_VALIDATOR_DISABLE_ENV: string = "AGON_DISABLE_SYNTAX_VALIDATOR_SIDECAR";
 
 /**
  * Best-effort extension → language mapping. Returns '' for unknown extensions.
  */
-// @kern-source: syntax-validator-bridge:43
+// @kern-source: syntax-validator-bridge:42
 export function detectLanguageFromPath(path: string): string {
   const EXT_TO_LANGUAGE: Record<string, string> = {
     '.ts': 'typescript',
@@ -69,17 +67,13 @@ export function detectLanguageFromPath(path: string): string {
 /**
  * Synchronous tree-sitter parse via the Python sidecar. Returns null on any sidecar failure — caller treats absence of validation as no signal (don't penalize).
  */
-// @kern-source: syntax-validator-bridge:63
+// @kern-source: syntax-validator-bridge:62
 export function validateSyntax(files: SyntaxValidatorInput[]): SyntaxValidatorResult[] | null {
   if (process.env[SYNTAX_VALIDATOR_DISABLE_ENV]) return null;
   if (!files || files.length === 0) return [];
 
-  // Resolve sidecar relative to compiled output:
-  // packages/core/dist/generated/blocks/syntax-validator-bridge.js
-  //   → ../../../../dedup/syntax-validator.py
-  const here = dirname(fileURLToPath(import.meta.url));
-  const sidecar = resolve(here, '..', '..', '..', '..', 'dedup', 'syntax-validator.py');
-  if (!existsSync(sidecar)) return null;
+  const sidecar = resolveDedupSidecar('syntax-validator.py');
+  if (!sidecar) return null;
 
   const python = process.env.AGON_PYTHON || 'python3';
 

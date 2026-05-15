@@ -326,13 +326,21 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
     // M-of-N auto-finalize quorum: when this many engines pass at-or-above
     // the min-score threshold, abort any in-flight challengers. The caller
     // can still explicitly return 'finalize' from onResult — that takes
-    // precedence. Disable by setting forgeEarlyFinalizeEnabled=false.
+    // precedence. Disable by:
+    //   - setting forgeEarlyFinalizeEnabled = false
+    //   - or passing earlyFinalizeCount: 0 / --early-finalize-count 0
+    //   - or setting forgeEarlyFinalizePassingCount: 0
     let passedCount = 0;
-    const EARLY_FINALIZE_ENABLED = opts.config.forgeEarlyFinalizeEnabled !== false;
     const EARLY_FINALIZE_MIN_SCORE = opts.config.forgeEarlyFinalizeMinScore ?? 70;
-    const EARLY_FINALIZE_COUNT = opts.earlyFinalizeCount
-      ?? opts.config.forgeEarlyFinalizePassingCount
-      ?? 3;
+    const rawCount = opts.earlyFinalizeCount !== undefined
+      ? opts.earlyFinalizeCount
+      : (opts.config.forgeEarlyFinalizePassingCount ?? 3);
+    // count <= 0 is the explicit-disable sentinel. We freeze the resolved
+    // count once so a single comparison can decide both "enabled" and
+    // "threshold met".
+    const EARLY_FINALIZE_COUNT = rawCount;
+    const EARLY_FINALIZE_ENABLED = opts.config.forgeEarlyFinalizeEnabled !== false
+      && EARLY_FINALIZE_COUNT > 0;
     const publishResult = (engineId: string, result: EngineResult, metric: DispatchMetric) => {
       metrics.push(metric);
       if (!published.has(engineId)) {
@@ -349,7 +357,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
           && !finalizeRequested
         ) {
           opts.onEvent?.({
-            type: 'forge:auto-finalize' as any,
+            type: 'forge:auto-finalize',
             engineId,
             data: {
               passingCount: passedCount,

@@ -175,6 +175,10 @@ config name=AgonConfig
     doc "Quorum size (M): number of passing engines (each with score >= forgeEarlyFinalizeMinScore) required to trigger auto-finalize. Overridable per-invocation via --early-finalize-count."
   field name=forgeEarlyFinalizeMinScore type=number default=70
     doc "Minimum score an engine must achieve to count toward the early-finalize quorum."
+  field name=forgeHealthCheckEnabled type=boolean default=true
+    doc "When true, forge pings each engine with a tiny prompt before dispatch and skips engines that don't respond cleanly. Costs ~timeout × max(parallel-engine-spawn-time) per forge run; saves up to forgeDispatchTimeout per dead engine."
+  field name=forgeHealthCheckTimeoutSec type=number default=5
+    doc "Per-engine health-check timeout in seconds. An engine that doesn't return non-empty stdout within this window is treated as unhealthy for THIS run only."
   field name=ratingsEnabled type=boolean default=true
   field name=contextSummary type=boolean default=true
   field name=sessionContinuity type=boolean default=false
@@ -292,6 +296,10 @@ interface name=ForgeOptions
   field name=signal type=AbortSignal optional=true
   field name=earlyFinalizeCount type=number optional=true
     doc "Per-invocation override of config.forgeEarlyFinalizePassingCount — minimum passing engines required to trigger stage2 auto-finalize. Set by --early-finalize-count on the CLI."
+  field name=healthCheckEnabled type=boolean optional=true
+    doc "Per-invocation override of config.forgeHealthCheckEnabled. Set false (or --no-health-check) to skip the pre-flight health probe for this run."
+  field name=healthCheckTimeoutSec type=number optional=true
+    doc "Per-invocation override of config.forgeHealthCheckTimeoutSec."
 
 interface name=EngineResult
   field name=engineId type=string
@@ -402,6 +410,9 @@ event name=ForgeEvent
   type name="forge:single-survivor" data="{ engineId: string, score: number, totalEngines: number, failedCount: number }"
   type name="forge:no-engines-available" data="{ enabled: string[], skipped: string[] }"
   type name="forge:fatal" data="{ phase: string, error: string }"
+  type name="forge:auto-finalize" data="{ passingCount: number, targetCount: number, minScore: number }"
+  type name="forge:health-check-start" data="{ engineIds: string[], timeoutSec: number }"
+  type name="forge:health-check-done" data="{ healthy: string[], unhealthy: any[], totalMs: number }"
 
 interface name=BrainstormBid
   field name=engineId type=string

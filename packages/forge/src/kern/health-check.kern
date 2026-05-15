@@ -1,0 +1,154 @@
+// Pre-flight engine health check. Each engine gets a featherweight
+// `dispatch("say ok")` call with a short timeout BEFORE forge starts
+// stage1/stage2. Engines that don't respond cleanly are filtered out for
+// this run — saves the full forgeDispatchTimeout floor (480s default) per
+// dead engine.
+//
+// Distinct from the persistent engineHealth quarantine: that records
+// past-failure status to skip auth-failed/unreachable engines across
+// runs. This is a per-run probe that catches "engine binary is fine,
+// API key is set, but the engine itself isn't responding TODAY."
+
+import from="node:os" names="tmpdir"
+import from="node:path" names="join"
+import from="node:fs" names="mkdirSync,rmSync"
+import from="@agon/core" names="EngineRegistry,engineHealth,classifyDispatchFailure"
+import from="@agon/core" names="EngineAdapter" types=true
+
+const name=HEALTH_CHECK_DISABLE_ENV type=string value="AGON_DISABLE_FORGE_HEALTH_CHECK"
+  doc "Set this env var (to any non-empty value) to skip the forge pre-flight health check globally. Used in tests to avoid having every mock adapter answer a 'say ok' probe; production users opt out via forgeHealthCheckEnabled=false or --no-health-check."
+
+interface name=HealthCheckResult
+  field name=engineId type=string
+  field name=ok type=boolean
+  field name=reason type=string optional=true
+  field name=durationMs type=number
+
+interface name=HealthCheckSummary
+  field name=healthy type="string[]"
+  field name=unhealthy type="HealthCheckResult[]"
+  field name=totalMs type=number
+
+const name=HEALTH_CHECK_DEFAULT_PROMPT type=string value="Reply with just: ok"
+  doc "Featherweight prompt — engines should respond instantly with any non-empty text. We don't parse it for content, only check that something came back before the timeout."
+
+fn name=healthCheckEngine async=true params="engineId:string, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, timeoutSec:number, prompt:string" returns="Promise<HealthCheckResult>"
+  doc "Ping a single engine with a tiny prompt and short timeout. Healthy = dispatch returns within timeout with non-empty stdout and exit code 0."
+  handler <<<
+    const start = Date.now();
+    let engine;
+    try {
+      engine = registry.get(engineId);
+    } catch (err) {
+      return {
+        engineId,
+        ok: false,
+        reason: `registry-error: ${err instanceof Error ? err.message : String(err)}`,
+        durationMs: Date.now() - start,
+      };
+    }
+
+    // Disposable scratch dir — the dispatch call needs SOMEWHERE to write
+    // its outputs even though we'll throw them away. Per-engine path so
+    // parallel pings don't collide.
+    const scratchDir = join(tmpdir(), `agon-healthcheck-${engineId}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    try {
+      mkdirSync(scratchDir, { recursive: true });
+    } catch {
+      return {
+        engineId,
+        ok: false,
+        reason: 'scratch-dir-create-failed',
+        durationMs: Date.now() - start,
+      };
+    }
+
+    let dispatchResult: any;
+    try {
+      dispatchResult = await adapter.dispatch({
+        engine,
+        prompt,
+        cwd: cwd || scratchDir,
+        mode: 'exec',
+        timeout: Math.max(1, Math.ceil(timeoutSec)),
+        outputDir: scratchDir,
+      } as any);
+    } catch (err) {
+      try { rmSync(scratchDir, { recursive: true, force: true }); } catch { /* ignore */ }
+      const message = err instanceof Error ? err.message : String(err);
+      const status = classifyDispatchFailure({ errorMessage: message });
+      // Persist auth/unreachable so the wider preflight quarantine sees it too.
+      if (status === 'auth-failed' || status === 'unreachable') {
+        engineHealth.mark(engineId, status, message);
+      }
+      return {
+        engineId,
+        ok: false,
+        reason: `dispatch-threw: ${message}`,
+        durationMs: Date.now() - start,
+      };
+    }
+
+    try { rmSync(scratchDir, { recursive: true, force: true }); } catch { /* ignore */ }
+
+    const durationMs = Date.now() - start;
+    const timedOut = dispatchResult?.timedOut === true;
+    const exitCode = Number(dispatchResult?.exitCode ?? 0);
+    const stdout = String(dispatchResult?.stdout ?? '').trim();
+    const stderr = String(dispatchResult?.stderr ?? '');
+
+    if (timedOut) {
+      return { engineId, ok: false, reason: `timeout after ${timeoutSec}s`, durationMs };
+    }
+    if (exitCode !== 0) {
+      const status = classifyDispatchFailure({ stderr, exitCode, errorMessage: stderr });
+      if (status === 'auth-failed' || status === 'unreachable') {
+        engineHealth.mark(engineId, status, stderr || `exit-${exitCode}`);
+      }
+      return {
+        engineId,
+        ok: false,
+        reason: `exit-${exitCode}${stderr ? `: ${stderr.split('\n')[0].slice(0, 120)}` : ''}`,
+        durationMs,
+      };
+    }
+    if (!stdout) {
+      return { engineId, ok: false, reason: 'empty-stdout', durationMs };
+    }
+    return { engineId, ok: true, durationMs };
+  >>>
+
+fn name=healthCheckEngines async=true params="engineIds:string[], registry:EngineRegistry, adapter:EngineAdapter, cwd:string, timeoutSec:number, prompt:string" returns="Promise<HealthCheckSummary>"
+  doc "Ping N engines in parallel. Total wall-clock is max(per-engine duration), not sum. Returns the partition of engineIds into healthy + unhealthy. Short-circuits to 'all healthy' when AGON_DISABLE_FORGE_HEALTH_CHECK is set."
+  handler <<<
+    const start = Date.now();
+    if (process.env[HEALTH_CHECK_DISABLE_ENV]) {
+      return { healthy: engineIds.slice(), unhealthy: [], totalMs: Date.now() - start };
+    }
+    const results = await Promise.allSettled(
+      engineIds.map((id: string) =>
+        healthCheckEngine(id, registry, adapter, cwd, timeoutSec, prompt)
+      )
+    );
+    const healthy: string[] = [];
+    const unhealthy: HealthCheckResult[] = [];
+    results.forEach((settled, i) => {
+      const id = engineIds[i];
+      if (settled.status === 'fulfilled') {
+        const r = settled.value;
+        if (r.ok) {
+          healthy.push(id);
+        } else {
+          unhealthy.push(r);
+        }
+      } else {
+        unhealthy.push({
+          engineId: id,
+          ok: false,
+          reason: `health-check-rejected: ${settled.reason instanceof Error ? settled.reason.message : String(settled.reason)}`,
+          durationMs: 0,
+        });
+      }
+    });
+    return { healthy, unhealthy, totalMs: Date.now() - start };
+  >>>

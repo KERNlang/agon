@@ -33,13 +33,15 @@ export const HISTORY_SEARCH_TIMEOUT_MS: number = 5000;
 export const HISTORY_SEARCH_DISABLE_ENV: string = "AGON_DISABLE_HISTORY_SEARCH_SIDECAR";
 
 /**
- * Synchronous Python sidecar call. Returns null on any failure — caller falls back to substring/chronological.
+ * Synchronous Python sidecar call. Returns null ONLY on sidecar unavailability/failure (caller should fall back to substring). Returns [] when the sidecar ran cleanly but had no above-threshold matches, or when there's nothing to search.
  */
 // @kern-source: history-search-bridge:24
 export function searchHistorySemantic(query: string, items: HistorySearchItem[], topK: number): HistorySearchHit[] | null {
   if (process.env[HISTORY_SEARCH_DISABLE_ENV]) return null;
-  if (!query || !query.trim()) return null;
-  if (!items || items.length === 0) return null;
+  // No query / no items: nothing to do, but distinguish this from sidecar
+  // failure so the caller doesn't mislabel UX as "sidecar unavailable".
+  if (!query || !query.trim()) return [];
+  if (!items || items.length === 0) return [];
 
   // Resolve sidecar relative to compiled output:
   // packages/core/dist/generated/sessions/history-search-bridge.js

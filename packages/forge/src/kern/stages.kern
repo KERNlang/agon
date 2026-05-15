@@ -19,12 +19,27 @@ fn name=formatDispatchError params="err:unknown" returns=string export=false
     return message;
   >>>
 
-fn name=makeFailedResult params="engineId:string,error:string,durationMs?:number" returns=EngineResult export=false expr={{ return { engineId, pass: false, score: 0, diffLines: 0, filesChanged: 0, durationSec: Math.max(0, Math.round((durationMs ?? 0) / 1000)), lintWarnings: 0, styleScore: 0, dispatchStdout: `ERROR: ${error}` }; }}
+fn name=makeFailedResult params="engineId:string,error:string,durationMs?:number" returns=EngineResult export=false
+  handler <<<
+    return {
+      engineId,
+      pass: false,
+      score: 0,
+      diffLines: 0,
+      filesChanged: 0,
+      durationSec: Math.max(0, Math.round((durationMs ?? 0) / 1000)),
+      lintWarnings: 0,
+      styleScore: 0,
+      dispatchStdout: `ERROR: ${error}`,
+    };
+  >>>
 
 fn name=emitForgeEvent params="onEvent:any,type:string,engineId?:string,data?:Record<string,unknown>" export=false
-  handler lang="kern"
-    if cond="onEvent"
-      do value="onEvent({ type, engineId, data })"
+  handler <<<
+    if (onEvent) {
+      onEvent({ type, engineId, data });
+    }
+  >>>
 
 fn name=resolveForgeDispatchTimeout params="engine:any,config:Required<AgonConfig>" returns=number export=true
   doc "Per-engine dispatch timeout for stage1/stage2. Floor: forgeDispatchTimeout (default 480s). Engines whose configured timeout (engines/*.json, calibrated for short chat use) is below the floor get raised to it — forge needs more time than a chat reply. Engines with a genuinely high configured timeout keep it. The previous behavior used forgeTimeout (1800s) as the floor, which let one stuck engine hold the run hostage for 30 min via Promise.allSettled."

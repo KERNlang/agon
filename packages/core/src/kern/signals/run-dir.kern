@@ -24,16 +24,19 @@ import from="node:path" names="join"
 import from="./config.js" names="agonPath"
 
 interface name=CreateRunDirOptions
-  field name=mode type=string doc "Mode identifier — brainstorm|forge|tribunal|campfire|review|team-*."
-  field name=label type=string optional=true doc "Optional human-readable suffix baked into the dir name. Sanitized to safe chars; long values truncated to 32 chars."
-  field name=announce type=boolean optional=true doc "If false, suppress the AGON_RUN announcement on stdout. Defaults to true. AGON_QUIET=1 forces stdout to contain ONLY the path."
+  doc "Inputs to createRunDir. `mode` is the run kind (brainstorm|forge|tribunal|campfire|review|team-*) — used as the dir-name prefix and sanitized against path traversal. `label` is an optional human-readable suffix orchestrators use to distinguish parallel runs (sanitized + capped at 32 chars). `announce` defaults to true; set false to skip the AGON_RUN: stdout line (AGON_QUIET=1 forces stdout to contain ONLY the path)."
+  field name=mode type=string
+  field name=label type=string optional=true
+  field name=announce type=boolean optional=true
 
 interface name=RunDirHandle
-  field name=id type=string doc "Run identifier — <mode>-<timestamp>[-<label>]."
-  field name=path type=string doc "Absolute path to the run directory."
-  field name=announced type=boolean doc "Whether the path was announced on stdout."
+  doc "Return value of createRunDir. `id` is the run identifier (<mode>-<timestamp>-<random>[-<label>]); `path` is the absolute dir path; `announced` reports whether the path was printed on stdout."
+  field name=id type=string
+  field name=path type=string
+  field name=announced type=boolean
 
 interface name=RunStatusEngine
+  doc "Per-engine outcome record. `status` is the authoritative success classifier: 'ok' (engine produced expected output), 'blocking' (review parsed but found blocking findings — outcome is failure even though the engine succeeded), 'parse-failure' (engine output missing structured sentinel), 'timeout', 'error' (dispatch threw), 'skipped' (never dispatched — health-check / filter)."
   field name=id type=string
   field name=status type="'ok' | 'blocking' | 'parse-failure' | 'timeout' | 'error' | 'skipped'"
   field name=exitCode type=number optional=true
@@ -41,6 +44,7 @@ interface name=RunStatusEngine
   field name=detail type=string optional=true
 
 interface name=RunStatus
+  doc "Final outcome record written to <run-dir>/status.json. Authoritative replacement for grepping stream output. `ok` is true only if every engine succeeded — a run with skipped engines is NOT ok."
   field name=mode type=string
   field name=label type=string optional=true
   field name=startedAt type=string

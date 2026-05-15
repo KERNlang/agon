@@ -53,12 +53,26 @@ fn name=resolveForgeRunTimeout params="config:AgonConfig,explicitTimeout:number|
 
 fn name=completeMissingForgeResults params="manifest:ForgeManifest, engineIds:string[], reason:string" returns=ForgeManifest export=true
   doc "Mark every selected forge engine terminal before persisting a bundle. This keeps aborted, timed-out, or disappearing engines visible instead of leaving the run looking half-open."
-  handler lang="kern"
-    each name=id in=engineIds
-      if cond="!(manifest.results as any)[id]"
-        assign target="(manifest.results as any)[id]" value="{ engineId: id, pass: false, score: 0, diffLines: 0, filesChanged: 0, durationSec: 0, lintWarnings: 0, styleScore: 0, dispatchStdout: `ERROR: ${reason}` }"
-    assign target="manifest.enginesDispatched" value="Object.keys(manifest.results ?? {}).filter((id) => id !== 'synthesis').length"
-    return value="manifest"
+  handler <<<
+    for (const id of engineIds) {
+      if ((manifest.results as any)[id]) continue;
+      (manifest.results as any)[id] = {
+        engineId: id,
+        pass: false,
+        score: 0,
+        diffLines: 0,
+        filesChanged: 0,
+        durationSec: 0,
+        lintWarnings: 0,
+        styleScore: 0,
+        dispatchStdout: `ERROR: ${reason}`,
+      };
+    }
+    manifest.enginesDispatched = Object.keys(manifest.results ?? {})
+      .filter((id) => id !== 'synthesis')
+      .length;
+    return manifest;
+  >>>
 
 fn name=writeForgeResultBundle params="manifest:ForgeManifest, worktrees:WorktreeEntry[], options:ForgeOptions, repoRootPath:string, baseSha:string, sidechainPath:string, errorMessage?:string" returns=string export=true
   doc "Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command."

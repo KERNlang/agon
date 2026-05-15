@@ -47,21 +47,25 @@ fn name=stripMouseReportInput params="input:string" returns=string export=false
     return value="input .replace(/\\x1b\\[<\\d+;\\d+;\\d+[mM]/g, '') .replace(/\\[<\\d+;\\d+;\\d+[mM]/g, '') .replace(/(?:\\x1b\\[|\\[)?<\\d+;\\d+;\\d*(?:[mM])?/g, '')"
 
 fn name=wrapPromptText params="value:string, width:number" returns="string[]"
-  handler lang="kern"
-    let name=safeWidth value="Math.max(1, width)"
-    let name=lines type="string[]" kind=let value="['']"
-    let name=col kind=let value="0"
-    each name=char in=value
-      if cond="char === '\\n'"
-        do value="lines.push('')"
-        assign target="col" value="0"
-      if cond="char !== '\\n' && col === safeWidth"
-        do value="lines.push('')"
-        assign target="col" value="0"
-      if cond="char !== '\\n'"
-        assign target="lines[lines.length - 1]" value="lines[lines.length - 1] + char"
-        assign target="col" value="col + 1"
-    return value="lines"
+  handler <<<
+    const safeWidth = Math.max(1, width);
+    const lines = [''];
+    let col = 0;
+    for (const char of value) {
+      if (char === '\n') {
+        lines.push('');
+        col = 0;
+        continue;
+      }
+      if (col === safeWidth) {
+        lines.push('');
+        col = 0;
+      }
+      lines[lines.length - 1] += char;
+      col += 1;
+    }
+    return lines;
+  >>>
 
 fn name=locatePromptCursor params="value:string, width:number, cursorOffset:number" returns="{column:number, line:number, synthetic:boolean}"
   handler <<<

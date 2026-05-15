@@ -2,19 +2,15 @@
 
 import { spawnSync } from 'node:child_process';
 
-import { dirname, resolve } from 'node:path';
+import { resolveDedupSidecar } from '../blocks/dedup-resolver.js';
 
-import { fileURLToPath } from 'node:url';
-
-import { existsSync } from 'node:fs';
-
-// @kern-source: history-search-bridge:10
+// @kern-source: history-search-bridge:8
 export interface HistorySearchItem {
   id: string;
   text: string;
 }
 
-// @kern-source: history-search-bridge:14
+// @kern-source: history-search-bridge:12
 export interface HistorySearchHit {
   id: string;
   similarity: number;
@@ -23,19 +19,19 @@ export interface HistorySearchHit {
 /**
  * Hard cap on the synchronous Python call. Embedding ~50 manifests is ~700ms warm; cap at 5s to cover cold start safely.
  */
-// @kern-source: history-search-bridge:18
+// @kern-source: history-search-bridge:16
 export const HISTORY_SEARCH_TIMEOUT_MS: number = 5000;
 
 /**
  * Set this env var to skip the Python sidecar (forces substring fallback). Useful for tests and CI.
  */
-// @kern-source: history-search-bridge:21
+// @kern-source: history-search-bridge:19
 export const HISTORY_SEARCH_DISABLE_ENV: string = "AGON_DISABLE_HISTORY_SEARCH_SIDECAR";
 
 /**
  * Synchronous Python sidecar call. Returns null ONLY on sidecar unavailability/failure (caller should fall back to substring). Returns [] when the sidecar ran cleanly but had no above-threshold matches, or when there's nothing to search.
  */
-// @kern-source: history-search-bridge:24
+// @kern-source: history-search-bridge:22
 export function searchHistorySemantic(query: string, items: HistorySearchItem[], topK: number): HistorySearchHit[] | null {
   if (process.env[HISTORY_SEARCH_DISABLE_ENV]) return null;
   // No query / no items: nothing to do, but distinguish this from sidecar
@@ -43,12 +39,8 @@ export function searchHistorySemantic(query: string, items: HistorySearchItem[],
   if (!query || !query.trim()) return [];
   if (!items || items.length === 0) return [];
 
-  // Resolve sidecar relative to compiled output:
-  // packages/core/dist/generated/sessions/history-search-bridge.js
-  //   → ../../../../dedup/history-search.py
-  const here = dirname(fileURLToPath(import.meta.url));
-  const sidecar = resolve(here, '..', '..', '..', '..', 'dedup', 'history-search.py');
-  if (!existsSync(sidecar)) return null;
+  const sidecar = resolveDedupSidecar('history-search.py');
+  if (!sidecar) return null;
 
   const python = process.env.AGON_PYTHON || 'python3';
 

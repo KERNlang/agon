@@ -3,9 +3,7 @@
 // degrade gracefully to chronological / substring fallback.
 
 import from="node:child_process" names="spawnSync"
-import from="node:path" names="dirname,resolve"
-import from="node:url" names="fileURLToPath"
-import from="node:fs" names="existsSync"
+import from="../blocks/dedup-resolver.js" names="resolveDedupSidecar"
 
 interface name=HistorySearchItem
   field name=id type=string
@@ -30,12 +28,8 @@ fn name=searchHistorySemantic params="query:string, items:HistorySearchItem[], t
     if (!query || !query.trim()) return [];
     if (!items || items.length === 0) return [];
 
-    // Resolve sidecar relative to compiled output:
-    // packages/core/dist/generated/sessions/history-search-bridge.js
-    //   → ../../../../dedup/history-search.py
-    const here = dirname(fileURLToPath(import.meta.url));
-    const sidecar = resolve(here, '..', '..', '..', '..', 'dedup', 'history-search.py');
-    if (!existsSync(sidecar)) return null;
+    const sidecar = resolveDedupSidecar('history-search.py');
+    if (!sidecar) return null;
 
     const python = process.env.AGON_PYTHON || 'python3';
 

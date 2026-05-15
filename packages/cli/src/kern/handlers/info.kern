@@ -9,765 +9,766 @@ import from="@agon/core" names="EngineRegistry"
 import from="../cesar/routing.js" names="deriveRoutingHints,buildRoutingContext"
 import from="../cesar/reliability.js" names="summarizeAllCesarToolReliability"
 
-fn name=handleLeaderboard params="dispatch:Dispatch" returns=void
-  handler <<<
-    const ratings = getRatings();
-    dispatch({ type: 'header', title: 'Global Leaderboard' });
+module name=InfoHandlers
+  fn name=handleLeaderboard params="dispatch:Dispatch" returns=void
+    handler <<<
+      const ratings = getRatings();
+      dispatch({ type: 'header', title: 'Global Leaderboard' });
 
-    const sorted = Object.entries(ratings.global)
-      .map(([id, r]) => ({ id, r, floor: Math.round(r.mu - 2 * r.phi), matches: r.wins + r.losses }))
-      .sort((a, b) => b.floor - a.floor);
+      const sorted = Object.entries(ratings.global)
+        .map(([id, r]) => ({ id, r, floor: Math.round(r.mu - 2 * r.phi), matches: r.wins + r.losses }))
+        .sort((a, b) => b.floor - a.floor);
 
-    const rows = sorted.map((e, i) => [
-      `${i + 1}.`,
-      e.id + (e.matches < 30 ? ' *' : ''),
-      String(e.r.mu),
-      `+-${Math.round(e.r.phi)}`,
-      String(e.r.wins),
-      String(e.r.losses),
-      `${e.matches > 0 ? Math.round((e.r.wins / e.matches) * 100) : 0}%`,
-    ]);
-
-    if (rows.length === 0) {
-      dispatch({ type: 'info', message: 'No matches recorded. Run a forge to start competing!' });
-      return;
-    }
-    dispatch({ type: 'table', headers: ['#', 'Engine', 'Rating', '+/-', 'W', 'L', 'Win%'], rows });
-
-    const modes = ['forge', 'brainstorm', 'tribunal'] as const;
-    const modeInfo = modes
-      .filter(m => Object.keys(ratings.byMode[m]).length > 0)
-      .map(m => `${m}: ${Object.values(ratings.byMode[m]).reduce((s: number, r: any) => s + r.wins + r.losses, 0)} matches`);
-    if (modeInfo.length > 0) {
-      dispatch({ type: 'info', message: `Modes: ${modeInfo.join(' | ')}` });
-    }
-  >>>
-
-fn name=handleCesarReport params="dispatch:Dispatch" returns=void
-  handler <<<
-    const reportPath = join(RUNS_DIR, 'cesar-decisions.jsonl');
-    if (!existsSync(reportPath)) {
-      dispatch({ type: 'info', message: 'No Cesar decision log yet. Use Cesar for a few turns, then run /cesar-report.' });
-      return;
-    }
-
-    let raw = '';
-    try {
-      raw = readFileSync(reportPath, 'utf-8');
-    } catch (err) {
-      dispatch({ type: 'error', message: `Failed to read Cesar report: ${err instanceof Error ? err.message : String(err)}` });
-      return;
-    }
-
-    const records = raw
-      .split('\n')
-      .map((line: string) => line.trim())
-      .filter(Boolean)
-      .map((line: string) => {
-        try { return JSON.parse(line) as any; } catch { return null; }
-      })
-      .filter((r: any) => !!r);
-
-    if (records.length === 0) {
-      dispatch({ type: 'info', message: 'Cesar decision log is empty.' });
-      return;
-    }
-
-    const recent = records.slice(-200);
-    dispatch({ type: 'header', title: `Cesar Report — last ${recent.length} decisions` });
-
-    const delegatedCount = recent.filter((r: any) => r.delegated).length;
-    const localCount = recent.length - delegatedCount;
-    const matchedEsc = recent.filter((r: any) => r.matchedEscalationHint === true).length;
-    const matchedBreadth = recent.filter((r: any) => r.matchedBreadthHint === true).length;
-    dispatch({
-      type: 'info',
-      message: `Local: ${localCount} (${Math.round((localCount / recent.length) * 100)}%) | Delegated: ${delegatedCount} (${Math.round((delegatedCount / recent.length) * 100)}%) | Escalation hint match: ${Math.round((matchedEsc / recent.length) * 100)}% | Breadth hint match: ${Math.round((matchedBreadth / recent.length) * 100)}%`,
-    });
-
-    const modeCounts: Record<string, number> = {};
-    for (const r of recent) {
-      const key = r.mode ?? 'unknown';
-      modeCounts[key] = (modeCounts[key] ?? 0) + 1;
-    }
-    const modeRows = Object.entries(modeCounts)
-      .sort((a, b) => b[1] - a[1])
-      .map(([mode, count]) => [mode, String(count), `${Math.round((count / recent.length) * 100)}%`]);
-    dispatch({ type: 'table', headers: ['Mode', 'Count', 'Share'], rows: modeRows });
-
-    const toolMap: Record<string, { turns: number; toolTurns: number; toolCount: number; eventCount: number; native: number; mcp: number; xml: number; stalls: number; auto: number; confidence: number; tools: Record<string, number> }> = {};
-    for (const r of recent) {
-      const engine = String(r.engineId ?? r.cesarEngineId ?? 'unknown');
-      const backend = String(r.backend ?? r.cesarBackend ?? 'unknown');
-      const key = `${engine} / ${backend}`;
-      toolMap[key] ??= { turns: 0, toolTurns: 0, toolCount: 0, eventCount: 0, native: 0, mcp: 0, xml: 0, stalls: 0, auto: 0, confidence: 0, tools: {} };
-      const bucket = toolMap[key];
-      const toolCount = Number(r.toolCount ?? 0);
-      bucket.turns++;
-      bucket.toolCount += toolCount;
-      bucket.eventCount += Number(r.toolEventCount ?? 0);
-      bucket.native += Number(r.nativeToolCalls ?? 0);
-      bucket.mcp += Number(r.mcpToolCalls ?? 0);
-      bucket.xml += Number(r.xmlToolCalls ?? 0);
-      bucket.stalls += Number(r.narratedToolStalls ?? 0);
-      bucket.auto += Number(r.autoToolExecutions ?? 0);
-      if (toolCount > 0) bucket.toolTurns++;
-      if (r.confidenceToolUsed === true) bucket.confidence++;
-      if (Array.isArray(r.toolsUsed)) {
-        for (const t of r.toolsUsed) {
-          const name = String(t);
-          bucket.tools[name] = (bucket.tools[name] ?? 0) + 1;
-        }
-      }
-    }
-    const reliabilityByKey = new Map(
-      summarizeAllCesarToolReliability(200).map((summary: any) => [`${summary.engineId} / ${summary.backend}`, summary])
-    );
-    const toolRows = Object.entries(toolMap)
-      .sort((a, b) => b[1].turns - a[1].turns)
-      .map(([key, data]) => {
-        const reliability = reliabilityByKey.get(key) as any;
-        const topTools = Object.entries(data.tools)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 4)
-          .map(([name, count]) => `${name}:${count}`)
-          .join(', ') || '-';
-        const toolTurnPct = data.turns > 0 ? Math.round((data.toolTurns / data.turns) * 100) : 0;
-        const confidencePct = data.turns > 0 ? Math.round((data.confidence / data.turns) * 100) : 0;
-        const avgTools = data.turns > 0 ? (data.toolCount / data.turns).toFixed(1) : '0.0';
-        return [
-          key,
-          reliability?.label ?? '-',
-          String(data.turns),
-          `${data.toolTurns} (${toolTurnPct}%)`,
-          avgTools,
-          `${data.native}/${data.mcp}/${data.xml}`,
-          `${data.confidence} (${confidencePct}%)`,
-          String(data.stalls),
-          String(data.auto),
-          topTools,
-        ];
-      });
-    dispatch({ type: 'separator' });
-    dispatch({ type: 'table', headers: ['Cesar Engine / Backend', 'Reliability', 'Turns', 'Tool Turns', 'Avg Tools', 'Native/MCP/XML', 'Confidence Tool', 'Stalls', 'Auto', 'Top Tools'], rows: toolRows });
-
-    const familyMap: Record<string, { count: number; matched: number; modes: Record<string, number> }> = {};
-    for (const r of recent) {
-      const family = r.uncertaintyFamily ?? 'unknown';
-      familyMap[family] ??= { count: 0, matched: 0, modes: {} };
-      familyMap[family].count++;
-      if (r.matchedEscalationHint === true) familyMap[family].matched++;
-      const mode = r.mode ?? 'unknown';
-      familyMap[family].modes[mode] = (familyMap[family].modes[mode] ?? 0) + 1;
-    }
-    const familyRows = Object.entries(familyMap)
-      .sort((a, b) => b[1].count - a[1].count)
-      .map(([family, data]) => {
-        const topMode = Object.entries(data.modes).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
-        return [family, String(data.count), `${Math.round((data.matched / data.count) * 100)}%`, topMode];
-      });
-    dispatch({ type: 'separator' });
-    dispatch({ type: 'table', headers: ['Uncertainty', 'Count', 'Hint Match', 'Top Actual Mode'], rows: familyRows });
-
-    const intakeMap: Record<string, { count: number; flows: Record<string, number>; modes: Record<string, number> }> = {};
-    for (const r of recent) {
-      const intake = r.intakeKind ?? 'unknown';
-      intakeMap[intake] ??= { count: 0, flows: {}, modes: {} };
-      intakeMap[intake].count++;
-      const flow = r.recommendedFlow ?? 'unknown';
-      intakeMap[intake].flows[flow] = (intakeMap[intake].flows[flow] ?? 0) + 1;
-      const mode = r.mode ?? 'unknown';
-      intakeMap[intake].modes[mode] = (intakeMap[intake].modes[mode] ?? 0) + 1;
-    }
-    const intakeRows = Object.entries(intakeMap)
-      .sort((a, b) => b[1].count - a[1].count)
-      .map(([intake, data]) => {
-        const topFlow = Object.entries(data.flows).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
-        const topMode = Object.entries(data.modes).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
-        return [intake, String(data.count), topFlow, topMode];
-      });
-    dispatch({ type: 'separator' });
-    dispatch({ type: 'table', headers: ['Intake', 'Count', 'Top Flow Hint', 'Top Actual Mode'], rows: intakeRows });
-
-    const miscalibrationRows: string[][] = [];
-    const nonSelfSelfCount = recent.filter((r: any) => r.escalationHint && r.escalationHint !== 'self' && r.mode === 'self').length;
-    if (nonSelfSelfCount > 0) {
-      miscalibrationRows.push(['Escalated-by-hint but stayed self', String(nonSelfSelfCount)]);
-    }
-    const sliceButNotForge = recent.filter((r: any) => r.forgeScopeHint === 'slice' && r.mode !== 'forge-slice' && r.mode !== 'forge' && r.mode !== 'team-forge').length;
-    if (sliceButNotForge > 0) {
-      miscalibrationRows.push(['Slice-forge candidates not forged', String(sliceButNotForge)]);
-    }
-    const teamHintSoloActual = recent.filter((r: any) => r.breadthHint === 'team' && typeof r.mode === 'string' && !r.mode.startsWith('team-')).length;
-    if (teamHintSoloActual > 0) {
-      miscalibrationRows.push(['Team-worthy by hint but solved solo', String(teamHintSoloActual)]);
-    }
-    const selfNeroHintSelfActual = recent.filter((r: any) => r.escalationHint === 'self-nero' && r.mode === 'self').length;
-    if (selfNeroHintSelfActual > 0) {
-      miscalibrationRows.push(['Quick-Nero candidates stayed plain self', String(selfNeroHintSelfActual)]);
-    }
-
-    if (miscalibrationRows.length > 0) {
-      dispatch({ type: 'separator' });
-      dispatch({ type: 'table', headers: ['Calibration Signal', 'Count'], rows: miscalibrationRows });
-    }
-
-    const recentTail = recent.slice(-5).map((r: any) => [
-      String(r.mode ?? 'unknown'),
-      String(r.intakeKind ?? '-'),
-      String(r.recommendedFlow ?? '-'),
-      String(r.toolCount ?? 0),
-      String(r.narratedToolStalls ?? 0),
-      String(r.uncertaintyFamily ?? '-'),
-      String(r.escalationHint ?? '-'),
-      String(r.breadthHint ?? '-'),
-      String(r.forgeScopeHint ?? '-'),
-    ]);
-    dispatch({ type: 'separator' });
-    dispatch({ type: 'table', headers: ['Recent Mode', 'Intake', 'Flow', 'Tools', 'Stalls', 'Family', 'Hint', 'Breadth', 'Forge Scope'], rows: recentTail });
-  >>>
-
-fn name=handleCesarHints params="input:string, dispatch:Dispatch, ctx:HandlerContext" returns=void
-  handler lang="kern"
-    let name=trimmed value="input.trim()"
-    if cond="!trimmed"
-      do value="dispatch({ type: 'error', message: 'Usage: /cesar-hints <task>' })"
-      return
-    let name=hints value="deriveRoutingHints(trimmed, ctx)"
-    do value="dispatch({ type: 'header', title: 'Cesar Hints' })"
-    do value="dispatch({ type: 'text', content: trimmed })"
-    do value="dispatch({ type: 'table', headers: ['Task Class', 'Intake', 'Flow', 'Uncertainty', 'Escalation', 'Breadth'], rows: [[ String(hints.taskClass), String(hints.intakeKind), String(hints.recommendedFlow), String(hints.uncertaintyFamily), String(hints.escalationHint), String(hints.recommendedBreadth), ]], })"
-    do value="dispatch({ type: 'text', content: `Flow reason: ${hints.flowReason}` })"
-    do value="dispatch({ type: 'table', headers: ['Input Tokens', 'Changed Files', 'Dir Spread', 'Forge Scope', 'Fanout', 'Review', 'Engine Mention'], rows: [[ String(hints.inputTokens), String(hints.scopeFileCount), String(hints.scopeDirSpread), String(hints.recommendedForgeScope), hints.fanoutLikely ? 'yes' : 'no', hints.reviewLikely ? 'yes' : 'no', hints.explicitEngineMention ? 'yes' : 'no', ]], })"
-    let name=routingCtx value="buildRoutingContext(trimmed, ctx)"
-    do value="dispatch({ type: 'separator' })"
-    do value="dispatch({ type: 'text', content: routingCtx })"
-
-fn name=showRunDetail params="dispatch:Dispatch, id:string" returns=void export=false
-  handler <<<
-    let files: string[];
-    try {
-      files = readdirSync(RUNS_DIR).filter((f: string) => f.includes(id));
-    } catch (err) {
-      console.warn(`[agon] failed to read runs directory: ${err instanceof Error ? err.message : String(err)}`);
-      dispatch({ type: 'info', message: `Run "${id}" not found` });
-      return;
-    }
-    if (files.length === 0) {
-      dispatch({ type: 'info', message: `Run "${id}" not found` });
-      return;
-    }
-
-    const manifest = JSON.parse(readFileSync(join(RUNS_DIR, files[0]), 'utf-8')) as ForgeManifest;
-    dispatch({ type: 'header', title: `Forge Run: ${manifest.forgeId.slice(0, 8)}` });
-    dispatch({ type: 'text', content: `Task: ${manifest.task}\nFitness: ${manifest.fitnessCmd}\nDate: ${new Date(manifest.timestamp).toLocaleString()}\nWinner: ${manifest.winner ?? 'none'}` });
-
-    if (Object.keys(manifest.results).length > 0) {
-      dispatch({ type: 'header', title: 'Scores' });
-      const rows = Object.entries(manifest.results).map(([eid, r]) => [
-        eid === manifest.winner ? `${icons().winner} ${eid}` : eid,
-        r.pass ? 'PASS' : 'FAIL',
-        String(r.score),
-        String(r.diffLines),
-        String(r.filesChanged),
-        `${r.durationSec}s`,
+      const rows = sorted.map((e, i) => [
+        `${i + 1}.`,
+        e.id + (e.matches < 30 ? ' *' : ''),
+        String(e.r.mu),
+        `+-${Math.round(e.r.phi)}`,
+        String(e.r.wins),
+        String(e.r.losses),
+        `${e.matches > 0 ? Math.round((e.r.wins / e.matches) * 100) : 0}%`,
       ]);
-      dispatch({ type: 'table', headers: ['Engine', 'Status', 'Score', 'Diff', 'Files', 'Time'], rows });
-    }
-  >>>
 
-fn name=handleHistory params="dispatch:Dispatch, id?:string" returns=void
-  handler <<<
-    ensureAgonHome();
+      if (rows.length === 0) {
+        dispatch({ type: 'info', message: 'No matches recorded. Run a forge to start competing!' });
+        return;
+      }
+      dispatch({ type: 'table', headers: ['#', 'Engine', 'Rating', '+/-', 'W', 'L', 'Win%'], rows });
 
-    if (id) {
-      showRunDetail(dispatch, id);
-      return;
-    }
+      const modes = ['forge', 'brainstorm', 'tribunal'] as const;
+      const modeInfo = modes
+        .filter(m => Object.keys(ratings.byMode[m]).length > 0)
+        .map(m => `${m}: ${Object.values(ratings.byMode[m]).reduce((s: number, r: any) => s + r.wins + r.losses, 0)} matches`);
+      if (modeInfo.length > 0) {
+        dispatch({ type: 'info', message: `Modes: ${modeInfo.join(' | ')}` });
+      }
+    >>>
 
-    let files: string[];
-    try {
-      files = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).sort().reverse();
-    } catch (err) {
-      console.warn(`[agon] failed to list runs: ${err instanceof Error ? err.message : String(err)}`);
-      dispatch({ type: 'info', message: 'No forge runs yet.' });
-      return;
-    }
+  fn name=handleCesarReport params="dispatch:Dispatch" returns=void
+    handler <<<
+      const reportPath = join(RUNS_DIR, 'cesar-decisions.jsonl');
+      if (!existsSync(reportPath)) {
+        dispatch({ type: 'info', message: 'No Cesar decision log yet. Use Cesar for a few turns, then run /cesar-report.' });
+        return;
+      }
 
-    if (files.length === 0) {
-      dispatch({ type: 'info', message: 'No forge runs yet.' });
-      return;
-    }
-
-    const recent = files.slice(0, 10);
-    dispatch({ type: 'header', title: `Recent Runs (${Math.min(10, files.length)} of ${files.length})` });
-
-    const rows: string[][] = [];
-    for (const file of recent) {
+      let raw = '';
       try {
-        const manifest = JSON.parse(readFileSync(join(RUNS_DIR, file), 'utf-8')) as ForgeManifest;
-        const date = new Date(manifest.timestamp).toLocaleString();
-        const taskStr = manifest.task.length > 40 ? manifest.task.slice(0, 40) + '...' : manifest.task;
-        const winner = manifest.winner ?? 'none';
-        const synthesis = manifest.synthesis?.wins ? 'yes' : '-';
-        rows.push([date, taskStr, winner, String(manifest.enginesDispatched), synthesis, manifest.forgeId.slice(0, 8)]);
+        raw = readFileSync(reportPath, 'utf-8');
       } catch (err) {
-        console.warn(`[agon] skipping malformed manifest ${file}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-    dispatch({ type: 'table', headers: ['Date', 'Task', 'Winner', 'Engines', 'Synth', 'ID'], rows });
-    dispatch({ type: 'info', message: 'Use /history <id> for details' });
-  >>>
-
-fn name=handleEngines params="dispatch:Dispatch, ctx:HandlerContext, intent?:Intent&{type:'engines'}" returns="Promise<void>" async=true
-  handler <<<
-    const action = String((intent as any)?.action ?? '').toLowerCase();
-    if (action && action !== 'list') {
-      const id = String((intent as any)?.id ?? '').trim().toLowerCase();
-      if (!id) {
-        dispatch({ type: 'error', message: 'Usage: /engines hide <id> | /engines remove <id> | /engines restore <id>' });
+        dispatch({ type: 'error', message: `Failed to read Cesar report: ${err instanceof Error ? err.message : String(err)}` });
         return;
       }
 
-      const hidden = new Set<string>((ctx.config as any).hiddenEngines ?? []);
-      const enabled = new Set<string>((ctx.config as any).forgeEnabledEngines ?? []);
+      const records = raw
+        .split('\n')
+        .map((line: string) => line.trim())
+        .filter(Boolean)
+        .map((line: string) => {
+          try { return JSON.parse(line) as any; } catch { return null; }
+        })
+        .filter((r: any) => !!r);
 
-      if (['hide', 'remove', 'delete'].includes(action)) {
-        hidden.add(id);
-        enabled.delete(id);
-        const hiddenList = Array.from(hidden);
-        const enabledList = Array.from(enabled);
-        configSet('hiddenEngines' as any, hiddenList as any);
-        configSet('forgeEnabledEngines' as any, enabledList as any);
-        (ctx.config as any).hiddenEngines = hiddenList;
-        (ctx.config as any).forgeEnabledEngines = enabledList;
-
-        let removedUserConfig = false;
-        const userConfigPath = join(getAgonHome(), 'engines', `${id}.json`);
-        if ((action === 'remove' || action === 'delete') && existsSync(userConfigPath)) {
-          rmSync(userConfigPath, { force: true });
-          try { (ctx.registry as any).unregister?.(id); } catch { /* best effort */ }
-          removedUserConfig = true;
-        }
-        try { (ctx.registry as any).clearBinaryCache?.(id); } catch { /* older registry */ }
-
-        dispatch({ type: 'success', message: `${id} hidden from Agon${removedUserConfig ? ' and user engine config removed' : ''}. It will not reappear on scan unless restored.` });
-        if (((ctx.config as any).cesarEngine ?? '') === id) {
-          dispatch({ type: 'warning', message: `${id} is still configured as Cesar. Switch with /cesar <engine> if needed.` });
-        }
+      if (records.length === 0) {
+        dispatch({ type: 'info', message: 'Cesar decision log is empty.' });
         return;
       }
 
-      if (['unhide', 'restore', 'show'].includes(action)) {
-        hidden.delete(id);
-        const hiddenList = Array.from(hidden);
-        configSet('hiddenEngines' as any, hiddenList as any);
-        (ctx.config as any).hiddenEngines = hiddenList;
-        try { (ctx.registry as any).clearBinaryCache?.(id); } catch { /* older registry */ }
-        dispatch({ type: 'success', message: `${id} restored. Run /engines scan to refresh availability.` });
-        return;
-      }
+      const recent = records.slice(-200);
+      dispatch({ type: 'header', title: `Cesar Report — last ${recent.length} decisions` });
 
-      dispatch({ type: 'error', message: `Unknown /engines action: ${action}` });
-      return;
-    }
-
-    dispatch({ type: 'header', title: 'Engines' });
-    dispatch({ type: 'spinner-start', message: 'Scanning...' });
-
-    const config = ctx.config;
-    const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-    const cesarBackend = (config as any).cesarBackend ?? 'auto';
-
-    try {
-      const engines = ctx.registry.list();
-      const results = await Promise.all(
-        engines.map(async (engine: any) => {
-          const hasBinary = !!(engine.binary && ctx.registry.findBinary(engine));
-          const hasApi = !!(engine.api && process.env[engine.api.apiKeyEnv]);
-          const avail = hasBinary || hasApi;
-          const version = avail ? ((await ctx.adapter.getVersion(engine)) ?? 'unknown') : '';
-          return { engine, avail, version, hasBinary, hasApi };
-        }),
-      );
-
-      dispatch({ type: 'spinner-stop' });
-
-      const hidden = new Set((config as any).hiddenEngines ?? []);
-      const rows = results.map(({ engine, avail, version, hasBinary, hasApi }: any) => {
-        // Show which backends are available
-        const ic = icons();
-        const cli = hasBinary ? `${ic.dotOn} cli` : `${ic.dotOff} cli`;
-        const api = engine.api ? (hasApi ? `${ic.dotOn} api` : `${ic.dotOff} api`) : '— api';
-        // Show active backend for Cesar brain engine
-        let active = '';
-        if (engine.id === cesarId) {
-          if (cesarBackend === 'api' && hasApi) active = '← api';
-          else if (cesarBackend === 'cli' && hasBinary) active = '← cli';
-          else if (cesarBackend === 'auto') active = hasBinary ? '← cli' : hasApi ? '← api' : '';
-          active = active ? `[cesar] ${active}` : '[cesar]';
-        }
-        return [
-          engine.id,
-          hidden.has(engine.id) ? 'hidden' : avail ? 'installed' : 'missing',
-          cli,
-          api,
-          version,
-          active,
-        ];
+      const delegatedCount = recent.filter((r: any) => r.delegated).length;
+      const localCount = recent.length - delegatedCount;
+      const matchedEsc = recent.filter((r: any) => r.matchedEscalationHint === true).length;
+      const matchedBreadth = recent.filter((r: any) => r.matchedBreadthHint === true).length;
+      dispatch({
+        type: 'info',
+        message: `Local: ${localCount} (${Math.round((localCount / recent.length) * 100)}%) | Delegated: ${delegatedCount} (${Math.round((delegatedCount / recent.length) * 100)}%) | Escalation hint match: ${Math.round((matchedEsc / recent.length) * 100)}% | Breadth hint match: ${Math.round((matchedBreadth / recent.length) * 100)}%`,
       });
-      dispatch({ type: 'table', headers: ['ID', 'Status', 'CLI', 'API', 'Version', ''], rows });
-      dispatch({ type: 'info', message: `Backend: ${cesarBackend}. Switch: /cesar <engine> cli|api` });
-      dispatch({ type: 'info', message: 'Hide/delete in Agon: /engines remove <id>. Restore: /engines restore <id>. Rescan PATH: /engines scan' });
-    } catch (err) {
-      dispatch({ type: 'spinner-stop' });
-      throw err;
-    }
-  >>>
 
-fn name=handleDiscover params="dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>" async=true
-  handler <<<
-    dispatch({ type: 'header', title: 'Engine Discovery' });
-    dispatch({ type: 'spinner-start', message: 'Scanning installed engines...' });
-
-    try {
-      try { (ctx.registry as any).clearBinaryCache?.(); } catch { /* older registry */ }
-      const results = await discoverEngines(ctx.registry, ctx.adapter);
-      dispatch({ type: 'spinner-stop', message: `${results.length} engines checked` });
-
-      const found = results.filter((r: any) => r.found);
-      const missing = results.filter((r: any) => !r.found);
-
-      if (found.length > 0) {
-        const rows = found.map((r: any) => [
-          r.id, r.displayName, r.version ?? 'unknown',
-          r.envOk ? 'ok' : r.missingEnv.join(', '),
-        ]);
-        dispatch({ type: 'table', headers: ['Engine', 'Name', 'Version', 'Env'], rows });
+      const modeCounts: Record<string, number> = {};
+      for (const r of recent) {
+        const key = r.mode ?? 'unknown';
+        modeCounts[key] = (modeCounts[key] ?? 0) + 1;
       }
-      if (missing.length > 0) {
-        dispatch({ type: 'info', message: `Not installed: ${missing.map((r: any) => r.id).join(', ')}` });
-      }
-    } catch (err) {
-      dispatch({ type: 'spinner-stop' });
-      throw err;
-    }
-  >>>
+      const modeRows = Object.entries(modeCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([mode, count]) => [mode, String(count), `${Math.round((count / recent.length) * 100)}%`]);
+      dispatch({ type: 'table', headers: ['Mode', 'Count', 'Share'], rows: modeRows });
 
-fn name=handleConfig params="intent:Intent&{type:'config'}, dispatch:Dispatch, ctx?:HandlerContext" returns=void
-  handler <<<
-    ensureAgonHome();
-    const action = (intent as any).action ?? 'list';
-
-    switch (action) {
-      case 'list': {
-        dispatch({ type: 'header', title: 'Configuration' });
-        const config = loadConfig(process.cwd());
-        const rows = Object.entries(config).map(([key, value]) => {
-          const defaultVal = (DEFAULT_CONFIG as any)[key];
-          const isDefault = JSON.stringify(value) === JSON.stringify(defaultVal);
-          return [key, String(Array.isArray(value) ? value.join(',') : value), isDefault ? 'default' : 'custom'];
-        });
-        dispatch({ type: 'table', headers: ['Key', 'Value', 'Source'], rows });
-        break;
-      }
-      case 'get': {
-        if (!(intent as any).key) { dispatch({ type: 'error', message: 'Usage: /config get <key>' }); return; }
-        const config = loadConfig(process.cwd());
-        const key = (intent as any).key as keyof AgonConfig;
-        if (key in config) {
-          const value = (config as any)[key];
-          dispatch({ type: 'text', content: Array.isArray(value) ? value.join(',') : String(value) });
-        } else {
-          dispatch({ type: 'error', message: `Unknown key: ${(intent as any).key}` });
-        }
-        break;
-      }
-      case 'set': {
-        if (!(intent as any).key || (intent as any).value === undefined) {
-          dispatch({ type: 'error', message: 'Usage: /config set <key> <value>' });
-          return;
-        }
-        const key = (intent as any).key as keyof AgonConfig;
-        if (!(key in DEFAULT_CONFIG)) {
-          dispatch({ type: 'error', message: `Unknown key: ${(intent as any).key}` });
-          return;
-        }
-        const defaultVal = (DEFAULT_CONFIG as any)[key];
-        let parsed: unknown;
-        if (typeof defaultVal === 'boolean') parsed = (intent as any).value === 'true';
-        else if (typeof defaultVal === 'number') {
-          parsed = parseInt((intent as any).value, 10);
-          if (isNaN(parsed as number)) { dispatch({ type: 'error', message: `Invalid number: ${(intent as any).value}` }); return; }
-        } else if (Array.isArray(defaultVal)) parsed = (intent as any).value.split(',').map((s: string) => s.trim());
-        else parsed = (intent as any).value;
-        configSet(key, parsed as any);
-        if (ctx && ['cesarEngine', 'cesarBackend', 'cesarMcpEnabled', 'cesarMcpConfigPath'].includes(String(key))) {
-          if (ctx.cesarSession) {
-            ctx.cesarSession.close();
-            ctx.setCesarSession(null);
+      const toolMap: Record<string, { turns: number; toolTurns: number; toolCount: number; eventCount: number; native: number; mcp: number; xml: number; stalls: number; auto: number; confidence: number; tools: Record<string, number> }> = {};
+      for (const r of recent) {
+        const engine = String(r.engineId ?? r.cesarEngineId ?? 'unknown');
+        const backend = String(r.backend ?? r.cesarBackend ?? 'unknown');
+        const key = `${engine} / ${backend}`;
+        toolMap[key] ??= { turns: 0, toolTurns: 0, toolCount: 0, eventCount: 0, native: 0, mcp: 0, xml: 0, stalls: 0, auto: 0, confidence: 0, tools: {} };
+        const bucket = toolMap[key];
+        const toolCount = Number(r.toolCount ?? 0);
+        bucket.turns++;
+        bucket.toolCount += toolCount;
+        bucket.eventCount += Number(r.toolEventCount ?? 0);
+        bucket.native += Number(r.nativeToolCalls ?? 0);
+        bucket.mcp += Number(r.mcpToolCalls ?? 0);
+        bucket.xml += Number(r.xmlToolCalls ?? 0);
+        bucket.stalls += Number(r.narratedToolStalls ?? 0);
+        bucket.auto += Number(r.autoToolExecutions ?? 0);
+        if (toolCount > 0) bucket.toolTurns++;
+        if (r.confidenceToolUsed === true) bucket.confidence++;
+        if (Array.isArray(r.toolsUsed)) {
+          for (const t of r.toolsUsed) {
+            const name = String(t);
+            bucket.tools[name] = (bucket.tools[name] ?? 0) + 1;
           }
         }
-        dispatch({ type: 'success', message: `Set ${(intent as any).key} = ${(intent as any).value}` });
-        break;
       }
-      default:
-        dispatch({ type: 'error', message: `Unknown config action: ${action}` });
-    }
-  >>>
+      const reliabilityByKey = new Map(
+        summarizeAllCesarToolReliability(200).map((summary: any) => [`${summary.engineId} / ${summary.backend}`, summary])
+      );
+      const toolRows = Object.entries(toolMap)
+        .sort((a, b) => b[1].turns - a[1].turns)
+        .map(([key, data]) => {
+          const reliability = reliabilityByKey.get(key) as any;
+          const topTools = Object.entries(data.tools)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 4)
+            .map(([name, count]) => `${name}:${count}`)
+            .join(', ') || '-';
+          const toolTurnPct = data.turns > 0 ? Math.round((data.toolTurns / data.turns) * 100) : 0;
+          const confidencePct = data.turns > 0 ? Math.round((data.confidence / data.turns) * 100) : 0;
+          const avgTools = data.turns > 0 ? (data.toolCount / data.turns).toFixed(1) : '0.0';
+          return [
+            key,
+            reliability?.label ?? '-',
+            String(data.turns),
+            `${data.toolTurns} (${toolTurnPct}%)`,
+            avgTools,
+            `${data.native}/${data.mcp}/${data.xml}`,
+            `${data.confidence} (${confidencePct}%)`,
+            String(data.stalls),
+            String(data.auto),
+            topTools,
+          ];
+        });
+      dispatch({ type: 'separator' });
+      dispatch({ type: 'table', headers: ['Cesar Engine / Backend', 'Reliability', 'Turns', 'Tool Turns', 'Avg Tools', 'Native/MCP/XML', 'Confidence Tool', 'Stalls', 'Auto', 'Top Tools'], rows: toolRows });
 
-fn name=handleUse params="engineIds:string[], dispatch:Dispatch, ctx:HandlerContext, setSessionEngines:(engines:string[]|null)=>void" returns=void
-  handler lang="kern"
-    if cond="engineIds.length === 0 || (engineIds.length === 1 && engineIds[0] === 'all')"
-      do value="setSessionEngines(null)"
-      do value="configSet('engineActivationMode' as any, 'auto' as any)"
-      let name=active value="ctx.registry.activeIds({ ...(ctx.config as any), engineActivationMode: 'auto' } as any)"
-      do value="configSet('forgeEnabledEngines', active)"
-      do value="dispatch({ type: 'success', message: 'Using all available engines' })"
-      do value="dispatch({ type: 'info', message: active.join(', ') })"
-      return
-    let name=available value="ctx.registry.availableIds()"
-    let name=valid type="string[]" value="[]"
-    let name=invalid type="string[]" value="[]"
-    each name=id in="engineIds"
-      if cond="available.includes(id)"
-        do value="valid.push(id)"
-      else
-        do value="invalid.push(id)"
-    if cond="invalid.length > 0"
-      do value="dispatch({ type: 'warning', message: `Not available: ${invalid.join(', ')}` })"
-    if cond="valid.length === 0"
-      do value="dispatch({ type: 'error', message: `No valid engines selected. Available: ${available.join(', ')}` })"
-      return
-    do value="setSessionEngines(valid)"
-    do value="configSet('engineActivationMode' as any, 'explicit' as any)"
-    do value="configSet('forgeEnabledEngines', valid)"
-    do value="dispatch({ type: 'success', message: `Active engines: ${valid.join(', ')}` })"
-    do value="dispatch({ type: 'info', message: 'Saved — persists across sessions. Use /cesar <engine> to change Cesar brain separately.' })"
+      const familyMap: Record<string, { count: number; matched: number; modes: Record<string, number> }> = {};
+      for (const r of recent) {
+        const family = r.uncertaintyFamily ?? 'unknown';
+        familyMap[family] ??= { count: 0, matched: 0, modes: {} };
+        familyMap[family].count++;
+        if (r.matchedEscalationHint === true) familyMap[family].matched++;
+        const mode = r.mode ?? 'unknown';
+        familyMap[family].modes[mode] = (familyMap[family].modes[mode] ?? 0) + 1;
+      }
+      const familyRows = Object.entries(familyMap)
+        .sort((a, b) => b[1].count - a[1].count)
+        .map(([family, data]) => {
+          const topMode = Object.entries(data.modes).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
+          return [family, String(data.count), `${Math.round((data.matched / data.count) * 100)}%`, topMode];
+        });
+      dispatch({ type: 'separator' });
+      dispatch({ type: 'table', headers: ['Uncertainty', 'Count', 'Hint Match', 'Top Actual Mode'], rows: familyRows });
 
-fn name=handleCesar params="engineId:string, dispatch:Dispatch, ctx:HandlerContext" returns=void
-  handler <<<
-    // Parse: "/cesar claude api" or "/cesar claude cli" or "/cesar claude" or "/cesar"
-    const parts = engineId.trim().split(/\s+/);
-    const id = parts[0] ?? '';
-    const backendArg = parts[1]?.toLowerCase();
+      const intakeMap: Record<string, { count: number; flows: Record<string, number>; modes: Record<string, number> }> = {};
+      for (const r of recent) {
+        const intake = r.intakeKind ?? 'unknown';
+        intakeMap[intake] ??= { count: 0, flows: {}, modes: {} };
+        intakeMap[intake].count++;
+        const flow = r.recommendedFlow ?? 'unknown';
+        intakeMap[intake].flows[flow] = (intakeMap[intake].flows[flow] ?? 0) + 1;
+        const mode = r.mode ?? 'unknown';
+        intakeMap[intake].modes[mode] = (intakeMap[intake].modes[mode] ?? 0) + 1;
+      }
+      const intakeRows = Object.entries(intakeMap)
+        .sort((a, b) => b[1].count - a[1].count)
+        .map(([intake, data]) => {
+          const topFlow = Object.entries(data.flows).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
+          const topMode = Object.entries(data.modes).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
+          return [intake, String(data.count), topFlow, topMode];
+        });
+      dispatch({ type: 'separator' });
+      dispatch({ type: 'table', headers: ['Intake', 'Count', 'Top Flow Hint', 'Top Actual Mode'], rows: intakeRows });
 
-    if (!id) {
-      // Show current Cesar brain + backend
+      const miscalibrationRows: string[][] = [];
+      const nonSelfSelfCount = recent.filter((r: any) => r.escalationHint && r.escalationHint !== 'self' && r.mode === 'self').length;
+      if (nonSelfSelfCount > 0) {
+        miscalibrationRows.push(['Escalated-by-hint but stayed self', String(nonSelfSelfCount)]);
+      }
+      const sliceButNotForge = recent.filter((r: any) => r.forgeScopeHint === 'slice' && r.mode !== 'forge-slice' && r.mode !== 'forge' && r.mode !== 'team-forge').length;
+      if (sliceButNotForge > 0) {
+        miscalibrationRows.push(['Slice-forge candidates not forged', String(sliceButNotForge)]);
+      }
+      const teamHintSoloActual = recent.filter((r: any) => r.breadthHint === 'team' && typeof r.mode === 'string' && !r.mode.startsWith('team-')).length;
+      if (teamHintSoloActual > 0) {
+        miscalibrationRows.push(['Team-worthy by hint but solved solo', String(teamHintSoloActual)]);
+      }
+      const selfNeroHintSelfActual = recent.filter((r: any) => r.escalationHint === 'self-nero' && r.mode === 'self').length;
+      if (selfNeroHintSelfActual > 0) {
+        miscalibrationRows.push(['Quick-Nero candidates stayed plain self', String(selfNeroHintSelfActual)]);
+      }
+
+      if (miscalibrationRows.length > 0) {
+        dispatch({ type: 'separator' });
+        dispatch({ type: 'table', headers: ['Calibration Signal', 'Count'], rows: miscalibrationRows });
+      }
+
+      const recentTail = recent.slice(-5).map((r: any) => [
+        String(r.mode ?? 'unknown'),
+        String(r.intakeKind ?? '-'),
+        String(r.recommendedFlow ?? '-'),
+        String(r.toolCount ?? 0),
+        String(r.narratedToolStalls ?? 0),
+        String(r.uncertaintyFamily ?? '-'),
+        String(r.escalationHint ?? '-'),
+        String(r.breadthHint ?? '-'),
+        String(r.forgeScopeHint ?? '-'),
+      ]);
+      dispatch({ type: 'separator' });
+      dispatch({ type: 'table', headers: ['Recent Mode', 'Intake', 'Flow', 'Tools', 'Stalls', 'Family', 'Hint', 'Breadth', 'Forge Scope'], rows: recentTail });
+    >>>
+
+  fn name=handleCesarHints params="input:string, dispatch:Dispatch, ctx:HandlerContext" returns=void
+    handler lang="kern"
+      let name=trimmed value="input.trim()"
+      if cond="!trimmed"
+        do value="dispatch({ type: 'error', message: 'Usage: /cesar-hints <task>' })"
+        return
+      let name=hints value="deriveRoutingHints(trimmed, ctx)"
+      do value="dispatch({ type: 'header', title: 'Cesar Hints' })"
+      do value="dispatch({ type: 'text', content: trimmed })"
+      do value="dispatch({ type: 'table', headers: ['Task Class', 'Intake', 'Flow', 'Uncertainty', 'Escalation', 'Breadth'], rows: [[ String(hints.taskClass), String(hints.intakeKind), String(hints.recommendedFlow), String(hints.uncertaintyFamily), String(hints.escalationHint), String(hints.recommendedBreadth), ]], })"
+      do value="dispatch({ type: 'text', content: `Flow reason: ${hints.flowReason}` })"
+      do value="dispatch({ type: 'table', headers: ['Input Tokens', 'Changed Files', 'Dir Spread', 'Forge Scope', 'Fanout', 'Review', 'Engine Mention'], rows: [[ String(hints.inputTokens), String(hints.scopeFileCount), String(hints.scopeDirSpread), String(hints.recommendedForgeScope), hints.fanoutLikely ? 'yes' : 'no', hints.reviewLikely ? 'yes' : 'no', hints.explicitEngineMention ? 'yes' : 'no', ]], })"
+      let name=routingCtx value="buildRoutingContext(trimmed, ctx)"
+      do value="dispatch({ type: 'separator' })"
+      do value="dispatch({ type: 'text', content: routingCtx })"
+
+  fn name=showRunDetail params="dispatch:Dispatch, id:string" returns=void export=false
+    handler <<<
+      let files: string[];
+      try {
+        files = readdirSync(RUNS_DIR).filter((f: string) => f.includes(id));
+      } catch (err) {
+        console.warn(`[agon] failed to read runs directory: ${err instanceof Error ? err.message : String(err)}`);
+        dispatch({ type: 'info', message: `Run "${id}" not found` });
+        return;
+      }
+      if (files.length === 0) {
+        dispatch({ type: 'info', message: `Run "${id}" not found` });
+        return;
+      }
+
+      const manifest = JSON.parse(readFileSync(join(RUNS_DIR, files[0]), 'utf-8')) as ForgeManifest;
+      dispatch({ type: 'header', title: `Forge Run: ${manifest.forgeId.slice(0, 8)}` });
+      dispatch({ type: 'text', content: `Task: ${manifest.task}\nFitness: ${manifest.fitnessCmd}\nDate: ${new Date(manifest.timestamp).toLocaleString()}\nWinner: ${manifest.winner ?? 'none'}` });
+
+      if (Object.keys(manifest.results).length > 0) {
+        dispatch({ type: 'header', title: 'Scores' });
+        const rows = Object.entries(manifest.results).map(([eid, r]) => [
+          eid === manifest.winner ? `${icons().winner} ${eid}` : eid,
+          r.pass ? 'PASS' : 'FAIL',
+          String(r.score),
+          String(r.diffLines),
+          String(r.filesChanged),
+          `${r.durationSec}s`,
+        ]);
+        dispatch({ type: 'table', headers: ['Engine', 'Status', 'Score', 'Diff', 'Files', 'Time'], rows });
+      }
+    >>>
+
+  fn name=handleHistory params="dispatch:Dispatch, id?:string" returns=void
+    handler <<<
+      ensureAgonHome();
+
+      if (id) {
+        showRunDetail(dispatch, id);
+        return;
+      }
+
+      let files: string[];
+      try {
+        files = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).sort().reverse();
+      } catch (err) {
+        console.warn(`[agon] failed to list runs: ${err instanceof Error ? err.message : String(err)}`);
+        dispatch({ type: 'info', message: 'No forge runs yet.' });
+        return;
+      }
+
+      if (files.length === 0) {
+        dispatch({ type: 'info', message: 'No forge runs yet.' });
+        return;
+      }
+
+      const recent = files.slice(0, 10);
+      dispatch({ type: 'header', title: `Recent Runs (${Math.min(10, files.length)} of ${files.length})` });
+
+      const rows: string[][] = [];
+      for (const file of recent) {
+        try {
+          const manifest = JSON.parse(readFileSync(join(RUNS_DIR, file), 'utf-8')) as ForgeManifest;
+          const date = new Date(manifest.timestamp).toLocaleString();
+          const taskStr = manifest.task.length > 40 ? manifest.task.slice(0, 40) + '...' : manifest.task;
+          const winner = manifest.winner ?? 'none';
+          const synthesis = manifest.synthesis?.wins ? 'yes' : '-';
+          rows.push([date, taskStr, winner, String(manifest.enginesDispatched), synthesis, manifest.forgeId.slice(0, 8)]);
+        } catch (err) {
+          console.warn(`[agon] skipping malformed manifest ${file}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      dispatch({ type: 'table', headers: ['Date', 'Task', 'Winner', 'Engines', 'Synth', 'ID'], rows });
+      dispatch({ type: 'info', message: 'Use /history <id> for details' });
+    >>>
+
+  fn name=handleEngines params="dispatch:Dispatch, ctx:HandlerContext, intent?:Intent&{type:'engines'}" returns="Promise<void>" async=true
+    handler <<<
+      const action = String((intent as any)?.action ?? '').toLowerCase();
+      if (action && action !== 'list') {
+        const id = String((intent as any)?.id ?? '').trim().toLowerCase();
+        if (!id) {
+          dispatch({ type: 'error', message: 'Usage: /engines hide <id> | /engines remove <id> | /engines restore <id>' });
+          return;
+        }
+
+        const hidden = new Set<string>((ctx.config as any).hiddenEngines ?? []);
+        const enabled = new Set<string>((ctx.config as any).forgeEnabledEngines ?? []);
+
+        if (['hide', 'remove', 'delete'].includes(action)) {
+          hidden.add(id);
+          enabled.delete(id);
+          const hiddenList = Array.from(hidden);
+          const enabledList = Array.from(enabled);
+          configSet('hiddenEngines' as any, hiddenList as any);
+          configSet('forgeEnabledEngines' as any, enabledList as any);
+          (ctx.config as any).hiddenEngines = hiddenList;
+          (ctx.config as any).forgeEnabledEngines = enabledList;
+
+          let removedUserConfig = false;
+          const userConfigPath = join(getAgonHome(), 'engines', `${id}.json`);
+          if ((action === 'remove' || action === 'delete') && existsSync(userConfigPath)) {
+            rmSync(userConfigPath, { force: true });
+            try { (ctx.registry as any).unregister?.(id); } catch { /* best effort */ }
+            removedUserConfig = true;
+          }
+          try { (ctx.registry as any).clearBinaryCache?.(id); } catch { /* older registry */ }
+
+          dispatch({ type: 'success', message: `${id} hidden from Agon${removedUserConfig ? ' and user engine config removed' : ''}. It will not reappear on scan unless restored.` });
+          if (((ctx.config as any).cesarEngine ?? '') === id) {
+            dispatch({ type: 'warning', message: `${id} is still configured as Cesar. Switch with /cesar <engine> if needed.` });
+          }
+          return;
+        }
+
+        if (['unhide', 'restore', 'show'].includes(action)) {
+          hidden.delete(id);
+          const hiddenList = Array.from(hidden);
+          configSet('hiddenEngines' as any, hiddenList as any);
+          (ctx.config as any).hiddenEngines = hiddenList;
+          try { (ctx.registry as any).clearBinaryCache?.(id); } catch { /* older registry */ }
+          dispatch({ type: 'success', message: `${id} restored. Run /engines scan to refresh availability.` });
+          return;
+        }
+
+        dispatch({ type: 'error', message: `Unknown /engines action: ${action}` });
+        return;
+      }
+
+      dispatch({ type: 'header', title: 'Engines' });
+      dispatch({ type: 'spinner-start', message: 'Scanning...' });
+
       const config = ctx.config;
-      const current = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-      const backend = (config as any).cesarBackend ?? 'auto';
-      dispatch({ type: 'info', message: `Cesar brain: ${current} (backend: ${backend})` });
-      dispatch({ type: 'info', message: 'Usage: /cesar <engine> [cli|api|auto]' });
-      return;
-    }
+      const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+      const cesarBackend = (config as any).cesarBackend ?? 'auto';
 
-    // Backend-only switch: "/cesar cli" or "/cesar api" or "/cesar auto"
-    if (['cli', 'api', 'auto'].includes(id)) {
-      configSet('cesarBackend', id);
-      // Kill session to force reboot with new backend
+      try {
+        const engines = ctx.registry.list();
+        const results = await Promise.all(
+          engines.map(async (engine: any) => {
+            const hasBinary = !!(engine.binary && ctx.registry.findBinary(engine));
+            const hasApi = !!(engine.api && process.env[engine.api.apiKeyEnv]);
+            const avail = hasBinary || hasApi;
+            const version = avail ? ((await ctx.adapter.getVersion(engine)) ?? 'unknown') : '';
+            return { engine, avail, version, hasBinary, hasApi };
+          }),
+        );
+
+        dispatch({ type: 'spinner-stop' });
+
+        const hidden = new Set((config as any).hiddenEngines ?? []);
+        const rows = results.map(({ engine, avail, version, hasBinary, hasApi }: any) => {
+          // Show which backends are available
+          const ic = icons();
+          const cli = hasBinary ? `${ic.dotOn} cli` : `${ic.dotOff} cli`;
+          const api = engine.api ? (hasApi ? `${ic.dotOn} api` : `${ic.dotOff} api`) : '— api';
+          // Show active backend for Cesar brain engine
+          let active = '';
+          if (engine.id === cesarId) {
+            if (cesarBackend === 'api' && hasApi) active = '← api';
+            else if (cesarBackend === 'cli' && hasBinary) active = '← cli';
+            else if (cesarBackend === 'auto') active = hasBinary ? '← cli' : hasApi ? '← api' : '';
+            active = active ? `[cesar] ${active}` : '[cesar]';
+          }
+          return [
+            engine.id,
+            hidden.has(engine.id) ? 'hidden' : avail ? 'installed' : 'missing',
+            cli,
+            api,
+            version,
+            active,
+          ];
+        });
+        dispatch({ type: 'table', headers: ['ID', 'Status', 'CLI', 'API', 'Version', ''], rows });
+        dispatch({ type: 'info', message: `Backend: ${cesarBackend}. Switch: /cesar <engine> cli|api` });
+        dispatch({ type: 'info', message: 'Hide/delete in Agon: /engines remove <id>. Restore: /engines restore <id>. Rescan PATH: /engines scan' });
+      } catch (err) {
+        dispatch({ type: 'spinner-stop' });
+        throw err;
+      }
+    >>>
+
+  fn name=handleDiscover params="dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>" async=true
+    handler <<<
+      dispatch({ type: 'header', title: 'Engine Discovery' });
+      dispatch({ type: 'spinner-start', message: 'Scanning installed engines...' });
+
+      try {
+        try { (ctx.registry as any).clearBinaryCache?.(); } catch { /* older registry */ }
+        const results = await discoverEngines(ctx.registry, ctx.adapter);
+        dispatch({ type: 'spinner-stop', message: `${results.length} engines checked` });
+
+        const found = results.filter((r: any) => r.found);
+        const missing = results.filter((r: any) => !r.found);
+
+        if (found.length > 0) {
+          const rows = found.map((r: any) => [
+            r.id, r.displayName, r.version ?? 'unknown',
+            r.envOk ? 'ok' : r.missingEnv.join(', '),
+          ]);
+          dispatch({ type: 'table', headers: ['Engine', 'Name', 'Version', 'Env'], rows });
+        }
+        if (missing.length > 0) {
+          dispatch({ type: 'info', message: `Not installed: ${missing.map((r: any) => r.id).join(', ')}` });
+        }
+      } catch (err) {
+        dispatch({ type: 'spinner-stop' });
+        throw err;
+      }
+    >>>
+
+  fn name=handleConfig params="intent:Intent&{type:'config'}, dispatch:Dispatch, ctx?:HandlerContext" returns=void
+    handler <<<
+      ensureAgonHome();
+      const action = (intent as any).action ?? 'list';
+
+      switch (action) {
+        case 'list': {
+          dispatch({ type: 'header', title: 'Configuration' });
+          const config = loadConfig(process.cwd());
+          const rows = Object.entries(config).map(([key, value]) => {
+            const defaultVal = (DEFAULT_CONFIG as any)[key];
+            const isDefault = JSON.stringify(value) === JSON.stringify(defaultVal);
+            return [key, String(Array.isArray(value) ? value.join(',') : value), isDefault ? 'default' : 'custom'];
+          });
+          dispatch({ type: 'table', headers: ['Key', 'Value', 'Source'], rows });
+          break;
+        }
+        case 'get': {
+          if (!(intent as any).key) { dispatch({ type: 'error', message: 'Usage: /config get <key>' }); return; }
+          const config = loadConfig(process.cwd());
+          const key = (intent as any).key as keyof AgonConfig;
+          if (key in config) {
+            const value = (config as any)[key];
+            dispatch({ type: 'text', content: Array.isArray(value) ? value.join(',') : String(value) });
+          } else {
+            dispatch({ type: 'error', message: `Unknown key: ${(intent as any).key}` });
+          }
+          break;
+        }
+        case 'set': {
+          if (!(intent as any).key || (intent as any).value === undefined) {
+            dispatch({ type: 'error', message: 'Usage: /config set <key> <value>' });
+            return;
+          }
+          const key = (intent as any).key as keyof AgonConfig;
+          if (!(key in DEFAULT_CONFIG)) {
+            dispatch({ type: 'error', message: `Unknown key: ${(intent as any).key}` });
+            return;
+          }
+          const defaultVal = (DEFAULT_CONFIG as any)[key];
+          let parsed: unknown;
+          if (typeof defaultVal === 'boolean') parsed = (intent as any).value === 'true';
+          else if (typeof defaultVal === 'number') {
+            parsed = parseInt((intent as any).value, 10);
+            if (isNaN(parsed as number)) { dispatch({ type: 'error', message: `Invalid number: ${(intent as any).value}` }); return; }
+          } else if (Array.isArray(defaultVal)) parsed = (intent as any).value.split(',').map((s: string) => s.trim());
+          else parsed = (intent as any).value;
+          configSet(key, parsed as any);
+          if (ctx && ['cesarEngine', 'cesarBackend', 'cesarMcpEnabled', 'cesarMcpConfigPath'].includes(String(key))) {
+            if (ctx.cesarSession) {
+              ctx.cesarSession.close();
+              ctx.setCesarSession(null);
+            }
+          }
+          dispatch({ type: 'success', message: `Set ${(intent as any).key} = ${(intent as any).value}` });
+          break;
+        }
+        default:
+          dispatch({ type: 'error', message: `Unknown config action: ${action}` });
+      }
+    >>>
+
+  fn name=handleUse params="engineIds:string[], dispatch:Dispatch, ctx:HandlerContext, setSessionEngines:(engines:string[]|null)=>void" returns=void
+    handler lang="kern"
+      if cond="engineIds.length === 0 || (engineIds.length === 1 && engineIds[0] === 'all')"
+        do value="setSessionEngines(null)"
+        do value="configSet('engineActivationMode' as any, 'auto' as any)"
+        let name=active value="ctx.registry.activeIds({ ...(ctx.config as any), engineActivationMode: 'auto' } as any)"
+        do value="configSet('forgeEnabledEngines', active)"
+        do value="dispatch({ type: 'success', message: 'Using all available engines' })"
+        do value="dispatch({ type: 'info', message: active.join(', ') })"
+        return
+      let name=available value="ctx.registry.availableIds()"
+      let name=valid type="string[]" value="[]"
+      let name=invalid type="string[]" value="[]"
+      each name=id in="engineIds"
+        if cond="available.includes(id)"
+          do value="valid.push(id)"
+        else
+          do value="invalid.push(id)"
+      if cond="invalid.length > 0"
+        do value="dispatch({ type: 'warning', message: `Not available: ${invalid.join(', ')}` })"
+      if cond="valid.length === 0"
+        do value="dispatch({ type: 'error', message: `No valid engines selected. Available: ${available.join(', ')}` })"
+        return
+      do value="setSessionEngines(valid)"
+      do value="configSet('engineActivationMode' as any, 'explicit' as any)"
+      do value="configSet('forgeEnabledEngines', valid)"
+      do value="dispatch({ type: 'success', message: `Active engines: ${valid.join(', ')}` })"
+      do value="dispatch({ type: 'info', message: 'Saved — persists across sessions. Use /cesar <engine> to change Cesar brain separately.' })"
+
+  fn name=handleCesar params="engineId:string, dispatch:Dispatch, ctx:HandlerContext" returns=void
+    handler <<<
+      // Parse: "/cesar claude api" or "/cesar claude cli" or "/cesar claude" or "/cesar"
+      const parts = engineId.trim().split(/\s+/);
+      const id = parts[0] ?? '';
+      const backendArg = parts[1]?.toLowerCase();
+
+      if (!id) {
+        // Show current Cesar brain + backend
+        const config = ctx.config;
+        const current = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+        const backend = (config as any).cesarBackend ?? 'auto';
+        dispatch({ type: 'info', message: `Cesar brain: ${current} (backend: ${backend})` });
+        dispatch({ type: 'info', message: 'Usage: /cesar <engine> [cli|api|auto]' });
+        return;
+      }
+
+      // Backend-only switch: "/cesar cli" or "/cesar api" or "/cesar auto"
+      if (['cli', 'api', 'auto'].includes(id)) {
+        configSet('cesarBackend', id);
+        // Kill session to force reboot with new backend
+        if (ctx.cesarSession) {
+          ctx.cesarSession.close();
+          ctx.setCesarSession(null);
+        }
+        dispatch({ type: 'success', message: `Cesar backend set to: ${id}` });
+        return;
+      }
+
+      const available = ctx.registry.availableIds();
+      if (!available.includes(id)) {
+        dispatch({ type: 'error', message: `Engine "${id}" not available. Available: ${available.join(', ')}` });
+        return;
+      }
+
+      // Validate backend if specified
+      if (backendArg && !['cli', 'api', 'auto'].includes(backendArg)) {
+        dispatch({ type: 'error', message: `Invalid backend "${backendArg}". Use: cli, api, or auto` });
+        return;
+      }
+
+      if (backendArg === 'api') {
+        const engine = ctx.registry.get(id);
+        if (!engine.api || !process.env[engine.api.apiKeyEnv]) {
+          dispatch({ type: 'error', message: `API not available for ${id} — need ${engine.api?.apiKeyEnv ?? 'API key'}` });
+          return;
+        }
+      }
+      if (backendArg === 'cli') {
+        const engine = ctx.registry.get(id);
+        if (!engine.binary || !ctx.registry.findBinary(engine)) {
+          dispatch({ type: 'error', message: `CLI binary not found for ${id}` });
+          return;
+        }
+      }
+
+      // Only change Cesar brain — do NOT touch sessionEngines, forgeEnabledEngines, or forgeFixedStarter
+      configSet('cesarEngine', id);
+      if (backendArg) configSet('cesarBackend', backendArg);
+
+      // Kill old persistent session so next message boots fresh with new engine
       if (ctx.cesarSession) {
         ctx.cesarSession.close();
         ctx.setCesarSession(null);
       }
-      dispatch({ type: 'success', message: `Cesar backend set to: ${id}` });
-      return;
-    }
 
-    const available = ctx.registry.availableIds();
-    if (!available.includes(id)) {
-      dispatch({ type: 'error', message: `Engine "${id}" not available. Available: ${available.join(', ')}` });
-      return;
-    }
+      const backend = backendArg ?? (ctx.config as any).cesarBackend ?? 'auto';
+      dispatch({ type: 'success', message: `Cesar brain set to: ${id} (backend: ${backend})` });
+      dispatch({ type: 'info', message: 'Conversation context + memory preserved. Forge/tribunal engines unchanged — use /use to change those.' });
+    >>>
 
-    // Validate backend if specified
-    if (backendArg && !['cli', 'api', 'auto'].includes(backendArg)) {
-      dispatch({ type: 'error', message: `Invalid backend "${backendArg}". Use: cli, api, or auto` });
-      return;
-    }
+  fn name=handleTokens params="dispatch:Dispatch" returns=void
+    handler <<<
+      const stats = tracker.getStats();
+      dispatch({ type: 'header', title: 'Token Usage — This Session' });
 
-    if (backendArg === 'api') {
-      const engine = ctx.registry.get(id);
-      if (!engine.api || !process.env[engine.api.apiKeyEnv]) {
-        dispatch({ type: 'error', message: `API not available for ${id} — need ${engine.api?.apiKeyEnv ?? 'API key'}` });
+      if (stats.dispatches === 0) {
+        dispatch({ type: 'info', message: 'No engine dispatches yet.' });
         return;
       }
-    }
-    if (backendArg === 'cli') {
-      const engine = ctx.registry.get(id);
-      if (!engine.binary || !ctx.registry.findBinary(engine)) {
-        dispatch({ type: 'error', message: `CLI binary not found for ${id}` });
-        return;
+
+      // Determine dominant source per engine
+      const allUsages = tracker.recent(10000);
+      const engineSources: Record<string, Set<string>> = {};
+      for (const u of allUsages) {
+        if (!engineSources[u.engineId]) engineSources[u.engineId] = new Set();
+        engineSources[u.engineId].add(u.source);
       }
-    }
 
-    // Only change Cesar brain — do NOT touch sessionEngines, forgeEnabledEngines, or forgeFixedStarter
-    configSet('cesarEngine', id);
-    if (backendArg) configSet('cesarBackend', backendArg);
-
-    // Kill old persistent session so next message boots fresh with new engine
-    if (ctx.cesarSession) {
-      ctx.cesarSession.close();
-      ctx.setCesarSession(null);
-    }
-
-    const backend = backendArg ?? (ctx.config as any).cesarBackend ?? 'auto';
-    dispatch({ type: 'success', message: `Cesar brain set to: ${id} (backend: ${backend})` });
-    dispatch({ type: 'info', message: 'Conversation context + memory preserved. Forge/tribunal engines unchanged — use /use to change those.' });
-  >>>
-
-fn name=handleTokens params="dispatch:Dispatch" returns=void
-  handler <<<
-    const stats = tracker.getStats();
-    dispatch({ type: 'header', title: 'Token Usage — This Session' });
-
-    if (stats.dispatches === 0) {
-      dispatch({ type: 'info', message: 'No engine dispatches yet.' });
-      return;
-    }
-
-    // Determine dominant source per engine
-    const allUsages = tracker.recent(10000);
-    const engineSources: Record<string, Set<string>> = {};
-    for (const u of allUsages) {
-      if (!engineSources[u.engineId]) engineSources[u.engineId] = new Set();
-      engineSources[u.engineId].add(u.source);
-    }
-
-    const sourceLabel = (id: string): string => {
-      const sources = engineSources[id];
-      if (!sources || sources.size === 0) return 'est';
-      if (sources.size === 1) {
-        const s = [...sources][0];
-        return s === 'sdk' ? 'sdk' : s === 'cli-reported' ? 'cli' : 'est';
-      }
-      return 'mixed';
-    };
-
-    const costLabel = (costUsd: number, id: string): string => {
-      if (costUsd <= 0) return 'free';
-      const src = sourceLabel(id);
-      const prefix = src === 'sdk' ? '' : '~';
-      return `${prefix}$${costUsd.toFixed(4)}`;
-    };
-
-    const rows = Object.entries(stats.byEngine).map(([id, e]: [string, any]) => [
-      id,
-      String(e.dispatches),
-      String(e.promptTokens),
-      String(e.responseTokens),
-      String(e.totalTokens),
-      costLabel(e.costUsd, id),
-      sourceLabel(id),
-    ]);
-    dispatch({ type: 'table', headers: ['Engine', 'Calls', 'Prompt', 'Response', 'Total', 'Cost', 'Source'], rows });
-
-    const hasSdk = allUsages.some((u: any) => u.source === 'sdk');
-    const totalCostPrefix = hasSdk ? '' : '~';
-    const totalCost = stats.totalCostUsd > 0 ? `${totalCostPrefix}$${stats.totalCostUsd.toFixed(4)}` : 'free';
-    dispatch({ type: 'text', content: `Session total: ${stats.totalTokens} tokens  ${totalCost}` });
-    dispatch({ type: 'info', message: `${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines` });
-  >>>
-
-fn name=handleWorkspace params="action:string, dispatch:Dispatch, ctx:HandlerContext, path?:string" returns=void
-  handler <<<
-    switch (action) {
-      case 'add': {
-        if (!path) { dispatch({ type: 'error', message: 'Usage: /workspace add <path>' }); return; }
-        const ws = addWorkspace(path);
-        dispatch({ type: 'success', message: `Added ${ws.name}${ws.isKern ? ' (Kern project)' : ''}` });
-        dispatch({ type: 'info', message: ws.path });
-        break;
-      }
-      case 'remove': {
-        if (!path) { dispatch({ type: 'error', message: 'Usage: /workspace remove <id>' }); return; }
-        if (removeWorkspace(path)) dispatch({ type: 'success', message: `Removed ${path}` });
-        else dispatch({ type: 'error', message: `Workspace "${path}" not found` });
-        break;
-      }
-      case 'switch': {
-        if (!path) { dispatch({ type: 'error', message: 'Usage: /workspace switch <id>' }); return; }
-        const ws = switchWorkspace(path);
-        if (ws) {
-          dispatch({ type: 'success', message: `Active: ${ws.name} ${ws.path}` });
-          // Invalidate Cesar session — it was booted with previous workspace context
-          if (ctx.cesarSession) {
-            ctx.cesarSession.close();
-            ctx.setCesarSession(null);
-            dispatch({ type: 'info', message: 'Cesar session reset for new workspace' });
-          }
+      const sourceLabel = (id: string): string => {
+        const sources = engineSources[id];
+        if (!sources || sources.size === 0) return 'est';
+        if (sources.size === 1) {
+          const s = [...sources][0];
+          return s === 'sdk' ? 'sdk' : s === 'cli-reported' ? 'cli' : 'est';
         }
-        else dispatch({ type: 'error', message: `Workspace "${path}" not found` });
-        break;
+        return 'mixed';
+      };
+
+      const costLabel = (costUsd: number, id: string): string => {
+        if (costUsd <= 0) return 'free';
+        const src = sourceLabel(id);
+        const prefix = src === 'sdk' ? '' : '~';
+        return `${prefix}$${costUsd.toFixed(4)}`;
+      };
+
+      const rows = Object.entries(stats.byEngine).map(([id, e]: [string, any]) => [
+        id,
+        String(e.dispatches),
+        String(e.promptTokens),
+        String(e.responseTokens),
+        String(e.totalTokens),
+        costLabel(e.costUsd, id),
+        sourceLabel(id),
+      ]);
+      dispatch({ type: 'table', headers: ['Engine', 'Calls', 'Prompt', 'Response', 'Total', 'Cost', 'Source'], rows });
+
+      const hasSdk = allUsages.some((u: any) => u.source === 'sdk');
+      const totalCostPrefix = hasSdk ? '' : '~';
+      const totalCost = stats.totalCostUsd > 0 ? `${totalCostPrefix}$${stats.totalCostUsd.toFixed(4)}` : 'free';
+      dispatch({ type: 'text', content: `Session total: ${stats.totalTokens} tokens  ${totalCost}` });
+      dispatch({ type: 'info', message: `${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines` });
+    >>>
+
+  fn name=handleWorkspace params="action:string, dispatch:Dispatch, ctx:HandlerContext, path?:string" returns=void
+    handler <<<
+      switch (action) {
+        case 'add': {
+          if (!path) { dispatch({ type: 'error', message: 'Usage: /workspace add <path>' }); return; }
+          const ws = addWorkspace(path);
+          dispatch({ type: 'success', message: `Added ${ws.name}${ws.isKern ? ' (Kern project)' : ''}` });
+          dispatch({ type: 'info', message: ws.path });
+          break;
+        }
+        case 'remove': {
+          if (!path) { dispatch({ type: 'error', message: 'Usage: /workspace remove <id>' }); return; }
+          if (removeWorkspace(path)) dispatch({ type: 'success', message: `Removed ${path}` });
+          else dispatch({ type: 'error', message: `Workspace "${path}" not found` });
+          break;
+        }
+        case 'switch': {
+          if (!path) { dispatch({ type: 'error', message: 'Usage: /workspace switch <id>' }); return; }
+          const ws = switchWorkspace(path);
+          if (ws) {
+            dispatch({ type: 'success', message: `Active: ${ws.name} ${ws.path}` });
+            // Invalidate Cesar session — it was booted with previous workspace context
+            if (ctx.cesarSession) {
+              ctx.cesarSession.close();
+              ctx.setCesarSession(null);
+              dispatch({ type: 'info', message: 'Cesar session reset for new workspace' });
+            }
+          }
+          else dispatch({ type: 'error', message: `Workspace "${path}" not found` });
+          break;
+        }
+        case 'list':
+        default: {
+          const all = listWorkspaces();
+          const active = getActiveWorkspace();
+          if (all.length === 0) {
+            dispatch({ type: 'info', message: 'No workspaces. Current directory is used by default.' });
+            return;
+          }
+          dispatch({ type: 'header', title: 'Workspaces' });
+          const rows = all.map((ws: any) => [
+            ws.id === active?.id ? icons().dotOn : icons().dotOff,
+            ws.name,
+            ws.isKern ? 'kern' : '',
+            ws.path,
+          ]);
+          dispatch({ type: 'table', headers: ['', 'Name', 'Type', 'Path'], rows });
+          break;
+        }
       }
-      case 'list':
-      default: {
-        const all = listWorkspaces();
-        const active = getActiveWorkspace();
-        if (all.length === 0) {
-          dispatch({ type: 'info', message: 'No workspaces. Current directory is used by default.' });
+    >>>
+
+  fn name=handleChats params="dispatch:Dispatch, sessionId?:string" returns=void
+    handler <<<
+      if (sessionId) {
+        const session = loadChatSession(sessionId);
+        if (!session) {
+          dispatch({ type: 'error', message: `Session not found: ${sessionId}` });
           return;
         }
-        dispatch({ type: 'header', title: 'Workspaces' });
-        const rows = all.map((ws: any) => [
-          ws.id === active?.id ? icons().dotOn : icons().dotOff,
-          ws.name,
-          ws.isKern ? 'kern' : '',
-          ws.path,
-        ]);
-        dispatch({ type: 'table', headers: ['', 'Name', 'Type', 'Path'], rows });
-        break;
-      }
-    }
-  >>>
-
-fn name=handleChats params="dispatch:Dispatch, sessionId?:string" returns=void
-  handler <<<
-    if (sessionId) {
-      const session = loadChatSession(sessionId);
-      if (!session) {
-        dispatch({ type: 'error', message: `Session not found: ${sessionId}` });
+        dispatch({ type: 'header', title: `Chat: ${session.id}` });
+        dispatch({ type: 'info', message: `Started: ${session.startedAt}  Messages: ${session.messages.length}` });
+        for (const msg of session.messages) {
+          if (msg.role === 'user') {
+            dispatch({ type: 'text', content: `You: ${msg.content}` });
+          } else {
+            dispatch({ type: 'engine-block', engineId: (msg as any).engineId ?? 'engine', color: 245, content: msg.content.slice(0, 200) });
+          }
+        }
         return;
       }
-      dispatch({ type: 'header', title: `Chat: ${session.id}` });
-      dispatch({ type: 'info', message: `Started: ${session.startedAt}  Messages: ${session.messages.length}` });
-      for (const msg of session.messages) {
-        if (msg.role === 'user') {
-          dispatch({ type: 'text', content: `You: ${msg.content}` });
-        } else {
-          dispatch({ type: 'engine-block', engineId: (msg as any).engineId ?? 'engine', color: 245, content: msg.content.slice(0, 200) });
-        }
+
+      const sessions = listChatSessions(20);
+      if (sessions.length === 0) {
+        dispatch({ type: 'info', message: 'No chat sessions yet.' });
+        return;
       }
-      return;
-    }
+      dispatch({ type: 'header', title: 'Chat Sessions' });
+      const rows = sessions.map((s: any) => {
+        const firstMsg = s.messages.find((m: any) => m.role === 'user');
+        const preview = firstMsg ? firstMsg.content.slice(0, 40) : '(empty)';
+        return [s.id, String(s.messages.length), s.startedAt.slice(0, 10), preview];
+      });
+      dispatch({ type: 'table', headers: ['Session', 'Msgs', 'Date', 'First Message'], rows });
+    >>>
 
-    const sessions = listChatSessions(20);
-    if (sessions.length === 0) {
-      dispatch({ type: 'info', message: 'No chat sessions yet.' });
-      return;
-    }
-    dispatch({ type: 'header', title: 'Chat Sessions' });
-    const rows = sessions.map((s: any) => {
-      const firstMsg = s.messages.find((m: any) => m.role === 'user');
-      const preview = firstMsg ? firstMsg.content.slice(0, 40) : '(empty)';
-      return [s.id, String(s.messages.length), s.startedAt.slice(0, 10), preview];
-    });
-    dispatch({ type: 'table', headers: ['Session', 'Msgs', 'Date', 'First Message'], rows });
-  >>>
-
-fn name=handleModels params="dispatch:Dispatch, ctx:HandlerContext" returns=void
-  handler lang="kern"
-    do value="dispatch({ type: 'header', title: 'Models & Engines' })"
-    let name=config value="ctx.config"
-    let name=available value="ctx.registry.availableIds()"
-    let name=enabled value="ctx.registry.activeIds(config as any)"
-    let name=rows value="available.map((id: string) => [ enabled.includes(id) ? icons().dotOn : icons().dotOff, id, enabled.includes(id) ? 'active' : 'inactive', ])"
-    do value="dispatch({ type: 'table', headers: ['', 'Engine', 'Status'], rows })"
-    let name=configuredDefault value="config.forgeFixedStarter ?? ''"
-    let name=defaultEngine value="configuredDefault && enabled.includes(configuredDefault) ? configuredDefault : enabled[0] ?? 'none'"
-    do value="dispatch({ type: 'info', message: `Default chat engine: ${defaultEngine}` })"
-    do value="dispatch({ type: 'info', message: `Activation mode: ${(config as any).engineActivationMode ?? 'auto'}` })"
-    do value="dispatch({ type: 'separator' })"
-    do value="dispatch({ type: 'info', message: 'Change engines:  /use claude,codex    (persists across sessions)' })"
-    do value="dispatch({ type: 'info', message: 'Reset to auto:   /use all' })"
-    do value="dispatch({ type: 'info', message: 'Set chat default: /config set forgeFixedStarter claude' })"
+  fn name=handleModels params="dispatch:Dispatch, ctx:HandlerContext" returns=void
+    handler lang="kern"
+      do value="dispatch({ type: 'header', title: 'Models & Engines' })"
+      let name=config value="ctx.config"
+      let name=available value="ctx.registry.availableIds()"
+      let name=enabled value="ctx.registry.activeIds(config as any)"
+      let name=rows value="available.map((id: string) => [ enabled.includes(id) ? icons().dotOn : icons().dotOff, id, enabled.includes(id) ? 'active' : 'inactive', ])"
+      do value="dispatch({ type: 'table', headers: ['', 'Engine', 'Status'], rows })"
+      let name=configuredDefault value="config.forgeFixedStarter ?? ''"
+      let name=defaultEngine value="configuredDefault && enabled.includes(configuredDefault) ? configuredDefault : enabled[0] ?? 'none'"
+      do value="dispatch({ type: 'info', message: `Default chat engine: ${defaultEngine}` })"
+      do value="dispatch({ type: 'info', message: `Activation mode: ${(config as any).engineActivationMode ?? 'auto'}` })"
+      do value="dispatch({ type: 'separator' })"
+      do value="dispatch({ type: 'info', message: 'Change engines:  /use claude,codex    (persists across sessions)' })"
+      do value="dispatch({ type: 'info', message: 'Reset to auto:   /use all' })"
+      do value="dispatch({ type: 'info', message: 'Set chat default: /config set forgeFixedStarter claude' })"

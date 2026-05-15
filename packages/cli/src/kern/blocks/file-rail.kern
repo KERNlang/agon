@@ -125,7 +125,7 @@ screen name=FileRailDetail target=ink export=false
       );
     >>>
 
-// Orchestrator — uses composed-mode: wrapper + locals + conditionals + each + sub-screens.
+// Orchestrator.
 screen name=FileRail target=ink memo=true
   prop name=files type="FileEntry[]"
   prop name=maxRows type=number
@@ -134,57 +134,45 @@ screen name=FileRail target=ink memo=true
   prop name=selectedIndex type=number optional=true
   prop name=expandedPath type="string|null" optional=true
   prop name=autoExpandSelected type=boolean optional=true
-  render wrapper="<Box flexDirection=\"column\" flexShrink={0} width={w} height={h} paddingLeft={1} borderStyle=\"single\" borderColor={borderColor} overflow=\"hidden\">"
-    local name=w expr="width ?? 36"
-    local name=h expr="Math.max(4, maxRows + 2)"
-    local name=sel expr="Math.max(0, Math.min(files.length - 1, selectedIndex ?? 0))"
-    local name=expandedFile type="FileEntry | undefined" expr="resolveFileRailExpandedFile(files, selectedIndex, expandedPath, autoExpandSelected)"
-    local name=borderColor expr="focused ? '#22d3ee' : 'gray'"
-    local name=pathMax expr="Math.max(4, w - 5)"
-    local name=detailRows expr="fileRailDetailRows(maxRows, expandedFile != null)"
-    local name=listBudget expr="Math.max(3, maxRows - detailRows - 3)"
-    local name=start expr="Math.max(0, Math.min(files.length - listBudget, sel - Math.floor(listBudget / 2)))"
-    local name=visible type="FileEntry[]" expr="files.slice(start, start + listBudget)"
-    conditional if="files.length === 0"
-      handler <<<
-        <FileRailEmpty />
-      >>>
-    conditional if="files.length > 0"
-      handler <<<
-        <Text dimColor bold>{`FILES (${files.length})`}{focused ? <Text color="#22d3ee">{' \u25c6'}</Text> : null}</Text>
-      >>>
-    conditional if="files.length > 0 && !!focused"
-      handler <<<
-        <Text dimColor>{'\u2191\u2193 select  auto preview  \u2192 pin  esc close'}</Text>
-      >>>
-    conditional if="files.length > 0 && !focused"
-      handler <<<
-        <Text dimColor>{'\u2191\u2193 focus with empty composer'}</Text>
-      >>>
-    each name=f in=visible index=i key="f.path"
-      let name=idx expr="start + i"
-      let name=isSel expr="(focused ?? false) && idx === sel"
-      // kern-ignore-next-line undefined-reference
-      // f, isSel, pathMax are bound by the surrounding each/let/local scope
-      handler <<<
-        <Box key={f.path}>
-          <Text color={isSel ? '#22d3ee' : 'gray'}>{isSel ? '\u25b8' : ' '}</Text>
-          <Text color={statusColor(f.status)} bold={f.status !== 'read'}>{statusGlyph(f.status)}</Text>
-          <Text> </Text>
-          <Text dimColor={f.status === 'read' && !isSel} bold={isSel}>
-            {truncateLeft(f.relPath, pathMax)}
-          </Text>
+  render
+    handler <<<
+      const w = width ?? 36;
+      const h = Math.max(4, maxRows + 2);
+      const sel = Math.max(0, Math.min(files.length - 1, selectedIndex ?? 0));
+      const expandedFile = resolveFileRailExpandedFile(files, selectedIndex, expandedPath, autoExpandSelected);
+      const borderColor = focused ? '#22d3ee' : 'gray';
+      const pathMax = Math.max(4, w - 5);
+      const detailRows = fileRailDetailRows(maxRows, expandedFile != null);
+      const listBudget = Math.max(3, maxRows - detailRows - 3);
+      const start = Math.max(0, Math.min(files.length - listBudget, sel - Math.floor(listBudget / 2)));
+      const visible = files.slice(start, start + listBudget);
+
+      return (
+        <Box flexDirection="column" flexShrink={0} width={w} height={h} paddingLeft={1} borderStyle="single" borderColor={borderColor} overflow="hidden">
+          {files.length === 0 ? <FileRailEmpty /> : null}
+          {files.length > 0 ? (
+            <Text dimColor bold>{`FILES (${files.length})`}{focused ? <Text color="#22d3ee">{' \u25c6'}</Text> : null}</Text>
+          ) : null}
+          {files.length > 0 && !!focused ? <Text dimColor>{'\u2191\u2193 select  auto preview  \u2192 pin  esc close'}</Text> : null}
+          {files.length > 0 && !focused ? <Text dimColor>{'\u2191\u2193 focus with empty composer'}</Text> : null}
+          {visible.map((f: FileEntry, i: number) => {
+            const idx = start + i;
+            const isSel = (focused ?? false) && idx === sel;
+            return (
+              <Box key={f.path}>
+                <Text color={isSel ? '#22d3ee' : 'gray'}>{isSel ? '\u25b8' : ' '}</Text>
+                <Text color={statusColor(f.status)} bold={f.status !== 'read'}>{statusGlyph(f.status)}</Text>
+                <Text> </Text>
+                <Text dimColor={f.status === 'read' && !isSel} bold={isSel}>
+                  {truncateLeft(f.relPath, pathMax)}
+                </Text>
+              </Box>
+            );
+          })}
+          {files.length > 0 && start + listBudget < files.length ? (
+            <Text dimColor>{`+${files.length - start - listBudget} more`}</Text>
+          ) : null}
+          {expandedFile != null ? <FileRailDetail expandedFile={expandedFile as FileEntry} maxRows={detailRows} /> : null}
         </Box>
-      >>>
-    conditional if="files.length > 0 && start + listBudget < files.length"
-      // kern-ignore-next-line undefined-reference
-      // start, listBudget are local bindings on the enclosing screen
-      handler <<<
-        <Text dimColor>{`+${files.length - start - listBudget} more`}</Text>
-      >>>
-    conditional if="expandedFile != null"
-      // kern-ignore-next-line undefined-reference
-      // expandedFile, detailRows are local bindings on the enclosing screen
-      handler <<<
-        <FileRailDetail expandedFile={expandedFile as FileEntry} maxRows={detailRows} />
-      >>>
+      );
+    >>>

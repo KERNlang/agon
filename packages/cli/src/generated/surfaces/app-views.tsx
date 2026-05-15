@@ -8,7 +8,7 @@ import { EngineProgressView, BRAND } from '../../generated/blocks/engine.js';
 
 import { RenderedSegments, contentWidth, engineColor, RichLineView, DiffLine, SyntaxLine, AnsiLine, GradientLine } from '../../generated/blocks/rendering.js';
 
-import { buildPlanPhaseGauge } from '../../generated/surfaces/status.js';
+import { buildPlanPhaseGauge } from './status-helpers.js';
 
 import type { EngineProgress } from '../../handlers/types.js';
 

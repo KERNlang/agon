@@ -1,0 +1,216 @@
+// Single source of truth for run directories. Replaces 11+ ad-hoc
+// `join(RUNS_DIR, \`<mode>-${Date.now()}\`)` sites that each rolled their
+// own naming, created the dir inconsistently, and never announced the
+// path to orchestrators.
+//
+// Why this matters: an Opus session driving agon in parallel can't tell
+// which of three concurrent `brainstorm-1715805123456` dirs belongs to
+// which question without grepping stream output. The fix is structural:
+//
+//   1. Every run announces its path on stdout as the FIRST line, prefixed
+//      `AGON_RUN: ` so orchestrators can match it with a regex.
+//   2. Optional --label bakes a human-readable suffix into the dir name.
+//   3. The dir is atomically symlinked from ~/.agon/runs/latest so
+//      `agon last` and external tooling can find it without timestamp
+//      archaeology.
+//   4. status.json is the authoritative outcome record — engine-by-engine
+//      status + summary — so callers stop grepping stream output for
+//      "succeeded" / "parse-failure" / "timeout".
+//   5. AGON_QUIET=1 suppresses everything except the run dir path on
+//      stdout, for orchestrators that read the run on their own schedule.
+
+import from="node:fs" names="mkdirSync,writeFileSync,renameSync,unlinkSync,existsSync,symlinkSync,readlinkSync,readdirSync,readFileSync,statSync"
+import from="node:path" names="join"
+import from="./config.js" names="agonPath"
+
+interface name=CreateRunDirOptions
+  field name=mode type=string doc "Mode identifier — brainstorm|forge|tribunal|campfire|review|team-*."
+  field name=label type=string optional=true doc "Optional human-readable suffix baked into the dir name. Sanitized to safe chars; long values truncated to 32 chars."
+  field name=announce type=boolean optional=true doc "If false, suppress the AGON_RUN announcement on stdout. Defaults to true. AGON_QUIET=1 forces stdout to contain ONLY the path."
+
+interface name=RunDirHandle
+  field name=id type=string doc "Run identifier — <mode>-<timestamp>[-<label>]."
+  field name=path type=string doc "Absolute path to the run directory."
+  field name=announced type=boolean doc "Whether the path was announced on stdout."
+
+interface name=RunStatusEngine
+  field name=id type=string
+  field name=status type="'ok' | 'blocking' | 'parse-failure' | 'timeout' | 'error' | 'skipped'"
+  field name=exitCode type=number optional=true
+  field name=durationMs type=number optional=true
+  field name=detail type=string optional=true
+
+interface name=RunStatus
+  field name=mode type=string
+  field name=label type=string optional=true
+  field name=startedAt type=string
+  field name=endedAt type=string
+  field name=engines type="RunStatusEngine[]"
+  field name=summary type=string
+  field name=ok type=boolean
+
+fn name=sanitizeRunLabel params="raw:string" returns=string export=true
+  doc "Strip a user-provided label down to filename-safe characters and cap length so it cannot break shell quoting, path traversal, or directory scanners."
+  handler <<<
+    if (!raw) return '';
+    // Only keep alnum, dash, underscore. Replace runs of other chars with '-'.
+    const cleaned = raw.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+    return cleaned.slice(0, 32);
+  >>>
+
+fn name=sanitizeRunMode params="raw:string" returns=string export=true
+  doc "Sanitize a mode identifier passed to createRunDir. Mode is exported and could be called from outside the CLI commands, so we defensively strip path-traversal characters even though every in-tree caller passes a literal."
+  handler <<<
+    if (!raw) return 'run';
+    const cleaned = raw.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+    return cleaned.slice(0, 32) || 'run';
+  >>>
+
+fn name=createRunDir params="opts:CreateRunDirOptions" returns=RunDirHandle export=true
+  doc "Allocate a run directory, refresh the `latest` symlink, and announce the path. Orchestrators capture the first AGON_RUN line and use status.json + the dir path to track the run instead of streaming-parsing stdout."
+  handler <<<
+    // Resolve RUNS_DIR at call time via agonPath() so test harnesses that
+    // mutate AGON_HOME after module load (the documented pattern in
+    // config.kern) actually redirect run dirs. The frozen RUNS_DIR const
+    // would silently leak runs into the real ~/.agon/runs.
+    const runsDir = agonPath('runs');
+    mkdirSync(runsDir, { recursive: true });
+    const mode = sanitizeRunMode(opts.mode);
+    const ts = Date.now();
+    // Append a short random suffix so two runs that start in the same
+    // millisecond don't merge into a single dir and race their status.json
+    // writes. 6 chars from a 36-symbol alphabet = 36^6 = ~2.2B; collision
+    // within the same ms is negligible for a CLI.
+    const rand = Math.floor(Math.random() * 36 ** 6).toString(36).padStart(6, '0');
+    const sanitized = opts.label ? sanitizeRunLabel(opts.label) : '';
+    const id = sanitized
+      ? `${mode}-${ts}-${rand}-${sanitized}`
+      : `${mode}-${ts}-${rand}`;
+    const path = join(runsDir, id);
+    mkdirSync(path, { recursive: true });
+
+    // Refresh the `latest` symlink atomically. symlinkSync fails if the
+    // link already exists, so we write a temp link and rename over the
+    // existing one. On filesystems that don't support symlinks (some
+    // Windows shares, restricted CI), fall back to writing the path to a
+    // plain file — `findLatestRunDir` reads either.
+    const latestLink = join(runsDir, 'latest');
+    const tempLink = join(runsDir, `.latest-${ts}-${rand}`);
+    try {
+      try { unlinkSync(tempLink); } catch { /* not present */ }
+      symlinkSync(path, tempLink, 'dir');
+      renameSync(tempLink, latestLink);
+    } catch {
+      // Symlink path failed — drop a plain-text pointer instead so
+      // findLatestRunDir still works.
+      try {
+        writeFileSync(join(runsDir, 'latest.txt'), path + '\n');
+      } catch { /* best effort */ }
+      try { unlinkSync(tempLink); } catch { /* not present */ }
+    }
+
+    const quiet = process.env.AGON_QUIET === '1';
+    const announce = opts.announce !== false;
+    let announced = false;
+    if (announce) {
+      if (quiet) {
+        // Quiet mode: print ONLY the bare path so orchestrators piping
+        // `agon ... --quiet | xargs cat status.json` work without sed.
+        process.stdout.write(path + '\n');
+      } else {
+        // Normal mode: AGON_RUN-prefixed line so it's grep-safe but
+        // doesn't disrupt human-readable output that follows.
+        process.stdout.write(`AGON_RUN: ${path}\n`);
+      }
+      announced = true;
+    }
+
+    return { id, path, announced };
+  >>>
+
+fn name=writeRunStatus params="runPath:string, status:RunStatus" returns=void export=true
+  doc "Atomically write status.json into a run directory. Authoritative outcome record — orchestrators read this instead of parsing stream output for keywords."
+  handler <<<
+    const finalPath = join(runPath, 'status.json');
+    const tempPath = join(runPath, '.status.json.tmp');
+    try {
+      mkdirSync(runPath, { recursive: true });
+      writeFileSync(tempPath, JSON.stringify(status, null, 2) + '\n');
+      renameSync(tempPath, finalPath);
+    } catch (err) {
+      // Surface the failure on stderr but never crash the caller — a
+      // failed status write should not kill an otherwise-successful run.
+      console.error(`[agon] warning: failed to write status.json at ${finalPath}: ${err instanceof Error ? err.message : String(err)}`);
+      try { unlinkSync(tempPath); } catch { /* best effort */ }
+    }
+  >>>
+
+fn name=printRunSummary params="status:RunStatus" returns=void export=true
+  doc "Print the final summary line — '5/6 succeeded; claude: parse-failure' — at the end of every multi-engine mode. Always printed, including under AGON_QUIET=1, because orchestrators need both the run-dir path AND the outcome at a glance — that's the whole reason quiet mode exists. 'blocking' (review found problems) and 'error' (engine crashed) are both surfaced; 'skipped' (never dispatched) does not count against ok but is mentioned when present so the caller doesn't mistake it for success."
+  handler <<<
+    const failing = status.engines.filter((e) => e.status !== 'ok' && e.status !== 'skipped');
+    const skipped = status.engines.filter((e) => e.status === 'skipped');
+    const okCount = status.engines.filter((e) => e.status === 'ok').length;
+    const total = status.engines.length;
+    const parts: string[] = [];
+    parts.push(`${okCount}/${total} succeeded`);
+    if (failing.length > 0) {
+      parts.push(failing.map((e) => `${e.id}: ${e.status}`).join(', '));
+    }
+    if (skipped.length > 0) {
+      parts.push(`skipped: ${skipped.map((e) => e.id).join(', ')}`);
+    }
+    process.stdout.write(`AGON_SUMMARY: ${parts.join('; ')}\n`);
+  >>>
+
+fn name=findLatestRunDir params="filter?:{mode?:string,engineId?:string}" returns="string | null" export=true
+  doc "Resolve the most recent run directory. Reads ~/.agon/runs/latest symlink (or latest.txt fallback) when present; otherwise scans the runs dir and picks the newest entry matching the filter. Returns null if no runs exist. Uses agonPath('runs') so AGON_HOME overrides apply at call time."
+  handler <<<
+    const runsDir = agonPath('runs');
+    if (!existsSync(runsDir)) return null;
+
+    // Fast path — `latest` symlink/file points at the absolute most recent.
+    // Honor it only when no filter is supplied; with a filter we must scan
+    // so we can find the most recent run that matches.
+    if (!filter || (!filter.mode && !filter.engineId)) {
+      const link = join(runsDir, 'latest');
+      try {
+        if (existsSync(link)) {
+          const target = readlinkSync(link);
+          if (existsSync(target)) return target;
+        }
+      } catch { /* fall through to file fallback */ }
+      const fallback = join(runsDir, 'latest.txt');
+      try {
+        if (existsSync(fallback)) {
+          const target = readFileSync(fallback, 'utf-8').trim();
+          if (target && existsSync(target)) return target;
+        }
+      } catch { /* fall through to scan */ }
+    }
+
+    // Slow path — scan and rank by mtime descending.
+    let entries: string[];
+    try { entries = readdirSync(runsDir); }
+    catch { return null; }
+
+    const candidates: { path: string; mtime: number }[] = [];
+    for (const name of entries) {
+      if (name.startsWith('.') || name === 'latest' || name === 'latest.txt') continue;
+      if (filter?.mode && !name.startsWith(filter.mode + '-')) continue;
+      const path = join(runsDir, name);
+      try {
+        const s = statSync(path);
+        if (!s.isDirectory()) continue;
+        if (filter?.engineId) {
+          // Engine filter requires a stdout file for that engine in the dir.
+          const stdoutFile = join(path, `${filter.engineId}-output.txt`);
+          if (!existsSync(stdoutFile)) continue;
+        }
+        candidates.push({ path, mtime: s.mtimeMs });
+      } catch { /* skip unreadable entries */ }
+    }
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => b.mtime - a.mtime);
+    return candidates[0]!.path;
+  >>>

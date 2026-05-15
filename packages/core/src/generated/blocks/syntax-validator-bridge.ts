@@ -15,38 +15,39 @@ export interface SyntaxValidatorInput {
   language: string;
 }
 
-// @kern-source: syntax-validator-bridge:16
-export interface SyntaxError {
+// @kern-source: syntax-validator-bridge:17
+export interface SyntaxValidationError {
   row: number;
   column: number;
   message: string;
 }
 
-// @kern-source: syntax-validator-bridge:21
+// @kern-source: syntax-validator-bridge:22
 export interface SyntaxValidatorResult {
   path: string;
   valid: boolean;
   language: string;
-  errors: SyntaxError[];
+  errors: SyntaxValidationError[];
   languageUnsupported: boolean | undefined;
+  grammarUnavailable: boolean | undefined;
 }
 
 /**
  * Hard cap on the synchronous Python call. Cold tree-sitter import is ~200ms; batches of ≤50 files parse in well under 1s. 8s covers cold start + a worst-case batch.
  */
-// @kern-source: syntax-validator-bridge:28
+// @kern-source: syntax-validator-bridge:30
 export const SYNTAX_VALIDATOR_TIMEOUT_MS: number = 8000;
 
 /**
  * Set this env var to skip the sidecar (forces null = no validation). Useful for tests and CI.
  */
-// @kern-source: syntax-validator-bridge:31
+// @kern-source: syntax-validator-bridge:33
 export const SYNTAX_VALIDATOR_DISABLE_ENV: string = "AGON_DISABLE_SYNTAX_VALIDATOR_SIDECAR";
 
 /**
  * Best-effort extension → language mapping. Returns '' for unknown extensions.
  */
-// @kern-source: syntax-validator-bridge:41
+// @kern-source: syntax-validator-bridge:43
 export function detectLanguageFromPath(path: string): string {
   const EXT_TO_LANGUAGE: Record<string, string> = {
     '.ts': 'typescript',
@@ -68,7 +69,7 @@ export function detectLanguageFromPath(path: string): string {
 /**
  * Synchronous tree-sitter parse via the Python sidecar. Returns null on any sidecar failure — caller treats absence of validation as no signal (don't penalize).
  */
-// @kern-source: syntax-validator-bridge:61
+// @kern-source: syntax-validator-bridge:63
 export function validateSyntax(files: SyntaxValidatorInput[]): SyntaxValidatorResult[] | null {
   if (process.env[SYNTAX_VALIDATOR_DISABLE_ENV]) return null;
   if (!files || files.length === 0) return [];
@@ -120,6 +121,7 @@ export function validateSyntax(files: SyntaxValidatorInput[]): SyntaxValidatorRe
           }))
         : [],
       languageUnsupported: r?.language_unsupported === true ? true : undefined,
+      grammarUnavailable: r?.grammar_unavailable === true ? true : undefined,
     })) as SyntaxValidatorResult[];
   } catch {
     return null;

@@ -6,9 +6,12 @@ export { updateGlicko, updateGlickoRanked, getRatings, getEngineGlickoRating, ad
 export { classifyTask } from './task-classifier.js';
 export { searchHistorySemantic } from './history-search.js';
 export type { HistorySearchItem, HistorySearchHit } from './history-search.js';
-export { validateSyntax, detectLanguageFromPath } from './syntax-validator.js';
+export {
+  validateSyntax, detectLanguageFromPath,
+  SYNTAX_VALIDATOR_TIMEOUT_MS, SYNTAX_VALIDATOR_DISABLE_ENV,
+} from './syntax-validator.js';
 export type {
-  SyntaxValidatorInput, SyntaxValidatorResult, SyntaxError,
+  SyntaxValidatorInput, SyntaxValidatorResult, SyntaxValidationError,
 } from './syntax-validator.js';
 export { defaultFinalizeOnScoreForTask } from './generated/blocks/finalize-policy.js';
 export {

@@ -251,7 +251,6 @@ fn name=pluralizeLines params="count:number" returns=string export=false expr={{
 
 fn name=isDelegatedCtrlShortcut params="input:string" returns=boolean export=true expr={{ return ['b', 'c', 'e', 'g', 'i', 'j', 'l', 'r', 't', 'y'].includes(input); }}
 
-// KERN-GAP: native test runner — `kern test` ReferenceError when calling fns with `lang="kern"` bodies. Reverted to raw body so the existing test suite resolves the fn at runtime.
 fn name=shouldAdoptPromptValue params="originalValue:string, pendingEchoValue:string|null" returns=boolean export=true
   handler lang="kern"
     if cond="pendingEchoValue === null"

@@ -43,23 +43,16 @@ export const SYNTAX_VALIDATOR_TIMEOUT_MS: number = 8000;
 export const SYNTAX_VALIDATOR_DISABLE_ENV: string = "AGON_DISABLE_SYNTAX_VALIDATOR_SIDECAR";
 
 /**
+ * Extension → tree-sitter language id. Empty result = unsupported.
+ */
+// @kern-source: syntax-validator-bridge:35
+export const EXT_TO_LANGUAGE: Record<string, string> = ({ '.ts': 'typescript', '.cts': 'typescript', '.mts': 'typescript', '.tsx': 'tsx', '.js': 'javascript', '.cjs': 'javascript', '.mjs': 'javascript', '.jsx': 'jsx', '.py': 'python', '.pyi': 'python', '.json': 'json' });
+
+/**
  * Best-effort extension → language mapping. Returns '' for unknown extensions.
  */
-// @kern-source: syntax-validator-bridge:42
+// @kern-source: syntax-validator-bridge:38
 export function detectLanguageFromPath(path: string): string {
-  const EXT_TO_LANGUAGE: Record<string, string> = {
-    '.ts': 'typescript',
-    '.cts': 'typescript',
-    '.mts': 'typescript',
-    '.tsx': 'tsx',
-    '.js': 'javascript',
-    '.cjs': 'javascript',
-    '.mjs': 'javascript',
-    '.jsx': 'jsx',
-    '.py': 'python',
-    '.pyi': 'python',
-    '.json': 'json',
-  };
   const ext = extname(path).toLowerCase();
   return EXT_TO_LANGUAGE[ext] ?? '';
 }
@@ -67,7 +60,7 @@ export function detectLanguageFromPath(path: string): string {
 /**
  * Synchronous tree-sitter parse via the Python sidecar. Returns null on any sidecar failure — caller treats absence of validation as no signal (don't penalize).
  */
-// @kern-source: syntax-validator-bridge:62
+// @kern-source: syntax-validator-bridge:45
 export function validateSyntax(files: SyntaxValidatorInput[]): SyntaxValidatorResult[] | null {
   if (process.env[SYNTAX_VALIDATOR_DISABLE_ENV]) return null;
   if (!files || files.length === 0) return [];

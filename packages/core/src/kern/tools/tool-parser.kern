@@ -403,7 +403,7 @@ fn name=toolCallsToApiFormat params="parsed:ParsedToolCall[]" returns="ToolCall[
   handler lang="kern"
     return value="parsed.map((tc, i) => Object.assign({}, { id: `tc_${Date.now()}_${i}`, name: tc.name, input: tc.input }))"
 
-// KERN-GAP: lang="kern" — `\n` inside template literal in `return value="..."` becomes a real newline + 2-space indentation in generated TS, prefixing every reinjected tool result line. Reverted to raw body until value=-strings stop reformatting embedded templates.
+// KERN-GAP: lang="kern" — `return value="\`...\`"` (template-literal as the whole RHS) fails parse in kern 3.5.1 with "Unexpected character '\\'". Backticks mid-string work (cf. gitTruncatedDiff). Reverted to raw body until leading-backtick parsing lands.
 fn name=formatToolResult params="toolName:string, result:string, isError?:boolean" returns=string
   doc "Format a tool result to inject back into the conversation."
   handler <<<

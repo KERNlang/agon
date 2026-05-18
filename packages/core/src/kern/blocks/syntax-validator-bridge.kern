@@ -32,29 +32,12 @@ const name=SYNTAX_VALIDATOR_TIMEOUT_MS type=number value=8000
 const name=SYNTAX_VALIDATOR_DISABLE_ENV type=string value="AGON_DISABLE_SYNTAX_VALIDATOR_SIDECAR"
   doc "Set this env var to skip the sidecar (forces null = no validation). Useful for tests and CI."
 
-// KERN-GAP: const-literal — kern v3.5.0 cannot codegen a `const` whose
-// value is an inline object literal (e.g. `value={{ ({ '.ts': 'typescript', ... }) }}`).
-// The parser emits `(;` and drops the body. Inlining the table into the
-// function below is the workaround. Equivalent KERN would be a primitive
-// `record` or `const-map` node, or simply better object-literal handling
-// inside `value={{ ... }}` braces.
+const name=EXT_TO_LANGUAGE type="Record<string, string>" value={{ ({ '.ts': 'typescript', '.cts': 'typescript', '.mts': 'typescript', '.tsx': 'tsx', '.js': 'javascript', '.cjs': 'javascript', '.mjs': 'javascript', '.jsx': 'jsx', '.py': 'python', '.pyi': 'python', '.json': 'json' }) }}
+  doc "Extension → tree-sitter language id. Empty result = unsupported."
 
 fn name=detectLanguageFromPath params="path:string" returns=string
   doc "Best-effort extension → language mapping. Returns '' for unknown extensions."
   handler <<<
-    const EXT_TO_LANGUAGE: Record<string, string> = {
-      '.ts': 'typescript',
-      '.cts': 'typescript',
-      '.mts': 'typescript',
-      '.tsx': 'tsx',
-      '.js': 'javascript',
-      '.cjs': 'javascript',
-      '.mjs': 'javascript',
-      '.jsx': 'jsx',
-      '.py': 'python',
-      '.pyi': 'python',
-      '.json': 'json',
-    };
     const ext = extname(path).toLowerCase();
     return EXT_TO_LANGUAGE[ext] ?? '';
   >>>

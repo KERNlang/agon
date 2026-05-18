@@ -117,8 +117,8 @@ fn name=resolveAgentArgs params="engine:EngineDefinition, permissionLevel:'full'
     // plan mode: swap vendor-specific flags
     const planArgs = engine.agent.args.map((arg: string) => {
       if (arg === '--dangerously-skip-permissions') return '--permission-mode=plan';
+      if (arg === '--dangerously-bypass-approvals-and-sandbox') return '--sandbox=workspace-write';
       if (arg === 'yolo') return 'plan';
-      if (arg === '--full-auto') return '--full-auto';
       return arg;
     });
     return { args: planArgs };

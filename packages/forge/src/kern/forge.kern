@@ -102,6 +102,7 @@ fn name=writeForgeResultBundle params="manifest:ForgeManifest, worktrees:Worktre
       const result = manifest.results[id];
       return !result || !result.pass;
     });
+    const skippedEngines = manifest.skippedEngines ?? [];
     const engineSummaries = Object.fromEntries(
       Object.entries(manifest.results).map(([id, r]: [string, any]) => [id, {
         pass: r.pass,
@@ -132,6 +133,7 @@ fn name=writeForgeResultBundle params="manifest:ForgeManifest, worktrees:Worktre
       acceptReviewOutput: manifest.acceptReviewOutput,
       noDiffSummary: manifest.noDiffSummary,
       failedEngines,
+      skippedEngines,
       task: manifest.task,
       cwd: options.cwd,
       repoRoot: repoRootPath,
@@ -171,6 +173,9 @@ fn name=writeForgeResultBundle params="manifest:ForgeManifest, worktrees:Worktre
       '',
       '## Failed Engines',
       failedEngines.length ? failedEngines.map((id: string) => `- ${id}`).join('\n') : '- none',
+      '',
+      '## Skipped Engines',
+      skippedEngines.length ? skippedEngines.map((s: any) => `- ${s.engineId}: ${s.status}${s.reason ? ` - ${s.reason}` : ''}`).join('\n') : '- none',
       '',
       '## Cleanup',
       '```sh',
@@ -281,6 +286,7 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
     const explicitlyRequested = options.engines != null && options.engines.length > 0;
     const skippedQuarantine: Array<{ id: string; reason: string; status: string }> = [];
     const droppedEngines: Array<{ id: string; reason: string }> = [];
+    const skippedEngines: Array<{ engineId: string; status: string; reason?: string }> = [];
     const available = enabledEngines.filter((id: string) => {
       try {
         const engine = registry.get(id);
@@ -311,6 +317,7 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
     });
     if (skippedQuarantine.length > 0) {
       for (const skip of skippedQuarantine) {
+        skippedEngines.push({ engineId: skip.id, status: skip.status, reason: skip.reason });
         console.warn(`[agon] forge: skipping ${skip.id} (${skip.status} — ${skip.reason || 'unknown'})`);
         onEvent?.({ type: 'forge:engine-skipped', data: { engineId: skip.id, status: skip.status, reason: skip.reason } });
       }
@@ -319,6 +326,7 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
     // (clear caller bug), quieter (event-only) when relying on defaults.
     if (droppedEngines.length > 0) {
       for (const drop of droppedEngines) {
+        skippedEngines.push({ engineId: drop.id, status: 'unavailable', reason: drop.reason });
         if (explicitlyRequested) {
           console.warn(`[agon] forge: ${drop.id} requested via -e but dropped — ${drop.reason}`);
         }
@@ -357,6 +365,7 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
       );
       onEvent?.({ type: 'forge:health-check-done', data: { healthy: summary.healthy, unhealthy: summary.unhealthy, totalMs: summary.totalMs } });
       for (const skip of summary.unhealthy) {
+        skippedEngines.push({ engineId: skip.engineId, status: 'health-check-failed', reason: skip.reason });
         console.warn(`[agon] forge: skipping ${skip.engineId} — health check failed (${skip.reason ?? 'unknown'})`);
         onEvent?.({ type: 'forge:engine-skipped', data: { engineId: skip.engineId, status: 'health-check-failed', reason: skip.reason } });
       }
@@ -378,6 +387,7 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
         fitnessCmd: options.fitnessCmd,
         timestamp: new Date().toISOString(),
         engines: [],
+        skippedEngines,
         results: {},
         patches: {},
         winner: null,
@@ -453,6 +463,7 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
       fitnessCmd: options.fitnessCmd,
       timestamp: new Date().toISOString(),
       engines: available,
+      skippedEngines,
       results: {},
       patches: {},
       winner: null,

@@ -15,13 +15,13 @@
   "timeout": 120,
 
   "exec": {
-    "args": ["-p", "{prompt}", "--approval-mode", "yolo"]
+    "args": ["-p", "{prompt}", "--skip-trust", "--approval-mode", "yolo"]
   },
   "review": {
-    "args": ["-p", "{prompt}", "--approval-mode", "plan"]
+    "args": ["-p", "{prompt}", "--skip-trust", "--approval-mode", "plan"]
   },
   "agent": {
-    "args": ["-p", "{prompt}", "--approval-mode", "yolo"]
+    "args": ["-p", "{prompt}", "--skip-trust", "--approval-mode", "yolo"]
   },
 
   "model": {

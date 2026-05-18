@@ -21,7 +21,7 @@
     "args": ["review", "{prompt}"]
   },
   "agent": {
-    "args": ["exec", "--full-auto", "{prompt}"]
+    "args": ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "{prompt}"]
   },
 
   "model": {

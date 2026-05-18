@@ -83,7 +83,7 @@ const name=forgeCommand type=any
         },
         healthCheckTimeoutSec: {
           type: 'string',
-          description: 'Per-engine health-check timeout in seconds (default 5). Overrides config.forgeHealthCheckTimeoutSec.',
+          description: 'Per-engine health-check timeout in seconds (default 20). Overrides config.forgeHealthCheckTimeoutSec.',
         },
         label: {
           type: 'string',
@@ -188,6 +188,7 @@ const name=forgeCommand type=any
           }
         }
 
+        const skippedByEngine = new Map<string, { status: string; reason?: string }>();
         const manifest = await runForge(
           {
             task: args.task,
@@ -210,6 +211,15 @@ const name=forgeCommand type=any
           registry,
           adapter,
           (event: any) => {
+            if (event.type === 'forge:engine-skipped') {
+              const engineId = String(event.data?.engineId ?? event.engineId ?? '');
+              if (engineId) {
+                skippedByEngine.set(engineId, {
+                  status: String(event.data?.status ?? 'skipped'),
+                  reason: event.data?.reason != null ? String(event.data.reason) : undefined,
+                });
+              }
+            }
             // Quiet mode promises stdout becomes only the run dir + summary.
             // Per-event narration would break that contract — suppress it
             // here rather than gating every info/warn/success call below.
@@ -221,6 +231,8 @@ const name=forgeCommand type=any
               case 'baseline:done':
                 if (event.data?.passes) {
                   warn('Baseline passes — fitness may be non-discriminating. Add a failing regression test, use --mode validate, or set --require-diff=false.');
+                } else {
+                  warn('Baseline fails before candidate patches — forge scores may reflect an already-red fitness command.');
                 }
                 break;
               case 'stage1:dispatch':
@@ -288,13 +300,18 @@ const name=forgeCommand type=any
         // mark any engine missing from manifest.results as 'skipped' so
         // the summary surfaces it.
         const requestedEngines: string[] = displayEngines as string[];
+        const skippedFromManifest = (manifest.skippedEngines ?? []) as Array<{ engineId: string; status?: string; reason?: string }>;
+        const lookupSkipped = (id: string) => skippedByEngine.get(id) ?? skippedFromManifest.find((s) => s.engineId === id);
         const engineStatuses = requestedEngines.map((id) => {
           const r = (manifest.results as Record<string, any>)[id];
           if (!r) {
+            const skipped = lookupSkipped(id);
             return {
               id,
               status: 'skipped' as const,
-              detail: 'engine never dispatched (health check, missing CLI, or filtered)',
+              detail: skipped
+                ? `${skipped.status ?? 'skipped'}${skipped.reason ? `: ${skipped.reason}` : ''}`
+                : 'engine never dispatched (health check, missing CLI, or filtered)',
             };
           }
           return {
@@ -338,6 +355,18 @@ const name=forgeCommand type=any
           String(r.filesChanged),
           `${r.durationSec}s`,
         ]);
+        for (const id of requestedEngines) {
+          if ((manifest.results as Record<string, any>)[id]) continue;
+          const skipped = lookupSkipped(id);
+          rows.push([
+            yellow(`${icons().warning} ${id}`),
+            yellow('SKIPPED'),
+            '0',
+            '0',
+            '0',
+            skipped ? `${skipped.status ?? 'skipped'}${skipped.reason ? `: ${skipped.reason}` : ''}` : 'not dispatched',
+          ]);
+        }
 
         table(['Engine', 'Status', 'Score', 'Diff', 'Files', 'Time'], rows);
 

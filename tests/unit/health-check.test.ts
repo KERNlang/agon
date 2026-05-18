@@ -112,6 +112,12 @@ describe('forge pre-flight health check', () => {
     expect(manifest.results.alive, 'alive should have run').toBeDefined();
     expect(manifest.results.alive.pass).toBe(true);
     expect(manifest.results.dead, 'dead should NOT have run').toBeUndefined();
+    expect(manifest.skippedEngines).toEqual([
+      expect.objectContaining({
+        engineId: 'dead',
+        status: 'health-check-failed',
+      }),
+    ]);
     expect(skipped).toEqual(['dead']);
   }, 20_000);
 

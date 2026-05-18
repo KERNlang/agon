@@ -3,9 +3,12 @@ name = "kern-engines"
 version = "0.1.0"
 description = "Engine substrates that drive third-party CLI/API agents on behalf of agon."
 requires-python = ">=3.9"
-dependencies = [
-  "pyte>=0.8.2",
-]
+# Runtime is stdlib-only (pty, select, signal, fcntl, termios, json).
+# No third-party packages are required to use ClaudeCliSession, the
+# daemon, or scripts/claude-tui-probe.py. All terminal-emulator handling
+# is bytes-only — pyte / xterm-headless are deliberately not used (they
+# hang on the Claude TUI byte stream).
+dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]

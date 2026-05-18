@@ -41,11 +41,38 @@ CLAUDE = EngineConfig(
 )
 
 
-# Add other engines here when their billing forces us to pty-drive them.
-# Until then, structured stream-json is strictly better — see README.
+# ─────────────────────────────────────────────────────────────────────────
+# UNWIRED STUBS — kept here as templates, not exposed via REGISTRY yet.
+#
+# Each shows the minimal config needed to onboard another engine when its
+# billing forces us off `--print`. To activate one:
+#   1. Verify the marker bytes / chrome regex against a real session
+#      (run `claude-tui-probe.py` clone for that binary).
+#   2. Add it to REGISTRY below.
+#   3. Add a TS shim like `cli/codex.ts` that calls
+#      `PtyCliSession.spawn('codex', ...)`.
+#   4. Update adapter-helpers to recognise it in shouldUsePty.
+# ─────────────────────────────────────────────────────────────────────────
+
+CODEX_STUB = EngineConfig(
+    id="codex",
+    binary="codex",
+    # UNVERIFIED — Codex TUI markers need a live probe to confirm.
+    prompt_marker_bytes="▶".encode("utf-8"),
+    response_marker="◆",
+    chrome_regex=r"(?:status|tokens?\)|elapsed_steps)",
+    env_strip=("CODEX_SESSION_ID",),
+    agent_extra_argv=(
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--skip-git-repo-check",
+    ),
+)
+
 
 REGISTRY: dict[str, EngineConfig] = {
     CLAUDE.id: CLAUDE,
+    # CODEX_STUB intentionally not added until its markers are verified
+    # against a real Codex TUI capture. Treat it as the on-ramp template.
 }
 
 

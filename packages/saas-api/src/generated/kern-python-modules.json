@@ -1,0 +1,12 @@
+{
+  "target": "fastapi",
+  "entries": [
+    {
+      "sourceFile": "src/kern/health.kern",
+      "outputFile": "health.py",
+      "package": "",
+      "moduleName": "health",
+      "modulePath": "health"
+    }
+  ]
+}

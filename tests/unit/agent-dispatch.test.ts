@@ -28,12 +28,13 @@ describe('Agent Dispatch', () => {
       expect(args).not.toContain('--output-format');
     });
 
-    it('uses agent args for codex (--full-auto)', () => {
+    it('uses agent args for codex (bypass approvals + sandbox)', () => {
       const reg = loadRegistry();
       const engine = reg.get('codex');
       const binary = '/usr/local/bin/codex';
       const { args } = buildCommand(engine, 'agent', 'fix the bug', '/tmp', 120, binary);
-      expect(args).toContain('--full-auto');
+      expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
+      expect(args).toContain('--skip-git-repo-check');
       expect(args).toContain('exec');
     });
 

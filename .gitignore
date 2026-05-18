@@ -25,3 +25,8 @@ packages/*/src/**/*.js
 packages/*/src/**/*.js.map
 packages/*/src/**/*.d.ts
 packages/*/src/**/*.d.ts.map
+
+# Python build artifacts in the polyglot kern_engines package
+__pycache__/
+*.py[cod]
+kern_engines/*.egg-info/

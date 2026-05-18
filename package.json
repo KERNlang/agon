@@ -9,7 +9,8 @@
     "packages/cli",
     "packages/mcp",
     "packages/saas-api",
-    "packages/dedup"
+    "packages/dedup",
+    "kern_engines"
   ],
   "scripts": {
     "postinstall": "patch-package",

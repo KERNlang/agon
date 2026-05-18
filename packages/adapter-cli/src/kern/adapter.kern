@@ -2,7 +2,7 @@ import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
 import from="@agon/core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
 import from="@agon/core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiStreamDispatch,companionDispatch,runHooks,hooksFailed,runApiAgentLoop,sessionContext,resolveWorkingDir,engineHealth,classifyDispatchFailure"
-import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,resolveModel,stripStreamJson,usesStreamJson,recordDispatchHealth,shouldUseCompanionForAgent"
+import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,resolveModel,stripStreamJson,usesStreamJson,recordDispatchHealth,shouldUseCompanionForAgent,shouldUseClaudePty,runClaudePtyDispatch,runClaudePtyStreamDispatch"
 
 service name=CliAdapter implements=EngineAdapter
   field name=registry type=EngineRegistry private=true
@@ -47,6 +47,17 @@ service name=CliAdapter implements=EngineAdapter
       let name=preHooks value="runHooks('pre_dispatch', { AGON_ENGINE: options.engine.id, AGON_MODE: options.mode })"
       if cond="hooksFailed(preHooks)"
         return value="{ exitCode: 1, stdout: '', stderr: `pre_dispatch hook blocked: ${preHooks.find((h: any) => !h.ok)?.stderr ?? 'unknown'}`, durationMs: 0, timedOut: false }"
+      comment raw="// Subscription path: drive interactive `claude` TUI via pty when opted-in (AGON_CLAUDE_PTY=1)."
+      comment raw="// Avoids `claude -p` (SDK credits). If kern-engines peer deps are missing, falls through."
+      if cond="shouldUseClaudePty(options.engine)"
+        let name=ptyResult value="await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt)"
+        if cond="!ptyResult.unavailable"
+          let name=outputPath value="join(options.outputDir, `${options.engine.id}-output.txt`)"
+          do value="mkdirSync(dirname(outputPath), { recursive: true })"
+          do value="writeFileSync(outputPath, ptyResult.stdout)"
+          do value="recordDispatchHealth(options.engine.id, ptyResult)"
+          do value="runHooks('post_dispatch', { AGON_ENGINE: options.engine.id, AGON_MODE: options.mode, AGON_EXIT_CODE: String(ptyResult.exitCode) })"
+          return value="ptyResult"
       comment raw="// Try companion protocol (JSONRPC app-server) first — faster, more stable"
       if cond="options.engine.companion"
         let name=companionResult value="await companionDispatch({ config: options.engine.companion, binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: options.mode === 'agent' ? 'agent' : options.mode === 'review' ? 'review' : 'exec', model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, })"
@@ -85,6 +96,29 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatchStream params="options:DispatchOptions" returns="string, DispatchResult, void" async=true stream=true
     handler <<<
+      // Subscription pty path for claude — yields response deltas, returns final result.
+      // Falls through if peer deps missing (unavailable:true).
+      if (shouldUseClaudePty(options.engine)) {
+        const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt);
+        let last: DispatchResult | undefined;
+        while (true) {
+          const next = await gen.next();
+          if (next.done) {
+            last = next.value as DispatchResult & { unavailable?: boolean };
+            break;
+          }
+          yield next.value;
+        }
+        if (last && !(last as any).unavailable) {
+          const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+          mkdirSync(dirname(outputPath), { recursive: true });
+          writeFileSync(outputPath, last.stdout);
+          recordDispatchHealth(options.engine.id, last);
+          return last;
+        }
+        // fall through to legacy path
+      }
+
       // Prefer CLI binary when available — API is fallback for binary-less engines
       const binaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
 
@@ -153,6 +187,31 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatchAgent params="options:DispatchOptions" returns="Promise<AgentDispatchResult>" async=true
     handler lang="kern"
+      comment raw="// Subscription pty path for claude (agent mode: tools + bypassed perms)."
+      comment raw="// We still diff the cwd before/after so callers get filesChanged/diffLines."
+      if cond="shouldUseClaudePty(options.engine)"
+        let name=ptyStart value="Date.now()"
+        let name=ptyBaseline value="readOnlyDiff(options.cwd)"
+        let name=ptyResult value="await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt)"
+        if cond="!ptyResult.unavailable"
+          let name=outputPath value="join(options.outputDir, `${options.engine.id}-output.txt`)"
+          do value="mkdirSync(dirname(outputPath), { recursive: true })"
+          do value="writeFileSync(outputPath, ptyResult.stdout)"
+          let name=postDiff value="readOnlyDiff(options.cwd)"
+          let name=baselineFiles value="new Set(ptyBaseline.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
+          let name=postLines value="postDiff.split('\\n')"
+          let name=newDiffLines type="string[]" value="[]"
+          let name=inNewFile kind=let value="false"
+          each name=line in="postLines"
+            if cond="line.startsWith('diff --git')"
+              assign target="inNewFile" value="!baselineFiles.has(line)"
+            if cond="inNewFile"
+              do value="newDiffLines.push(line)"
+          let name=diff value="newDiffLines.join('\\n')"
+          let name=lines value="diffLineCount(diff)"
+          let name=files value="diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0"
+          do value="recordDispatchHealth(options.engine.id, ptyResult)"
+          return value="{ ...ptyResult, diff, diffLines: lines, filesChanged: files }"
       comment raw="// API fallback: use API agent loop when binary is declared but not installed"
       let name=agentBinaryPath value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
       if cond="options.engine.api && !agentBinaryPath"
@@ -258,6 +317,43 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatchAgentStream params="options:DispatchOptions" returns="string, AgentDispatchResult, void" async=true stream=true
     handler <<<
+      // Subscription pty path for claude (agent mode). Same diff capture as dispatchAgent.
+      if (shouldUseClaudePty(options.engine)) {
+        const baselineDiff = readOnlyDiff(options.cwd);
+        const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt);
+        let last: DispatchResult & { unavailable?: boolean } | undefined;
+        const collected: string[] = [];
+        while (true) {
+          const next = await gen.next();
+          if (next.done) {
+            last = next.value as DispatchResult & { unavailable?: boolean };
+            break;
+          }
+          collected.push(next.value);
+          yield next.value;
+        }
+        if (last && !last.unavailable) {
+          const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+          mkdirSync(dirname(outputPath), { recursive: true });
+          writeFileSync(outputPath, last.stdout);
+          const postDiff = readOnlyDiff(options.cwd);
+          const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
+          const postLines = postDiff.split('\n');
+          const newDiffLines: string[] = [];
+          let inNewFile = false;
+          for (const line of postLines) {
+            if (line.startsWith('diff --git')) inNewFile = !baselineFiles.has(line);
+            if (inNewFile) newDiffLines.push(line);
+          }
+          const diff = newDiffLines.join('\n');
+          const lines = diffLineCount(diff);
+          const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
+          recordDispatchHealth(options.engine.id, last);
+          return { ...last, diff, diffLines: lines, filesChanged: files };
+        }
+        // fall through to legacy path
+      }
+
       const streamBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
       if (options.engine.api && !streamBinaryPath) {
         yield `Engine "${options.engine.id}" is API-only and does not support streaming agent mode. Use non-streaming dispatch or install the CLI binary.`;

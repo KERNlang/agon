@@ -431,24 +431,38 @@ class PtyTuiSession:
 
             last_emitted = ""
             last_emit_at = time.monotonic()
+            response_marker = cfg.response_marker
+            response_seen = False
 
             def done(s: _PumpState) -> bool:
-                nonlocal last_emitted, last_emit_at
+                nonlocal last_emitted, last_emit_at, response_seen
                 now = time.monotonic()
+                # Only consider a snapshot every stream_emit_interval_s and
+                # only after we've seen *any* bytes back from the engine.
                 if now - last_emit_at >= cfg.stream_emit_interval_s and s.bytes_seen > 0:
                     snapshot = extract_response(
                         strip_ansi_bytes(bytes(self._buffer[pre_len:])), cfg,
                     )
+                    # Before the response marker appears we're scraping the
+                    # spinner/animation area — emitting that as "progress"
+                    # is just noise. Hold off until the marker shows up.
+                    if response_marker and response_marker not in strip_ansi_bytes(
+                        bytes(self._buffer[pre_len:])
+                    ) and not response_seen:
+                        return s.idle_ms > self._response_idle_ms
+                    response_seen = True
                     if snapshot and snapshot != last_emitted:
-                        delta = (
-                            snapshot[len(last_emitted):]
-                            if snapshot.startswith(last_emitted)
-                            else snapshot
-                        )
-                        if delta:
-                            self._pending_chunks.append(delta)
+                        # Only emit if the response strictly grew. Regressions
+                        # (e.g. chrome line briefly extending the extract,
+                        # then disappearing again) update the watermark
+                        # silently — they don't get yielded as a chunk.
+                        if snapshot.startswith(last_emitted) and len(snapshot) > len(last_emitted):
+                            delta = snapshot[len(last_emitted):]
+                            # Suppress whitespace-only deltas from redraws.
+                            if delta.strip():
+                                self._pending_chunks.append(delta)
                         last_emitted = snapshot
-                        last_emit_at = now
+                    last_emit_at = now
                 if s.bytes_seen <= 0:
                     return False
                 return s.idle_ms > self._response_idle_ms

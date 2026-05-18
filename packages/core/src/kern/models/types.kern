@@ -177,8 +177,8 @@ config name=AgonConfig
     doc "Minimum score an engine must achieve to count toward the early-finalize quorum."
   field name=forgeHealthCheckEnabled type=boolean default=true
     doc "When true, forge pings each engine with a tiny prompt before dispatch and skips engines that don't respond cleanly. Costs ~timeout × max(parallel-engine-spawn-time) per forge run; saves up to forgeDispatchTimeout per dead engine."
-  field name=forgeHealthCheckTimeoutSec type=number default=5
-    doc "Per-engine health-check timeout in seconds. An engine that doesn't return non-empty stdout within this window is treated as unhealthy for THIS run only."
+  field name=forgeHealthCheckTimeoutSec type=number default=20
+    doc "Per-engine health-check timeout in seconds. CLI agents can take several seconds to warm up, so keep this above the common cold-start range. An engine that doesn't return non-empty stdout within this window is treated as unhealthy for THIS run only."
   field name=ratingsEnabled type=boolean default=true
   field name=contextSummary type=boolean default=true
   field name=sessionContinuity type=boolean default=false
@@ -321,6 +321,11 @@ interface name=EngineResult
   field name=syntaxErrors type=number optional=true
   field name=syntaxInvalidFiles type="string[]" optional=true
 
+interface name=SkippedEngine
+  field name=engineId type=string
+  field name=status type=string
+  field name=reason type=string optional=true
+
 interface name=DispatchMetric
   field name=engineId type=string
   field name=phase type="'stage1'|'stage1-fallback'|'stage2-scout'|'stage2-scout-fallback'|'stage2-follower'|'stage2-fallback'|'synthesis'|'gauntlet'"
@@ -340,6 +345,7 @@ interface name=ForgeManifest
   field name=fitnessCmd type=string
   field name=timestamp type=string
   field name=engines type="string[]"
+  field name=skippedEngines type="SkippedEngine[]" optional=true
   field name=results type="Record<string,EngineResult>"
   field name=patches type="Record<string,string>"
   field name=winner type="string|null"
@@ -405,7 +411,7 @@ event name=ForgeEvent
   type name="gauntlet:corpus-save" data="{ count: number }"
   type name="gauntlet:done" data="{ attacksLanded: number, repairPass: boolean }"
   type name="forge:done"
-  type name="forge:engine-skipped" data="{ engineId: string, status: string, reason: string }"
+  type name="forge:engine-skipped" data="{ engineId: string, status: string, reason?: string }"
   type name="forge:already-satisfied" data="{ baselinePasses: boolean }"
   type name="forge:single-survivor" data="{ engineId: string, score: number, totalEngines: number, failedCount: number }"
   type name="forge:no-engines-available" data="{ enabled: string[], skipped: string[] }"

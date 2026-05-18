@@ -112,13 +112,9 @@ try {
 
 ### Python
 
-```sh
-python3 -m pip install --user pyte
-```
+**Just `python3` on PATH (3.9+). No `pip install` step.** The runtime imports are stdlib-only: `pty`, `select`, `os`, `signal`, `fcntl`, `termios`, `json`. We deliberately don't use `pyte` or any terminal-emulator library — they hang on the Claude TUI byte stream. The hot path is raw bytes + ANSI strip at the end.
 
-`pyte` is no longer on the hot path (the probe and session classes use raw bytes — pyte hung on Claude's TUI byte stream). It's still listed as a dependency for future use, but the substrate works without it.
-
-A `pyproject.toml` is provided for `pip install -e kern_engines`.
+A `pyproject.toml` is provided for `pip install -e kern_engines` if you'd rather install the package than rely on PYTHONPATH/relative imports.
 
 ### Node / TypeScript
 
@@ -189,7 +185,6 @@ That's it. No new pty plumbing, no new daemon, no new IPC layer.
 A standalone bytes-only probe lives at `scripts/claude-tui-probe.py`:
 
 ```sh
-python3 -m pip install --user pyte
 python3 scripts/claude-tui-probe.py "reply with exactly: pong"
 ```
 

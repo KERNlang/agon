@@ -35,7 +35,7 @@ export interface PromptViewport {
   hiddenBelow: number;
 }
 
-// @kern-source: prompt-input:267
+// @kern-source: prompt-input:266
 const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder, focus, showCursor, highlightPastedText, ghostText, width, maxVisibleLines, onChange, onSubmit, onCtrlShortcut, onPaste }: { value:string; placeholder:string|undefined; focus:boolean|undefined; showCursor:boolean|undefined; highlightPastedText:boolean|undefined; ghostText:string|undefined; width:number; maxVisibleLines:number|undefined; onChange:(value:string) => void; onSubmit:((value:string) => void)|undefined; onCtrlShortcut:((shortcut:string) => void)|undefined; onPaste:((raw:string) => string)|undefined }) {
   const originalValue = value;
   const resolvedPlaceholder = placeholder ?? '';
@@ -522,7 +522,7 @@ export function isDelegatedCtrlShortcut(input: string): boolean {
   return ['b', 'c', 'e', 'g', 'i', 'j', 'l', 'r', 't', 'y'].includes(input);
 }
 
-// @kern-source: prompt-input:255
+// @kern-source: prompt-input:254
 export function shouldAdoptPromptValue(originalValue: string, pendingEchoValue: string|null): boolean {
   if (pendingEchoValue === null) {
     return true;

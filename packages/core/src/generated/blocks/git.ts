@@ -505,7 +505,7 @@ export function gitChangedFiles(cwd: string): string[] {
 /**
  * Read-only: truncated git diff (unstaged). Caps output. No git add.
  */
-// @kern-source: git:445
+// @kern-source: git:444
 export function gitTruncatedDiff(cwd: string, maxLines?: number): string {
   try {
     const diff = git(['diff'], cwd);

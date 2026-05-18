@@ -176,3 +176,195 @@ fn name=checkEnvVars params="engine:EngineDefinition" returns="string|null"
     }
     return null;
   >>>
+
+fn name=shouldUseClaudePty params="engine:EngineDefinition" returns=boolean
+  doc "Drive `claude` via the pty subscription path by default. Opt out with AGON_CLAUDE_PRINT=1 (uses `claude -p`, currently free under subscription, but Anthropic is changing this in June — keep as fallback only)."
+  handler lang="kern"
+    if cond="engine.id !== 'claude'"
+      return value="false"
+    let name=optOut value="process.env.AGON_CLAUDE_PRINT"
+    if cond="optOut === '1' || optOut === 'true'"
+      return value="false"
+    return value="true"
+
+fn name=composeClaudePtyPrompt params="prompt:string, systemPrompt?:string" returns="string"
+  doc "When a caller passed a systemPrompt, prepend it to the prompt with the same [System Instructions]/[User Message] framing the legacy non-flag CLI path uses. Claude's TUI has no --system-prompt equivalent we can apply through stdin, so this is the honest way to keep forge/tribunal/brainstorm system instructions intact on the pty path."
+  handler <<<
+    if (!systemPrompt) return prompt;
+    return `[System Instructions]\n${systemPrompt}\n\n[User Message]\n${prompt}`;
+  >>>
+
+fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string" returns="Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}>" async=true
+  doc "Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @agon/kern-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check."
+  handler <<<
+    const start = Date.now();
+    try {
+      let mod: any;
+      try {
+        mod = await import('@agon/kern-engines/cli/claude.js' as any);
+      } catch (e) {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: `pty path unavailable: ${e instanceof Error ? e.message : String(e)}`,
+          durationMs: Date.now() - start,
+          timedOut: false,
+          unavailable: true,
+        };
+      }
+
+      let session: any;
+      try {
+        session = await mod.ClaudeCliSession.spawn({
+          mode: mode ?? 'exec',
+          cwd: cwd,
+        });
+      } catch (e) {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: `pty path spawn failed: ${e instanceof Error ? e.message : String(e)}`,
+          durationMs: Date.now() - start,
+          timedOut: false,
+          unavailable: true,
+        };
+      }
+
+      const onAbort = () => { session.close().catch(() => undefined); };
+      if (signal) {
+        if (signal.aborted) {
+          await session.close().catch(() => undefined);
+          return { exitCode: 130, stdout: '', stderr: 'aborted', durationMs: Date.now() - start, timedOut: false };
+        }
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+
+      try {
+        const composed = composeClaudePtyPrompt(prompt, systemPrompt);
+        const text = await session.ask(composed, timeoutSec * 1000);
+        return {
+          exitCode: 0,
+          stdout: text,
+          stderr: '',
+          durationMs: Date.now() - start,
+          timedOut: false,
+        };
+      } catch (e: any) {
+        const isTimeout = e?.kind === 'timeout' || e?.name === 'ClaudeSessionTimeout';
+        return {
+          exitCode: isTimeout ? 124 : 1,
+          stdout: '',
+          stderr: e instanceof Error ? e.message : String(e),
+          durationMs: Date.now() - start,
+          timedOut: isTimeout,
+        };
+      } finally {
+        if (signal) signal.removeEventListener('abort', onAbort);
+        await session.close().catch(() => undefined);
+      }
+    } catch (e: any) {
+      // Last-ditch: any unforeseen error becomes unavailable so the KERN
+      // caller's `!result.unavailable` fall-through still works.
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: `pty path internal error: ${e instanceof Error ? e.message : String(e)}`,
+        durationMs: Date.now() - start,
+        timedOut: false,
+        unavailable: true,
+      };
+    }
+  >>>
+
+fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string" returns="AsyncGenerator<string, {exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}, void>" async=true stream=true
+  doc "Streaming variant of runClaudePtyDispatch — yields response deltas as they arrive, returns the final DispatchResult. Never throws — any unforeseen error returns unavailable:true via the generator's return value, so kern callers can fall through to legacy paths."
+  handler <<<
+    const start = Date.now();
+    let session: any;
+    try {
+      let mod: any;
+      try {
+        mod = await import('@agon/kern-engines/cli/claude.js' as any);
+      } catch (e) {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: `pty path unavailable: ${e instanceof Error ? e.message : String(e)}`,
+          durationMs: Date.now() - start,
+          timedOut: false,
+          unavailable: true,
+        };
+      }
+
+      try {
+        session = await mod.ClaudeCliSession.spawn({
+          mode: mode ?? 'exec',
+          cwd: cwd,
+        });
+      } catch (e) {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: `pty path spawn failed: ${e instanceof Error ? e.message : String(e)}`,
+          durationMs: Date.now() - start,
+          timedOut: false,
+          unavailable: true,
+        };
+      }
+
+      const onAbort = () => { session.close().catch(() => undefined); };
+      if (signal) {
+        if (signal.aborted) {
+          await session.close().catch(() => undefined);
+          return { exitCode: 130, stdout: '', stderr: 'aborted', durationMs: Date.now() - start, timedOut: false };
+        }
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+
+      const collected: string[] = [];
+      try {
+        const composed = composeClaudePtyPrompt(prompt, systemPrompt);
+        const gen = session.askStream(composed, timeoutSec * 1000);
+        while (true) {
+          const next = await gen.next();
+          if (next.done) {
+            const text = typeof next.value === 'string' && next.value
+              ? next.value
+              : collected.join('');
+            return {
+              exitCode: 0,
+              stdout: text,
+              stderr: '',
+              durationMs: Date.now() - start,
+              timedOut: false,
+            };
+          }
+          collected.push(next.value);
+          yield next.value;
+        }
+      } catch (e: any) {
+        const isTimeout = e?.kind === 'timeout' || e?.name === 'ClaudeSessionTimeout';
+        return {
+          exitCode: isTimeout ? 124 : 1,
+          stdout: collected.join(''),
+          stderr: e instanceof Error ? e.message : String(e),
+          durationMs: Date.now() - start,
+          timedOut: isTimeout,
+        };
+      } finally {
+        if (signal) signal.removeEventListener('abort', onAbort);
+        await session.close().catch(() => undefined);
+      }
+    } catch (e: any) {
+      // Outer guard for anything the inner blocks miss.
+      try { if (session) await session.close(); } catch { /* ignore */ }
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: `pty path internal error: ${e instanceof Error ? e.message : String(e)}`,
+        durationMs: Date.now() - start,
+        timedOut: false,
+        unavailable: true,
+      };
+    }
+  >>>

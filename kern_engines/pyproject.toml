@@ -1,0 +1,19 @@
+[project]
+name = "kern-engines"
+version = "0.1.0"
+description = "Engine substrates that drive third-party CLI/API agents on behalf of agon."
+requires-python = ">=3.9"
+dependencies = [
+  "pyte>=0.8.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["kern_engines", "kern_engines.cli"]
+package-dir = {"kern_engines" = ".", "kern_engines.cli" = "cli"}

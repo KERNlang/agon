@@ -1,0 +1,33 @@
+{
+  "name": "@agon/kern-engines",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Engine substrates that drive third-party CLI/API agents on behalf of agon. Polyglot: TS twin in this directory, Python twin in .py files side-by-side.",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./cli/claude": {
+      "import": "./dist/cli/claude.js",
+      "types": "./dist/cli/claude.d.ts"
+    },
+    "./cli/claude.js": "./dist/cli/claude.js",
+    "./cli/session": {
+      "import": "./dist/cli/session.js",
+      "types": "./dist/cli/session.d.ts"
+    },
+    "./cli/session.js": "./dist/cli/session.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && tsc -b tsconfig.json --force",
+    "typecheck": "tsc --noEmit"
+  },
+  "optionalDependencies": {}
+}

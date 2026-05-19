@@ -1733,6 +1733,154 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           }
         }
 
+        // ── Auto-continuation: Cesar stops only on asks-user or done ──
+        // Rule: if Cesar used tools this turn and didn't end on a user-directed question
+        // or a completion signal, nudge the engine to keep going. Re-enter the tool
+        // pipeline so XML-tool engines (Kimi/Z.AI) actually execute, not just plan.
+        // Source: campfire 2026-05-19 (minimax/zai/gemini consensus — structural signal,
+        // state-rich nudge, hard cap + stuck-detector).
+        const _detectTurnState = (resp: string): 'asks-user' | 'done' | 'stuck' => {
+          const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+          const wroteFiles = _toolsUsed.some((t: string) => WRITE_TOOLS.has(t));
+          const lines = resp.split('\n').map((l: string) => l.trim()).filter(Boolean);
+          const last = lines[lines.length - 1] ?? '';
+          const userAddressed = /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|implement|which|what|how|do you|would you|can you|should i)\b/i.test(last);
+          const endsWithQ = /\?\s*$/.test(last);
+          if (endsWithQ && userAddressed) return 'asks-user';
+          if (wroteFiles) return 'done';
+          const effectSummary = /(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b[^.]{0,80}(?:\b(?:and|,)\b[^.]{0,80}\b(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b)/i.test(resp);
+          if (effectSummary) return 'done';
+          if (/(?:^|\n)\s*(?:DONE|Done\.|Complete\.|All done\.|Task complete\.)\s*$/m.test(resp) && !/\bnot done\b/i.test(resp)) return 'done';
+          return 'stuck';
+        };
+        const _shouldAutoContinue = (hadToolActivity || ranToolLoop)
+          && !inPlanMode
+          && !ctx.cesar!.pendingDelegation
+          && session.alive
+          && !abort.signal.aborted
+          && response.trim().length > 0;
+        if (_shouldAutoContinue) {
+          const MAX_CONTINUATIONS = 5;
+          let _continuations = 0;
+          let _prevToolCount = _toolsUsed.length;
+          let _consecutiveNoProgress = 0;
+          while (
+            _continuations < MAX_CONTINUATIONS
+            && session.alive
+            && !abort.signal.aborted
+            && !ctx.cesar!.pendingDelegation
+          ) {
+            const state = _detectTurnState(response);
+            if (state === 'asks-user' || state === 'done') break;
+            // State-rich nudge — name the files Cesar mentioned but didn't touch
+            const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+            const wroteFiles = _toolsUsed.some((t: string) => WRITE_TOOLS.has(t));
+            const filePathRe = /\b[\w./-]+\.(?:ts|tsx|kern|js|jsx|py|md|json|yaml|yml|toml|sh|css|scss|html)\b/g;
+            const filesMentioned = Array.from(new Set(response.match(filePathRe) ?? [])).slice(0, 3);
+            let nudge: string;
+            if (filesMentioned.length > 0 && !wroteFiles) {
+              nudge = `[SYSTEM] You described changes to ${filesMentioned.join(', ')} but did not edit any files. Make the edits now using the Edit or Write tool. If you need information from me first, ask a direct question ending with "?". Otherwise, finish the task.`;
+            } else {
+              nudge = '[SYSTEM] You paused without finishing or asking me a question. Either complete the task using Edit/Write/Bash tools, or ask me a direct question ending with "?" if you need information.';
+            }
+            _continuations++;
+            dispatch({ type: 'warning', message: `Cesar paused mid-task — auto-continuing (${_continuations}/${MAX_CONTINUATIONS}).` });
+            dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
+            let contResponse = '';
+            try {
+              const contGen = session.send({ message: nudge, signal: abort.signal });
+              for await (const chunk of contGen) {
+                if (abort.signal.aborted) break;
+                if (chunk.type === 'text') contResponse += chunk.content;
+                if (chunk.type === 'done' || chunk.type === 'error') break;
+              }
+            } catch {
+              dispatch({ type: 'spinner-stop' });
+              break;
+            }
+            dispatch({ type: 'spinner-stop' });
+            const cleanCont = contResponse.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+            if (!cleanCont) break;
+            // Handoff check — let delegation tool calls short-circuit out of the loop
+            try {
+              const parsedHandoff = parseToolCalls(cleanCont);
+              if (parsedHandoff.hasToolCalls) {
+                let delegated = false;
+                for (const call of parsedHandoff.toolCalls) {
+                  if (shouldStopAfterXmlToolCall(call.name)) {
+                    const del = extractDelegation(call.name, call.input);
+                    return await commitTurnAndDelegate(del, input, response + '\n\n' + cleanCont, cesarEngineId, false, dispatch, ctx, buildToolTelemetry());
+                  }
+                }
+                // Non-handoff tool calls: re-enter the tool loop so they actually execute
+                if (!delegated && toolRegistry) {
+                  const contResult = await runToolLoop(
+                    async (message: string) => {
+                      if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
+                      if (!session.alive || abort.signal.aborted) return '';
+                      dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
+                      let nextResp = '';
+                      const gen = session.send({ message, signal: abort.signal });
+                      for await (const chunk of gen) {
+                        if (chunk.type === 'text') nextResp += chunk.content;
+                        if (chunk.type === 'done' || chunk.type === 'error') break;
+                      }
+                      dispatch({ type: 'spinner-stop' });
+                      return nextResp.trim() || '[No response from engine]';
+                    },
+                    cleanCont, toolCtx, toolRegistry,
+                    {
+                      onToolCall: (name: string, inp: Record<string, unknown>) => {
+                        recordToolUse(name, 'xml', JSON.stringify(inp), 'running');
+                        _lastToolInputs[name] = JSON.stringify(inp);
+                        emitXmlToolEvent(name, inp, 'running');
+                      },
+                      onToolResult: (name: string, result: any) => {
+                        const out = result.result.ok ? result.result.content : result.result.error;
+                        emitXmlToolEvent(name, _lastToolInputs[name] ?? '{}', result.result.ok ? 'ok' : 'error', out);
+                        delete _lastToolInputs[name];
+                      },
+                      onPermissionAsk: async (tool: string, message: string) => {
+                        return new Promise<boolean>((resolve) => {
+                          dispatch({ type: 'permission-ask', tool, command: tool, reason: message, resolve } as any);
+                        });
+                      },
+                      onText: (text: string) => { if (text.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: text }); },
+                      onTurnComplete: (turn: number) => { dispatch({ type: 'spinner-update', message: `Cesar continuing turn ${turn}…` }); },
+                    },
+                  );
+                  response = response + '\n\n' + (contResult.finalText?.trim() ?? '');
+                  _toolCallTurns += contResult.turns ?? 0;
+                }
+              } else {
+                // Pure text continuation
+                dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: cleanCont });
+                response = response + '\n\n' + cleanCont;
+              }
+            } catch {
+              // If parse fails, treat as text
+              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: cleanCont });
+              response = response + '\n\n' + cleanCont;
+            }
+            // Stuck-detector: no new tool calls AND no substantive new text → bail
+            const newTools = _toolsUsed.length - _prevToolCount;
+            const newSubstantive = cleanCont.length > 80;
+            if (newTools === 0 && !newSubstantive) {
+              _consecutiveNoProgress++;
+              if (_consecutiveNoProgress >= 2) {
+                dispatch({ type: 'warning', message: 'Cesar: no progress across 2 continuations — stopping.' });
+                break;
+              }
+            } else {
+              _consecutiveNoProgress = 0;
+            }
+            _prevToolCount = _toolsUsed.length;
+          }
+          if (_continuations >= MAX_CONTINUATIONS) {
+            dispatch({ type: 'warning', message: `Cesar reached the auto-continuation cap (${MAX_CONTINUATIONS}). Stopping — re-prompt if the task is incomplete.` });
+          }
+        }
+
         // ── Display final response (skip if already displayed via streaming or tool loop) ──
         if (!streaming && response && !ranToolLoop && !wasStreamed) {
           dispatch({ type: 'spinner-stop' });

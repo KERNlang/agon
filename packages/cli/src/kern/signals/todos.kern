@@ -1,0 +1,49 @@
+// ── Todo List — lightweight always-visible task tracker ────────────────
+// Codex / Claude-Code-style rolling todo list. Different from JobManager
+// (which only tracks running *background* jobs) and PlanExecutionView
+// (heavyweight, approval-gated, persisted). This list is forward-looking:
+// handlers and the plan-executor declare what's coming up, then mark items
+// running / done as work progresses. Renders compact 1-line-per-todo in
+// the dynamic region above the composer; renders nothing when empty.
+
+interface name=Todo export=true
+  doc "A single rolling task — pending, running, done, failed, cancelled."
+  field name=id type=string
+  field name=text type=string
+  field name=state type="'pending'|'running'|'done'|'failed'|'cancelled'"
+  field name=kind type=string optional=true
+  field name=note type=string optional=true
+
+fn name=setTodos params="todos:Todo[]" returns="Todo[]" export=true
+  doc "Replace the todo list. Returns a fresh slice so React identity changes."
+  handler <<<
+    return todos.slice();
+  >>>
+
+fn name=updateTodoState params="todos:Todo[], id:string, state:string, note:string|undefined" returns="Todo[]" export=true
+  doc "Patch a single todo's state (and optionally note). No-op if id is unknown."
+  handler <<<
+    return todos.map((t) =>
+      t.id === id
+        ? { ...t, state: state as Todo['state'], note: note !== undefined ? note : t.note }
+        : t
+    );
+  >>>
+
+fn name=clearTodos returns="Todo[]" export=true
+  doc "Wipe the todo list."
+  handler <<<
+    return [];
+  >>>
+
+fn name=todosFromPlanSteps params="steps:any[]" returns="Todo[]" export=true
+  doc "Convert plan steps into todo items so an executing plan auto-populates the rolling list. Plan-step states map directly; anything else falls through to 'pending'."
+  handler <<<
+    const allowed = new Set(['pending', 'running', 'done', 'failed', 'cancelled']);
+    return steps.map((s: any) => ({
+      id: String(s.id),
+      text: String(s.description ?? s.id),
+      state: (allowed.has(s.state) ? s.state : 'pending') as Todo['state'],
+      kind: s.type,
+    }));
+  >>>

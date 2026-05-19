@@ -35,6 +35,7 @@ import from="../cesar/telemetry.js" names="TelemetrySnapshot" types=true
 import from="@agon/core" names="createSpeculator,loadOrCreateActiveThread"
 import from="@agon/core" names="SpeculatorMemberConfig" types=true
 import from="./file-tracker.js" names="listFiles,getFileDiff"
+import from="./todos.js" names="todosFromPlanSteps"
 
 // Orchestration actions Cesar can auto-fire. Each one still emits an
 // info notice so the user knows when Cesar reached for a heavy tool,
@@ -2767,6 +2768,8 @@ fn name=buildPlanCallbacks params="initialPlan:CesarPlan, cb:DispatchCallbacks" 
       }
     };
 
+    cb.dispatch({ type: 'todos-set', todos: todosFromPlanSteps(initialPlan.steps) } as any);
+
     return {
       onStepStart: (stepId: string) => {
         currentPlan = markStepRunning(currentPlan, stepId);
@@ -2785,6 +2788,7 @@ fn name=buildPlanCallbacks params="initialPlan:CesarPlan, cb:DispatchCallbacks" 
           status: 'running',
         } as any);
         cb.dispatch({ type: 'info', message: msg });
+        cb.dispatch({ type: 'todos-update', id: stepId, state: 'running' } as any);
       },
       onStepDone: (stepId: string, result: CesarStepResult) => {
         const step = currentPlan.steps.find((s: any) => s.id === stepId);
@@ -2801,6 +2805,7 @@ fn name=buildPlanCallbacks params="initialPlan:CesarPlan, cb:DispatchCallbacks" 
           error: result.error,
         } as any);
         cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} \u2014 ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s, $${result.actualCostUsd.toFixed(4)})` });
+        cb.dispatch({ type: 'todos-update', id: stepId, state: result.status === 'success' ? 'done' : 'failed', note: result.error ? result.error.slice(0, 80) : undefined } as any);
       },
       onPlanUpdate: (updated: CesarPlan) => {
         const previousState = currentPlan.state;

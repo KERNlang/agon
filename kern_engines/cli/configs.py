@@ -13,6 +13,26 @@ from __future__ import annotations
 from .pty_session import EngineConfig
 
 
+# Tools agon delegates to claude without per-call confirmation. Claude
+# is running inside agon's harness — patrol rules, hooks, and the agon
+# confirmation surface already gate dangerous actions at the outer
+# layer. A second prompt from claude would (a) be redundant policy,
+# (b) hang our pty scraper because we can't answer an interactive y/n.
+#
+# Using --allowedTools (claude-native, granular whitelist) instead of
+# --dangerously-skip-permissions because the latter triggers a one-time
+# "Bypass Permissions mode" confirmation banner that traps the pty boot
+# heuristic. --allowedTools auto-approves listed tools without any banner.
+#
+# AskUserQuestion is deliberately NOT on the list: if claude tried to use
+# it our scraper would hang waiting for a human answer. If claude does
+# try it, the dispatch times out (loud failure) rather than wedging.
+_CLAUDE_ALLOWED_TOOLS = (
+    "Bash Edit Read Write MultiEdit Glob Grep "
+    "TodoWrite WebFetch WebSearch Task NotebookEdit"
+)
+
+
 CLAUDE = EngineConfig(
     id="claude",
     binary="claude",
@@ -31,12 +51,16 @@ CLAUDE = EngineConfig(
         "CLAUDE_CODE_SESSION_ID",
         "CLAUDE_TOOL_RESULT_FD",
     ),
-    # Agent mode: tools enabled, all permission checks bypassed including
-    # the workspace-trust dialog. Matches what claude.json's `agent.args`
-    # used for the legacy --print path. The caller is opting in by routing
-    # through agent dispatch — same trust contract as before.
+    # Exec mode: same whitelist. Tool calls during chat (git status,
+    # grep, etc.) auto-approve without pausing the scraper.
+    extra_argv=(
+        "--allowedTools", _CLAUDE_ALLOWED_TOOLS,
+    ),
+    # Agent mode: same whitelist. Edits and shell commands auto-approve.
+    # No --dangerously-skip-permissions because it shows a startup banner
+    # that breaks pty boot detection.
     agent_extra_argv=(
-        "--dangerously-skip-permissions",
+        "--allowedTools", _CLAUDE_ALLOWED_TOOLS,
     ),
 )
 

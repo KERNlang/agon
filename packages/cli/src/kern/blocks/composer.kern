@@ -83,10 +83,14 @@ screen name=ComposerView target=ink memo=true
       const yesChoice = choiceList.find((choice: any) => String(choice.key ?? '').toLowerCase() === 'y');
       const noChoice = choiceList.find((choice: any) => String(choice.key ?? '').toLowerCase() === 'n');
       const alwaysChoice = choiceList.find((choice: any) => String(choice.key ?? '').toLowerCase() === 'a');
-      const inlineChoiceText = choiceList.map((choice: any) => {
+      const fmtChoiceKey = (choice: any, idx: number) => {
         const key = String(choice?.key ?? '').toUpperCase();
+        if (/^[1-9]$/.test(key)) return key;
+        return idx < 9 ? `${key}/${idx + 1}` : key;
+      };
+      const inlineChoiceText = choiceList.map((choice: any, i: number) => {
         const label = String(choice?.label ?? '').trim();
-        return `[${key}] ${label}`.trim();
+        return `[${fmtChoiceKey(choice, i)}] ${label}`.trim();
       }).join('  ');
       const useInlineChoices = choiceList.length > 0
         && choiceList.length <= 3
@@ -126,11 +130,11 @@ screen name=ComposerView target=ink memo=true
                 <Box borderStyle="round" borderColor="#fbbf24" paddingX={1} flexDirection="column" width="100%">
                   <Text bold color="#fbbf24">{icons().warning}{' '}{permissionTool}{' approval required'}</Text>
                   <Text>
-                    {yesChoice ? <Text color={yesChoice.color ?? '#4ade80'} bold>{'[Y] '}{yesChoice.label}</Text> : null}
+                    {yesChoice ? <Text color={yesChoice.color ?? '#4ade80'} bold>{'['}{fmtChoiceKey(yesChoice, choiceList.indexOf(yesChoice))}{'] '}{yesChoice.label}</Text> : null}
                     {yesChoice && (noChoice || alwaysChoice || permissionNeedsDetail) ? <Text dimColor>{'  '}</Text> : null}
-                    {noChoice ? <Text color={noChoice.color ?? '#ef4444'} bold>{'[N] '}{noChoice.label}</Text> : null}
+                    {noChoice ? <Text color={noChoice.color ?? '#ef4444'} bold>{'['}{fmtChoiceKey(noChoice, choiceList.indexOf(noChoice))}{'] '}{noChoice.label}</Text> : null}
                     {noChoice && (alwaysChoice || permissionNeedsDetail) ? <Text dimColor>{'  '}</Text> : null}
-                    {alwaysChoice ? <Text color={alwaysChoice.color ?? '#60a5fa'} bold>{'[A] '}{alwaysChoice.label}</Text> : null}
+                    {alwaysChoice ? <Text color={alwaysChoice.color ?? '#60a5fa'} bold>{'['}{fmtChoiceKey(alwaysChoice, choiceList.indexOf(alwaysChoice))}{'] '}{alwaysChoice.label}</Text> : null}
                   </Text>
                   {permissionPreview ? (
                     <Text dimColor>{'  $ '}{permissionPreview}{permissionHasMoreLines ? ' …' : ''}</Text>
@@ -152,7 +156,7 @@ screen name=ComposerView target=ink memo=true
                           {choiceList.map((c: any, i: number) => (
                             <React.Fragment key={`choice-inline-${i}`}>
                               {i > 0 ? <Text dimColor>{'  '}</Text> : null}
-                              <Text color={c.color ?? questionAccent} bold>{'['}{String(c.key ?? '').toUpperCase()}{'] '}{c.label}</Text>
+                              <Text color={c.color ?? questionAccent} bold>{'['}{fmtChoiceKey(c, i)}{'] '}{c.label}</Text>
                             </React.Fragment>
                           ))}
                         </Text>
@@ -161,7 +165,7 @@ screen name=ComposerView target=ink memo=true
                       <Box flexDirection="column" paddingLeft={1}>
                         {choiceList.map((c: any, i: number) => (
                           <Text key={`choice-${i}`}>
-                            <Text color={c.color ?? questionAccent} bold>{'['}{String(c.key ?? '').toUpperCase()}{']'}</Text>
+                            <Text color={c.color ?? questionAccent} bold>{'['}{fmtChoiceKey(c, i)}{']'}</Text>
                             <Text>{' '}{c.label}</Text>
                           </Text>
                         ))}

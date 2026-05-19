@@ -36,7 +36,11 @@ import from="@agon/core" names="createSpeculator,loadOrCreateActiveThread"
 import from="@agon/core" names="SpeculatorMemberConfig" types=true
 import from="./file-tracker.js" names="listFiles,getFileDiff"
 
-const name=SLASH_ONLY_CESAR_ACTIONS type="Set<string>" value={{ new Set(['forge', 'team-forge', 'brainstorm', 'team-brainstorm', 'tribunal', 'team-tribunal', 'campfire', 'pipeline', 'review']) }}
+// Orchestration actions Cesar can auto-fire. Each one still emits an
+// info notice so the user knows when Cesar reached for a heavy tool,
+// but the dispatch is no longer blocked — Cesar has autonomy. Slash
+// commands keep working as before (they bypass this announce path).
+const name=ORCHESTRATION_ACTIONS type="Set<string>" value={{ new Set(['forge', 'team-forge', 'brainstorm', 'team-brainstorm', 'tribunal', 'team-tribunal', 'campfire', 'pipeline', 'review']) }}
 
 fn name=slashCommandForOrchestrationAction params="action:string,task:string,fitnessCmd?:string|null,tribunalMode?:string" returns=string
   handler lang="kern"
@@ -62,14 +66,14 @@ fn name=slashCommandForOrchestrationAction params="action:string,task:string,fit
       return value="`/review ${safeTask === '<task>' ? '' : safeTask}`.trim()"
     return value="`/${action} ${safeTask}`"
 
-fn name=blockSlashOnlyCesarOrchestration params="action:string,task:string,cb:DispatchCallbacks,fitnessCmd?:string|null,tribunalMode?:string" returns=boolean
+fn name=announceCesarAutoOrchestration params="action:string,task:string,cb:DispatchCallbacks,fitnessCmd?:string|null,tribunalMode?:string" returns=boolean
+  doc "Cesar auto-fired an orchestration tool — announce it so the user has visibility, then let it run. Always returns false (never blocks). The equivalent slash command is included in the notice so the user can re-run it explicitly if they want to."
   handler lang="kern"
-    if cond="!SLASH_ONLY_CESAR_ACTIONS.has(action)"
+    if cond="!ORCHESTRATION_ACTIONS.has(action)"
       return value="false"
     let name=cmd value="slashCommandForOrchestrationAction(action, task, fitnessCmd, tribunalMode)"
-    do value="cb.dispatch({ type: 'warning', message: `Blocked automatic ${action}. Orchestration only starts from slash commands now.` })"
-    do value="cb.dispatch({ type: 'info', message: `Run ${cmd} if you want to start it.` })"
-    return value="true"
+    do value="cb.dispatch({ type: 'info', message: `Cesar auto-fired ${action}. (equivalent: ${cmd})` })"
+    return value="false"
 
 // ── Thread outcome capture helper ─────────────────────────────────────
 // After any non-trivial slash command (forge, brainstorm, tribunal, etc.),
@@ -556,9 +560,9 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
             : input);
         let taskInput = userContext ? `${baseTask}\n\n${userContext}` : baseTask;
         const fitnessCmd = result.fitnessCmd ?? delegatedSpec.fitnessCmd ?? executionSpec.fitnessCmd;
-        if (blockSlashOnlyCesarOrchestration(routeAction, taskInput, cb, fitnessCmd, tMode)) {
-          return false;
-        }
+        // Always returns false now — informs the user that Cesar
+        // auto-fired this orchestration, never blocks it.
+        announceCesarAutoOrchestration(routeAction, taskInput, cb, fitnessCmd, tMode);
         const isForgeSlice = routeAction === 'forge' && result.scope === 'slice';
         if (isForgeSlice) {
           taskInput = `Scoped forge only. Solve only the hard subpart below. Do not rewrite the whole task. Cesar will integrate wiring, cleanup, and final verification locally.

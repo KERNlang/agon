@@ -11,7 +11,7 @@ export type FastApiGeneratedGap = { id: string; severity: 'blocking' | 'importan
 export type FastApiGeneratedGapReport = { ok: boolean; gaps: FastApiGeneratedGap[]; checkedFiles: string[] };
 
 /**
- * Static checks for known @kernlang/fastapi output gaps Agon currently works around or cannot run through.
+ * Static checks for known @kernlang/python output gaps Agon currently works around or cannot run through.
  */
 // @kern-source: check-fastapi-gaps:7
 export function analyzeFastApiGenerated(generatedDir: string): FastApiGeneratedGapReport {

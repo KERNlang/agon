@@ -1587,7 +1587,14 @@ Respond with ONLY the summary, no preamble.`;
               // Fall through to process fullResponse as if stream completed
             }
 
-            if (!fullResponse) break;
+            if (!fullResponse) {
+              // Empty response after successful stream: usually means the model returned
+              // an empty completion (rate limit, content filter, or format mismatch — common
+              // with Kimi/ZAI when tool-use format doesn't line up). Surface it so the
+              // upper layer can warn the user instead of silently breaking.
+              yield { type: 'error' as const, content: 'Engine returned an empty response (possible rate limit, content filter, or tool-format mismatch).' };
+              break;
+            }
 
             // Check for tool call markers — robust parser handles all formats:
             // <tool name="X">{json}</tool>, <tool_call>{json}</tool_call>,

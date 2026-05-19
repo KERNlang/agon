@@ -1746,15 +1746,19 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // Read-only completion phrases — Cesar finished a Read/Grep/Bash investigation
         // and gave a complete answer. Don't nudge. Catches codex-review P2-1.
         const _AUTO_CONT_READONLY_DONE_RE = /\b(?:tests? passed|all (?:tests|checks) pass|no matches found|no issues found|no errors|all clean|nothing to (?:do|fix|change)|already (?:correct|fixed|in place|done))\b/i;
-        const _detectTurnState = (resp: string): 'asks-user' | 'done' | 'stuck' => {
-          const wroteFiles = _toolsUsed.some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
+        // Detect turn state. wroteSinceBaseline counts only writes that happened in
+        // continuations after `baselineToolCount` — NOT writes from the initial turn.
+        // Initial-turn writes alone are too weak a "done" signal: engine could have
+        // edited 1 of 3 needed files and stopped (minimax/zai review consensus).
+        const _detectTurnState = (resp: string, baselineToolCount: number): 'asks-user' | 'done' | 'stuck' => {
+          const wroteSinceBaseline = _toolsUsed.slice(baselineToolCount).some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
           const lines = resp.split('\n').map((l: string) => l.trim()).filter(Boolean);
           const last = lines[lines.length - 1] ?? '';
           const userAddressed = /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|implement|which|what|how|do you|would you|can you|should i)\b/i.test(last);
           const endsWithQ = /\?\s*$/.test(last);
           if (endsWithQ && userAddressed) return 'asks-user';
-          // Wrote files AND no "still in progress" signal → done (multi-step guard)
-          if (wroteFiles && !_AUTO_CONT_CONTINUE_RE.test(resp)) return 'done';
+          // New writes in continuation AND no "still in progress" signal → done
+          if (wroteSinceBaseline && !_AUTO_CONT_CONTINUE_RE.test(resp)) return 'done';
           const effectSummary = /(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b[^.]{0,80}(?:\b(?:and|,)\b[^.]{0,80}\b(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b)/i.test(resp);
           if (effectSummary) return 'done';
           if (/(?:^|\n)\s*(?:DONE|Done\.|Complete\.|All done\.|Task complete\.)\s*$/m.test(resp) && !/\bnot done\b/i.test(resp)) return 'done';
@@ -1810,6 +1814,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (_shouldAutoContinue) {
           const MAX_CONTINUATIONS = 5;
           let _continuations = 0;
+          // Baseline: tool count BEFORE the auto-continuation loop fires. Used by
+          // _detectTurnState to distinguish "wrote during continuation" (a 'done'
+          // signal) from "wrote in the initial turn" (insufficient evidence).
+          const _loopStartToolCount = _toolsUsed.length;
           let _prevToolCount = _toolsUsed.length;
           let _consecutiveNoProgress = 0;
           while (
@@ -1818,12 +1826,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             && !abort.signal.aborted
             && !ctx.cesar!.pendingDelegation
           ) {
-            const state = _detectTurnState(response);
+            const state = _detectTurnState(response, _loopStartToolCount);
             if (state === 'asks-user' || state === 'done') break;
-            // State-rich nudge — name the files Cesar mentioned but didn't touch
+            // State-rich nudge — name the files Cesar mentioned but didn't touch.
+            // File path regex requires a path prefix (./ ../ / ~/ or src/test/etc dir)
+            // to reduce false positives like "version 1.0.ts" (minimax review #6).
             const wroteFiles = _toolsUsed.some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
-            const filePathRe = /\b[\w./-]+\.(?:ts|tsx|kern|js|jsx|py|md|json|yaml|yml|toml|sh|css|scss|html)\b/g;
-            const filesMentioned = Array.from(new Set(response.match(filePathRe) ?? [])).slice(0, 3);
+            const filePathRe = /(?:^|\s|`)((?:\.{1,2}\/|~\/|\/|(?:packages|src|tests|scripts|kern)\/)[\w./-]+\.(?:ts|tsx|kern|js|jsx|py|md|json|yaml|yml|toml|sh|css|scss|html))\b/g;
+            const filesMentioned = Array.from(new Set(Array.from(response.matchAll(filePathRe), (m: RegExpMatchArray) => m[1]))).slice(0, 3);
             let nudge: string;
             if (filesMentioned.length > 0 && !wroteFiles) {
               nudge = `[SYSTEM] You described changes to ${filesMentioned.join(', ')} but did not edit any files. Make the edits now using the Edit or Write tool. If you need information from me first, ask a direct question ending with "?". Otherwise, finish the task.`;

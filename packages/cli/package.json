@@ -18,7 +18,7 @@
     "@agon/adapter-cli": "*",
     "@agon/core": "*",
     "@agon/forge": "*",
-    "@kernlang/terminal": "~3.5.1",
+    "@kernlang/terminal": "~3.5.3",
     "citty": "^0.1.6",
     "ink": "^7.0.1",
     "ink-spinner": "^5.0.0",

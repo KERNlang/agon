@@ -39,9 +39,10 @@ export async function dedupBrainstormDrafts(drafts: {engineId:string, text:strin
     proc.on('error', () => resolveOuter(null));
     proc.on('close', (code: number | null) => {
       if (code !== 0) {
-        if (code === 2) {
-          console.warn('[agon] dedup sidecar: fastembed not installed — install with `npm run install:python -w packages/dedup`');
-        } else if (stderr.trim()) {
+        // code 2 = fastembed missing → silent degrade (postinstall + doctor
+        // handle the hint). Non-zero with stderr is a real runtime fault,
+        // worth surfacing.
+        if (code !== 2 && stderr.trim()) {
           console.warn(`[agon] dedup sidecar exited ${code}: ${stderr.trim().split('\n')[0]}`);
         }
         return resolveOuter(null);

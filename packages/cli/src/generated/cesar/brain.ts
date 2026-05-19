@@ -1733,6 +1733,207 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           }
         }
 
+        // ── Auto-continuation: Cesar stops only on asks-user or done ──
+        // Rule: if Cesar used tools this turn and didn't end on a user-directed question
+        // or a completion signal, nudge the engine to keep going. Re-enter the tool
+        // pipeline so XML-tool engines (Kimi/Z.AI) actually execute, not just plan.
+        // Source: campfire 2026-05-19 + multi-engine review (codex/gemini/...).
+        const _AUTO_CONT_WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+        const _AUTO_CONT_LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent']);
+        // Continue-intent words signal multi-step work in progress; if present alongside
+        // a write tool, treat as still-going rather than done. Catches gemini-review #4.
+        const _AUTO_CONT_CONTINUE_RE = /\b(?:now i'?ll|next i'?ll|still need|let me also|i'?ll also|then i'?ll|next step|next up)\b/i;
+        // Read-only completion phrases — Cesar finished a Read/Grep/Bash investigation
+        // and gave a complete answer. Don't nudge. Catches codex-review P2-1.
+        const _AUTO_CONT_READONLY_DONE_RE = /\b(?:tests? passed|all (?:tests|checks) pass|no matches found|no issues found|no errors|all clean|nothing to (?:do|fix|change)|already (?:correct|fixed|in place|done))\b/i;
+        // Detect turn state. wroteSinceBaseline counts only writes that happened in
+        // continuations after `baselineToolCount` — NOT writes from the initial turn.
+        // Initial-turn writes alone are too weak a "done" signal: engine could have
+        // edited 1 of 3 needed files and stopped (minimax/zai review consensus).
+        const _detectTurnState = (resp: string, baselineToolCount: number): 'asks-user' | 'done' | 'stuck' => {
+          const wroteSinceBaseline = _toolsUsed.slice(baselineToolCount).some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
+          const lines = resp.split('\n').map((l: string) => l.trim()).filter(Boolean);
+          const last = lines[lines.length - 1] ?? '';
+          const userAddressed = /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|implement|which|what|how|do you|would you|can you|should i)\b/i.test(last);
+          const endsWithQ = /\?\s*$/.test(last);
+          if (endsWithQ && userAddressed) return 'asks-user';
+          // New writes in continuation AND no "still in progress" signal → done
+          if (wroteSinceBaseline && !_AUTO_CONT_CONTINUE_RE.test(resp)) return 'done';
+          const effectSummary = /(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b[^.]{0,80}(?:\b(?:and|,)\b[^.]{0,80}\b(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b)/i.test(resp);
+          if (effectSummary) return 'done';
+          if (/(?:^|\n)\s*(?:DONE|Done\.|Complete\.|All done\.|Task complete\.)\s*$/m.test(resp) && !/\bnot done\b/i.test(resp)) return 'done';
+          // Read-only investigation that produced a real answer (codex-review P2-1)
+          if (_AUTO_CONT_READONLY_DONE_RE.test(resp)) return 'done';
+          return 'stuck';
+        };
+        // Build a runToolLoop options object that mirrors the main tool loop —
+        // critical: handoff intercept, shouldStopAfterToolCall, and rich permission UI.
+        // (gemini-review A, codex-review P2-2, old-gemini-review #1: all converged on this).
+        const _buildContToolLoopOpts = () => ({
+          onToolCall: (name: string, inp: Record<string, unknown>) => {
+            _lastToolInputs[name] = JSON.stringify(inp);
+            recordToolUse(name, 'xml', _lastToolInputs[name], 'running');
+            emitXmlToolEvent(name, inp, 'running');
+            if (_AUTO_CONT_LOOP_ORCH.has(name)) {
+              if (cesarFastPath) return;
+              if (!ctx.cesar!.pendingDelegation) {
+                ctx.cesar!.pendingDelegation = extractDelegation(name, (inp as Record<string, unknown>) ?? {});
+              }
+            }
+            if (name === 'ProposePlan') {
+              if (cesarFastPath) return;
+              (ctx.cesar as any)._proposePlanArgs = inp;
+              emitXmlToolEvent(name, inp, 'ok', 'Plan submitted for user approval.');
+              delete _lastToolInputs[name];
+            }
+          },
+          shouldStopAfterToolCall: shouldStopAfterXmlToolCall,
+          onToolResult: (name: string, result: any) => {
+            const out = result.result.ok ? result.result.content : result.result.error;
+            emitXmlToolEvent(name, _lastToolInputs[name] ?? '{}', result.result.ok ? 'ok' : 'error', out);
+            delete _lastToolInputs[name];
+          },
+          onPermissionAsk: async (tool: string, message: string) => {
+            return new Promise<boolean>((resolve) => {
+              const lastInput = _lastToolInputs[tool] ?? '{}';
+              let command = '';
+              try { command = JSON.parse(lastInput).command ?? JSON.parse(lastInput).file_path ?? lastInput; } catch { command = lastInput; }
+              dispatch({ type: 'permission-ask', tool, command, reason: message, resolve } as any);
+            });
+          },
+          onText: (text: string) => { if (text.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: text }); },
+          onTurnComplete: (turn: number) => { dispatch({ type: 'spinner-update', message: `Cesar continuing turn ${turn}…` }); },
+          maxTurns: cesarFastPath ? fastPathMaxBudget : undefined,
+        });
+        const _shouldAutoContinue = (hadToolActivity || ranToolLoop)
+          && !inPlanMode
+          && !ctx.cesar!.pendingDelegation
+          && session.alive
+          && !abort.signal.aborted
+          && response.trim().length > 0;
+        if (_shouldAutoContinue) {
+          const MAX_CONTINUATIONS = 5;
+          let _continuations = 0;
+          // Baseline: tool count BEFORE the auto-continuation loop fires. Used by
+          // _detectTurnState to distinguish "wrote during continuation" (a 'done'
+          // signal) from "wrote in the initial turn" (insufficient evidence).
+          const _loopStartToolCount = _toolsUsed.length;
+          let _prevToolCount = _toolsUsed.length;
+          let _consecutiveNoProgress = 0;
+          while (
+            _continuations < MAX_CONTINUATIONS
+            && session.alive
+            && !abort.signal.aborted
+            && !ctx.cesar!.pendingDelegation
+          ) {
+            const state = _detectTurnState(response, _loopStartToolCount);
+            if (state === 'asks-user' || state === 'done') break;
+            // State-rich nudge — name the files Cesar mentioned but didn't touch.
+            // File path regex requires a path prefix (./ ../ / ~/ or src/test/etc dir)
+            // to reduce false positives like "version 1.0.ts" (minimax review #6).
+            const wroteFiles = _toolsUsed.some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
+            const filePathRe = /(?:^|\s|`)((?:\.{1,2}\/|~\/|\/|(?:packages|src|tests|scripts|kern)\/)[\w./-]+\.(?:ts|tsx|kern|js|jsx|py|md|json|yaml|yml|toml|sh|css|scss|html))\b/g;
+            const filesMentioned = Array.from(new Set(Array.from(response.matchAll(filePathRe), (m: RegExpMatchArray) => m[1]))).slice(0, 3);
+            let nudge: string;
+            if (filesMentioned.length > 0 && !wroteFiles) {
+              nudge = `[SYSTEM] You described changes to ${filesMentioned.join(', ')} but did not edit any files. Make the edits now using the Edit or Write tool. If you need information from me first, ask a direct question ending with "?". Otherwise, finish the task.`;
+            } else {
+              nudge = '[SYSTEM] You paused without finishing or asking me a question. Either complete the task using Edit/Write/Bash tools, or ask me a direct question ending with "?" if you need information.';
+            }
+            _continuations++;
+            dispatch({ type: 'warning', message: `Cesar paused mid-task — auto-continuing (${_continuations}/${MAX_CONTINUATIONS}).` });
+            dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
+            let contResponse = '';
+            try {
+              const contGen = session.send({
+                message: nudge,
+                signal: abort.signal,
+                toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
+                toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
+              });
+              for await (const chunk of contGen) {
+                if (abort.signal.aborted) break;
+                if (chunk.type === 'text') contResponse += chunk.content;
+                if (chunk.type === 'done' || chunk.type === 'error') break;
+              }
+            } catch {
+              dispatch({ type: 'spinner-stop' });
+              break;
+            }
+            dispatch({ type: 'spinner-stop' });
+            const cleanCont = contResponse.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+            if (!cleanCont) break;
+            // Handoff check — let delegation tool calls short-circuit out of the loop
+            try {
+              const parsedHandoff = parseToolCalls(cleanCont);
+              if (parsedHandoff.hasToolCalls) {
+                for (const call of parsedHandoff.toolCalls) {
+                  if (shouldStopAfterXmlToolCall(call.name)) {
+                    const del = extractDelegation(call.name, call.input);
+                    return await commitTurnAndDelegate(del, input, response + '\n\n' + cleanCont, cesarEngineId, false, dispatch, ctx, buildToolTelemetry());
+                  }
+                }
+                // Non-handoff tool calls: re-enter the tool loop so they actually execute
+                if (toolRegistry) {
+                  const contResult = await runToolLoop(
+                    async (message: string) => {
+                      if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
+                      if (!session.alive || abort.signal.aborted) return '';
+                      dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
+                      let nextResp = '';
+                      const gen = session.send({
+                        message,
+                        signal: abort.signal,
+                        toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
+                        toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
+                      });
+                      for await (const chunk of gen) {
+                        if (chunk.type === 'text') nextResp += chunk.content;
+                        if (chunk.type === 'done' || chunk.type === 'error') break;
+                      }
+                      dispatch({ type: 'spinner-stop' });
+                      return nextResp.trim() || '[No response from engine]';
+                    },
+                    cleanCont, toolCtx, toolRegistry, _buildContToolLoopOpts(),
+                  );
+                  response = response + '\n\n' + (contResult.finalText?.trim() ?? '');
+                  _toolCallTurns += contResult.turns ?? 0;
+                  // If the tool loop set a pendingDelegation, fire it now so the
+                  // user-visible delegation actually starts (gemini-review A).
+                  if (ctx.cesar!.pendingDelegation) {
+                    const pending = ctx.cesar!.pendingDelegation;
+                    return await commitTurnAndDelegate(pending, input, response, cesarEngineId, false, dispatch, ctx, buildToolTelemetry());
+                  }
+                }
+              } else {
+                // Pure text continuation
+                dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: cleanCont });
+                response = response + '\n\n' + cleanCont;
+              }
+            } catch {
+              // If parse fails, treat as text
+              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: cleanCont });
+              response = response + '\n\n' + cleanCont;
+            }
+            // Stuck-detector: no new tool calls AND no substantive new text → bail
+            const newTools = _toolsUsed.length - _prevToolCount;
+            const newSubstantive = cleanCont.length > 80;
+            if (newTools === 0 && !newSubstantive) {
+              _consecutiveNoProgress++;
+              if (_consecutiveNoProgress >= 2) {
+                dispatch({ type: 'warning', message: 'Cesar: no progress across 2 continuations — stopping.' });
+                break;
+              }
+            } else {
+              _consecutiveNoProgress = 0;
+            }
+            _prevToolCount = _toolsUsed.length;
+          }
+          if (_continuations >= MAX_CONTINUATIONS) {
+            dispatch({ type: 'warning', message: `Cesar reached the auto-continuation cap (${MAX_CONTINUATIONS}). Stopping — re-prompt if the task is incomplete.` });
+          }
+        }
+
         // ── Display final response (skip if already displayed via streaming or tool loop) ──
         if (!streaming && response && !ranToolLoop && !wasStreamed) {
           dispatch({ type: 'spinner-stop' });

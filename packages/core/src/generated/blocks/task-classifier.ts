@@ -64,12 +64,10 @@ export function classifyTaskSemantic(description: string): TaskClass | null {
   }
 
   if (result.status !== 0 || !result.stdout) {
-    // Quietly degrade — don't spam stderr from the hot path.
-    // Exit 2 = fastembed missing. Surface it once per session.
-    if (result.status === 2 && !(globalThis as any).__agonClassifierMissingWarned) {
-      console.warn('[agon] task classifier: fastembed not installed — install with `npm run install:python -w packages/dedup` (regex fast-path still works)');
-      (globalThis as any).__agonClassifierMissingWarned = true;
-    }
+    // Silent degrade. Regex fast-path handles the call. `agon doctor` surfaces
+    // the install hint for users who want the semantic classifier. The
+    // postinstall script attempts the install automatically when Python is
+    // available, so the previous startup warning was redundant noise.
     return null;
   }
 
@@ -89,7 +87,7 @@ export function classifyTaskSemantic(description: string): TaskClass | null {
 /**
  * Layered task classifier. Regex fast-path catches most cases instantly; Python sidecar escalation catches paraphrased / unusual phrasings. Result cached per session.
  */
-// @kern-source: task-classifier:82
+// @kern-source: task-classifier:80
 export function classifyTask(description: string): TaskClass {
   const fast = classifyTaskRegex(description);
   if (fast !== 'other') return fast;

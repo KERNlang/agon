@@ -31,7 +31,7 @@ The FastAPI output has a KERN-authored checker that turns the documented Python 
 npm run check:gaps -w packages/saas-api
 ```
 
-As of `@kernlang/python` 3.5.1 this passes — all five Phase 0 gaps below are closed upstream. The check stays in CI as a regression guard.
+As of kern v3.5.1 this passes — all five Phase 0 gaps below are closed upstream (the package was renamed `@kernlang/fastapi` → `@kernlang/python` in v3.5.3). The check stays in CI as a regression guard.
 
 ## Roadmap
 
@@ -71,7 +71,7 @@ Agon is a primary testbed for `@kernlang/python`. Any limitation hit during tran
 
 ### Phase 0 gaps — closed in kern v3.5.1
 
-All five originally-filed Phase 0 gaps are fixed upstream as of `@kernlang/python` 3.5.1:
+All five originally-filed Phase 0 gaps are fixed upstream as of kern v3.5.1 (then `@kernlang/fastapi`, renamed `@kernlang/python` in v3.5.3):
 
 1. **TS-style file header in Python output** — fixed: `.py` files now emit a Python `#` comment header natively. The local `scripts/fix-python-header.mjs` workaround was deleted.
 2. **Multi-file route emission missing** — fixed: `routes/get_health.py` is now emitted alongside the entrypoint, plus `__init__.py` and a `kern-python-modules.json` manifest.

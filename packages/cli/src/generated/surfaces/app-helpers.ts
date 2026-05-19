@@ -908,18 +908,21 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
     return commandIsLong || summaryIsLong ? 4 : 3;
   }
   if (hasChoices) {
-    const inlineChoiceWidth = questionState.choices.reduce((sum: number, choice: any, index: number) => {
+    const fmtChoiceKey = (choice: any, idx: number) => {
       const key = String(choice?.key ?? '').toUpperCase();
+      if (/^[1-9]$/.test(key)) return key;
+      return idx < 9 ? `${key}/${idx + 1}` : key;
+    };
+    const inlineChoiceWidth = questionState.choices.reduce((sum: number, choice: any, index: number) => {
       const label = String(choice?.label ?? '').trim();
-      return sum + stringDisplayWidth(`[${key}] ${label}`.trim()) + (index > 0 ? 2 : 0);
+      return sum + stringDisplayWidth(`[${fmtChoiceKey(choice, index)}] ${label}`.trim()) + (index > 0 ? 2 : 0);
     }, 0);
     if (questionState.choices.length <= 3 && inlineChoiceWidth <= safeWidth) {
       return promptRows + 1;
     }
-    const choiceRows = questionState.choices.reduce((sum: number, choice: any) => {
-      const key = String(choice?.key ?? '').toUpperCase();
+    const choiceRows = questionState.choices.reduce((sum: number, choice: any, index: number) => {
       const label = String(choice?.label ?? '').trim();
-      return sum + estimateWrappedRowCount(`[${key}] ${label}`.trim(), safeWidth);
+      return sum + estimateWrappedRowCount(`[${fmtChoiceKey(choice, index)}] ${label}`.trim(), safeWidth);
     }, 0);
     return promptRows + Math.max(1, choiceRows);
   }

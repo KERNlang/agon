@@ -1,6 +1,6 @@
 # @agon/saas-api
 
-KERN→FastAPI proof-of-concept. **Internal-only, no auth, not the SaaS launch.** This package exists to validate `@kernlang/fastapi` against Agon's KERN dialect and to give the SaaS roadmap a real testbed.
+KERN→FastAPI proof-of-concept. **Internal-only, no auth, not the SaaS launch.** This package exists to validate `@kernlang/python` against Agon's KERN dialect and to give the SaaS roadmap a real testbed.
 
 ## Status: Phase 0
 
@@ -31,7 +31,7 @@ The FastAPI output has a KERN-authored checker that turns the documented Python 
 npm run check:gaps -w packages/saas-api
 ```
 
-As of `@kernlang/fastapi` 3.5.1 this passes — all five Phase 0 gaps below are closed upstream. The check stays in CI as a regression guard.
+As of `@kernlang/python` 3.5.1 this passes — all five Phase 0 gaps below are closed upstream. The check stays in CI as a regression guard.
 
 ## Roadmap
 
@@ -67,11 +67,11 @@ SSE for forge using KERN's `stream=true` primitive (already proven in `packages/
 
 ## KERN-GAP reporting
 
-Agon is a primary testbed for `@kernlang/fastapi`. Any limitation hit during transpile is filed as a `// KERN-GAP:` comment in the offending `.kern` file. See top-level `KERN-GAPS.md` for accumulated reports.
+Agon is a primary testbed for `@kernlang/python`. Any limitation hit during transpile is filed as a `// KERN-GAP:` comment in the offending `.kern` file. See top-level `KERN-GAPS.md` for accumulated reports.
 
 ### Phase 0 gaps — closed in kern v3.5.1
 
-All five originally-filed Phase 0 gaps are fixed upstream as of `@kernlang/fastapi` 3.5.1:
+All five originally-filed Phase 0 gaps are fixed upstream as of `@kernlang/python` 3.5.1:
 
 1. **TS-style file header in Python output** — fixed: `.py` files now emit a Python `#` comment header natively. The local `scripts/fix-python-header.mjs` workaround was deleted.
 2. **Multi-file route emission missing** — fixed: `routes/get_health.py` is now emitted alongside the entrypoint, plus `__init__.py` and a `kern-python-modules.json` manifest.

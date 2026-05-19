@@ -39,6 +39,9 @@ import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBloc
 import from="../blocks/review.js" names="handleReviewAction"
 import from="../blocks/engine.js" names="DashboardView,OutputBlockView"
 import from="../blocks/plan-view.js" names="PlanProposalView"
+import from="../blocks/todo-list.js" names="TodoList"
+import from="../signals/todos.js" names="Todo" types=true
+import from="../signals/todos.js" names="clearTodos"
 import from="../cesar/session.js" names="saveCesarConversationSnapshot"
 import from="../../generated/surfaces/status.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,BackgroundJobRail,StatusDashboard,ExecutionRailPanel"
 import from="../../generated/blocks/controls.js" names="EnginePicker,ModelPicker,ReviewBlock,CesarPicker"
@@ -127,6 +130,7 @@ screen name=App target=ink
   state name=liveScoreboard type="Scoreboard|null" initial="null"
   state name=liveRationale type="ModeRationale|null" initial="null"
   state name=agentProgress type="Record<string,AgentProgressSnapshot>" initial="{}"
+  state name=todos type="Todo[]" initial="[]"
   state name=planModeQueued type=boolean initial=false safe=false
   state name=autoModeQueued type=boolean initial="() => loadConfig().cesarAutoMode === true" safe=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
@@ -713,6 +717,7 @@ screen name=App target=ink
           agentProgressRef.current = next;
           setAgentProgress(next);
         },
+        setTodos: (updater: Todo[] | ((prev: Todo[]) => Todo[])) => setTodos(updater as any),
       };
     >>>
 
@@ -736,7 +741,7 @@ screen name=App target=ink
         let name=engineId value="String((event as any).engineId ?? '').trim()"
         if cond="engineId"
           do value="activeEnginePidsRef.current.delete(engineId)"
-      let name=state type="OutputState" value="{ liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, liveToolStreams: liveToolStreamsRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} }"
+      let name=state type="OutputState" value="{ liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, liveToolStreams: liveToolStreamsRef.current ?? {}, agentProgress: agentProgressRef.current ?? {}, todos: todos }"
       do value="handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current)"
 
   callback name=askQuestion params="prompt:string" deps="dispatch"
@@ -1765,6 +1770,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       const lowerPanel = (
       <Box flexDirection="column" flexShrink={0}>
         <ChromeBar mode={mode} cwdLabel={workspacePath.split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} />
+        <TodoList todos={todos} />
         <BackgroundJobRail jobs={runningJobs} />
         {startupUseDashboardView && (displayRows.length === 0 || terminalMode === 'native') && (
           <Box flexDirection="column">

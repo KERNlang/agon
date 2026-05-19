@@ -59,6 +59,16 @@ union name=OutputEvent discriminant=type
   variant name=plan-cancelled
     doc "Fired when the user rejects a plan-proposal at the approval prompt. Clears the live-pane proposal slot; does not add a scrollback block."
     field name=plan type=any
+  variant name=todos-set
+    doc "Replace the rolling todo list shown above the composer. Pass an empty array to hide it; pass a non-empty array to declare 'here's what I'm about to do'."
+    field name=todos type="any[]"
+  variant name=todos-update
+    doc "Patch a single todo's state. Used by the plan-executor on step transitions and by any handler that wants to mark a declared todo running/done/failed."
+    field name=id type=string
+    field name=state type=string
+    field name=note type=string optional=true
+  variant name=todos-clear
+    doc "Wipe the rolling todo list."
   variant name=scoreboard
     field name=title type=string
     field name=winner type=string optional=true

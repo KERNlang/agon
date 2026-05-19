@@ -66,10 +66,12 @@ import type { SpeculatorMemberConfig } from '@agon/core';
 
 import { listFiles, getFileDiff } from './file-tracker.js';
 
-// @kern-source: dispatch:43
+import { todosFromPlanSteps } from './todos.js';
+
+// @kern-source: dispatch:44
 export const ORCHESTRATION_ACTIONS: Set<string> = new Set(['forge', 'team-forge', 'brainstorm', 'team-brainstorm', 'tribunal', 'team-tribunal', 'campfire', 'pipeline', 'review']);
 
-// @kern-source: dispatch:45
+// @kern-source: dispatch:46
 export function slashCommandForOrchestrationAction(action: string, task: string, fitnessCmd?: string|null, tribunalMode?: string): string {
   const cleanTask = String(task || '').replace(/\s+/g, ' ').trim();
   const safeTask = cleanTask || '<task>';
@@ -106,7 +108,7 @@ export function slashCommandForOrchestrationAction(action: string, task: string,
 /**
  * Cesar auto-fired an orchestration tool — announce it so the user has visibility, then let it run. Always returns false (never blocks). The equivalent slash command is included in the notice so the user can re-run it explicitly if they want to.
  */
-// @kern-source: dispatch:69
+// @kern-source: dispatch:70
 export function announceCesarAutoOrchestration(action: string, task: string, cb: DispatchCallbacks, fitnessCmd?: string|null, tribunalMode?: string): boolean {
   if (!ORCHESTRATION_ACTIONS.has(action)) {
     return false;
@@ -119,7 +121,7 @@ export function announceCesarAutoOrchestration(action: string, task: string, cb:
 /**
  * Wraps a runAsJob callback with rich ContextThread outcome capture. Uses a message-ID snapshot (not index) so concurrent jobs don't pick up each other's messages in the slice (review finding from OpenCode + Gemini). After fn completes, appends: (1) a structured header with job type, label, duration, status; (2) engine responses added to chatSession DURING this job's execution (by ID diff), so forge/brainstorm/tribunal results land in Cesar's memory.
  */
-// @kern-source: dispatch:83
+// @kern-source: dispatch:84
 export function withThreadOutcome(cwd: string, jobType: string, label: string, fn: ()=>Promise<any>, ctx?: HandlerContext): ()=>Promise<void> {
   return async () => {
     const startedAt = Date.now();
@@ -192,7 +194,7 @@ export function withThreadOutcome(cwd: string, jobType: string, label: string, f
   };
 }
 
-// @kern-source: dispatch:157
+// @kern-source: dispatch:158
 export interface DispatchCallbacks {
   dispatch: Dispatch;
   ctx: HandlerContext;
@@ -234,7 +236,7 @@ export interface DispatchCallbacks {
 /**
  * After /review or Review() finishes, feed ctx.lastReviewResult back into Cesar so the orchestrator can reason about findings and the fix plan.
  */
-// @kern-source: dispatch:194
+// @kern-source: dispatch:195
 export async function absorbReviewResultIntoCesar(sourceInput: string, cb: DispatchCallbacks, launchInputEpoch?: number, launchUserTurns?: number): Promise<void> {
   const review = cb.ctx.lastReviewResult;
   if (!review) {
@@ -248,7 +250,7 @@ export async function absorbReviewResultIntoCesar(sourceInput: string, cb: Dispa
 /**
  * Build the prompt that feeds delegated orchestration results back to Cesar for synthesis or follow-up work.
  */
-// @kern-source: dispatch:204
+// @kern-source: dispatch:205
 export function buildDelegatedContinuationPrompt(message: string): string {
   return ['[DELEGATED RESULT]', message, '', '[CONTINUE]', 'Continue from this delegated result. Do not re-run the same Brainstorm, Tribunal, Campfire, Review, Forge, or Agent unless there is a genuinely new subproblem.', 'If more work is needed, use direct tools or a different focused delegation now. If the task is complete, synthesize the concrete outcome, recommendation, and remaining risk.'].join('\n');
 }
@@ -256,7 +258,7 @@ export function buildDelegatedContinuationPrompt(message: string): string {
 /**
  * Format a Brainstorm winner as a Cesar continuation payload. Brainstorm is an input to Cesar, not a terminal answer.
  */
-// @kern-source: dispatch:209
+// @kern-source: dispatch:210
 export function buildBrainstormContinuationMessage(source: string, question: string|undefined, result: any): string {
   const bids = Array.isArray(result?.bids) ? result.bids : [];
   const bidSummary = bids.map((b: any) => {
@@ -274,7 +276,7 @@ export function buildBrainstormContinuationMessage(source: string, question: str
 /**
  * Collect recent engine messages for post-delegation Cesar synthesis.
  */
-// @kern-source: dispatch:225
+// @kern-source: dispatch:226
 export function collectRecentEngineContext(ctx: HandlerContext, maxMessages?: number, maxChars?: number): string {
   const recentChat = ctx.chatSession?.messages?.slice(-(maxMessages ?? 12)) ?? [];
   const cap = maxChars ?? 1500;
@@ -284,7 +286,7 @@ export function collectRecentEngineContext(ctx: HandlerContext, maxMessages?: nu
 /**
  * Delete persisted workspace conversation plus per-engine session state/tool caches so /clear and /clean start with a genuinely empty context.
  */
-// @kern-source: dispatch:232
+// @kern-source: dispatch:233
 export function clearPersistedSessionContext(ctx: HandlerContext): string[] {
   const engineIds = new Set<string>();
   const add = (value: unknown) => {
@@ -318,7 +320,7 @@ export function clearPersistedSessionContext(ctx: HandlerContext): string[] {
 /**
  * Guard post-delegation Cesar continuation so long-running jobs do not answer an old turn after the user has moved on.
  */
-// @kern-source: dispatch:264
+// @kern-source: dispatch:265
 export function shouldAutoContinueDelegatedResult(launchInputEpoch?: number, launchUserTurns?: number, ctx?: HandlerContext): boolean {
   if (!ctx) {
     return true;
@@ -338,7 +340,7 @@ export function shouldAutoContinueDelegatedResult(launchInputEpoch?: number, lau
 /**
  * Feed a delegated result back through the full Cesar path, not the lightweight summarizer. This lets Cesar call tools, propose plans, or launch follow-up agents instead of being cut off after another model returns.
  */
-// @kern-source: dispatch:277
+// @kern-source: dispatch:278
 export async function continueCesarAfterResult(message: string, cb: DispatchCallbacks, launchInputEpoch?: number, launchUserTurns?: number): Promise<void> {
   if (!shouldAutoContinueDelegatedResult(launchInputEpoch, launchUserTurns, cb.ctx)) {
     cb.dispatch({ type: 'info', message: 'Skipped Cesar follow-up — user moved on while delegated job was running.' });
@@ -355,7 +357,7 @@ export async function continueCesarAfterResult(message: string, cb: DispatchCall
   }
 }
 
-// @kern-source: dispatch:295
+// @kern-source: dispatch:296
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
@@ -364,7 +366,7 @@ export interface DispatchResult {
 /**
  * Handle mode-switching intents. Returns true if consumed.
  */
-// @kern-source: dispatch:299
+// @kern-source: dispatch:300
 export function handleModeSwitch(intentType: string, topic: string|undefined, question: string|undefined, cb: DispatchCallbacks): boolean {
   if (intentType === 'campfire' && !topic) {
     cb.setMode('campfire');
@@ -394,7 +396,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
 /**
  * Extract a fitness command from conversational execution input while keeping the task clean.
  */
-// @kern-source: dispatch:327
+// @kern-source: dispatch:328
 export function extractExecutionSpec(input: string): { task:string; fitnessCmd:string|null } {
   const fitnessMatch = FITNESS_PATTERN.exec(input);
   const fitnessCmd = fitnessMatch ? fitnessMatch[1].trim() : null;
@@ -405,7 +407,7 @@ export function extractExecutionSpec(input: string): { task:string; fitnessCmd:s
 /**
  * Compact user-facing Cesar recovery messages. Keep these short because they render in the live status/transcript path during failure handling.
  */
-// @kern-source: dispatch:335
+// @kern-source: dispatch:336
 export function formatCesarRecoveryStatus(stage: 'delegation'|'rebuild'|'retry'|'acting'|'failed', subject: string, detail?: string): string {
   const suffix = detail ? ` - ${detail}` : '';
   switch (stage) {
@@ -427,7 +429,7 @@ export function formatCesarRecoveryStatus(stage: 'delegation'|'rebuild'|'retry'|
 /**
  * Normalize the cross-engine Cesar fallback policy. Defaults to auto: when the configured Cesar engine returns no response, Agon silently swaps to another available engine and attributes its output as Cesar so the user perceives one persona. 'ask' restores the legacy prompt-and-show-chrome behavior; 'off' never swaps.
  */
-// @kern-source: dispatch:355
+// @kern-source: dispatch:356
 export function normalizeCesarActingFallbackMode(value: any): 'ask'|'auto'|'off' {
   const mode = String(value ?? 'auto').trim().toLowerCase();
   if (mode === 'ask' || mode === 'prompt' || mode === 'confirm') {
@@ -439,13 +441,13 @@ export function normalizeCesarActingFallbackMode(value: any): 'ask'|'auto'|'off'
   return 'auto';
 }
 
-// @kern-source: dispatch:365
+// @kern-source: dispatch:366
 export function countTrackedUserTurns(ctx: HandlerContext): number {
   const messages = ctx.chatSession?.messages ?? [];
   return messages.filter((m: any) => m.role === 'user').length;
 }
 
-// @kern-source: dispatch:370
+// @kern-source: dispatch:371
 export function shouldAutoResumeAgentResult(result: any, launchInputEpoch: number, launchUserTurns: number, ctx: HandlerContext): boolean {
   if (!result || typeof result !== 'object') {
     return false;
@@ -463,7 +465,7 @@ export function shouldAutoResumeAgentResult(result: any, launchInputEpoch: numbe
   return true;
 }
 
-// @kern-source: dispatch:383
+// @kern-source: dispatch:384
 export function buildAgentAutoResumePrompt(originalTask: string, result: any): string {
   if (!result || typeof result !== 'object') {
     return '';
@@ -494,7 +496,7 @@ export function buildAgentAutoResumePrompt(originalTask: string, result: any): s
   return lines.join('\n');
 }
 
-// @kern-source: dispatch:408
+// @kern-source: dispatch:409
 export async function resumeCesarAfterAgent(originalTask: string, launchInputEpoch: number, launchUserTurns: number, result: any, cb: DispatchCallbacks): Promise<void> {
   if (!shouldAutoResumeAgentResult(result, launchInputEpoch, launchUserTurns, cb.ctx)) {
     return;
@@ -507,7 +509,7 @@ export async function resumeCesarAfterAgent(originalTask: string, launchInputEpo
   await routeWithCesar(prompt, [], cb);
 }
 
-// @kern-source: dispatch:418
+// @kern-source: dispatch:419
 export async function runAgentJobWithAutoResume(originalTask: string, cb: DispatchCallbacks, runner: ()=>Promise<any>): Promise<void> {
   const launchInputEpoch = cb.ctx.inputEpoch ?? 0;
   const launchUserTurns = countTrackedUserTurns(cb.ctx);
@@ -518,7 +520,7 @@ export async function runAgentJobWithAutoResume(originalTask: string, cb: Dispat
 /**
  * Build the message used to feed completed review findings back into Cesar so the orchestrator knows what the reviewer found and can propose the fix path.
  */
-// @kern-source: dispatch:425
+// @kern-source: dispatch:426
 export function buildReviewAbsorptionPrompt(sourceInput: string, review: { engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number }): string {
   const output = String(review.reviewOutput ?? '').trim();
   const cappedOutput = (output.length > 12000) ? `${output.slice(0, 12000)}\n... [review output truncated]` : output;
@@ -530,7 +532,7 @@ export function buildReviewAbsorptionPrompt(sourceInput: string, review: { engin
 /**
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
-// @kern-source: dispatch:434
+// @kern-source: dispatch:435
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
       try {
@@ -1250,7 +1252,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
 /**
  * Return true for natural approval replies users type after Cesar says go/run it.
  */
-// @kern-source: dispatch:1152
+// @kern-source: dispatch:1153
 export function isCesarPlanApprovalInput(input: string): boolean {
   const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
   return /^(?:y|yes|yes go|yes please|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute|ok|okay|sure)$/i.test(text);
@@ -1259,7 +1261,7 @@ export function isCesarPlanApprovalInput(input: string): boolean {
 /**
  * Return true for approval phrases strong enough to recover a saved pending plan even when no plan panel is active.
  */
-// @kern-source: dispatch:1158
+// @kern-source: dispatch:1159
 export function isStrongCesarPlanApprovalInput(input: string): boolean {
   const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
   return /^(?:yes go|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute)$/i.test(text);
@@ -1268,7 +1270,7 @@ export function isStrongCesarPlanApprovalInput(input: string): boolean {
 /**
  * Find the most relevant pending Cesar plan: proposed plan first, active plan second, then latest saved awaiting_approval plan.
  */
-// @kern-source: dispatch:1164
+// @kern-source: dispatch:1165
 export function findPendingCesarPlan(ctx: HandlerContext): CesarPlan | null {
   const proposed = ctx.cesar?.proposedPlan as CesarPlan | undefined;
   if (proposed && proposed.state === 'awaiting_approval') {
@@ -1285,7 +1287,7 @@ export function findPendingCesarPlan(ctx: HandlerContext): CesarPlan | null {
 /**
  * Return the in-session paused/running plan if any. No disk fallback — stale persisted plans must be resumed explicitly via `/plan resume <id>` so innocuous words like 'go' or 'continue' cannot resurrect them.
  */
-// @kern-source: dispatch:1176
+// @kern-source: dispatch:1177
 export function findResumableCesarPlan(ctx: HandlerContext): CesarPlan | null {
   const active = ctx.activePlan as CesarPlan | undefined;
   if (active && (active.state === 'paused' || active.state === 'running')) {
@@ -1297,7 +1299,7 @@ export function findResumableCesarPlan(ctx: HandlerContext): CesarPlan | null {
 /**
  * Treat natural approval text as /approve only when a live pending plan is visible in this session.
  */
-// @kern-source: dispatch:1184
+// @kern-source: dispatch:1185
 export function shouldApprovePendingCesarPlanInput(input: string, ctx: HandlerContext): boolean {
   const text = String(input ?? '').trim();
   if (!text || text.startsWith('/')) {
@@ -1312,7 +1314,7 @@ export function shouldApprovePendingCesarPlanInput(input: string, ctx: HandlerCo
 /**
  * Return true when the user is clearly telling a paused/running plan to continue.
  */
-// @kern-source: dispatch:1195
+// @kern-source: dispatch:1196
 export function isCesarPlanResumeInput(input: string): boolean {
   const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
   return /^(?:go|run|resume|continue|proceed|start)(?:\b|$)/i.test(text) || /^(?:do it|do so|keep going|carry on|ok do last part|do last part|last part)$/i.test(text);
@@ -1321,7 +1323,7 @@ export function isCesarPlanResumeInput(input: string): boolean {
 /**
  * Return true for short status checks that should be answered from plan state instead of routed to Cesar chat.
  */
-// @kern-source: dispatch:1201
+// @kern-source: dispatch:1202
 export function isCesarPlanStatusInput(input: string): boolean {
   const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
   return /^(?:done|done yet|status|progress|what happened|what went wrong|what did you do|what yu do|what you do|why stop|why stopped|why did it stop|are you doing something|are you still working|still working|is it running|where are we)$/i.test(text);
@@ -1330,7 +1332,7 @@ export function isCesarPlanStatusInput(input: string): boolean {
 /**
  * Render a concise persisted plan status so Cesar chat cannot hallucinate whether a plan is running.
  */
-// @kern-source: dispatch:1207
+// @kern-source: dispatch:1208
 export function formatCesarPlanRuntimeStatus(plan: CesarPlan): string {
   const total = plan.steps.length;
   const done = plan.steps.filter((s: any) => s.state === 'done').length;
@@ -1352,7 +1354,7 @@ export function formatCesarPlanRuntimeStatus(plan: CesarPlan): string {
 /**
  * Compute resume prompt context: how many steps done/failed/remain, which step failed, and estimated cost to finish.
  */
-// @kern-source: dispatch:1223
+// @kern-source: dispatch:1224
 export function buildResumePromptContext(plan: CesarPlan): { doneCount:number; failedCount:number; remainingCount:number; failedStep:any|null; remainingCostUsd:number; remainingTokens:number } {
   const steps = plan.steps ?? [];
   const doneCount = steps.filter((s: any) => s.state === 'done').length;
@@ -1369,7 +1371,7 @@ export function buildResumePromptContext(plan: CesarPlan): { doneCount:number; f
 /**
  * Mark done steps as skipped so executePlan skips them on resume. Keeps failed steps as pending (unless review-exhausted).
  */
-// @kern-source: dispatch:1237
+// @kern-source: dispatch:1238
 export function skipCompletedSteps(plan: CesarPlan): CesarPlan {
   const cyclesUsedAtResume = (plan as any).reviewCyclesUsed ?? 0;
   const newSteps = plan.steps.map((s: any) => {
@@ -1385,7 +1387,7 @@ export function skipCompletedSteps(plan: CesarPlan): CesarPlan {
 /**
  * Resume a paused or stale-running Cesar plan through the shared executor path. Shows a resume prompt with context before executing.
  */
-// @kern-source: dispatch:1251
+// @kern-source: dispatch:1252
 export async function resumeCesarPlan(plan: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const ctx = buildResumePromptContext(plan);
   const lines = [
@@ -1442,7 +1444,7 @@ export async function resumeCesarPlan(plan: CesarPlan, cb: DispatchCallbacks): P
 /**
  * Approve and execute the pending CesarPlan, if one exists. Backs /approve and natural approval aliases like go.
  */
-// @kern-source: dispatch:1306
+// @kern-source: dispatch:1307
 export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<boolean> {
   const pending = findPendingCesarPlan(cb.ctx);
   if (!pending) {
@@ -1469,7 +1471,7 @@ export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<bo
 /**
  * Ask a keyboard-choice question in the composer instead of falling back to a blank free-text field.
  */
-// @kern-source: dispatch:1326
+// @kern-source: dispatch:1327
 export function askChoiceQuestion(cb: DispatchCallbacks, prompt: string, choices: any[], defaultChoiceKey?: string): Promise<string> {
   return new Promise<string>((resolve) => {
     cb.dispatch({ type: 'question', prompt, choices, defaultChoiceKey, resolve } as any);
@@ -1479,7 +1481,7 @@ export function askChoiceQuestion(cb: DispatchCallbacks, prompt: string, choices
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */
-// @kern-source: dispatch:1334
+// @kern-source: dispatch:1335
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {
@@ -2807,7 +2809,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 /**
  * Activate a proposed Cesar plan. Auto-approved plans execute immediately; manual approval is intentionally non-blocking so the REPL returns to idle and accepts go, yes, or /approve through the normal composer.
  */
-// @kern-source: dispatch:2660
+// @kern-source: dispatch:2661
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -2854,7 +2856,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2710
+// @kern-source: dispatch:2711
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2913,6 +2915,8 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
     }
   };
 
+  cb.dispatch({ type: 'todos-set', todos: todosFromPlanSteps(initialPlan.steps) } as any);
+
   return {
     onStepStart: (stepId: string) => {
       currentPlan = markStepRunning(currentPlan, stepId);
@@ -2931,6 +2935,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
         status: 'running',
       } as any);
       cb.dispatch({ type: 'info', message: msg });
+      cb.dispatch({ type: 'todos-update', id: stepId, state: 'running' } as any);
     },
     onStepDone: (stepId: string, result: CesarStepResult) => {
       const step = currentPlan.steps.find((s: any) => s.id === stepId);
@@ -2947,6 +2952,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
         error: result.error,
       } as any);
       cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} \u2014 ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s, $${result.actualCostUsd.toFixed(4)})` });
+      cb.dispatch({ type: 'todos-update', id: stepId, state: result.status === 'success' ? 'done' : 'failed', note: result.error ? result.error.slice(0, 80) : undefined } as any);
     },
     onPlanUpdate: (updated: CesarPlan) => {
       const previousState = currentPlan.state;
@@ -2984,7 +2990,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * Return true when a failed plan step looks like it was interrupted by stall/fallback handling rather than a semantic task failure.
  */
-// @kern-source: dispatch:2838
+// @kern-source: dispatch:2843
 export function failedPlanStepIsFallbackRetryable(step: any): boolean {
   if (!step || step.state !== 'failed') {
     return false;
@@ -3000,7 +3006,7 @@ export function failedPlanStepIsFallbackRetryable(step: any): boolean {
 /**
  * Reset one retryable failed plan step and bind it to the fallback engine. The caller runs executePlan again with a fresh abort controller.
  */
-// @kern-source: dispatch:2849
+// @kern-source: dispatch:2854
 export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string): CesarPlan|null {
   const engine = String(fallbackEngine ?? '').trim();
   if (!engine || !Array.isArray(plan.steps)) return null;
@@ -3040,7 +3046,7 @@ export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2887
+// @kern-source: dispatch:2892
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx, cb.dispatch);
   let abortController = new AbortController();
@@ -3111,7 +3117,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2956
+// @kern-source: dispatch:2961
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const FORGE_LIKE = new Set(['forge', 'teamforge', 'pipeline']);

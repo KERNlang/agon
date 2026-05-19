@@ -8,10 +8,14 @@ import { codeBlockBuffer } from '../../code-buffer.js';
 
 import { loadConfig, configSet } from '@agon/core';
 
+import type { Todo } from './todos.js';
+
+import { setTodos, updateTodoState, clearTodos } from './todos.js';
+
 /**
  * Live state for a running autonomous agent session. Fed by agent-* OutputEvents, rendered by surfaces/agent.kern::AgentProgressView. teamId groups members of a single AgentTeam run for explicit clear-by-team. completedAt is set by agent-step-end and consumed by the TTL pruner in app.kern.
  */
-// @kern-source: output:10
+// @kern-source: output:12
 export interface AgentProgressSnapshot {
   engineId: string;
   turnIndex: number;
@@ -35,23 +39,24 @@ export interface AgentProgressSnapshot {
 /**
  * Per-engine streaming buffer. Sharding on engineId prevents N concurrent agents from clobbering each other's in-flight tokens.
  */
-// @kern-source: output:30
+// @kern-source: output:32
 export interface StreamingEntry {
   engineId: string;
   content: string;
   startedAt: number;
 }
 
-// @kern-source: output:36
+// @kern-source: output:38
 export interface OutputState {
   liveSpinner: {message:string,color?:number,engineId?:string}|null;
   liveProgress: EngineProgress[]|null;
   streamingText: Record<string,StreamingEntry>;
   liveToolStreams: Record<string,any>;
   agentProgress: Record<string,AgentProgressSnapshot>;
+  todos: Todo[];
 }
 
-// @kern-source: output:43
+// @kern-source: output:46
 export interface OutputActions {
   setLiveSpinner: (val:any) => void;
   setLiveProgress: (val:EngineProgress[]|null) => void;
@@ -71,18 +76,19 @@ export interface OutputActions {
   setLiveRationale: (val:any) => void;
   setAgentProgress: (updater:Record<string,AgentProgressSnapshot> | ((prev:Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => void;
   clearAgentProgressByTeam: (teamId:string) => void;
+  setTodos: (updater:Todo[] | ((prev:Todo[]) => Todo[])) => void;
 }
 
-// @kern-source: output:64
+// @kern-source: output:68
 export const _thinkingBuffer: {engineId:string,content:string} = { engineId: '', content: '' };
 
-// @kern-source: output:67
+// @kern-source: output:71
 export const _permissionQueue: Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>;
 
-// @kern-source: output:69
+// @kern-source: output:73
 export const _sessionAllowList: string[] = [] as string[];
 
-// @kern-source: output:71
+// @kern-source: output:75
 export function getSessionAllowList(): string[] {
   return _sessionAllowList;
 }
@@ -90,7 +96,7 @@ export function getSessionAllowList(): string[] {
 /**
  * Reject all queued permissions and clear the queue. Called on interrupt/cancel.
  */
-// @kern-source: output:73
+// @kern-source: output:77
 export function clearPermissionQueue(): void {
   while (_permissionQueue.length > 0) {
     const entry = _permissionQueue.shift()!;
@@ -101,25 +107,25 @@ export function clearPermissionQueue(): void {
 /**
  * Drop any buffered thinking-chunk content. Called on interrupt / clear / SIGINT so the next turn doesn't emit stale content as a fresh block.
  */
-// @kern-source: output:80
+// @kern-source: output:84
 export function clearThinkingBuffer(): void {
   _thinkingBuffer.engineId = '';
   _thinkingBuffer.content = '';
 }
 
-// @kern-source: output:92
+// @kern-source: output:96
 export const TOOL_CALL_GROUP_FLUSH_MS: number = 500;
 
-// @kern-source: output:94
+// @kern-source: output:98
 export const _pendingToolCalls: any[] = [] as any[];
 
-// @kern-source: output:96
+// @kern-source: output:100
 export const _pendingFlushTimer: { timer: any, actions: any } = ({ timer: null, actions: null }) as any;
 
-// @kern-source: output:99
+// @kern-source: output:103
 export const _liveToolStreams: Record<string,any> = {} as Record<string, any>;
 
-// @kern-source: output:101
+// @kern-source: output:105
 function toolCallKey(event: any): string {
   return [String(event?.engineId ?? ''), String(event?.tool ?? ''), String(event?.input ?? '')].join('\x00');
 }
@@ -127,7 +133,7 @@ function toolCallKey(event: any): string {
 /**
  * Emit any buffered tool-call events as a single tool-call-group block.
  */
-// @kern-source: output:105
+// @kern-source: output:109
 export function flushPendingToolCalls(actions: OutputActions): void {
   if (_pendingFlushTimer.timer) {
     clearTimeout(_pendingFlushTimer.timer);
@@ -142,7 +148,7 @@ export function flushPendingToolCalls(actions: OutputActions): void {
 /**
  * Debounce-flush pending tool-calls after a quiet period — covers turns that end on a tool-call without any trailing event.
  */
-// @kern-source: output:118
+// @kern-source: output:122
 export function schedulePendingFlush(actions: OutputActions): void {
   _pendingFlushTimer.actions = actions;
   if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
@@ -155,7 +161,7 @@ export function schedulePendingFlush(actions: OutputActions): void {
 /**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
-// @kern-source: output:129
+// @kern-source: output:133
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
@@ -175,7 +181,7 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
-// @kern-source: output:146
+// @kern-source: output:150
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -235,7 +241,7 @@ function _showNextPermission(actions: OutputActions): void {
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
-// @kern-source: output:203
+// @kern-source: output:207
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
@@ -348,10 +354,28 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       }
       return;
     }
+    case 'todos-set': {
+      const incoming = ((event as any).todos ?? []) as Todo[];
+      actions.setTodos(setTodos(incoming));
+      return;
+    }
+    case 'todos-update': {
+      const id = String((event as any).id ?? '');
+      const newState = String((event as any).state ?? '');
+      const note = (event as any).note as string | undefined;
+      if (!id || !newState) return;
+      actions.setTodos((prev) => updateTodoState(prev, id, newState, note));
+      return;
+    }
+    case 'todos-clear': {
+      actions.setTodos(clearTodos());
+      return;
+    }
     case 'clear':
       actions.clearBlocks();
       actions.setStreamingText({});
       actions.setAgentProgress({});
+      actions.setTodos(clearTodos());
       actions.setQuestionState(null);
       actions.setPendingPlanProposal(null);
       _pendingToolCalls.length = 0;

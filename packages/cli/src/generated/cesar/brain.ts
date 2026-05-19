@@ -834,7 +834,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 break; // Exit stream loop, process whatever we have
               }
               dispatch({ type: 'spinner-stop' });
-              return { delegated: false, responded: false };
+              const errBody = (chunk.content ?? '').toString().slice(0, 200) || 'unknown stream error';
+              dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) stream error before any output: ${errBody}. Try again or switch engine with /engine.` });
+              clearInterval(heartbeat);
+              processMcpSideChannel();
+              if (mcpWatcherInterval) clearInterval(mcpWatcherInterval);
+              return { delegated: false, responded: false, decisionReason: 'pre-stream-error' };
             }
 
             if (chunk.type === 'done') break;
@@ -1819,6 +1824,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         dispatch({ type: 'warning', message: 'Cesar used tools but produced no final answer; treating this turn as incomplete and recovering.' });
         return { mode: usedQuickNero ? 'self-nero' : 'self', delegated: false, responded: false, decisionReason: usedQuickNero ? 'tool-loop-self-challenge-no-answer' : 'tool-loop-no-answer', ...buildToolTelemetry() };
       }
+      dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) produced no output this turn. The engine may have timed out, hit a rate limit, or returned a malformed response. Try again, or run /engine to switch.` });
       return { mode: usedQuickNero ? 'self-nero' : 'self', delegated: false, responded: false, decisionReason: 'empty-turn', ...buildToolTelemetry() };
     } finally {
         if (restoreFastPathMode) {

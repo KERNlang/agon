@@ -5,7 +5,7 @@ type name=FastApiGeneratedGap alias="{ id: string; severity: 'blocking' | 'impor
 type name=FastApiGeneratedGapReport alias="{ ok: boolean; gaps: FastApiGeneratedGap[]; checkedFiles: string[] }" export=true
 
 fn name=analyzeFastApiGenerated params="generatedDir:string" returns=FastApiGeneratedGapReport export=true
-  doc "Static checks for known @kernlang/fastapi output gaps Agon currently works around or cannot run through."
+  doc "Static checks for known @kernlang/python output gaps Agon currently works around or cannot run through."
   handler <<<
     const gaps: FastApiGeneratedGap[] = [];
     const checkedFiles: string[] = [];

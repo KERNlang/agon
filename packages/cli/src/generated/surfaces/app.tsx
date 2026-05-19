@@ -76,6 +76,12 @@ import { DashboardView, OutputBlockView } from '../blocks/engine.js';
 
 import { PlanProposalView } from '../blocks/plan-view.js';
 
+import { TodoList } from '../blocks/todo-list.js';
+
+import type { Todo } from '../signals/todos.js';
+
+import { clearTodos } from '../signals/todos.js';
+
 import { saveCesarConversationSnapshot } from '../cesar/session.js';
 
 import { SpinnerBlock, StatusBar, CesarStatusStrip, BackgroundJobRail, StatusDashboard, ExecutionRailPanel } from '../../generated/surfaces/status.js';
@@ -128,7 +134,7 @@ import { COMPOSER_HISTORY_LIMIT, probeEngineVitals, toolDetailViewportRows, find
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:81
+// @kern-source: app:84
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -335,6 +341,8 @@ export function App() {
   const setLiveRationale = useMemo(() => __inkSafe(_setLiveRationaleRaw), [_setLiveRationaleRaw]);
   const [agentProgress, _setAgentProgressRaw] = useState<Record<string,AgentProgressSnapshot>>({});
   const setAgentProgress = useMemo(() => __inkSafe(_setAgentProgressRaw), [_setAgentProgressRaw]);
+  const [todos, _setTodosRaw] = useState<Todo[]>([]);
+  const setTodos = useMemo(() => __inkSafe(_setTodosRaw), [_setTodosRaw]);
   const [planModeQueued, setPlanModeQueued] = useState<boolean>(false);
   const [autoModeQueued, setAutoModeQueued] = useState<boolean>(() => loadConfig().cesarAutoMode === true);
   const [cesarMemory, _setCesarMemoryRaw] = useState<any>(() => createCesarMemory());
@@ -733,6 +741,7 @@ export function App() {
               agentProgressRef.current = next;
               setAgentProgress(next);
             },
+            setTodos: (updater: Todo[] | ((prev: Todo[]) => Todo[])) => setTodos(updater as any),
           };
   }, []);
 
@@ -839,7 +848,7 @@ export function App() {
         activeEnginePidsRef.current.delete(engineId);
       }
     }
-    const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, liveToolStreams: liveToolStreamsRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} };
+    const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, liveToolStreams: liveToolStreamsRef.current ?? {}, agentProgress: agentProgressRef.current ?? {}, todos: todos };
     handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
   }, [mode]);
 
@@ -2032,6 +2041,7 @@ export function App() {
   const lowerPanel = (
   <Box flexDirection="column" flexShrink={0}>
     <ChromeBar mode={mode} cwdLabel={workspacePath.split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} />
+    <TodoList todos={todos} />
     <BackgroundJobRail jobs={runningJobs} />
     {startupUseDashboardView && (displayRows.length === 0 || terminalMode === 'native') && (
       <Box flexDirection="column">
@@ -2359,22 +2369,22 @@ export function App() {
   );
 }
 
-// @kern-source: app:71
+// @kern-source: app:74
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:73
+// @kern-source: app:76
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:75
+// @kern-source: app:78
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:77
+// @kern-source: app:80
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:79
+// @kern-source: app:82
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2096
+// @kern-source: app:2102
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

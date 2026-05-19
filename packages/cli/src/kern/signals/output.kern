@@ -6,6 +6,8 @@ import from="../../handlers/types.js" names="OutputEvent,EngineProgress" types=t
 import from="../blocks/markdown.js" names="parseMarkdownBlocks,cleanEngineOutput"
 import from="../../code-buffer.js" names="codeBlockBuffer"
 import from="@agon/core" names="loadConfig,configSet"
+import from="./todos.js" names="Todo" types=true
+import from="./todos.js" names="setTodos,updateTodoState,clearTodos"
 
 interface name=AgentProgressSnapshot
   doc "Live state for a running autonomous agent session. Fed by agent-* OutputEvents, rendered by surfaces/agent.kern::AgentProgressView. teamId groups members of a single AgentTeam run for explicit clear-by-team. completedAt is set by agent-step-end and consumed by the TTL pruner in app.kern."
@@ -39,6 +41,7 @@ interface name=OutputState
   field name=streamingText type="Record<string,StreamingEntry>"
   field name=liveToolStreams type="Record<string,any>"
   field name=agentProgress type="Record<string,AgentProgressSnapshot>"
+  field name=todos type="Todo[]"
 
 interface name=OutputActions
   field name=setLiveSpinner type="(val:any) => void"
@@ -59,6 +62,7 @@ interface name=OutputActions
   field name=setLiveRationale type="(val:any) => void"
   field name=setAgentProgress type="(updater:Record<string,AgentProgressSnapshot> | ((prev:Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => void"
   field name=clearAgentProgressByTeam type="(teamId:string) => void"
+  field name=setTodos type="(updater:Todo[] | ((prev:Todo[]) => Todo[])) => void"
 
 // ── Thinking buffer — coalesces thinking-chunk events into a single block ────
 const name=_thinkingBuffer type="{engineId:string,content:string}" value={{ { engineId: '', content: '' } }}
@@ -314,10 +318,28 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         }
         return;
       }
+      case 'todos-set': {
+        const incoming = ((event as any).todos ?? []) as Todo[];
+        actions.setTodos(setTodos(incoming));
+        return;
+      }
+      case 'todos-update': {
+        const id = String((event as any).id ?? '');
+        const newState = String((event as any).state ?? '');
+        const note = (event as any).note as string | undefined;
+        if (!id || !newState) return;
+        actions.setTodos((prev) => updateTodoState(prev, id, newState, note));
+        return;
+      }
+      case 'todos-clear': {
+        actions.setTodos(clearTodos());
+        return;
+      }
       case 'clear':
         actions.clearBlocks();
         actions.setStreamingText({});
         actions.setAgentProgress({});
+        actions.setTodos(clearTodos());
         actions.setQuestionState(null);
         actions.setPendingPlanProposal(null);
         _pendingToolCalls.length = 0;

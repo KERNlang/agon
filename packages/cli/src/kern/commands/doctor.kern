@@ -56,7 +56,14 @@ fn name=diagnoseEngineDoctorEntry params="engine:EngineDefinition, registry:Engi
     if (engine.binary) backendParts.push(hasCliBackend ? `cli:${binaryPath}` : `cli missing:${engine.binary}`);
     if (hasApi) {
       const format = engine.api?.format ?? 'anthropic';
-      backendParts.push(apiKeySet ? `api:${format}:${engine.api?.model ?? 'model?'}` : `api key missing:${apiKeyEnv}`);
+      // A missing API key is only a problem when the API is the engine's ONLY
+      // path. CLI-authed engines (codex/claude log in via their own CLI) keep
+      // the API as an optional fallback — don't frame the unset key as "missing".
+      backendParts.push(apiKeySet
+        ? `api:${format}:${engine.api?.model ?? 'model?'}`
+        : hasCliBackend
+          ? `api:${format} (key optional)`
+          : `api key missing:${apiKeyEnv}`);
     }
     const backend = backendParts.join(' + ') || 'none';
     const modes = [
@@ -81,9 +88,15 @@ fn name=diagnoseEngineDoctorEntry params="engine:EngineDefinition, registry:Engi
         status = 'warn';
         details.push('CLI missing; API fallback available');
       }
-      if (hasApi && !apiKeySet) {
+      // Only warn about an unset API key when the CLI backend isn't carrying the
+      // engine. When CLI auth is active (codex/claude), the API key is an unused
+      // optional fallback — flagging it as a warn is noise that scares users off
+      // the engines that actually work most reliably.
+      if (hasApi && !apiKeySet && !hasCliBackend) {
         status = 'warn';
         details.push(`API key ${apiKeyEnv} not set`);
+      } else if (hasApi && !apiKeySet && hasCliBackend) {
+        details.push(`CLI auth active (${apiKeyEnv} optional)`);
       }
       if (enabled && !engine.agent && !engine.exec) {
         status = 'warn';

@@ -390,6 +390,8 @@ export async function runForge(options: ForgeOptions & { onResult?: (engineId:st
       options.cwd,
       hcTimeoutSec,
       HEALTH_CHECK_DEFAULT_PROMPT,
+      config.forgeHealthCheckApiTimeoutSec,
+      config.forgeMaxParallelApi,
     );
     onEvent?.({ type: 'forge:health-check-done', data: { healthy: summary.healthy, unhealthy: summary.unhealthy, totalMs: summary.totalMs } });
     for (const skip of summary.unhealthy) {

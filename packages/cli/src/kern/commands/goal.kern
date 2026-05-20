@@ -1,0 +1,272 @@
+// ── agon goal — autonomous controller CLI ──────────────────────────────
+// Drives a finite, machine-verifiable queue (e.g. .kern-gaps/) to completion
+// unattended: per task, forge implements in a throwaway worktree, the diff is
+// witnessed + mutation-witnessed, the frozen gate runs once, an ensemble
+// review gates the commit, then one commit lands on the goal branch. The loop
+// itself lives in @agon/forge (runGoalController); this command wires the real
+// engines (forge = IMPLEMENT, runReviewCore = REVIEW), loads the queue, and
+// owns push safety (P0 never auto-pushes — it stops at the goal branch).
+// See AGON-GOAL-DESIGN.md.
+
+import from="citty" names="defineCommand"
+import from="node:fs" names="readFileSync,readdirSync,existsSync,statSync"
+import from="node:path" names="resolve,relative"
+import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,applyPatch"
+import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
+import from="@agon/adapter-cli" names="createCliAdapter"
+import from="@agon/forge" names="runForge,runGoalController,loadJournal,summarizeGoal,goalDir"
+import from="../handlers/review.js" names="runReviewCore"
+import from="../blocks/output-format.js" names="header,success,fail,warn,info,bold,cyan,green"
+
+const name=goalCommand type=any
+  handler <<<
+    (() => {
+    const slug = (s: string): string =>
+      String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 128);
+
+    const loadQueue = (queuePath: string): Array<{ id: string; source: string; dependsOn?: string[] }> => {
+      const abs = resolve(queuePath);
+      if (!existsSync(abs)) throw new Error(`queue not found: ${queuePath}`);
+      const st = statSync(abs);
+      if (st.isDirectory()) {
+        const used = new Set<string>();
+        return readdirSync(abs)
+          .filter((f) => !f.startsWith('.'))
+          .sort()
+          .map((f, i) => {
+            let id = slug(f) || `task-${i}`;
+            // disambiguate slug collisions (e.g. a.md / a.txt both -> "a")
+            let n = 1; const base = id;
+            while (used.has(id)) id = `${base}-${n++}`;
+            used.add(id);
+            return { id, source: f };
+          });
+      }
+      if (abs.endsWith('.jsonl') || abs.endsWith('.json')) {
+        return readFileSync(abs, 'utf-8').split('\n').map((l) => l.trim()).filter(Boolean).map((line, i) => {
+          const o = JSON.parse(line) as { id?: string; source?: string; dependsOn?: string[] };
+          const id = slug(o.id ?? '') || `task-${i}`;
+          return { id, source: String(o.source ?? o.id ?? id), dependsOn: o.dependsOn };
+        });
+      }
+      throw new Error(`unsupported queue ${queuePath} — expected a directory or a .jsonl/.json file`);
+    };
+
+    return defineCommand({
+      meta: {
+        name: 'goal',
+        description: 'Autonomously drive a task queue (e.g. .kern-gaps/) to completion: forge implements, the diff is witnessed + mutation-witnessed, a frozen gate + ensemble review gate each commit. Lands one commit per task on a goal branch — never main, never auto-pushed.',
+      },
+      args: {
+        intent: { type: 'positional', description: 'What the goal is (human description; also seeds the goal id)', required: false },
+        queue: { type: 'string', alias: 'q', description: 'Task source: a directory (one task per file) or a .jsonl of {id,source,dependsOn}' },
+        gate: { type: 'string', alias: 'g', description: 'Green oracle command — the authoritative pass/fail, frozen at start (e.g. "npm run build && npm run typecheck && npm test")' },
+        witnessCmd: { type: 'string', description: 'Test-only command for witness + mutation steps (defaults to --gate). A narrower command makes fail-on-base witnessing precise.' },
+        branch: { type: 'string', alias: 'b', description: 'Goal branch (default goal/<id>) — never main; one commit per closed task' },
+        id: { type: 'string', description: 'Explicit goal id (slug). Defaults to a slug of the intent.' },
+        engines: { type: 'string', alias: 'e', description: 'Comma-separated engines that implement (forge roster)' },
+        reviewEngine: { type: 'string', alias: 'r', description: 'Engine that reviews each task diff (default config.forgeJudgeEngine or codex)' },
+        maxAttempts: { type: 'string', description: 'Attempts per task before park (default 3)' },
+        budget: { type: 'string', description: 'Global USD ceiling (default 50; 0 = unlimited)' },
+        maxHours: { type: 'string', description: 'Wall-clock ceiling in hours (default 8; 0 = unlimited)' },
+        gateTimeout: { type: 'string', description: 'Per-gate timeout in seconds (default 1800)' },
+        timeout: { type: 'string', description: 'Per-engine implement timeout in seconds' },
+        cwd: { type: 'string', description: 'Repo working directory', default: process.cwd() },
+        resume: { type: 'boolean', description: 'Resume an existing goal from its journal', default: false },
+        status: { type: 'boolean', description: 'Print the status/summary of an existing goal (by id or intent) and exit', default: false },
+        dryRun: { type: 'boolean', description: 'Resolve the queue + spec and print the plan without running', default: false },
+      },
+      async run({ args }) {
+        ensureAgonHome();
+        const config = loadConfig(args.cwd);
+        const repoRoot = resolve(args.cwd);
+
+        const goalId = args.id ? slug(args.id) : slug(args.intent ?? '');
+        if (!goalId) {
+          fail('A goal id is required. Pass an intent ("agon goal \"close all kern gaps\"") or --id.');
+          process.exit(1);
+        }
+
+        // `--status`: read-only digest from the durable journal — works from any
+        // session, long after the originating run is gone.
+        if (args.status) {
+          const state = loadJournal(goalId);
+          if (!state) { fail(`No goal '${goalId}' found under ${goalDir(goalId)}`); process.exit(1); }
+          header(`Goal ${goalId}`);
+          console.log(summarizeGoal(state!));
+          info(`Artifacts: ${goalDir(goalId)}`);
+          return;
+        }
+
+        const branch = args.branch ?? `goal/${goalId}`;
+        if (branch === 'main' || branch === 'master') {
+          fail(`Refusing to use ${branch} as the goal branch — pick a goal/* branch.`);
+          process.exit(1);
+        }
+
+        const gate = (args.gate ?? '').trim();
+        if (!gate) {
+          fail('A --gate command is required (the green oracle). E.g. --gate "npm run build && npm run typecheck && npm test".');
+          process.exit(1);
+        }
+        const queueSource = (args.queue ?? '').trim();
+        if (!queueSource && !args.resume) {
+          fail('A --queue is required (a directory of tasks or a .jsonl). E.g. --queue .kern-gaps/.');
+          process.exit(1);
+        }
+
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        const adapter = createCliAdapter(registry);
+        const available = registry.activeIds(config as any);
+        if (available.length === 0) {
+          fail('No engines found. Install at least one AI CLI tool.');
+          process.exit(1);
+        }
+
+        const requestedEngines = args.engines
+          ? args.engines.split(',').map((s: string) => registry.resolveId(s.trim())).filter(Boolean)
+          : undefined;
+        const reviewRaw = (args.reviewEngine ?? config.forgeJudgeEngine ?? 'codex').toString().trim();
+        const reviewEngine = registry.resolveId(reviewRaw) || available[0];
+        const implementTimeout = args.timeout ? parseInt(args.timeout, 10) : undefined;
+
+        const num = (v: string | undefined, dflt: number): number => {
+          if (v == null || v.trim() === '') return dflt;
+          const n = Number(v);
+          return Number.isFinite(n) && n >= 0 ? n : dflt;
+        };
+
+        let tasks: Array<{ id: string; source: string; dependsOn?: string[] }> = [];
+        if (queueSource) {
+          try { tasks = loadQueue(queueSource); }
+          catch (e) { fail(`Could not load queue: ${e instanceof Error ? e.message : String(e)}`); process.exit(1); }
+          if (tasks.length === 0 && !args.resume) { fail(`Queue '${queueSource}' is empty.`); process.exit(1); }
+        }
+
+        const spec = {
+          goalId,
+          intent: (args.intent ?? goalId).toString(),
+          branch,
+          gate,
+          queueSource: queueSource || '(resume)',
+          maxAttempts: num(args.maxAttempts, 3),
+          budgetUsd: num(args.budget, 50),
+          maxHours: num(args.maxHours, 8),
+          engines: requestedEngines,
+          supervised: true,
+        };
+
+        header(`Goal: ${spec.intent}`);
+        info(`Id: ${goalId}  ·  Branch: ${branch}`);
+        info(`Gate: ${gate}`);
+        info(`Implement: ${requestedEngines?.join(', ') ?? available.join(', ')}  ·  Review: ${reviewEngine}`);
+        info(`Budget: $${spec.budgetUsd || '∞'}  ·  Max: ${spec.maxHours || '∞'}h  ·  Attempts/task: ${spec.maxAttempts}`);
+        info(`Tasks: ${tasks.length}${args.resume ? ' (+ resumed journal)' : ''}`);
+
+        if (args.dryRun) {
+          warn('Dry-run — nothing will be dispatched.');
+          for (const t of tasks.slice(0, 50)) console.log(`  • ${t.id} — ${t.source}${t.dependsOn?.length ? ` (after ${t.dependsOn.join(', ')})` : ''}`);
+          if (tasks.length > 50) info(`  … and ${tasks.length - 50} more`);
+          return;
+        }
+
+        // Ctrl-C → cooperative abort: the controller checkpoints the journal and
+        // returns, so the run is resumable rather than corrupt.
+        const abort = new AbortController();
+        const onSig = () => { warn('\nAbort requested — checkpointing and stopping after the current step…'); abort.abort(); };
+        process.once('SIGINT', onSig);
+
+        // IMPLEMENT — forge races engines to satisfy the gate inside the task
+        // worktree; we apply the winning patch. A fixContext re-runs forge to
+        // address blocking review findings on the existing changes.
+        const implement = async (a: { task: { id: string; source: string }; worktree: string; baseSha: string; fixContext?: string }) => {
+          const task = a.fixContext
+            ? `These changes have BLOCKING review findings. Fix them without regressing the gate or weakening tests:\n${a.fixContext}`
+            : `Close this gap: ${a.task.source}\n\nImplement the fix AND add a test that FAILS before your change and PASSES after. Do not weaken or skip existing tests.`;
+          const { path: forgeDir } = createRunDir({ mode: 'forge', label: `goal-${a.task.id}` });
+          try {
+            const manifest = await runForge(
+              {
+                task,
+                fitnessCmd: gate,
+                cwd: a.worktree,
+                forgeDir,
+                engines: requestedEngines,
+                timeout: implementTimeout,
+                mode: 'implement',
+                requireDiff: !a.fixContext,
+                signal: abort.signal,
+              } as any,
+              registry,
+              adapter,
+            );
+            if (!manifest.winner) return { ok: false, costUsd: 0, error: 'forge produced no winning patch' };
+            const patchPath = (manifest.patches as Record<string, string>)[manifest.winner];
+            const patch = patchPath ? readFileSync(patchPath, 'utf-8') : '';
+            if (patch.trim()) applyPatch(a.worktree, patch);
+            return { ok: true, costUsd: 0 };
+          } catch (e) {
+            return { ok: false, costUsd: 0, error: e instanceof Error ? e.message : String(e) };
+          }
+        };
+
+        // REVIEW — the same hardened multi-engine pipeline /review uses; the
+        // controller blocks the commit on a blocking verdict.
+        const review = async (a: { diff: string; label: string }) => {
+          if (!a.diff.trim()) return { blocking: false, summary: 'no diff' };
+          let diff = a.diff;
+          if (diff.length > 100_000) diff = diff.slice(0, 100_000) + '\n... [truncated — diff exceeds 100K chars]';
+          try {
+            const r = await runReviewCore(diff, a.label, reviewEngine, { config, adapter, registry } as any, abort.signal);
+            return { blocking: r.blocking, summary: (r.response || '').slice(0, 4000) };
+          } catch (e) {
+            // A review that errors must not silently bless the commit.
+            return { blocking: true, summary: `review errored: ${e instanceof Error ? e.message : String(e)}` };
+          }
+        };
+
+        const state = await runGoalController({
+          spec: spec as any,
+          repoRoot,
+          tasks,
+          oracleFiles: [],
+          resume: args.resume,
+          gateTimeoutSec: num(args.gateTimeout, 1800),
+          witnessCmd: args.witnessCmd?.trim() || undefined,
+          signal: abort.signal,
+          implement: implement as any,
+          review: review as any,
+          onEvent: (e: { kind: string; taskId?: string; detail?: string }) => {
+            const id = e.taskId ? ` [${e.taskId}]` : '';
+            switch (e.kind) {
+              case 'task-start': info(`▶ implementing${id}: ${e.detail ?? ''}`); break;
+              case 'task-done': success(`✓ closed${id} → ${String(e.detail ?? '').slice(0, 8)}`); break;
+              case 'task-parked': warn(`⏸ parked${id}: ${e.detail ?? ''}`); break;
+              case 'task-retry': warn(`↻ retrying${id}: ${e.detail ?? ''}`); break;
+              case 'review-block': warn(`⚑ review blocking${id} — one fix pass`); break;
+              case 'stop': warn(`■ stopping run: ${e.detail ?? ''}`); break;
+              case 'aborted': warn('■ aborted by user'); break;
+            }
+          },
+        });
+        process.removeListener('SIGINT', onSig);
+
+        console.log('');
+        header('Goal run complete');
+        console.log(summarizeGoal(state));
+        console.log('');
+        info(`Artifacts: ${goalDir(goalId)}`);
+        const done = state.tasks.filter((t: any) => t.status === 'done').length;
+        if (done > 0) {
+          // P0 push safety: never auto-push. Land on the goal branch; the human
+          // reviews the commits and opens the PR. (Unsupervised push is P1.)
+          success(`${done} commit(s) on ${cyan(branch)}.`);
+          info(`Review them, then: ${green(`git push -u origin ${branch}`)} and open a PR.`);
+        } else {
+          warn('No tasks closed. See the parked list above and the journal for why.');
+        }
+      },
+    });
+    })()
+  >>>

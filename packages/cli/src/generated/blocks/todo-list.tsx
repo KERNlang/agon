@@ -19,11 +19,11 @@ const TodoList = React.memo(function TodoList({ todos }: { todos:Todo[] }) {
         {running.length > 0 && <Text color="#fbbf24">{' ●'}</Text>}
       </Box>
       {todos.map((t) => {
-        const cfg = (TODO_STATE_ICONS as any)[t.state] ?? TODO_STATE_ICONS.pending;
+        const cfg = TODO_STATE_ICONS[t.state] ?? TODO_STATE_ICONS.pending;
         return (
           <Box key={t.id}>
             <Text color={cfg.color}>{cfg.icon}{' '}</Text>
-            <Text color={t.state === 'done' ? '#64748b' : t.state === 'running' ? 'white' : undefined}>{t.text}</Text>
+            <Text color={t.state === 'done' ? '#64748b' : t.state === 'running' ? 'white' : undefined} dimColor={t.state !== 'done' && t.state !== 'running'}>{t.text}</Text>
             {t.note ? (<Text dimColor>{' — '}{t.note}</Text>) : null}
           </Box>
         );
@@ -34,4 +34,4 @@ const TodoList = React.memo(function TodoList({ todos }: { todos:Todo[] }) {
 export { TodoList };
 
 // @kern-source: todo-list:12
-export const TODO_STATE_ICONS: Record<string,{icon:string,color:string}> = ({ pending: { icon: '○', color: '#64748b' }, running: { icon: '●', color: '#fbbf24' }, done: { icon: '✓', color: '#22c55e' }, failed: { icon: '✗', color: '#ef4444' }, cancelled: { icon: '—', color: '#64748b' } }) as Record<string,{icon:string,color:string}>;
+export const TODO_STATE_ICONS: Record<string,{icon:string,color:string}> = ({ pending: { icon: '○', color: '#64748b' }, running: { icon: '●', color: '#fbbf24' }, done: { icon: '✓', color: '#22c55e' }, failed: { icon: '✗', color: '#ef4444' }, cancelled: { icon: '—', color: '#64748b' } });

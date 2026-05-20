@@ -206,7 +206,8 @@ module name=IntentParsing
       let name=lower value="part.toLowerCase()"
       return value="lower === 'it' || lower === 'this' || lower === 'that' || lower === 'them' || lower === 'changes' || lower === 'diff'"
 
-  fn name=parseReviewInput params="input:string" returns=Intent export=false
+  fn name=parseReviewInput params="input:string, bareWordsAreEngines?:boolean" returns=Intent export=false
+    doc "Parse review args into target + engine list. When bareWordsAreEngines is true (the explicit /review slash path), any bare word that isn't a target (uncommitted/branch:/commit:) or a keyword is treated as an engine name — so `/review codex claude` reviews with BOTH, no `with` needed. The natural-language shortcut path leaves it false so prose like `review this code` doesn't mis-bind `code` as an engine."
     handler <<<
       const reviewParts = splitReviewArgs(input);
       const engineIds: string[] = [];
@@ -230,7 +231,7 @@ module name=IntentParsing
           if (!target) target = part;
           continue;
         }
-        if (collectingEngines) {
+        if (collectingEngines || bareWordsAreEngines) {
           if (!engineIds.includes(lower)) engineIds.push(lower);
           continue;
         }
@@ -498,7 +499,7 @@ module name=IntentParsing
         }
         case 'review':
         case 'cr': {
-          return parseReviewInput(rest);
+          return parseReviewInput(rest, true);
         }
         case 'run':
         case 'exec':

@@ -226,7 +226,7 @@ export function parseReviewBlocking(response: string): {blocking:boolean, parseF
 }
 
 /**
- * Repair pass (B): re-ask the engine to emit ONLY the sentinel + JSON findings block, derived from a review it already produced but did not format parseably. One extra round-trip, best-effort — callers keep the fail-closed result if this also fails to parse.
+ * Repair pass (B): re-ask the engine for ONLY a bare JSON array of the findings it already wrote in prose. Asking for a bare array (no sentinel, no prose, no fence) is the format LLMs comply with most reliably — far better than 'an HTML-comment marker followed by JSON', which engines routinely truncate to just the marker. The caller (runReviewCore) prepends the sentinel itself before parsing, so the anti-injection anchor is preserved. Best-effort: if this still doesn't parse, the fail-closed/unstructured result stands.
  */
 // @kern-source: review:219
 export async function runReviewRepair(priorReview: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal): Promise<string> {
@@ -235,7 +235,7 @@ export async function runReviewRepair(priorReview: string, engineId: string, ctx
   const parts: string[] = [];
   parts.push('You previously produced this code review:');
   parts.push(priorReview);
-  parts.push(`Now restate your findings as a machine-readable block and NOTHING else: the sentinel line on its own, immediately followed by a JSON array. No prose before it, no text after it, no code fences.\n\n<!--AGON_REVIEW_FINDINGS_v1-->\n[{"file":"...","lines":"...","severity":"blocking|important|nit","blocking":true|false,"problem":"...","minimalFix":"..."}]\n\nIf the review found no issues, output the sentinel followed by []. Derive the findings from the review above — do not re-analyze. The very last characters of your response MUST be the closing ].`);
+  parts.push(`Now convert the findings above into a JSON array — output ONLY the array, nothing else. Your entire response must be valid JSON: start with [ and end with ]. No prose, no explanation, no markdown, no code fence.\n\nEach element: {"file":"path","lines":"10-12","severity":"blocking|important|nit","blocking":true,"problem":"what is wrong","minimalFix":"smallest fix"}\n\nExample of a valid response:\n[{"file":"src/auth.ts","lines":"42","severity":"important","blocking":false,"problem":"missing null check","minimalFix":"guard before deref"}]\n\nIf the review found no issues, your entire response must be exactly: []\nDerive the findings from the review above — do not re-analyze.`);
   const prompt = parts.join('\n\n');
   const engine = ctx.registry.get(engineId);
   const outputDir = join(RUNS_DIR, `review-repair-${Date.now()}`);
@@ -290,7 +290,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   }
   parts.push(`## REVIEW REQUEST\nReview the following ${label}.`);
   parts.push(`## DIFF\n\`\`\`diff\n${diff}\n\`\`\``);
-  parts.push(`## INSTRUCTIONS\nProvide a thorough code review:\n- Bugs and logic errors\n- Security vulnerabilities\n- Performance issues\n- Code quality and readability\n- Missing edge cases\n\nFor each issue: file, line range, severity (blocking|important|nit), suggested fix.\n\nEnd your response with EXACTLY this sentinel line on its own, followed by a JSON array of findings:\n\n<!--AGON_REVIEW_FINDINGS_v1-->\n[{"file":"...","lines":"...","severity":"blocking|important|nit","blocking":true|false,"problem":"...","minimalFix":"..."}]\n\nIf you find no issues, the array MUST be []. The sentinel and JSON array are required for parsing — do not quote them anywhere else in your response, do not wrap them in code fences, and do not add any text after the JSON array. The very last characters of your response MUST be the closing ] of that array.`);
+  parts.push(`## INSTRUCTIONS\nProvide a thorough code review: bugs and logic errors, security vulnerabilities, performance issues, code quality, and missing edge cases. For each issue give file, line range, severity (blocking|important|nit), and a suggested fix.\n\n## REQUIRED MACHINE BLOCK\nAfter your prose review you MUST append a machine-readable findings block. This is mandatory — a review without it is discarded. The block is the sentinel line, then a fenced JSON code block, as the very last thing in your response. Do NOT stop at the sentinel line: the JSON array after it is required.\n\n<!--AGON_REVIEW_FINDINGS_v1-->\n\`\`\`json\n[{"file":"src/auth.ts","lines":"42","severity":"important","blocking":false,"problem":"missing null check","minimalFix":"guard before deref"}]\n\`\`\`\n\nReplace the example with your real findings. If you found no issues, the array MUST be []. Emit the sentinel + JSON block exactly once, at the end.`);
   const prompt = parts.join('\n\n');
   const engine = ctx.registry.get(engineId);
   const outputDir = join(RUNS_DIR, `review-${Date.now()}`);
@@ -339,15 +339,16 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   let blocking = parsed1.blocking;
   let parseFailed = parsed1.parseFailed;
   let unstructured = false;
-  // Repair pass (B): the engine reviewed but didn't emit a parseable sentinel+JSON block. Re-ask once for just the machine block, re-parse, and append it so the result is parseable downstream. Failure leaves the fail-closed result intact.
+  // Repair pass (B): the engine reviewed but didn't emit a parseable findings block (the common case: it ends with the sentinel and no JSON). Re-ask for ONLY a bare JSON array — the format LLMs comply with most reliably — then prepend the sentinel OURSELVES so parseReviewBlocking's anti-injection anchor still holds. Append the reconstructed block so the result is parseable downstream. Failure leaves the fail-closed/unstructured result intact.
   if (parseFailed && response.length > 0 && !signal?.aborted) {
     const repairResp = await runReviewRepair(response, engineId, ctx, signal);
     if (repairResp) {
-      const parsed2 = parseReviewBlocking(repairResp);
+      const repairBlock = `<!--AGON_REVIEW_FINDINGS_v1-->\n${repairResp}`;
+      const parsed2 = parseReviewBlocking(repairBlock);
       if (!parsed2.parseFailed) {
         blocking = parsed2.blocking;
         parseFailed = false;
-        response += `\n\n${repairResp}`;
+        response += `\n\n${repairBlock}`;
       }
     }
   }
@@ -358,7 +359,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   return { response: response, blocking: blocking, parseFailed: parseFailed, unstructured: unstructured };
 }
 
-// @kern-source: review:321
+// @kern-source: review:322
 export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngine?: string): Promise<void> {
   const abort = new AbortController();
   try {
@@ -459,7 +460,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 /**
  * Run review for one or more explicitly requested engines. Multiple reviewers run sequentially so stream output stays readable; their findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning.
  */
-// @kern-source: review:418
+// @kern-source: review:419
 export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
   const engineIds = Array.from(new Set((requestedEngines ?? []).map((id) => String(id ?? '').trim().toLowerCase()).filter(Boolean)));
   if (engineIds.length <= 1) {

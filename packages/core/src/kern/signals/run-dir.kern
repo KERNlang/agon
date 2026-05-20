@@ -36,9 +36,9 @@ interface name=RunDirHandle
   field name=announced type=boolean
 
 interface name=RunStatusEngine
-  doc "Per-engine outcome record. `status` is the authoritative success classifier: 'ok' (engine produced expected output), 'blocking' (review parsed but found blocking findings — outcome is failure even though the engine succeeded), 'parse-failure' (engine output missing structured sentinel), 'timeout', 'error' (dispatch threw), 'skipped' (never dispatched — health-check / filter)."
+  doc "Per-engine outcome record. `status` is the authoritative success classifier: 'ok' (engine produced expected output), 'unstructured' (engine produced a useful prose review but no machine-parseable verdict — a SUCCESS, not a failure: the review is valid, it just lacks the sentinel JSON block), 'blocking' (review parsed but found blocking findings — outcome is failure even though the engine succeeded), 'parse-failure' (engine output was empty/garbage with no usable review), 'timeout', 'error' (dispatch threw), 'skipped' (never dispatched — health-check / filter)."
   field name=id type=string
-  field name=status type="'ok' | 'blocking' | 'parse-failure' | 'timeout' | 'error' | 'skipped'"
+  field name=status type="'ok' | 'unstructured' | 'blocking' | 'parse-failure' | 'timeout' | 'error' | 'skipped'"
   field name=exitCode type=number optional=true
   field name=durationMs type=number optional=true
   field name=detail type=string optional=true

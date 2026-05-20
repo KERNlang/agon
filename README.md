@@ -72,6 +72,8 @@ Competitive code generation. Engines race on the exact same task in isolated git
 /forge "Implement a Redis caching layer for the user service"
 ```
 
+With synthesis enabled (`forgeEnableSynthesis`), a configurable **synthesizer** engine then refines the winner using the other engines' critiques into a best-of-all result — **Cesar** in the interactive REPL, the **judge** under `agon goal`, or any named engine elsewhere.
+
 ### Brainstorm
 Engines bid their confidence level on how they would tackle a complex problem. Engines with higher confidence bids are allocated more tokens and priority.
 
@@ -101,10 +103,11 @@ A focused, single-engine build-review-fix loop ideal for deterministic tasks whe
 ```
 
 ### Review
-Performs an automated, multi-engine code review of your uncommitted changes, specific branches, or recent commits.
+Performs an automated, multi-engine code review of your uncommitted changes, branches, or commits — then folds every engine's findings into one **confidence-tiered consensus** instead of dumping several noisy reviews side by side. Each finding carries a 0–1 confidence, and a two-signal rule decides what truly blocks: one *blocking* finding at ≥0.85, **or** two engines flagging the same issue at ≥0.70 (a nit never blocks, even at 0.99). Findings are grouped **verified / needs-check / speculative / nit**; engine timeouts and parse-failures land in their own lane (never a phantom blocker); and medium-confidence findings can go to a **judge** for a second opinion.
 
 ```bash
 /review HEAD~1..HEAD
+agon review commit:HEAD --engines claude,codex,gemini
 ```
 
 ### Agent
@@ -129,17 +132,19 @@ Team-based variants of core modes (e.g., 2v2 or 3v3). Includes Team Forge, Team 
 ```
 
 ### Goal
-Autonomous, long-running orchestration. You hand Agon a finite, checkable task queue (e.g. a directory of gap specs) plus a green **gate** command, and it drives the whole queue to completion unattended — for hours. Each task runs in a throwaway worktree off a dedicated `goal/` branch: an engine implements the change, every new test is **witnessed** (it must fail on the base commit and pass on the new one) and **mutation-witnessed** (canonical mutants on the changed lines must die — which defeats tautological "encode the answer" tests), the frozen gate runs once, an ensemble review gates the commit, and only then does **one commit per task** land on the goal branch. Any failure discards the worktree wholesale (atomic rollback). The run is journaled and resumable (`--resume`), checkpoints cleanly on Ctrl-C, and **never auto-pushes** — you review the commits and open the PR.
+Autonomous, long-running orchestration. You hand Agon a finite, checkable task queue (e.g. a directory of gap specs) plus a green **gate** command, and it drives the whole queue to completion unattended — for hours. Each task runs in a throwaway worktree off a dedicated `goal/` branch: forge races the engines, the **test-aware winner** is selected (a passing patch that includes a test beats a higher-scoring one that doesn't), every new test is **witnessed** (it must fail on the base commit and pass on the new one) and **mutation-witnessed** (canonical mutants on the changed lines must die — defeating tautological "encode the answer" tests), the frozen gate runs once, **all engines review** the diff and a **judge** adjudicates the flagged findings via the confidence-tiered consensus, blockers get one bounded fix pass, and only then does **one commit per task** land on the goal branch. Any failure discards the worktree wholesale (atomic rollback). The run is journaled and resumable (`--resume`), checkpoints cleanly on Ctrl-C, meters real spend, and **never auto-pushes** by default — you review the commits and open the PR (`--push` pushes each task as it lands; `--pr` opens the PR at the end).
 
 ```bash
 agon goal "Close all KERN gaps" \
   --queue .kern-gaps/ \
   --gate "npm run build && npm run typecheck && npm test" \
   --branch goal/close-gaps \
-  --maxHours 8
+  --review-engines claude,codex,gemini \
+  --judge codex \
+  --max-hours 8 --budget 5
 ```
 
-Read a run's digest from any session with `agon goal --status --id close-all-kern-gaps`. _(P0: `--maxHours` is the live wall-clock ceiling; USD budgeting and hermetic gate isolation are on the roadmap.)_
+Bound a run by `--max-hours`, `--budget` (USD), both, or neither (free). Pick the review panel with `--review-engines` (default: all active) and the adjudicator with `--judge`. Read a run's digest from any session with `agon goal --status --id close-all-kern-gaps`. Reachable from external CLIs via `agon call goal "<intent>" --queue <dir> --gate "<cmd>"`. _(Roadmap: hermetic gate isolation, detached delegation + async callback.)_
 
 ## Interactive REPL
 

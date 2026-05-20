@@ -12,7 +12,7 @@ import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@agon/adapter-cli';
 
-import { runForge, runDelegate, runGoalController, loadJournal, summarizeGoal, goalDir } from '@agon/forge';
+import { runForge, runDelegate, runGoalController, loadJournal, summarizeGoal, goalDir, isTestFile, parseChangedLines, pickImplementWinner } from '@agon/forge';
 
 import { runReviewCore, extractReviewFindings } from '../handlers/review.js';
 
@@ -255,12 +255,43 @@ return defineCommand({
           registry,
           adapter,
         );
-        // Meter real spend: sum each competing engine's token cost.
-        const costUsd = Object.entries(manifest.results as Record<string, { usage?: { totalTokens?: number } }>)
-          .reduce((sum, [eng, r]) => sum + estimateCost(eng, r?.usage?.totalTokens ?? 0), 0);
+        // Meter real spend from forge's per-dispatch ledger. EngineResult has
+        // no token field; the recorded dollar cost lives in dispatchLog[].tokens
+        // .costUsd (already priced per engine/model), so summing results.usage
+        // always yielded $0.00 even when forge charged real cost. Parked attempts
+        // count too — the cost was incurred regardless of whether the patch landed.
+        const costUsd = ((manifest.dispatchLog ?? []) as Array<{ tokens?: { costUsd?: number } }>)
+          .reduce((sum, d) => sum + (d?.tokens?.costUsd ?? 0), 0);
         if (!manifest.winner) return { ok: false, costUsd, error: 'forge produced no winning patch' };
-        const patchPath = (manifest.patches as Record<string, string> | undefined)?.[manifest.winner];
-        const patch = patchPath ? readFileSync(patchPath, 'utf-8') : '';
+
+        // Test-aware winner selection. Forge scores by fitness alone, so it can
+        // hand goal a higher-scoring patch that adds NO test while lower-scoring
+        // PASSING patches do include one — the witness then rejects it and the
+        // task parks, wasting the whole panel. When requireTests is on and the
+        // forge winner is test-less, prefer the highest-scoring passing candidate
+        // whose patch actually adds a test. (Fall back to forge's winner if none
+        // has a test — the witness will still park it, correctly.)
+        const results = manifest.results as Record<string, { pass?: boolean; score?: number }>;
+        const patches = manifest.patches as Record<string, string> | undefined;
+        const readPatch = (eng: string): string => {
+          const p = patches?.[eng];
+          try { return p ? readFileSync(p, 'utf-8') : ''; } catch { return ''; }
+        };
+        const patchAddsTest = (diff: string): boolean =>
+          !!diff.trim() && Object.keys(parseChangedLines(diff)).some((f) => isTestFile(f));
+
+        const candidates = Object.keys(results).map((eng) => ({
+          engine: eng,
+          pass: !!results[eng]?.pass,
+          score: results[eng]?.score ?? 0,
+          addsTest: patchAddsTest(readPatch(eng)),
+        }));
+        const winner = pickImplementWinner(manifest.winner, candidates, args.requireTests !== false, !!a.fixContext);
+        if (winner !== manifest.winner) {
+          info(`Forge winner ${manifest.winner} added no test; applying passing test-bearing candidate ${winner} instead (requireTests).`);
+        }
+
+        const patch = readPatch(winner);
         if (patch.trim()) applyPatch(a.worktree, patch);
         return { ok: true, costUsd };
       } catch (e) {

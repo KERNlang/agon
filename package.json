@@ -13,7 +13,7 @@
     "kern_engines"
   ],
   "scripts": {
-    "postinstall": "patch-package",
+    "postinstall": "node scripts/postinstall.mjs",
     "kern:compile": "node scripts/run-agon-script.mjs kern:compile:workspaces",
     "kern:compile:workspaces": "npm run kern:compile -w packages/core && npm run kern:compile -w packages/forge && npm run kern:compile -w packages/adapter-cli && npm run kern:compile -w packages/cli && npm run kern:compile -w packages/mcp && npm run kern:compile -w packages/saas-api",
     "kern:review": "node scripts/run-kern-review.mjs",

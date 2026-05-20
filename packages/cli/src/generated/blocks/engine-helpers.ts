@@ -87,3 +87,11 @@ export function extractSummary(text: string, maxLen: number): string {
   const summary = firstSentence ? firstSentence[0] : s.slice(0, maxLen);
   return (summary.length > maxLen) ? (summary.slice(0, maxLen - 1) + '…') : summary;
 }
+
+/**
+ * Remove reasoning-scaffolding blocks (<think>/<thinking>/<reasoning>) that reasoning models (MiniMax, DeepSeek, Qwen) emit before their real answer and sometimes leak into persisted output. Strips CLOSED blocks only — the common leak case — using a backreference so the open and close tags must match. Engine-agnostic: apply wherever raw engine output is persisted or parsed so scaffolding never reaches users or a structured-findings parser.
+ */
+// @kern-source: engine-helpers:82
+export function stripReasoning(text: string): string {
+  return text.replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>\s*/gi, '').trim();
+}

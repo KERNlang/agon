@@ -14,7 +14,9 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
-// @kern-source: review:12
+import { stripReasoning } from '../blocks/engine-helpers.js';
+
+// @kern-source: review:13
 export function resolveReviewTarget(target: string|undefined, cwd: string): {diff:string, label:string} {
   const t = (target ?? 'uncommitted').trim();
   let diff = '';
@@ -97,7 +99,7 @@ export function resolveReviewTarget(target: string|undefined, cwd: string): {dif
   return { diff, label };
 }
 
-// @kern-source: review:95
+// @kern-source: review:96
 export function selectReviewEngine(requestedEngine: string|undefined, ctx: HandlerContext): string {
   const allActive = ctx.activeEngines();
   const active = requestedEngine ? allActive : filterDefaultOrchestrationEngines(allActive);
@@ -145,7 +147,7 @@ export function selectReviewEngine(requestedEngine: string|undefined, ctx: Handl
   throw new Error('No engines available for review. Try /engines to check availability.');
 }
 
-// @kern-source: review:143
+// @kern-source: review:144
 export interface ReviewCoreResult {
   response: string;
   blocking: boolean;
@@ -153,13 +155,13 @@ export interface ReviewCoreResult {
   unstructured: boolean;
 }
 
-// @kern-source: review:150
+// @kern-source: review:151
 export const REVIEW_SENTINEL: string = '<!--AGON_REVIEW_FINDINGS_v1-->';
 
 /**
  * Sentinel-anchored, fail-closed parser. Tribunal fix #9 + Gemini (b): the engine MUST end its response with a unique sentinel followed by a JSON array of findings. We parse only the text after the LAST sentinel occurrence. Without a sentinel match the response is treated as blocking + parseFailed, so the user must explicitly approve. This blocks the prompt-injection attack where an attacker echoes `[{"blocking":false}]` inside diff content — the injected payload has no sentinel and the engine's actual structured output (which DOES carry the sentinel) is the only thing the parser will consider.
  */
-// @kern-source: review:152
+// @kern-source: review:153
 export function parseReviewBlocking(response: string): {blocking:boolean, parseFailed:boolean} {
   if (!response || response.trim().length === 0) return { blocking: true, parseFailed: true };
 
@@ -269,7 +271,7 @@ export function parseReviewBlocking(response: string): {blocking:boolean, parseF
 /**
  * Repair pass (B): re-ask the engine for ONLY a bare JSON array of the findings it already wrote in prose. Asking for a bare array (no sentinel, no prose, no fence) is the format LLMs comply with most reliably — far better than 'an HTML-comment marker followed by JSON', which engines routinely truncate to just the marker. The caller (runReviewCore) prepends the sentinel itself before parsing, so the anti-injection anchor is preserved. Best-effort: if this still doesn't parse, the fail-closed/unstructured result stands.
  */
-// @kern-source: review:260
+// @kern-source: review:261
 export async function runReviewRepair(priorReview: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal): Promise<string> {
   const config = ctx.config;
   const cwd = resolveWorkingDir();
@@ -319,7 +321,7 @@ export async function runReviewRepair(priorReview: string, engineId: string, ctx
 /**
  * Core review flow with no ctx side effects. Used by both handleReview (with streaming dispatch) and the plan executor's review step (silent). Does NOT touch ctx.setActiveAbort, ctx.lastReviewResult, ctx.chatSession, or tracker. signal is optional: callers that don't have an abort controller can pass undefined.
  */
-// @kern-source: review:298
+// @kern-source: review:299
 export async function runReviewCore(diff: string, label: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, onProgress?: (chunk:string)=>void): Promise<ReviewCoreResult> {
   const cwd = resolveWorkingDir();
   const config = ctx.config;
@@ -376,6 +378,8 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
     response = result.stdout;
   }
   response = response.trim();
+  // Strip reasoning scaffolding (<think> etc.) BEFORE parse + persist so MiniMax-style models don't leak their reasoning into the saved review or confuse the findings parser.
+  response = stripReasoning(response);
   const parsed1 = parseReviewBlocking(response);
   let blocking = parsed1.blocking;
   let parseFailed = parsed1.parseFailed;
@@ -400,7 +404,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   return { response: response, blocking: blocking, parseFailed: parseFailed, unstructured: unstructured };
 }
 
-// @kern-source: review:363
+// @kern-source: review:366
 export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngine?: string): Promise<void> {
   const abort = new AbortController();
   try {
@@ -501,7 +505,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 /**
  * Run review for one or more explicitly requested engines. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A single engine delegates to the streaming handleReview path.
  */
-// @kern-source: review:460
+// @kern-source: review:463
 export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
   const abort = new AbortController();
   try {

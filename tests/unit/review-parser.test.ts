@@ -143,6 +143,38 @@ describe('parseReviewBlocking — sentinel-anchored, fail-closed (Tribunal #9 + 
       expect(r.blocking).toBe(false);
       expect(r.parseFailed).toBe(false);
     });
+
+    it('tolerates a trailing comma before the closing bracket (kimi quirk, engine-agnostic)', () => {
+      const r = parseReviewBlocking(
+        `${SENTINEL}\n\`\`\`json\n[{"severity":"blocking","blocking":true,"problem":"x"},]\n\`\`\``,
+      );
+      expect(r.blocking).toBe(true);
+      expect(r.parseFailed).toBe(false);
+    });
+
+    it('tolerates a trailing comma after the last object inside it too', () => {
+      const r = parseReviewBlocking(
+        `${SENTINEL}\n[{"severity":"nit","blocking":false,"problem":"x",}]`,
+      );
+      expect(r.blocking).toBe(false);
+      expect(r.parseFailed).toBe(false);
+    });
+
+    it('tolerates // and /* */ comments annotating the JSON', () => {
+      const r = parseReviewBlocking(
+        `${SENTINEL}\n[\n  // a real finding\n  {"severity":"blocking","blocking":true,"problem":"x"} /* important */\n]`,
+      );
+      expect(r.blocking).toBe(true);
+      expect(r.parseFailed).toBe(false);
+    });
+
+    it('does NOT strip a comma/slash that lives inside a string value (relax is string-aware)', () => {
+      const r = parseReviewBlocking(
+        `${SENTINEL}\n[{"severity":"nit","blocking":false,"problem":"array literal [1,] or path a//b stays intact"}]`,
+      );
+      expect(r.blocking).toBe(false);
+      expect(r.parseFailed).toBe(false);
+    });
   });
 
   describe('prompt-injection resistance (Gemini fix b)', () => {

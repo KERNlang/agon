@@ -170,6 +170,43 @@ export function parseReviewBlocking(response: string): {blocking:boolean, parseF
   const tail = response.slice(lastSentinelIdx + sentinel.length).trim();
   if (!tail) return { blocking: true, parseFailed: true };
 
+  // Engine-AGNOSTIC JSON tolerance. LLMs routinely emit *almost*-JSON: a
+  // trailing comma before the closing bracket (e.g. kimi's `...}]`→`...},]`),
+  // // or /* */ comments annotating findings, etc. Rather than special-casing
+  // any one engine, we strict-parse first and, ONLY on failure, retry against
+  // a string-aware "relaxed" copy. This is the single chokepoint where review
+  // JSON is decoded, so every engine — current and future — benefits without
+  // a per-engine branch. The relax pass is string-aware (it never touches
+  // commas/slashes that live inside a JSON string value), so it can't corrupt
+  // findings text. If both strict and relaxed parses fail, we fall through to
+  // the engine-agnostic safety nets below (fenced-block retry → repair pass →
+  // unstructured success).
+  const relaxJsonString = (raw: string): string => {
+    let out = '';
+    let inStr = false;
+    let esc = false;
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw[i];
+      if (inStr) {
+        out += ch;
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') { inStr = true; out += ch; continue; }
+      if (ch === '/' && raw[i + 1] === '/') { i += 1; while (i + 1 < raw.length && raw[i + 1] !== '\n') i += 1; continue; }
+      if (ch === '/' && raw[i + 1] === '*') { i += 1; while (i + 1 < raw.length && !(raw[i + 1] === '*' && raw[i + 2] === '/')) i += 1; i += 2; continue; }
+      if (ch === ',') {
+        let j = i + 1;
+        while (j < raw.length && /\s/.test(raw[j])) j += 1;
+        if (j < raw.length && (raw[j] === ']' || raw[j] === '}')) continue;
+      }
+      out += ch;
+    }
+    return out;
+  };
+
   // Parse the first balanced [...] array found at or after `from`. The scan is
   // string-aware so brackets inside string values don't skew the depth count.
   // Returns null on no array / unbalanced / invalid JSON / non-array.
@@ -193,14 +230,18 @@ export function parseReviewBlocking(response: string): {blocking:boolean, parseF
       else if (ch === ']') { depth--; if (depth === 0) { end = i; break; } }
     }
     if (end < 0) return null;
+    const candidate = text.slice(start, end + 1);
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(text.slice(start, end + 1)) as Array<{ blocking?: boolean; severity?: string }>;
-      if (!Array.isArray(parsed)) return null;
-      const blocking = parsed.some((c) => c && (c.blocking === true || (typeof c.severity === 'string' && c.severity.toLowerCase() === 'blocking')));
-      return { blocking, parseFailed: false };
+      parsed = JSON.parse(candidate);
     } catch {
-      return null;
+      try { parsed = JSON.parse(relaxJsonString(candidate)); }
+      catch { return null; }
     }
+    if (!Array.isArray(parsed)) return null;
+    const arr = parsed as Array<{ blocking?: boolean; severity?: string }>;
+    const blocking = arr.some((c) => c && (c.blocking === true || (typeof c.severity === 'string' && c.severity.toLowerCase() === 'blocking')));
+    return { blocking, parseFailed: false };
   };
 
   // Tolerant extraction (A): the first balanced [...] array anywhere in the
@@ -228,7 +269,7 @@ export function parseReviewBlocking(response: string): {blocking:boolean, parseF
 /**
  * Repair pass (B): re-ask the engine for ONLY a bare JSON array of the findings it already wrote in prose. Asking for a bare array (no sentinel, no prose, no fence) is the format LLMs comply with most reliably — far better than 'an HTML-comment marker followed by JSON', which engines routinely truncate to just the marker. The caller (runReviewCore) prepends the sentinel itself before parsing, so the anti-injection anchor is preserved. Best-effort: if this still doesn't parse, the fail-closed/unstructured result stands.
  */
-// @kern-source: review:219
+// @kern-source: review:260
 export async function runReviewRepair(priorReview: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal): Promise<string> {
   const config = ctx.config;
   const cwd = resolveWorkingDir();
@@ -278,7 +319,7 @@ export async function runReviewRepair(priorReview: string, engineId: string, ctx
 /**
  * Core review flow with no ctx side effects. Used by both handleReview (with streaming dispatch) and the plan executor's review step (silent). Does NOT touch ctx.setActiveAbort, ctx.lastReviewResult, ctx.chatSession, or tracker. signal is optional: callers that don't have an abort controller can pass undefined.
  */
-// @kern-source: review:257
+// @kern-source: review:298
 export async function runReviewCore(diff: string, label: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, onProgress?: (chunk:string)=>void): Promise<ReviewCoreResult> {
   const cwd = resolveWorkingDir();
   const config = ctx.config;
@@ -359,7 +400,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   return { response: response, blocking: blocking, parseFailed: parseFailed, unstructured: unstructured };
 }
 
-// @kern-source: review:322
+// @kern-source: review:363
 export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngine?: string): Promise<void> {
   const abort = new AbortController();
   try {
@@ -460,7 +501,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 /**
  * Run review for one or more explicitly requested engines. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A single engine delegates to the streaming handleReview path.
  */
-// @kern-source: review:419
+// @kern-source: review:460
 export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
   const abort = new AbortController();
   try {

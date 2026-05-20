@@ -16,6 +16,8 @@ export interface CallCommandOptions {
   strategy?: string;
   lead?: string;
   finalizeOnScore?: string;
+  gate?: string;
+  queue?: string;
 }
 
 export interface BuiltCallCommands {
@@ -102,6 +104,22 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     ]);
   } else if (workflow === 'review') {
     commands.push(['review', opts.input?.trim() || 'uncommitted', ...timeout, ...engines]);
+  } else if (workflow === 'goal') {
+    // Autonomous controller. goal itself enforces that --gate and --queue are
+    // present (and prints a clear error otherwise), so the bridge just forwards
+    // them. --engines sets the implement roster; review uses the full panel by
+    // default. Long-running — the bridge call blocks until the goal finishes.
+    const intent = requireInput(workflow, opts.input);
+    commands.push([
+      'goal',
+      intent,
+      '--cwd',
+      cwd,
+      ...textFlag('--queue', opts.queue),
+      ...textFlag('--gate', opts.gate),
+      ...timeout,
+      ...engines,
+    ]);
   } else if (workflow === 'doctor') {
     // Passthrough so external CLIs that standardize on `agon call <workflow>`
     // can reach the top-level doctor. `agon call doctor` -> `agon doctor`,
@@ -116,7 +134,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
     commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
   } else {
-    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, tribunal, campfire, pipeline, review, doctor, or a team-* workflow.`);
+    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, tribunal, campfire, pipeline, review, goal, doctor, or a team-* workflow.`);
   }
 
   return { cwd, commands };
@@ -177,7 +195,7 @@ export const callCommand = defineCommand({
   args: {
     workflow: {
       type: 'positional',
-      description: 'Workflow: forge, brainstorm, tribunal, campfire, pipeline, review, doctor, or team-*',
+      description: 'Workflow: forge, brainstorm, tribunal, campfire, pipeline, review, goal, doctor, or team-*',
       required: true,
     },
     input: {
@@ -239,6 +257,14 @@ export const callCommand = defineCommand({
       type: 'string',
       description: 'For solo forge: finalize as soon as any engine PASSES with score >= N',
     },
+    gate: {
+      type: 'string',
+      description: 'For goal: the green-oracle gate command (e.g. "npm test")',
+    },
+    queue: {
+      type: 'string',
+      description: 'For goal: the task queue (a directory of tasks or a .jsonl)',
+    },
   },
   async run({ args }) {
     let built: BuiltCallCommands;
@@ -257,6 +283,8 @@ export const callCommand = defineCommand({
         strategy: args.strategy,
         lead: args.lead,
         finalizeOnScore: args.finalizeOnScore,
+        gate: args.gate,
+        queue: args.queue,
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

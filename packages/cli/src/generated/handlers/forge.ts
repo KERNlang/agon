@@ -681,6 +681,11 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
           engines,
           context: projectCtx,
           hardened: hardened ?? false,
+          // Interactive forge: Cesar synthesizes the best-of-all result (only
+          // active when config.forgeEnableSynthesis is on). Falls back to the
+          // winner engine if cesarEngine is unset/unknown.
+          synthEngine: String((ctx.config as any).cesarEngine ?? '').trim() || undefined,
+          synthesize: 'always',
           signal: forgeAbort.signal,
         },
         ctx.registry,

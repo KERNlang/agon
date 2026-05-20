@@ -1,0 +1,71 @@
+// Pure synthesis-planning decision layer for forge's always-on synthesis pass.
+// Given the forge winner, every candidate (pass/score/whether its patch adds a
+// test), an optionally-configured synthesizer engine (goal -> the judge;
+// interactive -> Cesar) and whether tests are required, it decides whether to
+// synthesize, which engine synthesizes, and whose patch is the base to refine.
+//
+// Implementation forged competitively (`agon forge`, winner: gemini, score 90,
+// 3/7 engines passed) against tests/unit/synth-plan.test.ts, then ported here.
+
+interface name=SynthCandidate export=true
+  field name=engine type=string
+  field name=pass type=boolean
+  field name=score type=number
+  field name=addsTest type=boolean
+    doc "Whether this candidate's patch adds/changes a test file."
+
+interface name=SynthPlanOpts export=true
+  field name=forgeWinner type=string
+  field name=candidates type="SynthCandidate[]"
+  field name=configuredSynthEngine type=string optional=true
+    doc "Explicit synthesizer engine. goal passes the judge; interactive forge passes Cesar. When absent, the base patch's own engine refines (forge's historical behavior)."
+  field name=requireTests type=boolean
+  field name=alwaysSynthesize type=boolean
+
+interface name=SynthPlan export=true
+  field name=run type=boolean
+  field name=synthEngine type=string
+  field name=basePatchEngine type=string
+    doc "Whose patch synthesis refines — the constraint-aware base."
+  field name=reason type=string
+
+fn name=planSynthesis params="opts:SynthPlanOpts" returns="SynthPlan" export=true
+  doc "Decide forge's synthesis pass. basePatchEngine: when requireTests and the forge winner's patch adds no test, the highest-scoring PASSING candidate that does add a test; else the forge winner. synthEngine: configuredSynthEngine when set, else basePatchEngine. run: there is a passing candidate AND (alwaysSynthesize OR more than one passed). Pure."
+  handler <<<
+    const { forgeWinner, candidates, configuredSynthEngine, requireTests, alwaysSynthesize } = opts;
+
+    const winnerCandidate = candidates.find((c) => c.engine === forgeWinner);
+    const passingCandidates = candidates.filter((c) => c.pass);
+    const passingCount = passingCandidates.length;
+
+    let basePatchEngine = forgeWinner;
+    let switchedReason = '';
+
+    if (requireTests && winnerCandidate && !winnerCandidate.addsTest) {
+      const bestPassingWithTests = candidates
+        .filter((c) => c.pass && c.addsTest)
+        .sort((a, b) => b.score - a.score)[0];
+
+      if (bestPassingWithTests) {
+        basePatchEngine = bestPassingWithTests.engine;
+        switchedReason = ` (switched from ${forgeWinner} to satisfy test requirement)`;
+      }
+    }
+
+    const synthEngine = configuredSynthEngine ?? basePatchEngine;
+
+    const run = passingCount > 0 && (alwaysSynthesize || passingCount > 1);
+
+    let reason = '';
+    if (!run) {
+      if (passingCount === 0) {
+        reason = 'No passing candidates available for synthesis';
+      } else {
+        reason = `Synthesis skipped: only one candidate passed (${passingCandidates[0].engine}) and alwaysSynthesize is false`;
+      }
+    } else {
+      reason = `Synthesis planned using ${synthEngine}${switchedReason}. ${passingCount} candidate(s) passed.`;
+    }
+
+    return { run, synthEngine, basePatchEngine, reason };
+  >>>

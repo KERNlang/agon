@@ -111,6 +111,30 @@ describe('parseReviewBlocking — sentinel-anchored, fail-closed (Tribunal #9 + 
       expect(r.blocking).toBe(false);
       expect(r.parseFailed).toBe(false);
     });
+
+    it('tolerates trailing prose after the JSON array (tolerant extraction A)', () => {
+      const r = parseReviewBlocking(
+        `${SENTINEL}\n[{"severity":"blocking","blocking":true,"problem":"x"}]\n\nLet me know if you'd like me to elaborate on any of these.`,
+      );
+      expect(r.blocking).toBe(true);
+      expect(r.parseFailed).toBe(false);
+    });
+
+    it('tolerates trailing prose after a fenced JSON array', () => {
+      const r = parseReviewBlocking(
+        `${SENTINEL}\n\`\`\`json\n[{"severity":"nit","blocking":false}]\n\`\`\`\n\nThat is my full review.`,
+      );
+      expect(r.blocking).toBe(false);
+      expect(r.parseFailed).toBe(false);
+    });
+
+    it('counts only real array brackets, not ] inside string values', () => {
+      const r = parseReviewBlocking(
+        `${SENTINEL}\n[{"severity":"nit","blocking":false,"problem":"index out of range at arr[0]"}] done.`,
+      );
+      expect(r.blocking).toBe(false);
+      expect(r.parseFailed).toBe(false);
+    });
   });
 
   describe('prompt-injection resistance (Gemini fix b)', () => {

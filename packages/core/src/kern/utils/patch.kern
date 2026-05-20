@@ -1,0 +1,9 @@
+// ── Patch Utilities ──────────────────────────────────────────────────
+// Shared patch-normalization helper used by git.kern and patch-apply.kern.
+
+fn name=normalizePatchContent params="patchContent:string" returns=string export=true
+  doc "Ensure patch content ends with a trailing newline so git-apply never chokes."
+  handler lang="kern"
+    if cond="!patchContent.trim()"
+      return value="patchContent"
+    return value="patchContent.endsWith('\\n') ? patchContent : `${patchContent}\\n`"

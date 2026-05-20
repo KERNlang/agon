@@ -248,6 +248,26 @@ fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[
     const durationMs = Number.isFinite(Number(capture?.durationMs))
       ? Number(capture.durationMs)
       : Date.now() - Number(capture?.startedAt ?? Date.now());
+    const files = buildRecapTouchedFiles(beforeFiles, afterFiles);
+    let createdCount = 0;
+    let editedCount = 0;
+    let readCount = 0;
+    for (const f of files) {
+      const s = String(f.status);
+      if (s === 'created') createdCount += 1;
+      else if (s === 'edited') editedCount += 1;
+      else readCount += 1;
+    }
+    const changeSummary = { created: createdCount, edited: editedCount, read: readCount };
+    const verifyLabels = new Set(['compile', 'typecheck', 'build', 'tests', 'lint']);
+    const verification: any[] = [];
+    const seenVerify = new Set<string>();
+    for (const c of commands) {
+      const label = String(c.label);
+      if (!verifyLabels.has(label) || seenVerify.has(label)) continue;
+      seenVerify.add(label);
+      verification.push({ label, ok: String(c.status).toLowerCase() !== 'error' });
+    }
     return {
       type: 'cesar-recap',
       engineId: String(result?.cesarEngineId ?? capture?.engineId ?? 'cesar'),
@@ -260,7 +280,9 @@ fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[
       failedTools,
       toolSummary,
       commands,
-      files: buildRecapTouchedFiles(beforeFiles, afterFiles),
+      files,
+      changeSummary,
+      verification,
       checkpoints,
       warnings: [...(capture?.warnings ?? []), ...(capture?.errors ?? [])].slice(0, 4),
     };

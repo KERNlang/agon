@@ -4,8 +4,9 @@
 
 import from="node:child_process" names="execSync"
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,existsSync,statSync"
-import from="node:path" names="join,resolve"
+import from="node:path" names="join"
 import from="node:os" names="homedir"
+import from="../utils/paths.js" names="getCacheDir"
 
 interface name=CliModelEntry
   field name=id type=string
@@ -35,13 +36,6 @@ const name=ENGINE_PROVIDER_MAP type="Record<string, {providerId:string, engineId
 // ── Minimal fallback when API is unreachable ──
 
 const name=FALLBACK_MODELS type="Record<string, {id:string, name:string, contextWindow?:number, toolCall?:boolean, reasoning?:boolean}[]>" value={{ ({ anthropic: [ { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextWindow: 200000, toolCall: true, reasoning: true }, { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', contextWindow: 200000, toolCall: true, reasoning: true } ], openai: [ { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'o4-mini', name: 'o4-mini', contextWindow: 200000, toolCall: true, reasoning: true } ], google: [ { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', contextWindow: 1048576, toolCall: true, reasoning: true } ], mistral: [ { id: 'mistral-large-latest', name: 'Mistral Large', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'codestral-latest', name: 'Codestral', contextWindow: 256000, toolCall: true, reasoning: false } ], openrouter: [ { id: 'auto', name: 'Auto (best for task)', toolCall: true, reasoning: false } ] }) }}
-
-fn name=getCacheDir returns=string
-  handler <<<
-    const override = process.env.AGON_HOME?.trim();
-    const home = override ? resolve(override) : join(homedir(), '.agon');
-    return join(home, 'cache');
-  >>>
 
 const name=CACHE_TTL_MS type=number value=3600000
 

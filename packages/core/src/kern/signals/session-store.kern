@@ -4,17 +4,10 @@
 // v2.1: Conversation store — cross-engine continuity so engine switches feel seamless.
 
 import from="node:fs" names="writeFileSync,readFileSync,existsSync,mkdirSync,unlinkSync,readdirSync,statSync,rmdirSync,renameSync"
-import from="node:path" names="join,dirname,resolve"
+import from="node:path" names="join,dirname"
 import from="node:crypto" names="createHash"
-import from="node:os" names="homedir"
+import from="../utils/paths.js" names="runtimeAgonPath"
 import from="../models/context-parts.js" names="CompactionSummaryPart,ToolCacheEntry" types=true
-
-fn name=runtimeAgonPath params="...parts:string[]" returns="string" export=false
-  handler <<<
-    const override = process.env.AGON_HOME?.trim();
-    const home = override ? resolve(override) : join(homedir(), '.agon');
-    return join(home, ...parts);
-  >>>
 
 const name=SESSION_SCHEMA_VERSION type=number value=2
 const name=SESSION_MAX_MESSAGES type=number value=80

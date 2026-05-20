@@ -1,8 +1,9 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync"
-import from="node:path" names="join,resolve"
+import from="node:path" names="join"
 import from="node:child_process" names="execSync"
-import from="node:os" names="homedir"
 import from="../models/types.js" names="ForgeManifest" types=true
+import from="../utils/paths.js" names="getUndoDir"
+import from="../utils/patch.js" names="normalizePatchContent"
 import from="./patch-parser.js" names="invertPatch"
 
 interface name=PatchInfo
@@ -16,19 +17,6 @@ interface name=ApplyPreflight
   field name=error type=string optional=true
   field name=patch type=PatchInfo optional=true
   field name=dirtyTree type=boolean
-
-fn name=normalizePatchContent params="patchContent:string" returns=string export=false
-  handler lang="kern"
-    if cond="!patchContent.trim()"
-      return value="patchContent"
-    return value="patchContent.endsWith('\\n') ? patchContent : `${patchContent}\\n`"
-
-fn name=getUndoDir returns=string export=false
-  handler <<<
-    const override = process.env.AGON_HOME?.trim();
-    const home = override ? resolve(override) : join(homedir(), '.agon');
-    return join(home, 'undo');
-  >>>
 
 fn name=readPatchFromManifest params="manifestPath:string" returns="PatchInfo|null"
   handler <<<

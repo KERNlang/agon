@@ -250,6 +250,10 @@ return defineCommand({
             timeout: implementTimeout,
             mode: 'implement',
             requireDiff: !a.fixContext,
+            // The judge synthesizes the best-of-all result (only active when
+            // config.forgeEnableSynthesis is on); falls back to the winner if unset.
+            synthEngine: judge,
+            synthesize: 'always',
             signal: abort.signal,
           } as any,
           registry,
@@ -273,12 +277,22 @@ return defineCommand({
         // has a test — the witness will still park it, correctly.)
         const results = manifest.results as Record<string, { pass?: boolean; score?: number }>;
         const patches = manifest.patches as Record<string, string> | undefined;
-        const readPatch = (eng: string): string => {
-          const p = patches?.[eng];
+        const readPatchPath = (p?: string): string => {
           try { return p ? readFileSync(p, 'utf-8') : ''; } catch { return ''; }
         };
+        const readPatch = (eng: string): string => readPatchPath(patches?.[eng]);
         const patchAddsTest = (diff: string): boolean =>
           !!diff.trim() && Object.keys(parseChangedLines(diff)).some((f) => isTestFile(f));
+
+        // Forge's synthesis pass may have won (winner === 'synthesis'). Apply
+        // it directly when it satisfies the test requirement; otherwise fall
+        // through to the constraint-aware pick so the witness is never handed
+        // a test-less patch.
+        const synthPatch = manifest.winner === 'synthesis' ? readPatchPath(((manifest as any).synthesis ?? {}).patchPath) : '';
+        if (synthPatch.trim() && (!!a.fixContext || args.requireTests === false || patchAddsTest(synthPatch))) {
+          applyPatch(a.worktree, synthPatch);
+          return { ok: true, costUsd };
+        }
 
         const candidates = Object.keys(results).map((eng) => ({
           engine: eng,
@@ -286,9 +300,14 @@ return defineCommand({
           score: results[eng]?.score ?? 0,
           addsTest: patchAddsTest(readPatch(eng)),
         }));
-        const winner = pickImplementWinner(manifest.winner, candidates, args.requireTests !== false, !!a.fixContext);
+        // If synthesis was the nominal winner but we fell through (no test),
+        // pick over the original engines using the best passing one as the base.
+        const baseWinner = manifest.winner === 'synthesis'
+          ? (candidates.filter((c) => c.pass).sort((x, y) => y.score - x.score)[0]?.engine ?? manifest.winner)
+          : manifest.winner;
+        const winner = pickImplementWinner(baseWinner, candidates, args.requireTests !== false, !!a.fixContext);
         if (winner !== manifest.winner) {
-          info(`Forge winner ${manifest.winner} added no test; applying passing test-bearing candidate ${winner} instead (requireTests).`);
+          info(`Forge winner ${manifest.winner} not test-bearing; applying passing test-bearing candidate ${winner} instead (requireTests).`);
         }
 
         const patch = readPatch(winner);

@@ -27,3 +27,14 @@ export type { CampfireResult } from './generated/campfire.js';
 // ── Delegate ──
 export { runDelegate } from './generated/delegate.js';
 export type { DelegateResult } from './generated/delegate.js';
+// ── Goal controller ──
+export type { GoalSpec, GoalTask, AttemptRecord, GoalEvent, JournalState } from './generated/goal/types.js';
+export {
+  goalDir, journalPath, createJournal, saveJournal, loadJournal,
+  addTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent,
+} from './generated/goal/journal.js';
+export { assertSafeGoalId, resolveWithin } from './generated/goal/paths.js';
+export type { Mutant } from './generated/goal/mutation.js';
+export { generateMutants, applyMutantToSource, mutationSurvivors } from './generated/goal/mutation.js';
+export type { FrozenOracle, WitnessResult } from './generated/goal/oracle.js';
+export { hashOracleInputs, snapshotOracle, oracleTampered, witnessTest } from './generated/goal/oracle.js';

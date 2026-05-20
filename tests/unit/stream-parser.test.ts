@@ -156,6 +156,34 @@ describe('StreamParser', () => {
       const results = parser.feed(json + '\n');
       expect(results).toEqual([]);
     });
+
+    it('preserves a JSON ARRAY line as raw text (kimi findings block was being dropped)', () => {
+      const parser = new StreamParser();
+      const arr = '[{"file":"a.ts","severity":"blocking","blocking":true}]';
+      const results = parser.feed(arr + '\n');
+      expect(results).toEqual([{ type: 'raw', content: arr }]);
+    });
+
+    it('preserves a JSON object with NO string type field as raw text', () => {
+      const parser = new StreamParser();
+      const obj = '{"file":"a.ts","problem":"x"}';
+      const results = parser.feed(obj + '\n');
+      expect(results).toEqual([{ type: 'raw', content: obj }]);
+    });
+
+    it('skips an object with a non-string type (malformed envelope, not content)', () => {
+      const parser = new StreamParser();
+      expect(parser.feed('{"type":null,"data":1}\n')).toEqual([]);
+      expect(parser.feed('{"type":123,"data":1}\n')).toEqual([]);
+    });
+
+    it('skips bare JSON primitives (number/string/bool/null) as before', () => {
+      const parser = new StreamParser();
+      expect(parser.feed('42\n')).toEqual([]);
+      expect(parser.feed('true\n')).toEqual([]);
+      expect(parser.feed('"hello"\n')).toEqual([]);
+      expect(parser.feed('null\n')).toEqual([]);
+    });
   });
 
   describe('parseStreamChunk — backward compat wrapper', () => {

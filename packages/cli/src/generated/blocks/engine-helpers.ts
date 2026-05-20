@@ -87,3 +87,25 @@ export function extractSummary(text: string, maxLen: number): string {
   const summary = firstSentence ? firstSentence[0] : s.slice(0, maxLen);
   return (summary.length > maxLen) ? (summary.slice(0, maxLen - 1) + '…') : summary;
 }
+
+/**
+ * Remove reasoning-scaffolding blocks (<think>/<thinking>/<reasoning>) that reasoning models (MiniMax, DeepSeek, Qwen) emit before their real answer and sometimes leak into persisted output. Strips CLOSED blocks only — the common leak case — using a backreference so the open and close tags must match. Engine-agnostic: apply wherever raw engine output is persisted or parsed so scaffolding never reaches users or a structured-findings parser.
+ */
+// @kern-source: engine-helpers:82
+export function stripReasoning(text: string): string {
+  return text.replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>\s*/gi, '').trim();
+}
+
+/**
+ * Strip claude TUI thinking-animation chrome that leaks into pty-captured output. The animation redraws on one line, so ANSI-stripping flattens its frames into a glyph/label/counter soup ('·✢✳✶✻✽…This one needs a moment…Working through it…95%…Review …'). Spinner glyph frames and the input-bar prompt char (❯) are NEVER legitimate content, so they're always removed. The …-terminated spinner labels (claude invents endless ones — 'Cogitating…', 'Untangling some thoughts…' — so enumerating them is hopeless) and the leading token/elapsed counter residue are removed ONLY when glyph frames were present, i.e. proof this is TUI chrome. That glyph-gate means API engines (gemini/kimi/zai — no TUI) never have real content touched.
+ */
+// @kern-source: engine-helpers:88
+export function stripTuiChrome(text: string): string {
+  const hadChrome = /[·✢✳✶✻✽⎿]/.test(text);
+  let s = text.replace(/[·✢✳✴✵✶✷✸✹✺✻✼✽✾⎿]/g, '').replace(/❯/g, '');
+  if (hadChrome) {
+    s = s.replace(/[A-Z][^\n…]{0,40}…/g, '');
+    s = s.replace(/^[\s\d%]+/, '');
+  }
+  return s.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}

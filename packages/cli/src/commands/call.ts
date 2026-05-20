@@ -101,7 +101,14 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...engines,
     ]);
   } else if (workflow === 'review') {
-    commands.push(['review', opts.input?.trim() || 'uncommitted', ...engines]);
+    commands.push(['review', opts.input?.trim() || 'uncommitted', ...timeout, ...engines]);
+  } else if (workflow === 'doctor') {
+    // Passthrough so external CLIs that standardize on `agon call <workflow>`
+    // can reach the top-level doctor. `agon call doctor` -> `agon doctor`,
+    // `agon call doctor harness` -> `agon doctor harness`. Forward --timeout
+    // and --engines too so `agon call doctor review --engines x --timeout 15`
+    // reaches the doctor-review smoke test (they're ignored by other scopes).
+    commands.push(['doctor', opts.input?.trim() || 'engines', ...timeout, ...engines]);
   } else if (workflow === 'pipeline') {
     const task = requireInput(workflow, opts.input);
     const fitness = opts.fitnessCmd?.trim() || 'true';
@@ -109,7 +116,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
     commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
   } else {
-    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, tribunal, campfire, pipeline, review, or a team-* workflow.`);
+    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, tribunal, campfire, pipeline, review, doctor, or a team-* workflow.`);
   }
 
   return { cwd, commands };
@@ -170,7 +177,7 @@ export const callCommand = defineCommand({
   args: {
     workflow: {
       type: 'positional',
-      description: 'Workflow: forge, brainstorm, tribunal, campfire, pipeline, review, or team-*',
+      description: 'Workflow: forge, brainstorm, tribunal, campfire, pipeline, review, doctor, or team-*',
       required: true,
     },
     input: {

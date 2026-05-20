@@ -156,6 +156,20 @@ describe('StreamParser', () => {
       const results = parser.feed(json + '\n');
       expect(results).toEqual([]);
     });
+
+    it('preserves a JSON ARRAY line as raw text (kimi findings block was being dropped)', () => {
+      const parser = new StreamParser();
+      const arr = '[{"file":"a.ts","severity":"blocking","blocking":true}]';
+      const results = parser.feed(arr + '\n');
+      expect(results).toEqual([{ type: 'raw', content: arr }]);
+    });
+
+    it('preserves a JSON object with NO string type field as raw text', () => {
+      const parser = new StreamParser();
+      const obj = '{"file":"a.ts","problem":"x"}';
+      const results = parser.feed(obj + '\n');
+      expect(results).toEqual([{ type: 'raw', content: obj }]);
+    });
   });
 
   describe('parseStreamChunk — backward compat wrapper', () => {

@@ -58,7 +58,10 @@ service name=StreamParser
           if cond="msg.message"
             do value="results.push({ type: 'status', content: msg.message })"
           return value="results"
-        comment raw="// Unknown JSON: skip."
+        comment raw="// A genuine stream-json control envelope always carries a string `type`. If this line parsed as JSON but is NOT such an envelope (e.g. an API engine like kimi emitting its findings as a JSON array — or any model whose TEXT output contains a JSON object/array on its own line), it is CONTENT, not protocol. Dropping it silently ate kimi's review findings (the array parsed as JSON, matched no envelope type, and was discarded — the output file written by the adapter looked complete, but the accumulated text lost the block). Preserve it as raw text. We only skip lines that look like an unknown control envelope (string `type` field)."
+        if cond="msg && typeof msg === 'object' && typeof msg.type === 'string'"
+          return value="results"
+        do value="results.push({ type: 'raw', content: line })"
         return value="results"
         catch name=e
           comment raw="// Not JSON: treat as raw text (Codex, Gemini, etc.)."

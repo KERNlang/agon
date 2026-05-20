@@ -90,10 +90,13 @@ fn name=clampConfidence params="raw:number" returns="number" export=true
   >>>
 
 fn name=inferConfidence params="f:RawFinding" returns="number" export=true
-  doc "A finding's effective confidence: its self-rated number when present and finite, else inferred from severity (blocking 0.8, important 0.6, nit/unknown 0.3)."
+  doc "A finding's effective confidence: its self-rated value when present and finite, else inferred from severity (blocking 0.8, important 0.6, nit/unknown 0.3). Accepts a numeric STRING too (engines routinely emit confidence:\"0.72\"); a non-finite or absent value falls back to the severity default."
   handler <<<
-    const c = f.confidence;
-    if (typeof c === 'number' && Number.isFinite(c)) return clampConfidence(c);
+    const c: any = (f as any).confidence;
+    const n = typeof c === 'number'
+      ? c
+      : (typeof c === 'string' && c.trim() !== '' ? Number(c) : NaN);
+    if (Number.isFinite(n)) return clampConfidence(n);
     const sev = (f.severity || '').toLowerCase();
     if (f.blocking === true || sev === 'blocking') return 0.8;
     if (sev === 'important' || sev === 'major') return 0.6;
@@ -194,8 +197,18 @@ fn name=buildConsensus params="outcomes:EngineOutcome[], minVerified?:number, mi
     for (const c of clusters.values()) {
       const pairVotes = Array.from(c.sigConf.values()).filter((v) => v >= mp).length;
       const isNit = c.severity === 'nit';
+      // Anchor quality guards pair-block: two engines only count as agreeing on
+      // the SAME issue when the cluster is concrete enough to trust the match —
+      // a real file+line, or a problem specific enough to be more than a few
+      // generic words. Without it, sparse low-information findings (empty
+      // file/lines/problem → key '#-1#') from different engines would collapse
+      // into one cluster and fake a pair-block. A weak cluster can still solo-
+      // block (one engine's deliberate >=0.85 blocking call) and still surfaces
+      // for the judge — it just can't auto-block on phantom cross-engine agreement.
+      const probWords = (c.problem || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(Boolean).length;
+      const hasAnchor = (!!(c.file && String(c.file).trim()) && /\d/.test(String(c.lines || ''))) || probWords >= 3;
       const soloBlock = c.severity === 'blocking' && c.blockingMaxConf >= mv;
-      const pairBlock = (c.severity === 'blocking' || c.severity === 'important') && pairVotes >= 2;
+      const pairBlock = (c.severity === 'blocking' || c.severity === 'important') && pairVotes >= 2 && hasAnchor;
       const blocks = !isNit && (soloBlock || pairBlock);
       const engines = Array.from(c.engines);
       let tier: string;

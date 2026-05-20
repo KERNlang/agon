@@ -25,6 +25,7 @@ export const agentGuideCommand: any = defineCommand({
           { name: 'tribunal', cmd: 'agon tribunal "<question>" --mode adversarial', use: 'decisions with real tradeoffs' },
           { name: 'campfire', cmd: 'agon campfire "<topic>"', use: 'open exploration, no winner' },
           { name: 'review', cmd: 'agon review uncommitted', use: 'multi-engine code review' },
+          { name: 'goal', cmd: 'agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"', use: 'autonomously drive a task queue to completion (build->review->fix->commit per task); long-running' },
         ],
         flags: ['--engines claude,codex,gemini', '--timeout <sec>'],
         machineReadable: 'agon call <mode> "<input>" [flags] --jsonl',

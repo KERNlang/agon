@@ -58,9 +58,24 @@ export function globalBreaker(state: JournalState, maxParkStreak: number, maxNoP
 }
 
 /**
- * True once cumulative spend reaches the goal's USD ceiling (0 = unlimited).
+ * Constraint-aware winner pick for the goal loop. Forge scores by fitness alone, so it can crown a higher-scoring patch that adds NO test while lower-scoring PASSING patches include one — the witness then parks it and the whole panel is wasted. When requireTests is on and this is not a fix pass, if the forge winner adds no test, return the highest-scoring PASSING candidate that DOES add a test; otherwise keep forge's winner (the witness will park it, correctly). Pure: the caller resolves each candidate's addsTest by inspecting its patch.
  */
 // @kern-source: policy:59
+export function pickImplementWinner(forgeWinner: string, candidates: Array<{engine:string,pass:boolean,score:number,addsTest:boolean}>, requireTests: boolean, isFix: boolean): string {
+  if (isFix || !requireTests) return forgeWinner;
+  const w = candidates.find((c) => c.engine === forgeWinner);
+  if (w && w.addsTest) return forgeWinner;
+  const withTest = candidates
+    .filter((c) => c.pass && c.addsTest)
+    .slice()
+    .sort((a, b) => b.score - a.score);
+  return withTest.length > 0 ? withTest[0].engine : forgeWinner;
+}
+
+/**
+ * True once cumulative spend reaches the goal's USD ceiling (0 = unlimited).
+ */
+// @kern-source: policy:72
 export function budgetExceeded(state: JournalState): boolean {
   const cap = state.spec.budgetUsd;
   return cap > 0 && state.spentUsd >= cap;
@@ -69,7 +84,7 @@ export function budgetExceeded(state: JournalState): boolean {
 /**
  * True once wall-clock since startedAt reaches the goal's hour ceiling (0 = unlimited).
  */
-// @kern-source: policy:66
+// @kern-source: policy:79
 export function timeExceeded(state: JournalState, now: number): boolean {
   if (!state.startedAt) return false;
   const cap = state.spec.maxHours;

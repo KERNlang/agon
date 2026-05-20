@@ -1,12 +1,56 @@
 import { describe, it, expect } from 'vitest';
 import {
-  gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded,
+  gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pickImplementWinner,
 } from '../../packages/forge/src/generated/goal/policy.js';
 import type { JournalState, GoalTask, GoalSpec } from '../../packages/forge/src/generated/goal/types.js';
 
 const spec = (over: Partial<GoalSpec> = {}): GoalSpec => ({
   goalId: 'g', intent: 'x', branch: 'goal/x', gate: 'npm test', queueSource: '.kern-gaps/',
   maxAttempts: 3, budgetUsd: 50, maxHours: 8, supervised: true, ...over,
+});
+
+describe('pickImplementWinner', () => {
+  // The exact dogfooding failure: zai wins on score (89) with no test; codex &
+  // gemini pass at 79 WITH a test. requireTests must steer to a test-bearing one.
+  const realPanel = [
+    { engine: 'zai', pass: true, score: 89, addsTest: false },
+    { engine: 'codex', pass: true, score: 79, addsTest: true },
+    { engine: 'gemini', pass: true, score: 79, addsTest: true },
+    { engine: 'minimax', pass: false, score: 0, addsTest: true },
+    { engine: 'kimi', pass: false, score: 0, addsTest: false },
+  ];
+
+  it('overrides a test-less forge winner with the highest-scoring passing test-bearing candidate', () => {
+    expect(pickImplementWinner('zai', realPanel, true, false)).toBe('codex');
+  });
+
+  it('keeps the forge winner when it already adds a test', () => {
+    expect(pickImplementWinner('codex', realPanel, true, false)).toBe('codex');
+  });
+
+  it('keeps the forge winner when requireTests is off', () => {
+    expect(pickImplementWinner('zai', realPanel, false, false)).toBe('zai');
+  });
+
+  it('keeps the forge winner on a fix pass (no new test mandated)', () => {
+    expect(pickImplementWinner('zai', realPanel, true, true)).toBe('zai');
+  });
+
+  it('falls back to the forge winner when NO passing candidate has a test', () => {
+    const noTests = [
+      { engine: 'zai', pass: true, score: 89, addsTest: false },
+      { engine: 'codex', pass: true, score: 79, addsTest: false },
+    ];
+    expect(pickImplementWinner('zai', noTests, true, false)).toBe('zai');
+  });
+
+  it('ignores test-bearing candidates that did not PASS', () => {
+    const onlyFailingHasTest = [
+      { engine: 'zai', pass: true, score: 89, addsTest: false },
+      { engine: 'minimax', pass: false, score: 50, addsTest: true },
+    ];
+    expect(pickImplementWinner('zai', onlyFailingHasTest, true, false)).toBe('zai');
+  });
 });
 
 const task = (over: Partial<GoalTask> = {}): GoalTask => ({

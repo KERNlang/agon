@@ -1560,32 +1560,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           }
         }
 
-        // ── Auto-review: when Cesar wrote code, run a quick review before declaring done ──
-        // Data: 79% bug catch rate from reviewers. Architecture, not prompts.
-        const WRITE_TOOL_NAMES = new Set(['Edit', 'Write']);
-        const cesarWroteCode = _toolsUsed.some((t: string) => WRITE_TOOL_NAMES.has(t));
-        if (cesarWroteCode && (config as any).autoReviewAfterImpl !== false && session.alive && !abort.signal.aborted && !ctx.cesar!.pendingDelegation) {
-          dispatch({ type: 'spinner-start', message: 'Auto-reviewing changes…', color });
-          try {
-            let reviewResponse = '';
-            const reviewGen = session.send({
-              message: 'You just wrote code. Before we present this to the user, quickly self-review: check for bugs, missing edge cases, type errors, and off-by-one issues in what you just changed. If you find issues, fix them now. If everything looks correct, say "Review passed." Be brief.',
-              signal: abort.signal,
-            });
-            for await (const chunk of reviewGen) {
-              if (chunk.type === 'text') reviewResponse += chunk.content;
-              if (chunk.type === 'done' || chunk.type === 'error') break;
-            }
-            dispatch({ type: 'spinner-stop' });
-            if (reviewResponse.trim() && !reviewResponse.includes('Review passed')) {
-              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: `**Auto-review:**\n${reviewResponse.trim()}` });
-              response += `\n\n[Auto-review: ${reviewResponse.trim().slice(0, 200)}]`;
-            }
-          } catch {
-            dispatch({ type: 'spinner-stop' });
-            // Auto-review is best-effort — don't crash
-          }
-        }
+        // ── Auto-review: disabled — user must explicitly request /review <engine> ──
 
         // ── Plan mode gate: Cesar must end with ProposePlan — nudge hard but don't force ──
         if (inPlanMode && !ctx.cesar!.proposedPlan && !ctx.cesar!.pendingDelegation && session.alive && !abort.signal.aborted) {

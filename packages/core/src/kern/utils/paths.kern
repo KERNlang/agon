@@ -6,13 +6,8 @@
 import from="node:path" names="join,resolve"
 import from="node:os" names="homedir"
 
-fn name=runtimeAgonPath params="...parts:string[]" returns="string" export=true
-  doc "Resolve a path under ~/.agon (or AGON_HOME if set)."
-  handler <<<
-    const override = process.env.AGON_HOME?.trim();
-    const home = override ? resolve(override) : join(homedir(), '.agon');
-    return join(home, ...parts);
-  >>>
+fn name=runtimeAgonPath params="...parts:string[]" returns="string" export=true expr={{ return join(resolve(process.env.AGON_HOME?.trim() || join(homedir(), '.agon')), ...parts); }}
+  doc "Resolve a path under ~/.agon (or AGON_HOME if set). resolve() is a no-op on the already-absolute homedir path, so the override and default branches behave identically."
 
 fn name=getCacheDir returns=string export=true
   doc "Canonical cache directory under ~/.agon/cache."

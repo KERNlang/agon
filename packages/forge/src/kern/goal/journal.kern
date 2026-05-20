@@ -3,18 +3,20 @@
 // JournalState (testable without fs) plus load/save persistence to
 // ~/.agon/goals/<goalId>/journal.json. See AGON-GOAL-DESIGN.md.
 
-import from="node:fs" names="existsSync,readFileSync,writeFileSync,mkdirSync"
+import from="node:fs" names="existsSync,readFileSync,writeFileSync,mkdirSync,renameSync"
+import from="node:path" names="dirname"
 import from="@agon/core" names="agonPath,ensureAgonHome"
+import from="./paths.js" names="assertSafeGoalId"
 import from="./types.js" names="JournalState,GoalSpec,GoalTask,AttemptRecord" types=true
 
 fn name=goalDir params="goalId:string" returns=string export=true
   handler <<<
-    return agonPath('goals', goalId);
+    return agonPath('goals', assertSafeGoalId(goalId));
   >>>
 
 fn name=journalPath params="goalId:string" returns=string export=true
   handler <<<
-    return agonPath('goals', goalId, 'journal.json');
+    return agonPath('goals', assertSafeGoalId(goalId), 'journal.json');
   >>>
 
 fn name=createJournal params="spec:GoalSpec" returns="JournalState" export=true
@@ -34,18 +36,20 @@ fn name=createJournal params="spec:GoalSpec" returns="JournalState" export=true
   >>>
 
 fn name=saveJournal params="state:JournalState" returns=void export=true
-  doc "Checkpoint the journal to disk (atomic enough for resume)."
+  doc "Atomically checkpoint the journal: write a temp file then rename, so a crash mid-write can never corrupt the resume source of truth."
   handler <<<
     ensureAgonHome();
-    const dir = agonPath('goals', state.spec.goalId);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(agonPath('goals', state.spec.goalId, 'journal.json'), JSON.stringify(state, null, 2));
+    const target = journalPath(state.spec.goalId);
+    mkdirSync(dirname(target), { recursive: true });
+    const tmp = target + '.tmp';
+    writeFileSync(tmp, JSON.stringify(state, null, 2));
+    renameSync(tmp, target);
   >>>
 
 fn name=loadJournal params="goalId:string" returns="JournalState | null" export=true
   doc "Load a journal for --resume; null when absent or corrupt."
   handler <<<
-    const p = agonPath('goals', goalId, 'journal.json');
+    const p = journalPath(goalId);
     if (!existsSync(p)) return null;
     try {
       return JSON.parse(readFileSync(p, 'utf-8')) as JournalState;

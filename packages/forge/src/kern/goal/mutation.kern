@@ -5,9 +5,9 @@
 // tests. A surviving mutant (tests still pass on wrong code) means the test is
 // too weak -> park. This makes "encode the answer in the test" self-defeating.
 
-import from="node:fs" names="readFileSync,writeFileSync"
-import from="node:path" names="isAbsolute,join"
+import from="node:fs" names="writeFileSync"
 import from="@agon/core" names="spawnWithTimeout"
+import from="./paths.js" names="resolveWithin"
 
 interface name=Mutant export=true
   doc "A single canonical mutation applied to one changed line."
@@ -32,7 +32,7 @@ fn name=generateMutants params="source:string, changedLines:number[]" returns="M
       { name: 'bool:true→false', apply: (s) => { const m = s.replace(/\btrue\b/, 'false'); return m !== s ? m : null; } },
       { name: 'bool:false→true', apply: (s) => { const m = s.replace(/\bfalse\b/, 'true'); return m !== s ? m : null; } },
       { name: 'ret:→undefined', apply: (s) => { const m = s.replace(/\breturn\s+[^;]+;/, 'return undefined;'); return m !== s ? m : null; } },
-      { name: 'arr:[]→[0]', apply: (s) => { const m = s.replace('[]', '[0]'); return m !== s ? m : null; } },
+      { name: 'arr:[]→[0]', apply: (s) => { const m = s.replace(/(?<![\w\]])\[\](?!\])/, '[0]'); return m !== s ? m : null; } },
     ];
     const lines = source.split('\n');
     const mutants: Mutant[] = [];
@@ -60,10 +60,10 @@ fn name=applyMutantToSource params="source:string, mutant:Mutant" returns=string
   >>>
 
 fn name=mutationSurvivors async=true params="opts:{worktree:string, relFilePath:string, source:string, mutants:Mutant[], testCmd:string, timeout:number}" returns="Promise<Mutant[]>" export=true
-  doc "Apply each mutant to the file, run the witness tests; a mutant whose tests still PASS survived (weak test). Restores the original file in finally."
+  doc "Apply each mutant to the file, run the witness tests; a mutant whose tests still PASS survived (weak test). Restores the original file in finally. Single-file by design — the controller calls this once per changed file. Rejects relFilePath that escapes the worktree."
   handler <<<
     const { worktree, relFilePath, source, mutants, testCmd, timeout } = opts;
-    const absPath = isAbsolute(relFilePath) ? relFilePath : join(worktree, relFilePath);
+    const absPath = resolveWithin(worktree, relFilePath);
     const survivors: Mutant[] = [];
     try {
       for (const mutant of mutants) {

@@ -57,6 +57,18 @@ describe('goal journal — pure transforms', () => {
     expect(nextTask(j)!.id).toBe('b');
   });
 
+  it('treats a dependsOn referencing an unknown id as permanently blocked', () => {
+    let j = createJournal(spec());
+    j = addTasks(j, [{ id: 'z', source: 'z', dependsOn: ['nonexistent'] }]);
+    expect(nextTask(j)).toBeNull();
+  });
+
+  it('treats an empty dependsOn array as immediately runnable', () => {
+    let j = createJournal(spec());
+    j = addTasks(j, [{ id: 'x', source: 'x', dependsOn: [] }]);
+    expect(nextTask(j)!.id).toBe('x');
+  });
+
   it('markStatus patches fields and is a no-op for unknown ids', () => {
     let j = createJournal(spec());
     j = addTasks(j, [{ id: 'a', source: 'gap-a' }]);
@@ -121,5 +133,10 @@ describe('goal journal — persistence (sandboxed AGON_HOME)', () => {
 
   it('loadJournal returns null for an unknown goal', () => {
     expect(loadJournal('does-not-exist')).toBeNull();
+  });
+
+  it('saveJournal rejects a goalId that would traverse the filesystem', () => {
+    const j = createJournal({ ...spec(), goalId: '../escape' });
+    expect(() => saveJournal(j)).toThrow();
   });
 });

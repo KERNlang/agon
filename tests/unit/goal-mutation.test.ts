@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateMutants, applyMutantToSource } from '../../packages/forge/src/generated/goal/mutation.js';
 import { hashOracleInputs } from '../../packages/forge/src/generated/goal/oracle.js';
+import { assertSafeGoalId, resolveWithin } from '../../packages/forge/src/generated/goal/paths.js';
 
 describe('mutation-witness — generateMutants', () => {
   const src = [
@@ -21,16 +22,23 @@ describe('mutation-witness — generateMutants', () => {
     expect(ops).toContain('ret:→undefined');
   });
 
-  it('produces operator-specific mutants on the relational/logical line', () => {
-    const ops = generateMutants(src, [3]).map((m) => m.operator);
+  it('produces operator-specific mutants with correct mutated text (not just presence)', () => {
+    const mutants = generateMutants(src, [3]);
+    const ops = mutants.map((m) => m.operator);
     expect(ops).toContain('eq:===→!==');
     expect(ops).toContain('logic:&&→||');
     expect(ops).toContain('rel:>→<=');
+    // each operator starts from the pristine line, so no self-inversion
+    expect(mutants.find((m) => m.operator === 'eq:===→!==')!.after).toBe('  const ok = a !== b && a > 0;');
+    expect(mutants.find((m) => m.operator === 'logic:&&→||')!.after).toBe('  const ok = a === b || a > 0;');
   });
 
-  it('mutates empty-array literal', () => {
-    const ops = generateMutants(src, [4]).map((m) => m.operator);
-    expect(ops).toContain('arr:[]→[0]');
+  it('mutates empty-array literal but not array TYPE annotations', () => {
+    expect(generateMutants(src, [4]).map((m) => m.operator)).toContain('arr:[]→[0]');
+    // `string[] = []` must mutate the value [], never the `string[]` type
+    const typed = generateMutants('const xs: string[] = [];', [1]);
+    const arr = typed.find((m) => m.operator === 'arr:[]→[0]');
+    expect(arr!.after).toBe('const xs: string[] = [0];');
   });
 
   it('ignores out-of-range line numbers', () => {
@@ -54,6 +62,20 @@ describe('mutation-witness — applyMutantToSource', () => {
   });
   it('returns source unchanged for an out-of-range line', () => {
     expect(applyMutantToSource(src, { id: 'x', operator: 'x', line: 99, before: '', after: 'ZZ' })).toBe(src);
+  });
+});
+
+describe('path safety', () => {
+  it('assertSafeGoalId accepts slugs and rejects traversal', () => {
+    expect(assertSafeGoalId('g-123_abc')).toBe('g-123_abc');
+    for (const bad of ['..', 'a/b', '../etc', 'a.b', '/abs', '', 'has space']) {
+      expect(() => assertSafeGoalId(bad)).toThrow();
+    }
+  });
+  it('resolveWithin rejects paths that escape the root', () => {
+    expect(resolveWithin('/tmp/wt', 'a/b.ts')).toBe('/tmp/wt/a/b.ts');
+    expect(() => resolveWithin('/tmp/wt', '../escape.ts')).toThrow();
+    expect(() => resolveWithin('/tmp/wt', '/etc/passwd')).toThrow();
   });
 });
 

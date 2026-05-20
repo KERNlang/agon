@@ -1,0 +1,255 @@
+// Consensus review model — the confidence-tiered ensemble logic shared by
+// /review and /goal. Pure data in, pure data out: a panel of per-engine review
+// outcomes goes in, a single ConsensusReport comes out. No IO, no engine calls
+// — every decision here is unit-testable.
+//
+// The blocking rule (codex's two-signal design, reduces false-positive blocks
+// while preserving weird-edge-case catches):
+//   • solo-block — ONE finding of severity 'blocking' with confidence >= 0.85
+//   • pair-block — TWO engines on the SAME blocking/important issue, each >= 0.70
+//   • a 'nit' NEVER blocks, even at confidence 0.99
+//   • medium-confidence blocking/important findings → 'needs-check' (the judge
+//     adjudicates them; "any blocking finding < 0.85 must be reviewed by another
+//     engine before it blocks")
+//   • < 0.60 single-engine findings → 'speculative' noise, unless a second
+//     engine independently agrees (which promotes them to needs-check)
+// Engine timeouts / parse failures are NOT findings — they go in their own
+// engineFailures lane so a flaky engine can never impersonate a real blocker.
+
+interface name=RawFinding export=true
+  field name=engine type=string
+    doc "Which engine produced this finding."
+  field name=severity type=string optional=true
+    doc "Engine self-rated severity: 'blocking' | 'important' | 'nit'. Missing → inferred from the blocking flag."
+  field name=blocking type=boolean optional=true
+  field name=confidence type=number optional=true
+    doc "0..1 self-rated confidence. Missing → inferred from severity (blocking 0.8, important 0.6, else 0.3)."
+  field name=file type=string optional=true
+  field name=lines type=string optional=true
+  field name=problem type=string optional=true
+  field name=minimalFix type=string optional=true
+
+interface name=EngineOutcome export=true
+  field name=engine type=string
+  field name=status type=string
+    doc "'ok' | 'parse-failed' | 'timeout' | 'error'. Anything other than 'ok' lands in engineFailures, never in the findings buckets."
+  field name=findings type="RawFinding[]"
+  field name=note type=string optional=true
+    doc "Free-text detail for a failure (error message, timeout duration)."
+
+interface name=ConsensusFinding export=true
+  field name=key type=string
+    doc "Cluster key: file + line-bucket + normalized problem words. Findings that share a key are treated as the SAME issue across engines."
+  field name=engines type="string[]"
+    doc "Distinct engines that reported this cluster."
+  field name=maxConfidence type=number
+  field name=pairVotes type=number
+    doc "How many distinct engines flagged this as blocking/important at confidence >= the pair threshold (drives pair-block)."
+  field name=severity type=string
+    doc "Worst severity across the cluster: 'blocking' > 'important' > 'nit'."
+  field name=tier type=string
+    doc "'verified' | 'needs-check' | 'speculative' | 'nit'."
+  field name=blocks type=boolean
+    doc "True iff this cluster auto-blocks per the two-signal rule."
+  field name=problem type=string
+  field name=minimalFix type=string optional=true
+  field name=file type=string optional=true
+  field name=lines type=string optional=true
+
+interface name=ConsensusReport export=true
+  field name=findings type="ConsensusFinding[]"
+    doc "All clusters, sorted blockers-first then by confidence."
+  field name=verified type="ConsensusFinding[]"
+  field name=needsCheck type="ConsensusFinding[]"
+  field name=speculative type="ConsensusFinding[]"
+  field name=nits type="ConsensusFinding[]"
+  field name=blockers type="ConsensusFinding[]"
+    doc "The subset that auto-blocks (== verified). Acting on these needs no judge."
+  field name=engineFailures type="EngineOutcome[]"
+    doc "Engines that timed out / failed to parse / errored — surfaced separately, never counted as findings."
+  field name=panelSize type=number
+  field name=okCount type=number
+    doc "Engines that returned a usable verdict."
+  field name=autoBlock type=boolean
+    doc "Block immediately without a judge: a verified blocker exists, OR no engine produced a verdict (fail-closed)."
+  field name=needsJudge type=boolean
+    doc "There are needs-check findings to adjudicate but nothing that auto-blocks."
+  field name=summary type=string
+
+const name=PAIR_THRESHOLD type=number value={{ 0.70 }}
+const name=VERIFIED_THRESHOLD type=number value={{ 0.85 }}
+const name=MEDIUM_THRESHOLD type=number value={{ 0.60 }}
+
+fn name=clampConfidence params="raw:number" returns="number" export=true
+  doc "Clamp an arbitrary number into [0,1]."
+  handler <<<
+    if (!Number.isFinite(raw)) return 0;
+    if (raw < 0) return 0;
+    if (raw > 1) return 1;
+    return raw;
+  >>>
+
+fn name=inferConfidence params="f:RawFinding" returns="number" export=true
+  doc "A finding's effective confidence: its self-rated number when present and finite, else inferred from severity (blocking 0.8, important 0.6, nit/unknown 0.3)."
+  handler <<<
+    const c = f.confidence;
+    if (typeof c === 'number' && Number.isFinite(c)) return clampConfidence(c);
+    const sev = (f.severity || '').toLowerCase();
+    if (f.blocking === true || sev === 'blocking') return 0.8;
+    if (sev === 'important' || sev === 'major') return 0.6;
+    return 0.3;
+  >>>
+
+fn name=normSeverity params="f:RawFinding" returns="string" export=true
+  doc "Normalize a finding's severity to 'blocking' | 'important' | 'nit'. blocking===true wins; 'major'→'important'; anything unrecognized → 'nit'."
+  handler <<<
+    const sev = (f.severity || '').toLowerCase();
+    if (f.blocking === true || sev === 'blocking') return 'blocking';
+    if (sev === 'important' || sev === 'major') return 'important';
+    return 'nit';
+  >>>
+
+fn name=clusterKey params="f:RawFinding" returns="string" export=true
+  doc "Cluster key so the same issue from different engines collapses into one finding: lowercased file + a 10-line bucket of the first line number + the first 8 normalized words of the problem. Best-effort — when engines word a bug differently it stays split, which is the SAFE direction (no accidental auto-block from a phantom pair)."
+  handler <<<
+    const file = (f.file || '').trim().toLowerCase();
+    const lineStr = (f.lines == null ? '' : String(f.lines));
+    const m = lineStr.match(/\d+/);
+    const bucket = m ? Math.floor(parseInt(m[0], 10) / 10) : -1;
+    const prob = (f.problem || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]+/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 8)
+      .join(' ');
+    return `${file}#${bucket}#${prob}`;
+  >>>
+
+fn name=buildConsensus params="outcomes:EngineOutcome[], minVerified?:number, minPair?:number" returns="ConsensusReport" export=true
+  doc "Fold a panel of per-engine outcomes into one tiered, deduplicated report applying the two-signal block rule. minVerified defaults to 0.85 (solo-block), minPair to 0.70 (pair-block). Fail-closed: a panel where no engine returned a usable verdict autoBlocks."
+  handler <<<
+    const mv = typeof minVerified === 'number' && Number.isFinite(minVerified) ? minVerified : VERIFIED_THRESHOLD;
+    const mp = typeof minPair === 'number' && Number.isFinite(minPair) ? minPair : PAIR_THRESHOLD;
+
+    const list = Array.isArray(outcomes) ? outcomes : [];
+    const panelSize = list.length;
+    const ok = list.filter((o) => o && o.status === 'ok');
+    const engineFailures = list.filter((o) => o && o.status !== 'ok');
+    const okCount = ok.length;
+
+    // Working cluster carries internal accumulators we strip before returning.
+    type Work = {
+      key: string;
+      engines: Set<string>;
+      maxConfidence: number;     // any severity, for display
+      blockingMaxConf: number;   // confidence among severity==='blocking' only → drives solo-block
+      sigConf: Map<string, number>; // per engine: max conf among its blocking|important findings → drives pair-block
+      severity: string;          // worst across the cluster
+      problem: string;
+      minimalFix?: string;
+      file?: string;
+      lines?: string;
+    };
+    const sevRank = (s: string): number => (s === 'blocking' ? 2 : s === 'important' ? 1 : 0);
+    const clusters = new Map<string, Work>();
+
+    for (const o of ok) {
+      for (const f of (o.findings || [])) {
+        const key = clusterKey(f);
+        const conf = inferConfidence(f);
+        const sev = normSeverity(f);
+        let c = clusters.get(key);
+        if (!c) {
+          c = {
+            key,
+            engines: new Set<string>(),
+            maxConfidence: 0,
+            blockingMaxConf: 0,
+            sigConf: new Map<string, number>(),
+            severity: 'nit',
+            problem: f.problem || '',
+            minimalFix: f.minimalFix,
+            file: f.file,
+            lines: f.lines,
+          };
+          clusters.set(key, c);
+        }
+        c.engines.add(o.engine);
+        if (conf > c.maxConfidence) c.maxConfidence = conf;
+        if (sevRank(sev) > sevRank(c.severity)) c.severity = sev;
+        if (sev === 'blocking' && conf > c.blockingMaxConf) c.blockingMaxConf = conf;
+        if (sev === 'blocking' || sev === 'important') {
+          c.sigConf.set(o.engine, Math.max(c.sigConf.get(o.engine) ?? 0, conf));
+        }
+        // Keep the first informative copy of each human-facing field.
+        if (!c.problem && f.problem) c.problem = f.problem;
+        if (!c.minimalFix && f.minimalFix) c.minimalFix = f.minimalFix;
+        if (!c.file && f.file) c.file = f.file;
+        if (!c.lines && f.lines) c.lines = f.lines;
+      }
+    }
+
+    const findings: ConsensusFinding[] = [];
+    for (const c of clusters.values()) {
+      const pairVotes = Array.from(c.sigConf.values()).filter((v) => v >= mp).length;
+      const isNit = c.severity === 'nit';
+      const soloBlock = c.severity === 'blocking' && c.blockingMaxConf >= mv;
+      const pairBlock = (c.severity === 'blocking' || c.severity === 'important') && pairVotes >= 2;
+      const blocks = !isNit && (soloBlock || pairBlock);
+      const engines = Array.from(c.engines);
+      let tier: string;
+      if (isNit) tier = 'nit';
+      else if (blocks) tier = 'verified';
+      else if (c.maxConfidence >= MEDIUM_THRESHOLD) tier = 'needs-check';
+      else if (engines.length >= 2) tier = 'needs-check'; // independent agreement beats a lone sub-0.60 hunch
+      else tier = 'speculative';
+      findings.push({
+        key: c.key,
+        engines,
+        maxConfidence: c.maxConfidence,
+        pairVotes,
+        severity: c.severity,
+        tier,
+        blocks,
+        problem: c.problem,
+        minimalFix: c.minimalFix,
+        file: c.file,
+        lines: c.lines,
+      });
+    }
+
+    findings.sort((a, b) => (a.blocks === b.blocks ? b.maxConfidence - a.maxConfidence : a.blocks ? -1 : 1));
+
+    const verified = findings.filter((f) => f.tier === 'verified');
+    const needsCheck = findings.filter((f) => f.tier === 'needs-check');
+    const speculative = findings.filter((f) => f.tier === 'speculative');
+    const nits = findings.filter((f) => f.tier === 'nit');
+    const blockers = findings.filter((f) => f.blocks);
+
+    const noVerdict = panelSize > 0 && okCount === 0;
+    const autoBlock = blockers.length > 0 || noVerdict;
+    const needsJudge = !autoBlock && needsCheck.length > 0;
+
+    const failNote = engineFailures.length
+      ? `, ${engineFailures.length} failed (${engineFailures.map((f) => `${f.engine}:${f.status}`).join(', ')})`
+      : '';
+    const summary = noVerdict
+      ? `no engine produced a verdict (${panelSize} on panel${failNote}) — fail-closed block`
+      : `${okCount}/${panelSize} engines reviewed${failNote} · ${verified.length} verified, ${needsCheck.length} needs-check, ${speculative.length} speculative, ${nits.length} nit`;
+
+    return {
+      findings,
+      verified,
+      needsCheck,
+      speculative,
+      nits,
+      blockers,
+      engineFailures,
+      panelSize,
+      okCount,
+      autoBlock,
+      needsJudge,
+      summary,
+    };
+  >>>

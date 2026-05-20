@@ -16,6 +16,7 @@ import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@agon/adapter-cli" names="createCliAdapter"
 import from="@agon/forge" names="runForge,runDelegate,runGoalController,loadJournal,summarizeGoal,goalDir"
 import from="../handlers/review.js" names="runReviewCore,extractReviewFindings"
+import from="../blocks/consensus.js" names="buildConsensus"
 import from="../blocks/output-format.js" names="header,success,fail,warn,info,cyan,green"
 
 const name=goalCommand type=any
@@ -267,48 +268,76 @@ const name=goalCommand type=any
           }
         };
 
-        // REVIEW — ALL review engines look at the task diff in parallel before
-        // the commit (the ensemble gate). Block if ANY returns a blocking
-        // finding; fail-closed if not one of them produced a usable verdict
-        // (a flaky engine alone won't block, but a total reviewer wipeout does).
+        // REVIEW — ALL review engines look at the task diff in parallel, then
+        // buildConsensus folds their findings into tiers under the two-signal
+        // rule: a verified blocker (one blocking finding >= 0.85, or two engines
+        // on the same blocking/important issue each >= 0.70) blocks immediately;
+        // medium-confidence "needs-check" findings go to the judge for a second
+        // opinion before they can block; speculative/nits never block. Engine
+        // timeouts/parse-failures land in their own lane, so a flaky engine can't
+        // impersonate a blocker — but a total reviewer wipeout still fail-closes.
         const review = async (a: { worktree: string; baseSha: string; diff: string; label: string; signal?: AbortSignal }) => {
           if (!a.diff.trim()) return { blocking: false, summary: 'no diff' };
           let diff = a.diff;
           if (diff.length > 100_000) diff = diff.slice(0, 100_000) + '\n... [truncated — diff exceeds 100K chars]';
-          const verdicts = await Promise.all(reviewEngines.map(async (eng: string) => {
+          // Each engine's STATUS (ok / parse-failed / error) is captured apart
+          // from its parsed per-finding {severity, confidence}.
+          const outcomes = await Promise.all(reviewEngines.map(async (eng: string) => {
             try {
               const r = await runReviewCore(diff, `${a.label} [${eng}]`, eng, { config, adapter, registry } as any, abort.signal);
-              return { eng, ok: true, blocking: r.blocking, summary: (r.response || '').slice(0, 1500) };
+              if (r.parseFailed || r.unstructured) {
+                return { engine: eng, status: 'parse-failed', findings: [], note: (r.response || '').slice(0, 400) };
+              }
+              const raw = extractReviewFindings(r.response || '') || [];
+              const findings = raw.map((x: any) => ({
+                engine: eng,
+                severity: typeof x.severity === 'string' ? x.severity : (x.blocking ? 'blocking' : 'nit'),
+                blocking: x.blocking,
+                confidence: typeof x.confidence === 'number' ? x.confidence : undefined,
+                file: x.file, lines: x.lines, problem: x.problem, minimalFix: x.minimalFix,
+              }));
+              return { engine: eng, status: 'ok', findings };
             } catch (e) {
-              return { eng, ok: false, blocking: false, summary: `errored: ${e instanceof Error ? e.message : String(e)}` };
+              return { engine: eng, status: 'error', findings: [], note: e instanceof Error ? e.message : String(e) };
             }
           }));
-          const usable = verdicts.filter((v) => v.ok);
-          if (usable.length === 0) {
-            return { blocking: true, summary: `all ${reviewEngines.length} reviewers failed to return a verdict — blocking (fail-closed)` };
+
+          const consensus = buildConsensus(outcomes as any);
+
+          // Verified blockers (or a no-verdict wipeout) block now — the panel
+          // already cleared the two-signal bar, so no judge is needed.
+          if (consensus.autoBlock) {
+            const why = consensus.blockers.length
+              ? consensus.blockers.map((b) => `• [${b.severity} ${b.maxConfidence.toFixed(2)} ×${b.engines.length}] ${b.problem}${b.file ? ` (${b.file}${b.lines ? ':' + b.lines : ''})` : ''}`).join('\n')
+              : '(no engine produced a verdict)';
+            return { blocking: true, summary: `${consensus.summary}\nVERIFIED BLOCKERS:\n${why}` };
           }
-          const flagged = verdicts.filter((v) => v.blocking);
-          if (flagged.length === 0) {
-            return { blocking: false, summary: `${usable.length}/${reviewEngines.length} reviewers passed — no blocking findings` };
+
+          // Nothing verified, nothing uncertain → pass (speculative + nits are informational).
+          if (!consensus.needsJudge) {
+            return { blocking: false, summary: consensus.summary };
           }
-          // The panel flagged something — let the judge decide which findings are
-          // REAL must-fix blockers vs false positives, given the diff + every
-          // reviewer's notes. Only runs when there's a disagreement to resolve.
-          const panel = verdicts.map((v) => `### ${v.eng}${v.blocking ? ' — flagged BLOCKING' : ''}\n${v.summary}`).join('\n\n');
-          const judgePrompt = `You are the deciding reviewer (judge). ${flagged.length} of ${usable.length} engines flagged BLOCKING issues on the change below. Decide which are REAL must-fix blockers (a genuine bug, regression, or security hole) versus false positives or mere nits.\n\nDIFF:\n${diff}\n\nPANEL REVIEWS:\n${panel}\n\nGive a one-paragraph rationale, then end with a line containing exactly <!--AGON_REVIEW_FINDINGS_v1--> followed by a JSON array of ONLY the genuinely blocking findings (each {"severity":"blocking","file":"...","lines":"...","problem":"..."}). If none are real, output [].`;
+
+          // Medium-confidence findings get a SECOND opinion before they can block.
+          // The judge sees ONLY the uncertain findings, not the whole noisy panel.
+          const toAdjudicate = consensus.needsCheck
+            .map((c) => `- [${c.severity}, conf ${c.maxConfidence.toFixed(2)}, ${c.engines.join('+')}] ${c.problem}${c.file ? ` (${c.file}${c.lines ? ':' + c.lines : ''})` : ''}${c.minimalFix ? ` — fix: ${c.minimalFix}` : ''}`)
+            .join('\n');
+          const judgePrompt = `You are the deciding reviewer (judge). The review panel raised ${consensus.needsCheck.length} MEDIUM-confidence finding(s) that need a second opinion before they can block. For each, decide whether it is a REAL must-fix blocker (a genuine bug, regression, or security hole) given the diff — or a false positive / mere nit.\n\nDIFF:\n${diff}\n\nFINDINGS TO ADJUDICATE:\n${toAdjudicate}\n\nGive a one-paragraph rationale, then end with a line containing exactly <!--AGON_REVIEW_FINDINGS_v1--> followed by a JSON array of ONLY the findings you confirm as genuinely blocking (each {"severity":"blocking","file":"...","lines":"...","problem":"..."}). If none are real, output [].`;
           try {
             const { path: jdir } = createRunDir({ mode: 'forge', label: `goal-judge` });
             const jr = await runDelegate({ engineId: judge, task: judgePrompt, registry, adapter, timeout: implementTimeout ?? 420, outputDir: jdir, signal: abort.signal });
             const findings = extractReviewFindings(jr.response || '');
-            const realBlock = !!findings && findings.some((f: { severity?: string; blocking?: boolean }) => f.blocking === true || (f.severity ?? '').toLowerCase() === 'blocking');
+            const realBlock = !!findings && findings.some((fi: { severity?: string; blocking?: boolean }) => fi.blocking === true || (fi.severity ?? '').toLowerCase() === 'blocking');
             return {
               blocking: realBlock,
-              summary: `judge ${judge}: ${realBlock ? 'BLOCK' : 'pass'} (panel flagged ${flagged.length}/${usable.length})\n${(jr.response || '').slice(0, 2500)}`,
+              summary: `${consensus.summary}\njudge ${judge}: ${realBlock ? 'BLOCK' : 'pass'} (adjudicated ${consensus.needsCheck.length} needs-check)\n${(jr.response || '').slice(0, 2500)}`,
               costUsd: estimateCost(judge, jr.usage?.totalTokens ?? 0),
             };
           } catch (e) {
-            // Judge unreachable — fall back to the panel's signal (it flagged), so block conservatively.
-            return { blocking: true, summary: `judge ${judge} errored (${e instanceof Error ? e.message : String(e)}); ${flagged.length} engine(s) flagged blocking — blocking conservatively.` };
+            // Judge unreachable and only medium-confidence items were flagged
+            // (nothing crossed the verified bar) — fail-closed on the uncertain set.
+            return { blocking: true, summary: `${consensus.summary}\njudge ${judge} errored (${e instanceof Error ? e.message : String(e)}); ${consensus.needsCheck.length} needs-check finding(s) unadjudicated — blocking conservatively.` };
           }
         };
 

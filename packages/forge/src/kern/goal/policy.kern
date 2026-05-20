@@ -13,6 +13,7 @@ fn name=gateFailureSignature params="output:string" returns=string export=true
   doc "Stable, volatility-stripped fingerprint of a gate failure. Normalizes away hex shas, durations, line:col numbers and absolute paths so the SAME logical failure hashes identically across runs — that identity is what the oscillation breaker keys on. Hashes the tail (where the real error usually is)."
   handler <<<
     const norm = (output || '')
+      .replace(/\x1b\[[0-9;]*m/g, '')
       .replace(/\b[0-9a-f]{7,40}\b/gi, '<hex>')
       .replace(/\b\d+(?:\.\d+)?\s*(?:ms|s|m|h)\b/g, '<dur>')
       .replace(/:\d+:\d+/g, ':<n>:<n>')
@@ -27,8 +28,11 @@ fn name=gateFailureSignature params="output:string" returns=string export=true
 fn name=taskParkDecision params="task:GoalTask, maxAttempts:number" returns="{park:boolean, reason:string}" export=true
   doc "Park a task when it has burned its attempts OR is oscillating — the same gate-failure signature recurring means the agent keeps producing the same broken fix, so more attempts only waste budget."
   handler <<<
-    if (task.attempts >= Math.max(1, maxAttempts)) {
-      return { park: true, reason: `max-attempts (${Math.max(1, maxAttempts)})` };
+    // Guard against a NaN / non-positive cap (which would make every >= compare
+    // false and grind a task forever) by collapsing it to 1.
+    const cap = Number.isFinite(maxAttempts) && maxAttempts >= 1 ? Math.floor(maxAttempts) : 1;
+    if (task.attempts >= cap) {
+      return { park: true, reason: `max-attempts (${cap})` };
     }
     const seen = new Set<string>();
     for (const a of task.attemptLog) {

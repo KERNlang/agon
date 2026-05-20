@@ -41,9 +41,27 @@ CLAUDE = EngineConfig(
     # Claude prefixes each assistant response with this glyph in the
     # transcript area.
     response_marker="⏺",
+    # Filter Claude 2026+ TUI noise. chrome_regex cuts the response tail at
+    # the FIRST match, so patterns must reliably appear AFTER the assistant
+    # message. Spinner labels end with "…" (Unicode ellipsis) — anchor on it
+    # so we never match a verb inside claude's own prose. NOTE: do NOT include
+    # "Confidence:" here — claude prefixes its final answer with a
+    # "Confidence: ~0.82" line as part of the response, so cutting on it
+    # deletes the entire reply (this was an agon-side capture bug).
     chrome_regex=(
-        r"(?:Confidence:|Accomplishing|Sautéed|Cooked|Churned|Reasoning|"
-        r"automode|⏵⏵|ctx:|/effort|tokens?\))"
+        r"(?:Cogitating…|Pondering…|Philosophising…|Fiddle-faddling…|"
+        r"Caramelizing…|Crunching…|Chewing…|Marinating…|Steeping…|"
+        r"Simmering…|Unravelling…|Pontificating…|Ruminating…|"
+        r"Deliberating…|Contemplating…|Synthesising…|Synthesizing…|"
+        r"Forming…|Prestidigitating…|Conjuring…|Distilling…|Whisking…|"
+        r"Wibbling…|Wobbling…|Buzzing…|Crystallising…|Crystallizing…|"
+        r"Mulling…|Percolating…|Fermenting…|Transmuting…|"
+        r"Brewed for|Sautéed|Cooked|Churned|Reasoning…|"
+        r"Churned for|Cooked for|"
+        r"running stop hooks|Accomplishing|"
+        r"thought for [0-9]+s|"
+        r"automode|⏵⏵|ctx:|/effort|tokens?\)|"
+        r"\([0-9]+s\s*[·•])"
     ),
     env_strip=(
         "CLAUDECODE",
@@ -62,6 +80,21 @@ CLAUDE = EngineConfig(
     agent_extra_argv=(
         "--allowedTools", _CLAUDE_ALLOWED_TOOLS,
     ),
+    # Claude 2026+ TUI collapses a large burst write into
+    # "[Pasted text +N lines, paste again to expand]" and a single Enter no
+    # longer submits — the session parks on the staged paste and we scrape the
+    # placeholder instead of a reply (the paste-placeholder bug). Bracketed
+    # paste tells the TUI "one logical paste regardless of embedded \n", and
+    # the chunked slow-feed (512B / 4ms) keeps it from tripping burst
+    # detection. Together they make multi-line review prompts submit cleanly.
+    use_bracketed_paste=True,
+    input_chunk_size=512,
+    input_chunk_delay_ms=4,
+    # Wide cols so the TUI doesn't wrap long single-line JSON findings across
+    # rows — TUI wrap uses cursor-position ANSI (not \n), and our ANSI strip
+    # would collapse the wrapped words together ("No check for b===0" →
+    # "Nocheckforb===0"). 500 cols fits any reasonable finding on one row.
+    cols=500,
 )
 
 

@@ -1,0 +1,68 @@
+// ── agon goal — controller policy (pure decision logic) ────────────────
+// The risky judgement calls — when to park a task, when to abort the whole
+// run, whether budget/time is blown, and how to fingerprint a gate failure
+// for oscillation detection — are pulled out of the orchestration shell so
+// they can be unit-tested without spinning real git worktrees. The
+// controller is a thin loop around these; these are where the bugs hide.
+// See AGON-GOAL-DESIGN.md rails 5 (park, don't grind) and 6 (budgets).
+
+import from="node:crypto" names="createHash"
+import from="./types.js" names="JournalState,GoalTask" types=true
+
+fn name=gateFailureSignature params="output:string" returns=string export=true
+  doc "Stable, volatility-stripped fingerprint of a gate failure. Normalizes away hex shas, durations, line:col numbers and absolute paths so the SAME logical failure hashes identically across runs — that identity is what the oscillation breaker keys on. Hashes the tail (where the real error usually is)."
+  handler <<<
+    const norm = (output || '')
+      .replace(/\b[0-9a-f]{7,40}\b/gi, '<hex>')
+      .replace(/\b\d+(?:\.\d+)?\s*(?:ms|s|m|h)\b/g, '<dur>')
+      .replace(/:\d+:\d+/g, ':<n>:<n>')
+      .replace(/\/[^\s:'"]+/g, '<path>')
+      .replace(/\d+/g, '<n>')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const tail = norm.slice(-2000);
+    return createHash('sha256').update(tail).digest('hex').slice(0, 16);
+  >>>
+
+fn name=taskParkDecision params="task:GoalTask, maxAttempts:number" returns="{park:boolean, reason:string}" export=true
+  doc "Park a task when it has burned its attempts OR is oscillating — the same gate-failure signature recurring means the agent keeps producing the same broken fix, so more attempts only waste budget."
+  handler <<<
+    if (task.attempts >= Math.max(1, maxAttempts)) {
+      return { park: true, reason: `max-attempts (${Math.max(1, maxAttempts)})` };
+    }
+    const seen = new Set<string>();
+    for (const a of task.attemptLog) {
+      const sig = a.gateFailureSignature;
+      if (!sig) continue;
+      if (seen.has(sig)) return { park: true, reason: 'oscillation: repeated gate-failure signature' };
+      seen.add(sig);
+    }
+    return { park: false, reason: '' };
+  >>>
+
+fn name=globalBreaker params="state:JournalState, maxParkStreak:number, maxNoProgress:number" returns="{stop:boolean, reason:string}" export=true
+  doc "Abort the whole run when too many tasks park back-to-back, or too many cycles pass with no net decrease in remaining work — the signal that the loop is thrashing and a human should look."
+  handler <<<
+    if (maxParkStreak > 0 && state.parkedStreak >= maxParkStreak) {
+      return { stop: true, reason: `park-streak >= ${maxParkStreak}` };
+    }
+    if (maxNoProgress > 0 && state.noProgressStreak >= maxNoProgress) {
+      return { stop: true, reason: `no-progress-streak >= ${maxNoProgress}` };
+    }
+    return { stop: false, reason: '' };
+  >>>
+
+fn name=budgetExceeded params="state:JournalState" returns=boolean export=true
+  doc "True once cumulative spend reaches the goal's USD ceiling (0 = unlimited)."
+  handler <<<
+    const cap = state.spec.budgetUsd;
+    return cap > 0 && state.spentUsd >= cap;
+  >>>
+
+fn name=timeExceeded params="state:JournalState, now:number" returns=boolean export=true
+  doc "True once wall-clock since startedAt reaches the goal's hour ceiling (0 = unlimited)."
+  handler <<<
+    if (!state.startedAt) return false;
+    const cap = state.spec.maxHours;
+    return cap > 0 && (now - state.startedAt) >= cap * 3_600_000;
+  >>>

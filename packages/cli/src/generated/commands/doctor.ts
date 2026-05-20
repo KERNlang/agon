@@ -79,7 +79,14 @@ export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: En
   if (engine.binary) backendParts.push(hasCliBackend ? `cli:${binaryPath}` : `cli missing:${engine.binary}`);
   if (hasApi) {
     const format = engine.api?.format ?? 'anthropic';
-    backendParts.push(apiKeySet ? `api:${format}:${engine.api?.model ?? 'model?'}` : `api key missing:${apiKeyEnv}`);
+    // A missing API key is only a problem when the API is the engine's ONLY
+    // path. CLI-authed engines (codex/claude log in via their own CLI) keep
+    // the API as an optional fallback — don't frame the unset key as "missing".
+    backendParts.push(apiKeySet
+      ? `api:${format}:${engine.api?.model ?? 'model?'}`
+      : hasCliBackend
+        ? `api:${format} (key optional)`
+        : `api key missing:${apiKeyEnv}`);
   }
   const backend = backendParts.join(' + ') || 'none';
   const modes = [
@@ -104,9 +111,15 @@ export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: En
       status = 'warn';
       details.push('CLI missing; API fallback available');
     }
-    if (hasApi && !apiKeySet) {
+    // Only warn about an unset API key when the CLI backend isn't carrying the
+    // engine. When CLI auth is active (codex/claude), the API key is an unused
+    // optional fallback — flagging it as a warn is noise that scares users off
+    // the engines that actually work most reliably.
+    if (hasApi && !apiKeySet && !hasCliBackend) {
       status = 'warn';
       details.push(`API key ${apiKeyEnv} not set`);
+    } else if (hasApi && !apiKeySet && hasCliBackend) {
+      details.push(`CLI auth active (${apiKeyEnv} optional)`);
     }
     if (enabled && !engine.agent && !engine.exec) {
       status = 'warn';
@@ -128,7 +141,7 @@ export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: En
   };
 }
 
-// @kern-source: doctor:108
+// @kern-source: doctor:121
 export interface PythonDoctorResult {
   status: 'ok'|'warn'|'fail';
   detail: string;
@@ -138,13 +151,13 @@ export interface PythonDoctorResult {
 /**
  * Every Python file the bridges actually spawn. Doctor confirms ALL of them are reachable through resolveDedupSidecar — a bad package that ships only some is still a problem.
  */
-// @kern-source: doctor:113
+// @kern-source: doctor:126
 export const EXPECTED_SIDECARS: string[] = ['history-search.py','syntax-validator.py','classifier.py','sidecar.py'];
 
 /**
  * Probe whether the Python interpreter exists, every expected sidecar file resolves, and the deps (fastembed, numpy, tree-sitter + grammars) are importable. Fail-soft: not having Python means semantic features fall back, not that agon is broken.
  */
-// @kern-source: doctor:116
+// @kern-source: doctor:129
 export function diagnoseDedupPython(): PythonDoctorResult {
   const python = process.env.AGON_PYTHON || 'python3';
   // Tiny probe — imports every dep used across the 4 sidecars in one shot.
@@ -215,7 +228,7 @@ export function diagnoseDedupPython(): PythonDoctorResult {
   };
 }
 
-// @kern-source: doctor:188
+// @kern-source: doctor:201
 export function checkDoctorWorktree(cwd: string): {ok:boolean; message:string; cleanupCommand:string} {
   let root = '';
   let tempDir = '';
@@ -252,7 +265,7 @@ export function checkDoctorWorktree(cwd: string): {ok:boolean; message:string; c
 /**
  * Diagnose the live Cesar harness: selected engine, backend capability, native/MCP session state, and observed tool reliability.
  */
-// @kern-source: doctor:222
+// @kern-source: doctor:235
 export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, cesar?: any): HarnessDoctorReport {
   const rows: string[][] = [];
   const selected = String((config as any)?.cesarEngine ?? (config as any)?.forgeFixedStarter ?? 'claude');
@@ -324,7 +337,7 @@ export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, 
   };
 }
 
-// @kern-source: doctor:295
+// @kern-source: doctor:308
 export const doctorCommand: any = defineCommand({
   meta: {
     name: 'doctor',

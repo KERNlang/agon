@@ -31,6 +31,37 @@ describe('engine activation', () => {
     delete process.env[envKey];
   });
 
+  it('resolves short engine aliases to canonical ids (prefix + substring)', () => {
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('claude'));
+    registry.register(makeEngine('kimi-for-coding-k2p6'));
+    registry.register(makeEngine('zai-coding-plan-glm-5.1'));
+    registry.register(makeEngine('minimax-coding-plan-minimax-m2.7-highspeed'));
+
+    // exact id is returned unchanged
+    expect(registry.resolveId('claude')).toBe('claude');
+    // unique prefix match (the user's three buddy engines)
+    expect(registry.resolveId('kimi')).toBe('kimi-for-coding-k2p6');
+    expect(registry.resolveId('zai')).toBe('zai-coding-plan-glm-5.1');
+    expect(registry.resolveId('minimax')).toBe('minimax-coding-plan-minimax-m2.7-highspeed');
+    // case-insensitive
+    expect(registry.resolveId('KIMI')).toBe('kimi-for-coding-k2p6');
+    // and get() transparently resolves the alias
+    expect(registry.get('kimi').id).toBe('kimi-for-coding-k2p6');
+  });
+
+  it('leaves ambiguous or unknown aliases unchanged so the caller fails loudly', () => {
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('claude-opus'));
+    registry.register(makeEngine('claude-sonnet'));
+
+    // ambiguous prefix → return input unchanged (no silent wrong guess)
+    expect(registry.resolveId('claude')).toBe('claude');
+    expect(() => registry.get('claude')).toThrow(/not found/);
+    // unknown → unchanged
+    expect(registry.resolveId('nonexistent')).toBe('nonexistent');
+  });
+
   it('keeps auto mode broad and explicit mode limited to selected engines', () => {
     process.env[envKey] = 'test';
     const registry = new EngineRegistry();

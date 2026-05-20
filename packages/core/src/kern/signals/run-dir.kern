@@ -43,6 +43,12 @@ interface name=RunStatusEngine
   field name=durationMs type=number optional=true
   field name=detail type=string optional=true
 
+interface name=RunJudgeVerdict
+  doc "Codex-as-judge outcome: an independent engine reviewed the forge winner's patch after the run. `blocking` true means the judge found issues the fitness spec missed — the winner has known holes. `unstructured` true means the judge produced a prose review but no machine-parseable verdict."
+  field name=engineId type=string
+  field name=blocking type=boolean
+  field name=unstructured type=boolean
+
 interface name=RunStatus
   doc "Final outcome record written to <run-dir>/status.json. Authoritative replacement for grepping stream output. `ok` is true only if every engine succeeded — a run with skipped engines is NOT ok."
   field name=mode type=string
@@ -52,6 +58,8 @@ interface name=RunStatus
   field name=engines type="RunStatusEngine[]"
   field name=summary type=string
   field name=ok type=boolean
+  field name=judge type=RunJudgeVerdict optional=true
+    doc "Present when forge ran with a --judge engine. Lets orchestrated/quiet runs read 'winner has known holes' from status.json without scraping stdout."
 
 fn name=sanitizeRunLabel params="raw:string" returns=string export=true
   doc "Strip a user-provided label down to filename-safe characters and cap length so it cannot break shell quoting, path traversal, or directory scanners."

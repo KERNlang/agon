@@ -1,0 +1,64 @@
+// ── agon goal — unified-diff parsing (pure) ────────────────────────────
+// The controller feeds two adversarial defenses off the agent's diff:
+//   • WITNESS needs the NEW test files (added in this diff).
+//   • MUTATION-WITNESS needs the changed SOURCE lines (new-side line numbers).
+// Both are derived here from a single `git diff baseSha` (untracked included),
+// kept pure so the line-math is unit-tested rather than discovered in a 20h run.
+
+fn name=isTestFile params="path:string" returns=boolean export=true
+  doc "Heuristic: a path is a test if it lives under a tests/ or __tests__ dir, or carries a .test/.spec suffix. Used to split WITNESS targets (tests) from MUTATION targets (source)."
+  handler <<<
+    return /(^|\/)(tests?|__tests__|spec)\//.test(path)
+      || /\.(test|spec)\.[cm]?[tj]sx?$/.test(path);
+  >>>
+
+fn name=parseChangedLines params="diff:string" returns="Record<string, number[]>" export=true
+  doc "Map each file in a unified diff to the 1-based NEW-side line numbers it adds. Walks hunk headers (@@ -a,b +c,d @@) to track the new-side cursor; only '+' (added) lines are recorded — those are the lines mutation-witness perturbs."
+  handler <<<
+    const result: Record<string, number[]> = {};
+    let file = '';
+    let newLine = 0;
+    for (const raw of diff.split('\n')) {
+      if (raw.startsWith('+++ ')) {
+        const p = raw.slice(4).trim().replace(/\t.*$/, '');
+        file = p === '/dev/null' ? '' : p.replace(/^b\//, '').replace(/^"|"$/g, '');
+        continue;
+      }
+      if (raw.startsWith('--- ')) continue;
+      if (raw.startsWith('@@')) {
+        const m = raw.match(/@@ -\d+(?:,\d+)? \+(\d+)/);
+        newLine = m ? parseInt(m[1], 10) : 0;
+        continue;
+      }
+      if (!file || newLine === 0) continue;
+      if (raw.startsWith('+') && !raw.startsWith('+++')) {
+        (result[file] ??= []).push(newLine);
+        newLine++;
+      } else if (raw.startsWith('-') && !raw.startsWith('---')) {
+        // removed line — no new-side advance
+      } else if (raw.startsWith('\\')) {
+        // "\ No newline at end of file" — no advance
+      } else {
+        // context line (leading space, or empty trailing line)
+        newLine++;
+      }
+    }
+    return result;
+  >>>
+
+fn name=newFilesInDiff params="diff:string" returns="string[]" export=true
+  doc "Files ADDED in this diff (old side is /dev/null). These are the candidate new tests WITNESS must prove fail-on-base."
+  handler <<<
+    const files: string[] = [];
+    const lines = diff.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('--- ') && lines[i].slice(4).trim().replace(/\t.*$/, '') === '/dev/null') {
+        const next = lines[i + 1] ?? '';
+        if (next.startsWith('+++ ')) {
+          const p = next.slice(4).trim().replace(/\t.*$/, '');
+          if (p !== '/dev/null') files.push(p.replace(/^b\//, '').replace(/^"|"$/g, ''));
+        }
+      }
+    }
+    return files;
+  >>>

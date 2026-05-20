@@ -38,3 +38,6 @@ export type { Mutant } from './generated/goal/mutation.js';
 export { generateMutants, applyMutantToSource, mutationSurvivors } from './generated/goal/mutation.js';
 export type { FrozenOracle, WitnessResult } from './generated/goal/oracle.js';
 export { hashOracleInputs, snapshotOracle, oracleTampered, witnessTest } from './generated/goal/oracle.js';
+export { isTestFile, parseChangedLines, newFilesInDiff } from './generated/goal/diff.js';
+export { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded } from './generated/goal/policy.js';
+export { summarizeGoal, writeGoalArtifacts, runGoalController } from './generated/goal/controller.js';

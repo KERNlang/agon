@@ -189,6 +189,8 @@ config name=AgonConfig
     doc "Default 'judge' engine for forge: excluded from the competing roster and used to review the winning patch after a forge run (Codex-as-judge workflow — competitors race, the judge independently audits the winner for bugs the fitness spec missed). Empty = no judge unless --judge is passed. The CLI --judge flag overrides this."
   field name=reviewMaxTokens type=number default=8192
     doc "Output-token cap for REVIEW-mode dispatches. A code review is a findings list, not an implementation, so it rarely needs the engine's full output budget — capping it lower makes reviews finish generating (and thus complete) noticeably faster, especially for verbose API engines like kimi. Applied per-call via DispatchOptions.maxTokens, so it does NOT affect Cesar (agentic turns) or Forge (full implementations), which keep the engine's own maxTokens."
+  field name=reviewFileContext type=boolean default=true
+    doc "Repo grounding: include the full current content of the changed source files in the review prompt so reviewers verify findings against real code instead of guessing from diff hunks (kills the 'X is unhandled / unimported' false alarms). Bounded hard (per-file + total caps; generated/dist/min files skipped). Set false to minimize prompt size / time-to-first-token at the cost of more false alarms."
   field name=ratingsEnabled type=boolean default=true
   field name=contextSummary type=boolean default=true
   field name=sessionContinuity type=boolean default=false

@@ -6,6 +6,7 @@ import from="node:path" names="join,resolve,sep"
 import from="node:fs" names="mkdirSync,readFileSync,statSync"
 import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,scanProjectContext,resolveWorkingDir,rankByTaskClass"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
+import from="../blocks/consensus.js" names="buildConsensus"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 import from="../blocks/engine-helpers.js" names="stripReasoning,stripTuiChrome"
@@ -576,8 +577,11 @@ fn name=handleReviewMany params="dispatch:Dispatch, ctx:HandlerContext, target?:
     if (abort.signal.aborted) onMasterAbort();
     else abort.signal.addEventListener('abort', onMasterAbort, { once: true });
 
-    interface Collected { engineId: string; reviewOutput: string; unstructured: boolean }
-    const reviewOne = async (engineId: string): Promise<Collected | null> => {
+    // Each engine's STATUS (ok / parse-failed / timeout / error) is captured
+    // alongside its prose, so the consensus pass can route findings by
+    // confidence and shunt failures into their own lane.
+    interface Collected { engineId: string; reviewOutput: string; unstructured: boolean; status: string; note?: string }
+    const reviewOne = async (engineId: string): Promise<Collected> => {
       const controller = new AbortController();
       controllers.push(controller);
       let timedOut = false;
@@ -588,33 +592,63 @@ fn name=handleReviewMany params="dispatch:Dispatch, ctx:HandlerContext, target?:
         const response = (result.response ?? '').trim();
         if (timedOut) {
           dispatch({ type: 'warning', message: `${engineId}: timed out after ${timeoutSec}s — skipped.` });
-          return null;
+          return { engineId, reviewOutput: '', unstructured: false, status: 'timeout' };
         }
         if (!response) {
           dispatch({ type: 'warning', message: `${engineId} returned no review output.` });
-          return null;
+          return { engineId, reviewOutput: '', unstructured: false, status: 'error', note: 'no output' };
         }
         dispatch({ type: 'engine-block', engineId, color, content: response });
         appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
         tracker.record(engineId, { prompt: `[review ${label}]`, response });
-        return { engineId, reviewOutput: response, unstructured: result.unstructured };
+        return { engineId, reviewOutput: response, unstructured: result.unstructured, status: result.unstructured ? 'parse-failed' : 'ok' };
       } catch (err) {
-        if (timedOut) dispatch({ type: 'warning', message: `${engineId}: timed out after ${timeoutSec}s — skipped.` });
-        else dispatch({ type: 'error', message: `${engineId}: ${err instanceof Error ? err.message : String(err)}` });
-        return null;
+        if (timedOut) {
+          dispatch({ type: 'warning', message: `${engineId}: timed out after ${timeoutSec}s — skipped.` });
+          return { engineId, reviewOutput: '', unstructured: false, status: 'timeout' };
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        dispatch({ type: 'error', message: `${engineId}: ${msg}` });
+        return { engineId, reviewOutput: '', unstructured: false, status: 'error', note: msg };
       } finally {
         clearTimeout(timer);
       }
     };
 
     appendMessage(ctx.chatSession, { role: 'user', content: `[review ${label}]`, timestamp: new Date().toISOString() });
-    const settled = await Promise.all(engineIds.map((id) => reviewOne(id)));
-    const collected = settled.filter((c): c is Collected => c !== null);
+    const all = await Promise.all(engineIds.map((id) => reviewOne(id)));
+    const collected = all.filter((c) => c.reviewOutput);
 
     if (collected.length === 0) {
       dispatch({ type: 'warning', message: `No review output returned from ${engineIds.join(', ')}.` });
       return;
     }
+
+    // CONSENSUS — fold every engine's parsed findings into one tiered verdict.
+    // ok engines contribute their structured findings; unstructured/timeout/
+    // error engines land in the engineFailures lane (never a phantom blocker).
+    const outcomes = all.map((c) => {
+      if (c.status !== 'ok') return { engine: c.engineId, status: c.status, findings: [], note: c.note };
+      const raw = extractReviewFindings(c.reviewOutput) || [];
+      const findings = raw.map((x: any) => ({
+        engine: c.engineId,
+        severity: typeof x.severity === 'string' ? x.severity : (x.blocking ? 'blocking' : 'nit'),
+        blocking: x.blocking,
+        confidence: x.confidence,
+        file: x.file, lines: x.lines, problem: x.problem, minimalFix: x.minimalFix,
+      }));
+      return { engine: c.engineId, status: 'ok', findings };
+    });
+    const consensus = buildConsensus(outcomes as any);
+
+    const fmt = (f: any): string => `  • [${f.severity} ${f.maxConfidence.toFixed(2)} ×${f.engines.length}${f.pairVotes >= 2 ? ' pair' : ''}] ${f.problem}${f.file ? ` (${f.file}${f.lines ? ':' + f.lines : ''})` : ''}`;
+    const lines: string[] = [`Consensus — ${consensus.summary}`];
+    if (consensus.verified.length) { lines.push('VERIFIED (actionable):'); for (const f of consensus.verified) lines.push(fmt(f)); }
+    if (consensus.needsCheck.length) { lines.push('NEEDS-CHECK (want a second opinion):'); for (const f of consensus.needsCheck) lines.push(fmt(f)); }
+    if (consensus.speculative.length) lines.push(`SPECULATIVE: ${consensus.speculative.length} low-confidence finding(s) — likely noise.`);
+    if (consensus.nits.length) lines.push(`NITS: ${consensus.nits.length}.`);
+    if (consensus.engineFailures.length) lines.push(`FAILED (no machine verdict): ${consensus.engineFailures.map((e: any) => `${e.engine} (${e.status})`).join(', ')}.`);
+    dispatch({ type: consensus.autoBlock ? 'warning' : 'info', message: lines.join('\n') });
 
     const anyUnstructured = collected.some((c) => c.unstructured);
     ctx.lastReviewResult = {

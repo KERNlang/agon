@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pickImplementWinner,
+  gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pickImplementWinner, chooseImplementRoster,
 } from '../../packages/forge/src/generated/goal/policy.js';
 import type { JournalState, GoalTask, GoalSpec } from '../../packages/forge/src/generated/goal/types.js';
 
@@ -50,6 +50,51 @@ describe('pickImplementWinner', () => {
       { engine: 'minimax', pass: false, score: 50, addsTest: true },
     ];
     expect(pickImplementWinner('zai', onlyFailingHasTest, true, false)).toBe('zai');
+  });
+});
+
+describe('chooseImplementRoster', () => {
+  const all = ['claude', 'codex', 'gemini'];
+  const base = { allEngines: all, soloEngine: 'claude', estimatedCostUsd: 0, escalateThresholdUsd: 0 };
+
+  it('routes a quick-fix to a single engine', () => {
+    const r = chooseImplementRoster({ ...base, flow: 'quick-fix', forgeScope: 'slice', escalationHint: 'forge' });
+    expect(r.solo).toBe(true);
+    expect(r.engines).toEqual(['claude']);
+  });
+
+  it('routes a no-scope flow to a single engine', () => {
+    const r = chooseImplementRoster({ ...base, flow: 'answer', forgeScope: 'none', escalationHint: 'self' });
+    expect(r.solo).toBe(true);
+  });
+
+  it('competes the full panel for a real feature', () => {
+    const r = chooseImplementRoster({ ...base, flow: 'forge-slice', forgeScope: 'slice', escalationHint: 'forge' });
+    expect(r.solo).toBe(false);
+    expect(r.engines).toEqual(all);
+    expect(r.escalate).toBe(false);
+  });
+
+  it('escalates a full-scope/forge-full task', () => {
+    const r = chooseImplementRoster({ ...base, flow: 'forge-full', forgeScope: 'full', escalationHint: 'forge' });
+    expect(r.solo).toBe(false);
+    expect(r.escalate).toBe(true);
+  });
+
+  it('escalates when estimated cost crosses a positive threshold', () => {
+    const r = chooseImplementRoster({ ...base, flow: 'forge-slice', forgeScope: 'slice', escalationHint: 'forge', estimatedCostUsd: 2, escalateThresholdUsd: 1 });
+    expect(r.escalate).toBe(true);
+  });
+
+  it('routes a delegate escalation hint to solo', () => {
+    const r = chooseImplementRoster({ ...base, flow: 'feature', forgeScope: 'slice', escalationHint: 'delegate' });
+    expect(r.solo).toBe(true);
+  });
+
+  it('competes when no solo engine is available even for a quick-fix', () => {
+    const r = chooseImplementRoster({ ...base, soloEngine: '', flow: 'quick-fix', forgeScope: 'none', escalationHint: 'self' });
+    expect(r.solo).toBe(false);
+    expect(r.engines).toEqual(all);
   });
 });
 

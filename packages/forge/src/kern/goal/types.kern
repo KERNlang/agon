@@ -1,0 +1,58 @@
+// ── agon goal — durable state model ────────────────────────────────────
+// Data model for the autonomous goal controller (see AGON-GOAL-DESIGN.md).
+// JournalState persists to ~/.agon/goals/<goalId>/journal.json so an 8-24h
+// unattended run survives crash / restart / context limit.
+
+interface name=GoalSpec export=true
+  doc "Immutable run configuration captured at goal-start."
+  field name=goalId type=string
+  field name=intent type=string
+  field name=branch type=string
+  field name=gate type=string
+  field name=queueSource type=string
+  field name=maxAttempts type=number
+  field name=budgetUsd type=number
+  field name=maxHours type=number
+  field name=engines type="string[]" optional=true
+  field name=supervised type=boolean
+
+interface name=AttemptRecord export=true
+  doc "One implement->gate cycle for a task; fuels the park / oscillation breakers."
+  field name=at type=number
+  field name=outcome type="'gate-pass'|'gate-fail'|'witness-fail'|'mutation-survived'|'review-block'|'error'"
+  field name=gateFailureSignature type=string optional=true
+  field name=mutantsSurvived type=number optional=true
+  field name=error type=string optional=true
+
+interface name=GoalTask export=true
+  doc "One unit of work — a single gap to close."
+  field name=id type=string
+  field name=source type=string
+  field name=status type="'queued'|'inflight'|'done'|'parked'|'failed'"
+  field name=attempts type=number
+  field name=attemptLog type="AttemptRecord[]"
+  field name=dependsOn type="string[]" optional=true
+  field name=commitSha type=string optional=true
+  field name=costUsd type=number
+  field name=lastError type=string optional=true
+  field name=notes type=string optional=true
+
+interface name=GoalEvent export=true
+  doc "Append-only audit entry."
+  field name=ts type=number
+  field name=kind type=string
+  field name=taskId type=string optional=true
+  field name=detail type=string optional=true
+
+interface name=JournalState export=true
+  doc "The whole resumable goal state — the single source of truth for a run."
+  field name=spec type=GoalSpec
+  field name=createdAt type=number
+  field name=startedAt type=number optional=true
+  field name=spentUsd type=number
+  field name=parkedStreak type=number
+  field name=noProgressStreak type=number
+  field name=lastRemainingCount type=number
+  field name=oracleHash type=string optional=true
+  field name=tasks type="GoalTask[]"
+  field name=events type="GoalEvent[]"

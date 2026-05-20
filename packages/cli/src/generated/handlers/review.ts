@@ -458,30 +458,100 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 }
 
 /**
- * Run review for one or more explicitly requested engines. Multiple reviewers run sequentially so stream output stays readable; their findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning.
+ * Run review for one or more explicitly requested engines. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A single engine delegates to the streaming handleReview path.
  */
 // @kern-source: review:419
 export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
-  const engineIds = Array.from(new Set((requestedEngines ?? []).map((id) => String(id ?? '').trim().toLowerCase()).filter(Boolean)));
-  if (engineIds.length <= 1) {
-    await handleReview(dispatch, ctx, target, engineIds[0]);
-    return;
-  }
-  dispatch({ type: 'info', message: `Running review with ${engineIds.join(', ')}...` });
-  const collected: Array<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number }> = [];
-  for (const engineId of engineIds) {
-    const before = ctx.lastReviewResult;
-    await handleReview(dispatch, ctx, target, engineId);
-    const after = ctx.lastReviewResult;
-    if (after && after !== before && after.engineId === engineId && String(after.reviewOutput ?? '').trim()) {
-      collected.push(after);
+  const abort = new AbortController();
+  try {
+    ensureAgonHome();
+    const cwd = resolveWorkingDir();
+    const engineIds = Array.from(new Set(
+      (requestedEngines ?? [])
+        .map((id) => ctx.registry.resolveId(String(id ?? '').trim()))
+        .filter(Boolean),
+    ));
+    if (engineIds.length <= 1) {
+      await handleReview(dispatch, ctx, target, engineIds[0]);
+      return;
     }
+
+    // Resolve the diff once — all engines review the same target.
+    let diff: string;
+    let label: string;
+    try {
+      ({ diff, label } = resolveReviewTarget(target, cwd));
+    } catch (err) {
+      dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    if (!diff.trim()) {
+      dispatch({ type: 'info', message: `No changes to review (${label}).` });
+      return;
+    }
+
+    const config = ctx.config as any;
+    const timeoutSec = config.reviewTimeout ?? config.agentTimeout ?? 420;
+    dispatch({ type: 'info', message: `Reviewing with ${engineIds.join(', ')} in parallel (${timeoutSec}s timeout each)…` });
+
+    // The master abort (Esc / cleanup) fans out to every per-engine controller.
+    const controllers: AbortController[] = [];
+    const onMasterAbort = () => { for (const c of controllers) c.abort(); };
+    ctx.setActiveAbort(abort);
+    if (abort.signal.aborted) onMasterAbort();
+    else abort.signal.addEventListener('abort', onMasterAbort, { once: true });
+
+    interface Collected { engineId: string; reviewOutput: string; unstructured: boolean }
+    const reviewOne = async (engineId: string): Promise<Collected | null> => {
+      const controller = new AbortController();
+      controllers.push(controller);
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutSec * 1000);
+      const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 124;
+      try {
+        const result = await runReviewCore(diff, label, engineId, ctx, controller.signal);
+        const response = (result.response ?? '').trim();
+        if (timedOut) {
+          dispatch({ type: 'warning', message: `${engineId}: timed out after ${timeoutSec}s — skipped.` });
+          return null;
+        }
+        if (!response) {
+          dispatch({ type: 'warning', message: `${engineId} returned no review output.` });
+          return null;
+        }
+        dispatch({ type: 'engine-block', engineId, color, content: response });
+        appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
+        tracker.record(engineId, { prompt: `[review ${label}]`, response });
+        return { engineId, reviewOutput: response, unstructured: result.unstructured };
+      } catch (err) {
+        if (timedOut) dispatch({ type: 'warning', message: `${engineId}: timed out after ${timeoutSec}s — skipped.` });
+        else dispatch({ type: 'error', message: `${engineId}: ${err instanceof Error ? err.message : String(err)}` });
+        return null;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    appendMessage(ctx.chatSession, { role: 'user', content: `[review ${label}]`, timestamp: new Date().toISOString() });
+    const settled = await Promise.all(engineIds.map((id) => reviewOne(id)));
+    const collected = settled.filter((c): c is Collected => c !== null);
+
+    if (collected.length === 0) {
+      dispatch({ type: 'warning', message: `No review output returned from ${engineIds.join(', ')}.` });
+      return;
+    }
+
+    const anyUnstructured = collected.some((c) => c.unstructured);
+    ctx.lastReviewResult = {
+      engineId: collected.map((r) => r.engineId).join(', '),
+      target: target ?? 'uncommitted',
+      label,
+      diff,
+      reviewOutput: collected.map((r) => `## ${r.engineId}\n\n${r.reviewOutput}`).join('\n\n---\n\n'),
+      timestamp: Date.now(),
+    };
+    dispatch({ type: 'info', message: `Multi-review complete (${collected.map((r) => r.engineId).join(', ')}).${anyUnstructured ? ' Some reviews were unstructured (no machine verdict) but valid.' : ''} Say "fix it" or "fix it with <engine>" to address the findings.` });
+  } finally {
+    ctx.setActiveAbort(null);
   }
-  if (collected.length === 0) {
-    dispatch({ type: 'warning', message: `No review output returned from ${engineIds.join(', ')}.` });
-    return;
-  }
-  const base = collected[collected.length - 1];
-  ctx.lastReviewResult = { engineId: collected.map((r) => r.engineId).join(', '), target: base.target, label: base.label, diff: base.diff, reviewOutput: collected.map((r) => `## ${r.engineId}\n\n${r.reviewOutput}`).join('\n\n---\n\n'), timestamp: Date.now() };
-  dispatch({ type: 'info', message: `Multi-review complete (${collected.map((r) => r.engineId).join(', ')}). Say "fix it" or "fix it with <engine>" to address the findings.` });
 }

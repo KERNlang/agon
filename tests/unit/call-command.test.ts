@@ -51,6 +51,40 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('forwards --timeout and --engines to review', () => {
+    expect(buildCallCommands({
+      workflow: 'review',
+      input: 'branch:main',
+      engineTimeout: '90',
+      engines: 'codex,gemini',
+    }).commands).toEqual([
+      ['review', 'branch:main', '--timeout', '90', '--engines', 'codex,gemini'],
+    ]);
+  });
+
+  it('maps doctor to the top-level doctor command (engines by default)', () => {
+    expect(buildCallCommands({ workflow: 'doctor' }).commands).toEqual([
+      ['doctor', 'engines'],
+    ]);
+  });
+
+  it('passes a doctor scope through (e.g. harness)', () => {
+    expect(buildCallCommands({ workflow: 'doctor', input: 'harness' }).commands).toEqual([
+      ['doctor', 'harness'],
+    ]);
+  });
+
+  it('forwards --timeout and --engines to doctor review', () => {
+    expect(buildCallCommands({
+      workflow: 'doctor',
+      input: 'review',
+      engineTimeout: '15',
+      engines: 'codex',
+    }).commands).toEqual([
+      ['doctor', 'review', '--timeout', '15', '--engines', 'codex'],
+    ]);
+  });
+
   it('forwards --finalize-on-score to solo forge', () => {
     const { commands } = buildCallCommands({
       workflow: 'forge',

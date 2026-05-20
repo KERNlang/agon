@@ -20,11 +20,13 @@ import type { EngineDefinition } from '@agon/core';
 
 import { createCliAdapter } from '@agon/adapter-cli';
 
+import { runReviewCore, selectReviewEngine } from '../handlers/review.js';
+
 import { header, table, info, success, fail, warn, green, red, yellow, dim, bold } from '../blocks/output-format.js';
 
 import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork } from '../cesar/reliability.js';
 
-// @kern-source: doctor:14
+// @kern-source: doctor:15
 export interface EngineDoctorEntry {
   id: string;
   enabled: boolean;
@@ -34,7 +36,7 @@ export interface EngineDoctorEntry {
   detail: string;
 }
 
-// @kern-source: doctor:22
+// @kern-source: doctor:23
 export interface HarnessDoctorReport {
   headers: string[];
   rows: string[][];
@@ -42,19 +44,19 @@ export interface HarnessDoctorReport {
   ok: boolean;
 }
 
-// @kern-source: doctor:28
+// @kern-source: doctor:29
 export function shellQuoteForDoctor(value: string): string {
   const s = String(value ?? '');
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s;
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-// @kern-source: doctor:35
+// @kern-source: doctor:36
 export function buildDoctorCleanupCommand(repo: string, path: string): string {
   return `git -C ${shellQuoteForDoctor(repo)} worktree prune && rm -rf ${shellQuoteForDoctor(path)}`;
 }
 
-// @kern-source: doctor:37
+// @kern-source: doctor:38
 export function formatDoctorStatus(status: 'ok'|'warn'|'fail'): string {
   if (status === 'ok') {
     return green('ok');
@@ -65,7 +67,7 @@ export function formatDoctorStatus(status: 'ok'|'warn'|'fail'): string {
   return red('fail');
 }
 
-// @kern-source: doctor:45
+// @kern-source: doctor:46
 export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: EngineRegistry, enabledIds: string[]): EngineDoctorEntry {
   const binaryPath = engine.binary ? registry.findBinary(engine) : null;
   const hasApi = !!engine.api;
@@ -141,7 +143,7 @@ export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: En
   };
 }
 
-// @kern-source: doctor:121
+// @kern-source: doctor:122
 export interface PythonDoctorResult {
   status: 'ok'|'warn'|'fail';
   detail: string;
@@ -151,13 +153,13 @@ export interface PythonDoctorResult {
 /**
  * Every Python file the bridges actually spawn. Doctor confirms ALL of them are reachable through resolveDedupSidecar — a bad package that ships only some is still a problem.
  */
-// @kern-source: doctor:126
+// @kern-source: doctor:127
 export const EXPECTED_SIDECARS: string[] = ['history-search.py','syntax-validator.py','classifier.py','sidecar.py'];
 
 /**
  * Probe whether the Python interpreter exists, every expected sidecar file resolves, and the deps (fastembed, numpy, tree-sitter + grammars) are importable. Fail-soft: not having Python means semantic features fall back, not that agon is broken.
  */
-// @kern-source: doctor:129
+// @kern-source: doctor:130
 export function diagnoseDedupPython(): PythonDoctorResult {
   const python = process.env.AGON_PYTHON || 'python3';
   // Tiny probe — imports every dep used across the 4 sidecars in one shot.
@@ -228,7 +230,7 @@ export function diagnoseDedupPython(): PythonDoctorResult {
   };
 }
 
-// @kern-source: doctor:201
+// @kern-source: doctor:202
 export function checkDoctorWorktree(cwd: string): {ok:boolean; message:string; cleanupCommand:string} {
   let root = '';
   let tempDir = '';
@@ -265,7 +267,7 @@ export function checkDoctorWorktree(cwd: string): {ok:boolean; message:string; c
 /**
  * Diagnose the live Cesar harness: selected engine, backend capability, native/MCP session state, and observed tool reliability.
  */
-// @kern-source: doctor:235
+// @kern-source: doctor:236
 export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, cesar?: any): HarnessDoctorReport {
   const rows: string[][] = [];
   const selected = String((config as any)?.cesarEngine ?? (config as any)?.forgeFixedStarter ?? 'claude');
@@ -337,7 +339,86 @@ export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, 
   };
 }
 
-// @kern-source: doctor:308
+// @kern-source: doctor:309
+export interface ReviewDoctorReport {
+  rows: string[][];
+  ok: boolean;
+  summary: string;
+}
+
+// @kern-source: doctor:314
+export const REVIEW_DOCTOR_DIFF: string = [
+  'diff --git a/sample.ts b/sample.ts',
+  'new file mode 100644',
+  'index 0000000..1111111',
+  '--- /dev/null',
+  '+++ b/sample.ts',
+  '@@ -0,0 +1,3 @@',
+  '+export function divide(a: number, b: number): number {',
+  '+  return a / b;',
+  '+}',
+].join('\n');
+
+/**
+ * Review-specific reliability smoke test (#8). For each engine, runs a real review of a tiny synthetic buggy diff through the full runReviewCore pipeline (prompt → dispatch → sentinel parse → repair) under a short hard timeout, then classifies whether the engine produced machine-parseable output. This catches engines that pass `doctor engines` (binary/key reachable) but hang or emit unparseable output in actual review use — the kimi/zai failure mode the user hit.
+ */
+// @kern-source: doctor:326
+export async function runReviewDoctor(registry: EngineRegistry, config: any, adapter: any, engineIds: string[], timeoutSec: number): Promise<ReviewDoctorReport> {
+  // Align the inner dispatch timeout with the orchestrator wall clock (+grace)
+  // so a misbehaving dispatch path that defers abort still can't exceed the
+  // smoke-test budget — same belt-and-suspenders as the review command.
+  (config as any).reviewTimeout = timeoutSec + 5;
+  const ctx = {
+    config,
+    registry,
+    adapter,
+    activeEngines: () => registry.activeIds(config),
+  } as any;
+  const rows: string[][] = [];
+  let failing = 0;
+  let warned = 0;
+  for (const engineId of engineIds) {
+    const start = Date.now();
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutSec * 1000);
+    try {
+      const result = await runReviewCore(REVIEW_DOCTOR_DIFF, 'doctor smoke test', engineId, ctx, controller.signal);
+      const ms = Date.now() - start;
+      if (timedOut) {
+        failing += 1;
+        rows.push([engineId, 'fail', `timed out at ${timeoutSec}s — would hang a real review`]);
+      } else if (!result.parseFailed) {
+        // Parsed cleanly. blocking=true just means it caught the planted
+        // divide-by-zero bug AND emitted a structured block — the ideal result.
+        rows.push([engineId, 'ok', `parseable findings block in ${(ms / 1000).toFixed(1)}s${result.blocking ? ' (caught the planted bug)' : ''}`]);
+      } else if (result.unstructured) {
+        warned += 1;
+        rows.push([engineId, 'warn', `returned prose but no machine-parseable findings block (${(ms / 1000).toFixed(1)}s)`]);
+      } else {
+        failing += 1;
+        rows.push([engineId, 'fail', `empty or unusable response (${(ms / 1000).toFixed(1)}s)`]);
+      }
+    } catch (err) {
+      if (timedOut) {
+        failing += 1;
+        rows.push([engineId, 'fail', `timed out at ${timeoutSec}s — would hang a real review`]);
+      } else {
+        failing += 1;
+        rows.push([engineId, 'fail', err instanceof Error ? err.message : String(err)]);
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return {
+    rows,
+    ok: failing === 0,
+    summary: `${rows.length - failing - warned} ok, ${warned} warn, ${failing} fail`,
+  };
+}
+
+// @kern-source: doctor:383
 export const doctorCommand: any = defineCommand({
   meta: {
     name: 'doctor',
@@ -346,15 +427,24 @@ export const doctorCommand: any = defineCommand({
   args: {
     scope: {
       type: 'positional',
-      description: 'Scope: engines|harness',
+      description: 'Scope: engines|harness|review',
       required: false,
+    },
+    engines: {
+      type: 'string',
+      alias: 'e',
+      description: 'For `doctor review`: comma-separated engines to smoke-test (default: active review-capable engines).',
+    },
+    timeout: {
+      type: 'string',
+      description: 'For `doctor review`: per-engine hard timeout in seconds (default 30).',
     },
   },
   async run({ args }) {
     const scope = String(args.scope ?? 'engines').trim() || 'engines';
-    if (scope !== 'engines' && scope !== 'harness') {
+    if (scope !== 'engines' && scope !== 'harness' && scope !== 'review') {
       fail(`Unknown doctor scope: ${scope}`);
-      info('Available: engines, harness');
+      info('Available: engines, harness, review');
       process.exit(1);
     }
 
@@ -370,7 +460,44 @@ export const doctorCommand: any = defineCommand({
       return;
     }
 
-    const adapter = createCliAdapter(registry);
+    const reviewAdapter = createCliAdapter(registry);
+    if (scope === 'review') {
+      const ctx = { config, registry, adapter: reviewAdapter, activeEngines: () => registry.activeIds(config) } as any;
+      // Resolve which engines to smoke-test: explicit --engines (alias-resolved),
+      // else every active review-capable engine.
+      let reviewEngineIds: string[];
+      if (typeof args.engines === 'string' && args.engines.trim()) {
+        reviewEngineIds = args.engines.split(',').map((s: string) => registry.resolveId(s.trim())).filter(Boolean);
+      } else {
+        reviewEngineIds = registry.activeIds(config).filter((id: string) => {
+          try { return !!registry.get(id).review; } catch { return false; }
+        });
+      }
+      if (reviewEngineIds.length === 0) {
+        // Last resort: whatever selectReviewEngine would pick.
+        try { reviewEngineIds = [selectReviewEngine(undefined, ctx)]; } catch { /* none */ }
+      }
+      if (reviewEngineIds.length === 0) {
+        fail('No review-capable engines available to smoke-test.');
+        process.exit(1);
+      }
+      const parsedTimeout = args.timeout != null ? Number(String(args.timeout).trim()) : NaN;
+      const timeoutSec = Number.isFinite(parsedTimeout) && parsedTimeout > 0 ? Math.floor(parsedTimeout) : 30;
+      header('Review Doctor');
+      info(`Smoke-testing ${reviewEngineIds.join(', ')} — synthetic diff, ${timeoutSec}s hard timeout each.`);
+      const report = await runReviewDoctor(registry, config, reviewAdapter, reviewEngineIds, timeoutSec);
+      table(['Engine', 'Status', 'Detail'], report.rows.map((r) => [
+        bold(r[0]),
+        r[1] === 'ok' ? green('ok') : r[1] === 'warn' ? yellow('warn') : red('fail'),
+        r[2],
+      ]));
+      if (report.ok) success(`Summary: ${report.summary}`);
+      else warn(`Summary: ${report.summary}`);
+      if (!report.ok) process.exitCode = 1;
+      return;
+    }
+
+    const adapter = reviewAdapter;
     const enabledIds = config.forgeEnabledEngines ?? [];
 
     header('Engine Doctor');

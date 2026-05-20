@@ -42,6 +42,8 @@ interface name=RunStatusEngine
   field name=exitCode type=number optional=true
   field name=durationMs type=number optional=true
   field name=detail type=string optional=true
+  field name=outputPath type=string optional=true
+    doc "Absolute path to the per-engine output file written for this engine, so orchestrators can read each reviewer's raw text without re-deriving the filename."
 
 interface name=RunJudgeVerdict
   doc "Codex-as-judge outcome: an independent engine reviewed the forge winner's patch after the run. `blocking` true means the judge found issues the fitness spec missed — the winner has known holes. `unstructured` true means the judge produced a prose review but no machine-parseable verdict."
@@ -58,6 +60,10 @@ interface name=RunStatus
   field name=engines type="RunStatusEngine[]"
   field name=summary type=string
   field name=ok type=boolean
+  field name=requested type="string[]" optional=true
+    doc "The full list of engine ids the run was asked to dispatch. Lets a reader detect engines that never produced a record (e.g. a crash before the per-engine loop) by diffing requested against engines[].id."
+  field name=timeoutSec type=number optional=true
+    doc "The per-engine wall-clock timeout (seconds) enforced for this run, so 'timeout' statuses are interpretable after the fact."
   field name=judge type=RunJudgeVerdict optional=true
     doc "Present when forge ran with a --judge engine. Lets orchestrated/quiet runs read 'winner has known holes' from status.json without scraping stdout."
 
@@ -160,9 +166,11 @@ fn name=writeRunStatus params="runPath:string, status:RunStatus" returns=void ex
 fn name=printRunSummary params="status:RunStatus" returns=void export=true
   doc "Print the final summary line — '5/6 succeeded; claude: parse-failure' — at the end of every multi-engine mode. Always printed, including under AGON_QUIET=1, because orchestrators need both the run-dir path AND the outcome at a glance — that's the whole reason quiet mode exists. 'blocking' (review found problems) and 'error' (engine crashed) are both surfaced; 'skipped' (never dispatched) does not count against ok but is mentioned when present so the caller doesn't mistake it for success."
   handler <<<
-    const failing = status.engines.filter((e) => e.status !== 'ok' && e.status !== 'skipped');
+    // 'unstructured' is a successful review (useful prose, no machine verdict),
+    // so it counts as ok and never appears in the failing group.
+    const failing = status.engines.filter((e) => e.status !== 'ok' && e.status !== 'unstructured' && e.status !== 'skipped');
     const skipped = status.engines.filter((e) => e.status === 'skipped');
-    const okCount = status.engines.filter((e) => e.status === 'ok').length;
+    const okCount = status.engines.filter((e) => e.status === 'ok' || e.status === 'unstructured').length;
     const total = status.engines.length;
     const parts: string[] = [];
     parts.push(`${okCount}/${total} succeeded`);

@@ -72,12 +72,15 @@ export function clampConfidence(raw: number): number {
 }
 
 /**
- * A finding's effective confidence: its self-rated number when present and finite, else inferred from severity (blocking 0.8, important 0.6, nit/unknown 0.3).
+ * A finding's effective confidence: its self-rated value when present and finite, else inferred from severity (blocking 0.8, important 0.6, nit/unknown 0.3). Accepts a numeric STRING too (engines routinely emit confidence:"0.72"); a non-finite or absent value falls back to the severity default.
  */
 // @kern-source: consensus:92
 export function inferConfidence(f: RawFinding): number {
-  const c = f.confidence;
-  if (typeof c === 'number' && Number.isFinite(c)) return clampConfidence(c);
+  const c: any = (f as any).confidence;
+  const n = typeof c === 'number'
+    ? c
+    : (typeof c === 'string' && c.trim() !== '' ? Number(c) : NaN);
+  if (Number.isFinite(n)) return clampConfidence(n);
   const sev = (f.severity || '').toLowerCase();
   if (f.blocking === true || sev === 'blocking') return 0.8;
   if (sev === 'important' || sev === 'major') return 0.6;
@@ -87,7 +90,7 @@ export function inferConfidence(f: RawFinding): number {
 /**
  * Normalize a finding's severity to 'blocking' | 'important' | 'nit'. blocking===true wins; 'major'→'important'; anything unrecognized → 'nit'.
  */
-// @kern-source: consensus:103
+// @kern-source: consensus:106
 export function normSeverity(f: RawFinding): string {
   const sev = (f.severity || '').toLowerCase();
   if (f.blocking === true || sev === 'blocking') return 'blocking';
@@ -98,7 +101,7 @@ export function normSeverity(f: RawFinding): string {
 /**
  * Cluster key so the same issue from different engines collapses into one finding: lowercased file + a 10-line bucket of the first line number + the first 8 normalized words of the problem. Best-effort — when engines word a bug differently it stays split, which is the SAFE direction (no accidental auto-block from a phantom pair).
  */
-// @kern-source: consensus:112
+// @kern-source: consensus:115
 export function clusterKey(f: RawFinding): string {
   const file = (f.file || '').trim().toLowerCase();
   const lineStr = (f.lines == null ? '' : String(f.lines));
@@ -117,7 +120,7 @@ export function clusterKey(f: RawFinding): string {
 /**
  * Fold a panel of per-engine outcomes into one tiered, deduplicated report applying the two-signal block rule. minVerified defaults to 0.85 (solo-block), minPair to 0.70 (pair-block). Fail-closed: a panel where no engine returned a usable verdict autoBlocks.
  */
-// @kern-source: consensus:129
+// @kern-source: consensus:132
 export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, minPair?: number): ConsensusReport {
   const mv = typeof minVerified === 'number' && Number.isFinite(minVerified) ? minVerified : VERIFIED_THRESHOLD;
   const mp = typeof minPair === 'number' && Number.isFinite(minPair) ? minPair : PAIR_THRESHOLD;
@@ -184,8 +187,18 @@ export function buildConsensus(outcomes: EngineOutcome[], minVerified?: number, 
   for (const c of clusters.values()) {
     const pairVotes = Array.from(c.sigConf.values()).filter((v) => v >= mp).length;
     const isNit = c.severity === 'nit';
+    // Anchor quality guards pair-block: two engines only count as agreeing on
+    // the SAME issue when the cluster is concrete enough to trust the match —
+    // a real file+line, or a problem specific enough to be more than a few
+    // generic words. Without it, sparse low-information findings (empty
+    // file/lines/problem → key '#-1#') from different engines would collapse
+    // into one cluster and fake a pair-block. A weak cluster can still solo-
+    // block (one engine's deliberate >=0.85 blocking call) and still surfaces
+    // for the judge — it just can't auto-block on phantom cross-engine agreement.
+    const probWords = (c.problem || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(Boolean).length;
+    const hasAnchor = (!!(c.file && String(c.file).trim()) && /\d/.test(String(c.lines || ''))) || probWords >= 3;
     const soloBlock = c.severity === 'blocking' && c.blockingMaxConf >= mv;
-    const pairBlock = (c.severity === 'blocking' || c.severity === 'important') && pairVotes >= 2;
+    const pairBlock = (c.severity === 'blocking' || c.severity === 'important') && pairVotes >= 2 && hasAnchor;
     const blocks = !isNit && (soloBlock || pairBlock);
     const engines = Array.from(c.engines);
     let tier: string;

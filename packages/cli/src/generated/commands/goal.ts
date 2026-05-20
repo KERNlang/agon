@@ -293,7 +293,8 @@ return defineCommand({
             engine: eng,
             severity: typeof x.severity === 'string' ? x.severity : (x.blocking ? 'blocking' : 'nit'),
             blocking: x.blocking,
-            confidence: typeof x.confidence === 'number' ? x.confidence : undefined,
+            // pass confidence through raw — buildConsensus coerces numeric strings ("0.72") too
+            confidence: x.confidence,
             file: x.file, lines: x.lines, problem: x.problem, minimalFix: x.minimalFix,
           }));
           return { engine: eng, status: 'ok', findings };

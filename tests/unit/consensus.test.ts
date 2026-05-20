@@ -110,6 +110,51 @@ describe('buildConsensus — block rules', () => {
   });
 });
 
+describe('buildConsensus — anchor-gated pair-block (review finding: phantom pairs)', () => {
+  it('does NOT pair-block sparse low-information findings that collapse to the same key', () => {
+    // two engines, each a vague finding with no file/lines and a 2-word problem
+    const sparse = (engine: string): EngineOutcome => ({
+      engine, status: 'ok',
+      findings: [{ engine, severity: 'blocking', confidence: 0.8, problem: 'looks wrong', file: '', lines: '' }],
+    });
+    const r = buildConsensus([sparse('claude'), sparse('codex')]);
+    expect(r.autoBlock).toBe(false);          // no phantom verified blocker
+    expect(r.verified).toHaveLength(0);
+    expect(r.needsCheck).toHaveLength(1);      // still surfaced for the judge
+  });
+
+  it('still pair-blocks when the cluster has a concrete file+line anchor', () => {
+    const anchored = (engine: string): EngineOutcome => ({
+      engine, status: 'ok',
+      findings: [{ engine, severity: 'blocking', confidence: 0.75, problem: 'x', file: 'src/a.ts', lines: '42' }],
+    });
+    const r = buildConsensus([anchored('claude'), anchored('codex')]);
+    expect(r.autoBlock).toBe(true);
+  });
+
+  it('still pair-blocks when the problem text is specific enough (>=3 words) even without file/lines', () => {
+    const f = (engine: string): EngineOutcome => ({
+      engine, status: 'ok',
+      findings: [{ engine, severity: 'blocking', confidence: 0.72, problem: 'unbounded recursion on cyclic input', file: '', lines: '' }],
+    });
+    const r = buildConsensus([f('claude'), f('codex')]);
+    expect(r.autoBlock).toBe(true);
+  });
+});
+
+describe('inferConfidence — numeric-string coercion (review finding: quoted confidence)', () => {
+  it('coerces a quoted numeric confidence', () => {
+    expect(inferConfidence(f({ confidence: '0.72' as any }))).toBe(0.72);
+  });
+  it('falls back to severity default for a non-numeric string', () => {
+    expect(inferConfidence(f({ confidence: 'high' as any, severity: 'important' }))).toBe(0.6);
+  });
+  it('a quoted-confidence blocking finding can solo-block', () => {
+    const r = buildConsensus([ok('claude', [f({ confidence: '0.9' as any })])]);
+    expect(r.autoBlock).toBe(true);
+  });
+});
+
 describe('buildConsensus — tiering', () => {
   it('routes a lone sub-0.60 finding to speculative', () => {
     const r = buildConsensus([ok('claude', [f({ confidence: 0.4 })])]);

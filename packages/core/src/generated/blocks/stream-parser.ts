@@ -48,6 +48,10 @@ export class StreamParser {
     const results: ParsedChunk[] = [];
     try {
       const msg = JSON.parse(line);
+      // Primitives (number/string/bool/null) are never streamed content. Skip them here, BEFORE the envelope checks below read msg.type — which would throw on null (JSON.parse('null') === null) and fall into the catch as raw.
+      if (msg === null || typeof msg !== 'object') {
+        return results;
+      }
       // Claude Code stream-json: assistant message with content blocks
       if (msg.type === 'assistant' && msg.message?.content) {
         for (const block of msg.message.content) {
@@ -75,8 +79,8 @@ export class StreamParser {
         }
         return results;
       }
-      // A genuine stream-json control envelope always carries a string `type`. If this line parsed as JSON but is NOT such an envelope (e.g. an API engine like kimi emitting its findings as a JSON array — or any model whose TEXT output contains a JSON object/array on its own line), it is CONTENT, not protocol. Dropping it silently ate kimi's review findings (the array parsed as JSON, matched no envelope type, and was discarded — the output file written by the adapter looked complete, but the accumulated text lost the block). Preserve it as raw text. We only skip lines that look like an unknown control envelope (string `type` field).
-      if (msg && typeof msg === 'object' && typeof msg.type === 'string') {
+      // Content vs control (msg is a non-null object or array here). An OBJECT that carries a 'type' key is a (possibly malformed) control envelope we don't recognize — skip it, which covers unknown types AND {type:null}/{type:123}. Arrays (kimi's findings block) and type-less objects are CONTENT — preserve as raw text instead of dropping them (dropping silently ate kimi's findings: the array parsed as JSON, matched no envelope, was discarded, and the accumulated text lost the block while the adapter's raw file still looked complete). KNOWN LIMITATION: a model whose legit text output is a single-line JSON object that happens to carry a 'type' key (e.g. {type:'summary',text:'...'}) is skipped here — same ambiguity class as the original kimi bug, just narrower.
+      if (!Array.isArray(msg) && msg.type !== undefined) {
         return results;
       }
       results.push({ type: 'raw', content: line });
@@ -92,7 +96,7 @@ export class StreamParser {
 /**
  * Stateless convenience wrapper. For streaming use, prefer StreamParser.feed() + flush().
  */
-// @kern-source: stream-parser:71
+// @kern-source: stream-parser:74
 export function parseStreamChunk(chunk: string): ParsedChunk[] {
   const parser = new StreamParser();
   const results = parser.feed(chunk);

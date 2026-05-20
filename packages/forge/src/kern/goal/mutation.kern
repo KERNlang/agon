@@ -1,0 +1,84 @@
+// ── agon goal — mutation-witness ───────────────────────────────────────
+// The keystone defense (tribunal red-team R1/R2/R7): a "witnessed" test only
+// proves diff-sensitivity, not spec-correctness. After the agent's new tests
+// pass, we mutate the CHANGED lines with canonical operators and re-run those
+// tests. A surviving mutant (tests still pass on wrong code) means the test is
+// too weak -> park. This makes "encode the answer in the test" self-defeating.
+
+import from="node:fs" names="writeFileSync"
+import from="@agon/core" names="spawnWithTimeout"
+import from="./paths.js" names="resolveWithin"
+
+interface name=Mutant export=true
+  doc "A single canonical mutation applied to one changed line."
+  field name=id type=string
+  field name=operator type=string
+  field name=line type=number
+  field name=before type=string
+  field name=after type=string
+
+fn name=generateMutants params="source:string, changedLines:number[]" returns="Mutant[]" export=true
+  doc "Canonical mutants on the changed lines only (one per applicable operator/line)."
+  handler <<<
+    const ops: Array<{ name: string; apply: (s: string) => string | null }> = [
+      { name: 'arith:+→-', apply: (s) => { const m = s.replace(/(?<!\+)\+(?![+=])/, '-'); return m !== s ? m : null; } },
+      { name: 'arith:-→+', apply: (s) => { const m = s.replace(/(?<![-\w])-(?![-=>])/, '+'); return m !== s ? m : null; } },
+      { name: 'eq:===→!==', apply: (s) => { const m = s.replace('===', '!=='); return m !== s ? m : null; } },
+      { name: 'eq:!==→===', apply: (s) => { const m = s.replace('!==', '==='); return m !== s ? m : null; } },
+      { name: 'logic:&&→||', apply: (s) => { const m = s.replace('&&', '||'); return m !== s ? m : null; } },
+      { name: 'logic:||→&&', apply: (s) => { const m = s.replace('||', '&&'); return m !== s ? m : null; } },
+      { name: 'rel:<→>=', apply: (s) => { const m = s.replace(/(?<![<>=])<(?![<=])/, '>='); return m !== s ? m : null; } },
+      { name: 'rel:>→<=', apply: (s) => { const m = s.replace(/(?<![<>=-])>(?![>=])/, '<='); return m !== s ? m : null; } },
+      { name: 'bool:true→false', apply: (s) => { const m = s.replace(/\btrue\b/, 'false'); return m !== s ? m : null; } },
+      { name: 'bool:false→true', apply: (s) => { const m = s.replace(/\bfalse\b/, 'true'); return m !== s ? m : null; } },
+      { name: 'ret:→undefined', apply: (s) => { const m = s.replace(/\breturn\s+[^;]+;/, 'return undefined;'); return m !== s ? m : null; } },
+      { name: 'arr:[]→[0]', apply: (s) => { const m = s.replace(/(?<![\w\]])\[\](?!\])/, '[0]'); return m !== s ? m : null; } },
+    ];
+    const lines = source.split('\n');
+    const mutants: Mutant[] = [];
+    for (const ln of changedLines) {
+      const idx = ln - 1;
+      if (idx < 0 || idx >= lines.length) continue;
+      const original = lines[idx];
+      for (const op of ops) {
+        const mutated = op.apply(original);
+        if (mutated == null || mutated === original) continue;
+        mutants.push({ id: `${op.name}@L${ln}`, operator: op.name, line: ln, before: original, after: mutated });
+      }
+    }
+    return mutants;
+  >>>
+
+fn name=applyMutantToSource params="source:string, mutant:Mutant" returns=string export=true
+  doc "Return source with the mutant's single line swapped in."
+  handler <<<
+    const lines = source.split('\n');
+    const idx = mutant.line - 1;
+    if (idx < 0 || idx >= lines.length) return source;
+    lines[idx] = mutant.after;
+    return lines.join('\n');
+  >>>
+
+fn name=mutationSurvivors async=true params="opts:{worktree:string, relFilePath:string, source:string, mutants:Mutant[], testCmd:string, timeout:number}" returns="Promise<Mutant[]>" export=true
+  doc "Apply each mutant to the file, run the witness tests; a mutant whose tests still PASS survived (weak test). Restores the original file in finally. Single-file by design — the controller calls this once per changed file. Rejects relFilePath that escapes the worktree."
+  handler <<<
+    const { worktree, relFilePath, source, mutants, testCmd, timeout } = opts;
+    const absPath = resolveWithin(worktree, relFilePath);
+    const survivors: Mutant[] = [];
+    try {
+      for (const mutant of mutants) {
+        writeFileSync(absPath, applyMutantToSource(source, mutant));
+        const res = await spawnWithTimeout({
+          command: '/bin/sh',
+          args: ['-c', testCmd],
+          cwd: worktree,
+          timeout: Math.max(1, timeout) * 1000,
+        });
+        // exit 0 => tests still passed on mutated (wrong) code => mutant survived.
+        if (res.exitCode === 0 && !res.timedOut) survivors.push(mutant);
+      }
+    } finally {
+      writeFileSync(absPath, source);
+    }
+    return survivors;
+  >>>

@@ -1,0 +1,90 @@
+// ── Agent Guide text — the single overview any engine reads to learn agon ──
+// `agon agent-guide` prints agentGuideMarkdown(); `agon install-agent-prompts`
+// drops thin per-CLI shims (agonShim) that just point the engine back at that
+// command. One source of truth, zero always-on tokens — unlike the MCP server,
+// whose tool schemas load into context on every turn.
+
+fn name=agentGuideMarkdown returns=string export=true
+  doc "Compact how-to-call-agon overview for any external engine (Codex, Gemini, Claude, OpenCode)."
+  handler <<<
+    return [
+      '# How to call Agon',
+      '',
+      'Agon orchestrates multiple AI engines. Call it from your shell with your normal Bash/exec tool — there is no MCP and nothing to load.',
+      'Run it inside the git repo you are working on.',
+      '',
+      '## Modes',
+      '- `agon forge "<task>" -t "<test cmd>"` — engines race to implement the task; the test command picks the winner. Use when a runnable test/check exists and there are multiple valid approaches.',
+      '- `agon brainstorm "<question>"` — engines bid confidence, the most confident answers. Cheap second opinion.',
+      '- `agon tribunal "<question>" [--mode adversarial|steelman|socratic|red-team|synthesis|postmortem]` — structured multi-engine debate. Use for decisions with real tradeoffs.',
+      '- `agon campfire "<topic>"` — open multi-engine discussion, no winner. For exploration.',
+      '- `agon review <uncommitted|branch:NAME|commit:SHA>` — non-interactive multi-engine code review.',
+      '',
+      '## Common flags',
+      '- `--engines claude,codex,gemini` — limit which engines compete',
+      '- `--timeout <sec>` — per-engine timeout',
+      '',
+      '## Machine-readable output',
+      'The direct `agon <mode>` commands stream human output. For JSONL lifecycle + output chunks, use the bridge form `agon call <mode> "<input>" [flags] --jsonl`, e.g. `agon call forge "<task>" -t "<test>" --jsonl`.',
+      '',
+      '## Read the result',
+      '- `agon last` — prints the most recent run directory',
+      '- `cat "$(agon last)/summary.json"` — scores for the last run',
+      '- `agon last --status` — status.json of the last run',
+      '',
+      '## Pick a mode',
+      '- multiple valid approaches + a test  -> forge',
+      '- a decision with tradeoffs           -> tribunal',
+      '- need ideas / unsure                 -> brainstorm',
+      '- explore, no decision needed         -> campfire',
+      '- judge existing code                 -> review',
+      '',
+      'Run `agon <mode> --help` for the full flag list.',
+    ].join('\n');
+  >>>
+
+fn name=agonShim params="format:string" returns=string export=true
+  doc "Per-CLI /agon slash-command shim. format is one of codex | gemini | claude."
+  handler <<<
+    const body = [
+      'You have access to Agon, a multi-AI orchestration CLI (forge, brainstorm, tribunal, campfire, review).',
+      'First run `agon agent-guide` in the shell to see exactly how to call it, then use the right Agon mode to handle the request.',
+      'Call agon with your normal shell/Bash tool — there is no MCP and nothing is loaded until you invoke it.',
+    ].join('\n');
+
+    if (format === 'gemini') {
+      return [
+        'description = "Use Agon multi-AI orchestration (forge/tribunal/brainstorm/review)"',
+        'prompt = """',
+        body,
+        '',
+        '{{args}}',
+        '"""',
+        '',
+      ].join('\n');
+    }
+
+    if (format === 'claude') {
+      return [
+        '---',
+        'description: Use Agon multi-AI orchestration (forge/tribunal/brainstorm/review)',
+        'argument-hint: [task]',
+        '---',
+        '',
+        body,
+        '',
+        '$ARGUMENTS',
+        '',
+      ].join('\n');
+    }
+
+    // codex (and any other markdown-prompt CLI): plain markdown, no frontmatter.
+    return [
+      '# Agon',
+      '',
+      body,
+      '',
+      '$ARGUMENTS',
+      '',
+    ].join('\n');
+  >>>

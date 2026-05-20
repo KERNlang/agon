@@ -39,6 +39,9 @@ service name=StreamParser
       let name=results type="ParsedChunk[]" value="[]"
       try
         let name=msg value="JSON.parse(line)"
+        comment raw="// Primitives (number/string/bool/null) are never streamed content. Skip them here, BEFORE the envelope checks below read msg.type — which would throw on null (JSON.parse('null') === null) and fall into the catch as raw."
+        if cond="msg === null || typeof msg !== 'object'"
+          return value="results"
         comment raw="// Claude Code stream-json: assistant message with content blocks"
         if cond="msg.type === 'assistant' && msg.message?.content"
           each name=block in="msg.message.content"
@@ -58,7 +61,10 @@ service name=StreamParser
           if cond="msg.message"
             do value="results.push({ type: 'status', content: msg.message })"
           return value="results"
-        comment raw="// Unknown JSON: skip."
+        comment raw="// Content vs control (msg is a non-null object or array here). An OBJECT that carries a 'type' key is a (possibly malformed) control envelope we don't recognize — skip it, which covers unknown types AND {type:null}/{type:123}. Arrays (kimi's findings block) and type-less objects are CONTENT — preserve as raw text instead of dropping them (dropping silently ate kimi's findings: the array parsed as JSON, matched no envelope, was discarded, and the accumulated text lost the block while the adapter's raw file still looked complete). KNOWN LIMITATION: a model whose legit text output is a single-line JSON object that happens to carry a 'type' key (e.g. {type:'summary',text:'...'}) is skipped here — same ambiguity class as the original kimi bug, just narrower."
+        if cond="!Array.isArray(msg) && msg.type !== undefined"
+          return value="results"
+        do value="results.push({ type: 'raw', content: line })"
         return value="results"
         catch name=e
           comment raw="// Not JSON: treat as raw text (Codex, Gemini, etc.)."

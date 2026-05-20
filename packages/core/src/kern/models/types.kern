@@ -68,6 +68,8 @@ interface name=DispatchOptions
   field name=mode type=EngineMode
   field name=timeout type=number
   field name=outputDir type=string
+  field name=maxTokens type=number optional=true
+    doc "Per-call output-token cap. Overrides engine.api.maxTokens for THIS dispatch only — lets each mode size output independently (review caps low for speed; forge can raise; Cesar uses the engine default) without mutating the shared engine config. Ignored by CLI/companion engines; applies to the API path."
   field name=signal type=AbortSignal optional=true
   field name=images type="ImageAttachment[]" optional=true
   field name=systemPrompt type=string optional=true
@@ -185,6 +187,8 @@ config name=AgonConfig
     doc "Max number of API/network-backed engines probed (and otherwise burst-dispatched) at once. Local CLI engines stay fully parallel. Capping the API fan-out stops a big roster's API engines from all cold-starting against rate-limited providers simultaneously and losing the whole batch to a thundering-herd timeout. Set to 0 or a high number to effectively disable the cap."
   field name=forgeJudgeEngine type=string default=""
     doc "Default 'judge' engine for forge: excluded from the competing roster and used to review the winning patch after a forge run (Codex-as-judge workflow — competitors race, the judge independently audits the winner for bugs the fitness spec missed). Empty = no judge unless --judge is passed. The CLI --judge flag overrides this."
+  field name=reviewMaxTokens type=number default=8192
+    doc "Output-token cap for REVIEW-mode dispatches. A code review is a findings list, not an implementation, so it rarely needs the engine's full output budget — capping it lower makes reviews finish generating (and thus complete) noticeably faster, especially for verbose API engines like kimi. Applied per-call via DispatchOptions.maxTokens, so it does NOT affect Cesar (agentic turns) or Forge (full implementations), which keep the engine's own maxTokens."
   field name=ratingsEnabled type=boolean default=true
   field name=contextSummary type=boolean default=true
   field name=sessionContinuity type=boolean default=false

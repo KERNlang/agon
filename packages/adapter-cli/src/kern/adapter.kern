@@ -25,7 +25,7 @@ service name=CliAdapter implements=EngineAdapter
         comment raw="// No CLI binary — use API if available, otherwise fail"
         if cond="options.engine.api"
           let name=resolvedModel value="resolveModel(options.engine, options.cwd)"
-          let name=apiConfig value="resolvedModel ? { ...options.engine.api, model: resolvedModel } : options.engine.api"
+          let name=apiConfig value="{ ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) }"
           comment raw="// Inject project context for API engines so they know the codebase"
           comment raw="// Uses sessionContext cache — avoids redundant git spawns when handleChat already gathered context"
           let name=sysPrompt kind=let value="options.systemPrompt"
@@ -125,7 +125,7 @@ service name=CliAdapter implements=EngineAdapter
       if (!binaryPath) {
         if (options.engine.api) {
           const resolvedModel = resolveModel(options.engine, options.cwd);
-          const apiConfig = resolvedModel ? { ...options.engine.api, model: resolvedModel } : options.engine.api;
+          const apiConfig = { ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) };
           const gen = apiStreamDispatch(apiConfig, options.prompt, options.timeout, options.signal, options.systemPrompt);
           let result: DispatchResult;
           while (true) {
@@ -216,7 +216,7 @@ service name=CliAdapter implements=EngineAdapter
       let name=agentBinaryPath value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
       if cond="options.engine.api && !agentBinaryPath"
         let name=resolvedModel value="resolveModel(options.engine, options.cwd)"
-        let name=apiConfig value="resolvedModel ? { ...options.engine.api, model: resolvedModel } : options.engine.api"
+        let name=apiConfig value="{ ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) }"
         let name=cwd value="options.cwd || resolveWorkingDir()"
         let name=projectCtx value="sessionContext.get(cwd)"
         let name=systemPrompt value="[ options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.', projectCtx ? `## PROJECT CONTEXT\\n${projectCtx}` : '', ].filter(Boolean).join('\\n\\n')"

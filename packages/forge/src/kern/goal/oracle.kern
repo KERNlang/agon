@@ -1,0 +1,108 @@
+// ── agon goal — frozen oracle ──────────────────────────────────────────
+// The success oracle (gate cmd + runner config + acceptance test set) is
+// snapshotted out of tree at goal-start and hashed. The gate runs from the
+// frozen copy, never the agent's worktree, so the agent cannot weaken the
+// oracle to fake green (campfire). witnessTest enforces fail-on-base /
+// pass-on-new for every new test. See AGON-GOAL-DESIGN.md rails 1–3.
+
+import from="node:fs" names="existsSync,readFileSync,writeFileSync,mkdirSync,copyFileSync"
+import from="node:path" names="join,basename,dirname"
+import from="node:crypto" names="createHash"
+import from="@agon/core" names="agonPath,ensureAgonHome,spawnWithTimeout,worktreeCreate,worktreeRemoveBestEffort"
+import from="./paths.js" names="assertSafeGoalId,resolveWithin"
+
+interface name=FrozenOracle export=true
+  doc "Out-of-tree snapshot of the success oracle for a goal run."
+  field name=dir type=string
+  field name=hash type=string
+  field name=gate type=string
+  field name=files type="string[]"
+
+interface name=WitnessResult export=true
+  doc "Result of fail-on-base / pass-on-new witnessing for a new test."
+  field name=witnessed type=boolean
+  field name=failedOnBase type=boolean
+  field name=passedOnNew type=boolean
+  field name=baseTimedOut type=boolean
+  field name=baseExit type=number
+  field name=newExit type=number
+
+fn name=hashOracleInputs params="gate:string, files:string[]" returns=string export=true
+  doc "Stable sha256 over the gate string + each file's full path:content. Keys on the path-as-given (not basename) so same-named files in different dirs stay distinct."
+  handler <<<
+    const h = createHash('sha256');
+    h.update('gate\n');
+    h.update(gate);
+    h.update('\n');
+    for (const f of [...files].sort()) {
+      let content = '';
+      try { content = existsSync(f) ? readFileSync(f, 'utf-8') : ''; } catch { content = ''; }
+      h.update('file\n');
+      h.update(f);
+      h.update('\n');
+      h.update(content);
+      h.update('\n');
+    }
+    return h.digest('hex');
+  >>>
+
+fn name=snapshotOracle params="opts:{goalId:string, gate:string, files:string[]}" returns="FrozenOracle" export=true
+  doc "Freeze the gate string + oracle files into ~/.agon/goals/<id>/oracle/ and hash them. FrozenOracle.files holds the ORIGINAL paths (the basis of the hash), not the renamed copies."
+  handler <<<
+    const { goalId, gate, files } = opts;
+    assertSafeGoalId(goalId);
+    ensureAgonHome();
+    const dir = agonPath('goals', goalId, 'oracle');
+    const filesDir = join(dir, 'files');
+    mkdirSync(filesDir, { recursive: true });
+    writeFileSync(join(dir, 'gate.txt'), gate);
+    files.forEach((f, i) => {
+      if (!existsSync(f)) return;
+      // index-prefix avoids basename collisions across dirs
+      const dest = join(filesDir, `${i}-${basename(f)}`);
+      try { copyFileSync(f, dest); } catch { /* skip unreadable */ }
+    });
+    const hash = hashOracleInputs(gate, files);
+    writeFileSync(join(dir, 'hash.txt'), hash);
+    return { dir, hash, gate, files: [...files] };
+  >>>
+
+fn name=oracleTampered params="oracle:FrozenOracle, currentFiles:string[]" returns=boolean export=true
+  doc "True if the live oracle surface no longer matches the frozen hash (audit signal)."
+  handler <<<
+    return hashOracleInputs(oracle.gate, currentFiles) !== oracle.hash;
+  >>>
+
+fn name=witnessTest async=true params="opts:{repoRoot:string, baseSha:string, newWorktree:string, newTestFiles:string[], testCmd:string, timeout:number}" returns="Promise<WitnessResult>" export=true
+  doc "Copy the new test(s) into a base-SHA worktree and run there (must FAIL, and NOT merely time out), then run in the new worktree (must PASS). Proves the test sees the gap. Rejects any newTestFiles entry that escapes its worktree root."
+  handler <<<
+    const { repoRoot, baseSha, newWorktree, newTestFiles, testCmd, timeout } = opts;
+    const baseWt = join(agonPath('goals', 'tmp'), `witness-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+    const timeoutMs = Math.max(1, timeout) * 1000;
+    try {
+      worktreeCreate(repoRoot, baseWt, baseSha);
+      // Carry the *new* tests back onto the old code, so the test exists on base.
+      for (const rel of newTestFiles) {
+        const src = resolveWithin(newWorktree, rel);
+        if (!existsSync(src)) continue;
+        const dest = resolveWithin(baseWt, rel);
+        mkdirSync(dirname(dest), { recursive: true });
+        copyFileSync(src, dest);
+      }
+      const base = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', testCmd], cwd: baseWt, timeout: timeoutMs });
+      const fresh = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', testCmd], cwd: newWorktree, timeout: timeoutMs });
+      // A timeout on base is NOT a valid "failed on base" — it cannot bless a weak test.
+      const failedOnBase = base.exitCode !== 0 && !base.timedOut;
+      const passedOnNew = fresh.exitCode === 0 && !fresh.timedOut;
+      return {
+        witnessed: failedOnBase && passedOnNew,
+        failedOnBase,
+        passedOnNew,
+        baseTimedOut: base.timedOut,
+        baseExit: base.exitCode,
+        newExit: fresh.exitCode,
+      };
+    } finally {
+      worktreeRemoveBestEffort(repoRoot, baseWt);
+    }
+  >>>

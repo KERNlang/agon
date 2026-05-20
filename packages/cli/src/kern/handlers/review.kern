@@ -147,32 +147,36 @@ interface name=ReviewCoreResult export=true
   field name=parseFailed type=boolean
   field name=unstructured type=boolean
     doc "True when the engine produced a substantive prose review but no machine-parseable findings block (even after the repair pass). The review is useful and should be surfaced as a success to humans — but parseFailed/blocking stay fail-closed so any automated GATE still treats it as non-approval."
+  field name=severityCounts type=ReviewSeverityCounts
+    doc "Findings counted by severity, for human summaries like 'ok, 1 important, 3 nits'. All-zero when parseFailed/unstructured."
 
 const name=REVIEW_SENTINEL type=string value={{ '<!--AGON_REVIEW_FINDINGS_v1-->' }}
 
-fn name=parseReviewBlocking params="response:string" returns="{blocking:boolean, parseFailed:boolean}" export=true
-  doc "Sentinel-anchored, fail-closed parser. Tribunal fix #9 + Gemini (b): the engine MUST end its response with a unique sentinel followed by a JSON array of findings. We parse only the text after the LAST sentinel occurrence. Without a sentinel match the response is treated as blocking + parseFailed, so the user must explicitly approve. This blocks the prompt-injection attack where an attacker echoes `[{\"blocking\":false}]` inside diff content — the injected payload has no sentinel and the engine's actual structured output (which DOES carry the sentinel) is the only thing the parser will consider."
-  handler <<<
-    if (!response || response.trim().length === 0) return { blocking: true, parseFailed: true };
+interface name=ReviewSeverityCounts export=true
+  field name=blocking type=number
+  field name=important type=number
+  field name=nit type=number
+  field name=total type=number
 
-    const sentinel = '<!--AGON_REVIEW_FINDINGS_v1-->';
+fn name=extractReviewFindings params="response:string" returns="Array<{severity?:string, blocking?:boolean}> | null" export=true
+  doc "Sentinel-anchored, fail-closed extraction of the findings array — the single chokepoint shared by parseReviewBlocking (the blocking gate) and summarizeReviewFindings (severity counts). Returns the parsed array (possibly empty []) or null when no parseable block follows the LAST sentinel. Anti-injection: only text after the LAST sentinel is considered, so attacker brackets quoted earlier in the diff are ignored. Tolerant of almost-JSON (trailing commas, line and block JS-style comments) and fenced json code blocks."
+  handler <<<
+    if (!response || response.trim().length === 0) return null;
+
+    const sentinel = REVIEW_SENTINEL;
     const lastSentinelIdx = response.lastIndexOf(sentinel);
-    if (lastSentinelIdx < 0) return { blocking: true, parseFailed: true };
+    if (lastSentinelIdx < 0) return null;
 
     const tail = response.slice(lastSentinelIdx + sentinel.length).trim();
-    if (!tail) return { blocking: true, parseFailed: true };
+    if (!tail) return null;
 
     // Engine-AGNOSTIC JSON tolerance. LLMs routinely emit *almost*-JSON: a
     // trailing comma before the closing bracket (e.g. kimi's `...}]`→`...},]`),
     // // or /* */ comments annotating findings, etc. Rather than special-casing
     // any one engine, we strict-parse first and, ONLY on failure, retry against
-    // a string-aware "relaxed" copy. This is the single chokepoint where review
-    // JSON is decoded, so every engine — current and future — benefits without
-    // a per-engine branch. The relax pass is string-aware (it never touches
-    // commas/slashes that live inside a JSON string value), so it can't corrupt
-    // findings text. If both strict and relaxed parses fail, we fall through to
-    // the engine-agnostic safety nets below (fenced-block retry → repair pass →
-    // unstructured success).
+    // a string-aware "relaxed" copy. The relax pass is string-aware (it never
+    // touches commas/slashes inside a JSON string value), so it can't corrupt
+    // findings text.
     const relaxJsonString = (raw: string): string => {
       let out = '';
       let inStr = false;
@@ -199,10 +203,10 @@ fn name=parseReviewBlocking params="response:string" returns="{blocking:boolean,
       return out;
     };
 
-    // Parse the first balanced [...] array found at or after `from`. The scan is
-    // string-aware so brackets inside string values don't skew the depth count.
-    // Returns null on no array / unbalanced / invalid JSON / non-array.
-    const tryArrayFrom = (text: string): { blocking: boolean; parseFailed: boolean } | null => {
+    // Parse the first balanced [...] array found in `text`. String-aware so
+    // brackets inside string values don't skew the depth count. Returns the
+    // array or null (no array / unbalanced / invalid JSON / non-array).
+    const tryArrayFrom = (text: string): Array<{ severity?: string; blocking?: boolean }> | null => {
       const start = text.indexOf('[');
       if (start < 0) return null;
       let depth = 0;
@@ -231,31 +235,51 @@ fn name=parseReviewBlocking params="response:string" returns="{blocking:boolean,
         catch { return null; }
       }
       if (!Array.isArray(parsed)) return null;
-      const arr = parsed as Array<{ blocking?: boolean; severity?: string }>;
-      const blocking = arr.some((c) => c && (c.blocking === true || (typeof c.severity === 'string' && c.severity.toLowerCase() === 'blocking')));
-      return { blocking, parseFailed: false };
+      return parsed as Array<{ severity?: string; blocking?: boolean }>;
     };
 
     // Tolerant extraction (A): the first balanced [...] array anywhere in the
-    // post-sentinel tail, ignoring surrounding scaffolding — a ```json fence or
-    // trailing prose the engine appended (the #1 cause of parse failures with
-    // conversational engines like claude-code). Because we only ever look at
-    // text AFTER the LAST sentinel, attacker brackets injected earlier in the
-    // diff are never considered — the anti-injection guarantee is preserved.
+    // post-sentinel tail, ignoring surrounding scaffolding (a ```json fence or
+    // trailing prose). Only text AFTER the LAST sentinel is considered, so
+    // attacker brackets injected earlier in the diff are never seen.
     const primary = tryArrayFrom(tail);
     if (primary) return primary;
 
-    // Fallback (b): if the first bracket wasn't a valid findings array (e.g. the
-    // engine wrote prose like "issues [below]:" before the real block), retry on
-    // the body of the LAST fenced code block in the tail — engines that wrap
-    // their machine output in ```json most often put the real array there.
+    // Fallback (b): retry on the body of the LAST fenced code block in the tail
+    // — engines that wrap machine output in ```json usually put the array there.
     const fences = [...tail.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)];
     for (let i = fences.length - 1; i >= 0; i--) {
       const fenced = tryArrayFrom(fences[i][1] ?? '');
       if (fenced) return fenced;
     }
 
-    return { blocking: true, parseFailed: true };
+    return null;
+  >>>
+
+fn name=parseReviewBlocking params="response:string" returns="{blocking:boolean, parseFailed:boolean}" export=true
+  doc "Sentinel-anchored, fail-closed parser. The engine MUST end its response with a unique sentinel followed by a JSON array of findings. Without a parseable block the response is treated as blocking + parseFailed, so the user must explicitly approve. This blocks the prompt-injection attack where an attacker echoes `[{\"blocking\":false}]` inside diff content — only the engine's real structured output after the LAST sentinel is considered. Thin wrapper over extractReviewFindings."
+  handler <<<
+    const findings = extractReviewFindings(response);
+    if (findings === null) return { blocking: true, parseFailed: true };
+    const blocking = findings.some((c) => c && (c.blocking === true || (typeof c.severity === 'string' && c.severity.toLowerCase() === 'blocking')));
+    return { blocking, parseFailed: false };
+  >>>
+
+fn name=summarizeReviewFindings params="response:string" returns="ReviewSeverityCounts" export=true
+  doc "Count findings by severity from the structured block, for human summaries like 'claude: ok, 1 important, 3 nits'. Returns all-zero when there is no parseable findings block (the caller renders that as unstructured/empty). A finding counts as blocking if blocking===true or severity==='blocking'; otherwise by its severity, with anything not 'important' falling to nit."
+  handler <<<
+    const findings = extractReviewFindings(response);
+    if (!findings) return { blocking: 0, important: 0, nit: 0, total: 0 };
+    let blocking = 0;
+    let important = 0;
+    let nit = 0;
+    for (const f of findings) {
+      const sev = f && typeof f.severity === 'string' ? f.severity.toLowerCase() : '';
+      if ((f && f.blocking === true) || sev === 'blocking') blocking += 1;
+      else if (sev === 'important') important += 1;
+      else nit += 1;
+    }
+    return { blocking, important, nit, total: findings.length };
   >>>
 
 fn name=runReviewRepair params="priorReview:string, engineId:string, ctx:HandlerContext, signal?:AbortSignal" returns="Promise<string>" async=true
@@ -271,7 +295,7 @@ fn name=runReviewRepair params="priorReview:string, engineId:string, ctx:Handler
     let name=engine value="ctx.registry.get(engineId)"
     let name=outputDir value="join(RUNS_DIR, `review-repair-${Date.now()}`)"
     do value="mkdirSync(outputDir, { recursive: true })"
-    let name=dispatchOpts value="{ engine, prompt, cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, outputDir, signal, }"
+    let name=dispatchOpts value="{ engine, prompt, cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, maxTokens: (config as any).reviewMaxTokens ?? 8192, outputDir, signal, }"
     let name=response kind=let value="''"
     if cond="ctx.adapter.dispatchStream"
       let name=gen value="ctx.adapter.dispatchStream(dispatchOpts)"
@@ -313,7 +337,7 @@ fn name=runReviewCore params="diff:string, label:string, engineId:string, ctx:Ha
     let name=engine value="ctx.registry.get(engineId)"
     let name=outputDir value="join(RUNS_DIR, `review-${Date.now()}`)"
     do value="mkdirSync(outputDir, { recursive: true })"
-    let name=dispatchOpts value="{ engine, prompt, cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, outputDir, signal, }"
+    let name=dispatchOpts value="{ engine, prompt, cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, maxTokens: (config as any).reviewMaxTokens ?? 8192, outputDir, signal, }"
     let name=response kind=let value="''"
     if cond="ctx.adapter.dispatchStream"
       let name=gen value="ctx.adapter.dispatchStream(dispatchOpts)"
@@ -362,7 +386,8 @@ fn name=runReviewCore params="diff:string, label:string, engineId:string, ctx:Ha
     comment raw="// (c) Unstructured success: the engine produced a substantive prose review but no machine block parsed, even after repair. The review is still useful to a human, so flag it so the UI surfaces it as a completed (unstructured) review rather than an error. blocking/parseFailed stay fail-closed for any automated gate (e.g. the plan executor's review step)."
     if cond="parseFailed && response.trim().length >= 40"
       assign target="unstructured" value="true"
-    return value="{ response, blocking, parseFailed, unstructured }"
+    let name=severityCounts value="summarizeReviewFindings(response)"
+    return value="{ response, blocking, parseFailed, unstructured, severityCounts }"
 
 fn name=handleReview params="dispatch:Dispatch, ctx:HandlerContext, target?:string, requestedEngine?:string" returns="Promise<void>" async=true
   signal name=abort

@@ -67,8 +67,10 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
     const label = String(choice?.label ?? '').trim();
     return `[${fmtChoiceKey(choice, i)}] ${label}`.trim();
   }).join('  ');
+  // Only yes/no-style (2 choices) render inline/horizontal. Three or more —
+  // i.e. a real options menu / fork — always stacks vertically, one per line.
   const useInlineChoices = choiceList.length > 0
-    && choiceList.length <= 3
+    && choiceList.length <= 2
     && inlineChoiceText.length <= Math.max(24, termWidth - 10);
   const questionAccent = choiceList.length > 0 ? '#60a5fa' : '#d1d5db';
   return (

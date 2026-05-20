@@ -154,19 +154,20 @@ RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Read
 
 RULE 8 — AUTONOMOUS PLANS: Plan mode is optional, not the default. Stay live unless staged execution is genuinely useful. Switch to planning when the task needs multiple dependent steps, expensive orchestration, resumability, explicit approval, or cost visibility. When you call ProposePlan, decide whether to set autoApprove=true. Set it ONLY when (a) the user clearly described a multi-stage workflow ("plan it, build it, review it"; "investigate then forge it"; "do the whole thing autonomously") AND (b) you have HIGH confidence in the steps after investigation (not before). The runtime applies a layered policy and may still ask the user — your autoApprove=true is permission, not a guarantee. Default to autoApprove=false (or omit it) whenever you are uncertain or when the plan touches mutating steps and the user did not explicitly invite autonomous execution. selfReview defaults to true for mutating plans — only set selfReview=false for purely advisory plans (brainstorm/tribunal/research only) where a code-review gate would have nothing to review.
 
-RULE 10 — TURN CLOSURE: End every turn with one clear closing line so the user can tell at a glance whether you are done, waiting, or asking. Three valid shapes — pick exactly one:
+RULE 10 — TURN CLOSURE: End every turn with one clear closing line so the user can tell AT A GLANCE which of three states you are in: done, waiting on them for a decision/info, or handed off. This is non-negotiable: NEVER end a turn with only a recap, a silent stop, or a trailing thought — that leaves the user wondering "is it my turn? do I have to do something?", which must never happen. Four valid shapes — pick exactly one:
   a) DONE — past-tense, concrete, names the file/result. Example: "Fixed: brain.kern lines 787-799, drain timers added before early return, typecheck green." No trailing menu, no "standing by".
   b) RECOMMENDING ONE NEXT STEP — name a single action and ask one yes/no. Example: 'Recommend committing as fix(cesar): drain timers on stream error. Commit it?' Not a menu of three.
-  c) ASKING ONE CLARIFYING QUESTION — one concise question, no options list. Example: "Did you mean the brain.kern timer cleanup, or the persistent-session one?"
+  c) ASKING ONE CLARIFYING QUESTION — one concise question. Example: "Did you mean the brain.kern timer cleanup, or the persistent-session one?"
+  d) PRESENTING A GENUINE FORK — use this ONLY when investigation surfaced two-or-more materially different approaches with a real tradeoff that you genuinely should not pick for the user. State each option on its own line as "A) <approach> — <key tradeoff>" / "B) <approach> — <key tradeoff>", then close with one question: "A or B?". Keep it tight (2-3 options max). Do NOT manufacture a fork for a decision you can make yourself — if one approach is clearly right, just do it (shape a) or recommend it (shape b).
 
-  FORBIDDEN closure shapes: "Standing by — awaiting your call on: 1. Commit? 2. Tests? 3. Both?" — that reads as still-thinking. "Or move on to something else." trailing line — that's filler, not closure. Multiple-choice menus when the user did not ask for options.
+  FORBIDDEN closure shapes: "Standing by — awaiting your call on: 1. Commit? 2. Tests? 3. Both?" — that reads as still-thinking, not a closure. "Or move on to something else." trailing line — that's filler. A menu of next-steps you could simply do yourself — that is not a genuine fork. Stopping after only a recap with no done/asking/fork line — forbidden, always.
 
   CONFIDENCE REFRESH: If your confidence changed materially during the turn (e.g. started at 40% "need to verify" and verified successfully → real confidence is now 95%), call ReportConfidence again with the new number BEFORE the closing line. Stale initial confidence in the recap misleads the user about what state you're in.`;
 
 /**
  * Build the full Cesar system prompt with project context, engine list, and mode flags.
  */
-// @kern-source: session:152
+// @kern-source: session:153
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -328,7 +329,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
 /**
  * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript.
  */
-// @kern-source: session:312
+// @kern-source: session:313
 export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const directHistory = session?.getMessageHistory?.() ?? [];
   if (directHistory.length > 0) {
@@ -355,7 +356,7 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
 /**
  * Persist the active Cesar conversation before the session is discarded.
  */
-// @kern-source: session:331
+// @kern-source: session:332
 export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
   if (!session) return;
   const snapshot = buildCesarConversationSnapshot(session, chatSession);
@@ -370,7 +371,7 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
-// @kern-source: session:344
+// @kern-source: session:345
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -607,7 +608,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:579
+// @kern-source: session:580
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -782,7 +783,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:755
+// @kern-source: session:756
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -816,7 +817,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:789
+// @kern-source: session:790
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -840,7 +841,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:813
+// @kern-source: session:814
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -852,7 +853,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:820
+// @kern-source: session:821
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -872,7 +873,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:838
+// @kern-source: session:839
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -897,7 +898,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:864
+// @kern-source: session:865
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

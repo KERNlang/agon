@@ -2,14 +2,7 @@
 
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,readdirSync,renameSync,unlinkSync,existsSync"
 import from="node:path" names="join,resolve"
-import from="node:os" names="homedir"
-
-fn name=runtimeAgonPath params="...parts:string[]" returns="string" export=false
-  handler <<<
-    const override = process.env.AGON_HOME?.trim();
-    const home = override ? resolve(override) : join(homedir(), '.agon');
-    return join(home, ...parts);
-  >>>
+import from="../utils/paths.js" names="runtimeAgonPath"
 
 fn name=getCesarPlansDir returns=string export=true expr={{ return runtimeAgonPath('plans'); }}
   doc "Canonical directory for Cesar execution plans. Markdown and JSON live together so the user can inspect and edit the exact plan Cesar proposed."

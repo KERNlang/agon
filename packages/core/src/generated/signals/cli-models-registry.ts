@@ -4,11 +4,13 @@ import { execSync } from 'node:child_process';
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import { homedir } from 'node:os';
 
-// @kern-source: cli-models-registry:10
+import { getCacheDir } from '../utils/paths.js';
+
+// @kern-source: cli-models-registry:11
 export interface CliModelEntry {
   id: string;
   name: string;
@@ -21,7 +23,7 @@ export interface CliModelEntry {
   reasoning?: boolean;
 }
 
-// @kern-source: cli-models-registry:21
+// @kern-source: cli-models-registry:22
 export interface CliProviderGroup {
   providerId: string;
   providerName: string;
@@ -32,23 +34,16 @@ export interface CliProviderGroup {
   models: CliModelEntry[];
 }
 
-// @kern-source: cli-models-registry:33
+// @kern-source: cli-models-registry:34
 export const ENGINE_PROVIDER_MAP: Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[]}> = ({ anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'] }, openai: { providerId: 'openai', engineId: 'codex', engineBinary: 'codex', versionCmd: ['--version'] }, google: { providerId: 'google', engineId: 'gemini', engineBinary: 'gemini', versionCmd: ['--version'] }, mistral: { providerId: 'mistral', engineId: 'mistral', engineBinary: 'mistral', versionCmd: ['--version'] }, openrouter: { providerId: 'openrouter', engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] } });
 
-// @kern-source: cli-models-registry:37
+// @kern-source: cli-models-registry:38
 export const FALLBACK_MODELS: Record<string, {id:string, name:string, contextWindow?:number, toolCall?:boolean, reasoning?:boolean}[]> = ({ anthropic: [ { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextWindow: 200000, toolCall: true, reasoning: true }, { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', contextWindow: 200000, toolCall: true, reasoning: true } ], openai: [ { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'o4-mini', name: 'o4-mini', contextWindow: 200000, toolCall: true, reasoning: true } ], google: [ { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', contextWindow: 1048576, toolCall: true, reasoning: true } ], mistral: [ { id: 'mistral-large-latest', name: 'Mistral Large', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'codestral-latest', name: 'Codestral', contextWindow: 256000, toolCall: true, reasoning: false } ], openrouter: [ { id: 'auto', name: 'Auto (best for task)', toolCall: true, reasoning: false } ] });
 
-// @kern-source: cli-models-registry:39
-export function getCacheDir(): string {
-  const override = process.env.AGON_HOME?.trim();
-  const home = override ? resolve(override) : join(homedir(), '.agon');
-  return join(home, 'cache');
-}
-
-// @kern-source: cli-models-registry:46
+// @kern-source: cli-models-registry:40
 export const CACHE_TTL_MS: number = 3600000;
 
-// @kern-source: cli-models-registry:50
+// @kern-source: cli-models-registry:44
 export async function fetchCliModelsRegistry(): Promise<Record<string, any> | null> {
   const cacheDir = getCacheDir();
   const cacheFile = join(cacheDir, 'models-dev.json');
@@ -86,7 +81,7 @@ export async function fetchCliModelsRegistry(): Promise<Record<string, any> | nu
   }
 }
 
-// @kern-source: cli-models-registry:88
+// @kern-source: cli-models-registry:82
 export function findBinary(binary: string): string|null {
   try {
     const result = execSync(`which ${binary}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -106,7 +101,7 @@ export function findBinary(binary: string): string|null {
   return null;
 }
 
-// @kern-source: cli-models-registry:103
+// @kern-source: cli-models-registry:97
 export function getBinaryVersion(binary: string, versionCmd: string[]): string|null {
   if (!versionCmd.length) {
     return null;
@@ -122,7 +117,7 @@ export function getBinaryVersion(binary: string, versionCmd: string[]): string|n
 /**
  * Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync.
  */
-// @kern-source: cli-models-registry:113
+// @kern-source: cli-models-registry:107
 export function buildCliModelGroups(): CliProviderGroup[] {
   const groups: CliProviderGroup[] = [];
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
@@ -139,7 +134,7 @@ export function buildCliModelGroups(): CliProviderGroup[] {
 /**
  * Build CLI provider groups with latest models from models.dev API. Falls back to static list on failure.
  */
-// @kern-source: cli-models-registry:126
+// @kern-source: cli-models-registry:120
 export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
   let registry: Record<string, any> | null = null;
   try {

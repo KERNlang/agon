@@ -136,6 +136,16 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
   const failedTools = Number((event as any).failedTools ?? 0);
   const statusColor = failedTools > 0 ? '#fbbf24' : '#4ade80';
   const statusIcon = failedTools > 0 ? icons().warning : icons().success;
+  const change = (event as any).changeSummary ?? { created: 0, edited: 0, read: 0 };
+  const createdCount = Number(change.created ?? 0);
+  const editedCount = Number(change.edited ?? 0);
+  const readCount = Number(change.read ?? 0);
+  const changedTotal = createdCount + editedCount;
+  const changeParts: string[] = [];
+  if (createdCount > 0) changeParts.push(`+${createdCount} created`);
+  if (editedCount > 0) changeParts.push(`~${editedCount} edited`);
+  const verification = Array.isArray((event as any).verification) ? (event as any).verification : [];
+  const changedFiles = files.filter((f: any) => String(f.status) !== 'read');
   const toolLine = toolSummary.length > 0
     ? `${(event as any).toolCount ?? toolSummary.length} tools: ${toolSummary.slice(0, 8).join(', ')}${toolSummary.length > 8 ? ', ...' : ''}`
     : `${(event as any).toolCount ?? 0} tools`;
@@ -151,6 +161,31 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
         {confidence ? <Text dimColor>{' \u00b7 '}{confidence}</Text> : null}
         {seconds ? <Text dimColor>{' \u00b7 '}{seconds}</Text> : null}
       </Text>
+      {changedTotal > 0 ? (
+        <Text>
+          <Text color="#4ade80" bold>{'  changes: '}</Text>
+          <Text color="#4ade80">{changeParts.join(', ')}</Text>
+          {readCount > 0 ? <Text dimColor>{' · '}{readCount}{' read'}</Text> : null}
+        </Text>
+      ) : (
+        <Text>
+          <Text color="#fbbf24" bold>{'  changes: '}</Text>
+          <Text color="#fbbf24">{'none (explored only)'}</Text>
+          {readCount > 0 ? <Text dimColor>{' · '}{readCount}{' read'}</Text> : null}
+        </Text>
+      )}
+      {verification.length > 0 ? (
+        <Text>
+          <Text dimColor>{'  verified: '}</Text>
+          {verification.map((v: any, i: number) => (
+            <Text key={`verify-${i}`}>
+              <Text color={v.ok ? '#4ade80' : '#ef4444'}>{v.ok ? icons().success : icons().fail}</Text>
+              <Text>{' '}{v.label}</Text>
+              {i < verification.length - 1 ? <Text dimColor>{' · '}</Text> : null}
+            </Text>
+          ))}
+        </Text>
+      ) : null}
       <Text dimColor>{'  '}{toolLine}{failedTools > 0 ? ` · ${failedTools} failed` : ''}</Text>
       {(event as any).confidenceReasoning ? (
         <Text italic color="#a8a8a8">{'  why: '}{(event as any).confidenceReasoning}</Text>
@@ -162,8 +197,8 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
           <Text dimColor>{' · '}{cmd.command}</Text>
         </Text>
       ))}
-      {files.length > 0 && (
-        <Text dimColor>{'  files: '}{files.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}{files.length > 5 ? `, +${files.length - 5} more` : ''}</Text>
+      {changedFiles.length > 0 && (
+        <Text dimColor>{'  files: '}{changedFiles.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}{changedFiles.length > 5 ? `, +${changedFiles.length - 5} more` : ''}</Text>
       )}
       {checkpoints.length > 0 ? (
         <Text color="#22d3ee">{'  checkpoint: '}{checkpoints[0].id}{checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''}<Text dimColor>{` · /undo ${checkpoints[0].id} reverts checkpoint`}</Text></Text>
@@ -190,7 +225,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
 });
 export { CesarRecapBlock };
 
-// @kern-source: engine:207
+// @kern-source: engine:242
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -258,7 +293,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-// @kern-source: engine:279
+// @kern-source: engine:314
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -282,7 +317,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:308
+// @kern-source: engine:343
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -893,7 +928,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:925
+// @kern-source: engine:960
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -994,7 +1029,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1032
+// @kern-source: engine:1067
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1020,7 +1055,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1061
+// @kern-source: engine:1096
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (

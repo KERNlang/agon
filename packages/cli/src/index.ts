@@ -16,6 +16,8 @@ import { configCommand } from './commands/config.js';
 import { providerCommand } from './commands/provider.js';
 import { reviewCommand } from './commands/review.js';
 import { callCommand } from './commands/call.js';
+import { agentGuideCommand } from './commands/agent-guide.js';
+import { installAgentPromptsCommand } from './commands/install-agent-prompts.js';
 import { startRepl } from './repl.js';
 import { runOnboarding } from './onboarding.js';
 import { loadConfig, loadAllAuthKeys } from '@agon/core';
@@ -87,6 +89,8 @@ const main = defineCommand({
     config: configCommand,
     review: reviewCommand,
     call: callCommand,
+    'agent-guide': agentGuideCommand,
+    'install-agent-prompts': installAgentPromptsCommand,
   },
 });
 

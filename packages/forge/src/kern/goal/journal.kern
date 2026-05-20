@@ -1,0 +1,131 @@
+// ── agon goal — durable journal ────────────────────────────────────────
+// Resumable workflow state for the goal controller. Pure transforms over
+// JournalState (testable without fs) plus load/save persistence to
+// ~/.agon/goals/<goalId>/journal.json. See AGON-GOAL-DESIGN.md.
+
+import from="node:fs" names="existsSync,readFileSync,writeFileSync,mkdirSync"
+import from="@agon/core" names="agonPath,ensureAgonHome"
+import from="./types.js" names="JournalState,GoalSpec,GoalTask,AttemptRecord" types=true
+
+fn name=goalDir params="goalId:string" returns=string export=true
+  handler <<<
+    return agonPath('goals', goalId);
+  >>>
+
+fn name=journalPath params="goalId:string" returns=string export=true
+  handler <<<
+    return agonPath('goals', goalId, 'journal.json');
+  >>>
+
+fn name=createJournal params="spec:GoalSpec" returns="JournalState" export=true
+  doc "Fresh journal for a new goal run."
+  handler <<<
+    const now = Date.now();
+    return {
+      spec,
+      createdAt: now,
+      spentUsd: 0,
+      parkedStreak: 0,
+      noProgressStreak: 0,
+      lastRemainingCount: 0,
+      tasks: [],
+      events: [{ ts: now, kind: 'created', detail: spec.intent }],
+    };
+  >>>
+
+fn name=saveJournal params="state:JournalState" returns=void export=true
+  doc "Checkpoint the journal to disk (atomic enough for resume)."
+  handler <<<
+    ensureAgonHome();
+    const dir = agonPath('goals', state.spec.goalId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(agonPath('goals', state.spec.goalId, 'journal.json'), JSON.stringify(state, null, 2));
+  >>>
+
+fn name=loadJournal params="goalId:string" returns="JournalState | null" export=true
+  doc "Load a journal for --resume; null when absent or corrupt."
+  handler <<<
+    const p = agonPath('goals', goalId, 'journal.json');
+    if (!existsSync(p)) return null;
+    try {
+      return JSON.parse(readFileSync(p, 'utf-8')) as JournalState;
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=addTasks params="state:JournalState, items:Array<{id:string,source:string,dependsOn?:string[]}>" returns="JournalState" export=true
+  doc "Append queued tasks, skipping any id already present (idempotent on resume)."
+  handler <<<
+    const existing = new Set(state.tasks.map((t) => t.id));
+    const added: GoalTask[] = [];
+    for (const it of items) {
+      if (existing.has(it.id)) continue;
+      existing.add(it.id);
+      added.push({
+        id: it.id,
+        source: it.source,
+        status: 'queued',
+        attempts: 0,
+        attemptLog: [],
+        dependsOn: it.dependsOn,
+        costUsd: 0,
+      });
+    }
+    if (added.length === 0) return state;
+    return { ...state, tasks: [...state.tasks, ...added] };
+  >>>
+
+fn name=nextTask params="state:JournalState" returns="GoalTask | null" export=true
+  doc "First queued task whose dependsOn are all done; null if none runnable."
+  handler <<<
+    const byId = new Map(state.tasks.map((t) => [t.id, t] as const));
+    for (const t of state.tasks) {
+      if (t.status !== 'queued') continue;
+      const deps = t.dependsOn ?? [];
+      const blocked = deps.some((d) => {
+        const dep = byId.get(d);
+        return !dep || dep.status !== 'done';
+      });
+      if (!blocked) return t;
+    }
+    return null;
+  >>>
+
+fn name=markStatus params="state:JournalState, taskId:string, status:GoalTask['status'], patch?:Partial<GoalTask>" returns="JournalState" export=true
+  doc "Set a task's status (and optional field patch). No-op if id unknown."
+  handler <<<
+    const tasks = state.tasks.map((t) =>
+      t.id === taskId ? { ...t, status, ...(patch ?? {}) } : t
+    );
+    return { ...state, tasks };
+  >>>
+
+fn name=recordAttempt params="state:JournalState, taskId:string, rec:AttemptRecord" returns="JournalState" export=true
+  doc "Append an attempt record and bump the task's attempt count."
+  handler <<<
+    const tasks = state.tasks.map((t) =>
+      t.id === taskId
+        ? { ...t, attempts: t.attempts + 1, attemptLog: [...t.attemptLog, rec] }
+        : t
+    );
+    return { ...state, tasks };
+  >>>
+
+fn name=remainingCount params="state:JournalState" returns=number export=true
+  doc "Tasks still queued or in flight."
+  handler <<<
+    return state.tasks.filter((t) => t.status === 'queued' || t.status === 'inflight').length;
+  >>>
+
+fn name=isDone params="state:JournalState" returns=boolean export=true
+  doc "No queued or in-flight tasks remain."
+  handler <<<
+    return state.tasks.filter((t) => t.status === 'queued' || t.status === 'inflight').length === 0;
+  >>>
+
+fn name=logEvent params="state:JournalState, kind:string, taskId?:string, detail?:string" returns="JournalState" export=true
+  doc "Append an audit event."
+  handler <<<
+    return { ...state, events: [...state.events, { ts: Date.now(), kind, taskId, detail }] };
+  >>>

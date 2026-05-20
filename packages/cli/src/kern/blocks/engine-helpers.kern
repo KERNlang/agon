@@ -78,3 +78,9 @@ fn name=extractSummary params="text:string, maxLen:number" returns=string
     let name=firstSentence value="s.match(/^[^.!?\\n]{10,}[.!?]/)"
     let name=summary value="firstSentence ? firstSentence[0] : s.slice(0, maxLen)"
     return value="summary.length > maxLen ? summary.slice(0, maxLen - 1) + '\\u2026' : summary"
+
+fn name=stripReasoning params="text:string" returns=string export=true
+  doc "Remove reasoning-scaffolding blocks (<think>/<thinking>/<reasoning>) that reasoning models (MiniMax, DeepSeek, Qwen) emit before their real answer and sometimes leak into persisted output. Strips CLOSED blocks only — the common leak case — using a backreference so the open and close tags must match. Engine-agnostic: apply wherever raw engine output is persisted or parsed so scaffolding never reaches users or a structured-findings parser."
+  handler <<<
+    return text.replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>\s*/gi, '').trim();
+  >>>

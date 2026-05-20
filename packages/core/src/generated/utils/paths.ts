@@ -5,19 +5,17 @@ import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
 /**
- * Resolve a path under ~/.agon (or AGON_HOME if set).
+ * Resolve a path under ~/.agon (or AGON_HOME if set). resolve() is a no-op on the already-absolute homedir path, so the override and default branches behave identically.
  */
 // @kern-source: paths:9
 export function runtimeAgonPath(...parts: string[]): string {
-  const override = process.env.AGON_HOME?.trim();
-  const home = override ? resolve(override) : join(homedir(), '.agon');
-  return join(home, ...parts);
+  return join(resolve(process.env.AGON_HOME?.trim() || join(homedir(), '.agon')), ...parts);
 }
 
 /**
  * Canonical cache directory under ~/.agon/cache.
  */
-// @kern-source: paths:17
+// @kern-source: paths:12
 export function getCacheDir(): string {
   return runtimeAgonPath('cache');
 }
@@ -25,7 +23,7 @@ export function getCacheDir(): string {
 /**
  * Canonical undo directory under ~/.agon/undo.
  */
-// @kern-source: paths:23
+// @kern-source: paths:18
 export function getUndoDir(): string {
   return runtimeAgonPath('undo');
 }

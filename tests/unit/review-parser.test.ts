@@ -128,6 +128,14 @@ describe('parseReviewBlocking — sentinel-anchored, fail-closed (Tribunal #9 + 
       expect(r.parseFailed).toBe(false);
     });
 
+    it('falls back to the last fenced json block when a decoy bracket precedes it (fallback b)', () => {
+      const r = parseReviewBlocking(
+        `${SENTINEL}\nHere are the issues [see below]:\n\`\`\`json\n[{"severity":"blocking","blocking":true,"problem":"x"}]\n\`\`\``,
+      );
+      expect(r.blocking).toBe(true);
+      expect(r.parseFailed).toBe(false);
+    });
+
     it('counts only real array brackets, not ] inside string values', () => {
       const r = parseReviewBlocking(
         `${SENTINEL}\n[{"severity":"nit","blocking":false,"problem":"index out of range at arr[0]"}] done.`,
@@ -188,6 +196,7 @@ describe('selectReviewEngine', () => {
       activeEngines: () => ['claude', 'codex', 'gemini'],
       registry: {
         get: (id: string) => ({ id, review: { args: [] } }),
+        resolveId: (id: string) => id,
       },
     } as any;
   }

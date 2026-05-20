@@ -98,10 +98,11 @@ fn name=selectReviewEngine params="requestedEngine:string|undefined, ctx:Handler
     const active = requestedEngine ? allActive : filterDefaultOrchestrationEngines(allActive);
 
     if (requestedEngine) {
-      if (!active.includes(requestedEngine)) {
+      const resolved = ctx.registry.resolveId(requestedEngine);
+      if (!active.includes(resolved)) {
         throw new Error(`Engine "${requestedEngine}" is not available. Active engines: ${active.join(', ')}`);
       }
-      return requestedEngine;
+      return resolved;
     }
 
     // Preference order: explicit review default > ranked review-capable engine.
@@ -143,6 +144,8 @@ interface name=ReviewCoreResult export=true
   field name=response type=string
   field name=blocking type=boolean
   field name=parseFailed type=boolean
+  field name=unstructured type=boolean
+    doc "True when the engine produced a substantive prose review but no machine-parseable findings block (even after the repair pass). The review is useful and should be surfaced as a success to humans — but parseFailed/blocking stay fail-closed so any automated GATE still treats it as non-approval."
 
 const name=REVIEW_SENTINEL type=string value={{ '<!--AGON_REVIEW_FINDINGS_v1-->' }}
 
@@ -158,42 +161,59 @@ fn name=parseReviewBlocking params="response:string" returns="{blocking:boolean,
     const tail = response.slice(lastSentinelIdx + sentinel.length).trim();
     if (!tail) return { blocking: true, parseFailed: true };
 
-    // Tolerant extraction (A): locate the first balanced [...] array anywhere in
-    // the post-sentinel tail and ignore the surrounding scaffolding — a ```json
-    // fence, or trailing prose the engine appended after the array (the #1 cause
-    // of parse failures with conversational engines like claude-code). The scan
-    // is string-aware so brackets inside string values don't skew the depth
-    // count. Because we only ever look at text AFTER the LAST sentinel, attacker
-    // brackets injected earlier in the diff are never considered — the
-    // anti-injection guarantee is preserved.
-    const start = tail.indexOf('[');
-    if (start < 0) return { blocking: true, parseFailed: true };
-    let depth = 0;
-    let inStr = false;
-    let esc = false;
-    let end = -1;
-    for (let i = start; i < tail.length; i++) {
-      const ch = tail[i];
-      if (inStr) {
-        if (esc) esc = false;
-        else if (ch === '\\') esc = true;
-        else if (ch === '"') inStr = false;
-        continue;
+    // Parse the first balanced [...] array found at or after `from`. The scan is
+    // string-aware so brackets inside string values don't skew the depth count.
+    // Returns null on no array / unbalanced / invalid JSON / non-array.
+    const tryArrayFrom = (text: string): { blocking: boolean; parseFailed: boolean } | null => {
+      const start = text.indexOf('[');
+      if (start < 0) return null;
+      let depth = 0;
+      let inStr = false;
+      let esc = false;
+      let end = -1;
+      for (let i = start; i < text.length; i++) {
+        const ch = text[i];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (ch === '\\') esc = true;
+          else if (ch === '"') inStr = false;
+          continue;
+        }
+        if (ch === '"') inStr = true;
+        else if (ch === '[') depth++;
+        else if (ch === ']') { depth--; if (depth === 0) { end = i; break; } }
       }
-      if (ch === '"') inStr = true;
-      else if (ch === '[') depth++;
-      else if (ch === ']') { depth--; if (depth === 0) { end = i; break; } }
-    }
-    if (end < 0) return { blocking: true, parseFailed: true };
+      if (end < 0) return null;
+      try {
+        const parsed = JSON.parse(text.slice(start, end + 1)) as Array<{ blocking?: boolean; severity?: string }>;
+        if (!Array.isArray(parsed)) return null;
+        const blocking = parsed.some((c) => c && (c.blocking === true || (typeof c.severity === 'string' && c.severity.toLowerCase() === 'blocking')));
+        return { blocking, parseFailed: false };
+      } catch {
+        return null;
+      }
+    };
 
-    try {
-      const parsed = JSON.parse(tail.slice(start, end + 1)) as Array<{ blocking?: boolean; severity?: string }>;
-      if (!Array.isArray(parsed)) return { blocking: true, parseFailed: true };
-      const blocking = parsed.some((c) => c && (c.blocking === true || (typeof c.severity === 'string' && c.severity.toLowerCase() === 'blocking')));
-      return { blocking, parseFailed: false };
-    } catch {
-      return { blocking: true, parseFailed: true };
+    // Tolerant extraction (A): the first balanced [...] array anywhere in the
+    // post-sentinel tail, ignoring surrounding scaffolding — a ```json fence or
+    // trailing prose the engine appended (the #1 cause of parse failures with
+    // conversational engines like claude-code). Because we only ever look at
+    // text AFTER the LAST sentinel, attacker brackets injected earlier in the
+    // diff are never considered — the anti-injection guarantee is preserved.
+    const primary = tryArrayFrom(tail);
+    if (primary) return primary;
+
+    // Fallback (b): if the first bracket wasn't a valid findings array (e.g. the
+    // engine wrote prose like "issues [below]:" before the real block), retry on
+    // the body of the LAST fenced code block in the tail — engines that wrap
+    // their machine output in ```json most often put the real array there.
+    const fences = [...tail.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)];
+    for (let i = fences.length - 1; i >= 0; i--) {
+      const fenced = tryArrayFrom(fences[i][1] ?? '');
+      if (fenced) return fenced;
     }
+
+    return { blocking: true, parseFailed: true };
   >>>
 
 fn name=runReviewRepair params="priorReview:string, engineId:string, ctx:HandlerContext, signal?:AbortSignal" returns="Promise<string>" async=true
@@ -283,6 +303,7 @@ fn name=runReviewCore params="diff:string, label:string, engineId:string, ctx:Ha
     let name=parsed1 value="parseReviewBlocking(response)"
     let name=blocking kind=let value="parsed1.blocking"
     let name=parseFailed kind=let value="parsed1.parseFailed"
+    let name=unstructured kind=let value="false"
     comment raw="// Repair pass (B): the engine reviewed but didn't emit a parseable sentinel+JSON block. Re-ask once for just the machine block, re-parse, and append it so the result is parseable downstream. Failure leaves the fail-closed result intact."
     if cond="parseFailed && response.length > 0 && !(signal?.aborted)"
       let name=repairResp value="await runReviewRepair(response, engineId, ctx, signal)"
@@ -292,7 +313,10 @@ fn name=runReviewCore params="diff:string, label:string, engineId:string, ctx:Ha
           assign target="blocking" value="parsed2.blocking"
           assign target="parseFailed" value="false"
           assign target="response" op="+=" value="`\\n\\n${repairResp}`"
-    return value="{ response, blocking, parseFailed }"
+    comment raw="// (c) Unstructured success: the engine produced a substantive prose review but no machine block parsed, even after repair. The review is still useful to a human, so flag it so the UI surfaces it as a completed (unstructured) review rather than an error. blocking/parseFailed stay fail-closed for any automated gate (e.g. the plan executor's review step)."
+    if cond="parseFailed && response.trim().length >= 40"
+      assign target="unstructured" value="true"
+    return value="{ response, blocking, parseFailed, unstructured }"
 
 fn name=handleReview params="dispatch:Dispatch, ctx:HandlerContext, target?:string, requestedEngine?:string" returns="Promise<void>" async=true
   signal name=abort
@@ -331,6 +355,7 @@ fn name=handleReview params="dispatch:Dispatch, ctx:HandlerContext, target?:stri
     dispatch({ type: 'spinner-start', message: `${engineId} reviewing ${label}…`, color });
 
     let response = '';
+    let unstructured = false;
     let streaming = false;
 
     try {
@@ -342,6 +367,7 @@ fn name=handleReview params="dispatch:Dispatch, ctx:HandlerContext, target?:stri
         dispatch({ type: 'streaming-chunk', engineId, chunk });
       });
       response = result.response;
+      unstructured = result.unstructured;
     } catch (err) {
       dispatch({ type: 'spinner-stop' });
       dispatch({ type: 'error', message: `${engineId}: ${err instanceof Error ? err.message : String(err)}` });
@@ -377,7 +403,9 @@ fn name=handleReview params="dispatch:Dispatch, ctx:HandlerContext, target?:stri
         timestamp: Date.now(),
       };
 
-      dispatch({ type: 'info', message: `Review complete. Say "fix it" or "fix it with <engine>" to address the findings.` });
+      dispatch({ type: 'info', message: unstructured
+        ? `Review complete (unstructured — findings weren't machine-parseable, but the review above is valid). Say "fix it" or "fix it with <engine>" to address it.`
+        : `Review complete. Say "fix it" or "fix it with <engine>" to address the findings.` });
     } else {
       dispatch({ type: 'warning', message: `${engineId} returned no review output.` });
     }

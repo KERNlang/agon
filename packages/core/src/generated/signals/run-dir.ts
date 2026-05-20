@@ -39,9 +39,19 @@ export interface RunStatusEngine {
 }
 
 /**
- * Final outcome record written to <run-dir>/status.json. Authoritative replacement for grepping stream output. `ok` is true only if every engine succeeded — a run with skipped engines is NOT ok.
+ * Codex-as-judge outcome: an independent engine reviewed the forge winner's patch after the run. `blocking` true means the judge found issues the fitness spec missed — the winner has known holes. `unstructured` true means the judge produced a prose review but no machine-parseable verdict.
  */
 // @kern-source: run-dir:46
+export interface RunJudgeVerdict {
+  engineId: string;
+  blocking: boolean;
+  unstructured: boolean;
+}
+
+/**
+ * Final outcome record written to <run-dir>/status.json. Authoritative replacement for grepping stream output. `ok` is true only if every engine succeeded — a run with skipped engines is NOT ok.
+ */
+// @kern-source: run-dir:52
 export interface RunStatus {
   mode: string;
   label?: string;
@@ -50,12 +60,13 @@ export interface RunStatus {
   engines: RunStatusEngine[];
   summary: string;
   ok: boolean;
+  judge?: RunJudgeVerdict;
 }
 
 /**
  * Strip a user-provided label down to filename-safe characters and cap length so it cannot break shell quoting, path traversal, or directory scanners.
  */
-// @kern-source: run-dir:56
+// @kern-source: run-dir:64
 export function sanitizeRunLabel(raw: string): string {
   if (!raw) return '';
   // Only keep alnum, dash, underscore. Replace runs of other chars with '-'.
@@ -66,7 +77,7 @@ export function sanitizeRunLabel(raw: string): string {
 /**
  * Sanitize a mode identifier passed to createRunDir. Mode is exported and could be called from outside the CLI commands, so we defensively strip path-traversal characters even though every in-tree caller passes a literal.
  */
-// @kern-source: run-dir:65
+// @kern-source: run-dir:73
 export function sanitizeRunMode(raw: string): string {
   if (!raw) return 'run';
   const cleaned = raw.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -76,7 +87,7 @@ export function sanitizeRunMode(raw: string): string {
 /**
  * Allocate a run directory, refresh the `latest` symlink, and announce the path. Orchestrators capture the first AGON_RUN line and use status.json + the dir path to track the run instead of streaming-parsing stdout.
  */
-// @kern-source: run-dir:73
+// @kern-source: run-dir:81
 export function createRunDir(opts: CreateRunDirOptions): RunDirHandle {
   // Resolve RUNS_DIR at call time via agonPath() so test harnesses that
   // mutate AGON_HOME after module load (the documented pattern in
@@ -140,7 +151,7 @@ export function createRunDir(opts: CreateRunDirOptions): RunDirHandle {
 /**
  * Atomically write status.json into a run directory. Authoritative outcome record — orchestrators read this instead of parsing stream output for keywords.
  */
-// @kern-source: run-dir:135
+// @kern-source: run-dir:143
 export function writeRunStatus(runPath: string, status: RunStatus): void {
   const finalPath = join(runPath, 'status.json');
   const tempPath = join(runPath, '.status.json.tmp');
@@ -159,7 +170,7 @@ export function writeRunStatus(runPath: string, status: RunStatus): void {
 /**
  * Print the final summary line — '5/6 succeeded; claude: parse-failure' — at the end of every multi-engine mode. Always printed, including under AGON_QUIET=1, because orchestrators need both the run-dir path AND the outcome at a glance — that's the whole reason quiet mode exists. 'blocking' (review found problems) and 'error' (engine crashed) are both surfaced; 'skipped' (never dispatched) does not count against ok but is mentioned when present so the caller doesn't mistake it for success.
  */
-// @kern-source: run-dir:152
+// @kern-source: run-dir:160
 export function printRunSummary(status: RunStatus): void {
   const failing = status.engines.filter((e) => e.status !== 'ok' && e.status !== 'skipped');
   const skipped = status.engines.filter((e) => e.status === 'skipped');
@@ -179,7 +190,7 @@ export function printRunSummary(status: RunStatus): void {
 /**
  * Resolve the most recent run directory. Reads ~/.agon/runs/latest symlink (or latest.txt fallback) when present; otherwise scans the runs dir and picks the newest entry matching the filter. Returns null if no runs exist. Uses agonPath('runs') so AGON_HOME overrides apply at call time.
  */
-// @kern-source: run-dir:170
+// @kern-source: run-dir:178
 export function findLatestRunDir(filter?: {mode?:string,engineId?:string}): string | null {
   const runsDir = agonPath('runs');
   if (!existsSync(runsDir)) return null;

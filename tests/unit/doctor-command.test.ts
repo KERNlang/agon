@@ -35,7 +35,7 @@ describe('doctor command helpers', () => {
     expect(entry.enabled).toBe(true);
   });
 
-  it('warns when CLI fallback works but API auth is missing', () => {
+  it('stays ok when CLI auth works and the API key is just an unused fallback', () => {
     delete process.env.AGON_DOCTOR_TEST_KEY_MISSING;
     const entry = diagnoseEngineDoctorEntry({
       id: 'hybrid-test',
@@ -54,9 +54,36 @@ describe('doctor command helpers', () => {
       },
     } as any, { findBinary: () => '/usr/local/bin/hybrid' } as any, []);
 
-    expect(entry.status).toBe('warn');
+    // CLI auth carries the engine (codex/claude pattern). The unset API key is
+    // an optional fallback, not a problem — warning here is noise that scares
+    // users off the engines that work most reliably.
+    expect(entry.status).toBe('ok');
     expect(entry.backend).toContain('cli:/usr/local/bin/hybrid');
-    expect(entry.detail).toContain('API key AGON_DOCTOR_TEST_KEY_MISSING not set');
+    expect(entry.backend).toContain('(key optional)');
+    expect(entry.detail).toContain('CLI auth active (AGON_DOCTOR_TEST_KEY_MISSING optional)');
+    expect(entry.detail).not.toContain('not set');
+  });
+
+  it('still warns when the API key is missing and there is no CLI fallback', () => {
+    delete process.env.AGON_DOCTOR_TEST_KEY_MISSING;
+    const entry = diagnoseEngineDoctorEntry({
+      id: 'api-only-test',
+      displayName: 'API Only Test',
+      schemaVersion: 3,
+      isLocal: false,
+      tier: 'user',
+      timeout: 30,
+      exec: { args: [], stdin: true },
+      api: {
+        baseUrl: 'https://example.invalid/v1',
+        apiKeyEnv: 'AGON_DOCTOR_TEST_KEY_MISSING',
+        model: 'test-model',
+        format: 'openai',
+      },
+    } as any, { findBinary: () => null } as any, ['api-only-test']);
+
+    expect(entry.status).toBe('fail');
+    expect(entry.detail).toContain('set AGON_DOCTOR_TEST_KEY_MISSING');
   });
 
   it('builds a harness doctor report for the selected Cesar engine', () => {

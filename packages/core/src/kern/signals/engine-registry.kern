@@ -124,12 +124,33 @@ service name=EngineRegistry
         return
       do value="this.binaryCache.clear()"
 
+  method name=resolveId params="id:string" returns=string
+    doc "Resolve a possibly-abbreviated engine id to a canonical registered id. An exact id wins. Otherwise, case-insensitively: a unique exact match, then a unique prefix match (kimi -> kimi-for-coding-k2p6), then a unique substring match (zai -> zai-coding-plan-glm-5.1). Ambiguous or no match returns the input unchanged so the caller fails loudly with the original name rather than guessing wrong."
+    handler <<<
+      if (!id) return id;
+      if (this.engines.has(id)) return id;
+      const needle = id.trim().toLowerCase();
+      if (!needle) return id;
+      const ids = Array.from(this.engines.keys());
+      const ci = ids.filter((k) => k.toLowerCase() === needle);
+      if (ci.length === 1) return ci[0];
+      const prefix = ids.filter((k) => k.toLowerCase().startsWith(needle));
+      if (prefix.length === 1) return prefix[0];
+      const substr = ids.filter((k) => k.toLowerCase().includes(needle));
+      if (substr.length === 1) return substr[0];
+      return id;
+    >>>
+
   method name=get params="id:string" returns=EngineDefinition
     handler lang="kern"
       let name=engine value="this.engines.get(id)"
-      if cond="!engine"
-        throw value="new EngineNotFoundError(id)"
-      return value="engine"
+      if cond="engine"
+        return value="engine"
+      let name=resolved value="this.resolveId(id)"
+      let name=aliased value="resolved !== id ? this.engines.get(resolved) : undefined"
+      if cond="aliased"
+        return value="aliased"
+      throw value="new EngineNotFoundError(id)"
 
   method name=list returns="EngineDefinition[]"
     handler lang="kern"

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import { mkdirSync, rmSync } from 'node:fs';
 
-import { EngineRegistry, engineHealth, classifyDispatchFailure } from '@agon/core';
+import { EngineRegistry, engineHealth, classifyDispatchFailure, Semaphore } from '@agon/core';
 
 import type { EngineAdapter } from '@agon/core';
 
@@ -134,18 +134,40 @@ export async function healthCheckEngine(engineId: string, registry: EngineRegist
 }
 
 /**
- * Ping N engines in parallel. Total wall-clock is max(per-engine duration), not sum. Returns the partition of engineIds into healthy + unhealthy. Short-circuits to 'all healthy' when AGON_DISABLE_FORGE_HEALTH_CHECK is set.
+ * True when the engine has no usable local CLI binary and falls back to its network API (e.g. kimi/zai/minimax). These engines incur provider latency + cold-start and are the ones that lose a concurrent batch to a thundering-herd timeout, so forge throttles and gives them a longer probe window than local CLI engines.
  */
 // @kern-source: health-check:129
-export async function healthCheckEngines(engineIds: string[], registry: EngineRegistry, adapter: EngineAdapter, cwd: string, timeoutSec: number, prompt: string): Promise<HealthCheckSummary> {
+export function isApiBackedEngine(engineId: string, registry: EngineRegistry): boolean {
+  try {
+    const e: any = registry.get(engineId);
+    const cliBinary = e.binary ? registry.findBinary(e) : null;
+    return !cliBinary && !!e.api;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ping N engines. Local CLI engines run fully parallel; API/network-backed engines (kimi/zai/minimax) are throttled to maxParallelApi at a time and get a longer apiTimeoutSec probe window, so a big roster's API engines don't all cold-start against rate-limited providers at once and lose the batch to a thundering-herd timeout. Total wall-clock is max(per-engine duration) for CLI engines plus the throttled API tail. Short-circuits to 'all healthy' when AGON_DISABLE_FORGE_HEALTH_CHECK is set.
+ */
+// @kern-source: health-check:141
+export async function healthCheckEngines(engineIds: string[], registry: EngineRegistry, adapter: EngineAdapter, cwd: string, timeoutSec: number, prompt: string, apiTimeoutSec?: number, maxParallelApi?: number): Promise<HealthCheckSummary> {
   const start = Date.now();
   if (process.env[HEALTH_CHECK_DISABLE_ENV]) {
     return { healthy: engineIds.slice(), unhealthy: [], totalMs: Date.now() - start };
   }
+  const apiTimeout = Math.max(timeoutSec, apiTimeoutSec ?? timeoutSec);
+  const cap = maxParallelApi && maxParallelApi > 0 ? maxParallelApi : engineIds.length;
+  const apiSem = new Semaphore(Math.max(1, cap));
   const results = await Promise.allSettled(
-    engineIds.map((id: string) =>
-      healthCheckEngine(id, registry, adapter, cwd, timeoutSec, prompt)
-    )
+    engineIds.map((id: string) => {
+      if (isApiBackedEngine(id, registry)) {
+        return apiSem.runWith(
+          () => healthCheckEngine(id, registry, adapter, cwd, apiTimeout, prompt)
+        ) as Promise<HealthCheckResult>;
+      }
+      return healthCheckEngine(id, registry, adapter, cwd, timeoutSec, prompt);
+    })
   );
   const healthy: string[] = [];
   const unhealthy: HealthCheckResult[] = [];

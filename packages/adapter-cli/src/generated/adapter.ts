@@ -31,7 +31,7 @@ export class CliAdapter implements EngineAdapter {
       // No CLI binary — use API if available, otherwise fail
       if (options.engine.api) {
         const resolvedModel = resolveModel(options.engine, options.cwd);
-        const apiConfig = resolvedModel ? { ...options.engine.api, model: resolvedModel } : options.engine.api;
+        const apiConfig = { ...options.engine.api, ...resolvedModel ? { model: resolvedModel } : {}, ...options.maxTokens ? { maxTokens: options.maxTokens } : {} };
         // Inject project context for API engines so they know the codebase
         // Uses sessionContext cache — avoids redundant git spawns when handleChat already gathered context
         let sysPrompt = options.systemPrompt;
@@ -142,7 +142,7 @@ export class CliAdapter implements EngineAdapter {
     if (!binaryPath) {
       if (options.engine.api) {
         const resolvedModel = resolveModel(options.engine, options.cwd);
-        const apiConfig = resolvedModel ? { ...options.engine.api, model: resolvedModel } : options.engine.api;
+        const apiConfig = { ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) };
         const gen = apiStreamDispatch(apiConfig, options.prompt, options.timeout, options.signal, options.systemPrompt);
         let result: DispatchResult;
         while (true) {
@@ -237,7 +237,7 @@ export class CliAdapter implements EngineAdapter {
     const agentBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
     if (options.engine.api && !agentBinaryPath) {
       const resolvedModel = resolveModel(options.engine, options.cwd);
-      const apiConfig = resolvedModel ? { ...options.engine.api, model: resolvedModel } : options.engine.api;
+      const apiConfig = { ...options.engine.api, ...resolvedModel ? { model: resolvedModel } : {}, ...options.maxTokens ? { maxTokens: options.maxTokens } : {} };
       const cwd = options.cwd || resolveWorkingDir();
       const projectCtx = sessionContext.get(cwd);
       const systemPrompt = [options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.', projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : ''].filter(Boolean).join('\n\n');

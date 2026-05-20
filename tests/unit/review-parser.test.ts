@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { afterEach } from 'vitest';
 import { join } from 'node:path';
-import { parseReviewBlocking, selectReviewEngine } from '../../packages/cli/src/generated/handlers/review.js';
+import { parseReviewBlocking, selectReviewEngine, summarizeReviewFindings } from '../../packages/cli/src/generated/handlers/review.js';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 const SENTINEL = '<!--AGON_REVIEW_FINDINGS_v1-->';
@@ -209,6 +209,33 @@ describe('parseReviewBlocking — sentinel-anchored, fail-closed (Tribunal #9 + 
       expect(r.blocking).toBe(true);
       expect(r.parseFailed).toBe(true);
     });
+  });
+});
+
+describe('summarizeReviewFindings', () => {
+  it('counts findings by severity', () => {
+    const r = summarizeReviewFindings(
+      `${SENTINEL}\n[{"severity":"blocking","blocking":true},{"severity":"important"},{"severity":"important"},{"severity":"nit"},{"severity":"nit"},{"severity":"nit"}]`,
+    );
+    expect(r).toEqual({ blocking: 1, important: 2, nit: 3, total: 6 });
+  });
+
+  it('treats blocking:true as blocking even without a severity field', () => {
+    const r = summarizeReviewFindings(`${SENTINEL}\n[{"blocking":true},{"severity":"nit"}]`);
+    expect(r).toEqual({ blocking: 1, important: 0, nit: 1, total: 2 });
+  });
+
+  it('returns all-zero for an empty findings array', () => {
+    expect(summarizeReviewFindings(`${SENTINEL}\n[]`)).toEqual({ blocking: 0, important: 0, nit: 0, total: 0 });
+  });
+
+  it('returns all-zero when there is no parseable block', () => {
+    expect(summarizeReviewFindings('just prose, no sentinel')).toEqual({ blocking: 0, important: 0, nit: 0, total: 0 });
+  });
+
+  it('counts unknown/missing severities as nits', () => {
+    const r = summarizeReviewFindings(`${SENTINEL}\n[{"severity":"low"},{"problem":"x"}]`);
+    expect(r).toEqual({ blocking: 0, important: 0, nit: 2, total: 2 });
   });
 });
 

@@ -27,6 +27,17 @@ export function isPastePlaceholderOnly(text: string): boolean {
   return PASTE_PLACEHOLDER_RE.test(text) && stripped.replace(/PR#?\d+/gi, '').length < 16;
 }
 
+// Render findings counts as a consistent human tail: "1 blocking, 2 important,
+// 3 nits" (zero categories omitted; "no findings" when the block was empty).
+function formatSeverityCounts(c?: { blocking: number; important: number; nit: number; total: number }): string {
+  if (!c || c.total === 0) return 'no findings';
+  const parts: string[] = [];
+  if (c.blocking) parts.push(`${c.blocking} blocking`);
+  if (c.important) parts.push(`${c.important} important`);
+  if (c.nit) parts.push(`${c.nit} ${c.nit === 1 ? 'nit' : 'nits'}`);
+  return parts.join(', ');
+}
+
 export const reviewCommand = defineCommand({
   meta: {
     name: 'review',
@@ -98,7 +109,10 @@ export const reviewCommand = defineCommand({
       activeEngines: () => registry.activeIds(config),
     } as any;
 
-    let target: { diff: string; label: string };
+    // Definite-assignment assertion: the catch below always exits the process,
+    // so target is assigned before any use — but kern-guard's stricter config
+    // doesn't treat process.exit() as terminating, so assert it explicitly.
+    let target!: { diff: string; label: string };
     try {
       target = resolveReviewTarget(args.target, cwd);
     } catch (err) {
@@ -185,12 +199,13 @@ export const reviewCommand = defineCommand({
           flush([rawResponse, '⚠ returned no usable review output.']);
           return { id: engineId, status: 'parse-failure', durationMs: Date.now() - engineStart, detail: 'empty or unusable response', outputPath };
         }
+        const counts = formatSeverityCounts(result.severityCounts);
         if (result.blocking) {
-          flush([rawResponse, '⚠ blocking findings reported.']);
-          return { id: engineId, status: 'blocking', durationMs: Date.now() - engineStart, detail: 'blocking findings', outputPath };
+          flush([rawResponse, `⚠ ${bold(engineId)}: blocking, ${counts}`]);
+          return { id: engineId, status: 'blocking', durationMs: Date.now() - engineStart, detail: `blocking, ${counts}`, outputPath };
         }
-        flush([rawResponse]);
-        return { id: engineId, status: 'ok', durationMs: Date.now() - engineStart, detail: 'parsed cleanly', outputPath };
+        flush([rawResponse, `${bold(engineId)}: ok, ${counts}`]);
+        return { id: engineId, status: 'ok', durationMs: Date.now() - engineStart, detail: `ok, ${counts}`, outputPath };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (timedOut) {

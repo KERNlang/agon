@@ -8,7 +8,7 @@ import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,St
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
-import from="../blocks/engine-helpers.js" names="stripReasoning"
+import from="../blocks/engine-helpers.js" names="stripReasoning,stripTuiChrome"
 
 fn name=resolveReviewTarget params="target:string|undefined, cwd:string" returns="{diff:string, label:string}"
   handler <<<
@@ -342,7 +342,8 @@ fn name=runReviewCore params="diff:string, label:string, engineId:string, ctx:Ha
       let name=result value="await ctx.adapter.dispatch(dispatchOpts)"
       assign target="response" value="result.stdout"
     assign target="response" value="response.trim()"
-    comment raw="// Strip reasoning scaffolding (<think> etc.) BEFORE parse + persist so MiniMax-style models don't leak their reasoning into the saved review or confuse the findings parser."
+    comment raw="// Clean engine output BEFORE parse + persist: first strip claude TUI spinner/glyph chrome leaked by the pty path, then reasoning scaffolding (<think> etc.) from MiniMax-style models. Both run before parsing so neither the saved review nor the findings parser sees the junk."
+    assign target="response" value="stripTuiChrome(response)"
     assign target="response" value="stripReasoning(response)"
     let name=parsed1 value="parseReviewBlocking(response)"
     let name=blocking kind=let value="parsed1.blocking"

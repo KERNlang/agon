@@ -14,7 +14,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
-import { stripReasoning } from '../blocks/engine-helpers.js';
+import { stripReasoning, stripTuiChrome } from '../blocks/engine-helpers.js';
 
 // @kern-source: review:13
 export function resolveReviewTarget(target: string|undefined, cwd: string): {diff:string, label:string} {
@@ -378,7 +378,8 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
     response = result.stdout;
   }
   response = response.trim();
-  // Strip reasoning scaffolding (<think> etc.) BEFORE parse + persist so MiniMax-style models don't leak their reasoning into the saved review or confuse the findings parser.
+  // Clean engine output BEFORE parse + persist: first strip claude TUI spinner/glyph chrome leaked by the pty path, then reasoning scaffolding (<think> etc.) from MiniMax-style models. Both run before parsing so neither the saved review nor the findings parser sees the junk.
+  response = stripTuiChrome(response);
   response = stripReasoning(response);
   const parsed1 = parseReviewBlocking(response);
   let blocking = parsed1.blocking;
@@ -404,7 +405,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   return { response: response, blocking: blocking, parseFailed: parseFailed, unstructured: unstructured };
 }
 
-// @kern-source: review:366
+// @kern-source: review:367
 export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngine?: string): Promise<void> {
   const abort = new AbortController();
   try {
@@ -505,7 +506,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 /**
  * Run review for one or more explicitly requested engines. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A single engine delegates to the streaming handleReview path.
  */
-// @kern-source: review:463
+// @kern-source: review:464
 export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
   const abort = new AbortController();
   try {

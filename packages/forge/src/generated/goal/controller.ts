@@ -81,7 +81,7 @@ export function writeGoalArtifacts(state: JournalState): {resultPath:string, sum
  * Run the goal to a terminal state (done / budget / time / breaker / abort). Resumable: re-invoking with resume=true picks up the journal. Returns the final JournalState; durable artifacts are written before return.
  */
 // @kern-source: controller:77
-export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[]}>, oracleFiles?: string[], resume?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string}> }): Promise<JournalState> {
+export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[]}>, oracleFiles?: string[], resume?: boolean, push?: boolean, remote?: string, requireTests?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string, costUsd?:number}> }): Promise<JournalState> {
   const { spec, repoRoot } = opts;
   assertSafeGoalId(spec.goalId);
   ensureAgonHome();
@@ -166,6 +166,11 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
       state = { ...state, spentUsd: state.spentUsd + (impl.costUsd || 0) };
       if (!impl.ok) throw { kind: 'error', detail: impl.error ?? 'implement failed' };
 
+      // Guard the worktree race (dogfooding feedback: zai/gemini hit
+      // "worktree missing before diff"): if implement's engine churn pruned
+      // or removed our worktree, fail this attempt cleanly so it retries
+      // rather than crashing the whole run on a bad diff/read.
+      if (!existsSync(wt)) throw { kind: 'error', detail: 'worktree vanished during implement (worktree-prune race) — retrying' };
       const diffText = worktreeChangedDiff(wt, baseSha);
       if (!diffText.trim()) throw { kind: 'error', detail: 'no diff produced' };
       const changed = parseChangedLines(diffText);
@@ -176,11 +181,15 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
         ...added.filter(isTestFile),
         ...Object.keys(changed).filter(isTestFile),
       ]));
-      // Surface when a task changed source but shipped no test — the
-      // fail-on-base witness then has nothing to witness (mutation-witness
-      // still runs on the changed source lines).
+      // A task that changed source but shipped no test: by default this is a
+      // hard park, not a silent skip — the implement prompt mandates a test,
+      // and a fix with a green gate but no witnessing test defeats the whole
+      // defense (dogfooding feedback). Opt out with requireTests=false.
       if (testFiles.length === 0 && Object.keys(changed).some((f) => !isTestFile(f))) {
-        emit('witness-skip', task.id, 'no new/changed test files — diff-sensitivity witness skipped');
+        if (opts.requireTests !== false) {
+          throw { kind: 'witness', detail: 'changed source but added no test — a fix without a witnessing test is rejected (set requireTests=false / --no-require-tests to allow)' };
+        }
+        emit('witness-skip', task.id, 'no new/changed test files — diff-sensitivity witness skipped (requireTests=false)');
       }
       for (const tf of testFiles) {
         const w = await witnessTest({ repoRoot, baseSha, newWorktree: wt, newTestFiles: [tf], testCmd: witnessCmd, timeout: witnessTimeoutSec });
@@ -213,6 +222,8 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
 
       // REVIEW — ensemble findings; one bounded FIX pass on blocking, then park.
       let rev = await opts.review({ worktree: wt, baseSha, diff: diffText, label: `goal ${spec.goalId} task ${task.id}`, signal: opts.signal });
+      attemptCost += rev.costUsd || 0;
+      state = { ...state, spentUsd: state.spentUsd + (rev.costUsd || 0) };
       if (rev.blocking) {
         emit('review-block', task.id, rev.summary);
         const fix = await opts.implement({ task, worktree: wt, baseSha, repoRoot, fixContext: rev.summary, signal: opts.signal });
@@ -224,6 +235,8 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
           throw { kind: 'gate', sig: gateFailureSignature(`${gate2.stderr || ''}\n${gate2.stdout || ''}`), detail: 'gate failed after fix pass' };
         }
         rev = await opts.review({ worktree: wt, baseSha, diff: worktreeChangedDiff(wt, baseSha), label: `goal ${spec.goalId} task ${task.id} (post-fix)`, signal: opts.signal });
+        attemptCost += rev.costUsd || 0;
+        state = { ...state, spentUsd: state.spentUsd + (rev.costUsd || 0) };
         if (rev.blocking) throw { kind: 'review', detail: rev.summary };
       }
 
@@ -244,6 +257,16 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
       state = { ...state, parkedStreak: 0 };
       state = logEvent(state, 'task-done', task.id, newSha);
       emit('task-done', task.id, newSha);
+
+      // PUSH — completes the per-task build→review→fix→commit→PUSH cycle.
+      // The commit is already safe on the local goal branch, so a push
+      // failure (network/remote) is logged and the run continues rather than
+      // failing the task — the branch can be re-pushed on a later task or at end.
+      if (opts.push) {
+        const pushed = await git(['push', opts.remote ?? 'origin', spec.branch]);
+        if (pushed.exitCode === 0) { state = logEvent(state, 'task-pushed', task.id, spec.branch); emit('task-pushed', task.id, spec.branch); }
+        else { state = logEvent(state, 'push-failed', task.id, pushed.stderr.trim()); emit('push-failed', task.id, pushed.stderr.trim()); }
+      }
     } catch (e: unknown) {
       const err = e as { kind?: string; sig?: string; count?: number; detail?: string };
       const kind = err?.kind ?? 'error';

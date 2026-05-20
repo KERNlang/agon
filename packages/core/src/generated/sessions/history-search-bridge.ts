@@ -56,12 +56,9 @@ export function searchHistorySemantic(query: string, items: HistorySearchItem[],
   }
 
   if (result.status !== 0 || !result.stdout) {
-    // Surface fastembed-missing exactly once per session — same convention
-    // as task-classifier.kern.
-    if (result.status === 2 && !(globalThis as any).__agonHistorySearchMissingWarned) {
-      console.warn('[agon] history search: fastembed not installed — install with `npm run install:python -w packages/dedup` (chronological listing still works)');
-      (globalThis as any).__agonHistorySearchMissingWarned = true;
-    }
+    // Silent degrade — chronological listing still works. `agon doctor` shows
+    // the install hint; postinstall script attempts auto-install when Python
+    // is available.
     return null;
   }
 

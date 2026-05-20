@@ -246,9 +246,15 @@ return defineCommand({
       // single engine (cheap/fast), a real feature races the full panel. The
       // free heuristic decides; the judge confirms/adjusts the roster only for
       // big/expensive tasks (escalation). REVIEW always uses all engines.
+      //
+      // An EXPLICIT --engines roster is AUTHORITATIVE: when you name the
+      // engines, all of them compete on every task — routing/escalation never
+      // narrows a set you asked for. Per-task routing only optimizes the
+      // DEFAULT (all-active) roster when --engines was not passed.
       const baseRoster = (requestedEngines ?? available) as string[];
+      const explicitRoster = requestedEngines != null;
       let taskEngines: string[] = baseRoster;
-      if (!a.fixContext && baseRoster.length > 1) {
+      if (!a.fixContext && !explicitRoster && baseRoster.length > 1) {
         try {
           const hints = deriveRoutingHints(a.task.source, { activeEngines: () => baseRoster } as any);
           const r = chooseImplementRoster({

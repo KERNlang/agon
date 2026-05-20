@@ -176,10 +176,12 @@ const name=goalCommand type=any
         // it decides which are real must-fix blockers vs false positives.
         const judgeRaw = (args.judge ?? (config as any).forgeJudgeEngine ?? (config as any).cesarEngine ?? reviewEngines[0]).toString().trim();
         const judge = registry.resolveId(judgeRaw) || reviewEngines[0];
-        const implementTimeout = args.timeout ? parseInt(args.timeout, 10) : undefined;
+        const implementTimeout = args.timeout != null && args.timeout !== '' ? Number(args.timeout) : undefined;
 
-        const num = (v: string | undefined, dflt: number): number => {
-          if (v == null || v.trim() === '') return dflt;
+        // citty coerces numeric flags (e.g. --max-hours 1) to a number, not a
+        // string, so accept both rather than assuming .trim() exists.
+        const num = (v: unknown, dflt: number): number => {
+          if (v == null || (typeof v === 'string' && v.trim() === '')) return dflt;
           const n = Number(v);
           return Number.isFinite(n) && n >= 0 ? n : dflt;
         };

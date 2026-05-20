@@ -45,6 +45,62 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('maps synthesis to the synthesis command bridge', () => {
+    expect(buildCallCommands({
+      workflow: 'synthesis',
+      input: 'Design a new mode',
+      swaps: '2',
+      engineTimeout: '90',
+      engines: 'codex,gemini',
+    }).commands).toEqual([
+      ['synthesis', 'Design a new mode', '--swaps', '2', '--timeout', '90', '--engines', 'codex,gemini'],
+    ]);
+  });
+
+  it('maps synthesis without optional flags', () => {
+    expect(buildCallCommands({
+      workflow: 'synthesis',
+      input: 'Design a new mode',
+    }).commands).toEqual([
+      ['synthesis', 'Design a new mode'],
+    ]);
+  });
+
+  it('normalizes synthesis workflow casing before mapping', () => {
+    expect(buildCallCommands({
+      workflow: 'SynTheSis',
+      input: 'Design a new mode',
+    }).commands).toEqual([
+      ['synthesis', 'Design a new mode'],
+    ]);
+  });
+
+  it('forwards timeout to synthesis without swaps', () => {
+    expect(buildCallCommands({
+      workflow: 'synthesis',
+      input: 'Design a new mode',
+      engineTimeout: '45',
+    }).commands).toEqual([
+      ['synthesis', 'Design a new mode', '--timeout', '45'],
+    ]);
+  });
+
+  it('forwards engines to synthesis without swaps or timeout', () => {
+    expect(buildCallCommands({
+      workflow: 'synthesis',
+      input: 'Design a new mode',
+      engines: 'codex,claude',
+    }).commands).toEqual([
+      ['synthesis', 'Design a new mode', '--engines', 'codex,claude'],
+    ]);
+  });
+
+  it('requires input for synthesis', () => {
+    expect(() => buildCallCommands({
+      workflow: 'synthesis',
+    })).toThrow('agon call synthesis requires a prompt/task argument');
+  });
+
   it('defaults review target to uncommitted', () => {
     expect(buildCallCommands({ workflow: 'review' }).commands).toEqual([
       ['review', 'uncommitted'],

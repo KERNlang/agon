@@ -1,0 +1,165 @@
+import { defineCommand } from 'citty';
+import {
+  EngineRegistry, ensureAgonHome, loadConfig,
+  createRunDir, writeRunStatus, printRunSummary,
+} from '@agon/core';
+import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
+import type { RunStatusEngine } from '@agon/core';
+import { createCliAdapter } from '@agon/adapter-cli';
+import { runSynthesisModus } from '@agon/forge';
+import { header, info, table, bold, green, dim } from '../output.js';
+import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
+
+export const synthesisCommand = defineCommand({
+  meta: {
+    name: 'synthesis',
+    description: 'Competitive cross-pollination — engines draft, swap, improve, judge picks the best evolved artifact',
+  },
+  args: {
+    prompt: {
+      type: 'positional',
+      description: 'Task or prompt to synthesize',
+      required: true,
+    },
+    engines: {
+      type: 'string',
+      alias: 'e',
+      description: 'Comma-separated engine list',
+    },
+    swaps: {
+      type: 'string',
+      alias: 's',
+      description: 'Number of swap rounds (0 = draft-only)',
+      default: '1',
+    },
+    judge: {
+      type: 'string',
+      alias: 'j',
+      description: 'Judge engine ID (default: first engine)',
+    },
+    timeout: {
+      type: 'string',
+      description: 'Timeout per engine in seconds',
+      default: '120',
+    },
+    label: {
+      type: 'string',
+      description: 'Human-readable suffix baked into the run dir name.',
+    },
+    quiet: {
+      type: 'boolean',
+      description: 'Suppress streaming output; stdout becomes only the run dir path + final summary.',
+    },
+  },
+  async run({ args }) {
+    ensureAgonHome();
+    const config = loadConfig(process.cwd());
+
+    const registry = new EngineRegistry();
+    registry.load(resolveBuiltinEnginesDir());
+
+    const adapter = createCliAdapter(registry);
+    const available = args.engines
+      ? args.engines.split(',').map((s) => s.trim())
+      : filterDefaultOrchestrationEngines(registry.activeIds(config));
+
+    if (args.quiet) process.env.AGON_QUIET = '1';
+    const startedAt = new Date().toISOString();
+    const { path: outputDir } = createRunDir({
+      mode: 'synthesis',
+      label: args.label,
+    });
+
+    const quiet = process.env.AGON_QUIET === '1';
+    if (!quiet) {
+      header(`Synthesis: ${args.prompt}`);
+      info(`Engines: ${available.join(', ')}`);
+      info(`Swap rounds: ${args.swaps}`);
+      console.log('');
+    }
+
+    const result = await runSynthesisModus({
+      prompt: args.prompt,
+      engines: available,
+      registry,
+      adapter,
+      swaps: parseInt(args.swaps, 10),
+      judge: args.judge,
+      timeout: parseInt(args.timeout, 10),
+      outputDir,
+    });
+
+    // Build status
+    const engineStatuses: RunStatusEngine[] = available.map((id) => {
+      const draft = result.drafts.find((d) => d.engineId === id);
+      const swapCount = result.swaps.filter((s) => s.toEngineId === id).length;
+      const score = result.scores.find((s) => s.engineId === id);
+      const isWinner = result.winner === id;
+      const detail = `${draft ? 'draft' : 'no-draft'}${swapCount > 0 ? `, ${swapCount} swap(s)` : ''}${score ? `, score=${score.score}` : ''}`;
+      return {
+        id,
+        status: draft && !draft.content.startsWith('[draft failed') ? 'ok' : 'error',
+        detail: isWinner ? `${detail} ★ winner` : detail,
+      };
+    });
+    const okCount = engineStatuses.filter((e) => e.status === 'ok').length;
+    const status = {
+      mode: 'synthesis',
+      label: args.label,
+      startedAt,
+      endedAt: new Date().toISOString(),
+      engines: engineStatuses,
+      summary: `${okCount}/${available.length} drafted; winner=${result.winner}`,
+      ok: okCount === available.length,
+    };
+    writeRunStatus(outputDir, status);
+
+    if (quiet) {
+      printRunSummary(status);
+      return;
+    }
+
+    // Drafts
+    console.log('');
+    header('Initial Drafts');
+    for (const draft of result.drafts) {
+      const isWinner = result.winner === draft.engineId;
+      console.log(`${isWinner ? green('★ ') : ''}${bold(draft.engineId)}`);
+      console.log(draft.content.slice(0, 400) + (draft.content.length > 400 ? '…' : ''));
+      console.log('');
+    }
+
+    // Swaps
+    if (result.swaps.length > 0) {
+      header('Swap History');
+      const rows = result.swaps.map((s) => [
+        `R${s.round}`,
+        s.fromEngineId,
+        s.toEngineId,
+        s.reasoning.slice(0, 60),
+      ]);
+      table(['Round', 'From', 'To', 'Reasoning'], rows);
+    }
+
+    // Scores
+    if (result.scores.length > 0) {
+      console.log('');
+      header('Judge Scores');
+      const rows = result.scores.map((s) => [
+        s.engineId === result.winner ? green(`${s.engineId} ★`) : s.engineId,
+        String(s.score),
+        s.breakdown.slice(0, 60),
+      ]);
+      table(['Engine', 'Score', 'Breakdown'], rows);
+    }
+
+    // Winner
+    console.log('');
+    header(`Winner: ${bold(result.winner)}`);
+    console.log(result.judgeReasoning);
+
+    console.log('');
+    info(dim(`Full output saved: ${outputDir}`));
+    printRunSummary(status);
+  },
+});

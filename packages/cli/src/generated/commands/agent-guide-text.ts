@@ -17,6 +17,7 @@ export function agentGuideMarkdown(): string {
     '- `agon tribunal "<question>" [--mode adversarial|steelman|socratic|red-team|synthesis|postmortem]` — structured multi-engine debate. Use for decisions with real tradeoffs.',
     '- `agon campfire "<topic>"` — open multi-engine discussion, no winner. For exploration.',
     '- `agon review <uncommitted|branch:NAME|commit:SHA>` — non-interactive multi-engine code review.',
+    '- `agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"` — autonomous controller: drives a task queue to completion unattended, looping build -> witness -> gate -> review (panel + judge) -> fix -> commit per task on a goal/ branch. Bound it with `--max-hours`/`--budget`; `--push` pushes each task. Long-running (designed for 8-24h).',
     '',
     '## Common flags',
     '- `--engines claude,codex,gemini` — limit which engines compete',
@@ -36,6 +37,7 @@ export function agentGuideMarkdown(): string {
     '- need ideas / unsure                 -> brainstorm',
     '- explore, no decision needed         -> campfire',
     '- judge existing code                 -> review',
+    '- drive a whole task queue to done    -> goal',
     '',
     'Run `agon <mode> --help` for the full flag list.',
   ].join('\n');
@@ -44,17 +46,17 @@ export function agentGuideMarkdown(): string {
 /**
  * Per-CLI /agon slash-command shim. format is one of codex | gemini | claude.
  */
-// @kern-source: agent-guide-text:46
+// @kern-source: agent-guide-text:48
 export function agonShim(format: string): string {
   const body = [
-    'You have access to Agon, a multi-AI orchestration CLI (forge, brainstorm, tribunal, campfire, review).',
+    'You have access to Agon, a multi-AI orchestration CLI (forge, brainstorm, tribunal, campfire, review, goal).',
     'First run `agon agent-guide` in the shell to see exactly how to call it, then use the right Agon mode to handle the request.',
     'Call agon with your normal shell/Bash tool — there is no MCP and nothing is loaded until you invoke it.',
   ].join('\n');
 
   if (format === 'gemini') {
     return [
-      'description = "Use Agon multi-AI orchestration (forge/tribunal/brainstorm/review)"',
+      'description = "Use Agon multi-AI orchestration (forge/tribunal/brainstorm/review/goal)"',
       'prompt = """',
       body,
       '',
@@ -67,7 +69,7 @@ export function agonShim(format: string): string {
   if (format === 'claude') {
     return [
       '---',
-      'description: Use Agon multi-AI orchestration (forge/tribunal/brainstorm/review)',
+      'description: Use Agon multi-AI orchestration (forge/tribunal/brainstorm/review/goal)',
       'argument-hint: [task]',
       '---',
       '',

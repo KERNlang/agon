@@ -10,6 +10,7 @@ import type { JournalState, GoalTask } from './types.js';
 // @kern-source: policy:12
 export function gateFailureSignature(output: string): string {
   const norm = (output || '')
+    .replace(/\x1b\[[0-9;]*m/g, '')
     .replace(/\b[0-9a-f]{7,40}\b/gi, '<hex>')
     .replace(/\b\d+(?:\.\d+)?\s*(?:ms|s|m|h)\b/g, '<dur>')
     .replace(/:\d+:\d+/g, ':<n>:<n>')
@@ -24,10 +25,13 @@ export function gateFailureSignature(output: string): string {
 /**
  * Park a task when it has burned its attempts OR is oscillating — the same gate-failure signature recurring means the agent keeps producing the same broken fix, so more attempts only waste budget.
  */
-// @kern-source: policy:27
+// @kern-source: policy:28
 export function taskParkDecision(task: GoalTask, maxAttempts: number): {park:boolean, reason:string} {
-  if (task.attempts >= Math.max(1, maxAttempts)) {
-    return { park: true, reason: `max-attempts (${Math.max(1, maxAttempts)})` };
+  // Guard against a NaN / non-positive cap (which would make every >= compare
+  // false and grind a task forever) by collapsing it to 1.
+  const cap = Number.isFinite(maxAttempts) && maxAttempts >= 1 ? Math.floor(maxAttempts) : 1;
+  if (task.attempts >= cap) {
+    return { park: true, reason: `max-attempts (${cap})` };
   }
   const seen = new Set<string>();
   for (const a of task.attemptLog) {
@@ -42,7 +46,7 @@ export function taskParkDecision(task: GoalTask, maxAttempts: number): {park:boo
 /**
  * Abort the whole run when too many tasks park back-to-back, or too many cycles pass with no net decrease in remaining work — the signal that the loop is thrashing and a human should look.
  */
-// @kern-source: policy:43
+// @kern-source: policy:47
 export function globalBreaker(state: JournalState, maxParkStreak: number, maxNoProgress: number): {stop:boolean, reason:string} {
   if (maxParkStreak > 0 && state.parkedStreak >= maxParkStreak) {
     return { stop: true, reason: `park-streak >= ${maxParkStreak}` };
@@ -56,7 +60,7 @@ export function globalBreaker(state: JournalState, maxParkStreak: number, maxNoP
 /**
  * True once cumulative spend reaches the goal's USD ceiling (0 = unlimited).
  */
-// @kern-source: policy:55
+// @kern-source: policy:59
 export function budgetExceeded(state: JournalState): boolean {
   const cap = state.spec.budgetUsd;
   return cap > 0 && state.spentUsd >= cap;
@@ -65,7 +69,7 @@ export function budgetExceeded(state: JournalState): boolean {
 /**
  * True once wall-clock since startedAt reaches the goal's hour ceiling (0 = unlimited).
  */
-// @kern-source: policy:62
+// @kern-source: policy:66
 export function timeExceeded(state: JournalState, now: number): boolean {
   if (!state.startedAt) return false;
   const cap = state.spec.maxHours;

@@ -4,7 +4,7 @@ import { defineCommand } from 'citty';
 
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 
-import { resolve, relative } from 'node:path';
+import { resolve } from 'node:path';
 
 import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, applyPatch } from '@agon/core';
 
@@ -16,18 +16,26 @@ import { runForge, runGoalController, loadJournal, summarizeGoal, goalDir } from
 
 import { runReviewCore } from '../handlers/review.js';
 
-import { header, success, fail, warn, info, bold, cyan, green } from '../blocks/output-format.js';
+import { header, success, fail, warn, info, cyan, green } from '../blocks/output-format.js';
 
 // @kern-source: goal:21
 export const goalCommand: any = (() => {
 const slug = (s: string): string =>
   String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 128);
 
+const toTask = (o: { id?: string; source?: string; dependsOn?: string[] }, i: number) => {
+  const id = slug(o.id ?? '') || `task-${i}`;
+  return { id, source: String(o.source ?? o.id ?? id), dependsOn: o.dependsOn };
+};
+
 const loadQueue = (queuePath: string): Array<{ id: string; source: string; dependsOn?: string[] }> => {
   const abs = resolve(queuePath);
   if (!existsSync(abs)) throw new Error(`queue not found: ${queuePath}`);
   const st = statSync(abs);
   if (st.isDirectory()) {
+    // source is the repo-relative path (e.g. .kern-gaps/alpha.md) so the
+    // agent — running from the worktree root — can actually open the spec.
+    const relDir = queuePath.replace(/[\/\\]+$/, '');
     const used = new Set<string>();
     return readdirSync(abs)
       .filter((f) => !f.startsWith('.'))
@@ -38,14 +46,22 @@ const loadQueue = (queuePath: string): Array<{ id: string; source: string; depen
         let n = 1; const base = id;
         while (used.has(id)) id = `${base}-${n++}`;
         used.add(id);
-        return { id, source: f };
+        return { id, source: `${relDir}/${f}` };
       });
   }
-  if (abs.endsWith('.jsonl') || abs.endsWith('.json')) {
+  // A whole-document JSON queue: an array, a {tasks:[...]} envelope, or a
+  // single object. (.jsonl stays line-delimited.)
+  if (abs.endsWith('.json')) {
+    const parsed = JSON.parse(readFileSync(abs, 'utf-8')) as unknown;
+    const arr = Array.isArray(parsed)
+      ? parsed
+      : (parsed && Array.isArray((parsed as { tasks?: unknown[] }).tasks) ? (parsed as { tasks: unknown[] }).tasks : [parsed]);
+    return arr.map((o, i) => toTask(o as { id?: string; source?: string; dependsOn?: string[] }, i));
+  }
+  if (abs.endsWith('.jsonl')) {
     return readFileSync(abs, 'utf-8').split('\n').map((l) => l.trim()).filter(Boolean).map((line, i) => {
-      const o = JSON.parse(line) as { id?: string; source?: string; dependsOn?: string[] };
-      const id = slug(o.id ?? '') || `task-${i}`;
-      return { id, source: String(o.source ?? o.id ?? id), dependsOn: o.dependsOn };
+      try { return toTask(JSON.parse(line), i); }
+      catch (e) { throw new Error(`malformed JSON on line ${i + 1} of ${queuePath}: ${e instanceof Error ? e.message : String(e)}`); }
     });
   }
   throw new Error(`unsupported queue ${queuePath} — expected a directory or a .jsonl/.json file`);
@@ -123,9 +139,22 @@ return defineCommand({
       process.exit(1);
     }
 
-    const requestedEngines = args.engines
-      ? args.engines.split(',').map((s: string) => registry.resolveId(s.trim())).filter(Boolean)
-      : undefined;
+    let requestedEngines: string[] | undefined;
+    if (args.engines) {
+      // resolveId echoes unknown ids back rather than returning empty, so
+      // validate the canonical ids against the ACTIVE set: skip ones that
+      // aren't real/active (with a warning) and fail if none survive — a
+      // typo'd --engines must not silently dispatch the wrong roster.
+      const raw = args.engines.split(',').map((s: string) => s.trim()).filter(Boolean);
+      const resolved = raw.map((s: string) => registry.resolveId(s));
+      requestedEngines = resolved.filter((id: string) => available.includes(id));
+      const unknown = raw.filter((_: string, i: number) => !available.includes(resolved[i]));
+      if (unknown.length > 0) warn(`Ignoring unknown/inactive engines: ${unknown.join(', ')}`);
+      if (requestedEngines.length === 0) {
+        fail(`None of the requested engines are active: ${raw.join(', ')}. Run "agon doctor" to see what's available.`);
+        process.exit(1);
+      }
+    }
     const reviewRaw = (args.reviewEngine ?? config.forgeJudgeEngine ?? 'codex').toString().trim();
     const reviewEngine = registry.resolveId(reviewRaw) || available[0];
     const implementTimeout = args.timeout ? parseInt(args.timeout, 10) : undefined;
@@ -162,6 +191,7 @@ return defineCommand({
     info(`Implement: ${requestedEngines?.join(', ') ?? available.join(', ')}  ·  Review: ${reviewEngine}`);
     info(`Budget: $${spec.budgetUsd || '∞'}  ·  Max: ${spec.maxHours || '∞'}h  ·  Attempts/task: ${spec.maxAttempts}`);
     info(`Tasks: ${tasks.length}${args.resume ? ' (+ resumed journal)' : ''}`);
+    if (spec.budgetUsd > 0) warn('P0: the USD budget is not enforced yet (engine cost is not metered) — the live ceiling is --max-hours.');
 
     if (args.dryRun) {
       warn('Dry-run — nothing will be dispatched.');
@@ -179,7 +209,7 @@ return defineCommand({
     // IMPLEMENT — forge races engines to satisfy the gate inside the task
     // worktree; we apply the winning patch. A fixContext re-runs forge to
     // address blocking review findings on the existing changes.
-    const implement = async (a: { task: { id: string; source: string }; worktree: string; baseSha: string; fixContext?: string }) => {
+    const implement = async (a: { task: { id: string; source: string }; worktree: string; baseSha: string; repoRoot: string; fixContext?: string; signal?: AbortSignal }) => {
       const task = a.fixContext
         ? `These changes have BLOCKING review findings. Fix them without regressing the gate or weakening tests:\n${a.fixContext}`
         : `Close this gap: ${a.task.source}\n\nImplement the fix AND add a test that FAILS before your change and PASSES after. Do not weaken or skip existing tests.`;
@@ -201,7 +231,7 @@ return defineCommand({
           adapter,
         );
         if (!manifest.winner) return { ok: false, costUsd: 0, error: 'forge produced no winning patch' };
-        const patchPath = (manifest.patches as Record<string, string>)[manifest.winner];
+        const patchPath = (manifest.patches as Record<string, string> | undefined)?.[manifest.winner];
         const patch = patchPath ? readFileSync(patchPath, 'utf-8') : '';
         if (patch.trim()) applyPatch(a.worktree, patch);
         return { ok: true, costUsd: 0 };
@@ -212,7 +242,7 @@ return defineCommand({
 
     // REVIEW — the same hardened multi-engine pipeline /review uses; the
     // controller blocks the commit on a blocking verdict.
-    const review = async (a: { diff: string; label: string }) => {
+    const review = async (a: { worktree: string; baseSha: string; diff: string; label: string; signal?: AbortSignal }) => {
       if (!a.diff.trim()) return { blocking: false, summary: 'no diff' };
       let diff = a.diff;
       if (diff.length > 100_000) diff = diff.slice(0, 100_000) + '\n... [truncated — diff exceeds 100K chars]';
@@ -225,6 +255,7 @@ return defineCommand({
       }
     };
 
+    try {
     const state = await runGoalController({
       spec: spec as any,
       repoRoot,
@@ -244,12 +275,12 @@ return defineCommand({
           case 'task-parked': warn(`⏸ parked${id}: ${e.detail ?? ''}`); break;
           case 'task-retry': warn(`↻ retrying${id}: ${e.detail ?? ''}`); break;
           case 'review-block': warn(`⚑ review blocking${id} — one fix pass`); break;
+          case 'witness-skip': warn(`⚠ witness skipped${id}: ${e.detail ?? ''}`); break;
           case 'stop': warn(`■ stopping run: ${e.detail ?? ''}`); break;
           case 'aborted': warn('■ aborted by user'); break;
         }
       },
     });
-    process.removeListener('SIGINT', onSig);
 
     console.log('');
     header('Goal run complete');
@@ -264,6 +295,9 @@ return defineCommand({
       info(`Review them, then: ${green(`git push -u origin ${branch}`)} and open a PR.`);
     } else {
       warn('No tasks closed. See the parked list above and the journal for why.');
+    }
+    } finally {
+      process.removeListener('SIGINT', onSig);
     }
   },
 });

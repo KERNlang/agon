@@ -32,6 +32,14 @@ describe('gateFailureSignature', () => {
     expect(gateFailureSignature('assertion failed: equality'))
       .not.toBe(gateFailureSignature('type error: cannot find name'));
   });
+  it('strips ANSI color so the same error colored or plain hashes identically', () => {
+    const plain = 'FAIL expected foo got bar';
+    const colored = '\x1b[31mFAIL\x1b[0m expected \x1b[1mfoo\x1b[0m got bar';
+    expect(gateFailureSignature(colored)).toBe(gateFailureSignature(plain));
+  });
+  it('handles all-digit content without collapsing to an empty hash', () => {
+    expect(gateFailureSignature('error code 12345').length).toBe(16);
+  });
 });
 
 describe('taskParkDecision', () => {
@@ -50,6 +58,11 @@ describe('taskParkDecision', () => {
     const d = taskParkDecision(t, 5);
     expect(d.park).toBe(true);
     expect(d.reason).toMatch(/oscillation/);
+  });
+  it('treats a NaN / non-positive cap as 1 so a task never grinds forever', () => {
+    expect(taskParkDecision(task({ attempts: 1 }), Number.NaN).park).toBe(true);
+    expect(taskParkDecision(task({ attempts: 1 }), 0).park).toBe(true);
+    expect(taskParkDecision(task({ attempts: 0 }), Number.NaN).park).toBe(false);
   });
   it('does not park when signatures differ and attempts remain', () => {
     const t = task({

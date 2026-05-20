@@ -10,13 +10,15 @@ import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanPro
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
+import { buildConsensus } from '../blocks/consensus.js';
+
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
 import { stripReasoning, stripTuiChrome } from '../blocks/engine-helpers.js';
 
-// @kern-source: review:13
+// @kern-source: review:14
 export function resolveReviewTarget(target: string|undefined, cwd: string): {diff:string, label:string} {
   const t = (target ?? 'uncommitted').trim();
   let diff = '';
@@ -99,7 +101,7 @@ export function resolveReviewTarget(target: string|undefined, cwd: string): {dif
   return { diff, label };
 }
 
-// @kern-source: review:96
+// @kern-source: review:97
 export function selectReviewEngine(requestedEngine: string|undefined, ctx: HandlerContext): string {
   const allActive = ctx.activeEngines();
   const active = requestedEngine ? allActive : filterDefaultOrchestrationEngines(allActive);
@@ -147,7 +149,7 @@ export function selectReviewEngine(requestedEngine: string|undefined, ctx: Handl
   throw new Error('No engines available for review. Try /engines to check availability.');
 }
 
-// @kern-source: review:144
+// @kern-source: review:145
 export interface ReviewCoreResult {
   response: string;
   blocking: boolean;
@@ -156,10 +158,10 @@ export interface ReviewCoreResult {
   severityCounts: ReviewSeverityCounts;
 }
 
-// @kern-source: review:153
+// @kern-source: review:154
 export const REVIEW_SENTINEL: string = '<!--AGON_REVIEW_FINDINGS_v1-->';
 
-// @kern-source: review:155
+// @kern-source: review:156
 export interface ReviewSeverityCounts {
   blocking: number;
   important: number;
@@ -170,7 +172,7 @@ export interface ReviewSeverityCounts {
 /**
  * Sentinel-anchored, fail-closed extraction of the findings array — the single chokepoint shared by parseReviewBlocking (the blocking gate) and summarizeReviewFindings (severity counts). Returns the parsed array (possibly empty []) or null when no parseable block follows the LAST sentinel. Anti-injection: only text after the LAST sentinel is considered, so attacker brackets quoted earlier in the diff are ignored. Tolerant of almost-JSON (trailing commas, line and block JS-style comments) and fenced json code blocks.
  */
-// @kern-source: review:161
+// @kern-source: review:162
 export function extractReviewFindings(response: string): Array<{severity?:string, blocking?:boolean}> | null {
   if (!response || response.trim().length === 0) return null;
 
@@ -270,7 +272,7 @@ export function extractReviewFindings(response: string): Array<{severity?:string
 /**
  * Sentinel-anchored, fail-closed parser. The engine MUST end its response with a unique sentinel followed by a JSON array of findings. Without a parseable block the response is treated as blocking + parseFailed, so the user must explicitly approve. This blocks the prompt-injection attack where an attacker echoes `[{"blocking":false}]` inside diff content — only the engine's real structured output after the LAST sentinel is considered. Thin wrapper over extractReviewFindings.
  */
-// @kern-source: review:259
+// @kern-source: review:260
 export function parseReviewBlocking(response: string): {blocking:boolean, parseFailed:boolean} {
   const findings = extractReviewFindings(response);
   if (findings === null) return { blocking: true, parseFailed: true };
@@ -281,7 +283,7 @@ export function parseReviewBlocking(response: string): {blocking:boolean, parseF
 /**
  * Count findings by severity from the structured block, for human summaries like 'claude: ok, 1 important, 3 nits'. Returns all-zero when there is no parseable findings block (the caller renders that as unstructured/empty). A finding counts as blocking if blocking===true or severity==='blocking'; otherwise by its severity, with anything not 'important' falling to nit.
  */
-// @kern-source: review:268
+// @kern-source: review:269
 export function summarizeReviewFindings(response: string): ReviewSeverityCounts {
   const findings = extractReviewFindings(response);
   if (!findings) return { blocking: 0, important: 0, nit: 0, total: 0 };
@@ -300,14 +302,14 @@ export function summarizeReviewFindings(response: string): ReviewSeverityCounts 
 /**
  * Repair pass (B): re-ask the engine for ONLY a bare JSON array of the findings it already wrote in prose. Asking for a bare array (no sentinel, no prose, no fence) is the format LLMs comply with most reliably — far better than 'an HTML-comment marker followed by JSON', which engines routinely truncate to just the marker. The caller (runReviewCore) prepends the sentinel itself before parsing, so the anti-injection anchor is preserved. Best-effort: if this still doesn't parse, the fail-closed/unstructured result stands.
  */
-// @kern-source: review:285
+// @kern-source: review:286
 export async function runReviewRepair(priorReview: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal): Promise<string> {
   const config = ctx.config;
   const cwd = resolveWorkingDir();
   const parts: string[] = [];
   parts.push('You previously produced this code review:');
   parts.push(priorReview);
-  parts.push(`Now convert the findings above into a JSON array — output ONLY the array, nothing else. Your entire response must be valid JSON: start with [ and end with ]. No prose, no explanation, no markdown, no code fence.\n\nEach element: {"file":"path","lines":"10-12","severity":"blocking|important|nit","blocking":true,"problem":"what is wrong","minimalFix":"smallest fix"}\n\nExample of a valid response:\n[{"file":"src/auth.ts","lines":"42","severity":"important","blocking":false,"problem":"missing null check","minimalFix":"guard before deref"}]\n\nIf the review found no issues, your entire response must be exactly: []\nDerive the findings from the review above — do not re-analyze.`);
+  parts.push(`Now convert the findings above into a JSON array — output ONLY the array, nothing else. Your entire response must be valid JSON: start with [ and end with ]. No prose, no explanation, no markdown, no code fence.\n\nEach element: {"file":"path","lines":"10-12","severity":"blocking|important|nit","blocking":true,"confidence":0.0,"problem":"what is wrong","minimalFix":"smallest fix"}\n\nconfidence is your 0.00-1.00 certainty the issue is real and correctly diagnosed (1.0 = you verified it in the code; lower it when you are guessing).\n\nExample of a valid response:\n[{"file":"src/auth.ts","lines":"42","severity":"important","blocking":false,"confidence":0.7,"problem":"missing null check","minimalFix":"guard before deref"}]\n\nIf the review found no issues, your entire response must be exactly: []\nDerive the findings from the review above — do not re-analyze.`);
   const prompt = parts.join('\n\n');
   const engine = ctx.registry.get(engineId);
   const outputDir = join(RUNS_DIR, `review-repair-${Date.now()}`);
@@ -350,7 +352,7 @@ export async function runReviewRepair(priorReview: string, engineId: string, ctx
 /**
  * Repo grounding: read the CURRENT full content of each source file the diff touches and format it as a context block. A diff shows only the changed hunks, so reviewers raise false alarms that reading the whole file would kill instantly ('X is unhandled' when the wrapper handles it three lines down; 'unimported' when it's imported at the top). Bounded hard (per-file + total caps) to protect prompt size / TTFT, and skips generated/dist/min files (derived noise that would blow the budget). Best-effort: deleted/binary/unreadable files are skipped — the diff still covers them.
  */
-// @kern-source: review:323
+// @kern-source: review:324
 export function gatherReviewFileContext(diff: string, cwd: string): string {
   const PER_FILE_MAX = 20_000;
   const TOTAL_MAX = 60_000;
@@ -397,7 +399,7 @@ export function gatherReviewFileContext(diff: string, cwd: string): string {
 /**
  * Core review flow with no ctx side effects. Used by both handleReview (with streaming dispatch) and the plan executor's review step (silent). Does NOT touch ctx.setActiveAbort, ctx.lastReviewResult, ctx.chatSession, or tracker. signal is optional: callers that don't have an abort controller can pass undefined.
  */
-// @kern-source: review:368
+// @kern-source: review:369
 export async function runReviewCore(diff: string, label: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, onProgress?: (chunk:string)=>void): Promise<ReviewCoreResult> {
   const cwd = resolveWorkingDir();
   const config = ctx.config;
@@ -414,7 +416,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
     parts.push(`## CURRENT FILE CONTENTS\nFull current content of the changed source files, for grounding. Verify each finding against this real code — e.g. check whether an error is actually handled, a symbol actually unused, or an import actually missing — before flagging it. The DIFF below shows only what changed.\n\n${fileContext}`);
   }
   parts.push(`## DIFF\n\`\`\`diff\n${diff}\n\`\`\``);
-  parts.push(`## INSTRUCTIONS\nProvide a thorough code review: bugs and logic errors, security vulnerabilities, performance issues, code quality, and missing edge cases. For each issue give file, line range, severity (blocking|important|nit), and a suggested fix.\n\nVERIFY before you flag: confirm each issue against the CURRENT FILE CONTENTS above — is the error really unhandled, the symbol really unused, the import really missing? Only mark a finding 'blocking' if you confirmed it in the code. If you could not verify it from the provided context, downgrade its severity (or note the assumption) rather than guessing — unverified blocking findings are the #1 source of review noise.\n\n## REQUIRED MACHINE BLOCK\nAfter your prose review you MUST append a machine-readable findings block. This is mandatory — a review without it is discarded. The block is the sentinel line, then a fenced JSON code block, as the very last thing in your response. Do NOT stop at the sentinel line: the JSON array after it is required.\n\n<!--AGON_REVIEW_FINDINGS_v1-->\n\`\`\`json\n[{"file":"src/auth.ts","lines":"42","severity":"important","blocking":false,"problem":"missing null check","minimalFix":"guard before deref"}]\n\`\`\`\n\nReplace the example with your real findings. If you found no issues, the array MUST be []. Emit the sentinel + JSON block exactly once, at the end.`);
+  parts.push(`## INSTRUCTIONS\nProvide a thorough code review: bugs and logic errors, security vulnerabilities, performance issues, code quality, and missing edge cases. For each issue give file, line range, severity (blocking|important|nit), a 0.00-1.00 confidence, and a suggested fix.\n\nVERIFY before you flag: confirm each issue against the CURRENT FILE CONTENTS above — is the error really unhandled, the symbol really unused, the import really missing? Only mark a finding 'blocking' if you confirmed it in the code. Set confidence honestly: 1.0 means you verified it in the code; lower it the more you are inferring or guessing. If you could not verify it from the provided context, lower the confidence and downgrade the severity rather than guessing — unverified high-confidence blocking findings are the #1 source of review noise.\n\n## REQUIRED MACHINE BLOCK\nAfter your prose review you MUST append a machine-readable findings block. This is mandatory — a review without it is discarded. The block is the sentinel line, then a fenced JSON code block, as the very last thing in your response. Do NOT stop at the sentinel line: the JSON array after it is required.\n\n<!--AGON_REVIEW_FINDINGS_v1-->\n\`\`\`json\n[{"file":"src/auth.ts","lines":"42","severity":"important","blocking":false,"confidence":0.7,"problem":"missing null check","minimalFix":"guard before deref"}]\n\`\`\`\n\nReplace the example with your real findings. If you found no issues, the array MUST be []. Emit the sentinel + JSON block exactly once, at the end.`);
   const prompt = parts.join('\n\n');
   const engine = ctx.registry.get(engineId);
   const outputDir = join(RUNS_DIR, `review-${Date.now()}`);
@@ -487,7 +489,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   return { response: response, blocking: blocking, parseFailed: parseFailed, unstructured: unstructured, severityCounts: severityCounts };
 }
 
-// @kern-source: review:441
+// @kern-source: review:442
 export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngine?: string): Promise<void> {
   const abort = new AbortController();
   try {
@@ -588,7 +590,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 /**
  * Run review for one or more explicitly requested engines. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A single engine delegates to the streaming handleReview path.
  */
-// @kern-source: review:538
+// @kern-source: review:539
 export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
   const abort = new AbortController();
   try {
@@ -629,8 +631,11 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
     if (abort.signal.aborted) onMasterAbort();
     else abort.signal.addEventListener('abort', onMasterAbort, { once: true });
 
-    interface Collected { engineId: string; reviewOutput: string; unstructured: boolean }
-    const reviewOne = async (engineId: string): Promise<Collected | null> => {
+    // Each engine's STATUS (ok / parse-failed / timeout / error) is captured
+    // alongside its prose, so the consensus pass can route findings by
+    // confidence and shunt failures into their own lane.
+    interface Collected { engineId: string; reviewOutput: string; unstructured: boolean; status: string; note?: string }
+    const reviewOne = async (engineId: string): Promise<Collected> => {
       const controller = new AbortController();
       controllers.push(controller);
       let timedOut = false;
@@ -641,33 +646,63 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
         const response = (result.response ?? '').trim();
         if (timedOut) {
           dispatch({ type: 'warning', message: `${engineId}: timed out after ${timeoutSec}s — skipped.` });
-          return null;
+          return { engineId, reviewOutput: '', unstructured: false, status: 'timeout' };
         }
         if (!response) {
           dispatch({ type: 'warning', message: `${engineId} returned no review output.` });
-          return null;
+          return { engineId, reviewOutput: '', unstructured: false, status: 'error', note: 'no output' };
         }
         dispatch({ type: 'engine-block', engineId, color, content: response });
         appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
         tracker.record(engineId, { prompt: `[review ${label}]`, response });
-        return { engineId, reviewOutput: response, unstructured: result.unstructured };
+        return { engineId, reviewOutput: response, unstructured: result.unstructured, status: result.unstructured ? 'parse-failed' : 'ok' };
       } catch (err) {
-        if (timedOut) dispatch({ type: 'warning', message: `${engineId}: timed out after ${timeoutSec}s — skipped.` });
-        else dispatch({ type: 'error', message: `${engineId}: ${err instanceof Error ? err.message : String(err)}` });
-        return null;
+        if (timedOut) {
+          dispatch({ type: 'warning', message: `${engineId}: timed out after ${timeoutSec}s — skipped.` });
+          return { engineId, reviewOutput: '', unstructured: false, status: 'timeout' };
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        dispatch({ type: 'error', message: `${engineId}: ${msg}` });
+        return { engineId, reviewOutput: '', unstructured: false, status: 'error', note: msg };
       } finally {
         clearTimeout(timer);
       }
     };
 
     appendMessage(ctx.chatSession, { role: 'user', content: `[review ${label}]`, timestamp: new Date().toISOString() });
-    const settled = await Promise.all(engineIds.map((id) => reviewOne(id)));
-    const collected = settled.filter((c): c is Collected => c !== null);
+    const all = await Promise.all(engineIds.map((id) => reviewOne(id)));
+    const collected = all.filter((c) => c.reviewOutput);
 
     if (collected.length === 0) {
       dispatch({ type: 'warning', message: `No review output returned from ${engineIds.join(', ')}.` });
       return;
     }
+
+    // CONSENSUS — fold every engine's parsed findings into one tiered verdict.
+    // ok engines contribute their structured findings; unstructured/timeout/
+    // error engines land in the engineFailures lane (never a phantom blocker).
+    const outcomes = all.map((c) => {
+      if (c.status !== 'ok') return { engine: c.engineId, status: c.status, findings: [], note: c.note };
+      const raw = extractReviewFindings(c.reviewOutput) || [];
+      const findings = raw.map((x: any) => ({
+        engine: c.engineId,
+        severity: typeof x.severity === 'string' ? x.severity : (x.blocking ? 'blocking' : 'nit'),
+        blocking: x.blocking,
+        confidence: x.confidence,
+        file: x.file, lines: x.lines, problem: x.problem, minimalFix: x.minimalFix,
+      }));
+      return { engine: c.engineId, status: 'ok', findings };
+    });
+    const consensus = buildConsensus(outcomes as any);
+
+    const fmt = (f: any): string => `  • [${f.severity} ${f.maxConfidence.toFixed(2)} ×${f.engines.length}${f.pairVotes >= 2 ? ' pair' : ''}] ${f.problem}${f.file ? ` (${f.file}${f.lines ? ':' + f.lines : ''})` : ''}`;
+    const lines: string[] = [`Consensus — ${consensus.summary}`];
+    if (consensus.verified.length) { lines.push('VERIFIED (actionable):'); for (const f of consensus.verified) lines.push(fmt(f)); }
+    if (consensus.needsCheck.length) { lines.push('NEEDS-CHECK (want a second opinion):'); for (const f of consensus.needsCheck) lines.push(fmt(f)); }
+    if (consensus.speculative.length) lines.push(`SPECULATIVE: ${consensus.speculative.length} low-confidence finding(s) — likely noise.`);
+    if (consensus.nits.length) lines.push(`NITS: ${consensus.nits.length}.`);
+    if (consensus.engineFailures.length) lines.push(`FAILED (no machine verdict): ${consensus.engineFailures.map((e: any) => `${e.engine} (${e.status})`).join(', ')}.`);
+    dispatch({ type: consensus.autoBlock ? 'warning' : 'info', message: lines.join('\n') });
 
     const anyUnstructured = collected.some((c) => c.unstructured);
     ctx.lastReviewResult = {

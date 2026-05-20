@@ -8,7 +8,8 @@ import {
 import type { RunStatusEngine } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
-import { resolveReviewTarget, runReviewCore, selectReviewEngine } from '../generated/handlers/review.js';
+import { resolveReviewTarget, runReviewCore, selectReviewEngine, extractReviewFindings } from '../generated/handlers/review.js';
+import { buildConsensus } from '../generated/blocks/consensus.js';
 import { fail, header, info, warn, bold } from '../output.js';
 
 // A captured "review" that is really just the claude TUI's collapsed-paste
@@ -161,6 +162,19 @@ export const reviewCommand = defineCommand({
     // can't wedge the run. Total wall time is the slowest engine, not the sum.
     // Each engine's human output is buffered and flushed as ONE block when it
     // finishes — token-interleaving across concurrent engines would be unreadable.
+    // Parsed findings per engine (only ok/blocking engines), fed to buildConsensus
+    // after the run for the cross-engine tiered verdict.
+    const findingsByEngine = new Map<string, unknown[]>();
+    const captureFindings = (engineId: string, rawResponse: string) => {
+      const raw = extractReviewFindings(rawResponse) || [];
+      findingsByEngine.set(engineId, raw.map((x: any) => ({
+        engine: engineId,
+        severity: typeof x.severity === 'string' ? x.severity : (x.blocking ? 'blocking' : 'nit'),
+        blocking: x.blocking,
+        confidence: x.confidence,
+        file: x.file, lines: x.lines, problem: x.problem, minimalFix: x.minimalFix,
+      })));
+    };
     const reviewEngine = async (engineId: string): Promise<RunStatusEngine> => {
       const engineStart = Date.now();
       const outputPath = join(outputDir, `${engineId}-output.txt`);
@@ -200,6 +214,7 @@ export const reviewCommand = defineCommand({
           return { id: engineId, status: 'parse-failure', durationMs: Date.now() - engineStart, detail: 'empty or unusable response', outputPath };
         }
         const counts = formatSeverityCounts(result.severityCounts);
+        captureFindings(engineId, rawResponse);
         if (result.blocking) {
           flush([rawResponse, `⚠ ${bold(engineId)}: blocking, ${counts}`]);
           return { id: engineId, status: 'blocking', durationMs: Date.now() - engineStart, detail: `blocking, ${counts}`, outputPath };
@@ -267,5 +282,25 @@ export const reviewCommand = defineCommand({
     };
     writeRunStatus(outputDir, status);
     printRunSummary(status);
+
+    // CONSENSUS — fold every engine's parsed findings into one tiered verdict
+    // under the two-signal rule. ok/blocking engines contribute structured
+    // findings; unstructured/parse-failure/timeout/error engines land in the
+    // engineFailures lane (never a phantom blocker).
+    const outcomes = requested.map((id) => {
+      const st = engineStatuses.find((e) => e.id === id);
+      const ok = st && (st.status === 'ok' || st.status === 'blocking');
+      return ok
+        ? { engine: id, status: 'ok', findings: (findingsByEngine.get(id) || []) as any[] }
+        : { engine: id, status: st?.status ?? 'error', findings: [] as any[] };
+    });
+    const consensus = buildConsensus(outcomes as any);
+    const fmt = (f: any): string => `  • [${f.severity} ${f.maxConfidence.toFixed(2)} ×${f.engines.length}${f.pairVotes >= 2 ? ' pair' : ''}] ${f.problem}${f.file ? ` (${f.file}${f.lines ? ':' + f.lines : ''})` : ''}`;
+    const lines: string[] = ['', `▸ Consensus — ${consensus.summary}`];
+    if (consensus.verified.length) { lines.push('  VERIFIED (actionable):'); for (const f of consensus.verified) lines.push(fmt(f)); }
+    if (consensus.needsCheck.length) { lines.push('  NEEDS-CHECK (want a second opinion):'); for (const f of consensus.needsCheck) lines.push(fmt(f)); }
+    if (consensus.speculative.length) lines.push(`  SPECULATIVE: ${consensus.speculative.length} low-confidence finding(s) — likely noise.`);
+    if (consensus.nits.length) lines.push(`  NITS: ${consensus.nits.length}.`);
+    console.log(lines.join('\n'));
   },
 });

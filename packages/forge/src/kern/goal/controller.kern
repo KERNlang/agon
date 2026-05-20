@@ -85,7 +85,10 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
     const witnessCmd = opts.witnessCmd ?? spec.gate;
     const witnessTimeoutSec = opts.witnessTimeoutSec ?? gateTimeoutSec;
     const maxParkStreak = opts.maxParkStreak ?? 5;
-    const maxNoProgress = opts.maxNoProgress ?? 5;
+    // A retried task leaves remaining unchanged, so each retry bumps the
+    // no-progress streak. Scale the breaker above maxAttempts so one grinding
+    // task parks itself (max-attempts) before tripping the whole-run breaker.
+    const maxNoProgress = opts.maxNoProgress ?? Math.max(5, (spec.maxAttempts || 3) + 2);
     const emit = (kind: string, taskId?: string, detail?: string) => {
       try { opts.onEvent?.({ kind, taskId, detail }); } catch { /* listener must never break the loop */ }
     };
@@ -97,7 +100,16 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
     state = addTasks(state, opts.tasks);
 
     // 2. Freeze the oracle (gate string + oracle files) and record its hash.
+    //    On resume, refuse if the oracle no longer matches the frozen hash —
+    //    resuming with a different gate would silently move the goalposts.
     const oracle = snapshotOracle({ goalId: spec.goalId, gate: spec.gate, files: opts.oracleFiles ?? [] });
+    if (state.oracleHash && state.oracleHash !== oracle.hash) {
+      state = logEvent(state, 'error', undefined, 'oracle changed since the run was frozen — refusing to resume with a different gate (restore the original gate, or start a new goal id)');
+      saveJournal(state);
+      try { writeGoalArtifacts(state); } catch { /* artifact write is best-effort */ }
+      emit('stop', undefined, 'oracle-tampered');
+      return state;
+    }
     state = { ...state, oracleHash: oracle.hash };
     if (!state.startedAt) state = { ...state, startedAt: Date.now() };
     saveJournal(state);
@@ -113,7 +125,7 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
       if (created.exitCode !== 0) {
         state = logEvent(state, 'error', undefined, `create branch ${spec.branch}: ${created.stderr.trim()}`);
         saveJournal(state);
-        writeGoalArtifacts(state);
+        try { writeGoalArtifacts(state); } catch { /* artifact write is best-effort */ }
         return state;
       }
     }
@@ -145,6 +157,7 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
 
         // IMPLEMENT — agent produces a diff inside the worktree.
         const impl = await opts.implement({ task, worktree: wt, baseSha, repoRoot, signal: opts.signal });
+        let attemptCost = impl.costUsd || 0;
         state = { ...state, spentUsd: state.spentUsd + (impl.costUsd || 0) };
         if (!impl.ok) throw { kind: 'error', detail: impl.error ?? 'implement failed' };
 
@@ -158,12 +171,30 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
           ...added.filter(isTestFile),
           ...Object.keys(changed).filter(isTestFile),
         ]));
+        // Surface when a task changed source but shipped no test — the
+        // fail-on-base witness then has nothing to witness (mutation-witness
+        // still runs on the changed source lines).
+        if (testFiles.length === 0 && Object.keys(changed).some((f) => !isTestFile(f))) {
+          emit('witness-skip', task.id, 'no new/changed test files — diff-sensitivity witness skipped');
+        }
         for (const tf of testFiles) {
           const w = await witnessTest({ repoRoot, baseSha, newWorktree: wt, newTestFiles: [tf], testCmd: witnessCmd, timeout: witnessTimeoutSec });
           if (!w.witnessed) throw { kind: 'witness', detail: `${tf} (base exit ${w.baseExit}${w.baseTimedOut ? ', timed out' : ''}, new exit ${w.newExit})` };
         }
 
-        // MUTATION-WITNESS — canonical mutants on changed SOURCE lines must die.
+        // GATE — run the frozen gate ONCE from the worktree. Done BEFORE mutation
+        // so we never burn N mutant test-runs on code that isn't even green
+        // (a red suite kills every mutant trivially and proves nothing).
+        // (P1: hermetic execution — scrubbed env + container per AGON-GOAL-DESIGN.md
+        //  rail 4 / open-Q 2. P0 runs the gate verbatim; the frozen oracle +
+        //  mutation-witness are the load-bearing defenses, not env isolation.)
+        const gate = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', spec.gate], cwd: wt, timeout: gateTimeoutSec * 1000, signal: opts.signal });
+        if (gate.exitCode !== 0 || gate.timedOut) {
+          throw { kind: 'gate', sig: gateFailureSignature(`${gate.stderr || ''}\n${gate.stdout || ''}`), detail: gate.timedOut ? 'gate timed out' : `gate exit ${gate.exitCode}` };
+        }
+
+        // MUTATION-WITNESS — gate is green; now canonical mutants on the changed
+        // SOURCE lines must die (a surviving mutant means the tests are too weak).
         for (const [file, lines] of Object.entries(changed)) {
           if (isTestFile(file)) continue;
           const abs = resolveWithin(wt, file);
@@ -175,20 +206,12 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
           if (survivors.length > 0) throw { kind: 'mutation', count: survivors.length, detail: `${file}: ${survivors.map((m) => m.operator).join(', ')}` };
         }
 
-        // GATE — run the frozen gate ONCE from the worktree.
-        // (P1: hermetic execution — scrubbed env + container per AGON-GOAL-DESIGN.md
-        //  rail 4 / open-Q 2. P0 runs the gate verbatim; the frozen oracle +
-        //  mutation-witness are the load-bearing defenses, not env isolation.)
-        const gate = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', spec.gate], cwd: wt, timeout: gateTimeoutSec * 1000, signal: opts.signal });
-        if (gate.exitCode !== 0 || gate.timedOut) {
-          throw { kind: 'gate', sig: gateFailureSignature(`${gate.stderr || ''}\n${gate.stdout || ''}`), detail: gate.timedOut ? 'gate timed out' : `gate exit ${gate.exitCode}` };
-        }
-
         // REVIEW — ensemble findings; one bounded FIX pass on blocking, then park.
         let rev = await opts.review({ worktree: wt, baseSha, diff: diffText, label: `goal ${spec.goalId} task ${task.id}`, signal: opts.signal });
         if (rev.blocking) {
           emit('review-block', task.id, rev.summary);
           const fix = await opts.implement({ task, worktree: wt, baseSha, repoRoot, fixContext: rev.summary, signal: opts.signal });
+          attemptCost += fix.costUsd || 0;
           state = { ...state, spentUsd: state.spentUsd + (fix.costUsd || 0) };
           if (!fix.ok) throw { kind: 'review', detail: `fix pass failed: ${fix.error ?? 'unknown'}` };
           const gate2 = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', spec.gate], cwd: wt, timeout: gateTimeoutSec * 1000, signal: opts.signal });
@@ -205,11 +228,14 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
         if (commit.exitCode !== 0) throw { kind: 'error', detail: `commit failed: ${commit.stderr.trim()}` };
         const headRes = await git(['rev-parse', 'HEAD'], wt);
         const newSha = headRes.stdout.trim();
-        const advance = await git(['branch', '-f', spec.branch, newSha]);
-        if (advance.exitCode !== 0) throw { kind: 'error', detail: `branch advance failed: ${advance.stderr.trim()}` };
+        // Compare-and-swap: only advance if the branch still points at baseSha.
+        // A concurrent goal run (or any other mover) makes this fail safely
+        // instead of clobbering its commit — the task retries off the new tip.
+        const advance = await git(['update-ref', `refs/heads/${spec.branch}`, newSha, baseSha]);
+        if (advance.exitCode !== 0) throw { kind: 'error', detail: `branch advance failed (did ${spec.branch} move concurrently?): ${advance.stderr.trim()}` };
 
         state = recordAttempt(state, task.id, { at: Date.now(), outcome: 'gate-pass' });
-        state = markStatus(state, task.id, 'done', { commitSha: newSha, costUsd: task.costUsd + (impl.costUsd || 0) });
+        state = markStatus(state, task.id, 'done', { commitSha: newSha, costUsd: (task.costUsd || 0) + attemptCost });
         state = { ...state, parkedStreak: 0 };
         state = logEvent(state, 'task-done', task.id, newSha);
         emit('task-done', task.id, newSha);
@@ -255,6 +281,6 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
     }
 
     saveJournal(state);
-    writeGoalArtifacts(state);
+    try { writeGoalArtifacts(state); } catch { /* artifact write is best-effort */ }
     return state;
   >>>

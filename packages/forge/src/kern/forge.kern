@@ -6,6 +6,7 @@ import from="./health-check.js" names="healthCheckEngines,HEALTH_CHECK_DEFAULT_P
 import from="./stages.js" names="runBaseline,runStage1,runStage2,resolveForgeMode,resolveForgeRequireDiff,resolveForgeAcceptReviewOutput"
 import from="@agon/core" names="determineWinner"
 import from="./synthesis.js" names="runSynthesis"
+import from="./synth-plan.js" names="planSynthesis"
 import from="./gauntlet.js" names="runGauntlet"
 import from="./corpus.js" names="addToCorpus"
 import from="./manifest.js" names="writeManifest"
@@ -722,7 +723,24 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
         }
 
         const passingCount = [...stage2.engineResults.values()].filter((r) => r.pass).length;
-        if (closeCall && config.forgeEnableSynthesis && passingCount >= 2 && winner) {
+        // Synthesis trigger. Default ('close-call') preserves the historical gate
+        // — synthesize only on a close call. 'always' synthesizes whenever 2+
+        // engines pass (worth the tokens for a best-of-all result); 'never' opts
+        // out. planSynthesis then resolves WHO synthesizes (options.synthEngine —
+        // goal: judge, interactive: Cesar — else the winner). The constraint-aware
+        // base (requireTests) is goal's post-forge concern, so requireTests:false here.
+        const synthMode = options.synthesize ?? 'close-call';
+        const synthEligible = synthMode === 'always' || (synthMode === 'close-call' && closeCall);
+        const synthPlan = winner
+          ? planSynthesis({
+              forgeWinner: winner,
+              candidates: [...stage2.engineResults.entries()].map(([id, r]) => ({ engine: id, pass: r.pass, score: r.score, addsTest: false })),
+              configuredSynthEngine: options.synthEngine,
+              requireTests: false,
+              alwaysSynthesize: synthMode === 'always',
+            })
+          : null;
+        if (synthEligible && config.forgeEnableSynthesis && passingCount >= 2 && winner && synthPlan) {
           const losers = [...stage2.engineResults.entries()]
             .filter(([id, r]) => id !== winner && r.pass)
             .map(([id]) => id);
@@ -752,6 +770,7 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
               maxCritiques: config.forgeMaxCritiques,
               repoRoot: root,
               headSha: sha,
+              synthEngine: synthPlan.synthEngine,
               worktrees,
               onEvent: onSynthesisEvent,
               signal: synthesisAbort.signal,

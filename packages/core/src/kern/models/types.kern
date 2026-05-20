@@ -312,6 +312,10 @@ interface name=ForgeOptions
     doc "Per-invocation override of config.forgeHealthCheckEnabled. Set false (or --no-health-check) to skip the pre-flight health probe for this run."
   field name=healthCheckTimeoutSec type=number optional=true
     doc "Per-invocation override of config.forgeHealthCheckTimeoutSec."
+  field name=synthesize type="'always'|'close-call'|'never'" optional=true
+    doc "When synthesis runs. 'close-call' (default) keeps the historical gate (only on a close call); 'always' synthesizes whenever 2+ engines pass; 'never' disables it. goal passes 'always'."
+  field name=synthEngine type=string optional=true
+    doc "Engine that performs the synthesis/refine pass. Defaults to the winner engine (forge's historical behavior). goal passes the judge; interactive forge passes Cesar."
 
 interface name=EngineResult
   field name=engineId type=string

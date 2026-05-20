@@ -12,7 +12,9 @@ import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@agon/adapter-cli';
 
-import { runForge, runDelegate, runGoalController, loadJournal, summarizeGoal, goalDir, isTestFile, parseChangedLines, pickImplementWinner } from '@agon/forge';
+import { runForge, runDelegate, runGoalController, loadJournal, summarizeGoal, goalDir, isTestFile, parseChangedLines, pickImplementWinner, chooseImplementRoster } from '@agon/forge';
+
+import { deriveRoutingHints } from '../cesar/routing.js';
 
 import { runReviewCore, extractReviewFindings } from '../handlers/review.js';
 
@@ -20,7 +22,7 @@ import { buildConsensus } from '../blocks/consensus.js';
 
 import { header, success, fail, warn, info, cyan, green } from '../blocks/output-format.js';
 
-// @kern-source: goal:22
+// @kern-source: goal:23
 export const goalCommand: any = (() => {
 const slug = (s: string): string =>
   String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 128);
@@ -239,6 +241,43 @@ return defineCommand({
         ? `These changes have BLOCKING review findings. Fix them without regressing the gate or weakening tests:\n${a.fixContext}`
         : `Close this gap: ${a.task.source}\n\nImplement the fix AND add a test that FAILS before your change and PASSES after. Do not weaken or skip existing tests.`;
       const { path: forgeDir } = createRunDir({ mode: 'forge', label: `goal-${a.task.id}` });
+
+      // Cesar routes the implement roster per task: a trivial gap goes to a
+      // single engine (cheap/fast), a real feature races the full panel. The
+      // free heuristic decides; the judge confirms/adjusts the roster only for
+      // big/expensive tasks (escalation). REVIEW always uses all engines.
+      const baseRoster = (requestedEngines ?? available) as string[];
+      let taskEngines: string[] = baseRoster;
+      if (!a.fixContext && baseRoster.length > 1) {
+        try {
+          const hints = deriveRoutingHints(a.task.source, { activeEngines: () => baseRoster } as any);
+          const r = chooseImplementRoster({
+            flow: hints.recommendedFlow,
+            forgeScope: hints.recommendedForgeScope,
+            escalationHint: hints.escalationHint,
+            estimatedCostUsd: 0,
+            allEngines: baseRoster,
+            soloEngine: baseRoster[0],
+            escalateThresholdUsd: 0,
+          });
+          taskEngines = r.engines.length > 0 ? r.engines : baseRoster;
+          let note = r.reason;
+          if (r.escalate) {
+            try {
+              const { path: rdir } = createRunDir({ mode: 'forge', label: 'goal-route' });
+              const rPrompt = `You are routing an autonomous coding task to engines. Task:\n${a.task.source}\n\nAvailable engines: ${baseRoster.join(', ')}\nHeuristic proposed: ${taskEngines.join(', ')}\n\nReturn ONLY a JSON array of the engine ids that should COMPETE on this task — a subset of the available engines (more engines = more cost but more options). Example: ["claude","codex"].`;
+              const rr = await runDelegate({ engineId: judge, task: rPrompt, registry, adapter, timeout: implementTimeout ?? 180, outputDir: rdir, signal: abort.signal });
+              const m = (rr.response || '').match(/\[[\s\S]*?\]/);
+              if (m) {
+                const picked = (JSON.parse(m[0]) as unknown[]).map((s) => registry.resolveId(String(s).trim())).filter((id: string) => baseRoster.includes(id));
+                if (picked.length > 0) { taskEngines = picked; note += ` -> judge: ${picked.join(', ')}`; }
+              }
+            } catch { /* keep the heuristic roster */ }
+          }
+          info(`Route [${a.task.id}]: ${note}`);
+        } catch { /* routing is best-effort — fall back to the full roster */ }
+      }
+
       try {
         const manifest = await runForge(
           {
@@ -246,7 +285,7 @@ return defineCommand({
             fitnessCmd: gate,
             cwd: a.worktree,
             forgeDir,
-            engines: requestedEngines,
+            engines: taskEngines,
             timeout: implementTimeout,
             mode: 'implement',
             requireDiff: !a.fixContext,

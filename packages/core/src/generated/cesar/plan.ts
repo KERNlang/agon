@@ -4,24 +4,17 @@ import { mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync, unlink
 
 import { join, resolve } from 'node:path';
 
-import { homedir } from 'node:os';
-
-// @kern-source: plan:7
-function runtimeAgonPath(...parts: string[]): string {
-  const override = process.env.AGON_HOME?.trim();
-  const home = override ? resolve(override) : join(homedir(), '.agon');
-  return join(home, ...parts);
-}
+import { runtimeAgonPath } from '../utils/paths.js';
 
 /**
  * Canonical directory for Cesar execution plans. Markdown and JSON live together so the user can inspect and edit the exact plan Cesar proposed.
  */
-// @kern-source: plan:14
+// @kern-source: plan:7
 export function getCesarPlansDir(): string {
   return runtimeAgonPath('plans');
 }
 
-// @kern-source: plan:17
+// @kern-source: plan:10
 function safeCesarPlanId(planId: string): string {
   const sanitized = String(planId ?? '').replace(/[^a-zA-Z0-9_-]/g, '');
   if (!sanitized) {
@@ -33,7 +26,7 @@ function safeCesarPlanId(planId: string): string {
 /**
  * Canonical JSON path for a Cesar plan under ~/.agon/plans.
  */
-// @kern-source: plan:24
+// @kern-source: plan:17
 export function cesarPlanJsonPath(planId: string): string {
   const plansDir = getCesarPlansDir();
   const full = resolve(plansDir, `${safeCesarPlanId(planId)}.json`);
@@ -46,7 +39,7 @@ export function cesarPlanJsonPath(planId: string): string {
 /**
  * Canonical Markdown path for a Cesar plan under ~/.agon/plans.
  */
-// @kern-source: plan:33
+// @kern-source: plan:26
 export function cesarPlanMarkdownPath(planId: string): string {
   const plansDir = getCesarPlansDir();
   const full = resolve(plansDir, `${safeCesarPlanId(planId)}.md`);
@@ -56,16 +49,16 @@ export function cesarPlanMarkdownPath(planId: string): string {
   return full;
 }
 
-// @kern-source: plan:42
+// @kern-source: plan:35
 export type CesarPlanState = 'planning' | 'awaiting_approval' | 'running' | 'paused' | 'done' | 'cancelled';
 
-// @kern-source: plan:43
+// @kern-source: plan:36
 export type CesarStepState = 'pending' | 'blocked' | 'running' | 'done' | 'failed' | 'skipped' | 'cancelled';
 
-// @kern-source: plan:44
+// @kern-source: plan:37
 export type CesarStepType = 'self' | 'forge' | 'teamforge' | 'delegate' | 'brainstorm' | 'campfire' | 'tribunal' | 'pipeline' | 'review' | 'agent' | 'team-agent';
 
-// @kern-source: plan:46
+// @kern-source: plan:39
 export interface CesarStepResult {
   status: 'success'|'failure';
   actualTokens: number;
@@ -75,7 +68,7 @@ export interface CesarStepResult {
   error?: string;
 }
 
-// @kern-source: plan:54
+// @kern-source: plan:47
 export interface CesarPlanStep {
   id: string;
   type: CesarStepType;
@@ -100,7 +93,7 @@ export interface CesarPlanStep {
   runDir?: string;
 }
 
-// @kern-source: plan:78
+// @kern-source: plan:71
 export interface CesarPlan {
   id: string;
   state: CesarPlanState;
@@ -128,7 +121,7 @@ export interface CesarPlan {
 /**
  * Create a new CesarPlan in 'planning' state. Steps with dependsOn are marked 'blocked', others 'pending'.
  */
-// @kern-source: plan:101
+// @kern-source: plan:94
 export function createCesarPlan(intent: string, steps: CesarPlanStep[]): CesarPlan {
   const id = `cplan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const initializedSteps = steps.map(s => Object.assign({}, s, { state: ((s.dependsOn && s.dependsOn.length > 0) ? 'blocked' : 'pending') as CesarStepState }));
@@ -141,7 +134,7 @@ export function createCesarPlan(intent: string, steps: CesarPlanStep[]): CesarPl
 /**
  * Transition plan from 'awaiting_approval' to 'running', set approvedAt.
  */
-// @kern-source: plan:111
+// @kern-source: plan:104
 export function approveCesarPlan(plan: CesarPlan): CesarPlan {
   return { ...plan, state: 'running' as CesarPlanState, approvedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
 }
@@ -149,7 +142,7 @@ export function approveCesarPlan(plan: CesarPlan): CesarPlan {
 /**
  * Mark a step done/failed, unblock dependents, determine plan state.
  */
-// @kern-source: plan:116
+// @kern-source: plan:109
 export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarStepResult): CesarPlan {
   const stepIdx = plan.steps.findIndex(s => s.id === stepId);
   if (stepIdx === -1) return plan;
@@ -209,7 +202,7 @@ export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarS
 /**
  * Cancel the plan: mark all non-complete steps as cancelled.
  */
-// @kern-source: plan:174
+// @kern-source: plan:167
 export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
   const newSteps = plan.steps.map(s => {
     if (s.state === 'done' || s.state === 'failed') return s;
@@ -228,7 +221,7 @@ export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
 /**
  * Persist a CesarPlan to ~/.agon/plans/<id>.json atomically. Markdown lives beside it as <id>.md so the plan is discoverable and editable. FU-8: write to a .tmp file then renameSync, so concurrent Agon sessions reading the same path observe either the old complete file or the new complete file — never a partial. POSIX rename within the same directory is atomic.
  */
-// @kern-source: plan:191
+// @kern-source: plan:184
 export function saveCesarPlan(plan: CesarPlan): void {
   const dir = getCesarPlansDir();
   mkdirSync(dir, { recursive: true });
@@ -252,7 +245,7 @@ export function saveCesarPlan(plan: CesarPlan): void {
 /**
  * Load a persisted CesarPlan from ~/.agon/plans/<id>.json. Falls back to the legacy ~/.agon/runs path for old sessions.
  */
-// @kern-source: plan:213
+// @kern-source: plan:206
 export function loadCesarPlan(planId: string): CesarPlan|null {
   let safeId = '';
   try {
@@ -278,7 +271,7 @@ export function loadCesarPlan(planId: string): CesarPlan|null {
 /**
  * List persisted CesarPlans from ~/.agon/plans, with legacy ~/.agon/runs fallback.
  */
-// @kern-source: plan:233
+// @kern-source: plan:226
 export function listCesarPlans(): CesarPlan[] {
   const byId = new Map<string, CesarPlan>();
   const readFromDir = (dir: string, canonical: boolean) => {

@@ -1,6 +1,6 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,existsSync,statSync"
-import from="node:path" names="join,resolve"
-import from="node:os" names="homedir"
+import from="node:path" names="join"
+import from="../utils/paths.js" names="getCacheDir"
 import from="../models/types.js" names="EngineDefinition" types=true
 
 interface name=ModelsDevModel
@@ -36,13 +36,6 @@ interface name=ModelEntry
   field name=costOutput type=number optional=true
   field name=toolCall type=boolean optional=true
   field name=source type="'api'|'cli'" optional=true
-
-fn name=getCacheDir returns=string export=false
-  handler <<<
-    const override = process.env.AGON_HOME?.trim();
-    const home = override ? resolve(override) : join(homedir(), '.agon');
-    return join(home, 'cache');
-  >>>
 
 const name=CACHE_TTL_MS type=number value=3600000
 

@@ -2,6 +2,7 @@ import from="node:child_process" names="execFileSync"
 import from="node:fs" names="readdirSync,statSync,existsSync,rmSync,readFileSync,symlinkSync,mkdirSync,cpSync"
 import from="node:path" names="join"
 import from="../models/errors.js" names="GitError,WorktreeError"
+import from="../utils/patch.js" names="normalizePatchContent"
 
 fn name=git params="args:string[],cwd?:string" returns=string export=false
   handler <<<
@@ -41,12 +42,6 @@ fn name=gitRaw params="args:string[],cwd?:string" returns=string export=false
       );
     }
   >>>
-
-fn name=normalizePatchContent params="patchContent:string" returns=string export=false
-  handler lang="kern"
-    if cond="!patchContent.trim()"
-      return value="patchContent"
-    return value="patchContent.endsWith('\\n') ? patchContent : `${patchContent}\\n`"
 
 fn name=repoRoot params="cwd:string" returns=string expr={{ return git(['rev-parse', '--show-toplevel'], cwd); }}
 

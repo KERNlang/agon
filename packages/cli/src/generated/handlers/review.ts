@@ -168,17 +168,36 @@ export function parseReviewBlocking(response: string): {blocking:boolean, parseF
   const tail = response.slice(lastSentinelIdx + sentinel.length).trim();
   if (!tail) return { blocking: true, parseFailed: true };
 
-  // The tail should be a JSON array — possibly wrapped in a fenced code
-  // block. Strip the fence first if present, then parse. OpenCode fix
-  // (b1): \r?\n? handles CRLF as well as LF line endings.
-  let jsonStr = tail;
-  const fenceMatch = tail.match(/^```(?:json)?\s*\r?\n?([\s\S]*?)\r?\n?```\s*$/);
-  if (fenceMatch) jsonStr = fenceMatch[1].trim();
-
-  if (!jsonStr.startsWith('[')) return { blocking: true, parseFailed: true };
+  // Tolerant extraction (A): locate the first balanced [...] array anywhere in
+  // the post-sentinel tail and ignore the surrounding scaffolding — a ```json
+  // fence, or trailing prose the engine appended after the array (the #1 cause
+  // of parse failures with conversational engines like claude-code). The scan
+  // is string-aware so brackets inside string values don't skew the depth
+  // count. Because we only ever look at text AFTER the LAST sentinel, attacker
+  // brackets injected earlier in the diff are never considered — the
+  // anti-injection guarantee is preserved.
+  const start = tail.indexOf('[');
+  if (start < 0) return { blocking: true, parseFailed: true };
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  let end = -1;
+  for (let i = start; i < tail.length; i++) {
+    const ch = tail[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '[') depth++;
+    else if (ch === ']') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  if (end < 0) return { blocking: true, parseFailed: true };
 
   try {
-    const parsed = JSON.parse(jsonStr) as Array<{ blocking?: boolean; severity?: string }>;
+    const parsed = JSON.parse(tail.slice(start, end + 1)) as Array<{ blocking?: boolean; severity?: string }>;
     if (!Array.isArray(parsed)) return { blocking: true, parseFailed: true };
     const blocking = parsed.some((c) => c && (c.blocking === true || (typeof c.severity === 'string' && c.severity.toLowerCase() === 'blocking')));
     return { blocking, parseFailed: false };
@@ -188,9 +207,59 @@ export function parseReviewBlocking(response: string): {blocking:boolean, parseF
 }
 
 /**
+ * Repair pass (B): re-ask the engine to emit ONLY the sentinel + JSON findings block, derived from a review it already produced but did not format parseably. One extra round-trip, best-effort — callers keep the fail-closed result if this also fails to parse.
+ */
+// @kern-source: review:199
+export async function runReviewRepair(priorReview: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal): Promise<string> {
+  const config = ctx.config;
+  const cwd = resolveWorkingDir();
+  const parts: string[] = [];
+  parts.push('You previously produced this code review:');
+  parts.push(priorReview);
+  parts.push(`Now restate your findings as a machine-readable block and NOTHING else: the sentinel line on its own, immediately followed by a JSON array. No prose before it, no text after it, no code fences.\n\n<!--AGON_REVIEW_FINDINGS_v1-->\n[{"file":"...","lines":"...","severity":"blocking|important|nit","blocking":true|false,"problem":"...","minimalFix":"..."}]\n\nIf the review found no issues, output the sentinel followed by []. Derive the findings from the review above — do not re-analyze. The very last characters of your response MUST be the closing ].`);
+  const prompt = parts.join('\n\n');
+  const engine = ctx.registry.get(engineId);
+  const outputDir = join(RUNS_DIR, `review-repair-${Date.now()}`);
+  mkdirSync(outputDir, { recursive: true });
+  const dispatchOpts = { engine: engine, prompt: prompt, cwd: cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, outputDir: outputDir, signal: signal };
+  let response = '';
+  if (ctx.adapter.dispatchStream) {
+    const gen = ctx.adapter.dispatchStream(dispatchOpts);
+    const parser = new StreamParser();
+    while (true) {
+      const iter = await gen.next();
+      if (iter.done) {
+        break;
+      }
+      if (signal?.aborted) {
+        break;
+      }
+      const chunk = iter.value as string;
+      if (chunk.startsWith('\x00')) {
+        continue;
+      }
+      for (const parsed of parser.feed(chunk)) {
+        if (parsed.type === 'text' || parsed.type === 'raw') {
+          response += parsed.content;
+        }
+      }
+    }
+    for (const parsed of parser.flush()) {
+      if (parsed.type === 'text' || parsed.type === 'raw') {
+        response += parsed.content;
+      }
+    }
+  } else {
+    const result = await ctx.adapter.dispatch(dispatchOpts);
+    response = result.stdout;
+  }
+  return response.trim();
+}
+
+/**
  * Core review flow with no ctx side effects. Used by both handleReview (with streaming dispatch) and the plan executor's review step (silent). Does NOT touch ctx.setActiveAbort, ctx.lastReviewResult, ctx.chatSession, or tracker. signal is optional: callers that don't have an abort controller can pass undefined.
  */
-// @kern-source: review:180
+// @kern-source: review:237
 export async function runReviewCore(diff: string, label: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, onProgress?: (chunk:string)=>void): Promise<ReviewCoreResult> {
   const cwd = resolveWorkingDir();
   const config = ctx.config;
@@ -202,7 +271,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   }
   parts.push(`## REVIEW REQUEST\nReview the following ${label}.`);
   parts.push(`## DIFF\n\`\`\`diff\n${diff}\n\`\`\``);
-  parts.push(`## INSTRUCTIONS\nProvide a thorough code review:\n- Bugs and logic errors\n- Security vulnerabilities\n- Performance issues\n- Code quality and readability\n- Missing edge cases\n\nFor each issue: file, line range, severity (blocking|important|nit), suggested fix.\n\nEnd your response with EXACTLY this sentinel line on its own, followed by a JSON array of findings:\n\n<!--AGON_REVIEW_FINDINGS_v1-->\n[{"file":"...","lines":"...","severity":"blocking|important|nit","blocking":true|false,"problem":"...","minimalFix":"..."}]\n\nIf you find no issues, the array MUST be []. The sentinel and JSON array are required for parsing — do not quote them anywhere else in your response, do not wrap them in code fences, and do not add any text after the JSON array.`);
+  parts.push(`## INSTRUCTIONS\nProvide a thorough code review:\n- Bugs and logic errors\n- Security vulnerabilities\n- Performance issues\n- Code quality and readability\n- Missing edge cases\n\nFor each issue: file, line range, severity (blocking|important|nit), suggested fix.\n\nEnd your response with EXACTLY this sentinel line on its own, followed by a JSON array of findings:\n\n<!--AGON_REVIEW_FINDINGS_v1-->\n[{"file":"...","lines":"...","severity":"blocking|important|nit","blocking":true|false,"problem":"...","minimalFix":"..."}]\n\nIf you find no issues, the array MUST be []. The sentinel and JSON array are required for parsing — do not quote them anywhere else in your response, do not wrap them in code fences, and do not add any text after the JSON array. The very last characters of your response MUST be the closing ] of that array.`);
   const prompt = parts.join('\n\n');
   const engine = ctx.registry.get(engineId);
   const outputDir = join(RUNS_DIR, `review-${Date.now()}`);
@@ -247,11 +316,25 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
     response = result.stdout;
   }
   response = response.trim();
-  const { blocking, parseFailed } = parseReviewBlocking(response);
+  const parsed1 = parseReviewBlocking(response);
+  let blocking = parsed1.blocking;
+  let parseFailed = parsed1.parseFailed;
+  // Repair pass (B): the engine reviewed but didn't emit a parseable sentinel+JSON block. Re-ask once for just the machine block, re-parse, and append it so the result is parseable downstream. Failure leaves the fail-closed result intact.
+  if (parseFailed && response.length > 0 && !signal?.aborted) {
+    const repairResp = await runReviewRepair(response, engineId, ctx, signal);
+    if (repairResp) {
+      const parsed2 = parseReviewBlocking(repairResp);
+      if (!parsed2.parseFailed) {
+        blocking = parsed2.blocking;
+        parseFailed = false;
+        response += `\n\n${repairResp}`;
+      }
+    }
+  }
   return { response: response, blocking: blocking, parseFailed: parseFailed };
 }
 
-// @kern-source: review:231
+// @kern-source: review:297
 export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngine?: string): Promise<void> {
   const abort = new AbortController();
   try {
@@ -348,7 +431,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 /**
  * Run review for one or more explicitly requested engines. Multiple reviewers run sequentially so stream output stays readable; their findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning.
  */
-// @kern-source: review:324
+// @kern-source: review:390
 export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
   const engineIds = Array.from(new Set((requestedEngines ?? []).map((id) => String(id ?? '').trim().toLowerCase()).filter(Boolean)));
   if (engineIds.length <= 1) {

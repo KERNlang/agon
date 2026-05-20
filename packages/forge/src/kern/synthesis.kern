@@ -32,9 +32,14 @@ fn name=parseCritiques params="output:string" returns="Critique[]"
     }
   >>>
 
-fn name=runSynthesis async=true params="opts:{manifest:ForgeManifest, winner:string, losers:string[], registry:EngineRegistry, adapter:EngineAdapter, forgeDir:string, fitnessCmd:string, timeout:number, fitnessTimeout:number, maxCritiques:number, repoRoot:string, headSha:string, worktrees?:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}" returns="Promise<SynthesisResult>"
+fn name=runSynthesis async=true params="opts:{manifest:ForgeManifest, winner:string, losers:string[], registry:EngineRegistry, adapter:EngineAdapter, forgeDir:string, fitnessCmd:string, timeout:number, fitnessTimeout:number, maxCritiques:number, repoRoot:string, headSha:string, synthEngine?:string, worktrees?:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}" returns="Promise<SynthesisResult>"
   handler <<<
     const { manifest, winner, losers, registry, adapter, forgeDir } = opts;
+    // The engine that performs the refine pass — a configurable synthesizer
+    // (goal: judge; interactive: Cesar), defaulting to the winner's own engine
+    // (forge's historical behavior). It must be a real, registered engine; an
+    // unknown synthEngine falls back to the winner.
+    const refineEngineId = (opts.synthEngine && registry.get(opts.synthEngine)) ? opts.synthEngine : winner;
 
     const winnerResult = manifest.results[winner];
     if (!winnerResult.patchPath) {
@@ -169,7 +174,7 @@ fn name=runSynthesis async=true params="opts:{manifest:ForgeManifest, winner:str
         fitnessCmd: opts.fitnessCmd,
       });
 
-      const winnerEngine = registry.get(winner);
+      const winnerEngine = registry.get(refineEngineId);
       const synthMode = winnerEngine.agent && adapter.dispatchAgent ? 'agent' : 'exec';
       if (synthMode === 'agent') {
         await adapter.dispatchAgent!({

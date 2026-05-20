@@ -58,9 +58,42 @@ export function globalBreaker(state: JournalState, maxParkStreak: number, maxNoP
 }
 
 /**
- * True once cumulative spend reaches the goal's USD ceiling (0 = unlimited).
+ * Constraint-aware winner pick for the goal loop. Forge scores by fitness alone, so it can crown a higher-scoring patch that adds NO test while lower-scoring PASSING patches include one — the witness then parks it and the whole panel is wasted. When requireTests is on and this is not a fix pass, if the forge winner adds no test, return the highest-scoring PASSING candidate that DOES add a test; otherwise keep forge's winner (the witness will park it, correctly). Pure: the caller resolves each candidate's addsTest by inspecting its patch.
  */
 // @kern-source: policy:59
+export function pickImplementWinner(forgeWinner: string, candidates: Array<{engine:string,pass:boolean,score:number,addsTest:boolean}>, requireTests: boolean, isFix: boolean): string {
+  if (isFix || !requireTests) return forgeWinner;
+  const w = candidates.find((c) => c.engine === forgeWinner);
+  if (w && w.addsTest) return forgeWinner;
+  const withTest = candidates
+    .filter((c) => c.pass && c.addsTest)
+    .slice()
+    .sort((a, b) => b.score - a.score);
+  return withTest.length > 0 ? withTest[0].engine : forgeWinner;
+}
+
+/**
+ * Cesar-style per-task implement roster: route a trivial gap to a single engine (cheap/fast) and a real feature to the full competitive panel. Pure mapping of Cesar's routing hints. solo when forgeScope is 'none' or the flow is quick-fix/answer/bug-fix or the escalationHint is self/delegate (and a soloEngine exists); otherwise compete with allEngines. escalate flags big/expensive tasks (forgeScope 'full', flow 'forge-full', or estimatedCostUsd over a positive threshold) so the caller can ask an LLM to confirm/adjust the roster. The all-engine REVIEW is unaffected — this only shapes IMPLEMENT.
+ */
+// @kern-source: policy:72
+export function chooseImplementRoster(params: {flow:string, forgeScope:string, escalationHint:string, estimatedCostUsd:number, allEngines:string[], soloEngine:string, escalateThresholdUsd:number}): {engines:string[], solo:boolean, escalate:boolean, reason:string} {
+  const { flow, forgeScope, escalationHint, estimatedCostUsd, allEngines, soloEngine, escalateThresholdUsd } = params;
+  const roster = allEngines.length > 0 ? allEngines : (soloEngine ? [soloEngine] : []);
+  const soloFlows = ['quick-fix', 'answer', 'bug-fix'];
+  const wantSolo = forgeScope === 'none' || soloFlows.includes(flow) || escalationHint === 'self' || escalationHint === 'delegate';
+  const solo = wantSolo && !!soloEngine;
+  const engines = solo ? [soloEngine] : roster;
+  const escalate = forgeScope === 'full' || flow === 'forge-full' || (escalateThresholdUsd > 0 && estimatedCostUsd >= escalateThresholdUsd);
+  const reason = solo
+    ? `solo ${soloEngine} (${flow}/${forgeScope})`
+    : `compete ${engines.length} engines (${flow}/${forgeScope})${escalate ? ' — escalate' : ''}`;
+  return { engines, solo, escalate, reason };
+}
+
+/**
+ * True once cumulative spend reaches the goal's USD ceiling (0 = unlimited).
+ */
+// @kern-source: policy:88
 export function budgetExceeded(state: JournalState): boolean {
   const cap = state.spec.budgetUsd;
   return cap > 0 && state.spentUsd >= cap;
@@ -69,7 +102,7 @@ export function budgetExceeded(state: JournalState): boolean {
 /**
  * True once wall-clock since startedAt reaches the goal's hour ceiling (0 = unlimited).
  */
-// @kern-source: policy:66
+// @kern-source: policy:95
 export function timeExceeded(state: JournalState, now: number): boolean {
   if (!state.startedAt) return false;
   const cap = state.spec.maxHours;

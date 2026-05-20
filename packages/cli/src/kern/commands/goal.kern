@@ -14,7 +14,8 @@ import from="node:path" names="resolve"
 import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,applyPatch,spawnWithTimeout,estimateCost"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@agon/adapter-cli" names="createCliAdapter"
-import from="@agon/forge" names="runForge,runDelegate,runGoalController,loadJournal,summarizeGoal,goalDir"
+import from="@agon/forge" names="runForge,runDelegate,runGoalController,loadJournal,summarizeGoal,goalDir,isTestFile,parseChangedLines,pickImplementWinner,chooseImplementRoster"
+import from="../cesar/routing.js" names="deriveRoutingHints"
 import from="../handlers/review.js" names="runReviewCore,extractReviewFindings"
 import from="../blocks/consensus.js" names="buildConsensus"
 import from="../blocks/output-format.js" names="header,success,fail,warn,info,cyan,green"
@@ -239,6 +240,43 @@ const name=goalCommand type=any
             ? `These changes have BLOCKING review findings. Fix them without regressing the gate or weakening tests:\n${a.fixContext}`
             : `Close this gap: ${a.task.source}\n\nImplement the fix AND add a test that FAILS before your change and PASSES after. Do not weaken or skip existing tests.`;
           const { path: forgeDir } = createRunDir({ mode: 'forge', label: `goal-${a.task.id}` });
+
+          // Cesar routes the implement roster per task: a trivial gap goes to a
+          // single engine (cheap/fast), a real feature races the full panel. The
+          // free heuristic decides; the judge confirms/adjusts the roster only for
+          // big/expensive tasks (escalation). REVIEW always uses all engines.
+          const baseRoster = (requestedEngines ?? available) as string[];
+          let taskEngines: string[] = baseRoster;
+          if (!a.fixContext && baseRoster.length > 1) {
+            try {
+              const hints = deriveRoutingHints(a.task.source, { activeEngines: () => baseRoster } as any);
+              const r = chooseImplementRoster({
+                flow: hints.recommendedFlow,
+                forgeScope: hints.recommendedForgeScope,
+                escalationHint: hints.escalationHint,
+                estimatedCostUsd: 0,
+                allEngines: baseRoster,
+                soloEngine: baseRoster[0],
+                escalateThresholdUsd: 0,
+              });
+              taskEngines = r.engines.length > 0 ? r.engines : baseRoster;
+              let note = r.reason;
+              if (r.escalate) {
+                try {
+                  const { path: rdir } = createRunDir({ mode: 'forge', label: 'goal-route' });
+                  const rPrompt = `You are routing an autonomous coding task to engines. Task:\n${a.task.source}\n\nAvailable engines: ${baseRoster.join(', ')}\nHeuristic proposed: ${taskEngines.join(', ')}\n\nReturn ONLY a JSON array of the engine ids that should COMPETE on this task — a subset of the available engines (more engines = more cost but more options). Example: ["claude","codex"].`;
+                  const rr = await runDelegate({ engineId: judge, task: rPrompt, registry, adapter, timeout: implementTimeout ?? 180, outputDir: rdir, signal: abort.signal });
+                  const m = (rr.response || '').match(/\[[\s\S]*?\]/);
+                  if (m) {
+                    const picked = (JSON.parse(m[0]) as unknown[]).map((s) => registry.resolveId(String(s).trim())).filter((id: string) => baseRoster.includes(id));
+                    if (picked.length > 0) { taskEngines = picked; note += ` -> judge: ${picked.join(', ')}`; }
+                  }
+                } catch { /* keep the heuristic roster */ }
+              }
+              info(`Route [${a.task.id}]: ${note}`);
+            } catch { /* routing is best-effort — fall back to the full roster */ }
+          }
+
           try {
             const manifest = await runForge(
               {
@@ -246,21 +284,71 @@ const name=goalCommand type=any
                 fitnessCmd: gate,
                 cwd: a.worktree,
                 forgeDir,
-                engines: requestedEngines,
+                engines: taskEngines,
                 timeout: implementTimeout,
                 mode: 'implement',
                 requireDiff: !a.fixContext,
+                // The judge synthesizes the best-of-all result (only active when
+                // config.forgeEnableSynthesis is on); falls back to the winner if unset.
+                synthEngine: judge,
+                synthesize: 'always',
                 signal: abort.signal,
               } as any,
               registry,
               adapter,
             );
-            // Meter real spend: sum each competing engine's token cost.
-            const costUsd = Object.entries(manifest.results as Record<string, { usage?: { totalTokens?: number } }>)
-              .reduce((sum, [eng, r]) => sum + estimateCost(eng, r?.usage?.totalTokens ?? 0), 0);
+            // Meter real spend from forge's per-dispatch ledger. EngineResult has
+            // no token field; the recorded dollar cost lives in dispatchLog[].tokens
+            // .costUsd (already priced per engine/model), so summing results.usage
+            // always yielded $0.00 even when forge charged real cost. Parked attempts
+            // count too — the cost was incurred regardless of whether the patch landed.
+            const costUsd = ((manifest.dispatchLog ?? []) as Array<{ tokens?: { costUsd?: number } }>)
+              .reduce((sum, d) => sum + (d?.tokens?.costUsd ?? 0), 0);
             if (!manifest.winner) return { ok: false, costUsd, error: 'forge produced no winning patch' };
-            const patchPath = (manifest.patches as Record<string, string> | undefined)?.[manifest.winner];
-            const patch = patchPath ? readFileSync(patchPath, 'utf-8') : '';
+
+            // Test-aware winner selection. Forge scores by fitness alone, so it can
+            // hand goal a higher-scoring patch that adds NO test while lower-scoring
+            // PASSING patches do include one — the witness then rejects it and the
+            // task parks, wasting the whole panel. When requireTests is on and the
+            // forge winner is test-less, prefer the highest-scoring passing candidate
+            // whose patch actually adds a test. (Fall back to forge's winner if none
+            // has a test — the witness will still park it, correctly.)
+            const results = manifest.results as Record<string, { pass?: boolean; score?: number }>;
+            const patches = manifest.patches as Record<string, string> | undefined;
+            const readPatchPath = (p?: string): string => {
+              try { return p ? readFileSync(p, 'utf-8') : ''; } catch { return ''; }
+            };
+            const readPatch = (eng: string): string => readPatchPath(patches?.[eng]);
+            const patchAddsTest = (diff: string): boolean =>
+              !!diff.trim() && Object.keys(parseChangedLines(diff)).some((f) => isTestFile(f));
+
+            // Forge's synthesis pass may have won (winner === 'synthesis'). Apply
+            // it directly when it satisfies the test requirement; otherwise fall
+            // through to the constraint-aware pick so the witness is never handed
+            // a test-less patch.
+            const synthPatch = manifest.winner === 'synthesis' ? readPatchPath(((manifest as any).synthesis ?? {}).patchPath) : '';
+            if (synthPatch.trim() && (!!a.fixContext || args.requireTests === false || patchAddsTest(synthPatch))) {
+              applyPatch(a.worktree, synthPatch);
+              return { ok: true, costUsd };
+            }
+
+            const candidates = Object.keys(results).map((eng) => ({
+              engine: eng,
+              pass: !!results[eng]?.pass,
+              score: results[eng]?.score ?? 0,
+              addsTest: patchAddsTest(readPatch(eng)),
+            }));
+            // If synthesis was the nominal winner but we fell through (no test),
+            // pick over the original engines using the best passing one as the base.
+            const baseWinner = manifest.winner === 'synthesis'
+              ? (candidates.filter((c) => c.pass).sort((x, y) => y.score - x.score)[0]?.engine ?? manifest.winner)
+              : manifest.winner;
+            const winner = pickImplementWinner(baseWinner, candidates, args.requireTests !== false, !!a.fixContext);
+            if (winner !== manifest.winner) {
+              info(`Forge winner ${manifest.winner} not test-bearing; applying passing test-bearing candidate ${winner} instead (requireTests).`);
+            }
+
+            const patch = readPatch(winner);
             if (patch.trim()) applyPatch(a.worktree, patch);
             return { ok: true, costUsd };
           } catch (e) {

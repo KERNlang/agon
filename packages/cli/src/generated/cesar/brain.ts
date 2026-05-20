@@ -1907,6 +1907,37 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           if (_continuations >= MAX_CONTINUATIONS) {
             dispatch({ type: 'warning', message: `Cesar reached the auto-continuation cap (${MAX_CONTINUATIONS}). Stopping — re-prompt if the task is incomplete.` });
           }
+          // Closure guarantee: a turn must NEVER end ambiguously. If the loop gave up
+          // (cap or no-progress) while still 'stuck' — no done/asks-user signal — force
+          // one short closing line so the user always knows the state: done, blocked, or
+          // a decision they must make. Deterministic fallback if the engine stays silent.
+          if (_detectTurnState(response, _loopStartToolCount) === 'stuck'
+            && session.alive && !abort.signal.aborted && !ctx.cesar!.pendingDelegation) {
+            dispatch({ type: 'spinner-start', message: 'Cesar wrapping up…', color });
+            let _closure = '';
+            try {
+              const _closureGen = session.send({
+                message: [
+                  '[SYSTEM] Your turn is ending but you neither finished the task nor asked me anything. Write ONE short closing line (no tools, no recap) so I know exactly where things stand. Pick one:',
+                  '- DONE: one past-tense sentence naming what you completed, or',
+                  '- NEED A DECISION/INFO: one sentence on the current situation, then a direct question ending with "?". If there are two-plus materially different ways forward, name them as concrete options ("A) … B) …") inside that question.',
+                  'Do not call any tools.',
+                ].join('\n'),
+                signal: abort.signal,
+              });
+              for await (const _chunk of _closureGen) {
+                if (abort.signal.aborted) break;
+                if (_chunk.type === 'text') _closure += _chunk.content;
+                if (_chunk.type === 'done' || _chunk.type === 'error') break;
+              }
+            } catch { /* best effort — fallback below still guarantees closure */ }
+            dispatch({ type: 'spinner-stop' });
+            const _cleanClosure = _closure.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+            const _finalClosure = _cleanClosure
+              || 'I paused mid-task without finishing, and I am not blocked on anything specific from you. Re-prompt me with the next step, or say "continue" to keep going.';
+            dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _finalClosure });
+            response = response + '\n\n' + _finalClosure;
+          }
         }
 
         // ── Display final response (skip if already displayed via streaming or tool loop) ──
@@ -1965,10 +1996,61 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const happened = buildWhatHappenedSummary(buildToolTelemetry());
           if (happened) dispatch({ type: 'info', message: happened });
 
-          // Detect yes/no question — show choice buttons
+          // Detect an end-of-turn decision and surface it as pickable options so
+          // the user answers with one keystroke (smooth) and always knows it is
+          // their turn. Two shapes: a numbered/lettered fork (RULE 10 shape d) or
+          // a yes/no recommendation (shape b). keyboard.kern resolves a choice by
+          // its literal key OR its 1-based position, so digits and letters both work;
+          // Escape resolves to 'n' (decide later) — never hangs the await.
           const lastLine = response.split('\n').filter((l: string) => l.trim()).pop()?.trim() ?? '';
+          // Fork: 2-6 option lines like "A) … — …" / "1. …" in the response tail,
+          // closed by a question line. Each option becomes a numbered choice.
+          const _forkLineRe = /^\s*(?:([A-Fa-f])|([1-9]))[)\].:]\s+(.+\S)\s*$/;
+          const _forkOptions: { key: string; label: string; full: string }[] = [];
+          const _seenForkKeys = new Set<string>();
+          for (const _raw of response.split('\n').slice(-14)) {
+            const m = _raw.match(_forkLineRe);
+            if (!m) continue;
+            const key = (m[1] ?? m[2]).toLowerCase();
+            if (_seenForkKeys.has(key)) continue;
+            _seenForkKeys.add(key);
+            const full = m[3].trim();
+            _forkOptions.push({ key, label: full.length > 60 ? full.slice(0, 59) + '…' : full, full });
+          }
+          const isForkQuestion = /\?\s*$/.test(lastLine) && _forkOptions.length >= 2 && _forkOptions.length <= 6;
           const asksConfirmation = !ranToolLoop && /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
-          if (asksConfirmation) {
+          if (isForkQuestion) {
+            const _forkColors = ['#4ade80', '#22d3ee', '#fbbf24', '#a78bfa', '#f97316', '#ef4444'];
+            // Auto-append an "own idea" choice so the user is never boxed into the
+            // listed options. Picking it just ends the turn — choice mode swallows
+            // typing, so we exit it first; the composer is then free for free text,
+            // and Cesar still has the fork in chat history for the next turn.
+            const _allNumeric = _forkOptions.every((o) => /^[0-9]$/.test(o.key));
+            let _ownKey = _allNumeric ? String(_forkOptions.length + 1) : String.fromCharCode(97 + _forkOptions.length);
+            if (_seenForkKeys.has(_ownKey)) _ownKey = 'o';
+            const _choices = [
+              ..._forkOptions.map((o, i) => ({ key: o.key, label: o.label, color: _forkColors[i % _forkColors.length] })),
+              { key: _ownKey, label: '✎ my own idea (type it)', color: '#9ca3af' },
+            ];
+            const picked = String(await new Promise<string>((resolve) => {
+              dispatch({ type: 'question', prompt: `${cesarEngineId} — pick one, or ${_ownKey.toUpperCase()} to type your own (Esc to decide later):`, choices: _choices, resolve } as any);
+            })).toLowerCase();
+            const chosen = _forkOptions.find((o) => o.key === picked);
+            if (picked === _ownKey) {
+              dispatch({ type: 'info', message: 'Type your idea below and press Enter — Cesar has the options in context.' });
+            } else if (chosen && session.alive && !abort.signal.aborted) {
+              dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
+              let followUp = '';
+              const gen = session.send({ message: `Go with option ${chosen.key.toUpperCase()}: ${chosen.full}. Proceed and finish it.`, signal: abort.signal });
+              for await (const chunk of gen) {
+                if (abort.signal.aborted) break;
+                if (chunk.type === 'text') followUp += chunk.content;
+                if (chunk.type === 'done' || chunk.type === 'error') break;
+              }
+              dispatch({ type: 'spinner-stop' });
+              if (followUp.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: followUp.trim() });
+            }
+          } else if (asksConfirmation) {
             const answer = await new Promise<string>((resolve) => {
               dispatch({ type: 'question', prompt: `${cesarEngineId}: ${lastLine.length > 80 ? lastLine.slice(0, 80) + '…' : lastLine}`, choices: [
                 { key: 'y', label: 'Yes', color: '#4ade80' },

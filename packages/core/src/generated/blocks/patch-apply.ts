@@ -2,17 +2,19 @@
 
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import { execSync } from 'node:child_process';
 
-import { homedir } from 'node:os';
-
 import type { ForgeManifest } from '../models/types.js';
+
+import { getUndoDir } from '../utils/paths.js';
+
+import { normalizePatchContent } from '../utils/patch.js';
 
 import { invertPatch } from './patch-parser.js';
 
-// @kern-source: patch-apply:8
+// @kern-source: patch-apply:9
 export interface PatchInfo {
   path: string;
   engineId: string;
@@ -20,7 +22,7 @@ export interface PatchInfo {
   content: string;
 }
 
-// @kern-source: patch-apply:14
+// @kern-source: patch-apply:15
 export interface ApplyPreflight {
   ok: boolean;
   error?: string;
@@ -28,22 +30,7 @@ export interface ApplyPreflight {
   dirtyTree: boolean;
 }
 
-// @kern-source: patch-apply:20
-function normalizePatchContent(patchContent: string): string {
-  if (!patchContent.trim()) {
-    return patchContent;
-  }
-  return patchContent.endsWith('\n') ? patchContent : `${patchContent}\n`;
-}
-
-// @kern-source: patch-apply:26
-function getUndoDir(): string {
-  const override = process.env.AGON_HOME?.trim();
-  const home = override ? resolve(override) : join(homedir(), '.agon');
-  return join(home, 'undo');
-}
-
-// @kern-source: patch-apply:33
+// @kern-source: patch-apply:21
 export function readPatchFromManifest(manifestPath: string): PatchInfo|null {
   try {
     const raw = readFileSync(manifestPath, 'utf-8');
@@ -62,7 +49,7 @@ export function readPatchFromManifest(manifestPath: string): PatchInfo|null {
   }
 }
 
-// @kern-source: patch-apply:52
+// @kern-source: patch-apply:40
 export function readPatchFromPath(patchPath: string): PatchInfo|null {
   try {
     const content = normalizePatchContent(readFileSync(patchPath, 'utf-8'));
@@ -77,7 +64,7 @@ export function readPatchFromPath(patchPath: string): PatchInfo|null {
   }
 }
 
-// @kern-source: patch-apply:67
+// @kern-source: patch-apply:55
 export function isTreeDirty(cwd: string): boolean {
   try {
     const result = execSync('git status --porcelain', { cwd, encoding: 'utf-8' });
@@ -88,7 +75,7 @@ export function isTreeDirty(cwd: string): boolean {
   }
 }
 
-// @kern-source: patch-apply:78
+// @kern-source: patch-apply:66
 export function dryRunApply(cwd: string, patchContent: string): { ok:boolean, error?:string } {
   try {
     execSync('git apply --check -', { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
@@ -99,7 +86,7 @@ export function dryRunApply(cwd: string, patchContent: string): { ok:boolean, er
   }
 }
 
-// @kern-source: patch-apply:89
+// @kern-source: patch-apply:77
 export function applyPatchToTree(cwd: string, patchContent: string): { ok:boolean, error?:string } {
   try {
     execSync('git apply --allow-empty -', { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
@@ -110,7 +97,7 @@ export function applyPatchToTree(cwd: string, patchContent: string): { ok:boolea
   }
 }
 
-// @kern-source: patch-apply:100
+// @kern-source: patch-apply:88
 export function preflightApply(cwd: string, patchPath: string|null, manifestPath: string|null): ApplyPreflight {
   const dirtyTree = isTreeDirty(cwd);
   let patch: PatchInfo | null = null;
@@ -135,7 +122,7 @@ export function preflightApply(cwd: string, patchPath: string|null, manifestPath
 /**
  * Apply patch and save an inverse for undo.
  */
-// @kern-source: patch-apply:118
+// @kern-source: patch-apply:106
 export function applyPatchWithUndo(cwd: string, patchContent: string): { ok:boolean, error?:string, undoToken?:string } {
   const undoDir = getUndoDir();
   mkdirSync(undoDir, { recursive: true });
@@ -164,7 +151,7 @@ export function applyPatchWithUndo(cwd: string, patchContent: string): { ok:bool
 /**
  * Apply the saved inverse patch to undo a previous apply.
  */
-// @kern-source: patch-apply:145
+// @kern-source: patch-apply:133
 export function undoPatch(cwd: string, undoToken: string): { ok:boolean, error?:string } {
   const undoDir = getUndoDir();
   const inversePath = join(undoDir, `${undoToken}.patch`);

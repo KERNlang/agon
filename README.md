@@ -128,6 +128,19 @@ Team-based variants of core modes (e.g., 2v2 or 3v3). Includes Team Forge, Team 
 /team-forge "Rewrite the frontend to use Tailwind CSS"
 ```
 
+### Goal
+Autonomous, long-running orchestration. You hand Agon a finite, checkable task queue (e.g. a directory of gap specs) plus a green **gate** command, and it drives the whole queue to completion unattended — for hours. Each task runs in a throwaway worktree off a dedicated `goal/` branch: an engine implements the change, every new test is **witnessed** (it must fail on the base commit and pass on the new one) and **mutation-witnessed** (canonical mutants on the changed lines must die — which defeats tautological "encode the answer" tests), the frozen gate runs once, an ensemble review gates the commit, and only then does **one commit per task** land on the goal branch. Any failure discards the worktree wholesale (atomic rollback). The run is journaled and resumable (`--resume`), checkpoints cleanly on Ctrl-C, and **never auto-pushes** — you review the commits and open the PR.
+
+```bash
+agon goal "Close all KERN gaps" \
+  --queue .kern-gaps/ \
+  --gate "npm run build && npm run typecheck && npm test" \
+  --branch goal/close-gaps \
+  --maxHours 8
+```
+
+Read a run's digest from any session with `agon goal --status --id close-all-kern-gaps`. _(P0: `--maxHours` is the live wall-clock ceiling; USD budgeting and hermetic gate isolation are on the roadmap.)_
+
 ## Interactive REPL
 
 Launching `agon` starts a powerful terminal REPL equipped with native scrollback, command history, and a file rail. 

@@ -71,7 +71,7 @@ export const reviewCommand = defineCommand({
     }
 
     const requested = args.engines
-      ? args.engines.split(',').map((s) => s.trim()).filter(Boolean)
+      ? args.engines.split(',').map((s) => registry.resolveId(s.trim())).filter(Boolean)
       : [selectReviewEngine(args.engine, ctx)];
 
     if (args.quiet) process.env.AGON_QUIET = '1';
@@ -117,13 +117,26 @@ export const reviewCommand = defineCommand({
           if (!quiet) warn(`${engineId}: failed to write output file (${writeErr instanceof Error ? writeErr.message : String(writeErr)})`);
         }
         if (!quiet) console.log(result.response);
-        if (result.parseFailed) {
-          if (!quiet) warn(`${engineId}: review parser did not find the sentinel JSON block.`);
+        if (result.parseFailed && result.unstructured) {
+          // The engine produced a substantive prose review but no
+          // machine-parseable verdict (even after the repair retry). The
+          // review is useful and valid — surface it as a SUCCESS, not a
+          // failure. Conversational engines (e.g. claude) frequently land
+          // here; scoring that as parse-failure was the #1 false negative.
+          if (!quiet) info(`${engineId}: review complete (unstructured — no machine verdict, but the review above is valid).`);
+          engineStatuses.push({
+            id: engineId,
+            status: 'unstructured',
+            durationMs: Date.now() - engineStart,
+            detail: 'unstructured review (no machine-parseable findings block)',
+          });
+        } else if (result.parseFailed) {
+          if (!quiet) warn(`${engineId}: returned no usable review output.`);
           engineStatuses.push({
             id: engineId,
             status: 'parse-failure',
             durationMs: Date.now() - engineStart,
-            detail: 'no sentinel JSON in response',
+            detail: 'empty or unusable response',
           });
         } else if (result.blocking) {
           if (!quiet) warn(`${engineId}: blocking findings reported.`);
@@ -153,9 +166,12 @@ export const reviewCommand = defineCommand({
       }
     }
 
-    const okCount = engineStatuses.filter((e) => e.status === 'ok').length;
-    // Summary names EVERY non-ok / non-skipped engine, grouped by failure
-    // mode (blocking + parse-failure + error). Pre-fix the summary text
+    // 'unstructured' is a successful review (useful prose, no machine verdict),
+    // so it counts toward the reviewed total and never appears as a failure.
+    const reviewedCount = engineStatuses.filter((e) => e.status === 'ok' || e.status === 'unstructured').length;
+    const unstructuredCount = engineStatuses.filter((e) => e.status === 'unstructured').length;
+    // Summary names EVERY genuine-failure engine, grouped by failure mode
+    // (blocking + parse-failure + error + timeout). Pre-fix the summary text
     // only named parse-failures, which hid hard engine crashes under a
     // misleading "X/Y reviewed cleanly" message.
     const failureGroups: string[] = [];
@@ -165,6 +181,9 @@ export const reviewCommand = defineCommand({
         .map((e) => e.id);
       if (matched.length > 0) failureGroups.push(`${matched.join(', ')}: ${failureStatus}`);
     }
+    const reviewedNote = unstructuredCount > 0
+      ? `${reviewedCount}/${requested.length} reviewed (${unstructuredCount} unstructured)`
+      : `${reviewedCount}/${requested.length} reviewed cleanly`;
     const status = {
       mode: 'review',
       label: args.label,
@@ -172,9 +191,9 @@ export const reviewCommand = defineCommand({
       endedAt: new Date().toISOString(),
       engines: engineStatuses,
       summary: failureGroups.length > 0
-        ? `${okCount}/${requested.length} reviewed cleanly; ${failureGroups.join('; ')}`
-        : `${okCount}/${requested.length} reviewed cleanly`,
-      ok: okCount === requested.length,
+        ? `${reviewedNote}; ${failureGroups.join('; ')}`
+        : reviewedNote,
+      ok: reviewedCount === requested.length,
     };
     writeRunStatus(outputDir, status);
     printRunSummary(status);

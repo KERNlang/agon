@@ -258,8 +258,11 @@ function isImplicitReviewSubjectArg(part: string): boolean {
   return lower === 'it' || lower === 'this' || lower === 'that' || lower === 'them' || lower === 'changes' || lower === 'diff';
 }
 
+/**
+ * Parse review args into target + engine list. When bareWordsAreEngines is true (the explicit /review slash path), any bare word that isn't a target (uncommitted/branch:/commit:) or a keyword is treated as an engine name — so `/review codex claude` reviews with BOTH, no `with` needed. The natural-language shortcut path leaves it false so prose like `review this code` doesn't mis-bind `code` as an engine.
+ */
 // @kern-source: intent:209
-function parseReviewInput(input: string): Intent {
+function parseReviewInput(input: string, bareWordsAreEngines?: boolean): Intent {
   const reviewParts = splitReviewArgs(input);
   const engineIds: string[] = [];
   let target: string | undefined;
@@ -282,7 +285,7 @@ function parseReviewInput(input: string): Intent {
       if (!target) target = part;
       continue;
     }
-    if (collectingEngines) {
+    if (collectingEngines || bareWordsAreEngines) {
       if (!engineIds.includes(lower)) engineIds.push(lower);
       continue;
     }
@@ -293,7 +296,7 @@ function parseReviewInput(input: string): Intent {
   return { type: 'review', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target } as Intent;
 }
 
-// @kern-source: intent:244
+// @kern-source: intent:245
 function parseReviewShortcut(input: string): Intent|null {
   const match = input.match(/^(?:review|cr)(?:\s+([\s\S]+))?$/i);
   if (!match) {
@@ -321,7 +324,7 @@ function parseReviewShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:266
+// @kern-source: intent:267
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
@@ -556,7 +559,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
     }
     case 'review':
     case 'cr': {
-      return parseReviewInput(rest);
+      return parseReviewInput(rest, true);
     }
     case 'run':
     case 'exec':
@@ -620,7 +623,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   }
 }
 
-// @kern-source: intent:565
+// @kern-source: intent:566
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) {

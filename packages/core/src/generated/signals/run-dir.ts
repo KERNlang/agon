@@ -27,12 +27,12 @@ export interface RunDirHandle {
 }
 
 /**
- * Per-engine outcome record. `status` is the authoritative success classifier: 'ok' (engine produced expected output), 'blocking' (review parsed but found blocking findings — outcome is failure even though the engine succeeded), 'parse-failure' (engine output missing structured sentinel), 'timeout', 'error' (dispatch threw), 'skipped' (never dispatched — health-check / filter).
+ * Per-engine outcome record. `status` is the authoritative success classifier: 'ok' (engine produced expected output), 'unstructured' (engine produced a useful prose review but no machine-parseable verdict — a SUCCESS, not a failure: the review is valid, it just lacks the sentinel JSON block), 'blocking' (review parsed but found blocking findings — outcome is failure even though the engine succeeded), 'parse-failure' (engine output was empty/garbage with no usable review), 'timeout', 'error' (dispatch threw), 'skipped' (never dispatched — health-check / filter).
  */
 // @kern-source: run-dir:38
 export interface RunStatusEngine {
   id: string;
-  status: 'ok' | 'blocking' | 'parse-failure' | 'timeout' | 'error' | 'skipped';
+  status: 'ok' | 'unstructured' | 'blocking' | 'parse-failure' | 'timeout' | 'error' | 'skipped';
   exitCode?: number;
   durationMs?: number;
   detail?: string;

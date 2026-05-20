@@ -109,6 +109,25 @@ describe('Intent Detection — Slash Commands', () => {
     }
   });
 
+  it('/review treats bare engine names as engines without a "with" keyword', () => {
+    const r = detectIntent('/review codex claude');
+    expect(r.type).toBe('review');
+    if (r.type === 'review') {
+      expect(r.engineIds).toEqual(['codex', 'claude']);
+      expect(r.engineId).toBe('codex');
+      // no explicit target → defaults downstream to uncommitted
+      expect(r.target).toBeUndefined();
+    }
+
+    // target still parses alongside bare engine names, in any order
+    const withTarget = detectIntent('/review branch:main codex claude');
+    expect(withTarget.type).toBe('review');
+    if (withTarget.type === 'review') {
+      expect(withTarget.engineIds).toEqual(['codex', 'claude']);
+      expect(withTarget.target).toBe('branch:main');
+    }
+  });
+
   it('/leaderboard', () => {
     expect(detectIntent('/leaderboard').type).toBe('leaderboard');
     expect(detectIntent('/elo').type).toBe('leaderboard');

@@ -11,11 +11,11 @@
 import from="citty" names="defineCommand"
 import from="node:fs" names="readFileSync,readdirSync,existsSync,statSync"
 import from="node:path" names="resolve"
-import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,applyPatch"
+import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,applyPatch,spawnWithTimeout,estimateCost"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@agon/adapter-cli" names="createCliAdapter"
-import from="@agon/forge" names="runForge,runGoalController,loadJournal,summarizeGoal,goalDir"
-import from="../handlers/review.js" names="runReviewCore"
+import from="@agon/forge" names="runForge,runDelegate,runGoalController,loadJournal,summarizeGoal,goalDir"
+import from="../handlers/review.js" names="runReviewCore,extractReviewFindings"
 import from="../blocks/output-format.js" names="header,success,fail,warn,info,cyan,green"
 
 const name=goalCommand type=any
@@ -71,7 +71,7 @@ const name=goalCommand type=any
     return defineCommand({
       meta: {
         name: 'goal',
-        description: 'Autonomously drive a task queue (e.g. .kern-gaps/) to completion: forge implements, the diff is witnessed + mutation-witnessed, a frozen gate + ensemble review gate each commit. Lands one commit per task on a goal branch — never main, never auto-pushed.',
+        description: 'Autonomously drive a task queue (e.g. .kern-gaps/) to completion. Per task: forge implements, the diff is witnessed + mutation-witnessed, the frozen gate runs, ALL engines review and a judge decides, blockers get one fix pass, then one commit lands on the goal branch (never main) — and is pushed with --push. Bound it with --max-hours and/or --budget, or neither (free).',
       },
       args: {
         intent: { type: 'positional', description: 'What the goal is (human description; also seeds the goal id)', required: false },
@@ -81,13 +81,18 @@ const name=goalCommand type=any
         branch: { type: 'string', alias: 'b', description: 'Goal branch (default goal/<id>) — never main; one commit per closed task' },
         id: { type: 'string', description: 'Explicit goal id (slug). Defaults to a slug of the intent.' },
         engines: { type: 'string', alias: 'e', description: 'Comma-separated engines that implement (forge roster)' },
-        reviewEngine: { type: 'string', alias: 'r', description: 'Engine that reviews each task diff (default config.forgeJudgeEngine or codex)' },
+        reviewEngines: { type: 'string', alias: 'r', description: 'Comma-separated engines that review each task diff BEFORE the commit (default: all active). All review; a judge then decides which flagged findings are real.' },
+        judge: { type: 'string', alias: 'j', description: 'Deciding reviewer that adjudicates the panel’s flagged findings (real blocker vs false positive). Default: config.forgeJudgeEngine, else Cesar, else the first reviewer.' },
         maxAttempts: { type: 'string', description: 'Attempts per task before park (default 3)' },
-        budget: { type: 'string', description: 'Global USD ceiling (default 50; 0 = unlimited)' },
-        maxHours: { type: 'string', description: 'Wall-clock ceiling in hours (default 8; 0 = unlimited)' },
+        budget: { type: 'string', description: 'Optional USD ceiling — stop when metered spend reaches it (default 0 = no price limit).' },
+        maxHours: { type: 'string', description: 'Optional wall-clock ceiling in hours — stop when reached (default 0 = no time limit).' },
         gateTimeout: { type: 'string', description: 'Per-gate timeout in seconds (default 1800)' },
         timeout: { type: 'string', description: 'Per-engine implement timeout in seconds' },
         cwd: { type: 'string', description: 'Repo working directory', default: process.cwd() },
+        requireTests: { type: 'boolean', description: 'Reject a task whose diff changes source but adds no test (the witness has nothing to witness). Default true; --no-require-tests to allow test-free changes.', default: true },
+        push: { type: 'boolean', description: 'Push the goal branch to origin after EACH task commits (build→review→fix→commit→push per task). Only the goal/* branch, never main.', default: false },
+        pr: { type: 'boolean', description: 'With --push, open a PR for the goal branch when the run finishes (needs gh).', default: false },
+        remote: { type: 'string', description: 'Git remote to push to (default origin).', default: 'origin' },
         resume: { type: 'boolean', description: 'Resume an existing goal from its journal', default: false },
         status: { type: 'boolean', description: 'Print the status/summary of an existing goal (by id or intent) and exit', default: false },
         dryRun: { type: 'boolean', description: 'Resolve the queue + spec and print the plan without running', default: false },
@@ -156,8 +161,21 @@ const name=goalCommand type=any
             process.exit(1);
           }
         }
-        const reviewRaw = (args.reviewEngine ?? config.forgeJudgeEngine ?? 'codex').toString().trim();
-        const reviewEngine = registry.resolveId(reviewRaw) || available[0];
+        // Every task's diff is reviewed by ALL active engines before its commit
+        // (the design's ensemble gate) — narrow it with --review-engines if the
+        // full roster is too slow/expensive for an overnight run.
+        const reviewEngines = (args.reviewEngines
+          ? args.reviewEngines.split(',').map((s: string) => registry.resolveId(s.trim())).filter(Boolean)
+          : available
+        ).filter((id: string, i: number, arr: string[]) => arr.indexOf(id) === i);
+        if (reviewEngines.length === 0) {
+          fail('No review engines resolved. Pass --review-engines or check "agon doctor".');
+          process.exit(1);
+        }
+        // The judge adjudicates the panel: when reviewers flag blocking findings,
+        // it decides which are real must-fix blockers vs false positives.
+        const judgeRaw = (args.judge ?? (config as any).forgeJudgeEngine ?? (config as any).cesarEngine ?? reviewEngines[0]).toString().trim();
+        const judge = registry.resolveId(judgeRaw) || reviewEngines[0];
         const implementTimeout = args.timeout ? parseInt(args.timeout, 10) : undefined;
 
         const num = (v: string | undefined, dflt: number): number => {
@@ -180,8 +198,8 @@ const name=goalCommand type=any
           gate,
           queueSource: queueSource || '(resume)',
           maxAttempts: num(args.maxAttempts, 3),
-          budgetUsd: num(args.budget, 50),
-          maxHours: num(args.maxHours, 8),
+          budgetUsd: num(args.budget, 0),
+          maxHours: num(args.maxHours, 0),
           engines: requestedEngines,
           supervised: true,
         };
@@ -189,10 +207,13 @@ const name=goalCommand type=any
         header(`Goal: ${spec.intent}`);
         info(`Id: ${goalId}  ·  Branch: ${branch}`);
         info(`Gate: ${gate}`);
-        info(`Implement: ${requestedEngines?.join(', ') ?? available.join(', ')}  ·  Review: ${reviewEngine}`);
-        info(`Budget: $${spec.budgetUsd || '∞'}  ·  Max: ${spec.maxHours || '∞'}h  ·  Attempts/task: ${spec.maxAttempts}`);
+        info(`Implement: ${requestedEngines?.join(', ') ?? available.join(', ')}`);
+        info(`Review panel: ${reviewEngines.join(', ')}  ·  Judge: ${judge}`);
+        const ceiling = [spec.maxHours > 0 ? `${spec.maxHours}h` : null, spec.budgetUsd > 0 ? `$${spec.budgetUsd}` : null].filter(Boolean).join(' or ') || 'none (free — runs until the queue is empty)';
+        info(`Stop ceiling: ${ceiling}  ·  Attempts/task: ${spec.maxAttempts}`);
         info(`Tasks: ${tasks.length}${args.resume ? ' (+ resumed journal)' : ''}`);
-        if (spec.budgetUsd > 0) warn('P0: the USD budget is not enforced yet (engine cost is not metered) — the live ceiling is --max-hours.');
+        if (spec.budgetUsd > 0) info('Budget is metered best-effort (implement + judge token cost; panel-review cost not counted yet).');
+        if (spec.budgetUsd === 0 && spec.maxHours === 0) warn('No --max-hours or --budget set — the run continues until the queue is empty (or Ctrl-C). Set one to bound it.');
 
         if (args.dryRun) {
           warn('Dry-run — nothing will be dispatched.');
@@ -231,28 +252,61 @@ const name=goalCommand type=any
               registry,
               adapter,
             );
-            if (!manifest.winner) return { ok: false, costUsd: 0, error: 'forge produced no winning patch' };
+            // Meter real spend: sum each competing engine's token cost.
+            const costUsd = Object.entries(manifest.results as Record<string, { usage?: { totalTokens?: number } }>)
+              .reduce((sum, [eng, r]) => sum + estimateCost(eng, r?.usage?.totalTokens ?? 0), 0);
+            if (!manifest.winner) return { ok: false, costUsd, error: 'forge produced no winning patch' };
             const patchPath = (manifest.patches as Record<string, string> | undefined)?.[manifest.winner];
             const patch = patchPath ? readFileSync(patchPath, 'utf-8') : '';
             if (patch.trim()) applyPatch(a.worktree, patch);
-            return { ok: true, costUsd: 0 };
+            return { ok: true, costUsd };
           } catch (e) {
             return { ok: false, costUsd: 0, error: e instanceof Error ? e.message : String(e) };
           }
         };
 
-        // REVIEW — the same hardened multi-engine pipeline /review uses; the
-        // controller blocks the commit on a blocking verdict.
+        // REVIEW — ALL review engines look at the task diff in parallel before
+        // the commit (the ensemble gate). Block if ANY returns a blocking
+        // finding; fail-closed if not one of them produced a usable verdict
+        // (a flaky engine alone won't block, but a total reviewer wipeout does).
         const review = async (a: { worktree: string; baseSha: string; diff: string; label: string; signal?: AbortSignal }) => {
           if (!a.diff.trim()) return { blocking: false, summary: 'no diff' };
           let diff = a.diff;
           if (diff.length > 100_000) diff = diff.slice(0, 100_000) + '\n... [truncated — diff exceeds 100K chars]';
+          const verdicts = await Promise.all(reviewEngines.map(async (eng: string) => {
+            try {
+              const r = await runReviewCore(diff, `${a.label} [${eng}]`, eng, { config, adapter, registry } as any, abort.signal);
+              return { eng, ok: true, blocking: r.blocking, summary: (r.response || '').slice(0, 1500) };
+            } catch (e) {
+              return { eng, ok: false, blocking: false, summary: `errored: ${e instanceof Error ? e.message : String(e)}` };
+            }
+          }));
+          const usable = verdicts.filter((v) => v.ok);
+          if (usable.length === 0) {
+            return { blocking: true, summary: `all ${reviewEngines.length} reviewers failed to return a verdict — blocking (fail-closed)` };
+          }
+          const flagged = verdicts.filter((v) => v.blocking);
+          if (flagged.length === 0) {
+            return { blocking: false, summary: `${usable.length}/${reviewEngines.length} reviewers passed — no blocking findings` };
+          }
+          // The panel flagged something — let the judge decide which findings are
+          // REAL must-fix blockers vs false positives, given the diff + every
+          // reviewer's notes. Only runs when there's a disagreement to resolve.
+          const panel = verdicts.map((v) => `### ${v.eng}${v.blocking ? ' — flagged BLOCKING' : ''}\n${v.summary}`).join('\n\n');
+          const judgePrompt = `You are the deciding reviewer (judge). ${flagged.length} of ${usable.length} engines flagged BLOCKING issues on the change below. Decide which are REAL must-fix blockers (a genuine bug, regression, or security hole) versus false positives or mere nits.\n\nDIFF:\n${diff}\n\nPANEL REVIEWS:\n${panel}\n\nGive a one-paragraph rationale, then end with a line containing exactly <!--AGON_REVIEW_FINDINGS_v1--> followed by a JSON array of ONLY the genuinely blocking findings (each {"severity":"blocking","file":"...","lines":"...","problem":"..."}). If none are real, output [].`;
           try {
-            const r = await runReviewCore(diff, a.label, reviewEngine, { config, adapter, registry } as any, abort.signal);
-            return { blocking: r.blocking, summary: (r.response || '').slice(0, 4000) };
+            const { path: jdir } = createRunDir({ mode: 'forge', label: `goal-judge` });
+            const jr = await runDelegate({ engineId: judge, task: judgePrompt, registry, adapter, timeout: implementTimeout ?? 420, outputDir: jdir, signal: abort.signal });
+            const findings = extractReviewFindings(jr.response || '');
+            const realBlock = !!findings && findings.some((f: { severity?: string; blocking?: boolean }) => f.blocking === true || (f.severity ?? '').toLowerCase() === 'blocking');
+            return {
+              blocking: realBlock,
+              summary: `judge ${judge}: ${realBlock ? 'BLOCK' : 'pass'} (panel flagged ${flagged.length}/${usable.length})\n${(jr.response || '').slice(0, 2500)}`,
+              costUsd: estimateCost(judge, jr.usage?.totalTokens ?? 0),
+            };
           } catch (e) {
-            // A review that errors must not silently bless the commit.
-            return { blocking: true, summary: `review errored: ${e instanceof Error ? e.message : String(e)}` };
+            // Judge unreachable — fall back to the panel's signal (it flagged), so block conservatively.
+            return { blocking: true, summary: `judge ${judge} errored (${e instanceof Error ? e.message : String(e)}); ${flagged.length} engine(s) flagged blocking — blocking conservatively.` };
           }
         };
 
@@ -263,6 +317,9 @@ const name=goalCommand type=any
           tasks,
           oracleFiles: [],
           resume: args.resume,
+          push: args.push,
+          remote: args.remote,
+          requireTests: args.requireTests,
           gateTimeoutSec: num(args.gateTimeout, 1800),
           witnessCmd: args.witnessCmd?.trim() || undefined,
           signal: abort.signal,
@@ -273,6 +330,8 @@ const name=goalCommand type=any
             switch (e.kind) {
               case 'task-start': info(`▶ implementing${id}: ${e.detail ?? ''}`); break;
               case 'task-done': success(`✓ closed${id} → ${String(e.detail ?? '').slice(0, 8)}`); break;
+              case 'task-pushed': info(`⇡ pushed${id} → ${e.detail ?? ''}`); break;
+              case 'push-failed': warn(`⇡ push failed${id}: ${e.detail ?? ''} (commit is safe locally)`); break;
               case 'task-parked': warn(`⏸ parked${id}: ${e.detail ?? ''}`); break;
               case 'task-retry': warn(`↻ retrying${id}: ${e.detail ?? ''}`); break;
               case 'review-block': warn(`⚑ review blocking${id} — one fix pass`); break;
@@ -290,10 +349,27 @@ const name=goalCommand type=any
         info(`Artifacts: ${goalDir(goalId)}`);
         const done = state.tasks.filter((t: any) => t.status === 'done').length;
         if (done > 0) {
-          // P0 push safety: never auto-push. Land on the goal branch; the human
-          // reviews the commits and opens the PR. (Unsupervised push is P1.)
-          success(`${done} commit(s) on ${cyan(branch)}.`);
-          info(`Review them, then: ${green(`git push -u origin ${branch}`)} and open a PR.`);
+          if (args.push) {
+            success(`${done} commit(s) pushed to ${cyan(`${args.remote}/${branch}`)} (one push per task).`);
+            if (args.pr) {
+              info('Opening a PR…');
+              const pr = await spawnWithTimeout({
+                command: 'gh',
+                args: ['pr', 'create', '--head', branch, '--title', `goal: ${spec.intent}`, '--body', summarizeGoal(state)],
+                cwd: repoRoot,
+                timeout: 120_000,
+              });
+              if (pr.exitCode === 0) success(`PR: ${pr.stdout.trim()}`);
+              else warn(`Could not open PR (${pr.stderr.trim() || 'gh failed'}). Open one manually from ${branch}.`);
+            } else {
+              info(`Open a PR from ${cyan(branch)} when ready (or re-run with --pr).`);
+            }
+          } else {
+            // Default (no --push): land on the goal branch; the human reviews
+            // and pushes. Pass --push for the full review→fix→commit→push cycle.
+            success(`${done} commit(s) on ${cyan(branch)}.`);
+            info(`Review them, then: ${green(`git push -u origin ${branch}`)} — or re-run with --push to push each task automatically.`);
+          }
         } else {
           warn('No tasks closed. See the parked list above and the journal for why.');
         }

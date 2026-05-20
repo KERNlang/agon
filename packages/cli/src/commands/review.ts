@@ -98,7 +98,7 @@ export const reviewCommand = defineCommand({
       activeEngines: () => registry.activeIds(config),
     } as any;
 
-    let target;
+    let target: { diff: string; label: string };
     try {
       target = resolveReviewTarget(args.target, cwd);
     } catch (err) {

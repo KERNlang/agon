@@ -212,18 +212,32 @@ Agon can also be called from other AI CLIs such as Claude Code, Codex, and Gemin
 
 ### One-step setup
 
-Run this **once** to wire a `/agon` command into every AI CLI on your machine:
+Run this **once** to wire Agon into every AI CLI on your machine:
 
 ```bash
 agon install-agent-prompts
 ```
 
-It drops a lightweight shim into each detected CLI — `~/.codex/prompts/agon.md`, `~/.gemini/commands/agon.toml`, and `~/.claude/commands/agon.md` — that teaches the engine to call Agon from its own shell. No MCP, no always-on tokens: nothing loads into context until you type `/agon`. Target specific CLIs with `--cli codex,gemini,claude`, preview with `--dry`, or refresh an existing shim with `--force`.
+It drops the native lightweight integration for each detected CLI:
 
-After that, in any of those CLIs:
+| CLI | Installed files | Invoke |
+| --- | --- | --- |
+| Codex | `~/.codex/skills/agon/SKILL.md` and `~/.codex/skills/agon/agents/openai.yaml` | `$agon` in a new Codex session |
+| Gemini CLI | `~/.gemini/commands/agon.toml` | `/agon` |
+| Claude Code | `~/.claude/commands/agon.md` | `/agon` |
+
+Each prompt or skill teaches the engine to call Agon from its own shell. No MCP, no always-on tokens: nothing runs until you invoke it. Target specific CLIs with `--cli codex,gemini,claude`, preview with `--dry`, or refresh an existing integration with `--force`.
+
+After that, in Claude Code or Gemini:
 
 ```
 /agon evolve this design doc into a concrete implementation plan
+```
+
+In Codex, start a new session so skills reload, then use:
+
+```
+$agon evolve this design doc into a concrete implementation plan
 ```
 
 The engine runs `agon agent-guide` to learn the modes, then picks the right one — forge, synthesis, brainstorm, tribunal, campfire, review, or goal.

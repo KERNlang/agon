@@ -66,7 +66,12 @@ fn name=spawnWithTimeout async=true params="opts:SpawnOptions" returns="Promise<
             if (child.pid) process.kill(-child.pid, sig);
             else child.kill(sig);
           } catch (err) {
-            if (sig === 'SIGTERM') {
+            const code = (err as NodeJS.ErrnoException).code;
+            // EPERM/ESRCH: the detached child's group leader already exited (its
+            // pgid is defunct or got reused), so the GROUP kill is moot — fall
+            // back to a direct child kill QUIETLY. Expected teardown, not a
+            // failure; only warn on a genuinely unexpected SIGTERM error.
+            if (sig === 'SIGTERM' && code !== 'EPERM' && code !== 'ESRCH') {
               console.warn(`[agon] failed to terminate process group ${child.pid}: ${err instanceof Error ? err.message : String(err)}`);
             }
             try { child.kill(sig); } catch { /* already gone */ }
@@ -183,7 +188,12 @@ fn name=spawnStream generator=true async=true params="opts:SpawnOptions" returns
           if (child.pid) process.kill(-child.pid, sig);
           else child.kill(sig);
         } catch (err) {
-          if (sig === 'SIGTERM') {
+          const code = (err as NodeJS.ErrnoException).code;
+          // EPERM/ESRCH: the detached child's group leader already exited (its
+          // pgid is defunct or got reused), so the GROUP kill is moot — fall
+          // back to a direct child kill QUIETLY. Expected teardown, not a
+          // failure; only warn on a genuinely unexpected SIGTERM error.
+          if (sig === 'SIGTERM' && code !== 'EPERM' && code !== 'ESRCH') {
             console.warn(`[agon] failed to terminate process group ${child.pid}: ${err instanceof Error ? err.message : String(err)}`);
           }
           try { child.kill(sig); } catch { /* already gone */ }

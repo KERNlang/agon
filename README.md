@@ -74,6 +74,14 @@ Competitive code generation. Engines race on the exact same task in isolated git
 
 With synthesis enabled (`forgeEnableSynthesis`), a configurable **synthesizer** engine then refines the winner using the other engines' critiques into a best-of-all result — **Cesar** in the interactive REPL, the **judge** under `agon goal`, or any named engine elsewhere.
 
+### Synthesis
+Competitive cross-pollination. Engines draft independently, then improve each other's drafts in swap rounds before a judge picks the best evolved result.
+
+```bash
+/synthesis "Evolve this design doc into a concrete implementation plan" --swaps 2 --timeout 90
+agon synthesis "Evolve this design doc into a concrete implementation plan" --swaps 2 --timeout 90
+```
+
 ### Brainstorm
 Engines bid their confidence level on how they would tackle a complex problem. Engines with higher confidence bids are allocated more tokens and priority.
 
@@ -150,7 +158,7 @@ Bound a run by `--max-hours`, `--budget` (USD), both, or neither (free). Pick th
 
 Launching `agon` starts a powerful terminal REPL equipped with native scrollback, command history, and a file rail. 
 
-Available commands include: `/forge`, `/brainstorm`, `/tribunal`, `/campfire`, `/pipeline`, `/review`, `/agent`, `/speculate`, `/team-forge`, `/status`, `/leaderboard`, `/history`, `/config`, `/plan`, `/models`, `/engines`, `/doctor`, `/help`, and `/exit`.
+Available commands include: `/forge`, `/synthesis`, `/brainstorm`, `/tribunal`, `/campfire`, `/pipeline`, `/review`, `/agent`, `/speculate`, `/team-forge`, `/status`, `/leaderboard`, `/history`, `/config`, `/plan`, `/models`, `/engines`, `/doctor`, `/help`, and `/exit`.
 
 **Example Session:**
 ```text
@@ -175,10 +183,12 @@ Agon >
 Agon can also be called from other AI CLIs such as Claude Code, Codex, and Gemini. The fastest path is the shell bridge:
 
 ```bash
+agon synthesis "Evolve this design doc into a concrete implementation plan" --swaps 2 --timeout 90
 agon call tribunal "Should we ship this architecture?" --team --tribunalMode red-team
 agon call brainstorm "How should we design the plugin API?" --team
 agon call review
 agon call forge "Implement the cache layer" --test "npm test" --team
+agon call synthesis "Evolve this design doc into a concrete implementation plan" --swaps 2 --timeout 90
 ```
 
 `agon call` streams the underlying Agon workflow into the caller's terminal, so the calling CLI can show live progress and the other engines' output. Use `--jsonl` when the caller wants machine-readable lifecycle events:

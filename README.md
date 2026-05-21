@@ -65,6 +65,39 @@ Once installed, run `agon` in any git repository to start the interactive REPL. 
 
 Agon features multiple operational modes to suit different development challenges.
 
+### Which mode should I use?
+
+Pick by the **shape** of the problem, not the topic:
+
+| You need… | Use | Why |
+|-----------|-----|-----|
+| Ideas / options / "what am I missing?" | **brainstorm** | Cheap and fast — engines bid confidence and surface approaches and gaps. |
+| One refined output from many opinions | **synthesis** | Engines draft, improve each other's drafts over swap rounds, and a judge picks the best evolved result. |
+| A decision with real tradeoffs settled | **tribunal** | Structured debate (adversarial / steelman / socratic / red-team / synthesis / postmortem) that argues the sides. |
+| Open exploration, no decision yet | **campfire** | Relaxed multi-engine discussion — no scoring, no winner. |
+| Code built competitively against a test | **forge** | Engines race on the same task in isolated worktrees; the best test-passing patch is applied. |
+| The **first** passing solution, fast | **speculate** | N engines race; the first to pass the test wins and is applied immediately. |
+| A routine build with one engine | **pipeline** | Single-engine build → review → fix loop; no competition overhead. |
+| Existing code checked for bugs | **review** | Multi-engine review folded into one confidence-tiered consensus. |
+| A task done end-to-end autonomously | **agent** | One engine (Cesar-routed) runs a multi-turn tool loop to do the work. |
+| A whole queue driven to "done" unattended | **goal** | Per task: build → witness → gate → review + judge → commit, for hours. |
+| A big, multi-layered task | **team-\*** | 2v2 / 3v3 variants of forge / tribunal / brainstorm — engines collaborate per side. |
+
+**Rule of thumb**
+
+- Need ideas → `brainstorm`
+- Need a decision debate → `tribunal`
+- Need one refined output (plan, spec, PR description, architecture note, acceptance criteria, migration plan) → `synthesis`
+- Need code checked → `review`
+- Need code built competitively → `forge`
+- Need the first green solution fast → `speculate`
+- Need a task queue executed → `goal`
+
+**forge vs. speculate vs. synthesis** — all three run multiple engines, but they pick the winner differently:
+- **forge** *scores* every candidate against the test and applies the best.
+- **speculate** takes the *first* candidate that passes — fastest path to any correct answer.
+- **synthesis** has engines *improve each other's* drafts and a judge picks the evolved winner — use it when there's no clean pass/fail test (plans, specs, prose, architecture).
+
 ### Forge
 Competitive code generation. Engines race on the exact same task in isolated git worktrees. The winner's changes are applied automatically to your main branch.
 

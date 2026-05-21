@@ -199,7 +199,7 @@ fn name=linkWorktreeNodeModules params="repoDir:string,worktreePath:string" retu
     }
   >>>
 
-fn name=hydrateWorktreeBuildArtifacts params="repoDir:string,worktreePath:string" returns=void export=false
+fn name=hydrateWorktreeBuildArtifacts params="repoDir:string,worktreePath:string" returns=void export=true
   doc "Git worktrees omit ignored package dist artifacts, but workspace package exports point at dist. Copy existing root artifacts into the candidate worktree so fitness commands can resolve local workspace packages without forcing every forge candidate to rebuild first."
   handler <<<
     const sourcePackages = join(repoDir, 'packages');
@@ -253,14 +253,19 @@ fn name=branchExists params="repoDir:string,branch:string" returns=boolean
   >>>
 
 fn name=worktreeAddOnBranch params="repoDir:string,worktreePath:string,branch:string,base?:string,link?:boolean" returns=string
-  doc "Add a git worktree checked out on a NAMED branch (creating it off base/HEAD when absent) — unlike worktreeCreate, which detaches for throwaway forge candidates. When link is not false, overlay node_modules + dist so the worktree is immediately buildable."
+  doc "Add a git worktree checked out on a NAMED branch — unlike worktreeCreate, which detaches for throwaway forge candidates. Prefers git's DWIM (an existing local branch, or a tracking branch when <branch> resolves on exactly one remote); only when that fails is a fresh branch created off base/HEAD. When link is not false, overlay node_modules + dist so the worktree is immediately buildable."
   handler <<<
     worktreePrune(repoDir);
+    // Guard the empty string: '' ?? 'HEAD' is '', which git rejects as a start-point.
+    const startPoint = (base && base.trim()) || 'HEAD';
     try {
-      if (branchExists(repoDir, branch)) {
+      try {
+        // DWIM: checks out an existing local branch, or creates a tracking
+        // branch when <branch> resolves on exactly one remote.
         git(['worktree', 'add', worktreePath, branch], repoDir);
-      } else {
-        git(['worktree', 'add', '-b', branch, worktreePath, base ?? 'HEAD'], repoDir);
+      } catch {
+        // <branch> resolves to no ref — create a fresh branch off the base.
+        git(['worktree', 'add', '-b', branch, worktreePath, startPoint], repoDir);
       }
       if (link !== false) {
         linkWorktreeNodeModules(repoDir, worktreePath);

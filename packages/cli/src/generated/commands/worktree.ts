@@ -44,6 +44,11 @@ export const worktreeCommand: any = defineCommand({
       description: 'For prune: report what would be removed without removing it',
       default: false,
     },
+    force: {
+      type: 'boolean',
+      description: 'rm/prune: remove even when the worktree has uncommitted changes (discards them)',
+      default: false,
+    },
   },
   run({ args }) {
     ensureAgonHome();
@@ -53,7 +58,9 @@ export const worktreeCommand: any = defineCommand({
       typeof v === 'string' ? v : Array.isArray(v) && v.length > 0 ? String(v[v.length - 1]) : undefined;
     const rest: string[] = Array.isArray(args._) ? args._.filter((x: unknown) => typeof x === 'string').map(String) : [];
     const action = (coerce(args.action) ?? rest[0] ?? '').toString();
-    const branch = coerce(args.branch) ?? rest.find((t) => t !== action);
+    // Trust the declared positional; only fall back to args._ when citty
+    // didn't bind it. (rest[0] is the action when both land in args._.)
+    const branch = coerce(args.branch) ?? (rest[0] === action ? rest[1] : rest[0]);
 
     let root: string;
     try {
@@ -65,7 +72,9 @@ export const worktreeCommand: any = defineCommand({
     }
 
     const home = process.env.HOME;
-    const short = (p: string): string => (home ? p.replace(home, '~') : p);
+    // Prefix-only replace — String.replace(str) hits the first occurrence
+    // anywhere, which would mangle paths where HOME is a substring.
+    const short = (p: string): string => (home && p.startsWith(home) ? `~${p.slice(home.length)}` : p);
 
     const parseDuration = (s: string): number | null => {
       const m = /^(\d+)\s*([dhm])$/.exec(s.trim());
@@ -99,7 +108,8 @@ export const worktreeCommand: any = defineCommand({
         if (deps === 'install') {
           info(`Installing dependencies with ${pm}...`);
           try {
-            execFileSync(pm, ['install'], { cwd: m.path, stdio: 'inherit' });
+            // shell:true on Windows so npm/pnpm/yarn/bun (.cmd shims) resolve.
+            execFileSync(pm, ['install'], { cwd: m.path, stdio: 'inherit', shell: process.platform === 'win32' });
           } catch (e) {
             warn(`'${pm} install' failed in the worktree (${e instanceof Error ? e.message : String(e)}). Run it manually in ${m.path}.`);
           }
@@ -107,7 +117,7 @@ export const worktreeCommand: any = defineCommand({
         success(`Session worktree ready on ${bold(m.branch)}`);
         console.log(`  ${bold(`cd ${short(m.path)}`)}`);
         if (deps === 'link') {
-          info(`node_modules linked from the main install (fast). If this branch changes dependencies or uses yarn PnP/bun, run \`${pm} install\` here or recreate with --install.`);
+          info(`node_modules linked from the main install (fast). If this branch changes dependencies or uses yarn PnP/bun, run \`${pm} install\` here or recreate with \`--deps install\`.`);
         } else if (deps === 'none') {
           info(`No dependencies set up. Run \`${pm} install\` in the worktree before building.`);
         }
@@ -132,14 +142,19 @@ export const worktreeCommand: any = defineCommand({
       case 'rm':
       case 'remove': {
         if (!branch) {
-          fail('Usage: agon worktree rm <branch>');
+          fail('Usage: agon worktree rm <branch> [--force]');
           process.exit(1);
           return;
         }
-        if (removeSessionWorktree(root, branch)) {
-          success(`Removed the session worktree for ${bold(branch)} (the git branch is kept).`);
-        } else {
-          fail(`No session worktree found for "${branch}".`);
+        try {
+          if (removeSessionWorktree(root, branch, !!args.force)) {
+            success(`Removed the session worktree for ${bold(branch)} (the git branch is kept).`);
+          } else {
+            fail(`No session worktree found for "${branch}".`);
+            process.exit(1);
+          }
+        } catch (e) {
+          fail(e instanceof Error ? e.message : String(e));
           process.exit(1);
         }
         break;
@@ -154,9 +169,9 @@ export const worktreeCommand: any = defineCommand({
           return;
         }
         const dryRun = !!args['dry-run'];
-        const removed = pruneSessionWorktrees(root, ms, dryRun);
+        const removed = pruneSessionWorktrees(root, ms, dryRun, !!args.force);
         if (removed.length === 0) {
-          info(`No session worktrees older than ${olderThan}.`);
+          info(`No session worktrees older than ${olderThan} (dirty worktrees are skipped unless --force).`);
         } else if (dryRun) {
           info(`Would prune ${removed.length}: ${removed.join(', ')}`);
         } else {

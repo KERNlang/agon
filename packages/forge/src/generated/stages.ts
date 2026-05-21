@@ -191,6 +191,26 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
     emitForgeEvent(opts.onEvent, 'engine:pid-clear', opts.engineId, { engineId: opts.engineId, phase: opts.metricPhase });
   }
 
+  // Orphan guard (fixes the "worktree missing before diff" noise): when this
+  // engine was aborted by EARLY FINALIZATION or the stage2 hard-timeout, its
+  // attempt is now orphaned — Promise.race already resolved the challenger
+  // with the finalize/timeout result, so this fitness pass is discarded. But
+  // forge's eager loser-cleanup removes this worktree the moment a winner is
+  // known, so an orphaned runFitness races the rmdir and logs a spurious
+  // "worktree missing before diff" for whichever slow engine was mid-flight.
+  // Bail before fitness when aborted. NOTE: a plain DISPATCH timeout does NOT
+  // abort opts.signal (only finalize / hard-timeout / forge-level abort do),
+  // so the legitimate "harvest the timed-out worktree for fitness" path above
+  // is preserved — we only skip the discarded orphan runs.
+  if (opts.signal?.aborted) {
+    return {
+      result: makeFailedResult(opts.engineId, 'aborted (finalized/superseded before fitness)', dispatchDurationMs),
+      metric: { engineId: opts.engineId, phase: opts.metricPhase as DispatchMetric['phase'], dispatchDurationMs, totalDurationMs: dispatchDurationMs, error: 'aborted before fitness' },
+      dispatchResult,
+      worktreePath: wtPath,
+    };
+  }
+
   const fitnessStart = Date.now();
   const result = await runFitness({
     engineId: opts.engineId,
@@ -254,7 +274,7 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
   return { result, metric, dispatchResult, worktreePath: wtPath };
 }
 
-// @kern-source: stages:239
+// @kern-source: stages:259
 export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}): Promise<boolean> {
   opts.onEvent?.({ type: 'baseline:start' });
 
@@ -278,7 +298,7 @@ export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:
   }
 }
 
-// @kern-source: stages:263
+// @kern-source: stages:283
 export async function runStage1(opts: {starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, taskClass?:string, enginePrompts?:Map<string,string>, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
   const root = repoRoot(opts.cwd);
@@ -308,7 +328,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
   return { engineResults: engineResults, accepted: accepted, winner: result?.pass ? result.engineId : null, metrics: metrics };
 }
 
-// @kern-source: stages:290
+// @kern-source: stages:310
 export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, onResult?:(engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void, abortControllers?: Map<string,AbortController>, forgeMode?: 'implement'|'improve'|'validate', requireDiff?: boolean, baselinePasses?: boolean, acceptReviewOutput?: boolean, earlyFinalizeCount?: number}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
@@ -507,7 +527,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:489
+// @kern-source: stages:509
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, forgeMode?:'implement'|'improve'|'validate', requireDiff?:boolean, baselinePasses?:boolean, acceptReviewOutput?:boolean}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

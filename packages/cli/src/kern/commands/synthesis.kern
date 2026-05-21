@@ -3,8 +3,8 @@ import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createR
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@agon/core" names="RunStatusEngine" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
-import from="@agon/forge" names="runSynthesisModus"
-import from="../blocks/output-format.js" names="header,info,table,bold,green,dim"
+import from="@agon/forge" names="runSynthesisModus,synthesisRoutingAdvice"
+import from="../blocks/output-format.js" names="header,info,table,bold,green,dim,warn"
 import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
 
 const name=synthesisCommand type=any
@@ -74,6 +74,8 @@ const name=synthesisCommand type=any
           header(`Synthesis: ${args.prompt}`);
           info(`Engines: ${available.join(', ')}`);
           info(`Swap rounds: ${args.swaps}`);
+          const routingAdvice = synthesisRoutingAdvice(args.prompt);
+          if (routingAdvice) warn(routingAdvice);
           console.log('');
         }
 

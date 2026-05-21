@@ -6,6 +6,7 @@ export {
   buildSynthesisJudgePrompt,
   shuffleSynthesisEnginesInPlace,
   parseSynthesisJudgeOutput,
+  synthesisRoutingAdvice,
 } from './generated/synthesis-modus.js';
 export type {
   SynthesisDraft,

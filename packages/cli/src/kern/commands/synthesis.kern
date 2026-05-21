@@ -3,8 +3,8 @@ import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createR
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@agon/core" names="RunStatusEngine" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
-import from="@agon/forge" names="runSynthesisModus"
-import from="../blocks/output-format.js" names="header,info,table,bold,green,dim"
+import from="@agon/forge" names="runSynthesisModus,synthesisRoutingAdvice"
+import from="../blocks/output-format.js" names="header,info,table,bold,green,dim,warn"
 import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
 
 const name=synthesisCommand type=any
@@ -74,6 +74,8 @@ const name=synthesisCommand type=any
           header(`Synthesis: ${args.prompt}`);
           info(`Engines: ${available.join(', ')}`);
           info(`Swap rounds: ${args.swaps}`);
+          const routingAdvice = synthesisRoutingAdvice(args.prompt);
+          if (routingAdvice) warn(routingAdvice);
           console.log('');
         }
 
@@ -143,9 +145,10 @@ const name=synthesisCommand type=any
           const rows = result.scores.map((s: any) => [
             s.engineId === result.winner ? green(`${s.engineId} *`) : s.engineId,
             String(s.score),
-            s.breakdown.slice(0, 60),
+            typeof s.confidence === 'number' ? s.confidence.toFixed(2) : '—',
+            s.unhandled ? s.unhandled.slice(0, 48) : '—',
           ]);
-          table(['Engine', 'Score', 'Breakdown'], rows);
+          table(['Engine', 'Score', 'Conf', 'Unhandled (judge)'], rows);
         }
 
         console.log('');

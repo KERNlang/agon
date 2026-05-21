@@ -65,6 +65,7 @@ export interface JournalState {
   spec: GoalSpec;
   createdAt: number;
   startedAt?: number;
+  heartbeatAt?: number;
   spentUsd: number;
   parkedStreak: number;
   noProgressStreak: number;

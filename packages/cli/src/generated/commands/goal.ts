@@ -105,9 +105,15 @@ return defineCommand({
     const config = loadConfig(args.cwd);
     const repoRoot = resolve(args.cwd);
 
-    const goalId = args.id ? slug(args.id) : slug(args.intent ?? '');
+    let goalId = args.id ? slug(args.id) : slug(args.intent ?? '');
+    // Finding #4: `--status` keyed only on id/intent. Let it resolve a
+    // `goal/<id>` branch name too, so you can query a run you only know by
+    // branch (e.g. `agon goal --status --branch goal/semantic-spec-moat`).
+    if (!goalId && args.status && args.branch) {
+      goalId = slug(String(args.branch).replace(/^goal\//, ''));
+    }
     if (!goalId) {
-      fail('A goal id is required. Pass an intent ("agon goal \"close all kern gaps\"") or --id.');
+      fail('A goal id is required. Pass an intent ("agon goal \"close all kern gaps\""), --id, or (with --status) --branch goal/<id>.');
       process.exit(1);
     }
 
@@ -115,7 +121,7 @@ return defineCommand({
     // session, long after the originating run is gone.
     if (args.status) {
       const state = loadJournal(goalId);
-      if (!state) { fail(`No goal '${goalId}' found under ${goalDir(goalId)}`); process.exit(1); }
+      if (!state) { fail(`No goal '${goalId}' found under ${goalDir(goalId)}. Pass --id, the original intent, or --branch goal/<id>.`); process.exit(1); }
       header(`Goal ${goalId}`);
       console.log(summarizeGoal(state!));
       info(`Artifacts: ${goalDir(goalId)}`);
@@ -167,9 +173,19 @@ return defineCommand({
     // Every task's diff is reviewed by ALL active engines before its commit
     // (the design's ensemble gate) — narrow it with --review-engines if the
     // full roster is too slow/expensive for an overnight run.
+    // Default review panel (when -r omitted): a config-pinned roster if set,
+    // else every active engine EXCEPT local ones (e.g. ollama) — they were
+    // being pulled into the gate by the old all-active default (finding #3).
+    const configPanel = (((config as any).goalReviewEngines ?? []) as string[])
+      .map((s: string) => registry.resolveId(String(s).trim())).filter(Boolean);
+    const smartDefault = available.filter((id: string) => {
+      try { return !(registry.get(id) as any).isLocal; } catch { return true; }
+    });
     const reviewEngines = (args.reviewEngines
       ? args.reviewEngines.split(',').map((s: string) => registry.resolveId(s.trim())).filter(Boolean)
-      : available
+      : configPanel.length > 0
+        ? configPanel
+        : (smartDefault.length > 0 ? smartDefault : available)
     ).filter((id: string, i: number, arr: string[]) => arr.indexOf(id) === i);
     if (reviewEngines.length === 0) {
       fail('No review engines resolved. Pass --review-engines or check "agon doctor".');

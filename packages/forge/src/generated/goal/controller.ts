@@ -42,15 +42,25 @@ export function persistGateLog(goalId: string, taskId: string, gateCmd: string, 
 export function summarizeGoal(state: JournalState): string {
   const by = (s: string) => state.tasks.filter((t) => t.status === s);
   const done = by('done'), parked = by('parked'), failed = by('failed');
-  const queued = state.tasks.filter((t) => t.status === 'queued' || t.status === 'inflight');
+  const inflight = by('inflight');
+  const queued = by('queued');
   const mins = state.startedAt ? Math.round((Date.now() - state.startedAt) / 60_000) : 0;
+  const hbAgeMin = state.heartbeatAt ? Math.round((Date.now() - state.heartbeatAt) / 60_000) : null;
+  // A task mid-flight means the run is live (or crashed mid-task — the
+  // heartbeat age below tells which). Previously this always read "stopped".
+  const phase = isDone(state) ? 'complete' : inflight.length > 0 ? 'running' : 'stopped';
   const lines: string[] = [];
-  lines.push(`# Goal ${state.spec.goalId} — ${isDone(state) ? 'complete' : 'stopped'}`);
+  lines.push(`# Goal ${state.spec.goalId} — ${phase}`);
   lines.push('');
   lines.push(`Intent: ${state.spec.intent}`);
   lines.push(`Branch: ${state.spec.branch}`);
-  lines.push(`Tasks: ${done.length} done · ${parked.length} parked · ${failed.length} failed · ${queued.length} remaining`);
+  lines.push(`Tasks: ${done.length} done · ${inflight.length} in progress · ${parked.length} parked · ${failed.length} failed · ${queued.length} remaining`);
   lines.push(`Spend: $${state.spentUsd.toFixed(2)} / $${state.spec.budgetUsd || 0} · ${mins}m elapsed`);
+  if (inflight.length) {
+    lines.push('');
+    lines.push('## In progress');
+    for (const t of inflight) lines.push(`- ▶ implementing ${t.id} — ${t.source}${hbAgeMin != null ? ` (updated ${hbAgeMin}m ago)` : ''}`);
+  }
   if (done.length) {
     lines.push('');
     lines.push('## Closed');
@@ -67,7 +77,7 @@ export function summarizeGoal(state: JournalState): string {
 /**
  * Persist the durable terminal artifacts (result.json + summary.md) any session can read via `agon goal status <id>` — the source of truth when the originating CLI is long dead.
  */
-// @kern-source: controller:64
+// @kern-source: controller:74
 export function writeGoalArtifacts(state: JournalState): {resultPath:string, summaryPath:string} {
   assertSafeGoalId(state.spec.goalId);
   ensureAgonHome();
@@ -95,7 +105,7 @@ export function writeGoalArtifacts(state: JournalState): {resultPath:string, sum
 /**
  * Run the goal to a terminal state (done / budget / time / breaker / abort). Resumable: re-invoking with resume=true picks up the journal. Returns the final JournalState; durable artifacts are written before return.
  */
-// @kern-source: controller:90
+// @kern-source: controller:100
 export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[]}>, oracleFiles?: string[], resume?: boolean, push?: boolean, remote?: string, requireTests?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string, costUsd?:number}> }): Promise<JournalState> {
   const { spec, repoRoot } = opts;
   assertSafeGoalId(spec.goalId);

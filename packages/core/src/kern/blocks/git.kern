@@ -1,6 +1,6 @@
 import from="node:child_process" names="execFileSync"
-import from="node:fs" names="readdirSync,statSync,existsSync,rmSync,readFileSync,symlinkSync,mkdirSync,cpSync"
-import from="node:path" names="join"
+import from="node:fs" names="readdirSync,statSync,lstatSync,existsSync,rmSync,readFileSync,symlinkSync,mkdirSync,cpSync,realpathSync"
+import from="node:path" names="join,relative,sep,isAbsolute"
 import from="../models/errors.js" names="GitError,WorktreeError"
 import from="../utils/patch.js" names="normalizePatchContent"
 
@@ -59,35 +59,143 @@ fn name=symlinkNodeModuleEntry params="sourcePath:string,targetPath:string" retu
     symlinkSync(sourcePath, targetPath, linkType);
   >>>
 
-fn name=linkWorktreeNodeModules params="repoDir:string,worktreePath:string" returns=void export=false
-  doc "External git worktrees live outside the repo, so Node cannot walk up to the root install. Create a shallow node_modules overlay: external deps link to the root install, while @agon workspace packages link back into the candidate worktree so runtime tests see candidate edits."
+fn name=linkWorktreeNodeModules params="repoDir:string,worktreePath:string" returns=void export=true
+  doc "External git worktrees live outside the repo, so Node cannot walk up to the root install. Create a shallow node_modules overlay: external deps link to the source install, while workspace packages (any scope) link back into the candidate worktree so runtime tests see candidate edits. Handles both npm-hoisted (root node_modules/@scope) and pnpm non-hoisted (per-package node_modules) layouts."
   handler <<<
-    const source = join(repoDir, 'node_modules');
-    const target = join(worktreePath, 'node_modules');
-    if (!existsSync(source) || existsSync(target)) return;
-    try {
-      mkdirSync(target, { recursive: true });
-      const entries = readdirSync(source, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.name === '@agon') continue;
-        symlinkNodeModuleEntry(join(source, entry.name), join(target, entry.name));
+    const repoPackages = join(repoDir, 'packages');
+    const worktreePackages = join(worktreePath, 'packages');
+    // Workspace symlinks resolve through realpathSync, which canonicalizes the
+    // path (e.g. macOS /var -> /private/var, or any symlinked repo/home/temp
+    // component). Compare containment against the realpath'd base or the check
+    // silently fails and the workspace re-point is skipped.
+    const repoPackagesReal = existsSync(repoPackages) ? realpathSync(repoPackages) : repoPackages;
+
+    const warn = (err: unknown) => {
+      console.warn(`[agon] worktree node_modules link failed for ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
+    };
+
+    const isInsideRepoPackages = (candidatePath: string): boolean => {
+      const rel = relative(repoPackagesReal, candidatePath);
+      return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+    };
+
+    const workspacePackageNameFor = (resolvedPath: string): string | null => {
+      if (!isInsideRepoPackages(resolvedPath)) return null;
+      const rel = relative(repoPackagesReal, resolvedPath);
+      const [packageName] = rel.split(sep);
+      return packageName || null;
+    };
+
+    // A workspace symlink (resolving into repo/packages) is re-pointed at the
+    // worktree's copy so the gate sees candidate edits; everything else keeps
+    // pointing at the repo's resolved install (externals, .pnpm store, etc.).
+    const sourceForNodeModuleEntry = (sourcePath: string): string => {
+      const entryStat = lstatSync(sourcePath);
+      if (!entryStat.isSymbolicLink()) return sourcePath;
+
+      const resolvedPath = realpathSync(sourcePath);
+      const workspacePackageName = workspacePackageNameFor(resolvedPath);
+      if (!workspacePackageName) return resolvedPath;
+
+      const worktreePackage = join(worktreePackages, workspacePackageName);
+      return existsSync(worktreePackage) ? worktreePackage : resolvedPath;
+    };
+
+    const linkNodeModuleEntry = (
+      sourceDir: string,
+      targetDir: string,
+      entryName: string,
+      allowScopeRecursion: boolean,
+    ): void => {
+      const sourcePath = join(sourceDir, entryName);
+      const targetPath = join(targetDir, entryName);
+      const entryStat = lstatSync(sourcePath);
+
+      // Scope dir (@scope/pkg): recurse exactly one level so each scoped
+      // package is linked individually. allowScopeRecursion=false on the
+      // inner call prevents walking arbitrary nested trees / recursion loops.
+      if (allowScopeRecursion && entryName.startsWith('@') && entryStat.isDirectory()) {
+        mkdirSync(targetPath, { recursive: true });
+        const scopedEntries = readdirSync(sourcePath, { withFileTypes: true });
+        for (const scopedEntry of scopedEntries) {
+          linkNodeModuleEntry(sourcePath, targetPath, scopedEntry.name, false);
+        }
+        return;
       }
 
-      const agonSource = join(source, '@agon');
-      if (existsSync(agonSource)) {
-        const agonTarget = join(target, '@agon');
-        mkdirSync(agonTarget, { recursive: true });
-        const agonEntries = readdirSync(agonSource, { withFileTypes: true });
-        for (const entry of agonEntries) {
-          const worktreePackage = join(worktreePath, 'packages', entry.name);
-          const packageSource = existsSync(worktreePackage)
-            ? worktreePackage
-            : join(agonSource, entry.name);
-          symlinkNodeModuleEntry(packageSource, join(agonTarget, entry.name));
+      symlinkNodeModuleEntry(sourceForNodeModuleEntry(sourcePath), targetPath);
+    };
+
+    const linkEntries = (sourceDir: string, targetDir: string): void => {
+      mkdirSync(targetDir, { recursive: true });
+      const entries = readdirSync(sourceDir, { withFileTypes: true });
+      for (const entry of entries) {
+        try {
+          linkNodeModuleEntry(sourceDir, targetDir, entry.name, true);
+        } catch (err) {
+          warn(err);
+        }
+      }
+    };
+
+    try {
+      // 1. Root node_modules overlay (npm-hoisted externals + @scope packages).
+      const rootSource = join(repoDir, 'node_modules');
+      const rootTarget = join(worktreePath, 'node_modules');
+
+      if (existsSync(rootSource)) {
+        mkdirSync(rootTarget, { recursive: true });
+        const entries = readdirSync(rootSource, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.name === '@agon') continue;
+          // Root entries (incl. external scope dirs like @types) are symlinked
+          // WHOLESALE — preserving the original contract. pnpm's per-package
+          // re-pointing happens in the per-package overlay below, not here.
+          try {
+            symlinkNodeModuleEntry(join(rootSource, entry.name), join(rootTarget, entry.name));
+          } catch (err) {
+            warn(err);
+          }
+        }
+
+        // Preserve the explicit @agon fast path (root-hoisted workspace scope).
+        const agonSource = join(rootSource, '@agon');
+        if (existsSync(agonSource)) {
+          const agonTarget = join(rootTarget, '@agon');
+          mkdirSync(agonTarget, { recursive: true });
+          const agonEntries = readdirSync(agonSource, { withFileTypes: true });
+          for (const entry of agonEntries) {
+            try {
+              const worktreePackage = join(worktreePackages, entry.name);
+              const packageSource = existsSync(worktreePackage)
+                ? worktreePackage
+                : sourceForNodeModuleEntry(join(agonSource, entry.name));
+              symlinkNodeModuleEntry(packageSource, join(agonTarget, entry.name));
+            } catch (err) {
+              warn(err);
+            }
+          }
+        }
+      }
+
+      // 2. Per-package node_modules overlay (pnpm non-hoisted layout): each
+      //    packages/<p>/node_modules is recreated in the worktree.
+      if (existsSync(repoPackages)) {
+        const packageEntries = readdirSync(repoPackages, { withFileTypes: true });
+        for (const entry of packageEntries) {
+          if (!entry.isDirectory()) continue;
+
+          const packageNodeModules = join(repoPackages, entry.name, 'node_modules');
+          if (!existsSync(packageNodeModules)) continue;
+
+          linkEntries(
+            packageNodeModules,
+            join(worktreePackages, entry.name, 'node_modules'),
+          );
         }
       }
     } catch (err) {
-      console.warn(`[agon] worktree node_modules link failed for ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
+      warn(err);
     }
   >>>
 

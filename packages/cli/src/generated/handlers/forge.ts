@@ -153,7 +153,7 @@ function applyForgePatchToWorkspace(winnerId: string, patchContent: string, disp
   // changed the ground under us — don't auto-apply to the wrong base.
   const movedHead = headChanged(cwd, baseSha ?? null);
   if (movedHead.changed) {
-    dispatch({ type: 'warning', message: `HEAD moved (${String(baseSha).slice(0, 8)} → ${(movedHead.current ?? '?').slice(0, 8)}) since this run started — not auto-applying. Review with /apply.` });
+    dispatch({ type: 'warning', message: `HEAD moved (${(baseSha ?? '?').slice(0, 8)} → ${(movedHead.current ?? '?').slice(0, 8)}) since this run started — not auto-applying. Review with /apply.` });
     return false;
   }
   const movedBranch = branchChanged(cwd, baseBranch ?? null);

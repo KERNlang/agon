@@ -66,22 +66,23 @@ function readApplyLock(lockPath: string): ApplyLockInfo | null {
 }
 
 /**
- * A lock is stale (reclaimable) if: unreadable; OR older than the TTL (applies regardless of host); OR same-host with a dead pid. A same-host live pid, or a cross-host lock within the TTL, is treated as held.
+ * Reclaimable when: unreadable; same-host with a dead pid; or older than the TTL. Same host is pid-authoritative — a live holder owns it — with the TTL only as a backstop for a crashed-then-pid-reused holder or a hung apply (apply itself is sub-second). A different host can't be pid-verified, so it's honored until the TTL expires.
  */
 // @kern-source: worktree-lock:71
 function isApplyLockStale(info: ApplyLockInfo | null): boolean {
   if (!info) return true;
   const age = Date.now() - new Date(info.acquiredAt).getTime();
-  if (!Number.isFinite(age) || age > APPLY_LOCK_TTL_MS) return true;
-  // Different host: can't pid-verify, so honor until the TTL expires.
-  if (info.hostname !== hostname()) return false;
-  return !pidAlive(info.pid);
+  const ttlExpired = !Number.isFinite(age) || age > APPLY_LOCK_TTL_MS;
+  if (info.hostname === hostname()) {
+    return !pidAlive(info.pid) || ttlExpired;
+  }
+  return ttlExpired;
 }
 
 /**
  * Acquire the advisory apply-lock for this checkout. Returns acquired=true on success (incl. fail-open when cwd is not a git repo). On contention with a live holder, acquired=false and heldBy is set. Stale locks are reclaimed atomically.
  */
-// @kern-source: worktree-lock:82
+// @kern-source: worktree-lock:83
 export function acquireApplyLock(cwd: string, action?: string): ApplyLockResult {
   const sessionUUID = randomUUID();
   const lockPath = applyLockPath(cwd);
@@ -110,25 +111,32 @@ export function acquireApplyLock(cwd: string, action?: string): ApplyLockResult 
   const holder = readApplyLock(lockPath);
   if (!isApplyLockStale(holder)) return { acquired: false, lockPath, sessionUUID: null, heldBy: holder };
 
-  // Stale → reclaim atomically: write a unique temp, rename over the lock,
-  // then read back to confirm WE won (two reclaimers can't both succeed).
-  const tmp = `${lockPath}.${sessionUUID}`;
+  // Stale → CLAIM it by renaming the stale entry AWAY to a unique path.
+  // renameSync of a now-missing source throws, so at most ONE concurrent
+  // reclaimer wins; the rest get ENOENT. (This also avoids renaming OVER an
+  // existing target, which isn't atomic and fails with EPERM on Windows.)
+  const claim = `${lockPath}.claim.${sessionUUID}`;
   try {
-    writeFileSync(tmp, payload, { flag: 'w' });
-    renameSync(tmp, lockPath);
+    renameSync(lockPath, claim);
   } catch {
-    try { unlinkSync(tmp); } catch { /* nothing to clean */ }
-    return { acquired: false, lockPath, sessionUUID: null, heldBy: holder };
+    // Another reclaimer/acquirer got there first.
+    return { acquired: false, lockPath, sessionUUID: null, heldBy: readApplyLock(lockPath) ?? holder };
   }
-  const after = readApplyLock(lockPath);
-  if (after && after.sessionUUID === sessionUUID) return { acquired: true, lockPath, sessionUUID, heldBy: null };
-  return { acquired: false, lockPath, sessionUUID: null, heldBy: after };
+  try { unlinkSync(claim); } catch { /* the claimed stale entry; best-effort */ }
+  // The slot is now free — take it with the same O_EXCL create as the fast path,
+  // so a fresh acquirer racing us still can't double-acquire.
+  try {
+    writeFileSync(lockPath, payload, { flag: 'wx' });
+    return { acquired: true, lockPath, sessionUUID, heldBy: null };
+  } catch {
+    return { acquired: false, lockPath, sessionUUID: null, heldBy: readApplyLock(lockPath) };
+  }
 }
 
 /**
  * Release the apply-lock only if WE still own it (sessionUUID match), so a stale-reclaim by another session is never clobbered.
  */
-// @kern-source: worktree-lock:127
+// @kern-source: worktree-lock:135
 export function releaseApplyLock(cwd: string, sessionUUID: string): void {
   const lockPath = applyLockPath(cwd);
   if (!lockPath) return;
@@ -141,7 +149,7 @@ export function releaseApplyLock(cwd: string, sessionUUID: string): void {
 /**
  * HEAD compare-and-swap probe: true when the working tree's HEAD differs from the SHA recorded when a run started. A null/unknown expected SHA never reports changed (nothing to compare).
  */
-// @kern-source: worktree-lock:138
+// @kern-source: worktree-lock:146
 export function headChanged(cwd: string, expectedSha: string | null): { changed: boolean, current: string | null } {
   let current: string | null = null;
   try { current = headSha(cwd); } catch { /* not a git repo / detached weirdness */ }
@@ -152,7 +160,7 @@ export function headChanged(cwd: string, expectedSha: string | null): { changed:
 /**
  * Companion to headChanged for the branch ref — catches a branch switch that lands on the same commit.
  */
-// @kern-source: worktree-lock:147
+// @kern-source: worktree-lock:155
 export function branchChanged(cwd: string, expectedBranch: string | null): { changed: boolean, current: string | null } {
   let current: string | null = null;
   try { current = currentBranch(cwd); } catch { /* ignore */ }

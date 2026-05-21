@@ -49,7 +49,7 @@ describe('linkWorktreeNodeModules — pnpm per-package layout', () => {
     // + external dep (symlink up to root node_modules) — the pnpm shape.
     mkdirSync(join(repo, 'packages', 'cli', 'node_modules', '@scope'), { recursive: true });
     symlinkSync('../../../core', join(repo, 'packages', 'cli', 'node_modules', '@scope', 'core'), 'dir');
-    symlinkSync('../../../../node_modules/typescript', join(repo, 'packages', 'cli', 'node_modules', 'typescript'), 'dir');
+    symlinkSync('../../../node_modules/typescript', join(repo, 'packages', 'cli', 'node_modules', 'typescript'), 'dir');
 
     // ── worktree: tracked files only (git worktree never copies gitignored node_modules) ──
     // The worktree's core carries the CANDIDATE edit, distinguished by its MARKER.

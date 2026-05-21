@@ -1,15 +1,15 @@
-// `agon install-agent-prompts` — wire agon into other CLIs as a cheap /agon
-// slash command, instead of an always-on MCP server.
+// `agon install-agent-prompts` — wire agon into other CLIs as the native
+// lightweight prompt/skill shape for each CLI, instead of an always-on MCP server.
 //
 // Drops a thin per-CLI shim into each detected CLI's prompt/command dir:
-//   Codex       -> ~/.codex/prompts/agon.md
+//   Codex       -> ~/.codex/skills/agon/SKILL.md (+ agents/openai.yaml)
 //   Gemini CLI  -> ~/.gemini/commands/agon.toml
 //   Claude Code -> ~/.claude/commands/agon.md
-// Each shim just tells the engine to run `agon agent-guide` and drive agon
-// from its normal shell. Nothing is loaded into context until /agon is typed.
+// Each shim/skill tells the engine to run `agon agent-guide` and drive agon
+// from its normal shell. Nothing runs until invoked by the user.
 
 import from="citty" names="defineCommand"
-import from="./agent-guide-text.js" names="agonShim"
+import from="./agent-guide-text.js" names="agonShim,codexSkillMarkdown,codexSkillOpenAiYaml"
 import from="node:fs" names="existsSync,mkdirSync,writeFileSync"
 import from="node:os" names="homedir"
 import from="node:path" names="join,dirname"
@@ -19,7 +19,7 @@ const name=installAgentPromptsCommand type=any
     defineCommand({
       meta: {
         name: 'install-agent-prompts',
-        description: 'Install a lightweight /agon slash command into other CLIs (Codex, Gemini, Claude Code) — no MCP, no always-on tokens',
+        description: 'Install lightweight Agon prompts/skills into other CLIs (Codex, Gemini, Claude Code) — no MCP, no always-on tokens',
       },
       args: {
         cli: {
@@ -28,7 +28,7 @@ const name=installAgentPromptsCommand type=any
         },
         force: {
           type: 'boolean',
-          description: 'Overwrite an existing agon shim.',
+          description: 'Overwrite an existing Agon integration file.',
         },
         dry: {
           type: 'boolean',
@@ -37,11 +37,30 @@ const name=installAgentPromptsCommand type=any
       },
       run({ args }) {
         const home = homedir();
-        type Target = { id: string; label: string; baseDir: string; file: string; format: string };
+        type TargetFile = { file: string; content: string };
+        type Target = { id: string; label: string; baseDir: string; files: TargetFile[] };
         const targets: Target[] = [
-          { id: 'codex', label: 'Codex', baseDir: join(home, '.codex'), file: join(home, '.codex', 'prompts', 'agon.md'), format: 'codex' },
-          { id: 'gemini', label: 'Gemini CLI', baseDir: join(home, '.gemini'), file: join(home, '.gemini', 'commands', 'agon.toml'), format: 'gemini' },
-          { id: 'claude', label: 'Claude Code', baseDir: join(home, '.claude'), file: join(home, '.claude', 'commands', 'agon.md'), format: 'claude' },
+          {
+            id: 'codex',
+            label: 'Codex',
+            baseDir: join(home, '.codex'),
+            files: [
+              { file: join(home, '.codex', 'skills', 'agon', 'SKILL.md'), content: codexSkillMarkdown() },
+              { file: join(home, '.codex', 'skills', 'agon', 'agents', 'openai.yaml'), content: codexSkillOpenAiYaml() },
+            ],
+          },
+          {
+            id: 'gemini',
+            label: 'Gemini CLI',
+            baseDir: join(home, '.gemini'),
+            files: [{ file: join(home, '.gemini', 'commands', 'agon.toml'), content: agonShim('gemini') }],
+          },
+          {
+            id: 'claude',
+            label: 'Claude Code',
+            baseDir: join(home, '.claude'),
+            files: [{ file: join(home, '.claude', 'commands', 'agon.md'), content: agonShim('claude') }],
+          },
         ];
 
         const requested = String(args.cli ?? '')
@@ -78,31 +97,33 @@ const name=installAgentPromptsCommand type=any
         let hadError = false;
         const lines: string[] = [];
         for (const t of chosen) {
-          const exists = existsSync(t.file);
-          if (exists && !force) {
-            lines.push(fmt('skip', t.label, `${t.file} (exists — use --force to overwrite)`));
-            continue;
-          }
-          if (dryRun) {
-            lines.push(fmt(exists ? 'would overwrite' : 'would write', t.label, t.file));
-            continue;
-          }
-          try {
-            mkdirSync(dirname(t.file), { recursive: true });
-            writeFileSync(t.file, agonShim(t.format));
-            lines.push(fmt(exists ? 'updated' : 'wrote', t.label, t.file));
-          } catch (err) {
-            hadError = true;
-            lines.push(fmt('error', t.label, err instanceof Error ? err.message : String(err)));
+          for (const out of t.files) {
+            const exists = existsSync(out.file);
+            if (exists && !force) {
+              lines.push(fmt('skip', t.label, `${out.file} (exists — use --force to overwrite)`));
+              continue;
+            }
+            if (dryRun) {
+              lines.push(fmt(exists ? 'would overwrite' : 'would write', t.label, out.file));
+              continue;
+            }
+            try {
+              mkdirSync(dirname(out.file), { recursive: true });
+              writeFileSync(out.file, out.content);
+              lines.push(fmt(exists ? 'updated' : 'wrote', t.label, out.file));
+            } catch (err) {
+              hadError = true;
+              lines.push(fmt('error', t.label, err instanceof Error ? err.message : String(err)));
+            }
           }
         }
 
         process.stdout.write(lines.join('\n') + '\n');
         if (hadError) {
-          process.stderr.write('\nSome shims failed to install (see the "error" lines above).\n');
+          process.stderr.write('\nSome integration files failed to install (see the "error" lines above).\n');
           process.exitCode = 1;
         } else if (!dryRun) {
-          process.stdout.write('\nDone. In each CLI, type /agon — it runs `agon agent-guide`, then orchestrates. No MCP; nothing is loaded until you invoke it.\n');
+          process.stdout.write('\nDone. In Claude Code/Gemini, type /agon. In Codex, start a new session and use $agon. Each path runs `agon agent-guide`, then orchestrates. No MCP; nothing is loaded until you invoke it.\n');
         }
       },
     })

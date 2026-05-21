@@ -46,7 +46,7 @@ export function agentGuideMarkdown(): string {
 }
 
 /**
- * Per-CLI /agon slash-command shim. format is one of codex | gemini | claude.
+ * Per-CLI /agon slash-command shim. format is one of gemini | claude | markdown.
  */
 // @kern-source: agent-guide-text:50
 export function agonShim(format: string): string {
@@ -82,13 +82,65 @@ export function agonShim(format: string): string {
     ].join('\n');
   }
 
-  // codex (and any other markdown-prompt CLI): plain markdown, no frontmatter.
+  // Any markdown-prompt CLI: plain markdown, no frontmatter.
   return [
     '# Agon',
     '',
     body,
     '',
     '$ARGUMENTS',
+    '',
+  ].join('\n');
+}
+
+/**
+ * Native Codex skill that exposes Agon as $agon.
+ */
+// @kern-source: agent-guide-text:96
+export function codexSkillMarkdown(): string {
+  return [
+    '---',
+    'name: agon',
+    'description: "Use when the user explicitly asks for Agon, $agon, /agon, or wants Agon multi-AI orchestration modes such as forge, synthesis, brainstorm, tribunal, campfire, review, or goal."',
+    '---',
+    '',
+    '# Agon',
+    '',
+    'Use Agon through the local CLI. Do not assume an MCP server or resident background integration is available.',
+    '',
+    '## Workflow',
+    '',
+    '1. Run `agon agent-guide` in the shell before choosing a mode.',
+    '2. Select the Agon mode that matches the user request.',
+    '3. Run Agon from the current repository with the normal shell tool.',
+    '4. Summarize the result, including run paths or artifacts that matter.',
+    '',
+    '## Common modes',
+    '',
+    '- `forge`: multiple engines implement the same task and compete.',
+    '- `synthesis`: engines draft, swap, improve, and judge a final artifact.',
+    '- `brainstorm`: engines compare approaches or surface gaps.',
+    '- `tribunal`: engines debate opposing technical positions.',
+    '- `campfire`: open multi-engine discussion.',
+    '- `review`: non-interactive AI review of a diff target.',
+    '- `goal`: autonomous task-queue execution with stronger gates.',
+    '',
+  ].join('\n');
+}
+
+/**
+ * Codex UI metadata for the Agon skill.
+ */
+// @kern-source: agent-guide-text:129
+export function codexSkillOpenAiYaml(): string {
+  return [
+    'interface:',
+    '  display_name: "Agon"',
+    '  short_description: "Run Agon multi-AI orchestration."',
+    '  default_prompt: "Use $agon to run the right Agon mode for this task."',
+    '',
+    'policy:',
+    '  allow_implicit_invocation: true',
     '',
   ].join('\n');
 }

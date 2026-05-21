@@ -23,8 +23,7 @@ interface name=CompanionConfig
   field name=protocol type="'jsonrpc'|'acp'|'structured-cli'|'stream-json'"
   field name=serverCmd type="string[]"
   field name=sandbox type="'read-only'|'workspace-write'|'danger-full-access'" optional=true
-  comment raw="// Flag the companion server uses to set its working directory (e.g. opencode's '--cwd'). When set, companionDispatch appends [cwdArg, opts.cwd] to serverCmd so the server is PINNED to the worktree. Required for servers (opencode) that ignore the spawn cwd / attach to a shared server in the launch repo — relying on the spawn cwd alone leaked writes into the parent repo."
-  field name=cwdArg type=string optional=true
+  field name=cwdArg type=string optional=true doc="Flag the companion server uses to set its working directory (e.g. opencode's '--cwd'). When set, companionDispatch appends [cwdArg, opts.cwd] to serverCmd so the server is PINNED to the worktree. Required for servers (opencode) that ignore the spawn cwd / attach to a shared server in the launch repo — relying on the spawn cwd alone leaked writes into the parent repo."
   field name=features type="{threadResume?:boolean, nativeReview?:boolean, structuredOutput?:boolean}" optional=true
 
 interface name=CliModelEntry

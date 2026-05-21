@@ -69,14 +69,15 @@ fn name=readApplyLock params="lockPath:string" returns="ApplyLockInfo | null" ex
   >>>
 
 fn name=isApplyLockStale params="info:ApplyLockInfo | null" returns=boolean export=false
-  doc "A lock is stale (reclaimable) if: unreadable; OR older than the TTL (applies regardless of host); OR same-host with a dead pid. A same-host live pid, or a cross-host lock within the TTL, is treated as held."
+  doc "Reclaimable when: unreadable; same-host with a dead pid; or older than the TTL. Same host is pid-authoritative — a live holder owns it — with the TTL only as a backstop for a crashed-then-pid-reused holder or a hung apply (apply itself is sub-second). A different host can't be pid-verified, so it's honored until the TTL expires."
   handler <<<
     if (!info) return true;
     const age = Date.now() - new Date(info.acquiredAt).getTime();
-    if (!Number.isFinite(age) || age > APPLY_LOCK_TTL_MS) return true;
-    // Different host: can't pid-verify, so honor until the TTL expires.
-    if (info.hostname !== hostname()) return false;
-    return !pidAlive(info.pid);
+    const ttlExpired = !Number.isFinite(age) || age > APPLY_LOCK_TTL_MS;
+    if (info.hostname === hostname()) {
+      return !pidAlive(info.pid) || ttlExpired;
+    }
+    return ttlExpired;
   >>>
 
 fn name=acquireApplyLock params="cwd:string, action?:string" returns=ApplyLockResult export=true
@@ -109,19 +110,26 @@ fn name=acquireApplyLock params="cwd:string, action?:string" returns=ApplyLockRe
     const holder = readApplyLock(lockPath);
     if (!isApplyLockStale(holder)) return { acquired: false, lockPath, sessionUUID: null, heldBy: holder };
 
-    // Stale → reclaim atomically: write a unique temp, rename over the lock,
-    // then read back to confirm WE won (two reclaimers can't both succeed).
-    const tmp = `${lockPath}.${sessionUUID}`;
+    // Stale → CLAIM it by renaming the stale entry AWAY to a unique path.
+    // renameSync of a now-missing source throws, so at most ONE concurrent
+    // reclaimer wins; the rest get ENOENT. (This also avoids renaming OVER an
+    // existing target, which isn't atomic and fails with EPERM on Windows.)
+    const claim = `${lockPath}.claim.${sessionUUID}`;
     try {
-      writeFileSync(tmp, payload, { flag: 'w' });
-      renameSync(tmp, lockPath);
+      renameSync(lockPath, claim);
     } catch {
-      try { unlinkSync(tmp); } catch { /* nothing to clean */ }
-      return { acquired: false, lockPath, sessionUUID: null, heldBy: holder };
+      // Another reclaimer/acquirer got there first.
+      return { acquired: false, lockPath, sessionUUID: null, heldBy: readApplyLock(lockPath) ?? holder };
     }
-    const after = readApplyLock(lockPath);
-    if (after && after.sessionUUID === sessionUUID) return { acquired: true, lockPath, sessionUUID, heldBy: null };
-    return { acquired: false, lockPath, sessionUUID: null, heldBy: after };
+    try { unlinkSync(claim); } catch { /* the claimed stale entry; best-effort */ }
+    // The slot is now free — take it with the same O_EXCL create as the fast path,
+    // so a fresh acquirer racing us still can't double-acquire.
+    try {
+      writeFileSync(lockPath, payload, { flag: 'wx' });
+      return { acquired: true, lockPath, sessionUUID, heldBy: null };
+    } catch {
+      return { acquired: false, lockPath, sessionUUID: null, heldBy: readApplyLock(lockPath) };
+    }
   >>>
 
 fn name=releaseApplyLock params="cwd:string, sessionUUID:string" returns=void export=true

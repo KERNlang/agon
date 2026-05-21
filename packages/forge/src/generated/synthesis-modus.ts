@@ -2,7 +2,7 @@
 
 import type { EngineAdapter, ForgeEvent } from '@agon/core';
 
-import { EngineRegistry, resolveWorkingDir } from '@agon/core';
+import { EngineRegistry, resolveWorkingDir, classifyTask } from '@agon/core';
 
 // @kern-source: synthesis-modus:4
 export interface SynthesisDraft {
@@ -26,9 +26,11 @@ export interface SynthesisScore {
   engineId: string;
   score: number;
   breakdown: string;
+  confidence?: number;
+  unhandled?: string;
 }
 
-// @kern-source: synthesis-modus:22
+// @kern-source: synthesis-modus:26
 export interface SynthesisResult {
   prompt: string;
   drafts: SynthesisDraft[];
@@ -38,7 +40,7 @@ export interface SynthesisResult {
   judgeReasoning: string;
 }
 
-// @kern-source: synthesis-modus:30
+// @kern-source: synthesis-modus:34
 export interface SynthesisOptions {
   prompt: string;
   engines: string[];
@@ -52,7 +54,7 @@ export interface SynthesisOptions {
   signal?: AbortSignal;
 }
 
-// @kern-source: synthesis-modus:42
+// @kern-source: synthesis-modus:46
 export function buildSynthesisDraftPrompt(prompt: string): string {
   return [
     '## SYNTHESIS DRAFT',
@@ -66,7 +68,7 @@ export function buildSynthesisDraftPrompt(prompt: string): string {
   ].join('\n');
 }
 
-// @kern-source: synthesis-modus:56
+// @kern-source: synthesis-modus:60
 export function buildSynthesisSwapPrompt(task: string, originalEngineId: string, originalContent: string): string {
   return [
     "## SYNTHESIS SWAP - IMPROVE ANOTHER ENGINE'S DRAFT",
@@ -86,7 +88,7 @@ export function buildSynthesisSwapPrompt(task: string, originalEngineId: string,
   ].join('\n');
 }
 
-// @kern-source: synthesis-modus:76
+// @kern-source: synthesis-modus:80
 export function buildSynthesisJudgePrompt(task: string, entries: {engineId:string;content:string}[]): string {
   const drafts = entries
     .map((e, i) => `## ENTRY ${i + 1} - ${e.engineId}\n---\n${e.content}\n---`)
@@ -105,18 +107,25 @@ export function buildSynthesisJudgePrompt(task: string, entries: {engineId:strin
     '- clarity / structure (0-25)',
     '- creativity / insight (0-25)',
     '',
-    'For each entry, write a brief critique (2-3 sentences).',
-    'Then end your response with exactly these lines:',
+    'For each entry, write a brief critique (2-3 sentences), and explicitly name the single most',
+    'important edge case or scenario the entry FAILS to handle — correctness blind spots such as',
+    'unusual inputs, platform/environment quirks (e.g. path canonicalization), concurrency, or',
+    'empty/error states. A plausible-looking answer that ignores a key edge case is NOT correct.',
+    'Then end your response with exactly these lines, one set per entry in order:',
     '',
     'SCORE_1: <number 0-100>',
+    'CONFIDENCE_1: <0.0-1.0 — your confidence the entry is actually CORRECT, not just plausible>',
+    'UNHANDLED_1: <the most important edge case this entry does not handle, or "none">',
     'SCORE_2: <number 0-100>',
+    'CONFIDENCE_2: <0.0-1.0>',
+    'UNHANDLED_2: <edge case, or "none">',
     '...',
     'WINNER: "<engineId>"',
     'REASONING: "<one-sentence verdict>"',
   ].join('\n');
 }
 
-// @kern-source: synthesis-modus:106
+// @kern-source: synthesis-modus:117
 export function shuffleSynthesisEnginesInPlace(arr: any[]): any[] {
   for (let i = arr.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -125,16 +134,26 @@ export function shuffleSynthesisEnginesInPlace(arr: any[]): any[] {
   return arr;
 }
 
-// @kern-source: synthesis-modus:115
+// @kern-source: synthesis-modus:126
 export function parseSynthesisJudgeOutput(text: string, engineIds: string[]): {scores:SynthesisScore[];winner:string;reasoning:string} {
   const scores: SynthesisScore[] = [];
   for (let i = 0; i < engineIds.length; i += 1) {
     const re = new RegExp(`SCORE_${i + 1}\\s*:\\s*(\\d{1,3})`, 'i');
     const m = text.match(re);
+
+    const confMatch = text.match(new RegExp(`CONFIDENCE_${i + 1}\\s*:\\s*([0-9]*\\.?[0-9]+)`, 'i'));
+    const confidence = confMatch ? Math.max(0, Math.min(1, parseFloat(confMatch[1]))) : undefined;
+
+    const unhMatch = text.match(new RegExp(`UNHANDLED_${i + 1}\\s*:\\s*(.+)`, 'i'));
+    const unhandledRaw = unhMatch ? unhMatch[1].trim().replace(/^["']|["']$/g, '').trim() : undefined;
+    const unhandled = unhandledRaw && unhandledRaw.toLowerCase() !== 'none' ? unhandledRaw : undefined;
+
     scores.push({
       engineId: engineIds[i],
       score: m ? Math.min(parseInt(m[1], 10), 100) : 0,
       breakdown: '',
+      confidence,
+      unhandled,
     });
   }
 
@@ -147,7 +166,22 @@ export function parseSynthesisJudgeOutput(text: string, engineIds: string[]): {s
   return { scores, winner, reasoning };
 }
 
-// @kern-source: synthesis-modus:137
+/**
+ * Routing guard. synthesis selects a winner by LLM judgment with NO fitness test — fine for prose/design where no clean pass/fail exists, but a liability for testable code (an LLM judge once scored a broken implementation 91/100). For code-shaped tasks, advise forge, which selects by a real fitness test. Returns null for docs/ambiguous tasks (synthesis is the right tool).
+ */
+// @kern-source: synthesis-modus:158
+export function synthesisRoutingAdvice(prompt: string): string | null {
+  const cls = classifyTask(prompt);
+  const codeClasses = ['algorithm', 'refactor', 'bugfix', 'feature', 'test'];
+  if (!codeClasses.includes(cls)) return null;
+  return [
+    `This looks like a ${cls} task. \`agon synthesis\` picks a winner by LLM judgment with no fitness test —`,
+    `for code you can test, \`agon forge -t "<test>"\` selects by proven correctness and won't crown a`,
+    `confident-but-wrong artifact. Use synthesis when there's no clean pass/fail test (design, prose, tradeoffs).`,
+  ].join(' ');
+}
+
+// @kern-source: synthesis-modus:171
 export async function runSynthesisModus(opts: SynthesisOptions): Promise<SynthesisResult> {
   const { prompt, engines, registry, adapter, timeout, outputDir } = opts;
   const swapRounds = Math.max(0, opts.swaps ?? 1);

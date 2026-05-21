@@ -1,13 +1,13 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 import {
   createSessionWorktree, listSessionWorktrees, findSessionWorktree,
-  removeSessionWorktree, pruneSessionWorktrees, detectPackageManager,
-  sessionWorktreesDir, worktreePathFor,
+  removeSessionWorktree, pruneSessionWorktrees, rehydrateSessionWorktree,
+  detectPackageManager, sessionWorktreesDir, worktreePathFor,
 } from '../../packages/core/src/generated/blocks/worktree-session.js';
 
 // ── Session worktrees: per-session isolation contract ────────────────────
@@ -89,7 +89,9 @@ describe('session worktrees', () => {
       expect(m.branch).toBe('feat/iso');
       expect(existsSync(m.path)).toBe(true);
       expect(git(['rev-parse', '--abbrev-ref', 'HEAD'], m.path)).toBe('feat/iso');
-      expect(m.gitDir.length).toBeGreaterThan(0);
+      // gitDir must be the worktree's OWN per-checkout dir (.git/worktrees/<name>),
+      // not the main checkout's .git — this is what a per-checkout lock keys on.
+      expect(m.gitDir.includes('worktrees')).toBe(true);
 
       const list = listSessionWorktrees(repo);
       expect(list.map((w) => w.branch)).toEqual(['feat/iso']);
@@ -114,12 +116,10 @@ describe('session worktrees', () => {
 
     it('prune respects dry-run, then removes aged worktrees', () => {
       const m = createSessionWorktree({ repoRoot: repo, branch: 'feat/old', link: false });
-      // Backdate the manifest so age deterministically exceeds the threshold
-      // (using a 0ms threshold against a just-created worktree is timing-racy).
-      const manifestFile = `${m.path}.json`;
-      const rec = JSON.parse(readFileSync(manifestFile, 'utf-8'));
-      rec.createdAt = '2020-01-01T00:00:00.000Z';
-      writeFileSync(manifestFile, JSON.stringify(rec));
+      // prune ages by last activity (dir mtime); backdate it deterministically
+      // (a 0ms threshold against a just-created worktree would be timing-racy).
+      const old = new Date('2020-01-01T00:00:00.000Z');
+      utimesSync(m.path, old, old);
 
       // dry-run reports without removing
       expect(pruneSessionWorktrees(repo, 1000, true)).toEqual(['feat/old']);
@@ -128,6 +128,28 @@ describe('session worktrees', () => {
       expect(pruneSessionWorktrees(repo, 1000, false)).toEqual(['feat/old']);
       expect(existsSync(m.path)).toBe(false);
       expect(listSessionWorktrees(repo)).toEqual([]);
+    });
+
+    it('rehydrate returns true for an existing worktree, false otherwise', () => {
+      createSessionWorktree({ repoRoot: repo, branch: 'feat/rehy', link: false });
+      expect(rehydrateSessionWorktree(repo, 'feat/rehy')).toBe(true);
+      expect(rehydrateSessionWorktree(repo, 'no-such')).toBe(false);
+    });
+
+    it('rm refuses to discard uncommitted changes unless --force', () => {
+      const m = createSessionWorktree({ repoRoot: repo, branch: 'feat/dirty', link: false });
+      writeFileSync(join(m.path, 'uncommitted.txt'), 'work in progress');
+      // a dirty worktree must NOT be silently destroyed
+      expect(() => removeSessionWorktree(repo, 'feat/dirty')).toThrow(/uncommitted/);
+      expect(existsSync(m.path)).toBe(true);
+      // prune skips it too (no force)
+      const old = new Date('2020-01-01T00:00:00.000Z');
+      utimesSync(m.path, old, old);
+      expect(pruneSessionWorktrees(repo, 1000, false)).toEqual([]);
+      expect(existsSync(m.path)).toBe(true);
+      // explicit force discards
+      expect(removeSessionWorktree(repo, 'feat/dirty', true)).toBe(true);
+      expect(existsSync(m.path)).toBe(false);
     });
   });
 });

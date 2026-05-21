@@ -29,7 +29,7 @@ export {
   readOnlyDiff, diffLineCount, diffFileCount, applyPatch, recentCommits,
   currentBranch, isDirty,
   gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff,
-  absoluteGitDir, branchExists, worktreeAddOnBranch,
+  absoluteGitDir, branchExists, worktreeAddOnBranch, hydrateWorktreeBuildArtifacts,
 } from './git.js';
 export {
   createSessionWorktree, listSessionWorktrees, findSessionWorktree,

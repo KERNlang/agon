@@ -59,7 +59,7 @@ fn name=symlinkNodeModuleEntry params="sourcePath:string,targetPath:string" retu
     symlinkSync(sourcePath, targetPath, linkType);
   >>>
 
-fn name=linkWorktreeNodeModules params="repoDir:string,worktreePath:string" returns=void export=false
+fn name=linkWorktreeNodeModules params="repoDir:string,worktreePath:string" returns=void export=true
   doc "External git worktrees live outside the repo, so Node cannot walk up to the root install. Create a shallow node_modules overlay: external deps link to the root install, while @agon workspace packages link back into the candidate worktree so runtime tests see candidate edits."
   handler <<<
     const source = join(repoDir, 'node_modules');

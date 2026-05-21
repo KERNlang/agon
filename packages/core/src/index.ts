@@ -216,6 +216,14 @@ export type { EngineRole } from './role-specialization.js';
 export type { Skill } from './skill-loader.js';
 export { createSidechainLogger } from './sidechain-logger.js';
 export type { SidechainEvent, SidechainLogger } from './sidechain-logger.js';
+export {
+  buildForgeProvenance,
+  renderProvenanceMarkdown,
+  renderProvenanceJson,
+  sha256OfFile,
+  writeProvenanceReport,
+} from './provenance.js';
+export type { ProvenanceLedger, ProvenanceContribution } from './provenance.js';
 export { validateEngineConfig, validateEngineDir, EngineDefinitionSchema } from './schemas/engine-schema.js';
 export { validateManifest } from './extension-manifest.js';
 export type { ExtensionManifest, ExtensionContributions, CommandContribution, LoadedExtension } from './extension-manifest.js';

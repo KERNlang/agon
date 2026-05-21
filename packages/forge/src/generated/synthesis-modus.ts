@@ -141,12 +141,18 @@ export function parseSynthesisJudgeOutput(text: string, engineIds: string[]): {s
     const re = new RegExp(`SCORE_${i + 1}\\s*:\\s*(\\d{1,3})`, 'i');
     const m = text.match(re);
 
+    let confidence: number | undefined;
     const confMatch = text.match(new RegExp(`CONFIDENCE_${i + 1}\\s*:\\s*([0-9]*\\.?[0-9]+)`, 'i'));
-    const confidence = confMatch ? Math.max(0, Math.min(1, parseFloat(confMatch[1]))) : undefined;
+    if (confMatch) {
+      let v = parseFloat(confMatch[1]);
+      if (v > 1) v = v / 100; // tolerate 0-100 / percentage outputs (e.g. "75" or "75%") instead of 0-1
+      confidence = Math.max(0, Math.min(1, v));
+    }
 
     const unhMatch = text.match(new RegExp(`UNHANDLED_${i + 1}\\s*:\\s*(.+)`, 'i'));
     const unhandledRaw = unhMatch ? unhMatch[1].trim().replace(/^["']|["']$/g, '').trim() : undefined;
-    const unhandled = unhandledRaw && unhandledRaw.toLowerCase() !== 'none' ? unhandledRaw : undefined;
+    // Suppress "none" and its punctuated variants ("None.", "NONE!", "none ").
+    const unhandled = unhandledRaw && !/^none[.!\s]*$/i.test(unhandledRaw) ? unhandledRaw : undefined;
 
     scores.push({
       engineId: engineIds[i],
@@ -169,19 +175,23 @@ export function parseSynthesisJudgeOutput(text: string, engineIds: string[]): {s
 /**
  * Routing guard. synthesis selects a winner by LLM judgment with NO fitness test — fine for prose/design where no clean pass/fail exists, but a liability for testable code (an LLM judge once scored a broken implementation 91/100). For code-shaped tasks, advise forge, which selects by a real fitness test. Returns null for docs/ambiguous tasks (synthesis is the right tool).
  */
-// @kern-source: synthesis-modus:158
+// @kern-source: synthesis-modus:164
 export function synthesisRoutingAdvice(prompt: string): string | null {
   const cls = classifyTask(prompt);
   const codeClasses = ['algorithm', 'refactor', 'bugfix', 'feature', 'test'];
   if (!codeClasses.includes(cls)) return null;
+  // Phrased conditionally on the OUTPUT, not as a classification claim — the
+  // classifier is heuristic (e.g. "create"/"build" → feature), so a prose task
+  // that trips the gate still reads correctly and the user simply carries on.
   return [
-    `This looks like a ${cls} task. \`agon synthesis\` picks a winner by LLM judgment with no fitness test —`,
-    `for code you can test, \`agon forge -t "<test>"\` selects by proven correctness and won't crown a`,
-    `confident-but-wrong artifact. Use synthesis when there's no clean pass/fail test (design, prose, tradeoffs).`,
+    'Heads up: `agon synthesis` picks a winner by LLM judgment with no fitness test.',
+    'If this task produces code you can test, prefer `agon forge -t "<test>"` — it selects by',
+    "proven correctness and won't crown a confident-but-wrong artifact. If it's design, prose,",
+    "or tradeoffs with no clean pass/fail, synthesis is the right tool — carry on.",
   ].join(' ');
 }
 
-// @kern-source: synthesis-modus:171
+// @kern-source: synthesis-modus:181
 export async function runSynthesisModus(opts: SynthesisOptions): Promise<SynthesisResult> {
   const { prompt, engines, registry, adapter, timeout, outputDir } = opts;
   const swapRounds = Math.max(0, opts.swaps ?? 1);

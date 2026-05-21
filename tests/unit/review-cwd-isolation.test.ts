@@ -24,7 +24,11 @@ function fakeCtx(record: { cwd?: string }) {
       // no dispatchStream → runReviewCore takes the plain dispatch branch
       dispatch: async (opts: { cwd?: string }) => {
         record.cwd = opts.cwd;
-        return { stdout: `looks fine\n${VALID_FINDINGS}`, exitCode: 0 };
+        return {
+          stdout: `looks fine\n${VALID_FINDINGS}`,
+          exitCode: 0,
+          usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120, source: 'cli-reported' },
+        };
       },
     },
   } as any;
@@ -46,5 +50,14 @@ describe('runReviewCore cwd isolation', () => {
     await runReviewCore(diff, 'interactive review', 'fake', fakeCtx(record));
     // Not the override path — resolves to the active workspace / process.cwd().
     expect(record.cwd).toBeTruthy();
+  });
+
+  // Regression: the dispatch's token usage must be surfaced so the goal
+  // controller can meter the WHOLE review panel into --budget (not just
+  // implement + judge).
+  it('surfaces the dispatch token usage on the result', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'agon-wt-'));
+    const result = await runReviewCore(diff, 'goal task', 'fake', fakeCtx({}), undefined, undefined, dir);
+    expect(result.usage?.totalTokens).toBe(120);
   });
 });

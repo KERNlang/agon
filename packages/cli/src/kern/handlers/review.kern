@@ -8,6 +8,7 @@ import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,St
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../blocks/consensus.js" names="buildConsensus"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="@agon/core" names="DispatchResult" types=true
 import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 import from="../blocks/engine-helpers.js" names="stripReasoning,stripTuiChrome"
 
@@ -150,6 +151,8 @@ interface name=ReviewCoreResult export=true
     doc "True when the engine produced a substantive prose review but no machine-parseable findings block (even after the repair pass). The review is useful and should be surfaced as a success to humans — but parseFailed/blocking stay fail-closed so any automated GATE still treats it as non-approval."
   field name=severityCounts type=ReviewSeverityCounts
     doc "Findings counted by severity, for human summaries like 'ok, 1 important, 3 nits'. All-zero when parseFailed/unstructured."
+  field name=usage type="{promptTokens:number,completionTokens:number,totalTokens:number,source:'sdk'|'cli-reported'|'estimated'}" optional=true
+    doc "Token usage for THIS review dispatch (from the engine's DispatchResult), so callers metering spend — the goal controller's budget — can count panel-review cost, not just implement + judge. Includes the repair pass is NOT counted (best-effort). Absent if the engine reported none."
 
 const name=REVIEW_SENTINEL type=string value={{ '<!--AGON_REVIEW_FINDINGS_v1-->' }}
 
@@ -389,12 +392,14 @@ fn name=runReviewCore params="diff:string, label:string, engineId:string, ctx:Ha
     do value="mkdirSync(outputDir, { recursive: true })"
     let name=dispatchOpts value="{ engine, prompt, cwd, mode: 'exec' as const, timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420, maxTokens: (config as any).reviewMaxTokens ?? 8192, outputDir, signal, }"
     let name=response kind=let value="''"
+    let name=usage kind=let value="undefined as DispatchResult['usage']"
     if cond="ctx.adapter.dispatchStream"
       let name=gen value="ctx.adapter.dispatchStream(dispatchOpts)"
       let name=parser value="new StreamParser()"
       while cond="true"
         let name=iter value="await gen.next()"
         if cond="iter.done"
+          assign target="usage" value="iter.value?.usage"
           break
         comment raw="// OpenCode fix (f2): signal is optional; tolerate undefined."
         if cond="signal?.aborted"
@@ -415,6 +420,7 @@ fn name=runReviewCore params="diff:string, label:string, engineId:string, ctx:Ha
     else
       let name=result value="await ctx.adapter.dispatch(dispatchOpts)"
       assign target="response" value="result.stdout"
+      assign target="usage" value="result.usage"
     assign target="response" value="response.trim()"
     comment raw="// Clean engine output BEFORE parse + persist: first strip claude TUI spinner/glyph chrome leaked by the pty path, then reasoning scaffolding (<think> etc.) from MiniMax-style models. Both run before parsing so neither the saved review nor the findings parser sees the junk."
     assign target="response" value="stripTuiChrome(response)"
@@ -437,7 +443,7 @@ fn name=runReviewCore params="diff:string, label:string, engineId:string, ctx:Ha
     if cond="parseFailed && response.trim().length >= 40"
       assign target="unstructured" value="true"
     let name=severityCounts value="summarizeReviewFindings(response)"
-    return value="{ response, blocking, parseFailed, unstructured, severityCounts }"
+    return value="{ response, blocking, parseFailed, unstructured, severityCounts, usage }"
 
 fn name=handleReview params="dispatch:Dispatch, ctx:HandlerContext, target?:string, requestedEngine?:string" returns="Promise<void>" async=true
   signal name=abort

@@ -21,9 +21,24 @@ import { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, 
 import type { JournalState, GoalSpec, GoalTask } from './types.js';
 
 /**
- * Compact human digest of a finished (or stopped) run — gaps closed/parked/failed, commits, spend, wall-clock. The detached-delegation callback ships this, never a transcript dump.
+ * Persist the EXACT gate stdout/stderr to <goalDir>/<taskId>-gate.log so a parked task's failure is inspectable without re-running the gate by hand. Returns the path, or '' if it couldn't be written.
  */
 // @kern-source: controller:24
+export function persistGateLog(goalId: string, taskId: string, gateCmd: string, res: {stdout?:string, stderr?:string, exitCode?:number, timedOut?:boolean}): string {
+  try {
+    const body = `$ ${gateCmd}\n[exit ${res.exitCode ?? '?'}${res.timedOut ? ' (timed out)' : ''}]\n\n--- stdout ---\n${res.stdout ?? ''}\n\n--- stderr ---\n${res.stderr ?? ''}\n`;
+    const path = join(goalDir(goalId), `${taskId}-gate.log`);
+    writeFileSync(path, body);
+    return path;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Compact human digest of a finished (or stopped) run — gaps closed/parked/failed, commits, spend, wall-clock. The detached-delegation callback ships this, never a transcript dump.
+ */
+// @kern-source: controller:37
 export function summarizeGoal(state: JournalState): string {
   const by = (s: string) => state.tasks.filter((t) => t.status === s);
   const done = by('done'), parked = by('parked'), failed = by('failed');
@@ -52,7 +67,7 @@ export function summarizeGoal(state: JournalState): string {
 /**
  * Persist the durable terminal artifacts (result.json + summary.md) any session can read via `agon goal status <id>` — the source of truth when the originating CLI is long dead.
  */
-// @kern-source: controller:51
+// @kern-source: controller:64
 export function writeGoalArtifacts(state: JournalState): {resultPath:string, summaryPath:string} {
   assertSafeGoalId(state.spec.goalId);
   ensureAgonHome();
@@ -80,7 +95,7 @@ export function writeGoalArtifacts(state: JournalState): {resultPath:string, sum
 /**
  * Run the goal to a terminal state (done / budget / time / breaker / abort). Resumable: re-invoking with resume=true picks up the journal. Returns the final JournalState; durable artifacts are written before return.
  */
-// @kern-source: controller:77
+// @kern-source: controller:90
 export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[]}>, oracleFiles?: string[], resume?: boolean, push?: boolean, remote?: string, requireTests?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string, costUsd?:number}> }): Promise<JournalState> {
   const { spec, repoRoot } = opts;
   assertSafeGoalId(spec.goalId);
@@ -204,7 +219,8 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
       //  mutation-witness are the load-bearing defenses, not env isolation.)
       const gate = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', spec.gate], cwd: wt, timeout: gateTimeoutSec * 1000, signal: opts.signal });
       if (gate.exitCode !== 0 || gate.timedOut) {
-        throw { kind: 'gate', sig: gateFailureSignature(`${gate.stderr || ''}\n${gate.stdout || ''}`), detail: gate.timedOut ? 'gate timed out' : `gate exit ${gate.exitCode}` };
+        const logPath = persistGateLog(spec.goalId, task.id, spec.gate, gate);
+        throw { kind: 'gate', sig: gateFailureSignature(`${gate.stderr || ''}\n${gate.stdout || ''}`), detail: `${gate.timedOut ? 'gate timed out' : `gate exit ${gate.exitCode}`}${logPath ? ` — output: ${logPath}` : ''}` };
       }
 
       // MUTATION-WITNESS — gate is green; now canonical mutants on the changed
@@ -232,7 +248,8 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
         if (!fix.ok) throw { kind: 'review', detail: `fix pass failed: ${fix.error ?? 'unknown'}` };
         const gate2 = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', spec.gate], cwd: wt, timeout: gateTimeoutSec * 1000, signal: opts.signal });
         if (gate2.exitCode !== 0 || gate2.timedOut) {
-          throw { kind: 'gate', sig: gateFailureSignature(`${gate2.stderr || ''}\n${gate2.stdout || ''}`), detail: 'gate failed after fix pass' };
+          const logPath = persistGateLog(spec.goalId, task.id, spec.gate, gate2);
+          throw { kind: 'gate', sig: gateFailureSignature(`${gate2.stderr || ''}\n${gate2.stdout || ''}`), detail: `gate failed after fix pass${logPath ? ` — output: ${logPath}` : ''}` };
         }
         rev = await opts.review({ worktree: wt, baseSha, diff: worktreeChangedDiff(wt, baseSha), label: `goal ${spec.goalId} task ${task.id} (post-fix)`, signal: opts.signal });
         attemptCost += rev.costUsd || 0;
@@ -289,7 +306,7 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
       const updated = state.tasks.find((t) => t.id === task.id)!;
       const park = (kind === 'witness' || kind === 'mutation') ? { park: true, reason: outcome } : taskParkDecision(updated, spec.maxAttempts);
       if (park.park) {
-        state = markStatus(state, task.id, 'parked', { lastError: message, notes: park.reason });
+        state = markStatus(state, task.id, 'parked', { lastError: message, notes: `${park.reason} — ${message}`.slice(0, 300) });
         state = { ...state, parkedStreak: state.parkedStreak + 1 };
         emit('task-parked', task.id, `${outcome}: ${park.reason}`);
       } else {

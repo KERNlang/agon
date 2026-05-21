@@ -9,6 +9,7 @@ export interface CallCommandOptions {
   engines?: string;
   fitnessCmd?: string;
   rounds?: string;
+  swaps?: string;
   tribunalMode?: string;
   members?: string;
   cwd?: string;
@@ -78,6 +79,15 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...timeout,
       ...engines,
     ]);
+  } else if (workflow === 'synthesis') {
+    const task = requireInput(workflow, opts.input);
+    commands.push([
+      'synthesis',
+      task,
+      ...textFlag('--swaps', opts.swaps),
+      ...timeout,
+      ...engines,
+    ]);
   } else if (workflow === 'forge' || workflow === 'team-forge') {
     const task = requireInput(workflow, opts.input);
     const team = opts.team || workflow === 'team-forge';
@@ -134,7 +144,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
     commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
   } else {
-    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, tribunal, campfire, pipeline, review, goal, doctor, or a team-* workflow.`);
+    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, campfire, pipeline, review, goal, doctor, or a team-* workflow.`);
   }
 
   return { cwd, commands };
@@ -195,7 +205,7 @@ export const callCommand = defineCommand({
   args: {
     workflow: {
       type: 'positional',
-      description: 'Workflow: forge, brainstorm, tribunal, campfire, pipeline, review, goal, doctor, or team-*',
+      description: 'Workflow: forge, brainstorm, synthesis, tribunal, campfire, pipeline, review, goal, doctor, or team-*',
       required: true,
     },
     input: {
@@ -222,6 +232,11 @@ export const callCommand = defineCommand({
       type: 'string',
       alias: 'r',
       description: 'Tribunal rounds',
+    },
+    swaps: {
+      type: 'string',
+      alias: 's',
+      description: 'Synthesis swap rounds',
     },
     tribunalMode: {
       type: 'string',
@@ -276,6 +291,7 @@ export const callCommand = defineCommand({
         engines: args.engines,
         fitnessCmd: args.test,
         rounds: args.rounds,
+        swaps: args.swaps,
         tribunalMode: args.tribunalMode,
         members: args.members,
         cwd: args.cwd,

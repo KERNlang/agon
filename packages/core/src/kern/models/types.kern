@@ -166,6 +166,8 @@ config name=AgonConfig
   field name=forgeFixedStarter type=string default=claude
   field name=reviewDefaultEngine type=string default=""
     doc "Optional preferred engine for /review and Review(). Empty means auto-select from active review-capable engines; this is intentionally separate from forgeFixedStarter."
+  field name=goalReviewEngines type="string[]" default="[]"
+    doc "Default review panel for `agon goal` when --reviewEngines is omitted. Empty = smart default (every active engine except local ones like ollama). Pin an explicit roster, e.g. ['claude','codex','gemini'], to control cost/noise of the per-task review gate."
   field name=forgeRequireBaselineCheck type=boolean default=true
   field name=engineActivationMode type="'auto'|'explicit'" default=auto
     doc "'auto' keeps every available engine active. 'explicit' only activates engines listed in forgeEnabledEngines; set by /use or the engine picker."

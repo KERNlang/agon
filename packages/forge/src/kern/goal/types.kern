@@ -49,6 +49,8 @@ interface name=JournalState export=true
   field name=spec type=GoalSpec
   field name=createdAt type=number
   field name=startedAt type=number optional=true
+  field name=heartbeatAt type=number optional=true
+    doc "Wall-clock ms of the last journal checkpoint. Lets `--status` from another session tell a live run (recent heartbeat) from one that crashed mid-task (stale)."
   field name=spentUsd type=number
   field name=parkedStreak type=number
   field name=noProgressStreak type=number

@@ -46,6 +46,9 @@ export function saveJournal(state: JournalState): void {
   ensureAgonHome();
   const target = journalPath(state.spec.goalId);
   mkdirSync(dirname(target), { recursive: true });
+  // Stamp a liveness heartbeat on every checkpoint so a concurrent
+  // `--status` can distinguish a running task from a crashed one.
+  state.heartbeatAt = Date.now();
   const tmp = target + '.tmp';
   writeFileSync(tmp, JSON.stringify(state, null, 2));
   renameSync(tmp, target);
@@ -54,7 +57,7 @@ export function saveJournal(state: JournalState): void {
 /**
  * Load a journal for --resume; null when absent or corrupt.
  */
-// @kern-source: journal:49
+// @kern-source: journal:52
 export function loadJournal(goalId: string): JournalState | null {
   const p = journalPath(goalId);
   if (!existsSync(p)) return null;
@@ -68,7 +71,7 @@ export function loadJournal(goalId: string): JournalState | null {
 /**
  * Append queued tasks, skipping any id already present (idempotent on resume).
  */
-// @kern-source: journal:61
+// @kern-source: journal:64
 export function addTasks(state: JournalState, items: Array<{id:string,source:string,dependsOn?:string[]}>): JournalState {
   const existing = new Set(state.tasks.map((t) => t.id));
   const added: GoalTask[] = [];
@@ -92,7 +95,7 @@ export function addTasks(state: JournalState, items: Array<{id:string,source:str
 /**
  * First queued task whose dependsOn are all done; null if none runnable.
  */
-// @kern-source: journal:83
+// @kern-source: journal:86
 export function nextTask(state: JournalState): GoalTask | null {
   const byId = new Map(state.tasks.map((t) => [t.id, t] as const));
   for (const t of state.tasks) {
@@ -110,7 +113,7 @@ export function nextTask(state: JournalState): GoalTask | null {
 /**
  * Set a task's status (and optional field patch). No-op if id unknown.
  */
-// @kern-source: journal:99
+// @kern-source: journal:102
 export function markStatus(state: JournalState, taskId: string, status: GoalTask['status'], patch?: Partial<GoalTask>): JournalState {
   const tasks = state.tasks.map((t) =>
     t.id === taskId ? { ...t, status, ...(patch ?? {}) } : t
@@ -121,7 +124,7 @@ export function markStatus(state: JournalState, taskId: string, status: GoalTask
 /**
  * Append an attempt record and bump the task's attempt count.
  */
-// @kern-source: journal:108
+// @kern-source: journal:111
 export function recordAttempt(state: JournalState, taskId: string, rec: AttemptRecord): JournalState {
   const tasks = state.tasks.map((t) =>
     t.id === taskId
@@ -134,7 +137,7 @@ export function recordAttempt(state: JournalState, taskId: string, rec: AttemptR
 /**
  * Tasks still queued or in flight.
  */
-// @kern-source: journal:119
+// @kern-source: journal:122
 export function remainingCount(state: JournalState): number {
   return state.tasks.filter((t) => t.status === 'queued' || t.status === 'inflight').length;
 }
@@ -142,7 +145,7 @@ export function remainingCount(state: JournalState): number {
 /**
  * No queued or in-flight tasks remain.
  */
-// @kern-source: journal:125
+// @kern-source: journal:128
 export function isDone(state: JournalState): boolean {
   return state.tasks.filter((t) => t.status === 'queued' || t.status === 'inflight').length === 0;
 }
@@ -150,7 +153,7 @@ export function isDone(state: JournalState): boolean {
 /**
  * Append an audit event.
  */
-// @kern-source: journal:131
+// @kern-source: journal:134
 export function logEvent(state: JournalState, kind: string, taskId?: string, detail?: string): JournalState {
   return { ...state, events: [...state.events, { ts: Date.now(), kind, taskId, detail }] };
 }

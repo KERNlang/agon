@@ -35,8 +35,8 @@ export const forgeCommand: any = defineCommand({
     test: {
       type: 'string',
       alias: 't',
-      description: 'Fitness test command',
-      required: true,
+      description: 'Fitness test command. Optional — without it forge defaults to a non-discriminating "true" (all engines pass; winner decided by review/diff quality). Pass a real test for a discriminating fitness.',
+      required: false,
     },
     cwd: {
       type: 'string',
@@ -206,12 +206,19 @@ export const forgeCommand: any = defineCommand({
       healthCheckTimeoutSec = parsed;
     }
 
+    // -t/--test is optional: default to a non-discriminating "true" so forge
+    // can run without a test (winner falls to review/diff quality). Warn so
+    // the degenerate case is never silent.
+    const fitnessProvided = typeof args.test === 'string' && args.test.trim() !== '';
+    const fitness = fitnessProvided ? args.test.trim() : 'true';
+
     const quiet = process.env.AGON_QUIET === '1';
     if (!quiet) {
       header(`Forge: ${args.task}`);
       info(`Engines: ${displayEngines.join(', ')}`);
       if (judgeEngine) info(`Judge: ${judgeEngine} (reviews the winner)`);
-      info(`Fitness: ${args.test}`);
+      info(`Fitness: ${fitnessProvided ? fitness : 'true (default — non-discriminating; pass -t for a real test)'}`);
+      if (!fitnessProvided) warn('No -t/--test fitness command — engines will all "pass"; the winner is decided by review/diff quality, not a test. Use --mode validate or pass -t for a discriminating fitness.');
       info(`Mode: ${mode}`);
 
       if (args.dryRun) {
@@ -223,7 +230,7 @@ export const forgeCommand: any = defineCommand({
     const manifest = await runForge(
       {
         task: args.task,
-        fitnessCmd: args.test,
+        fitnessCmd: fitness,
         cwd: args.cwd,
         forgeDir,
         timeout: args.timeout ? parseInt(args.timeout, 10) : undefined,

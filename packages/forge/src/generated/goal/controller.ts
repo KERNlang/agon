@@ -160,6 +160,47 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
     }
   }
 
+  // 3.5 PRE-FLIGHT — the frozen gate MUST be green at base before any task.
+  //     A gate that's red at HEAD (broken build, renamed/stale dep, env drift)
+  //     makes EVERY witness inconclusive: the new test fails on base for a
+  //     reason unrelated to the patch, and fails on new for the same reason,
+  //     so red→green can never be proven and the whole queue gets false-parked
+  //     until the park-streak breaker stops the run. (Dogfood: 75 min, $0.12,
+  //     0 committed, 5 parked — every engine patch was gate-green the whole
+  //     time; the build was simply broken at base.) Catch it once, here, and
+  //     abort with an actionable message instead of burning the run.
+  if (nextTask(state)) {
+    emit('preflight-start', undefined, spec.gate);
+    const pfBaseSha = (await git(['rev-parse', spec.branch])).stdout.trim();
+    const pfWt = join(goalDir(spec.goalId), 'preflight', String(Date.now()));
+    let pfFail: string | null = null;
+    try {
+      worktreeCreate(repoRoot, pfWt, pfBaseSha);
+      const pf = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', spec.gate], cwd: pfWt, timeout: gateTimeoutSec * 1000, signal: opts.signal });
+      if (pf.exitCode !== 0 || pf.timedOut) {
+        const logPath = persistGateLog(spec.goalId, 'preflight', spec.gate, pf);
+        pfFail = `gate is not green at base (${pf.timedOut ? 'timed out' : `exit ${pf.exitCode}`}) — the goal oracle must pass at HEAD before any task runs. Fix the build/environment or the --gate, then retry.${logPath ? ` Output: ${logPath}` : ''}`;
+      }
+    } catch (e: unknown) {
+      pfFail = `pre-flight gate check could not run: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      worktreeRemoveBestEffort(repoRoot, pfWt);
+    }
+    if (opts.signal?.aborted) {
+      state = logEvent(state, 'aborted'); emit('aborted');
+      saveJournal(state); try { writeGoalArtifacts(state); } catch { /* best-effort */ }
+      return state;
+    }
+    if (pfFail) {
+      state = logEvent(state, 'error', undefined, pfFail);
+      state = logEvent(state, 'stop', undefined, 'gate-red-at-base');
+      saveJournal(state); try { writeGoalArtifacts(state); } catch { /* best-effort */ }
+      emit('stop', undefined, pfFail);
+      return state;
+    }
+    emit('preflight-ok', undefined, 'gate green at base');
+  }
+
   // 4. Main loop — one task per iteration, each transactional.
   while (true) {
     if (opts.signal?.aborted) { state = logEvent(state, 'aborted'); emit('aborted'); break; }

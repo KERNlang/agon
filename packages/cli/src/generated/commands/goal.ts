@@ -484,6 +484,8 @@ return defineCommand({
       onEvent: (e: { kind: string; taskId?: string; detail?: string }) => {
         const id = e.taskId ? ` [${e.taskId}]` : '';
         switch (e.kind) {
+          case 'preflight-start': info('Pre-flight: verifying the gate is green at base (runs your gate once)…'); break;
+          case 'preflight-ok': success('✓ gate is green at base'); break;
           case 'task-start': info(`▶ implementing${id}: ${e.detail ?? ''}`); break;
           case 'task-done': success(`✓ closed${id} → ${String(e.detail ?? '').slice(0, 8)}`); break;
           case 'task-pushed': info(`⇡ pushed${id} → ${e.detail ?? ''}`); break;

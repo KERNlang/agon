@@ -235,6 +235,45 @@ fn name=worktreeCreate params="repoDir:string,worktreePath:string,sha:string" re
     }
   >>>
 
+fn name=absoluteGitDir params="cwd:string" returns=string
+  doc "Resolve the PER-CHECKOUT git-dir (never the shared common-dir): the main checkout -> <repo>/.git, a linked worktree -> <repo>/.git/worktrees/<name>. Keying an advisory lock here makes sessions sharing ONE checkout contend (same dir) while separate worktrees stay independent (distinct dirs)."
+  handler <<<
+    return git(['rev-parse', '--absolute-git-dir'], cwd);
+  >>>
+
+fn name=branchExists params="repoDir:string,branch:string" returns=boolean
+  doc "True if refs/heads/<branch> already exists in repoDir."
+  handler <<<
+    try {
+      git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], repoDir);
+      return true;
+    } catch {
+      return false;
+    }
+  >>>
+
+fn name=worktreeAddOnBranch params="repoDir:string,worktreePath:string,branch:string,base?:string,link?:boolean" returns=string
+  doc "Add a git worktree checked out on a NAMED branch (creating it off base/HEAD when absent) — unlike worktreeCreate, which detaches for throwaway forge candidates. When link is not false, overlay node_modules + dist so the worktree is immediately buildable."
+  handler <<<
+    worktreePrune(repoDir);
+    try {
+      if (branchExists(repoDir, branch)) {
+        git(['worktree', 'add', worktreePath, branch], repoDir);
+      } else {
+        git(['worktree', 'add', '-b', branch, worktreePath, base ?? 'HEAD'], repoDir);
+      }
+      if (link !== false) {
+        linkWorktreeNodeModules(repoDir, worktreePath);
+        hydrateWorktreeBuildArtifacts(repoDir, worktreePath);
+      }
+      return worktreePath;
+    } catch (err) {
+      throw new WorktreeError(
+        `Failed to add worktree for branch ${branch} at ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  >>>
+
 fn name=worktreeRemove params="repoDir:string,worktreePath:string" returns=void
   doc "Strict worktree removal: one retry, then throws WorktreeError. Use when cleanup failure must be visible to the caller (e.g. AgentTeam where leaked worktrees collide on subsequent runs)."
   handler <<<

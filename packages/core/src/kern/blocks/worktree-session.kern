@@ -1,0 +1,170 @@
+// ── Session worktrees — per-developer isolation for the shared checkout ──
+// Multiple interactive sessions sharing ONE git checkout race on the single
+// HEAD (a commit can land on the wrong branch). A session worktree gives each
+// session its own working tree + index + HEAD, eliminating that race.
+//
+// Storage lives OUTSIDE the repo, under the Agon home, keyed by a hash of the
+// repo root so worktrees for different repos never collide:
+//   ~/.agon/worktrees/<sha256(repoRoot)[:12]>/<slug(branch)>-<sha256(branch)[:8]>
+// Branch names contain '/', mixed case, etc., so the directory name is a
+// sanitized slug plus a hash of the EXACT branch string — flat (never nested)
+// and collision-proof even on case-insensitive filesystems. A sibling
+// `<dir>.json` manifest records the exact branch so list/rm match on the
+// recorded branch, never by parsing directory structure.
+
+import from="node:fs" names="existsSync,mkdirSync,writeFileSync,readFileSync,readdirSync,rmSync,realpathSync"
+import from="node:path" names="join"
+import from="node:crypto" names="createHash"
+import from="../signals/config.js" names="getAgonHome,ensureAgonHome"
+import from="./git.js" names="worktreeAddOnBranch,worktreeRemoveBestEffort,linkWorktreeNodeModules,absoluteGitDir"
+
+// Manifest record for one session worktree. The recorded `branch` is
+// authoritative for list/rm; the directory name is a derived slug+hash.
+interface name=SessionWorktree
+  field name=branch type=string
+  field name=repoRoot type=string
+  field name=gitDir type=string
+  field name=path type=string
+  field name=createdAt type=string
+  field name=packageManager type="string | null"
+
+fn name=sha256hex params="value:string" returns=string export=false expr={{ return createHash('sha256').update(value).digest('hex'); }}
+
+fn name=canonicalRepoRoot params="repoRoot:string" returns=string export=false
+  doc "Canonicalize the repo root (macOS maps /var -> /private/var; symlinked checkouts differ) so the storage key is stable across equivalent paths."
+  handler <<<
+    try { return realpathSync(repoRoot); } catch { return repoRoot; }
+  >>>
+
+fn name=slugifyBranch params="branch:string" returns=string export=false
+  doc "Flatten a branch ref to a filesystem-safe leaf: collapse any run of non [A-Za-z0-9._-] (including '/') to a single dash."
+  handler <<<
+    const slug = branch.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+    return slug.length > 0 ? slug : 'branch';
+  >>>
+
+fn name=worktreeDirName params="branch:string" returns=string export=false
+  doc "Flat, collision-proof directory name: <slug>-<sha256(branch)[:8]>. The hash disambiguates case-folding collisions (Feature/x vs feature/x) on case-insensitive filesystems."
+  handler <<<
+    return `${slugifyBranch(branch)}-${sha256hex(branch).slice(0, 8)}`;
+  >>>
+
+fn name=sessionWorktreesDir params="repoRoot:string" returns=string export=true
+  doc "The per-repo session-worktree storage directory under the Agon home."
+  handler <<<
+    return join(getAgonHome(), 'worktrees', sha256hex(canonicalRepoRoot(repoRoot)).slice(0, 12));
+  >>>
+
+fn name=worktreePathFor params="repoRoot:string,branch:string" returns=string export=true
+  doc "Absolute path where a session worktree for <branch> lives (may not exist yet)."
+  handler <<<
+    return join(sessionWorktreesDir(repoRoot), worktreeDirName(branch));
+  >>>
+
+fn name=manifestPathFor params="repoRoot:string,branch:string" returns=string export=false expr={{ return join(sessionWorktreesDir(repoRoot), `${worktreeDirName(branch)}.json`); }}
+
+fn name=detectPackageManager params="dir:string" returns="string | null" export=true
+  doc "Best-effort package-manager detection from a project's lockfile. Package-manager-agnostic: returns the detected manager, or null when none is recognized (so callers never assume npm or pnpm)."
+  handler <<<
+    if (existsSync(join(dir, 'pnpm-lock.yaml'))) return 'pnpm';
+    if (existsSync(join(dir, 'yarn.lock'))) return 'yarn';
+    if (existsSync(join(dir, 'bun.lockb'))) return 'bun';
+    if (existsSync(join(dir, 'package-lock.json'))) return 'npm';
+    return null;
+  >>>
+
+fn name=createSessionWorktree params="opts:{ repoRoot: string, branch: string, base?: string, link?: boolean }" returns=SessionWorktree export=true
+  doc "Create a session worktree on <branch> (created off base/HEAD if absent) and record its manifest. When link is not false, node_modules + dist are overlaid so it is immediately buildable. Throws if a worktree for this branch already exists."
+  handler <<<
+    ensureAgonHome();
+    const dir = worktreePathFor(opts.repoRoot, opts.branch);
+    if (existsSync(dir)) {
+      throw new Error(`A session worktree for "${opts.branch}" already exists at ${dir}`);
+    }
+    mkdirSync(sessionWorktreesDir(opts.repoRoot), { recursive: true });
+
+    worktreeAddOnBranch(opts.repoRoot, dir, opts.branch, opts.base, opts.link !== false);
+
+    const manifest: SessionWorktree = {
+      branch: opts.branch,
+      repoRoot: opts.repoRoot,
+      gitDir: absoluteGitDir(opts.repoRoot),
+      path: dir,
+      createdAt: new Date().toISOString(),
+      packageManager: detectPackageManager(dir),
+    };
+    writeFileSync(manifestPathFor(opts.repoRoot, opts.branch), JSON.stringify(manifest, null, 2), 'utf-8');
+    return manifest;
+  >>>
+
+fn name=listSessionWorktrees params="repoRoot:string" returns="SessionWorktree[]" export=true
+  doc "All recorded session worktrees for this repo, newest first. Corrupt manifests are skipped (with a warning) rather than aborting the listing."
+  handler <<<
+    const base = sessionWorktreesDir(repoRoot);
+    if (!existsSync(base)) return [];
+    let entries: string[];
+    try { entries = readdirSync(base).filter((f) => f.endsWith('.json')); } catch { return []; }
+    const out: SessionWorktree[] = [];
+    for (const f of entries) {
+      try {
+        const m = JSON.parse(readFileSync(join(base, f), 'utf-8')) as SessionWorktree;
+        if (typeof m?.branch === 'string' && typeof m?.path === 'string') out.push(m);
+      } catch (err) {
+        console.warn(`[agon] worktree: skipping unreadable manifest ${f}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  >>>
+
+fn name=findSessionWorktree params="repoRoot:string,branch:string" returns="SessionWorktree | null" export=true
+  doc "Find a session worktree by its EXACT recorded branch."
+  handler <<<
+    const direct = manifestPathFor(repoRoot, branch);
+    if (existsSync(direct)) {
+      try {
+        const m = JSON.parse(readFileSync(direct, 'utf-8')) as SessionWorktree;
+        if (m?.branch === branch) return m;
+      } catch { /* fall through to scan */ }
+    }
+    for (const m of listSessionWorktrees(repoRoot)) {
+      if (m.branch === branch) return m;
+    }
+    return null;
+  >>>
+
+fn name=removeSessionWorktree params="repoRoot:string,branch:string" returns=boolean export=true
+  doc "Remove the worktree for <branch> and its manifest. The git branch itself is left intact. Returns false if no such worktree is recorded."
+  handler <<<
+    const m = findSessionWorktree(repoRoot, branch);
+    if (!m) return false;
+    worktreeRemoveBestEffort(repoRoot, m.path);
+    try { rmSync(m.path, { recursive: true, force: true }); } catch { /* git already removed it */ }
+    try { rmSync(manifestPathFor(repoRoot, m.branch), { force: true }); } catch { /* non-fatal */ }
+    return true;
+  >>>
+
+fn name=pruneSessionWorktrees params="repoRoot:string,olderThanMs:number,dryRun?:boolean" returns="string[]" export=true
+  doc "Remove session worktrees whose manifest is older than the threshold. Returns the branches removed (or that WOULD be removed when dryRun)."
+  handler <<<
+    const now = Date.now();
+    const removed: string[] = [];
+    for (const m of listSessionWorktrees(repoRoot)) {
+      const age = now - new Date(m.createdAt).getTime();
+      if (!(age > olderThanMs)) continue;
+      removed.push(m.branch);
+      if (dryRun) continue;
+      worktreeRemoveBestEffort(repoRoot, m.path);
+      try { rmSync(m.path, { recursive: true, force: true }); } catch { /* already gone */ }
+      try { rmSync(manifestPathFor(repoRoot, m.branch), { force: true }); } catch { /* non-fatal */ }
+    }
+    return removed;
+  >>>
+
+fn name=rehydrateSessionWorktree params="repoRoot:string,branch:string" returns=boolean export=true
+  doc "Re-overlay node_modules + dist for an existing session worktree (fixes stale symlinks after a root reinstall). NOT a git branch sync — it touches dependencies/artifacts only."
+  handler <<<
+    const m = findSessionWorktree(repoRoot, branch);
+    if (!m) return false;
+    linkWorktreeNodeModules(repoRoot, m.path);
+    return true;
+  >>>

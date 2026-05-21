@@ -7,6 +7,7 @@ export {
   renderProvenanceMarkdown,
   renderProvenanceJson,
   sha256OfFile,
+  writeProvenanceReport,
 } from './generated/blocks/provenance.js';
 export type {
   ProvenanceLedger,

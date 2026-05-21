@@ -4,14 +4,16 @@ import type { ForgeManifest, EngineResult } from '../models/types.js';
 
 import type { ProvenanceLedger, ProvenanceContribution } from '../models/provenance.js';
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+
+import { join, resolve } from 'node:path';
 
 import { createHash } from 'node:crypto';
 
 /**
  * Tamper-EVIDENT (not notarized) hash of a source artifact, so a reader can verify the report matches the underlying run data.
  */
-// @kern-source: provenance:11
+// @kern-source: provenance:12
 export function sha256OfFile(path: string): string {
   try {
     return 'sha256:' + createHash('sha256').update(readFileSync(path)).digest('hex');
@@ -26,7 +28,7 @@ export function sha256OfFile(path: string): string {
 /**
  * Fold a ForgeManifest into a ProvenanceLedger. Rejection reasons are factual (gate/score/status), never an editorial judgment of quality.
  */
-// @kern-source: provenance:24
+// @kern-source: provenance:25
 export function buildForgeProvenance(manifest: ForgeManifest, manifestPath: string): ProvenanceLedger {
   const contributions: ProvenanceContribution[] = [];
   const results = manifest.results ?? {};
@@ -140,7 +142,7 @@ export function buildForgeProvenance(manifest: ForgeManifest, manifestPath: stri
   };
 }
 
-// @kern-source: provenance:139
+// @kern-source: provenance:140
 export function renderProvenanceJson(led: ProvenanceLedger): string {
   return JSON.stringify(led, null, 2);
 }
@@ -148,7 +150,7 @@ export function renderProvenanceJson(led: ProvenanceLedger): string {
 /**
  * Human-readable AI-contribution statement. Honesty-first: labels autonomy plainly and refuses to claim human review that was not recorded.
  */
-// @kern-source: provenance:141
+// @kern-source: provenance:142
 export function renderProvenanceMarkdown(led: ProvenanceLedger): string {
   const L: string[] = [];
   // Manifest-sourced strings (humanPrompt, reason) are untrusted for Markdown:
@@ -205,4 +207,26 @@ export function renderProvenanceMarkdown(led: ProvenanceLedger): string {
   L.push(led.responsibility);
   L.push('');
   return L.join('\n');
+}
+
+/**
+ * Build the provenance ledger and write report file(s) into outDir. Returns the absolute path of the primary file (the .md, unless format is 'json'). The reusable core that `forge --provenance` calls.
+ */
+// @kern-source: provenance:202
+export function writeProvenanceReport(manifest: ForgeManifest, manifestPath: string, outDir: string, format?: 'md'|'json'|'both'): string {
+  const fmt = format ?? 'md';
+  const ledger = buildForgeProvenance(manifest, manifestPath);
+  mkdirSync(outDir, { recursive: true });
+  if (fmt === 'md' || fmt === 'both') {
+    const mdPath = resolve(join(outDir, 'provenance.md'));
+    writeFileSync(mdPath, renderProvenanceMarkdown(ledger), 'utf-8');
+    if (fmt === 'md') return mdPath;
+  }
+  if (fmt === 'json' || fmt === 'both') {
+    const jsonPath = resolve(join(outDir, 'provenance.json'));
+    writeFileSync(jsonPath, renderProvenanceJson(ledger), 'utf-8');
+    if (fmt === 'json') return jsonPath;
+  }
+  // 'both' → return the md path as the primary file
+  return resolve(join(outDir, 'provenance.md'));
 }

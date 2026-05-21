@@ -15,6 +15,7 @@ fn name=agentGuideMarkdown returns=string export=true
       '',
       '## Modes',
       '- `agon forge "<task>" -t "<test cmd>"` — engines race to implement the task; the test command picks the winner. Use when a runnable test/check exists and there are multiple valid approaches.',
+      '- `agon synthesis "<prompt>" [-s <swaps>] [-j <judge>]` — engines draft, then swap and improve on the other drafts; a judge picks the best evolved artifact. Use when you want one polished result that blends the best ideas and no clean pass/fail test exists.',
       '- `agon brainstorm "<question>"` — engines bid confidence, the most confident answers. Cheap second opinion.',
       '- `agon tribunal "<question>" [--mode adversarial|steelman|socratic|red-team|synthesis|postmortem]` — structured multi-engine debate. Use for decisions with real tradeoffs.',
       '- `agon campfire "<topic>"` — open multi-engine discussion, no winner. For exploration.',
@@ -35,6 +36,7 @@ fn name=agentGuideMarkdown returns=string export=true
       '',
       '## Pick a mode',
       '- multiple valid approaches + a test  -> forge',
+      '- want one blended artifact, no test  -> synthesis',
       '- a decision with tradeoffs           -> tribunal',
       '- need ideas / unsure                 -> brainstorm',
       '- explore, no decision needed         -> campfire',
@@ -49,14 +51,14 @@ fn name=agonShim params="format:string" returns=string export=true
   doc "Per-CLI /agon slash-command shim. format is one of codex | gemini | claude."
   handler <<<
     const body = [
-      'You have access to Agon, a multi-AI orchestration CLI (forge, brainstorm, tribunal, campfire, review, goal).',
+      'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, campfire, review, goal).',
       'First run `agon agent-guide` in the shell to see exactly how to call it, then use the right Agon mode to handle the request.',
       'Call agon with your normal shell/Bash tool — there is no MCP and nothing is loaded until you invoke it.',
     ].join('\n');
 
     if (format === 'gemini') {
       return [
-        'description = "Use Agon multi-AI orchestration (forge/tribunal/brainstorm/review/goal)"',
+        'description = "Use Agon multi-AI orchestration (forge/synthesis/tribunal/brainstorm/review/goal)"',
         'prompt = """',
         body,
         '',
@@ -69,7 +71,7 @@ fn name=agonShim params="format:string" returns=string export=true
     if (format === 'claude') {
       return [
         '---',
-        'description: Use Agon multi-AI orchestration (forge/tribunal/brainstorm/review/goal)',
+        'description: Use Agon multi-AI orchestration (forge/synthesis/tribunal/brainstorm/review/goal)',
         'argument-hint: [task]',
         '---',
         '',

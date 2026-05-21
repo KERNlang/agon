@@ -140,19 +140,47 @@ Team-based variants of core modes (e.g., 2v2 or 3v3). Includes Team Forge, Team 
 ```
 
 ### Goal
-Autonomous, long-running orchestration. You hand Agon a finite, checkable task queue (e.g. a directory of gap specs) plus a green **gate** command, and it drives the whole queue to completion unattended — for hours. Each task runs in a throwaway worktree off a dedicated `goal/` branch: forge races the engines, the **test-aware winner** is selected (a passing patch that includes a test beats a higher-scoring one that doesn't), every new test is **witnessed** (it must fail on the base commit and pass on the new one) and **mutation-witnessed** (canonical mutants on the changed lines must die — defeating tautological "encode the answer" tests), the frozen gate runs once, **all engines review** the diff and a **judge** adjudicates the flagged findings via the confidence-tiered consensus, blockers get one bounded fix pass, and only then does **one commit per task** land on the goal branch. Any failure discards the worktree wholesale (atomic rollback). The run is journaled and resumable (`--resume`), checkpoints cleanly on Ctrl-C, meters real spend, and **never auto-pushes** by default — you review the commits and open the PR (`--push` pushes each task as it lands; `--pr` opens the PR at the end).
+Autonomous, long-running orchestration. You hand Agon a finite, checkable task queue (e.g. a directory of gap specs) plus a green **gate** command, and it drives the whole queue to completion unattended — for hours. The value isn't "every engine succeeds"; it's the **gated competitive loop**: only clean, passing, test-witnessed patches ever land, even if half the panel times out or gets superseded.
+
+**How it works — the per-task loop.** For each task, on a dedicated `goal/<id>` branch (never `main`):
+
+1. **Worktree** — a fresh throwaway worktree is checked out at the base commit. *All engine activity — implement and review — runs inside this worktree; the repo you launched Agon from is never touched.* Any failure discards the worktree wholesale (atomic rollback).
+2. **Implement** — forge races the engine roster in parallel. When you don't pin `--engines`, Cesar routes the roster per task (a single engine for a trivial gap, the full panel for a real feature) and escalates ambiguous/expensive tasks to the judge.
+3. **Pick the winner** — *test-aware* selection: a passing patch that adds a test beats a higher-scoring one that doesn't (so the witness always has something to witness).
+4. **Witness** — the new test must **fail on the base commit and pass on the new one** — no no-op tests.
+5. **Mutation-witness** — canonical mutants on the changed lines must die, defeating tautological "encode the answer" tests (the highest-EV way to cheat a gate).
+6. **Gate** — the frozen green oracle (your `--gate`) runs once from the worktree. It's snapshotted at start so a task can't weaken it.
+7. **Review** — **all** review engines grade the diff in parallel; their findings are folded by a confidence-tiered **consensus** (verified / needs-check / speculative / nit) under a two-signal block rule. A **judge** adjudicates only the medium-confidence "needs-check" set. Flaky or empty engines land in a separate **failures lane** — they can't impersonate a blocker.
+8. **Fix** — a verified blocker triggers one bounded fix pass, then re-gate + re-review.
+9. **Commit** — only now does **one commit per task** land on the goal branch (CAS-safe). A task that can't pass **parks** with the reason and a saved gate log, and the run moves on.
+
+The run is **journaled and resumable** (`--resume`), checkpoints cleanly on Ctrl-C, **meters real spend** (implement + the whole review panel + judge), and **never auto-pushes** by default — you review the commits and open the PR.
 
 ```bash
 agon goal "Close all KERN gaps" \
   --queue .kern-gaps/ \
   --gate "npm run build && npm run typecheck && npm test" \
   --branch goal/close-gaps \
-  --review-engines claude,codex,gemini \
-  --judge codex \
-  --max-hours 8 --budget 5
+  --require-tests --max-attempts 3 \
+  --max-hours 8 --budget 5 --push
 ```
 
-Bound a run by `--max-hours`, `--budget` (USD), both, or neither (free). Pick the review panel with `--review-engines` (default: all active) and the adjudicator with `--judge`. Read a run's digest from any session with `agon goal --status --id close-all-kern-gaps`. Reachable from external CLIs via `agon call goal "<intent>" --queue <dir> --gate "<cmd>"`. _(Roadmap: hermetic gate isolation, detached delegation + async callback.)_
+**Flags / guardrails for a long run:**
+
+| Flag | Purpose | Default |
+| --- | --- | --- |
+| `--queue` | Task source: a directory (one task/file) or a `.jsonl` of `{id,source,dependsOn}` | required |
+| `--gate` | Green-oracle command — the authoritative pass/fail, frozen at start | required |
+| `--branch` | Goal branch (`goal/<id>`) — **never `main`** | `goal/<id>` |
+| `--engines` | Implementer roster; **authoritative** when set (no routing/narrowing) | all active |
+| `--review-engines` / `--judge` | The review panel and the adjudicator | all / config→Cesar→first |
+| `--require-tests` | Reject a source change with no test | on |
+| `--max-attempts` | Attempts per task before park | `3` |
+| `--max-hours` / `--budget` | Wall-clock and/or USD ceiling — either, both, or neither | off (`0`) |
+| `--push` / `--pr` | Push the goal branch per task / open a PR at the end (never `main`) | off |
+| `--resume` / `--status` / `--dry-run` | Resume from journal / print a run's digest / plan only | — |
+
+Read a run's digest from any session with `agon goal --status --id close-all-kern-gaps`. Reachable from external CLIs via `agon call goal "<intent>" --queue <dir> --gate "<cmd>"`. _(Roadmap: hermetic gate isolation, detached delegation + async callback.)_
 
 ## Interactive REPL
 
@@ -208,20 +236,63 @@ After that, clients can call Agon tools such as Tribunal, Brainstorm, Forge, Cam
 
 ## Engines
 
-Agon supports a wide variety of local and cloud-based AI engines out of the box. Supported engines include:
+Agon doesn't ship its own model — it **orchestrates the AI coding CLIs you already have**. The more engines you install and authenticate, the more competitors forge can race, the broader the review panel, and the better Cesar can route. To "get the most out of it," set up several.
 
-- **Claude** (Anthropic) - Requires `claude-code` CLI
-- **Codex** (OpenAI)
-- **Gemini** (Google) - Requires `gemini-cli`
-- **Aider**
-- **Ollama** (Local models)
-- **OpenRouter**
-- **Mistral**
-- **Qwen**
-- **MiniMax**
-- **OpenCode**
+### 1. Install the engine CLIs
 
-Engine definitions are stored as JSON configurations in the `engines/` directory. You can easily toggle availability and set default models.
+Each engine is a separate CLI you install once. Built-ins (in `engines/*.json`):
+
+| Engine | Install | Auth |
+| --- | --- | --- |
+| **Claude** (Anthropic) | `npm install -g @anthropic-ai/claude-code` | `claude` then `/login` (subscription) or `ANTHROPIC_API_KEY` |
+| **Codex** (OpenAI) | `npm install -g @openai/codex` | `codex` then sign in, or `OPENAI_API_KEY` |
+| **Gemini** (Google) | `npm install -g @google/gemini-cli` | `gemini` then sign in, or `GOOGLE_API_KEY` |
+| **OpenCode** | `curl -fsSL https://opencode.ai/install \| bash` | `opencode auth login` (provider keys) |
+| **Aider** | `pip install aider-chat` | provider API key |
+| **Ollama** (local) | [ollama.com/download](https://ollama.com/download) | none (runs locally) |
+| **OpenRouter** | `npm install -g openrouter-cli` | `OPENROUTER_API_KEY` |
+| **Mistral** / **Qwen** | `pip install mistral-cli` / `qwen-cli` | provider API key |
+
+Subscription/CLI-authed engines (Claude, Codex, Gemini, OpenCode) bill through their own login — no API key needed in your environment. The rest read an API key from the env var shown above.
+
+### 2. Verify what Agon can see
+
+`agon doctor` is the source of truth — it probes each engine's binary, auth, and capabilities:
+
+```bash
+agon doctor engines     # which engines are installed + reachable (binary/key/login)
+agon doctor review      # smoke-test that each engine returns parseable review output
+agon doctor harness     # Cesar routing: selected engine + tool reliability
+```
+
+Anything that shows `ok` is available to forge, review, and goal. Engines that fail are simply skipped (and quarantined in the review failures lane), so a missing CLI never breaks a run.
+
+### 3. (Optional) Add API-based engines
+
+Beyond the built-in CLIs, you can register any OpenAI- or Anthropic-compatible API endpoint — including provider "coding plans" — by dropping a JSON file in `~/.agon/engines/`. No code, no rebuild; Agon loads it on next launch.
+
+```jsonc
+// ~/.agon/engines/my-coding-plan.json
+{
+  "schemaVersion": 3,
+  "id": "my-coding-plan",
+  "displayName": "My Coding Plan",
+  "isLocal": false,
+  "tier": "user",
+  "timeout": 180,
+  "exec":   { "args": [] },
+  "review": { "args": [] },
+  "api": {
+    "baseUrl": "https://api.example.com/v1",
+    "apiKeyEnv": "MY_PLAN_API_KEY",   // read from this env var
+    "model": "the-model-id",
+    "maxTokens": 16384,
+    "format": "anthropic"             // "anthropic" or "openai"
+  }
+}
+```
+
+Set the key (`export MY_PLAN_API_KEY=…`), then confirm with `agon doctor engines`. Built-in definitions live in the repo's `engines/` directory; your own go in `~/.agon/engines/` and override built-ins of the same id. Toggle availability and per-engine default models from there or via config (`engineModels`).
 
 ## Cesar Routing
 

@@ -80,7 +80,7 @@ function symlinkNodeModuleEntry(sourcePath: string, targetPath: string): void {
  * External git worktrees live outside the repo, so Node cannot walk up to the root install. Create a shallow node_modules overlay: external deps link to the root install, while @agon workspace packages link back into the candidate worktree so runtime tests see candidate edits.
  */
 // @kern-source: git:62
-function linkWorktreeNodeModules(repoDir: string, worktreePath: string): void {
+export function linkWorktreeNodeModules(repoDir: string, worktreePath: string): void {
   const source = join(repoDir, 'node_modules');
   const target = join(worktreePath, 'node_modules');
   if (!existsSync(source) || existsSync(target)) return;

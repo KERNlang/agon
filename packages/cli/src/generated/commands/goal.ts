@@ -246,9 +246,15 @@ return defineCommand({
       // single engine (cheap/fast), a real feature races the full panel. The
       // free heuristic decides; the judge confirms/adjusts the roster only for
       // big/expensive tasks (escalation). REVIEW always uses all engines.
+      //
+      // An EXPLICIT --engines roster is AUTHORITATIVE: when you name the
+      // engines, all of them compete on every task — routing/escalation never
+      // narrows a set you asked for. Per-task routing only optimizes the
+      // DEFAULT (all-active) roster when --engines was not passed.
       const baseRoster = (requestedEngines ?? available) as string[];
+      const explicitRoster = requestedEngines != null;
       let taskEngines: string[] = baseRoster;
-      if (!a.fixContext && baseRoster.length > 1) {
+      if (!a.fixContext && !explicitRoster && baseRoster.length > 1) {
         try {
           const hints = deriveRoutingHints(a.task.source, { activeEngines: () => baseRoster } as any);
           const r = chooseImplementRoster({
@@ -266,7 +272,7 @@ return defineCommand({
             try {
               const { path: rdir } = createRunDir({ mode: 'forge', label: 'goal-route' });
               const rPrompt = `You are routing an autonomous coding task to engines. Task:\n${a.task.source}\n\nAvailable engines: ${baseRoster.join(', ')}\nHeuristic proposed: ${taskEngines.join(', ')}\n\nReturn ONLY a JSON array of the engine ids that should COMPETE on this task — a subset of the available engines (more engines = more cost but more options). Example: ["claude","codex"].`;
-              const rr = await runDelegate({ engineId: judge, task: rPrompt, registry, adapter, timeout: implementTimeout ?? 180, outputDir: rdir, signal: abort.signal });
+              const rr = await runDelegate({ engineId: judge, task: rPrompt, cwd: a.worktree, registry, adapter, timeout: implementTimeout ?? 180, outputDir: rdir, signal: abort.signal });
               const m = (rr.response || '').match(/\[[\s\S]*?\]/);
               if (m) {
                 const picked = (JSON.parse(m[0]) as unknown[]).map((s) => registry.resolveId(String(s).trim())).filter((id: string) => baseRoster.includes(id));
@@ -373,7 +379,13 @@ return defineCommand({
       // from its parsed per-finding {severity, confidence}.
       const outcomes = await Promise.all(reviewEngines.map(async (eng: string) => {
         try {
-          const r = await runReviewCore(diff, `${a.label} [${eng}]`, eng, { config, adapter, registry } as any, abort.signal);
+          // Pin the review engine to the task WORKTREE (a.worktree), not the
+          // parent repo: runReviewCore otherwise defaults to resolveWorkingDir()
+          // (= process.cwd(), the dir agon was launched from), which made review
+          // engines run in — and write scratch/fix files into — the parent repo,
+          // invisible to the goal pipeline (it only diffs the worktree). It also
+          // graded findings against the wrong repo's file content.
+          const r = await runReviewCore(diff, `${a.label} [${eng}]`, eng, { config, adapter, registry } as any, abort.signal, undefined, a.worktree);
           if (r.parseFailed || r.unstructured) {
             return { engine: eng, status: 'parse-failed', findings: [], note: (r.response || '').slice(0, 400) };
           }
@@ -416,7 +428,7 @@ return defineCommand({
       const judgePrompt = `You are the deciding reviewer (judge). The review panel raised ${consensus.needsCheck.length} MEDIUM-confidence finding(s) that need a second opinion before they can block. For each, decide whether it is a REAL must-fix blocker (a genuine bug, regression, or security hole) given the diff — or a false positive / mere nit.\n\nDIFF:\n${diff}\n\nFINDINGS TO ADJUDICATE:\n${toAdjudicate}\n\nGive a one-paragraph rationale, then end with a line containing exactly <!--AGON_REVIEW_FINDINGS_v1--> followed by a JSON array of ONLY the findings you confirm as genuinely blocking (each {"severity":"blocking","file":"...","lines":"...","problem":"..."}). If none are real, output [].`;
       try {
         const { path: jdir } = createRunDir({ mode: 'forge', label: `goal-judge` });
-        const jr = await runDelegate({ engineId: judge, task: judgePrompt, registry, adapter, timeout: implementTimeout ?? 420, outputDir: jdir, signal: abort.signal });
+        const jr = await runDelegate({ engineId: judge, task: judgePrompt, cwd: a.worktree, registry, adapter, timeout: implementTimeout ?? 420, outputDir: jdir, signal: abort.signal });
         const findings = extractReviewFindings(jr.response || '');
         const realBlock = !!findings && findings.some((fi: { severity?: string; blocking?: boolean }) => fi.blocking === true || (fi.severity ?? '').toLowerCase() === 'blocking');
         return {

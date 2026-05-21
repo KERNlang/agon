@@ -6,10 +6,11 @@ interface name=DelegateResult export=true
   field name=response type=string
   field name=usage type="DispatchResult['usage']" optional=true
 
-fn name=runDelegate async=true params="opts:{engineId:string,task:string,mode?:string,registry:EngineRegistry,adapter:EngineAdapter,timeout:number,outputDir:string,signal?:AbortSignal}" returns="Promise<DelegateResult>" export=true
+fn name=runDelegate async=true params="opts:{engineId:string,task:string,mode?:string,cwd?:string,registry:EngineRegistry,adapter:EngineAdapter,timeout:number,outputDir:string,signal?:AbortSignal}" returns="Promise<DelegateResult>" export=true
   handler lang="kern"
     let name=engine value="opts.registry.get(opts.engineId)"
-    let name=result value="await opts.adapter.dispatch({ engine, prompt: opts.task, cwd: resolveWorkingDir(), mode: (opts.mode ?? 'exec') as any, timeout: opts.timeout, outputDir: opts.outputDir, signal: opts.signal, })"
+    comment raw="// cwd pins the dispatch directory. Callers inside a goal worktree (judge adjudication, route escalation) MUST pass opts.cwd=<worktree> so the engine never runs in — or writes to — the parent repo; defaults to resolveWorkingDir() for top-level callers."
+    let name=result value="await opts.adapter.dispatch({ engine, prompt: opts.task, cwd: opts.cwd ?? resolveWorkingDir(), mode: (opts.mode ?? 'exec') as any, timeout: opts.timeout, outputDir: opts.outputDir, signal: opts.signal, })"
     if cond="!result.stdout.trim()"
       return value="{ engineId: opts.engineId, response: '', usage: result.usage }"
     comment raw="// Strip <think> blocks"

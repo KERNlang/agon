@@ -14,6 +14,7 @@ For non-interactive Codex shell work, the fastest path is the shell bridge:
 agon call brainstorm "What approaches should we consider for this migration?"
 agon call tribunal "Should we ship this architecture?" --tribunalMode red-team --rounds 2
 agon call forge "Implement the cache layer" --test "npm test"
+agon call synthesis "Evolve this design doc into a concrete implementation plan" --swaps 2 --timeout 90
 agon call review
 ```
 
@@ -32,6 +33,14 @@ agon call brainstorm "Compare options for this refactor" --jsonl
 
 Use `--cwd <path>` when the target repository is not the current working directory. Use `--engines claude,codex,gemini` to pin participants when needed. Use `--timeout <seconds>` for long-running tasks.
 
+External engines should always call Agon through the shell bridge, not direct model CLIs:
+
+```bash
+agon call <workflow> "<input>" [flags]
+```
+
+Example workflows: `forge`, `brainstorm`, `synthesis`, `tribunal`, `campfire`, `pipeline`, `review`, `goal`, and `team-*`.
+
 Do not use `qwen`, `opencode`/Kimi, or `ollama` for Agon orchestration unless the user explicitly asks for one of them. Prefer known-good local engines such as `claude`, `codex`, and `gemini` when pinning engines.
 
 ### Agon Mode Guide
@@ -42,6 +51,7 @@ Do not use `qwen`, `opencode`/Kimi, or `ollama` for Agon orchestration unless th
 - `team-tribunal`: use when debate quality matters; teams argue positions and a judge synthesizes.
 - `forge`: use when multiple engines should implement the same bounded coding task and compete under a fitness command.
 - `team-forge`: use for high-value implementation where teams of engines collaborate and compete.
+- `synthesis`: use for cross-pollination where engines iteratively improve each other's drafts and a judge selects the best evolved result.
 - `campfire`: use when the problem is fuzzy and needs exploratory discussion before a crisp plan exists.
 - `pipeline`: full sequence: brainstorm, forge, then tribunal review. Use for critical changes where design, implementation, and review all matter.
 - `review`: use for code review of uncommitted changes or a specified target.

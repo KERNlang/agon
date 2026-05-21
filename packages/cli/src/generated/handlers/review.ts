@@ -397,11 +397,11 @@ export function gatherReviewFileContext(diff: string, cwd: string): string {
 }
 
 /**
- * Core review flow with no ctx side effects. Used by both handleReview (with streaming dispatch) and the plan executor's review step (silent). Does NOT touch ctx.setActiveAbort, ctx.lastReviewResult, ctx.chatSession, or tracker. signal is optional: callers that don't have an abort controller can pass undefined.
+ * Core review flow with no ctx side effects. Used by both handleReview (with streaming dispatch) and the plan executor's review step (silent). Does NOT touch ctx.setActiveAbort, ctx.lastReviewResult, ctx.chatSession, or tracker. signal is optional: callers that don't have an abort controller can pass undefined. cwdOverride pins the working directory the review engine runs in AND the repo file-context is gathered from — goal passes the per-task worktree so review engines never operate in (and write to) the parent repo; defaults to resolveWorkingDir() for the interactive/CLI review paths.
  */
 // @kern-source: review:369
-export async function runReviewCore(diff: string, label: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, onProgress?: (chunk:string)=>void): Promise<ReviewCoreResult> {
-  const cwd = resolveWorkingDir();
+export async function runReviewCore(diff: string, label: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, onProgress?: (chunk:string)=>void, cwdOverride?: string): Promise<ReviewCoreResult> {
+  const cwd = cwdOverride ?? resolveWorkingDir();
   const config = ctx.config;
   const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat as any);
   // Repo grounding (default on): full current content of the changed source files, so reviewers verify findings against real code instead of guessing from hunks. Opt out with config.reviewFileContext=false to minimize prompt size / TTFT.

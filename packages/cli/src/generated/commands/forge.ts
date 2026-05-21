@@ -4,7 +4,7 @@ import { defineCommand } from 'citty';
 
 import { readFileSync } from 'node:fs';
 
-import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, writeRunStatus, printRunSummary } from '@agon/core';
+import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, writeRunStatus, printRunSummary, writeProvenanceReport } from '@agon/core';
 
 import type { EngineResult } from '@agon/core';
 
@@ -109,6 +109,10 @@ export const forgeCommand: any = defineCommand({
     quiet: {
       type: 'boolean',
       description: 'Suppress streaming output; stdout becomes only the run dir path + final summary.',
+    },
+    provenance: {
+      type: 'boolean',
+      description: 'After the run, write an AI-contribution / transparency report (provenance.md + .json) into the run dir.',
     },
   },
   async run({ args }) {
@@ -408,6 +412,18 @@ export const forgeCommand: any = defineCommand({
         : undefined,
     };
     writeRunStatus(forgeDir, status);
+
+    // --provenance: emit an AI-contribution report into the run dir, using
+    // the same renderer `agon provenance` uses. Best-effort: a report
+    // failure must never fail the forge run itself.
+    if (args.provenance) {
+      try {
+        const reportPath = writeProvenanceReport(manifest, `${forgeDir}/manifest.json`, forgeDir, 'both');
+        if (!quiet) info(`Provenance report: ${reportPath}`);
+      } catch (e) {
+        if (!quiet) warn(`Could not write provenance report: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
 
     if (quiet) {
       printRunSummary(status);

@@ -1,0 +1,51 @@
+// ── Provenance / transparency report schema ──────────────────────────
+// The data model behind `agon provenance`: an auditable, honesty-first
+// record of what each AI engine contributed to a run and how its output
+// was (or was not) accepted. Inspired by academic AI-contribution
+// statements — the human author retains full responsibility.
+//
+// Design principle (validated by a 6-engine brainstorm): report what Agon
+// can PROVE, label HOW each artifact was accepted, and never imply human
+// oversight that did not happen.
+
+// How a contribution came to be accepted. Deliberately granular so the
+// statement can be honest: a forge winner passing the fitness gate is
+// `autonomous-gate`, not human approval.
+//   human-explicit                  — a human recorded an accept/override (attest)
+//   human-implicit-survived-in-head — adopted because it survives in git HEAD
+//   autonomous-oracle               — accepted by a deterministic oracle
+//   autonomous-gate                 — accepted by passing the fitness/review gate
+//   machine-synthesized-blend       — a cross-engine synthesis; shared authorship
+//   not-accepted                    — rejected / skipped / parked
+//   unknown                         — not recorded
+
+interface name=ProvenanceContribution
+  field name=engineId type=string
+  field name=role type="'winner'|'synthesizer'|'rejected'|'skipped'"
+  field name=accepted type=boolean
+  field name=acceptanceMechanism type="'human-explicit'|'human-implicit-survived-in-head'|'autonomous-oracle'|'autonomous-gate'|'machine-synthesized-blend'|'not-accepted'|'unknown'"
+  field name=score type=number optional=true
+  field name=passedGate type=boolean optional=true
+  field name=reason type=string optional=true
+  field name=diffLines type=number optional=true
+  field name=filesChanged type=number optional=true
+  field name=durationSec type=number optional=true
+  field name=costUsd type=number optional=true
+
+interface name=ProvenanceLedger
+  field name=schemaVersion type=1
+  field name=kind type="'forge'|'goal'|'aggregate'"
+  field name=generatedAt type=string
+  field name=runId type=string
+  field name=humanPrompt type=string
+  field name=gate type=string optional=true
+  field name=startedAt type=string
+  field name=engines type="string[]"
+  field name=contributions type="ProvenanceContribution[]"
+  field name=winner type="string|null"
+  field name=autonomyLevel type="'human-gated'|'autonomous-selection'|'autonomous-loop'"
+  field name=synthesisBlended type=boolean
+  field name=sourceHashes type="Record<string,string>"
+  field name=aiDidNot type="string[]"
+  field name=limitations type="string[]"
+  field name=responsibility type=string

@@ -385,8 +385,12 @@ const name=goalCommand type=any
               // invisible to the goal pipeline (it only diffs the worktree). It also
               // graded findings against the wrong repo's file content.
               const r = await runReviewCore(diff, `${a.label} [${eng}]`, eng, { config, adapter, registry } as any, abort.signal, undefined, a.worktree);
+              // Meter this reviewer's spend so the budget counts the WHOLE panel,
+              // not just implement + judge (the review panel cost was previously
+              // invisible to --budget). estimateCost prices the engine's tokens.
+              const costUsd = estimateCost(eng, r.usage?.totalTokens ?? 0);
               if (r.parseFailed || r.unstructured) {
-                return { engine: eng, status: 'parse-failed', findings: [], note: (r.response || '').slice(0, 400) };
+                return { engine: eng, status: 'parse-failed', findings: [], note: (r.response || '').slice(0, 400), costUsd };
               }
               const raw = extractReviewFindings(r.response || '') || [];
               const findings = raw.map((x: any) => ({
@@ -397,12 +401,15 @@ const name=goalCommand type=any
                 confidence: x.confidence,
                 file: x.file, lines: x.lines, problem: x.problem, minimalFix: x.minimalFix,
               }));
-              return { engine: eng, status: 'ok', findings };
+              return { engine: eng, status: 'ok', findings, costUsd };
             } catch (e) {
-              return { engine: eng, status: 'error', findings: [], note: e instanceof Error ? e.message : String(e) };
+              return { engine: eng, status: 'error', findings: [], note: e instanceof Error ? e.message : String(e), costUsd: 0 };
             }
           }));
 
+          // Panel-review spend (summed across all reviewers) is added to every
+          // return path below so the controller meters it into state.spentUsd.
+          const panelCostUsd = (outcomes as Array<{ costUsd?: number }>).reduce((s, o) => s + (o?.costUsd ?? 0), 0);
           const consensus = buildConsensus(outcomes as any);
 
           // Verified blockers (or a no-verdict wipeout) block now — the panel
@@ -411,12 +418,12 @@ const name=goalCommand type=any
             const why = consensus.blockers.length
               ? consensus.blockers.map((b) => `• [${b.severity} ${b.maxConfidence.toFixed(2)} ×${b.engines.length}] ${b.problem}${b.file ? ` (${b.file}${b.lines ? ':' + b.lines : ''})` : ''}`).join('\n')
               : '(no engine produced a verdict)';
-            return { blocking: true, summary: `${consensus.summary}\nVERIFIED BLOCKERS:\n${why}` };
+            return { blocking: true, summary: `${consensus.summary}\nVERIFIED BLOCKERS:\n${why}`, costUsd: panelCostUsd };
           }
 
           // Nothing verified, nothing uncertain → pass (speculative + nits are informational).
           if (!consensus.needsJudge) {
-            return { blocking: false, summary: consensus.summary };
+            return { blocking: false, summary: consensus.summary, costUsd: panelCostUsd };
           }
 
           // Medium-confidence findings get a SECOND opinion before they can block.
@@ -433,12 +440,12 @@ const name=goalCommand type=any
             return {
               blocking: realBlock,
               summary: `${consensus.summary}\njudge ${judge}: ${realBlock ? 'BLOCK' : 'pass'} (adjudicated ${consensus.needsCheck.length} needs-check)\n${(jr.response || '').slice(0, 2500)}`,
-              costUsd: estimateCost(judge, jr.usage?.totalTokens ?? 0),
+              costUsd: panelCostUsd + estimateCost(judge, jr.usage?.totalTokens ?? 0),
             };
           } catch (e) {
             // Judge unreachable and only medium-confidence items were flagged
             // (nothing crossed the verified bar) — fail-closed on the uncertain set.
-            return { blocking: true, summary: `${consensus.summary}\njudge ${judge} errored (${e instanceof Error ? e.message : String(e)}); ${consensus.needsCheck.length} needs-check finding(s) unadjudicated — blocking conservatively.` };
+            return { blocking: true, summary: `${consensus.summary}\njudge ${judge} errored (${e instanceof Error ? e.message : String(e)}); ${consensus.needsCheck.length} needs-check finding(s) unadjudicated — blocking conservatively.`, costUsd: panelCostUsd };
           }
         };
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll } from 'vitest';
+import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import {
   synthesisRoutingAdvice,
   buildSynthesisJudgePrompt,
@@ -6,7 +6,12 @@ import {
 } from '../../packages/forge/src/generated/synthesis-modus.js';
 
 // Regex-only classification (no Python sidecar) keeps these deterministic.
+const PRIOR_DISABLE = process.env.AGON_DISABLE_CLASSIFIER_SIDECAR;
 beforeAll(() => { process.env.AGON_DISABLE_CLASSIFIER_SIDECAR = '1'; });
+afterAll(() => {
+  if (PRIOR_DISABLE === undefined) delete process.env.AGON_DISABLE_CLASSIFIER_SIDECAR;
+  else process.env.AGON_DISABLE_CLASSIFIER_SIDECAR = PRIOR_DISABLE;
+});
 
 // ── Cheap win #1: forge-routing guard ────────────────────────────────────
 // synthesis picks a winner by LLM judgment with no fitness test. For code
@@ -79,5 +84,18 @@ describe('parseSynthesisJudgeOutput — calibration', () => {
     expect(scores[0].score).toBe(50);
     expect(scores[0].confidence).toBeUndefined();
     expect(scores[0].unhandled).toBeUndefined();
+  });
+
+  it('normalizes 0-100 / percentage confidence into 0..1 and suppresses punctuated "none"', () => {
+    const text = [
+      'SCORE_1: 60', 'CONFIDENCE_1: 75', 'UNHANDLED_1: None.',
+      'SCORE_2: 70', 'CONFIDENCE_2: 40%', 'UNHANDLED_2: race condition',
+      'WINNER: "b"', 'REASONING: "x"',
+    ].join('\n');
+    const { scores } = parseSynthesisJudgeOutput(text, ['a', 'b']);
+    expect(scores[0].confidence).toBeCloseTo(0.75);   // "75" → 0.75, not clamped to 1
+    expect(scores[0].unhandled).toBeUndefined();        // "None." suppressed
+    expect(scores[1].confidence).toBeCloseTo(0.40);   // "40%" → 0.40
+    expect(scores[1].unhandled).toBe('race condition');
   });
 });

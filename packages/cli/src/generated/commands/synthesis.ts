@@ -153,9 +153,10 @@ export const synthesisCommand: any = defineCommand({
       const rows = result.scores.map((s: any) => [
         s.engineId === result.winner ? green(`${s.engineId} *`) : s.engineId,
         String(s.score),
-        s.breakdown.slice(0, 60),
+        typeof s.confidence === 'number' ? s.confidence.toFixed(2) : '—',
+        s.unhandled ? s.unhandled.slice(0, 48) : '—',
       ]);
-      table(['Engine', 'Score', 'Breakdown'], rows);
+      table(['Engine', 'Score', 'Conf', 'Unhandled (judge)'], rows);
     }
 
     console.log('');

@@ -221,6 +221,7 @@ export {
   renderProvenanceMarkdown,
   renderProvenanceJson,
   sha256OfFile,
+  writeProvenanceReport,
 } from './provenance.js';
 export type { ProvenanceLedger, ProvenanceContribution } from './provenance.js';
 export { validateEngineConfig, validateEngineDir, EngineDefinitionSchema } from './schemas/engine-schema.js';

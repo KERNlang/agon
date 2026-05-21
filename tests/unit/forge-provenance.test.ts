@@ -1,8 +1,10 @@
-// Contract (test-first) for phase 2: a `writeProvenanceReport` core helper that
-// builds a provenance ledger from a ForgeManifest and writes the report file(s)
-// to a directory — the reusable core that `forge --provenance` will call.
+// Contract for phase 2: a `writeProvenanceReport` core helper that builds a
+// provenance ledger from a ForgeManifest and writes the report file(s).
 //
-// This test is RED until @agon/core exports `writeProvenanceReport`.
+// Assertions are deliberately mutation-grade: they pin the winner/rejected
+// roles, acceptance mechanisms, autonomy level, format branching, and return
+// paths — so flipping a boolean / `===` / `||` / `return` in the provenance
+// logic breaks at least one expectation (goal's mutation-witness demands this).
 import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,32 +32,68 @@ const fixture: ForgeManifest = {
   enginesDispatched: 2,
 };
 
+function freshDir(prefix: string): string {
+  return mkdtempSync(join(tmpdir(), prefix));
+}
+
 describe('writeProvenanceReport', () => {
-  it('writes a Markdown AI-contribution statement into the output dir and returns its path', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'prov-report-'));
+  it('writes a Markdown statement that names the winner and pins roles', () => {
+    const dir = freshDir('prov-md-');
     const manifestPath = join(dir, 'manifest.json');
     writeFileSync(manifestPath, JSON.stringify(fixture));
 
     const out = writeProvenanceReport(fixture, manifestPath, dir, 'md');
 
-    expect(typeof out).toBe('string');
+    expect(out.endsWith('provenance.md')).toBe(true);
     expect(existsSync(out)).toBe(true);
-    const content = readFileSync(out, 'utf-8');
-    expect(content).toContain('AI Contribution Statement');
-    expect(content).toContain('codex'); // the winner is named
+    const md = readFileSync(out, 'utf-8');
+    expect(md).toContain('AI Contribution Statement');
+    // Winner row: codex must be the accepted winner via the autonomous gate.
+    expect(md).toContain('| codex | winner | yes | autonomous-gate');
+    // Loser row: claude must be rejected / not accepted.
+    expect(md).toContain('| claude | rejected | no | not-accepted');
+    expect(md).toContain('AI-SELECTED');
+    expect(md).toContain('What the AI did NOT do');
+    // multiline prompt collapsed to a single Scope line (no raw newline break)
+    expect(md).not.toContain('add a thing\nwith a multiline prompt');
   });
 
-  it('writes a JSON ledger when format is json', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'prov-report-json-'));
+  it('writes a JSON ledger with correct per-engine attribution', () => {
+    const dir = freshDir('prov-json-');
     const manifestPath = join(dir, 'manifest.json');
     writeFileSync(manifestPath, JSON.stringify(fixture));
 
     const out = writeProvenanceReport(fixture, manifestPath, dir, 'json');
 
+    expect(out.endsWith('provenance.json')).toBe(true);
     expect(existsSync(out)).toBe(true);
-    const parsed = JSON.parse(readFileSync(out, 'utf-8'));
-    expect(parsed.kind).toBe('forge');
-    expect(parsed.winner).toBe('codex');
-    expect(parsed.runId).toBe('test-forge-provenance-1');
+    const led = JSON.parse(readFileSync(out, 'utf-8'));
+    expect(led.kind).toBe('forge');
+    expect(led.winner).toBe('codex');
+    expect(led.runId).toBe('test-forge-provenance-1');
+    expect(led.autonomyLevel).toBe('autonomous-selection');
+    expect(led.synthesisBlended).toBe(false);
+    expect(Array.isArray(led.aiDidNot)).toBe(true);
+    expect(led.aiDidNot.length).toBeGreaterThanOrEqual(2);
+
+    const codex = led.contributions.find((c: { engineId: string }) => c.engineId === 'codex');
+    const claude = led.contributions.find((c: { engineId: string }) => c.engineId === 'claude');
+    expect(codex.role).toBe('winner');
+    expect(codex.accepted).toBe(true);
+    expect(codex.acceptanceMechanism).toBe('autonomous-gate');
+    expect(claude.role).toBe('rejected');
+    expect(claude.accepted).toBe(false);
+  });
+
+  it("writes BOTH files when format is 'both' and returns the md path", () => {
+    const dir = freshDir('prov-both-');
+    const manifestPath = join(dir, 'manifest.json');
+    writeFileSync(manifestPath, JSON.stringify(fixture));
+
+    const out = writeProvenanceReport(fixture, manifestPath, dir, 'both');
+
+    expect(out.endsWith('provenance.md')).toBe(true);
+    expect(existsSync(join(dir, 'provenance.md'))).toBe(true);
+    expect(existsSync(join(dir, 'provenance.json'))).toBe(true);
   });
 });

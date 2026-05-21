@@ -5,7 +5,8 @@
 
 import from="../models/types.js" names="ForgeManifest,EngineResult" types=true
 import from="../models/provenance.js" names="ProvenanceLedger,ProvenanceContribution" types=true
-import from="node:fs" names="readFileSync"
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync"
+import from="node:path" names="join,resolve"
 import from="node:crypto" names="createHash"
 
 fn name=sha256OfFile params="path:string" returns="string" export=true
@@ -196,4 +197,24 @@ fn name=renderProvenanceMarkdown params="led:ProvenanceLedger" returns="string" 
     L.push(led.responsibility);
     L.push('');
     return L.join('\n');
+  >>>
+
+fn name=writeProvenanceReport params="manifest:ForgeManifest, manifestPath:string, outDir:string, format?:'md'|'json'|'both'" returns="string" export=true
+  doc "Build the provenance ledger and write report file(s) into outDir. Returns the absolute path of the primary file (the .md, unless format is 'json'). The reusable core that `forge --provenance` calls."
+  handler <<<
+    const fmt = format ?? 'md';
+    const ledger = buildForgeProvenance(manifest, manifestPath);
+    mkdirSync(outDir, { recursive: true });
+    if (fmt === 'md' || fmt === 'both') {
+      const mdPath = resolve(join(outDir, 'provenance.md'));
+      writeFileSync(mdPath, renderProvenanceMarkdown(ledger), 'utf-8');
+      if (fmt === 'md') return mdPath;
+    }
+    if (fmt === 'json' || fmt === 'both') {
+      const jsonPath = resolve(join(outDir, 'provenance.json'));
+      writeFileSync(jsonPath, renderProvenanceJson(ledger), 'utf-8');
+      if (fmt === 'json') return jsonPath;
+    }
+    // 'both' → return the md path as the primary file
+    return resolve(join(outDir, 'provenance.md'));
   >>>

@@ -279,9 +279,17 @@ fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binar
       try {
         if (proc.pid) process.kill(-proc.pid, signal);
       } catch (e) {
-        if ((e as NodeJS.ErrnoException).code === 'ESRCH') return;
-        console.warn(`[agon] companion-dispatch: group kill failed (pid=${proc.pid}): ${e instanceof Error ? e.message : String(e)}`);
-        try { proc.kill(signal); } catch (e2) { console.warn(`[agon] companion-dispatch: direct kill also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
+        const code = (e as NodeJS.ErrnoException).code;
+        // ESRCH: group already gone. EPERM: the detached group leader already
+        // exited so its pgid is defunct (or got reused) — the GROUP kill is moot
+        // but our own child may still be reapable, so fall back to a direct kill
+        // QUIETLY. Both are expected companion teardown, not failures — warning
+        // on them just floods goal logs (the EPERM noise reported in dogfooding).
+        if (code === 'ESRCH') return;
+        try { proc.kill(signal); } catch { /* child already gone */ }
+        if (code !== 'EPERM') {
+          console.warn(`[agon] companion-dispatch: group kill failed (pid=${proc.pid}): ${e instanceof Error ? e.message : String(e)}`);
+        }
       }
     }
 

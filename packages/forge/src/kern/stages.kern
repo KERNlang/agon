@@ -173,6 +173,26 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
       emitForgeEvent(opts.onEvent, 'engine:pid-clear', opts.engineId, { engineId: opts.engineId, phase: opts.metricPhase });
     }
 
+    // Orphan guard (fixes the "worktree missing before diff" noise): when this
+    // engine was aborted by EARLY FINALIZATION or the stage2 hard-timeout, its
+    // attempt is now orphaned — Promise.race already resolved the challenger
+    // with the finalize/timeout result, so this fitness pass is discarded. But
+    // forge's eager loser-cleanup removes this worktree the moment a winner is
+    // known, so an orphaned runFitness races the rmdir and logs a spurious
+    // "worktree missing before diff" for whichever slow engine was mid-flight.
+    // Bail before fitness when aborted. NOTE: a plain DISPATCH timeout does NOT
+    // abort opts.signal (only finalize / hard-timeout / forge-level abort do),
+    // so the legitimate "harvest the timed-out worktree for fitness" path above
+    // is preserved — we only skip the discarded orphan runs.
+    if (opts.signal?.aborted) {
+      return {
+        result: makeFailedResult(opts.engineId, 'aborted (finalized/superseded before fitness)', dispatchDurationMs),
+        metric: { engineId: opts.engineId, phase: opts.metricPhase as DispatchMetric['phase'], dispatchDurationMs, totalDurationMs: dispatchDurationMs, error: 'aborted before fitness' },
+        dispatchResult,
+        worktreePath: wtPath,
+      };
+    }
+
     const fitnessStart = Date.now();
     const result = await runFitness({
       engineId: opts.engineId,

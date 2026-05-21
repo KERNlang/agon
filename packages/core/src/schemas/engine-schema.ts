@@ -26,6 +26,11 @@ export const EngineEnvVarSchema = z.object({
 export const CompanionConfigSchema = z.object({
   protocol: z.enum(['jsonrpc', 'acp', 'structured-cli', 'stream-json']),
   serverCmd: z.array(z.string()),
+  // Flag the companion server uses to set its working dir (e.g. opencode `--cwd`).
+  // companionDispatch appends [cwdArg, opts.cwd] so the server is pinned to the
+  // worktree — required for servers that ignore the spawn cwd (otherwise their
+  // writes leak into the launch repo).
+  cwdArg: z.string().optional(),
   sandbox: z.enum(['read-only', 'workspace-write', 'danger-full-access']).optional(),
   features: z.object({
     threadResume: z.boolean().optional(),

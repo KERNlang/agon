@@ -16,13 +16,13 @@
   "timeout": 180,
 
   "exec": {
-    "args": ["run", "--format", "json", "{prompt}"]
+    "args": ["run", "--dir", "{cwd}", "--format", "json", "{prompt}"]
   },
   "review": {
-    "args": ["run", "--format", "json", "{prompt}"]
+    "args": ["run", "--dir", "{cwd}", "--format", "json", "{prompt}"]
   },
   "agent": {
-    "args": ["run", "{prompt}"]
+    "args": ["run", "--dir", "{cwd}", "{prompt}"]
   },
 
   "model": {
@@ -39,6 +39,7 @@
   "companion": {
     "protocol": "acp",
     "serverCmd": ["acp"],
+    "cwdArg": "--cwd",
     "features": {
       "threadResume": true,
       "nativeReview": false,

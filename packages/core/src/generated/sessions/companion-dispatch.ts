@@ -52,8 +52,17 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     }
   }
 
-  // Spawn the app-server process
-  const proc = spawn(opts.binaryPath, opts.config.serverCmd, {
+  // Spawn the app-server process. Some companion servers (opencode's `acp`)
+  // ignore the spawn cwd and resolve their project dir themselves — defaulting
+  // to the launch repo or attaching to a shared server there — which leaked
+  // engine writes into the parent repo during goal worktree dispatches. When
+  // the config names a cwdArg, pass it EXPLICITLY so the server is pinned to
+  // opts.cwd (the worktree). Falls back to spawn-cwd only for servers that
+  // honor it (no cwdArg).
+  const serverArgs = opts.config.cwdArg
+    ? [...opts.config.serverCmd, opts.config.cwdArg, opts.cwd]
+    : opts.config.serverCmd;
+  const proc = spawn(opts.binaryPath, serverArgs, {
     stdio: ['pipe', 'pipe', 'pipe'],
     cwd: opts.cwd,
     detached: true,

@@ -41,6 +41,9 @@ fn name=saveJournal params="state:JournalState" returns=void export=true
     ensureAgonHome();
     const target = journalPath(state.spec.goalId);
     mkdirSync(dirname(target), { recursive: true });
+    // Stamp a liveness heartbeat on every checkpoint so a concurrent
+    // `--status` can distinguish a running task from a crashed one.
+    state.heartbeatAt = Date.now();
     const tmp = target + '.tmp';
     writeFileSync(tmp, JSON.stringify(state, null, 2));
     renameSync(tmp, target);

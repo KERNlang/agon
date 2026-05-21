@@ -10,9 +10,9 @@ import type { RunStatusEngine } from '@agon/core';
 
 import { createCliAdapter } from '@agon/adapter-cli';
 
-import { runSynthesisModus } from '@agon/forge';
+import { runSynthesisModus, synthesisRoutingAdvice } from '@agon/forge';
 
-import { header, info, table, bold, green, dim } from '../blocks/output-format.js';
+import { header, info, table, bold, green, dim, warn } from '../blocks/output-format.js';
 
 import { filterDefaultOrchestrationEngines } from '../handlers/engine-filter.js';
 
@@ -82,6 +82,8 @@ export const synthesisCommand: any = defineCommand({
       header(`Synthesis: ${args.prompt}`);
       info(`Engines: ${available.join(', ')}`);
       info(`Swap rounds: ${args.swaps}`);
+      const routingAdvice = synthesisRoutingAdvice(args.prompt);
+      if (routingAdvice) warn(routingAdvice);
       console.log('');
     }
 
@@ -151,9 +153,10 @@ export const synthesisCommand: any = defineCommand({
       const rows = result.scores.map((s: any) => [
         s.engineId === result.winner ? green(`${s.engineId} *`) : s.engineId,
         String(s.score),
-        s.breakdown.slice(0, 60),
+        typeof s.confidence === 'number' ? s.confidence.toFixed(2) : '—',
+        s.unhandled ? s.unhandled.slice(0, 48) : '—',
       ]);
-      table(['Engine', 'Score', 'Breakdown'], rows);
+      table(['Engine', 'Score', 'Conf', 'Unhandled (judge)'], rows);
     }
 
     console.log('');

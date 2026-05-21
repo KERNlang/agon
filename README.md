@@ -208,7 +208,29 @@ Agon >
 
 ## Using Agon from Other CLIs
 
-Agon can also be called from other AI CLIs such as Claude Code, Codex, and Gemini. The fastest path is the shell bridge:
+Agon can also be called from other AI CLIs such as Claude Code, Codex, and Gemini.
+
+### One-step setup
+
+Run this **once** to wire a `/agon` command into every AI CLI on your machine:
+
+```bash
+agon install-agent-prompts
+```
+
+It drops a lightweight shim into each detected CLI — `~/.codex/prompts/agon.md`, `~/.gemini/commands/agon.toml`, and `~/.claude/commands/agon.md` — that teaches the engine to call Agon from its own shell. No MCP, no always-on tokens: nothing loads into context until you type `/agon`. Target specific CLIs with `--cli codex,gemini,claude`, preview with `--dry`, or refresh an existing shim with `--force`.
+
+After that, in any of those CLIs:
+
+```
+/agon evolve this design doc into a concrete implementation plan
+```
+
+The engine runs `agon agent-guide` to learn the modes, then picks the right one — forge, synthesis, brainstorm, tribunal, campfire, review, or goal.
+
+### Or call Agon directly
+
+Any CLI that can run a shell command can call Agon straight away — no setup needed:
 
 ```bash
 agon synthesis "Evolve this design doc into a concrete implementation plan" --swaps 2 --timeout 90
@@ -224,6 +246,8 @@ agon call synthesis "Evolve this design doc into a concrete implementation plan"
 ```bash
 agon call tribunal "Debate the migration plan" --team --jsonl
 ```
+
+### MCP (heavier alternative)
 
 For MCP-capable clients, Agon also ships a stdio MCP server:
 

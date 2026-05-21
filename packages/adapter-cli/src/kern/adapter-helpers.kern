@@ -75,7 +75,10 @@ fn name=buildCommand params="engine:EngineDefinition, mode:EngineMode, prompt:st
 
     const vars: Record<string, string> = {
       prompt: effectivePrompt,
-      cwd,
+      // Never let a {cwd} placeholder resolve to '' — engines that template it
+      // (opencode's --dir) would get a broken empty flag. A dispatch always has
+      // a real cwd; fall back to process.cwd() only as a last resort.
+      cwd: cwd && cwd.trim() ? cwd : process.cwd(),
       timeout: String(timeout),
       model: model ?? '',
     };

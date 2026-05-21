@@ -2,7 +2,7 @@ export { runForge } from './forge.js';
 export { runBrainstorm, runScout } from './brainstorm.js';
 export { runTribunal } from './tribunal.js';
 export { runSynthesis } from './synthesis.js';
-export { runSynthesis as runSynthesisModus } from './synthesis-modus.js';
+export { runSynthesisModus } from './synthesis-modus.js';
 export type { SynthesisDraft, SynthesisSwap, SynthesisScore, SynthesisResult as SynthesisModusResult } from './synthesis-modus.js';
 export { runBaseline, runStage1, runStage2, determineWinner } from './stages.js';
 export { runFitness } from './fitness.js';

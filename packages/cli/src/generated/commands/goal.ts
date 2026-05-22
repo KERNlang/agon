@@ -12,7 +12,7 @@ import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@agon/adapter-cli';
 
-import { runForge, runDelegate, runGoalController, loadJournal, summarizeGoal, goalDir, isTestFile, parseChangedLines, pickImplementWinner, chooseImplementRoster } from '@agon/forge';
+import { runForge, runDelegate, runGoalController, runSupervisor, loadJournal, summarizeGoal, goalDir, isTestFile, parseChangedLines, pickImplementWinner, chooseImplementRoster } from '@agon/forge';
 
 import { deriveRoutingHints } from '../cesar/routing.js';
 
@@ -103,6 +103,8 @@ return defineCommand({
     resume: { type: 'boolean', description: 'Resume an existing goal from its journal', default: false },
     status: { type: 'boolean', description: 'Print the status/summary of an existing goal (by id or intent) and exit', default: false },
     dryRun: { type: 'boolean', description: 'Resolve the queue + spec and print the plan without running', default: false },
+    supervised: { type: 'boolean', description: 'Run UNATTENDED: a supervisor re-execs `agon goal --resume` if the run CRASHES (non-zero exit), with exponential backoff + a restart cap, until done / a clean stop / a deterministic misconfig / the cap. Survives a terminal close or transient crash overnight; the journal makes each restart resume where it left off.', default: false },
+    maxRestarts: { type: 'string', description: 'With --supervised: max crash-restarts before giving up (default 10; 0 = one-shot).' },
   },
   async run({ args }) {
     ensureAgonHome();
@@ -147,6 +149,65 @@ return defineCommand({
     if (!queueSource && !args.resume) {
       fail('A --queue is required (a directory of tasks or a .jsonl). E.g. --queue .kern-gaps/.');
       process.exit(1);
+    }
+
+    // --supervised: this process becomes a SUPERVISOR that re-execs the run
+    // (`agon goal <same args> --resume`, supervisor-only flags stripped) so
+    // an overnight run survives a crash. We delegate to runSupervisor here,
+    // before the parent does any engine setup — the children own that.
+    if (args.supervised && !args.dryRun) {
+      const maxRestarts = args.maxRestarts != null && Number.isFinite(Number(args.maxRestarts)) && Number(args.maxRestarts) >= 0
+        ? Math.floor(Number(args.maxRestarts)) : 10;
+      // Filter the RAW argv (robust to every goal flag without enumerating
+      // them) — drop supervisor-only flags, force --resume so each restart
+      // picks up the journal rather than starting over.
+      const raw = process.argv.slice(2);
+      const childArgs: string[] = [];
+      for (let i = 0; i < raw.length; i += 1) {
+        const tok = raw[i];
+        if (tok === '--supervised' || tok === '--supervised=true' || tok === '--supervised=false' || tok === '--no-supervised') continue;
+        if (tok === '--max-restarts') { i += 1; continue; }
+        if (tok.startsWith('--max-restarts=')) continue;
+        childArgs.push(tok);
+      }
+      if (!childArgs.includes('--resume')) childArgs.push('--resume');
+
+      header(`Supervised goal: ${args.intent ?? goalId}`);
+      info(`Id: ${goalId}  ·  Branch: ${branch}  ·  Max restarts: ${maxRestarts}`);
+      info(`Child: agon ${childArgs.join(' ')}`);
+      warn('Supervisor re-execs the run on a CRASH (non-zero exit) with backoff; a clean stop or Ctrl-C ends it.');
+
+      const result = await runSupervisor({
+        nodeExec: process.execPath,
+        agonEntry: process.argv[1],
+        childArgs,
+        goalId,
+        maxRestarts,
+        baseBackoffMs: 5000,
+        capBackoffMs: 300000,
+        onEvent: (e: { kind: string; detail?: string }) => {
+          switch (e.kind) {
+            case 'supervisor-start': info(`▶ supervisor: starting child (${e.detail ?? ''})`); break;
+            case 'supervisor-restart': warn(`↻ supervisor: restarting child (${e.detail ?? ''})`); break;
+            case 'supervisor-backoff': warn(`⏸ supervisor: ${e.detail ?? ''}`); break;
+            case 'supervisor-stop': info(`■ supervisor: ${e.detail ?? ''}`); break;
+          }
+        },
+      });
+
+      const finalState = loadJournal(goalId);
+      console.log('');
+      header('Supervised run complete');
+      if (finalState) console.log(summarizeGoal(finalState));
+      info(`Supervisor stopped: ${result.reason} — after ${result.restarts} restart(s).`);
+      info(`Artifacts: ${goalDir(goalId)}`);
+      // Exit non-zero so automation distinguishes a FAILED supervised run
+      // (restart cap exhausted / deterministic misconfig) from success. A
+      // clean stop (done/budget/time/breaker) or an interrupt is exit 0.
+      if (result.reason.startsWith('restart cap') || result.reason.includes('deterministic')) {
+        process.exit(1);
+      }
+      return;
     }
 
     const registry = new EngineRegistry();

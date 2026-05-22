@@ -105,6 +105,9 @@ export type {
 } from './context-parts.js';
 export { runApiAgentLoop } from './generated/api/agent-loop.js';
 export type { ApiAgentOptions, ApiAgentResult } from './generated/api/agent-loop.js';
+// ── Engine dispatch isolation ──
+export { resolveIsolationMode, planEngineIsolation, isValidIsolationMode, ISOLATION_MODES } from './generated/signals/isolation.js';
+export type { EngineIsolationPlan } from './generated/signals/isolation.js';
 // ── Tool System ──
 export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState } from './tool-types.js';
 export { FileStateCache, fileStateCache, getProjectFileStateCache, clearProjectFileStateCaches } from './file-state-cache.js';

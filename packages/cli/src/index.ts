@@ -24,10 +24,55 @@ import { synthesisCommand } from './commands/synthesis.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { startRepl } from './repl.js';
 import { runOnboarding } from './onboarding.js';
-import { loadConfig, loadAllAuthKeys } from '@agon/core';
+import { loadConfig, loadAllAuthKeys, configSet } from '@agon/core';
 
 // Load stored API keys from ~/.agon/auth.json into process.env at startup
 loadAllAuthKeys();
+
+// Global engine-isolation flags — consumed before citty so any subcommand honors
+// them. They set AGON_ENGINE_ISOLATION, which the adapter resolves per dispatch
+// (option > env > config > default workspace-pure). --pure/--bare/--impure are
+// shorthands; --isolation <mode> is explicit.
+function consumeIsolationFlags() {
+  const nextArgv = process.argv.slice(0, 2);
+  const args = process.argv.slice(2);
+  const set = (m: string) => { process.env.AGON_ENGINE_ISOLATION = m; };
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--pure') { set('workspace-pure'); continue; }
+    if (arg === '--impure') { set('inherit'); continue; }
+    if (arg === '--isolation') {
+      const next = args[i + 1];
+      // Only consume the flag when a value follows; otherwise leave it in argv
+      // so the command parser can report the misuse instead of silently dropping it.
+      if (next && !next.startsWith('-')) { set(next); i += 1; continue; }
+      nextArgv.push(arg);
+      continue;
+    }
+    if (arg.startsWith('--isolation=')) { set(arg.slice('--isolation='.length)); continue; }
+    nextArgv.push(arg);
+  }
+  process.argv = nextArgv;
+}
+
+// One-time, interactive-only notice that the workspace-pure default changed
+// behavior (the council asked for a LOUD migration). Never blocks startup.
+function maybeNotifyIsolationMigration() {
+  try {
+    if (!process.stderr.isTTY) return;
+    const cfg = loadConfig() as { engineIsolation?: string; isolationMigrationNotified?: boolean };
+    const mode = process.env.AGON_ENGINE_ISOLATION || cfg.engineIsolation || 'workspace-pure';
+    if (mode === 'inherit' || cfg.isolationMigrationNotified) return;
+    process.stderr.write(
+      '\n\x1b[33m▸ agon now runs engines in workspace-pure mode by default.\x1b[0m\n' +
+      "  Dispatched engines no longer inherit your personal Claude Code plugins/hooks/global\n" +
+      "  CLAUDE.md or user MCP servers (the repo's own CLAUDE.md/.mcp.json ARE kept). This makes\n" +
+      '  results clean + fair across engines. Restore the old behavior with \x1b[36m--impure\x1b[0m or\n' +
+      '  \x1b[36magon config set engineIsolation inherit\x1b[0m.\n\n',
+    );
+    try { configSet('isolationMigrationNotified', true); } catch { /* best-effort */ }
+  } catch { /* never block startup on the notice */ }
+}
 
 function consumeTelemetryDebugFlags() {
   const nextArgv = process.argv.slice(0, 2);
@@ -68,6 +113,8 @@ function consumeTelemetryDebugFlags() {
 }
 
 consumeTelemetryDebugFlags();
+consumeIsolationFlags();
+maybeNotifyIsolationMigration();
 
 const main = defineCommand({
   meta: {

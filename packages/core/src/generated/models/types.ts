@@ -273,7 +273,7 @@ export interface AgonConfig {
   engineIsolationByCommand: Record<string,string>;
   projectMcpMode?: 'keep'|'strip'|'allowlist';
   projectMcpAllowlist: string[];
-  isolationMigrationNotified: boolean;
+  isolationMigrationNotified?: boolean;
   terminalMode?: 'native'|'fullscreen';
   iconTheme?: 'roman'|'classic';
   autoReviewAfterForge?: boolean;

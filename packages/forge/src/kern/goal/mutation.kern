@@ -16,23 +16,24 @@ interface name=Mutant export=true
   field name=line type=number
   field name=before type=string
   field name=after type=string
+  field name=class type="'high-signal'|'equiv-prone'"
 
 fn name=generateMutants params="source:string, changedLines:number[]" returns="Mutant[]" export=true
   doc "Canonical mutants on the changed lines only (one per applicable operator/line)."
   handler <<<
-    const ops: Array<{ name: string; apply: (s: string) => string | null }> = [
-      { name: 'arith:+→-', apply: (s) => { const m = s.replace(/(?<!\+)\+(?![+=])/, '-'); return m !== s ? m : null; } },
-      { name: 'arith:-→+', apply: (s) => { const m = s.replace(/(?<![-\w])-(?![-=>])/, '+'); return m !== s ? m : null; } },
-      { name: 'eq:===→!==', apply: (s) => { const m = s.replace('===', '!=='); return m !== s ? m : null; } },
-      { name: 'eq:!==→===', apply: (s) => { const m = s.replace('!==', '==='); return m !== s ? m : null; } },
-      { name: 'logic:&&→||', apply: (s) => { const m = s.replace('&&', '||'); return m !== s ? m : null; } },
-      { name: 'logic:||→&&', apply: (s) => { const m = s.replace('||', '&&'); return m !== s ? m : null; } },
-      { name: 'rel:<→>=', apply: (s) => { const m = s.replace(/(?<![<>=])<(?![<=])/, '>='); return m !== s ? m : null; } },
-      { name: 'rel:>→<=', apply: (s) => { const m = s.replace(/(?<![<>=-])>(?![>=])/, '<='); return m !== s ? m : null; } },
-      { name: 'bool:true→false', apply: (s) => { const m = s.replace(/\btrue\b/, 'false'); return m !== s ? m : null; } },
-      { name: 'bool:false→true', apply: (s) => { const m = s.replace(/\bfalse\b/, 'true'); return m !== s ? m : null; } },
-      { name: 'ret:→undefined', apply: (s) => { const m = s.replace(/\breturn\s+[^;]+;/, 'return undefined;'); return m !== s ? m : null; } },
-      { name: 'arr:[]→[0]', apply: (s) => { const m = s.replace(/(?<![\w\]])\[\](?!\])/, '[0]'); return m !== s ? m : null; } },
+    const ops: Array<{ name: string; class: 'high-signal' | 'equiv-prone'; apply: (s: string) => string | null }> = [
+      { name: 'arith:+→-', class: 'high-signal', apply: (s) => { const m = s.replace(/(?<!\+)\+(?![+=])/, '-'); return m !== s ? m : null; } },
+      { name: 'arith:-→+', class: 'high-signal', apply: (s) => { const m = s.replace(/(?<![-\w])-(?![-=>])/, '+'); return m !== s ? m : null; } },
+      { name: 'eq:===→!==', class: 'high-signal', apply: (s) => { const m = s.replace('===', '!=='); return m !== s ? m : null; } },
+      { name: 'eq:!==→===', class: 'high-signal', apply: (s) => { const m = s.replace('!==', '==='); return m !== s ? m : null; } },
+      { name: 'logic:&&→||', class: 'high-signal', apply: (s) => { const m = s.replace('&&', '||'); return m !== s ? m : null; } },
+      { name: 'logic:||→&&', class: 'high-signal', apply: (s) => { const m = s.replace('||', '&&'); return m !== s ? m : null; } },
+      { name: 'rel:<→>=', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![<>=])<(?![<=])/, '>='); return m !== s ? m : null; } },
+      { name: 'rel:>→<=', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![<>=-])>(?![>=])/, '<='); return m !== s ? m : null; } },
+      { name: 'bool:true→false', class: 'high-signal', apply: (s) => { const m = s.replace(/\btrue\b/, 'false'); return m !== s ? m : null; } },
+      { name: 'bool:false→true', class: 'high-signal', apply: (s) => { const m = s.replace(/\bfalse\b/, 'true'); return m !== s ? m : null; } },
+      { name: 'ret:→undefined', class: 'equiv-prone', apply: (s) => { const m = s.replace(/\breturn\s+[^;]+;/, 'return undefined;'); return m !== s ? m : null; } },
+      { name: 'arr:[]→[0]', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![\w\]])\[\](?!\])/, '[0]'); return m !== s ? m : null; } },
     ];
     const lines = source.split('\n');
     const mutants: Mutant[] = [];
@@ -43,7 +44,7 @@ fn name=generateMutants params="source:string, changedLines:number[]" returns="M
       for (const op of ops) {
         const mutated = op.apply(original);
         if (mutated == null || mutated === original) continue;
-        mutants.push({ id: `${op.name}@L${ln}`, operator: op.name, line: ln, before: original, after: mutated });
+        mutants.push({ id: `${op.name}@L${ln}`, operator: op.name, line: ln, before: original, after: mutated, class: op.class });
       }
     }
     return mutants;

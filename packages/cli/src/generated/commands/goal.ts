@@ -95,6 +95,9 @@ return defineCommand({
     maxNoProgress: { type: 'string', description: 'Stop after N cycles with no net decrease in remaining work (default max(5, attempts+2)) — catches retry-thrash.' },
     breakerWindow: { type: 'string', description: 'Sliding-window breaker: number of recent TERMINAL outcomes to weigh (default 8; 0 disables it). A cluster of hard tasks shorter than this never aborts the run.' },
     breakerMinSuccessRate: { type: 'string', description: 'Sliding-window breaker: stop when the fraction of "done" in the last --breaker-window outcomes is below this (default 0.125). Trips on a broken gate / uniformly-too-hard queue, not a hard cluster.' },
+    mutationHighSignalMax: { type: 'string', description: 'Mutation gate: max HIGH-SIGNAL surviving mutants (===/!==, &&/||, +/-, true/false) tolerated before a task PARKS as a weak test (default 2). 1..max route the diff to the ensemble review with the survivors as evidence; 0 (with high-signal generated) lands. Equivalent boundary/guard survivors never park on their own — fixes the old zero-tolerance gate that parked correct contracts.' },
+    mutationSurvivorRatio: { type: 'string', description: 'Mutation gate fallback (only for diffs that generate NO high-signal mutants, e.g. relational/return-only): route to review when surviving mutants exceed this fraction of generated (default 0.15).' },
+    mutationFloor: { type: 'string', description: 'Mutation gate fallback: minimum surviving-mutant count before the --mutation-survivor-ratio check applies (default 3) — tiny mutant counts always land.' },
     cwd: { type: 'string', description: 'Repo working directory', default: process.cwd() },
     requireTests: { type: 'boolean', description: 'Reject a task whose diff changes source but adds no test (the witness has nothing to witness). Default true; --no-require-tests to allow test-free changes.', default: true },
     push: { type: 'boolean', description: 'Push the goal branch to origin after EACH task commits (build→review→fix→commit→push per task). Only the goal/* branch, never main.', default: false },
@@ -461,9 +464,14 @@ return defineCommand({
     // opinion before they can block; speculative/nits never block. Engine
     // timeouts/parse-failures land in their own lane, so a flaky engine can't
     // impersonate a blocker — but a total reviewer wipeout still fail-closes.
-    const review = async (a: { worktree: string; baseSha: string; diff: string; label: string; signal?: AbortSignal }) => {
+    const review = async (a: { worktree: string; baseSha: string; diff: string; label: string; mutationEvidence?: string; signal?: AbortSignal }) => {
       if (!a.diff.trim()) return { blocking: false, summary: 'no diff' };
       let diff = a.diff;
+      // The mutation gate routed this task to review (1..max high-signal
+      // survivors, or an over-ratio equiv-prone band): surface the surviving
+      // mutants to the panel so it adjudicates weak-test vs equivalent, rather
+      // than reviewing a diff that looks clean while a mutant slipped through.
+      if (a.mutationEvidence) diff = `### MUTATION-WITNESS EVIDENCE — adjudicate before approving\n${a.mutationEvidence}\n\n### DIFF UNDER REVIEW\n${diff}`;
       if (diff.length > 100_000) diff = diff.slice(0, 100_000) + '\n... [truncated — diff exceeds 100K chars]';
       // Each engine's STATUS (ok / parse-failed / error) is captured apart
       // from its parsed per-finding {severity, confidence}.
@@ -559,6 +567,9 @@ return defineCommand({
       maxNoProgress: optNum(args.maxNoProgress),
       breakerWindow: optNum(args.breakerWindow),
       breakerMinSuccessRate: optNum(args.breakerMinSuccessRate),
+      mutationHighSignalMax: optNum(args.mutationHighSignalMax),
+      mutationSurvivorRatio: optNum(args.mutationSurvivorRatio),
+      mutationFloor: optNum(args.mutationFloor),
       signal: abort.signal,
       implement: implement as any,
       review: review as any,
@@ -571,6 +582,7 @@ return defineCommand({
           case 'task-done': success(`✓ closed${id} → ${String(e.detail ?? '').slice(0, 8)}`); break;
           case 'task-pushed': info(`⇡ pushed${id} → ${e.detail ?? ''}`); break;
           case 'push-failed': warn(`⇡ push failed${id}: ${e.detail ?? ''} (commit is safe locally)`); break;
+          case 'mutation-graded': info(`⚗ mutation gate${id}: ${e.detail ?? ''}`); break;
           case 'task-parked': warn(`⏸ parked${id}: ${e.detail ?? ''}`); break;
           case 'task-retry': warn(`↻ retrying${id}: ${e.detail ?? ''}`); break;
           case 'review-block': warn(`⚑ review blocking${id} — one fix pass`); break;

@@ -74,4 +74,5 @@ export interface JournalState {
   oracleHash?: string;
   tasks: GoalTask[];
   events: GoalEvent[];
+  droppedEvents?: number;
 }

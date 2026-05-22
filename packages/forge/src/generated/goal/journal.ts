@@ -8,7 +8,7 @@ import { agonPath, ensureAgonHome } from '@agon/core';
 
 import { assertSafeGoalId } from './paths.js';
 
-import type { JournalState, GoalSpec, GoalTask, AttemptRecord } from './types.js';
+import type { JournalState, GoalSpec, GoalTask, AttemptRecord, GoalEvent } from './types.js';
 
 // @kern-source: journal:12
 export function goalDir(goalId: string): string {
@@ -151,9 +151,29 @@ export function isDone(state: JournalState): boolean {
 }
 
 /**
- * Append an audit event.
+ * Max audit events retained in a journal's events[]. The journal is rewritten whole on every checkpoint, so this bounds a 24h run's per-checkpoint cost; ~500 keeps a generous recent window while staying small.
  */
 // @kern-source: journal:134
+export const GOAL_EVENT_CAP: number = 500;
+
+/**
+ * Keep the audit trail bounded so a long run's per-checkpoint full-rewrite stays O(1) in event count rather than O(n) (an unbounded events[] makes 24h persistence O(n^2)). When events exceed cap, drop the OLDEST and report how many were dropped so the caller can accumulate a running total. cap <= 0 = unbounded. Pure: events are audit-only — resume logic reads tasks/counters, never events — so trimming the oldest is safe.
+ */
+// @kern-source: journal:137
+export function boundEvents(events: GoalEvent[], cap: number): {events:GoalEvent[], dropped:number} {
+  if (cap <= 0 || events.length <= cap) return { events, dropped: 0 };
+  const dropped = events.length - cap;
+  return { events: events.slice(dropped), dropped };
+}
+
+/**
+ * Append an audit event, keeping events[] bounded (the journal is rewritten whole on every checkpoint).
+ */
+// @kern-source: journal:145
 export function logEvent(state: JournalState, kind: string, taskId?: string, detail?: string): JournalState {
-  return { ...state, events: [...state.events, { ts: Date.now(), kind, taskId, detail }] };
+  const appended = [...state.events, { ts: Date.now(), kind, taskId, detail }];
+  const { events, dropped } = boundEvents(appended, GOAL_EVENT_CAP);
+  return dropped > 0
+    ? { ...state, events, droppedEvents: (state.droppedEvents ?? 0) + dropped }
+    : { ...state, events };
 }

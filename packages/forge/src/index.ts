@@ -33,7 +33,7 @@ export type { DelegateResult } from './generated/delegate.js';
 export type { GoalSpec, GoalTask, AttemptRecord, GoalEvent, JournalState } from './generated/goal/types.js';
 export {
   goalDir, journalPath, createJournal, saveJournal, loadJournal,
-  addTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent,
+  addTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent, boundEvents,
 } from './generated/goal/journal.js';
 export { assertSafeGoalId, resolveWithin } from './generated/goal/paths.js';
 export type { Mutant } from './generated/goal/mutation.js';

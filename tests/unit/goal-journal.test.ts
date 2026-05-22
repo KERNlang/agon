@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   createJournal, addTasks, nextTask, markStatus, recordAttempt,
-  remainingCount, isDone, logEvent, saveJournal, loadJournal, journalPath,
+  remainingCount, isDone, logEvent, boundEvents, saveJournal, loadJournal, journalPath,
 } from '../../packages/forge/src/generated/goal/journal.js';
 import { pushRecentOutcome, globalBreaker } from '../../packages/forge/src/generated/goal/policy.js';
 import type { GoalSpec } from '../../packages/forge/src/generated/goal/types.js';
@@ -103,6 +103,54 @@ describe('goal journal — pure transforms', () => {
     let j = createJournal(spec());
     j = logEvent(j, 'gate-pass', 'a', 'ok');
     expect(j.events.at(-1)).toMatchObject({ kind: 'gate-pass', taskId: 'a', detail: 'ok' });
+  });
+});
+
+describe('boundEvents — bounded audit trail', () => {
+  const ev = (i: number) => ({ ts: i, kind: `e${i}` });
+  it('returns events unchanged (same ref) when within the cap', () => {
+    const events = [ev(1), ev(2)];
+    const r = boundEvents(events, 500);
+    expect(r.dropped).toBe(0);
+    expect(r.events).toBe(events);
+  });
+  it('drops the oldest beyond the cap and reports the dropped count', () => {
+    const events = Array.from({ length: 12 }, (_, i) => ev(i));
+    const r = boundEvents(events, 10);
+    expect(r.dropped).toBe(2);
+    expect(r.events.length).toBe(10);
+    expect(r.events[0].kind).toBe('e2');  // oldest two (e0, e1) dropped
+    expect(r.events[9].kind).toBe('e11'); // most recent kept
+  });
+  it('returns events unchanged at the exact boundary (length === cap)', () => {
+    const events = Array.from({ length: 10 }, (_, i) => ev(i));
+    const r = boundEvents(events, 10);
+    expect(r.dropped).toBe(0);
+    expect(r.events).toBe(events); // <= cap keeps the same reference, no copy
+  });
+  it('cap <= 0 means unbounded', () => {
+    const events = Array.from({ length: 5 }, (_, i) => ev(i));
+    expect(boundEvents(events, 0).dropped).toBe(0);
+    expect(boundEvents(events, 0).events).toBe(events);
+    expect(boundEvents(events, -1).events.length).toBe(5);
+    expect(boundEvents(events, -1).dropped).toBe(0);
+  });
+});
+
+describe('logEvent — bounded append (24h journal stays O(1) in events)', () => {
+  it('appends within the cap without dropping', () => {
+    let j = createJournal(spec()); // starts with 1 'created' event
+    j = logEvent(j, 'task-done', 'a');
+    expect(j.events.at(-1)).toMatchObject({ kind: 'task-done', taskId: 'a' });
+    expect(j.droppedEvents ?? 0).toBe(0);
+  });
+  it('keeps events[] bounded at 500 and accumulates droppedEvents over a long run', () => {
+    let j = createJournal(spec()); // 1 event
+    for (let i = 0; i < 600; i += 1) j = logEvent(j, 'tick', undefined, String(i));
+    expect(j.events.length).toBe(500);
+    // 1 created + 600 ticks = 601 total; kept 500 -> 101 dropped
+    expect(j.droppedEvents).toBe(101);
+    expect(j.events.at(-1)).toMatchObject({ kind: 'tick', detail: '599' }); // most recent retained
   });
 });
 

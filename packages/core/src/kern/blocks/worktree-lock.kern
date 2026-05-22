@@ -1,0 +1,162 @@
+// ── Advisory apply-lock + HEAD-CAS for the shared checkout ──────────────
+// Defense-in-depth for the interactive layer (the autonomous `goal` path is
+// already isolated via detached worktrees + branch CAS, and does NOT use this).
+//
+// Two cooperating guards for operations that mutate the working tree on the
+// user's behalf (forge auto-apply):
+//   1. An advisory lock, keyed to the PER-CHECKOUT git-dir (absoluteGitDir,
+//      never --git-common-dir) so sessions sharing ONE checkout serialize
+//      while separate worktrees stay independent. Stale locks are reclaimed
+//      via pid-liveness (same host) + a TTL backstop; cross-host locks can't
+//      be pid-verified, so they're honored until the TTL expires.
+//   2. A HEAD compare-and-swap: if the working tree's HEAD moved since the
+//      run started, another session changed the ground under us — the caller
+//      refuses to auto-apply (the exact wrong-branch failure this prevents).
+
+import from="node:fs" names="writeFileSync,readFileSync,unlinkSync,renameSync"
+import from="node:os" names="hostname"
+import from="node:crypto" names="randomUUID"
+import from="node:path" names="join"
+import from="./git.js" names="absoluteGitDir,headSha,currentBranch"
+
+const name=APPLY_LOCK_TTL_MS type=number value={{ 120000 }}
+
+// Holder record written into the lock file.
+interface name=ApplyLockInfo
+  field name=pid type=number
+  field name=sessionUUID type=string
+  field name=hostname type=string
+  field name=action type=string
+  field name=acquiredAt type=string
+
+// Result of an acquisition attempt. When acquired is false, heldBy describes
+// the live holder so the caller can name it.
+interface name=ApplyLockResult
+  field name=acquired type=boolean
+  field name=lockPath type=string
+  field name=sessionUUID type="string | null"
+  field name=heldBy type="ApplyLockInfo | null"
+
+fn name=pidAlive params="pid:number" returns=boolean export=false
+  doc "process.kill(pid,0) probes existence without signalling. ESRCH = dead; EPERM = alive but owned by another user (still alive)."
+  handler <<<
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (e) {
+      return (e as { code?: string }).code === 'EPERM';
+    }
+  >>>
+
+fn name=applyLockPath params="cwd:string" returns="string | null" export=false
+  doc "Lock path in the per-checkout git-dir, or null when cwd is not a git repo (the lock then fails open — advisory)."
+  handler <<<
+    try {
+      return join(absoluteGitDir(cwd), 'agon-apply.lock');
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=readApplyLock params="lockPath:string" returns="ApplyLockInfo | null" export=false
+  handler <<<
+    try {
+      const info = JSON.parse(readFileSync(lockPath, 'utf-8')) as ApplyLockInfo;
+      return typeof info?.pid === 'number' && typeof info?.sessionUUID === 'string' ? info : null;
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=isApplyLockStale params="info:ApplyLockInfo | null" returns=boolean export=false
+  doc "Reclaimable when: unreadable; same-host with a dead pid; or older than the TTL. Same host is pid-authoritative — a live holder owns it — with the TTL only as a backstop for a crashed-then-pid-reused holder or a hung apply (apply itself is sub-second). A different host can't be pid-verified, so it's honored until the TTL expires."
+  handler <<<
+    if (!info) return true;
+    const age = Date.now() - new Date(info.acquiredAt).getTime();
+    const ttlExpired = !Number.isFinite(age) || age > APPLY_LOCK_TTL_MS;
+    if (info.hostname === hostname()) {
+      return !pidAlive(info.pid) || ttlExpired;
+    }
+    return ttlExpired;
+  >>>
+
+fn name=acquireApplyLock params="cwd:string, action?:string" returns=ApplyLockResult export=true
+  doc "Acquire the advisory apply-lock for this checkout. Returns acquired=true on success (incl. fail-open when cwd is not a git repo). On contention with a live holder, acquired=false and heldBy is set. Stale locks are reclaimed atomically."
+  handler <<<
+    const sessionUUID = randomUUID();
+    const lockPath = applyLockPath(cwd);
+    if (!lockPath) return { acquired: true, lockPath: '', sessionUUID, heldBy: null };
+
+    const me: ApplyLockInfo = {
+      pid: process.pid,
+      sessionUUID,
+      hostname: hostname(),
+      action: action ?? 'apply',
+      acquiredAt: new Date().toISOString(),
+    };
+    const payload = JSON.stringify(me);
+
+    try {
+      // O_EXCL: create only if absent.
+      writeFileSync(lockPath, payload, { flag: 'wx' });
+      return { acquired: true, lockPath, sessionUUID, heldBy: null };
+    } catch (e) {
+      if ((e as { code?: string }).code !== 'EEXIST') {
+        // Can't create the lock (e.g. git-dir unwritable) — fail open (advisory).
+        return { acquired: true, lockPath, sessionUUID, heldBy: null };
+      }
+    }
+
+    const holder = readApplyLock(lockPath);
+    if (!isApplyLockStale(holder)) return { acquired: false, lockPath, sessionUUID: null, heldBy: holder };
+
+    // Stale → CLAIM it by renaming the stale entry AWAY to a unique path.
+    // renameSync of a now-missing source throws, so at most ONE concurrent
+    // reclaimer wins; the rest get ENOENT. (This also avoids renaming OVER an
+    // existing target, which isn't atomic and fails with EPERM on Windows.)
+    const claim = `${lockPath}.claim.${sessionUUID}`;
+    try {
+      renameSync(lockPath, claim);
+    } catch {
+      // Another reclaimer/acquirer got there first.
+      return { acquired: false, lockPath, sessionUUID: null, heldBy: readApplyLock(lockPath) ?? holder };
+    }
+    try { unlinkSync(claim); } catch { /* the claimed stale entry; best-effort */ }
+    // The slot is now free — take it with the same O_EXCL create as the fast path,
+    // so a fresh acquirer racing us still can't double-acquire.
+    try {
+      writeFileSync(lockPath, payload, { flag: 'wx' });
+      return { acquired: true, lockPath, sessionUUID, heldBy: null };
+    } catch {
+      return { acquired: false, lockPath, sessionUUID: null, heldBy: readApplyLock(lockPath) };
+    }
+  >>>
+
+fn name=releaseApplyLock params="cwd:string, sessionUUID:string" returns=void export=true
+  doc "Release the apply-lock only if WE still own it (sessionUUID match), so a stale-reclaim by another session is never clobbered."
+  handler <<<
+    const lockPath = applyLockPath(cwd);
+    if (!lockPath) return;
+    const holder = readApplyLock(lockPath);
+    if (holder && holder.sessionUUID === sessionUUID) {
+      try { unlinkSync(lockPath); } catch { /* already gone — fine */ }
+    }
+  >>>
+
+fn name=headChanged params="cwd:string, expectedSha:string | null" returns="{ changed: boolean, current: string | null }" export=true
+  doc "HEAD compare-and-swap probe: true when the working tree's HEAD differs from the SHA recorded when a run started. A null/unknown expected SHA never reports changed (nothing to compare)."
+  handler <<<
+    let current: string | null = null;
+    try { current = headSha(cwd); } catch { /* not a git repo / detached weirdness */ }
+    const changed = expectedSha !== null && expectedSha !== 'unknown' && current !== null && current !== expectedSha;
+    return { changed, current };
+  >>>
+
+fn name=branchChanged params="cwd:string, expectedBranch:string | null" returns="{ changed: boolean, current: string | null }" export=true
+  doc "Companion to headChanged for the branch ref — catches a branch switch that lands on the same commit."
+  handler <<<
+    let current: string | null = null;
+    try { current = currentBranch(cwd); } catch { /* ignore */ }
+    const changed = expectedBranch !== null && expectedBranch !== 'unknown' && current !== null && current !== expectedBranch;
+    return { changed, current };
+  >>>

@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="existsSync,mkdirSync,readFileSync"
 import from="node:child_process" names="execFileSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,scanProjectContext,getActiveWorkspace,snapshotWorkspace,tracker,resolveWorkingDir,loadOrCreateActiveThread,applyPatchWithUndo"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,scanProjectContext,getActiveWorkspace,snapshotWorkspace,tracker,resolveWorkingDir,loadOrCreateActiveThread,applyPatchWithUndo,acquireApplyLock,releaseApplyLock,headChanged,branchChanged,headSha,currentBranch"
 import from="@agon/core" names="Plan,PlanStepInput,ApprovalLevel" types=true
 import from="@agon/forge" names="runForge"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
@@ -123,19 +123,48 @@ fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<strin
     return plan;
   >>>
 
-fn name=applyForgePatchToWorkspace params="winnerId:string, patchContent:string, dispatch:Dispatch" returns=boolean export=false
-  handler lang="kern"
-    if cond="!patchContent.trim()"
-      do value="dispatch({ type: 'info', message: `Winner ${winnerId} produced an empty patch.` })"
-      return value="true"
-    let name=result value="applyPatchWithUndo(resolveWorkingDir(), patchContent)"
-    if cond="result.ok"
-      do value="dispatch({ type: 'success', message: `Applied winner patch from ${winnerId}` })"
-      if cond="result.undoToken"
-        do value="dispatch({ type: 'info', message: 'Undo available: /undo' })"
-      return value="true"
-    do value="dispatch({ type: 'warning', message: `Winner patch not applied automatically: ${result.error ?? 'unknown error'}` })"
-    return value="false"
+fn name=applyForgePatchToWorkspace params="winnerId:string, patchContent:string, dispatch:Dispatch, baseSha?:string|null, baseBranch?:string|null" returns=boolean export=false
+  doc "Auto-apply a winning forge patch to the working tree, guarded against the shared-checkout hazard: a HEAD/branch compare-and-swap (refuse if another session moved the ground since this run started) and an advisory apply-lock (refuse if another apply is in flight here). Both refusals return false so the caller falls back to manual /apply — the patch is never lost."
+  handler <<<
+    if (!patchContent.trim()) {
+      dispatch({ type: 'info', message: `Winner ${winnerId} produced an empty patch.` });
+      return true;
+    }
+    const cwd = resolveWorkingDir();
+
+    // HEAD-CAS: if HEAD/branch moved since this run started, another session
+    // changed the ground under us — don't auto-apply to the wrong base.
+    const movedHead = headChanged(cwd, baseSha ?? null);
+    if (movedHead.changed) {
+      dispatch({ type: 'warning', message: `HEAD moved (${(baseSha ?? '?').slice(0, 8)} → ${(movedHead.current ?? '?').slice(0, 8)}) since this run started — not auto-applying. Review with /apply.` });
+      return false;
+    }
+    const movedBranch = branchChanged(cwd, baseBranch ?? null);
+    if (movedBranch.changed) {
+      dispatch({ type: 'warning', message: `Branch changed (${baseBranch} → ${movedBranch.current ?? '?'}) since this run started — not auto-applying. Review with /apply.` });
+      return false;
+    }
+
+    // Advisory apply-lock: serialize concurrent applies in this checkout.
+    const lock = acquireApplyLock(cwd, `forge-apply ${winnerId}`);
+    if (!lock.acquired) {
+      const who = lock.heldBy ? ` (pid ${lock.heldBy.pid}: ${lock.heldBy.action})` : '';
+      dispatch({ type: 'warning', message: `Another apply is in progress in this checkout${who} — not auto-applying. Review with /apply once it finishes.` });
+      return false;
+    }
+    try {
+      const result = applyPatchWithUndo(cwd, patchContent);
+      if (result.ok) {
+        dispatch({ type: 'success', message: `Applied winner patch from ${winnerId}` });
+        if (result.undoToken) dispatch({ type: 'info', message: 'Undo available: /undo' });
+        return true;
+      }
+      dispatch({ type: 'warning', message: `Winner patch not applied automatically: ${result.error ?? 'unknown error'}` });
+      return false;
+    } finally {
+      if (lock.sessionUUID) releaseApplyLock(cwd, lock.sessionUUID);
+    }
+  >>>
 
 fn name=extractFitnessCommandFromCesarOutput params="output:string" returns="string|null" export=true
   doc "Parse Cesar's command-only fitness response. Accepts strict JSON first, then a plain one-line command."
@@ -468,6 +497,10 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       return null;
     }
     const forgeCwd = resolveWorkingDir();
+    // Snapshot HEAD/branch now so auto-apply can refuse if another session
+    // moves the working tree out from under this run (the shared-checkout hazard).
+    const preflightHead: string | null = (() => { try { return headSha(forgeCwd); } catch { return null; } })();
+    const preflightBranch: string | null = (() => { try { return currentBranch(forgeCwd); } catch { return null; } })();
     const originalTask = task;
     task = repairForgeTaskRepositoryLiteral(task, forgeCwd);
     if (task !== originalTask) {
@@ -752,7 +785,7 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
           if (convergedPath) {
             dispatch({ type: 'success', message: 'Convergence complete — merged patch ready' });
             const convergedContent = readFileSync(convergedPath, 'utf-8');
-            const applied = applyForgePatchToWorkspace('convergence', convergedContent, dispatch);
+            const applied = applyForgePatchToWorkspace('convergence', convergedContent, dispatch, preflightHead, preflightBranch);
             if (!applied) dispatch({ type: 'patch-review' as any, winnerId: 'convergence', patchPath: convergedPath, patchContent: convergedContent });
 
             if ((ctx.config as any).sessionContinuity === true) {
@@ -837,7 +870,7 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       if (patchPath) {
         try {
           const patchContent = readFileSync(patchPath, 'utf-8');
-          const applied = applyForgePatchToWorkspace(finalWinner, patchContent, dispatch);
+          const applied = applyForgePatchToWorkspace(finalWinner, patchContent, dispatch, preflightHead, preflightBranch);
           if (!applied) dispatch({ type: 'patch-review' as any, winnerId: finalWinner, patchPath, patchContent });
 
           if ((ctx.config as any).sessionContinuity === true) {

@@ -6,6 +6,9 @@
 // process-spawning shell lives in the CLI; THESE are the testable judgement
 // calls (oracle: tests/unit/goal-supervisor.test.ts).
 
+import from="node:child_process" names="spawn"
+import from="./journal.js" names="loadJournal,isDone"
+
 interface name=SupervisorDecision export=true
   doc "Whether the supervisor should re-exec a crashed goal child or give up."
   field name=action type="'restart'|'stop'"
@@ -14,20 +17,78 @@ interface name=SupervisorDecision export=true
 fn name=computeBackoffMs params="restarts:number, baseMs:number, capMs:number" returns=number export=true
   doc "Exponential backoff capped at capMs: baseMs * 2^restarts, clamped to [baseMs, capMs]. A non-positive restart count yields the base delay (no negative exponent)."
   handler <<<
-    // STUB — forge implements against goal-supervisor.test.ts.
-    return baseMs;
+    if (restarts <= 0) return baseMs;
+    const delay = baseMs * Math.pow(2, restarts);
+    return Math.min(delay, capMs);
   >>>
 
 fn name=isDeterministicExit params="exitCode:number, stderrTail:string" returns=boolean export=true
   doc "True when the child failed for a NON-retryable reason — a frozen-oracle mismatch, a missing/invalid gate/queue/engine, or a refused branch. Restarting can't fix a misconfig, so the supervisor must stop instead of fast-looping. Heuristic: match known fatal phrases in the stderr tail, case-insensitively."
   handler <<<
-    // STUB — forge implements against goal-supervisor.test.ts.
-    return false;
+    const lower = stderrTail.toLowerCase();
+    const phrases = [
+      'oracle changed',
+      'gate command is required',
+      'queue not found',
+      'no engines found',
+      'refusing to use',
+    ];
+    return phrases.some(p => lower.includes(p));
   >>>
 
 fn name=supervisorDecision params="o:{exitCode:number, restarts:number, maxRestarts:number, journalDone:boolean, deterministic:boolean}" returns="SupervisorDecision" export=true
   doc "Decide restart-vs-stop for a returned goal child. STOP when: the journal is complete; the child exited cleanly (0 — it reached a terminal state itself: done/budget/time/breaker, so resuming won't help); the failure is deterministic (non-retryable); or the restart cap is reached (restarts >= maxRestarts). Otherwise RESTART — a transient crash (non-zero exit) worth resuming from the journal."
   handler <<<
-    // STUB — forge implements against goal-supervisor.test.ts.
-    return { action: 'stop', reason: 'stub' };
+    if (o.journalDone) return { action: 'stop', reason: 'complete' };
+    if (o.exitCode === 0) return { action: 'stop', reason: 'clean exit — terminal state reached (done/budget/time/breaker)' };
+    if (o.deterministic) return { action: 'stop', reason: 'deterministic failure — not retrying' };
+    if (o.restarts >= o.maxRestarts) return { action: 'stop', reason: `restart cap reached (${o.maxRestarts})` };
+    return { action: 'restart', reason: `transient crash (exit ${o.exitCode})` };
+  >>>
+
+fn name=runSupervisor async=true params="opts:{nodeExec:string, agonEntry:string, childArgs:string[], goalId:string, maxRestarts:number, baseBackoffMs:number, capBackoffMs:number, onEvent?:(e:{kind:string, detail?:string})=>void}" returns="Promise<{restarts:number, reason:string}>" export=true
+  doc "External-process supervisor for an unattended overnight run: re-exec `agon goal --resume` whenever the child CRASHES (non-zero exit), with exponential backoff and a restart cap, until the journal is done, the child exits cleanly, the failure is deterministic (a misconfig), or the cap is hit. Survives a child that dies mid-run (terminal close, transient crash, OOM) the way an in-process loop cannot — the journal makes each restart resume where the last left off. Ctrl-C on the supervisor forwards to the child (shared tty) and stops instead of restarting."
+  handler <<<
+    const emit = (kind: string, detail?: string) => { try { opts.onEvent?.({ kind, detail }); } catch { /* a listener must never break the supervise loop */ } };
+    let stopping = false;
+    const onSig = () => { stopping = true; };
+    process.on('SIGINT', onSig);
+    process.on('SIGTERM', onSig);
+    try {
+      let restarts = 0;
+      for (;;) {
+        emit(restarts === 0 ? 'supervisor-start' : 'supervisor-restart', `attempt ${restarts + 1} of ${opts.maxRestarts + 1}`);
+        // stderr is piped (so the deterministic-failure classifier can read the
+        // tail) AND teed to our own stderr so the run stays observable; stdin/
+        // stdout are inherited so the child shares the tty (Ctrl-C reaches it).
+        let stderrTail = '';
+        const exitCode: number = await new Promise<number>((resolve) => {
+          const child = spawn(opts.nodeExec, [opts.agonEntry, ...opts.childArgs], { stdio: ['inherit', 'inherit', 'pipe'] });
+          child.stderr?.on('data', (d: Buffer) => { const s = d.toString(); process.stderr.write(s); stderrTail = (stderrTail + s).slice(-4000); });
+          child.on('error', (err: Error) => { stderrTail = (stderrTail + String(err)).slice(-4000); resolve(1); });
+          // 'close' (not 'exit') guarantees the piped stderr has fully flushed.
+          child.on('close', (code: number | null) => resolve(code ?? 1));
+        });
+
+        // A Ctrl-C/SIGTERM during the child run means the human wants to stop —
+        // the child has already checkpointed via its own SIGINT handler — so do
+        // not treat the resulting non-zero exit as a transient crash to retry.
+        if (stopping) { emit('supervisor-stop', 'interrupted'); return { restarts, reason: 'interrupted' }; }
+
+        const state = loadJournal(opts.goalId);
+        const journalDone = state ? isDone(state) : false;
+        const deterministic = isDeterministicExit(exitCode, stderrTail);
+        const decision = supervisorDecision({ exitCode, restarts, maxRestarts: opts.maxRestarts, journalDone, deterministic });
+        if (decision.action === 'stop') { emit('supervisor-stop', decision.reason); return { restarts, reason: decision.reason }; }
+
+        const delay = computeBackoffMs(restarts, opts.baseBackoffMs, opts.capBackoffMs);
+        emit('supervisor-backoff', `${decision.reason}; resuming in ${Math.round(delay / 1000)}s`);
+        await new Promise<void>((r) => setTimeout(r, delay));
+        if (stopping) { emit('supervisor-stop', 'interrupted'); return { restarts, reason: 'interrupted' }; }
+        restarts += 1;
+      }
+    } finally {
+      process.removeListener('SIGINT', onSig);
+      process.removeListener('SIGTERM', onSig);
+    }
   >>>

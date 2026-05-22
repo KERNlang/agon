@@ -55,6 +55,8 @@ interface name=JournalState export=true
   field name=parkedStreak type=number
   field name=noProgressStreak type=number
   field name=lastRemainingCount type=number
+  field name=recentOutcomes type="string[]" optional=true
+    doc "Bounded ring of recent TERMINAL task outcomes ('done' | 'parked'). The sliding-window breaker keys on this so a cluster of hard tasks doesn't abort a run that still has productive work behind it — only a window with too few successes (a broken gate or uniformly-too-hard queue) stops the run."
   field name=oracleHash type=string optional=true
   field name=tasks type="GoalTask[]"
   field name=events type="GoalEvent[]"

@@ -4,10 +4,12 @@ import { createHash } from 'node:crypto';
 
 import type { JournalState, GoalTask } from './types.js';
 
+import type { Mutant } from './mutation.js';
+
 /**
  * Stable, volatility-stripped fingerprint of a gate failure. Normalizes away hex shas, durations, line:col numbers and absolute paths so the SAME logical failure hashes identically across runs — that identity is what the oscillation breaker keys on. Hashes the tail (where the real error usually is).
  */
-// @kern-source: policy:12
+// @kern-source: policy:13
 export function gateFailureSignature(output: string): string {
   const norm = (output || '')
     .replace(/\x1b\[[0-9;]*m/g, '')
@@ -25,7 +27,7 @@ export function gateFailureSignature(output: string): string {
 /**
  * Park a task when it has burned its attempts OR is oscillating — the same gate-failure signature recurring means the agent keeps producing the same broken fix, so more attempts only waste budget.
  */
-// @kern-source: policy:28
+// @kern-source: policy:29
 export function taskParkDecision(task: GoalTask, maxAttempts: number): {park:boolean, reason:string} {
   // Guard against a NaN / non-positive cap (which would make every >= compare
   // false and grind a task forever) by collapsing it to 1.
@@ -46,7 +48,7 @@ export function taskParkDecision(task: GoalTask, maxAttempts: number): {park:boo
 /**
  * Append a TERMINAL task outcome ('done' | 'parked') to the bounded ring that fuels the sliding-window breaker, dropping the oldest entries beyond `cap` (cap <= 0 = unbounded). Pure: the controller calls this once per task that reaches a terminal state.
  */
-// @kern-source: policy:47
+// @kern-source: policy:48
 export function pushRecentOutcome(recent: string[], outcome: string, cap: number): string[] {
   const next = [...recent, outcome];
   if (cap > 0 && next.length > cap) {
@@ -58,7 +60,7 @@ export function pushRecentOutcome(recent: string[], outcome: string, cap: number
 /**
  * Abort the whole run only when it is genuinely thrashing — NOT when it merely hit a cluster of hard tasks. The PRIMARY long-run signal is the sliding-window success rate (`window`): over the last `window.size` terminal outcomes, if the fraction that are 'done' is below `window.minSuccessRate`, the gate/env is likely broken or the queue is uniformly too hard, so stop. The legacy consecutive park-streak (`maxParkStreak`) is kept only as an opt-in hard cap (0 = off, the new default) because a park DECREASES remaining work, so it never trips the no-progress breaker on its own. `maxNoProgress` still catches retry-thrash with no net progress.
  */
-// @kern-source: policy:57
+// @kern-source: policy:58
 export function globalBreaker(state: JournalState, maxParkStreak: number, maxNoProgress: number, window?: {size:number, minSuccessRate:number}): {stop:boolean, reason:string} {
   const recent = state.recentOutcomes ?? [];
   if (window && window.size > 0 && recent.length >= window.size) {
@@ -80,7 +82,7 @@ export function globalBreaker(state: JournalState, maxParkStreak: number, maxNoP
 /**
  * Constraint-aware winner pick for the goal loop. Forge scores by fitness alone, so it can crown a higher-scoring patch that adds NO test while lower-scoring PASSING patches include one — the witness then parks it and the whole panel is wasted. When requireTests is on and this is not a fix pass, if the forge winner adds no test, return the highest-scoring PASSING candidate that DOES add a test; otherwise keep forge's winner (the witness will park it, correctly). Pure: the caller resolves each candidate's addsTest by inspecting its patch.
  */
-// @kern-source: policy:77
+// @kern-source: policy:78
 export function pickImplementWinner(forgeWinner: string, candidates: Array<{engine:string,pass:boolean,score:number,addsTest:boolean}>, requireTests: boolean, isFix: boolean): string {
   if (isFix || !requireTests) return forgeWinner;
   const w = candidates.find((c) => c.engine === forgeWinner);
@@ -95,7 +97,7 @@ export function pickImplementWinner(forgeWinner: string, candidates: Array<{engi
 /**
  * Cesar-style per-task implement roster: route a trivial gap to a single engine (cheap/fast) and a real feature to the full competitive panel. Pure mapping of Cesar's routing hints. solo when forgeScope is 'none' or the flow is quick-fix/answer/bug-fix or the escalationHint is self/delegate (and a soloEngine exists); otherwise compete with allEngines. escalate flags big/expensive tasks (forgeScope 'full', flow 'forge-full', or estimatedCostUsd over a positive threshold) so the caller can ask an LLM to confirm/adjust the roster. The all-engine REVIEW is unaffected — this only shapes IMPLEMENT.
  */
-// @kern-source: policy:90
+// @kern-source: policy:91
 export function chooseImplementRoster(params: {flow:string, forgeScope:string, escalationHint:string, estimatedCostUsd:number, allEngines:string[], soloEngine:string, escalateThresholdUsd:number}): {engines:string[], solo:boolean, escalate:boolean, reason:string} {
   const { flow, forgeScope, escalationHint, estimatedCostUsd, allEngines, soloEngine, escalateThresholdUsd } = params;
   const roster = allEngines.length > 0 ? allEngines : (soloEngine ? [soloEngine] : []);
@@ -111,9 +113,36 @@ export function chooseImplementRoster(params: {flow:string, forgeScope:string, e
 }
 
 /**
+ * Tiered mutation-gate calibration: decide on the HIGH-SIGNAL survivor count, not the raw count.
+ */
+// @kern-source: policy:107
+export function mutationGateDecision(survivors: Mutant[], generated: Mutant[], cfg?: {highSignalReviewMax?:number, survivorRatioCap?:number, floor?:number}): {verdict:'land'|'review'|'park', highSignalSurvivors:number, equivProneSurvivors:number, highSignalGenerated:number, reason:string} {
+  const max   = Math.max(0, Math.floor(cfg?.highSignalReviewMax ?? 2));
+  const cap   = Math.min(1, Math.max(0, cfg?.survivorRatioCap ?? 0.15));
+  const floor = Math.max(0, Math.floor(cfg?.floor ?? 3));
+  const highSignalSurvivors = survivors.filter((m) => m.class === 'high-signal').length;
+  const equivProneSurvivors = survivors.length - highSignalSurvivors;
+  const highSignalGenerated = generated.filter((m) => m.class === 'high-signal').length;
+  if (highSignalSurvivors > max) {
+    return { verdict: 'park', highSignalSurvivors, equivProneSurvivors, highSignalGenerated, reason: `${highSignalSurvivors} high-signal survivors > max ${max}` };
+  }
+  if (highSignalSurvivors >= 1) {
+    return { verdict: 'review', highSignalSurvivors, equivProneSurvivors, highSignalGenerated, reason: `${highSignalSurvivors} high-signal survivor(s) within 1..${max}` };
+  }
+  if (highSignalSurvivors === 0 && highSignalGenerated > 0) {
+    return { verdict: 'land', highSignalSurvivors, equivProneSurvivors, highSignalGenerated, reason: `${highSignalSurvivors}/${highSignalGenerated} high-signal mutants survived — core semantics pinned` };
+  }
+  const ratio = generated.length > 0 ? survivors.length / generated.length : 0;
+  if (survivors.length >= floor && ratio > cap) {
+    return { verdict: 'review', highSignalSurvivors, equivProneSurvivors, highSignalGenerated, reason: `no high-signal coverage; ${survivors.length}/${generated.length} (${(ratio * 100).toFixed(0)}%) equiv-prone survivors > ${(cap * 100).toFixed(0)}% cap` };
+  }
+  return { verdict: 'land', highSignalSurvivors, equivProneSurvivors, highSignalGenerated, reason: `no high-signal coverage; ${survivors.length}/${generated.length} equiv-prone survivors within cap` };
+}
+
+/**
  * True once cumulative spend reaches the goal's USD ceiling (0 = unlimited).
  */
-// @kern-source: policy:106
+// @kern-source: policy:132
 export function budgetExceeded(state: JournalState): boolean {
   const cap = state.spec.budgetUsd;
   return cap > 0 && state.spentUsd >= cap;
@@ -122,7 +151,7 @@ export function budgetExceeded(state: JournalState): boolean {
 /**
  * True once wall-clock since startedAt reaches the goal's hour ceiling (0 = unlimited).
  */
-// @kern-source: policy:113
+// @kern-source: policy:139
 export function timeExceeded(state: JournalState, now: number): boolean {
   if (!state.startedAt) return false;
   const cap = state.spec.maxHours;

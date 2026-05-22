@@ -16,26 +16,27 @@ export interface Mutant {
   line: number;
   before: string;
   after: string;
+  class: 'high-signal'|'equiv-prone';
 }
 
 /**
  * Canonical mutants on the changed lines only (one per applicable operator/line).
  */
-// @kern-source: mutation:20
+// @kern-source: mutation:21
 export function generateMutants(source: string, changedLines: number[]): Mutant[] {
-  const ops: Array<{ name: string; apply: (s: string) => string | null }> = [
-    { name: 'arith:+→-', apply: (s) => { const m = s.replace(/(?<!\+)\+(?![+=])/, '-'); return m !== s ? m : null; } },
-    { name: 'arith:-→+', apply: (s) => { const m = s.replace(/(?<![-\w])-(?![-=>])/, '+'); return m !== s ? m : null; } },
-    { name: 'eq:===→!==', apply: (s) => { const m = s.replace('===', '!=='); return m !== s ? m : null; } },
-    { name: 'eq:!==→===', apply: (s) => { const m = s.replace('!==', '==='); return m !== s ? m : null; } },
-    { name: 'logic:&&→||', apply: (s) => { const m = s.replace('&&', '||'); return m !== s ? m : null; } },
-    { name: 'logic:||→&&', apply: (s) => { const m = s.replace('||', '&&'); return m !== s ? m : null; } },
-    { name: 'rel:<→>=', apply: (s) => { const m = s.replace(/(?<![<>=])<(?![<=])/, '>='); return m !== s ? m : null; } },
-    { name: 'rel:>→<=', apply: (s) => { const m = s.replace(/(?<![<>=-])>(?![>=])/, '<='); return m !== s ? m : null; } },
-    { name: 'bool:true→false', apply: (s) => { const m = s.replace(/\btrue\b/, 'false'); return m !== s ? m : null; } },
-    { name: 'bool:false→true', apply: (s) => { const m = s.replace(/\bfalse\b/, 'true'); return m !== s ? m : null; } },
-    { name: 'ret:→undefined', apply: (s) => { const m = s.replace(/\breturn\s+[^;]+;/, 'return undefined;'); return m !== s ? m : null; } },
-    { name: 'arr:[]→[0]', apply: (s) => { const m = s.replace(/(?<![\w\]])\[\](?!\])/, '[0]'); return m !== s ? m : null; } },
+  const ops: Array<{ name: string; class: 'high-signal' | 'equiv-prone'; apply: (s: string) => string | null }> = [
+    { name: 'arith:+→-', class: 'high-signal', apply: (s) => { const m = s.replace(/(?<!\+)\+(?![+=])/, '-'); return m !== s ? m : null; } },
+    { name: 'arith:-→+', class: 'high-signal', apply: (s) => { const m = s.replace(/(?<![-\w])-(?![-=>])/, '+'); return m !== s ? m : null; } },
+    { name: 'eq:===→!==', class: 'high-signal', apply: (s) => { const m = s.replace('===', '!=='); return m !== s ? m : null; } },
+    { name: 'eq:!==→===', class: 'high-signal', apply: (s) => { const m = s.replace('!==', '==='); return m !== s ? m : null; } },
+    { name: 'logic:&&→||', class: 'high-signal', apply: (s) => { const m = s.replace('&&', '||'); return m !== s ? m : null; } },
+    { name: 'logic:||→&&', class: 'high-signal', apply: (s) => { const m = s.replace('||', '&&'); return m !== s ? m : null; } },
+    { name: 'rel:<→>=', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![<>=])<(?![<=])/, '>='); return m !== s ? m : null; } },
+    { name: 'rel:>→<=', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![<>=-])>(?![>=])/, '<='); return m !== s ? m : null; } },
+    { name: 'bool:true→false', class: 'high-signal', apply: (s) => { const m = s.replace(/\btrue\b/, 'false'); return m !== s ? m : null; } },
+    { name: 'bool:false→true', class: 'high-signal', apply: (s) => { const m = s.replace(/\bfalse\b/, 'true'); return m !== s ? m : null; } },
+    { name: 'ret:→undefined', class: 'equiv-prone', apply: (s) => { const m = s.replace(/\breturn\s+[^;]+;/, 'return undefined;'); return m !== s ? m : null; } },
+    { name: 'arr:[]→[0]', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![\w\]])\[\](?!\])/, '[0]'); return m !== s ? m : null; } },
   ];
   const lines = source.split('\n');
   const mutants: Mutant[] = [];
@@ -46,7 +47,7 @@ export function generateMutants(source: string, changedLines: number[]): Mutant[
     for (const op of ops) {
       const mutated = op.apply(original);
       if (mutated == null || mutated === original) continue;
-      mutants.push({ id: `${op.name}@L${ln}`, operator: op.name, line: ln, before: original, after: mutated });
+      mutants.push({ id: `${op.name}@L${ln}`, operator: op.name, line: ln, before: original, after: mutated, class: op.class });
     }
   }
   return mutants;
@@ -55,7 +56,7 @@ export function generateMutants(source: string, changedLines: number[]): Mutant[
 /**
  * Return source with the mutant's single line swapped in.
  */
-// @kern-source: mutation:52
+// @kern-source: mutation:53
 export function applyMutantToSource(source: string, mutant: Mutant): string {
   const lines = source.split('\n');
   const idx = mutant.line - 1;
@@ -67,7 +68,7 @@ export function applyMutantToSource(source: string, mutant: Mutant): string {
 /**
  * Apply each mutant to the file, run the witness tests; a mutant whose tests still PASS survived (weak test). Restores the original file in finally. Single-file by design — the controller calls this once per changed file. Rejects relFilePath that escapes the worktree.
  */
-// @kern-source: mutation:62
+// @kern-source: mutation:63
 export async function mutationSurvivors(opts: {worktree:string, relFilePath:string, source:string, mutants:Mutant[], testCmd:string, timeout:number}): Promise<Mutant[]> {
   const { worktree, relFilePath, source, mutants, testCmd, timeout } = opts;
   const absPath = resolveWithin(worktree, relFilePath);

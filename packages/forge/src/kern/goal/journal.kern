@@ -7,7 +7,7 @@ import from="node:fs" names="existsSync,readFileSync,writeFileSync,mkdirSync,ren
 import from="node:path" names="dirname"
 import from="@agon/core" names="agonPath,ensureAgonHome"
 import from="./paths.js" names="assertSafeGoalId"
-import from="./types.js" names="JournalState,GoalSpec,GoalTask,AttemptRecord" types=true
+import from="./types.js" names="JournalState,GoalSpec,GoalTask,AttemptRecord,GoalEvent" types=true
 
 fn name=goalDir params="goalId:string" returns=string export=true
   handler <<<
@@ -131,8 +131,23 @@ fn name=isDone params="state:JournalState" returns=boolean export=true
     return state.tasks.filter((t) => t.status === 'queued' || t.status === 'inflight').length === 0;
   >>>
 
-fn name=logEvent params="state:JournalState, kind:string, taskId?:string, detail?:string" returns="JournalState" export=true
-  doc "Append an audit event."
+const name=GOAL_EVENT_CAP type=number value=500
+  doc "Max audit events retained in a journal's events[]. The journal is rewritten whole on every checkpoint, so this bounds a 24h run's per-checkpoint cost; ~500 keeps a generous recent window while staying small."
+
+fn name=boundEvents params="events:GoalEvent[], cap:number" returns="{events:GoalEvent[], dropped:number}" export=true
+  doc "Keep the audit trail bounded so a long run's per-checkpoint full-rewrite stays O(1) in event count rather than O(n) (an unbounded events[] makes 24h persistence O(n^2)). When events exceed cap, drop the OLDEST and report how many were dropped so the caller can accumulate a running total. cap <= 0 = unbounded. Pure: events are audit-only — resume logic reads tasks/counters, never events — so trimming the oldest is safe."
   handler <<<
-    return { ...state, events: [...state.events, { ts: Date.now(), kind, taskId, detail }] };
+    if (cap <= 0 || events.length <= cap) return { events, dropped: 0 };
+    const dropped = events.length - cap;
+    return { events: events.slice(dropped), dropped };
+  >>>
+
+fn name=logEvent params="state:JournalState, kind:string, taskId?:string, detail?:string" returns="JournalState" export=true
+  doc "Append an audit event, keeping events[] bounded (the journal is rewritten whole on every checkpoint)."
+  handler <<<
+    const appended = [...state.events, { ts: Date.now(), kind, taskId, detail }];
+    const { events, dropped } = boundEvents(appended, GOAL_EVENT_CAP);
+    return dropped > 0
+      ? { ...state, events, droppedEvents: (state.droppedEvents ?? 0) + dropped }
+      : { ...state, events };
   >>>

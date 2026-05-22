@@ -60,3 +60,5 @@ interface name=JournalState export=true
   field name=oracleHash type=string optional=true
   field name=tasks type="GoalTask[]"
   field name=events type="GoalEvent[]"
+  field name=droppedEvents type=number optional=true
+    doc "Count of oldest audit events dropped to keep events[] bounded over a long run. The journal is fully rewritten on every checkpoint, so an unbounded events[] makes a 24h run's persistence O(n^2); the recent window is kept and this records how many earlier entries were trimmed."

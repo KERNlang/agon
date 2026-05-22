@@ -64,5 +64,12 @@
 
   "capabilities": ["vision"],
   "imageFlag": "--image",
-  "systemPromptFlag": "--system-prompt"
+  "systemPromptFlag": "--system-prompt",
+
+  "isolationHints": {
+    "configEnv": "CLAUDE_CONFIG_DIR",
+    "strictMcpArgs": ["--strict-mcp-config"],
+    "personalPaths": ["~/.claude"],
+    "supportsProjectMcp": true
+  }
 }

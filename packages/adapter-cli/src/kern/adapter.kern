@@ -2,7 +2,7 @@ import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
 import from="@agon/core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
 import from="@agon/core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiStreamDispatch,companionDispatch,runHooks,hooksFailed,runApiAgentLoop,sessionContext,resolveWorkingDir,engineHealth,classifyDispatchFailure"
-import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,resolveModel,stripStreamJson,usesStreamJson,recordDispatchHealth,shouldUseCompanionForAgent,shouldUseClaudePty,runClaudePtyDispatch,runClaudePtyStreamDispatch"
+import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,resolveModel,stripStreamJson,usesStreamJson,recordDispatchHealth,shouldUseCompanionForAgent,shouldUseClaudePty,runClaudePtyDispatch,runClaudePtyStreamDispatch,computeEngineIsolation"
 
 service name=CliAdapter implements=EngineAdapter
   field name=registry type=EngineRegistry private=true
@@ -47,10 +47,12 @@ service name=CliAdapter implements=EngineAdapter
       let name=preHooks value="runHooks('pre_dispatch', { AGON_ENGINE: options.engine.id, AGON_MODE: options.mode })"
       if cond="hooksFailed(preHooks)"
         return value="{ exitCode: 1, stdout: '', stderr: `pre_dispatch hook blocked: ${preHooks.find((h: any) => !h.ok)?.stderr ?? 'unknown'}`, durationMs: 0, timedOut: false }"
+      comment raw="// workspace-pure isolation, resolved once for every dispatch path below."
+      let name=iso value="computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd })"
       comment raw="// Subscription path: drive interactive `claude` TUI via pty when opted-in (AGON_CLAUDE_PTY=1)."
       comment raw="// Avoids `claude -p` (SDK credits). If kern-engines peer deps are missing, falls through."
       if cond="shouldUseClaudePty(options.engine)"
-        let name=ptyResult value="await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt)"
+        let name=ptyResult value="await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt, iso.env)"
         if cond="!ptyResult.unavailable"
           let name=outputPath value="join(options.outputDir, `${options.engine.id}-output.txt`)"
           do value="mkdirSync(dirname(outputPath), { recursive: true })"
@@ -60,7 +62,7 @@ service name=CliAdapter implements=EngineAdapter
           return value="ptyResult"
       comment raw="// Try companion protocol (JSONRPC app-server) first — faster, more stable"
       if cond="options.engine.companion"
-        let name=companionResult value="await companionDispatch({ config: options.engine.companion, binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: options.mode === 'agent' ? 'agent' : options.mode === 'review' ? 'review' : 'exec', model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, })"
+        let name=companionResult value="await companionDispatch({ config: options.engine.companion, binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: options.mode === 'agent' ? 'agent' : options.mode === 'review' ? 'review' : 'exec', model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, env: iso.env, })"
         comment raw="// Exit code 2 = companion not available, fall through to CLI spawn"
         comment raw="// Also fall through if companion returned empty output (stream-json capture failure)"
         if cond="companionResult.exitCode !== 2 && companionResult.stdout.trim()"
@@ -83,7 +85,10 @@ service name=CliAdapter implements=EngineAdapter
         let name=promptIdx value="args.indexOf(effectivePrompt)"
         let name=insertAt value="promptIdx >= 0 ? promptIdx : 0"
         do value="args.splice(insertAt, 0, sysFlag, options.systemPrompt)"
-      let name=result value="await spawnWithTimeout({ command, args, cwd: options.cwd, timeout: options.timeout * 1000, signal: options.signal, onSpawn: options.onSpawn, })"
+      comment raw="// workspace-pure: prepend isolation flags (e.g. claude --strict-mcp-config) so they bind before the positional prompt."
+      if cond="iso.argsExtra.length > 0"
+        do value="args.unshift(...iso.argsExtra)"
+      let name=result value="await spawnWithTimeout({ command, args, cwd: options.cwd, timeout: options.timeout * 1000, signal: options.signal, onSpawn: options.onSpawn, env: iso.env, })"
       comment raw="// Strip NDJSON system/hook messages from stream-json engines (Claude)"
       if cond="usesStreamJson(options.engine) && result.stdout.includes('{\"type\":')"
         assign target="result.stdout" value="stripStreamJson(result.stdout)"
@@ -96,10 +101,12 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatchStream params="options:DispatchOptions" returns="string, DispatchResult, void" async=true stream=true
     handler <<<
+      // workspace-pure isolation, resolved once for every dispatch path below.
+      const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
       // Subscription pty path for claude — yields response deltas, returns final result.
       // Falls through if peer deps missing (unavailable:true).
       if (shouldUseClaudePty(options.engine)) {
-        const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt);
+        const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt, iso.env);
         let last: DispatchResult | undefined;
         while (true) {
           const next = await gen.next();
@@ -160,12 +167,16 @@ service name=CliAdapter implements=EngineAdapter
         args.splice(insertAt, 0, sysFlag, options.systemPrompt);
       }
 
+      // workspace-pure: prepend isolation flags (e.g. claude --strict-mcp-config).
+      if (iso.argsExtra.length > 0) args.unshift(...iso.argsExtra);
+
       const gen = spawnStream({
         command, args,
         cwd: options.cwd,
         timeout: options.timeout * 1000,
         signal: options.signal,
         onSpawn: options.onSpawn,
+        env: iso.env,
       });
 
       let result: DispatchResult;
@@ -187,12 +198,14 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatchAgent params="options:DispatchOptions" returns="Promise<AgentDispatchResult>" async=true
     handler lang="kern"
+      comment raw="// workspace-pure isolation, resolved once for every agent dispatch path below."
+      let name=iso value="computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd })"
       comment raw="// Subscription pty path for claude (agent mode: tools + bypassed perms)."
       comment raw="// We still diff the cwd before/after so callers get filesChanged/diffLines."
       if cond="shouldUseClaudePty(options.engine)"
         let name=ptyStart value="Date.now()"
         let name=ptyBaseline value="readOnlyDiff(options.cwd)"
-        let name=ptyResult value="await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt)"
+        let name=ptyResult value="await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env)"
         if cond="!ptyResult.unavailable"
           let name=outputPath value="join(options.outputDir, `${options.engine.id}-output.txt`)"
           do value="mkdirSync(dirname(outputPath), { recursive: true })"
@@ -257,7 +270,7 @@ service name=CliAdapter implements=EngineAdapter
       let name=baselineDiff value="readOnlyDiff(options.cwd)"
       comment raw="// Try companion protocol first"
       if cond="options.engine.companion && shouldUseCompanionForAgent(options.engine)"
-        let name=companionResult value="await companionDispatch({ config: options.engine.companion, binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: 'agent', model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, onApproval: options.onApproval, })"
+        let name=companionResult value="await companionDispatch({ config: options.engine.companion, binaryPath, prompt: options.prompt, cwd: options.cwd, timeout: options.timeout, mode: 'agent', model: resolveModel(options.engine, options.cwd) ?? undefined, signal: options.signal, systemPrompt: options.systemPrompt, env: iso.env, onApproval: options.onApproval, })"
         if cond="companionResult.exitCode !== 2 && companionResult.stdout.trim()"
           let name=outputPath value="join(options.outputDir, `${options.engine.id}-output.txt`)"
           do value="mkdirSync(dirname(outputPath), { recursive: true })"
@@ -291,7 +304,10 @@ service name=CliAdapter implements=EngineAdapter
         let name=promptIdx value="args.indexOf(effectivePrompt)"
         let name=insertAt value="promptIdx >= 0 ? promptIdx : 0"
         do value="args.splice(insertAt, 0, sysFlag, options.systemPrompt)"
-      let name=result value="await spawnWithTimeout({ command, args, cwd: options.cwd, timeout: options.timeout * 1000, signal: options.signal, onSpawn: options.onSpawn, })"
+      comment raw="// workspace-pure: prepend isolation flags (e.g. claude --strict-mcp-config)."
+      if cond="iso.argsExtra.length > 0"
+        do value="args.unshift(...iso.argsExtra)"
+      let name=result value="await spawnWithTimeout({ command, args, cwd: options.cwd, timeout: options.timeout * 1000, signal: options.signal, onSpawn: options.onSpawn, env: iso.env, })"
       comment raw="// Strip NDJSON system/hook messages from stream-json engines (Claude)"
       if cond="usesStreamJson(options.engine) && result.stdout.includes('{\"type\":')"
         assign target="result.stdout" value="stripStreamJson(result.stdout)"
@@ -317,10 +333,12 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatchAgentStream params="options:DispatchOptions" returns="string, AgentDispatchResult, void" async=true stream=true
     handler <<<
+      // workspace-pure isolation, resolved once for every agent-stream path below.
+      const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
       // Subscription pty path for claude (agent mode). Same diff capture as dispatchAgent.
       if (shouldUseClaudePty(options.engine)) {
         const baselineDiff = readOnlyDiff(options.cwd);
-        const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt);
+        const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env);
         let last: DispatchResult & { unavailable?: boolean } | undefined;
         const collected: string[] = [];
         while (true) {
@@ -382,12 +400,16 @@ service name=CliAdapter implements=EngineAdapter
       // Capture baseline before agent runs
       const baselineDiff = readOnlyDiff(options.cwd);
 
+      // workspace-pure: prepend isolation flags (e.g. claude --strict-mcp-config).
+      if (iso.argsExtra.length > 0) args.unshift(...iso.argsExtra);
+
       const gen = spawnStream({
         command, args,
         cwd: options.cwd,
         timeout: options.timeout * 1000,
         signal: options.signal,
         onSpawn: options.onSpawn,
+        env: iso.env,
       });
 
       let result: DispatchResult;

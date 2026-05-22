@@ -2,9 +2,12 @@
 // Frozen oracle for the forge build of the unattended-overnight supervisor:
 // the pure restart/stop judgement. The process-spawn loop (re-exec
 // `agon goal --resume`) is hand-wired plumbing; these decide WHEN it runs.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
-  supervisorDecision, computeBackoffMs, isDeterministicExit,
+  supervisorDecision, computeBackoffMs, isDeterministicExit, runSupervisor,
 } from '../../packages/forge/src/generated/goal/supervisor.js';
 
 describe('computeBackoffMs — exponential backoff, capped', () => {
@@ -72,5 +75,60 @@ describe('supervisorDecision — restart vs stop', () => {
 
   it('a completed journal wins even when a crash would otherwise restart', () => {
     expect(supervisorDecision({ exitCode: 1, restarts: 0, maxRestarts: 5, journalDone: true, deterministic: false }).action).toBe('stop');
+  });
+});
+
+describe('runSupervisor — external-process restart loop (integration)', () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'agon-sup-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  // A fake "agon" child: bumps a counter file and exits 1 until it has run
+  // `failUntil` times, then exits 0 — so we can assert the supervisor restarts
+  // on a crash and stops on the eventual clean exit. Tiny backoff keeps it fast.
+  const writeFakeChild = (failUntil: number): string => {
+    const p = join(dir, 'fake-child.mjs');
+    const counter = join(dir, 'count');
+    writeFileSync(p, [
+      `import { readFileSync, writeFileSync, existsSync } from 'node:fs';`,
+      `const c = ${JSON.stringify(counter)};`,
+      `const n = existsSync(c) ? Number(readFileSync(c, 'utf8')) : 0;`,
+      `writeFileSync(c, String(n + 1));`,
+      `process.exit(n + 1 <= ${failUntil} ? 1 : 0);`,
+    ].join('\n'));
+    return p;
+  };
+
+  it('restarts on a crash and stops on the eventual clean exit', async () => {
+    const child = writeFakeChild(2); // fail twice, then succeed on the 3rd run
+    const res = await runSupervisor({
+      nodeExec: process.execPath, agonEntry: child, childArgs: [],
+      goalId: 'no-such-goal', maxRestarts: 5, baseBackoffMs: 1, capBackoffMs: 2,
+    });
+    expect(res.reason).toMatch(/clean exit/i);
+    expect(res.restarts).toBe(2);
+    expect(Number(readFileSync(join(dir, 'count'), 'utf8'))).toBe(3);
+  });
+
+  it('gives up at the restart cap when the child keeps crashing', async () => {
+    const child = writeFakeChild(999); // always fail
+    const res = await runSupervisor({
+      nodeExec: process.execPath, agonEntry: child, childArgs: [],
+      goalId: 'no-such-goal', maxRestarts: 2, baseBackoffMs: 1, capBackoffMs: 2,
+    });
+    expect(res.reason).toMatch(/restart cap/i);
+    expect(res.restarts).toBe(2);
+  });
+
+  it('stops immediately on a deterministic failure without retrying', async () => {
+    const p = join(dir, 'fake-det.mjs');
+    writeFileSync(p, `process.stderr.write('A --gate command is required'); process.exit(1);`);
+    const res = await runSupervisor({
+      nodeExec: process.execPath, agonEntry: p, childArgs: [],
+      goalId: 'no-such-goal', maxRestarts: 5, baseBackoffMs: 1, capBackoffMs: 2,
+    });
+    expect(res.reason).toMatch(/determin/i);
+    expect(res.restarts).toBe(0);
+    expect(existsSync(join(dir, 'count'))).toBe(false); // never ran the counter child
   });
 });

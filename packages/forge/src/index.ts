@@ -45,3 +45,5 @@ export { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, 
 export { planSynthesis } from './generated/synth-plan.js';
 export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './generated/synth-plan.js';
 export { summarizeGoal, writeGoalArtifacts, runGoalController } from './generated/goal/controller.js';
+export { supervisorDecision, computeBackoffMs, isDeterministicExit, runSupervisor } from './generated/goal/supervisor.js';
+export type { SupervisorDecision } from './generated/goal/supervisor.js';

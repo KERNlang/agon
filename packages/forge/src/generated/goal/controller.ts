@@ -127,8 +127,13 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
   // Sliding-window breaker: stop only when the last `breakerWindow` TERMINAL
   // outcomes contain too few successes (< breakerMinSuccessRate) — the signal
   // of a broken gate / uniformly-too-hard queue, not a mere hard cluster.
-  const breakerWindow = opts.breakerWindow ?? 8;
-  const breakerMinSuccessRate = opts.breakerMinSuccessRate ?? 0.125;
+  // Normalize defensively: runGoalController is exported, so a fractional
+  // window (would fire the >= size check after a single outcome) or an
+  // out-of-range rate (>1 trips the instant the window fills; <0 never) must
+  // not silently corrupt the breaker. (Review finding — clamp in core, not
+  // only at the CLI.)
+  const breakerWindow = Math.max(0, Math.floor(opts.breakerWindow ?? 8));
+  const breakerMinSuccessRate = Math.min(1, Math.max(0, opts.breakerMinSuccessRate ?? 0.125));
   // Bounded ring of recent terminal outcomes; >= the window so it can fill,
   // and capped so the journal can't grow without bound over a 24h run.
   const outcomeRingCap = Math.max(50, breakerWindow * 2);

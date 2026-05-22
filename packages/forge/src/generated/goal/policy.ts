@@ -65,7 +65,7 @@ export function globalBreaker(state: JournalState, maxParkStreak: number, maxNoP
     const windowEntries = recent.slice(-window.size);
     const successRate = windowEntries.filter(o => o === 'done').length / window.size;
     if (successRate < window.minSuccessRate) {
-      return { stop: true, reason: `success-rate ${successRate} is below minimum ${window.minSuccessRate}` };
+      return { stop: true, reason: `success-rate ${(successRate * 100).toFixed(0)}% < ${(window.minSuccessRate * 100).toFixed(0)}% over last ${window.size} tasks` };
     }
   }
   if (maxParkStreak > 0 && state.parkedStreak >= maxParkStreak) {

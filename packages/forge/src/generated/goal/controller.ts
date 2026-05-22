@@ -16,7 +16,7 @@ import { generateMutants, mutationSurvivors } from './mutation.js';
 
 import { parseChangedLines, newFilesInDiff, isTestFile } from './diff.js';
 
-import { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded } from './policy.js';
+import { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pushRecentOutcome } from './policy.js';
 
 import type { JournalState, GoalSpec, GoalTask } from './types.js';
 
@@ -106,7 +106,7 @@ export function writeGoalArtifacts(state: JournalState): {resultPath:string, sum
  * Run the goal to a terminal state (done / budget / time / breaker / abort). Resumable: re-invoking with resume=true picks up the journal. Returns the final JournalState; durable artifacts are written before return.
  */
 // @kern-source: controller:100
-export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[]}>, oracleFiles?: string[], resume?: boolean, push?: boolean, remote?: string, requireTests?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string, costUsd?:number}> }): Promise<JournalState> {
+export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[]}>, oracleFiles?: string[], resume?: boolean, push?: boolean, remote?: string, requireTests?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, breakerWindow?: number, breakerMinSuccessRate?: number, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string, costUsd?:number}> }): Promise<JournalState> {
   const { spec, repoRoot } = opts;
   assertSafeGoalId(spec.goalId);
   ensureAgonHome();
@@ -114,11 +114,24 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
   const gateTimeoutSec = opts.gateTimeoutSec ?? 1800;
   const witnessCmd = opts.witnessCmd ?? spec.gate;
   const witnessTimeoutSec = opts.witnessTimeoutSec ?? gateTimeoutSec;
-  const maxParkStreak = opts.maxParkStreak ?? 5;
+  // The legacy consecutive park-streak breaker is OFF by default (0): a park
+  // DECREASES remaining work, so a cluster of hard tasks would trip it (abort)
+  // long before the queue's easy work is reached. The sliding-window success
+  // rate below is the real long-run breaker; opt back into the streak cap with
+  // --max-park-streak if you want the old aggressive behavior.
+  const maxParkStreak = opts.maxParkStreak ?? 0;
   // A retried task leaves remaining unchanged, so each retry bumps the
   // no-progress streak. Scale the breaker above maxAttempts so one grinding
   // task parks itself (max-attempts) before tripping the whole-run breaker.
   const maxNoProgress = opts.maxNoProgress ?? Math.max(5, (spec.maxAttempts || 3) + 2);
+  // Sliding-window breaker: stop only when the last `breakerWindow` TERMINAL
+  // outcomes contain too few successes (< breakerMinSuccessRate) — the signal
+  // of a broken gate / uniformly-too-hard queue, not a mere hard cluster.
+  const breakerWindow = opts.breakerWindow ?? 8;
+  const breakerMinSuccessRate = opts.breakerMinSuccessRate ?? 0.125;
+  // Bounded ring of recent terminal outcomes; >= the window so it can fill,
+  // and capped so the journal can't grow without bound over a 24h run.
+  const outcomeRingCap = Math.max(50, breakerWindow * 2);
   const emit = (kind: string, taskId?: string, detail?: string) => {
     try { opts.onEvent?.({ kind, taskId, detail }); } catch { /* listener must never break the loop */ }
   };
@@ -206,7 +219,7 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
     if (opts.signal?.aborted) { state = logEvent(state, 'aborted'); emit('aborted'); break; }
     if (budgetExceeded(state)) { state = logEvent(state, 'stop', undefined, 'budget'); emit('stop', undefined, 'budget'); break; }
     if (timeExceeded(state, Date.now())) { state = logEvent(state, 'stop', undefined, 'time'); emit('stop', undefined, 'time'); break; }
-    const gb = globalBreaker(state, maxParkStreak, maxNoProgress);
+    const gb = globalBreaker(state, maxParkStreak, maxNoProgress, { size: breakerWindow, minSuccessRate: breakerMinSuccessRate });
     if (gb.stop) { state = logEvent(state, 'stop', undefined, gb.reason); emit('stop', undefined, gb.reason); break; }
 
     const task = nextTask(state);
@@ -322,7 +335,7 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
 
       state = recordAttempt(state, task.id, { at: Date.now(), outcome: 'gate-pass' });
       state = markStatus(state, task.id, 'done', { commitSha: newSha, costUsd: (task.costUsd || 0) + attemptCost });
-      state = { ...state, parkedStreak: 0 };
+      state = { ...state, parkedStreak: 0, recentOutcomes: pushRecentOutcome(state.recentOutcomes ?? [], 'done', outcomeRingCap) };
       state = logEvent(state, 'task-done', task.id, newSha);
       emit('task-done', task.id, newSha);
 
@@ -358,7 +371,7 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
       const park = (kind === 'witness' || kind === 'mutation') ? { park: true, reason: outcome } : taskParkDecision(updated, spec.maxAttempts);
       if (park.park) {
         state = markStatus(state, task.id, 'parked', { lastError: message, notes: `${park.reason} — ${message}`.slice(0, 300) });
-        state = { ...state, parkedStreak: state.parkedStreak + 1 };
+        state = { ...state, parkedStreak: state.parkedStreak + 1, recentOutcomes: pushRecentOutcome(state.recentOutcomes ?? [], 'parked', outcomeRingCap) };
         emit('task-parked', task.id, `${outcome}: ${park.reason}`);
       } else {
         state = markStatus(state, task.id, 'queued', { lastError: message });

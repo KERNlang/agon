@@ -25,7 +25,7 @@ export interface CompanionResult {
 }
 
 // @kern-source: companion-dispatch:19
-export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', model?:string, signal?:AbortSignal, systemPrompt?:string, onApproval?:(tool:string, command:string, reason?:string)=>Promise<boolean|string>}): Promise<DispatchResult> {
+export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', model?:string, signal?:AbortSignal, systemPrompt?:string, env?:Record<string,string>, onApproval?:(tool:string, command:string, reason?:string)=>Promise<boolean|string>}): Promise<DispatchResult> {
   if (opts.config.protocol !== 'jsonrpc' && opts.config.protocol !== 'acp' && opts.config.protocol !== 'stream-json') {
     return { exitCode: 2, stdout: '', stderr: `Protocol "${opts.config.protocol}" not supported for one-shot dispatch`, durationMs: 0, timedOut: false };
   }
@@ -65,6 +65,9 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
   const proc = spawn(opts.binaryPath, serverArgs, {
     stdio: ['pipe', 'pipe', 'pipe'],
     cwd: opts.cwd,
+    // workspace-pure isolation: env overrides (e.g. CODEX_HOME=<clean dir>) merged
+    // onto the inherited env so the companion server drops the user's global config.
+    env: opts.env ? { ...process.env, ...opts.env } : process.env,
     detached: true,
   });
   let procClosed = false;

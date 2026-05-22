@@ -1,6 +1,6 @@
-import from="@agon/core" names="EngineDefinition,EngineMode,EngineModeConfig,ImageAttachment" types=true
-import from="@agon/core" names="EngineNotFoundError,loadConfig,engineHealth,classifyDispatchFailure"
-import from="node:fs" names="statSync"
+import from="@agon/core" names="EngineDefinition,EngineMode,EngineModeConfig,ImageAttachment,EngineIsolationPlan" types=true
+import from="@agon/core" names="EngineNotFoundError,loadConfig,engineHealth,classifyDispatchFailure,resolveIsolationMode,planEngineIsolation,agonPath"
+import from="node:fs" names="statSync,mkdirSync"
 
 fn name=recordDispatchHealth params="engineId:string, result:{exitCode?:number,stderr?:string,timedOut?:boolean}" returns=void
   doc "Centralized engine-health recording for any dispatch return point. exitCode 0 + not timed out → mark ok (clears prior quarantine). Otherwise classify and quarantine only on auth-failed/unreachable — timeouts and generic failures stay in rotation since they may be transient."
@@ -12,6 +12,25 @@ fn name=recordDispatchHealth params="engineId:string, result:{exitCode?:number,s
     let name=status value="classifyDispatchFailure({ stderr: result.stderr, exitCode, timedOut: result.timedOut })"
     if cond="status === 'auth-failed' || status === 'unreachable'"
       do value="engineHealth.mark(engineId, status, (result.stderr || '').split('\\n')[0])"
+
+fn name=computeEngineIsolation params="engine:EngineDefinition, opts:{isolation?:string, cwd?:string}" returns="{env?:Record<string,string>, argsExtra:string[], plan:EngineIsolationPlan}"
+  doc "Resolve + materialise workspace-pure isolation for ONE dispatch. Mode = per-dispatch option > AGON_ENGINE_ISOLATION env > config.engineIsolation > default workspace-pure. For an engine with a configEnv hint, points it at a STABLE clean per-engine config dir (~/.agon/pure/<id>) — bounded on disk, free of the user's ~/.claude personal layer (global CLAUDE.md, plugins, hooks, user MCP). Returns env OVERRIDES (the spawn merges them onto process.env) + extra CLI args (e.g. --strict-mcp-config). API-only / inherit / hint-less engines return no env and [] (already pure / opted out)."
+  handler <<<
+    const cfg = loadConfig(opts.cwd) as { engineIsolation?: string };
+    const mode = resolveIsolationMode({
+      option: opts.isolation,
+      env: process.env.AGON_ENGINE_ISOLATION,
+      config: cfg.engineIsolation,
+    });
+    let cleanConfigDir = '';
+    if (mode !== 'inherit' && engine.isolationHints?.configEnv) {
+      cleanConfigDir = agonPath('pure', engine.id);
+      try { mkdirSync(cleanConfigDir, { recursive: true }); } catch { /* best-effort: fall back to inherited config dir */ }
+    }
+    const plan = planEngineIsolation(engine, mode, { cleanConfigDir });
+    const env = plan.isolate && Object.keys(plan.setEnv).length > 0 ? plan.setEnv : undefined;
+    return { env, argsExtra: plan.argsExtra, plan };
+  >>>
 
 fn name=resolveArgs params="template:string[], vars:Record<string,string>" returns="string[]"
   handler lang="kern"
@@ -197,7 +216,7 @@ fn name=composeClaudePtyPrompt params="prompt:string, systemPrompt?:string" retu
     return `[System Instructions]\n${systemPrompt}\n\n[User Message]\n${prompt}`;
   >>>
 
-fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string" returns="Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}>" async=true
+fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string, env?:Record<string,string>" returns="Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}>" async=true
   doc "Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @agon/kern-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check."
   handler <<<
     const start = Date.now();
@@ -221,6 +240,7 @@ fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:A
         session = await mod.ClaudeCliSession.spawn({
           mode: mode ?? 'exec',
           cwd: cwd,
+          env: env,
         });
       } catch (e) {
         return {
@@ -279,7 +299,7 @@ fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:A
     }
   >>>
 
-fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string" returns="AsyncGenerator<string, {exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}, void>" async=true stream=true
+fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string, env?:Record<string,string>" returns="AsyncGenerator<string, {exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}, void>" async=true stream=true
   doc "Streaming variant of runClaudePtyDispatch — yields response deltas as they arrive, returns the final DispatchResult. Never throws — any unforeseen error returns unavailable:true via the generator's return value, so kern callers can fall through to legacy paths."
   handler <<<
     const start = Date.now();
@@ -303,6 +323,7 @@ fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, sig
         session = await mod.ClaudeCliSession.spawn({
           mode: mode ?? 'exec',
           cwd: cwd,
+          env: env,
         });
       } catch (e) {
         return {

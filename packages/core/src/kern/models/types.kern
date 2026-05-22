@@ -262,7 +262,7 @@ config name=AgonConfig
     doc "How the repo's project .mcp.json is treated under workspace-pure. 'keep' (default) honors all project MCP servers; 'strip' drops them; 'allowlist' keeps only projectMcpAllowlist entries (e.g. keep the KERN compile/review MCP, drop the rest)."
   field name=projectMcpAllowlist type="string[]" optional=true
     doc "MCP server names kept when projectMcpMode='allowlist' (e.g. ['kern'])."
-  field name=isolationMigrationNotified type=boolean optional=true
+  field name=isolationMigrationNotified type=boolean default=false
     doc "Internal: set true once the one-time 'engines now run workspace-pure by default' migration notice has been shown, so it isn't repeated."
   field name=terminalMode type="'native'|'fullscreen'" default=native
     doc "Terminal scroll behavior. 'native' uses the terminal's own scrollback and OS scrollbar. 'fullscreen' matches Codex/Claude-style app-captured scrolling."

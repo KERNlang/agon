@@ -81,7 +81,7 @@ export interface EngineDefinition {
   api?: {baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number};
   companion?: CompanionConfig;
   cliModels?: EngineCliModelConfig;
-  isolationHints?: {configEnv?:string, strictMcpArgs?:string[], personalPaths?:string[], supportsProjectMcp?:boolean};
+  isolationHints?: {configEnv?:string, strictMcpArgs?:string[], personalPaths?:string[], authFiles?:string[], supportsProjectMcp?:boolean};
 }
 
 // @kern-source: types:67
@@ -101,7 +101,7 @@ export interface DispatchOptions {
   allowedCommands?: string[];
   toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
   onSpawn?: (pid:number)=>void;
-  isolation?: 'workspace-pure'|'bare'|'inherit';
+  isolation?: 'workspace-pure'|'inherit';
 }
 
 /**
@@ -269,10 +269,7 @@ export interface AgonConfig {
   toolPermissions: Record<string,'allow'|'ask'|'deny'>;
   hiddenEngines: string[];
   engineModels: Record<string,string>;
-  engineIsolation?: 'workspace-pure'|'bare'|'inherit';
-  engineIsolationByCommand: Record<string,string>;
-  projectMcpMode?: 'keep'|'strip'|'allowlist';
-  projectMcpAllowlist: string[];
+  engineIsolation?: 'workspace-pure'|'inherit';
   isolationMigrationNotified?: boolean;
   terminalMode?: 'native'|'fullscreen';
   iconTheme?: 'roman'|'classic';
@@ -357,9 +354,6 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   hiddenEngines: [],
   engineModels: {} as any,
   engineIsolation: 'workspace-pure',
-  engineIsolationByCommand: {} as any,
-  projectMcpMode: 'keep',
-  projectMcpAllowlist: [],
   isolationMigrationNotified: false,
   terminalMode: 'native',
   iconTheme: 'roman',
@@ -371,7 +365,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   autoCredit: true,
 };
 
-// @kern-source: types:284
+// @kern-source: types:278
 export interface ScoutBid {
   engineId: string;
   confidence: number;
@@ -382,7 +376,7 @@ export interface ScoutBid {
   needsCompetition: boolean;
 }
 
-// @kern-source: types:293
+// @kern-source: types:287
 export interface RoutingDecision {
   action: 'chat'|'build'|'pipeline'|'campfire'|'forge'|'brainstorm'|'tribunal'|'agent'|'team-agent';
   leadEngine: string;
@@ -394,14 +388,14 @@ export interface RoutingDecision {
   bids: ScoutBid[];
 }
 
-// @kern-source: types:303
+// @kern-source: types:297
 export interface CampfireMessage {
   engineId: string;
   content: string;
   isLead: boolean;
 }
 
-// @kern-source: types:308
+// @kern-source: types:302
 export interface ForgeOptions {
   task: string;
   fitnessCmd: string;
@@ -427,7 +421,7 @@ export interface ForgeOptions {
   synthEngine?: string;
 }
 
-// @kern-source: types:337
+// @kern-source: types:331
 export interface EngineResult {
   engineId: string;
   pass: boolean;
@@ -449,14 +443,14 @@ export interface EngineResult {
   syntaxInvalidFiles?: string[];
 }
 
-// @kern-source: types:357
+// @kern-source: types:351
 export interface SkippedEngine {
   engineId: string;
   status: string;
   reason?: string;
 }
 
-// @kern-source: types:362
+// @kern-source: types:356
 export interface DispatchMetric {
   engineId: string;
   phase: 'stage1'|'stage1-fallback'|'stage2-scout'|'stage2-scout-fallback'|'stage2-follower'|'stage2-fallback'|'synthesis'|'gauntlet';
@@ -470,7 +464,7 @@ export interface DispatchMetric {
   tokens?: {prompt:number, response:number, costUsd:number};
 }
 
-// @kern-source: types:374
+// @kern-source: types:368
 export interface ForgeManifest {
   forgeId: string;
   forgeDir: string;
@@ -502,7 +496,7 @@ export interface ForgeManifest {
   gauntlet?: GauntletResult;
 }
 
-// @kern-source: types:404
+// @kern-source: types:398
 export interface ConvergenceEntry {
   file: string;
   fn: string;
@@ -510,7 +504,7 @@ export interface ConvergenceEntry {
   reason: string;
 }
 
-// @kern-source: types:410
+// @kern-source: types:404
 export interface ForgeJudgment {
   winner: string;
   strengths: { engineId: string; category: string; reason: string }[];
@@ -521,7 +515,7 @@ export interface ForgeJudgment {
 
 export type ForgeEventType = 'baseline:start' | 'baseline:done' | 'stage1:start' | 'stage1:dispatch' | 'stage1:score' | 'stage1:accepted' | 'stage2:start' | 'stage2:dispatch' | 'stage2:score' | 'stage2:done' | 'engine:failed' | 'engine:worktree' | 'winner:determined' | 'forge:no-candidate-diff' | 'synthesis:start' | 'synthesis:critique' | 'synthesis:refine' | 'synthesis:score' | 'synthesis:done' | 'elo:update' | 'gauntlet:start' | 'gauntlet:breaker-dispatch' | 'gauntlet:breaker-done' | 'gauntlet:attack-landed' | 'gauntlet:repair-start' | 'gauntlet:repair-done' | 'gauntlet:corpus-save' | 'gauntlet:done' | 'forge:done' | 'forge:engine-skipped' | 'forge:already-satisfied' | 'forge:single-survivor' | 'forge:no-engines-available' | 'forge:fatal' | 'forge:auto-finalize' | 'forge:health-check-start' | 'forge:health-check-done';
 
-// @kern-source: types:417
+// @kern-source: types:411
 export interface ForgeEvent {
   type: ForgeEventType;
   engineId?: string;
@@ -570,7 +564,7 @@ export interface ForgeEventMap {
 
 export type ForgeEventCallback = (event: ForgeEvent) => void;
 
-// @kern-source: types:456
+// @kern-source: types:450
 export interface BrainstormBid {
   engineId: string;
   confidence: number;
@@ -579,14 +573,14 @@ export interface BrainstormBid {
   score?: number;
 }
 
-// @kern-source: types:463
+// @kern-source: types:457
 export interface BrainstormGroup {
   members: string[];
   representative: string;
   similarity: number;
 }
 
-// @kern-source: types:468
+// @kern-source: types:462
 export interface BrainstormResult {
   question: string;
   bids: BrainstormBid[];
@@ -595,7 +589,7 @@ export interface BrainstormResult {
   groups?: BrainstormGroup[];
 }
 
-// @kern-source: types:475
+// @kern-source: types:469
 export interface BreakerArtifact {
   engineId: string;
   testScript: string;
@@ -605,7 +599,7 @@ export interface BreakerArtifact {
   validated: boolean;
 }
 
-// @kern-source: types:483
+// @kern-source: types:477
 export interface GauntletResult {
   winnerId: string;
   breakerArtifacts: BreakerArtifact[];
@@ -618,7 +612,7 @@ export interface GauntletResult {
   patchPath?: string;
 }
 
-// @kern-source: types:494
+// @kern-source: types:488
 export interface CorpusEntry {
   forgeId: string;
   taskClass: TaskClass;
@@ -628,7 +622,7 @@ export interface CorpusEntry {
   pattern?: string;
 }
 
-// @kern-source: types:502
+// @kern-source: types:496
 export interface GapPattern {
   pattern: string;
   taskClass: TaskClass;
@@ -639,7 +633,7 @@ export interface GapPattern {
   skillPath?: string;
 }
 
-// @kern-source: types:511
+// @kern-source: types:505
 export interface Critique {
   file: string;
   lines: string;
@@ -647,5 +641,5 @@ export interface Critique {
   minimalFix: string;
 }
 
-// @kern-source: types:517
+// @kern-source: types:511
 export const DEFAULT_CONFIG: Required<AgonConfig> = DEFAULT_AGON_CONFIG;

@@ -3,28 +3,27 @@
 import type { EngineDefinition } from '../models/types.js';
 
 /**
- * The three valid isolation modes, in no particular order — used to validate untrusted input (env var / config) before it reaches the planner.
+ * The valid isolation modes — used to validate untrusted input (env var / config / flag) before it reaches the planner. ('bare' — strip project context too — is intentionally not shipped: it needs a worktree overlay to physically remove the repo CLAUDE.md, and is only useful for benchmarks.)
  */
-// @kern-source: isolation:19
-export const ISOLATION_MODES: readonly string[] = ['workspace-pure', 'bare', 'inherit'] as const;
+// @kern-source: isolation:21
+export const ISOLATION_MODES: readonly string[] = ['workspace-pure', 'inherit'] as const;
 
 /**
  * The decided isolation for ONE engine dispatch — consumed by the adapter to shape the spawn (env overrides + extra CLI args) and by provenance.
  */
-// @kern-source: isolation:22
+// @kern-source: isolation:24
 export interface EngineIsolationPlan {
   isolate: boolean;
-  mode: 'workspace-pure'|'bare'|'inherit';
+  mode: 'workspace-pure'|'inherit';
   engineId: string;
   setEnv: Record<string,string>;
   argsExtra: string[];
-  keepProjectContext: boolean;
   configDir?: string;
   strippedPersonal: boolean;
 }
 
 /**
- * Type-guard for untrusted isolation values (env var, config, CLI flag). Anything not one of the three modes is rejected so a typo falls through to the next source rather than corrupting dispatch.
+ * Type-guard for untrusted isolation values (env var, config, CLI flag). Anything not a known mode is rejected so a typo falls through to the next source rather than corrupting dispatch.
  */
 // @kern-source: isolation:39
 export function isValidIsolationMode(v: unknown): boolean {
@@ -32,35 +31,24 @@ export function isValidIsolationMode(v: unknown): boolean {
 }
 
 /**
- * Resolve the effective isolation mode by precedence: explicit per-dispatch option > AGON_ENGINE_ISOLATION env > per-command config override > global config > default 'workspace-pure'. Each source is validated; an invalid value is skipped (not honored, not fatal) so a typo can never silently disable isolation in an unexpected way.
+ * Resolve the effective isolation mode by precedence: explicit per-dispatch option > AGON_ENGINE_ISOLATION env > config.engineIsolation > default 'workspace-pure'. Each source is validated; an invalid value is skipped (not honored, not fatal) so a typo can never silently disable isolation in an unexpected way.
  */
 // @kern-source: isolation:45
-export function resolveIsolationMode(opts: {option?:string, env?:string, command?:string, byCommand?:Record<string,string>, config?:string}): 'workspace-pure'|'bare'|'inherit' {
-  const pick = (v: string | undefined): 'workspace-pure' | 'bare' | 'inherit' | null =>
-    isValidIsolationMode(v) ? (v as 'workspace-pure' | 'bare' | 'inherit') : null;
-  const fromCommand = opts.command && opts.byCommand ? opts.byCommand[opts.command] : undefined;
-  return (
-    pick(opts.option) ??
-    pick(opts.env) ??
-    pick(fromCommand) ??
-    pick(opts.config) ??
-    'workspace-pure'
-  );
+export function resolveIsolationMode(opts: {option?:string, env?:string, config?:string}): 'workspace-pure'|'inherit' {
+  const pick = (v: string | undefined): 'workspace-pure' | 'inherit' | null =>
+    isValidIsolationMode(v) ? (v as 'workspace-pure' | 'inherit') : null;
+  return pick(opts.option) ?? pick(opts.env) ?? pick(opts.config) ?? 'workspace-pure';
 }
 
 /**
- * Decide what to strip for one engine dispatch. PURE: the caller materialises opts.cleanConfigDir (an empty throwaway) and merges the returned setEnv/argsExtra into the spawn. 'inherit' isolates nothing. An engine with no isolationHints (API-only: kimi/minimax/zai — no local process, no inherited config) is already pure, so isolate=false. Otherwise apply the engine's configEnv (clean config dir) + strictMcpArgs; bare additionally drops project context.
+ * Decide what to strip for one engine dispatch. PURE: the caller materialises opts.cleanConfigDir (clean dir seeded with only the auth file) and merges the returned setEnv/argsExtra into the spawn. 'inherit' isolates nothing. An engine with no isolationHints (API-only: kimi/minimax/zai — no local process, no inherited config) is already pure, so isolate=false. Otherwise apply the engine's configEnv (clean config dir) + strictMcpArgs.
  */
-// @kern-source: isolation:60
-export function planEngineIsolation(engine: EngineDefinition, mode: 'workspace-pure'|'bare'|'inherit', opts: {cleanConfigDir:string}): EngineIsolationPlan {
+// @kern-source: isolation:53
+export function planEngineIsolation(engine: EngineDefinition, mode: 'workspace-pure'|'inherit', opts: {cleanConfigDir:string}): EngineIsolationPlan {
   const base = { engineId: engine.id, mode };
-  if (mode === 'inherit') {
-    return { ...base, isolate: false, setEnv: {}, argsExtra: [], keepProjectContext: true, strippedPersonal: false };
-  }
   const hints = engine.isolationHints;
-  if (!hints) {
-    // API-only / hint-less engine: nothing local to strip — already pure.
-    return { ...base, isolate: false, setEnv: {}, argsExtra: [], keepProjectContext: mode !== 'bare', strippedPersonal: false };
+  if (mode === 'inherit' || !hints) {
+    return { ...base, isolate: false, setEnv: {}, argsExtra: [], strippedPersonal: false };
   }
   const setEnv: Record<string, string> = hints.configEnv ? { [hints.configEnv]: opts.cleanConfigDir } : {};
   const argsExtra: string[] = hints.strictMcpArgs ? [...hints.strictMcpArgs] : [];
@@ -69,7 +57,6 @@ export function planEngineIsolation(engine: EngineDefinition, mode: 'workspace-p
     isolate: true,
     setEnv,
     argsExtra,
-    keepProjectContext: mode !== 'bare',
     configDir: hints.configEnv ? opts.cleanConfigDir : undefined,
     strippedPersonal: true,
   };

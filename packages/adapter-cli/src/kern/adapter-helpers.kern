@@ -1,6 +1,8 @@
 import from="@agon/core" names="EngineDefinition,EngineMode,EngineModeConfig,ImageAttachment,EngineIsolationPlan" types=true
 import from="@agon/core" names="EngineNotFoundError,loadConfig,engineHealth,classifyDispatchFailure,resolveIsolationMode,planEngineIsolation,agonPath"
-import from="node:fs" names="statSync,mkdirSync"
+import from="node:fs" names="statSync,mkdirSync,existsSync,copyFileSync"
+import from="node:path" names="join,dirname"
+import from="node:os" names="homedir"
 
 fn name=recordDispatchHealth params="engineId:string, result:{exitCode?:number,stderr?:string,timedOut?:boolean}" returns=void
   doc "Centralized engine-health recording for any dispatch return point. exitCode 0 + not timed out → mark ok (clears prior quarantine). Otherwise classify and quarantine only on auth-failed/unreachable — timeouts and generic failures stay in rotation since they may be transient."
@@ -14,7 +16,7 @@ fn name=recordDispatchHealth params="engineId:string, result:{exitCode?:number,s
       do value="engineHealth.mark(engineId, status, (result.stderr || '').split('\\n')[0])"
 
 fn name=computeEngineIsolation params="engine:EngineDefinition, opts:{isolation?:string, cwd?:string}" returns="{env?:Record<string,string>, argsExtra:string[], plan:EngineIsolationPlan}"
-  doc "Resolve + materialise workspace-pure isolation for ONE dispatch. Mode = per-dispatch option > AGON_ENGINE_ISOLATION env > config.engineIsolation > default workspace-pure. For an engine with a configEnv hint, points it at a STABLE clean per-engine config dir (~/.agon/pure/<id>) — bounded on disk, free of the user's ~/.claude personal layer (global CLAUDE.md, plugins, hooks, user MCP). Returns env OVERRIDES (the spawn merges them onto process.env) + extra CLI args (e.g. --strict-mcp-config). API-only / inherit / hint-less engines return no env and [] (already pure / opted out)."
+  doc "Resolve + materialise workspace-pure isolation for ONE dispatch. Mode = per-dispatch option > AGON_ENGINE_ISOLATION env > config.engineIsolation > default workspace-pure. For an engine with a configEnv hint, points it at a STABLE clean per-engine config dir (~/.agon/pure/<id>, bounded on disk) seeded with ONLY the engine's auth file(s) — so the user's ~/.claude personal layer (global CLAUDE.md, plugins, hooks, user MCP) is dropped while dispatch stays AUTHENTICATED. If the clean dir / auth copy can't be set up, FALL BACK to inherit (return no env) rather than risk a broken-auth dispatch. Returns env OVERRIDES (the spawn merges them onto process.env) + extra CLI args. API-only / inherit / hint-less engines return no env and [] (already pure / opted out)."
   handler <<<
     const cfg = loadConfig(opts.cwd) as { engineIsolation?: string };
     const mode = resolveIsolationMode({
@@ -22,10 +24,36 @@ fn name=computeEngineIsolation params="engine:EngineDefinition, opts:{isolation?
       env: process.env.AGON_ENGINE_ISOLATION,
       config: cfg.engineIsolation,
     });
-    let cleanConfigDir = '';
-    if (mode !== 'inherit' && engine.isolationHints?.configEnv) {
-      cleanConfigDir = agonPath('pure', engine.id);
-      try { mkdirSync(cleanConfigDir, { recursive: true }); } catch { /* best-effort: fall back to inherited config dir */ }
+    const hints = engine.isolationHints;
+    const inherit: { env?: Record<string, string>; argsExtra: string[]; plan: EngineIsolationPlan } = {
+      env: undefined,
+      argsExtra: [],
+      plan: { isolate: false, mode, engineId: engine.id, setEnv: {}, argsExtra: [], strippedPersonal: false },
+    };
+    if (mode === 'inherit' || !hints?.configEnv) {
+      // inherit, or API/flag-only engine — let planEngineIsolation decide argsExtra (no config dir to seed).
+      const plan = planEngineIsolation(engine, mode, { cleanConfigDir: '' });
+      return { env: plan.isolate && Object.keys(plan.setEnv).length > 0 ? plan.setEnv : undefined, argsExtra: plan.argsExtra, plan };
+    }
+    const cleanConfigDir = agonPath('pure', engine.id);
+    try {
+      mkdirSync(cleanConfigDir, { recursive: true });
+      // Preserve login: copy ONLY the credential file(s) from the engine's real
+      // config home into the clean dir. Personal config (CLAUDE.md/plugins/hooks/
+      // MCP) is intentionally NOT copied. No-op when auth lives in the OS keychain.
+      const realHome = process.env[hints.configEnv] || (hints.personalPaths?.[0] ?? '').replace(/^~(?=$|\/)/, homedir());
+      for (const rel of hints.authFiles ?? []) {
+        const src = join(realHome, rel);
+        if (realHome && existsSync(src)) {
+          const dst = join(cleanConfigDir, rel);
+          mkdirSync(dirname(dst), { recursive: true });
+          copyFileSync(src, dst);
+        }
+      }
+    } catch {
+      // Could not set up the clean dir / copy auth — do NOT risk an unauthenticated
+      // or broken dispatch; fall back to inheriting the real config for this call.
+      return inherit;
     }
     const plan = planEngineIsolation(engine, mode, { cleanConfigDir });
     const env = plan.isolate && Object.keys(plan.setEnv).length > 0 ? plan.setEnv : undefined;

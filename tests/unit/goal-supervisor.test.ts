@@ -131,4 +131,17 @@ describe('runSupervisor — external-process restart loop (integration)', () => 
     expect(res.restarts).toBe(0);
     expect(existsSync(join(dir, 'count'))).toBe(false); // never ran the counter child
   });
+
+  it('classifies a deterministic failure printed to STDOUT, not just stderr', async () => {
+    // The CLI fail() helper writes fatal diagnostics to STDOUT — the supervisor
+    // must still classify them as non-retryable (captures both streams).
+    const p = join(dir, 'fake-det-stdout.mjs');
+    writeFileSync(p, `process.stdout.write('queue not found: .kern-gaps/'); process.exit(1);`);
+    const res = await runSupervisor({
+      nodeExec: process.execPath, agonEntry: p, childArgs: [],
+      goalId: 'no-such-goal', maxRestarts: 5, baseBackoffMs: 1, capBackoffMs: 2,
+    });
+    expect(res.reason).toMatch(/determin/i);
+    expect(res.restarts).toBe(0);
+  });
 });

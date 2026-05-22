@@ -58,24 +58,40 @@ export function supervisorDecision(o: {exitCode:number, restarts:number, maxRest
 export async function runSupervisor(opts: {nodeExec:string, agonEntry:string, childArgs:string[], goalId:string, maxRestarts:number, baseBackoffMs:number, capBackoffMs:number, onEvent?:(e:{kind:string, detail?:string})=>void}): Promise<{restarts:number, reason:string}> {
   const emit = (kind: string, detail?: string) => { try { opts.onEvent?.({ kind, detail }); } catch { /* a listener must never break the supervise loop */ } };
   let stopping = false;
-  const onSig = () => { stopping = true; };
+  let currentChild: ReturnType<typeof spawn> | null = null;
+  let wakeBackoff: (() => void) | null = null;
+  const onSig = () => {
+    stopping = true;
+    // SIGINT from a tty reaches the child via the foreground process group,
+    // but SIGTERM does not — kill the running child explicitly so the stop is
+    // prompt either way, and wake any in-progress backoff sleep (Review
+    // finding: otherwise a Ctrl-C during backoff hangs up to capBackoffMs).
+    try { currentChild?.kill('SIGTERM'); } catch { /* child already gone */ }
+    if (wakeBackoff) wakeBackoff();
+  };
   process.on('SIGINT', onSig);
   process.on('SIGTERM', onSig);
+  process.on('SIGHUP', onSig);
   try {
     let restarts = 0;
     for (;;) {
       emit(restarts === 0 ? 'supervisor-start' : 'supervisor-restart', `attempt ${restarts + 1} of ${opts.maxRestarts + 1}`);
-      // stderr is piped (so the deterministic-failure classifier can read the
-      // tail) AND teed to our own stderr so the run stays observable; stdin/
-      // stdout are inherited so the child shares the tty (Ctrl-C reaches it).
-      let stderrTail = '';
+      // BOTH stdout and stderr are piped — so the deterministic-failure
+      // classifier sees the child's fatal diagnostics regardless of stream
+      // (the CLI fail() helper writes to STDOUT, Review finding) — and teed
+      // through so the run stays observable; stdin is inherited for the tty.
+      let outTail = '';
       const exitCode: number = await new Promise<number>((resolve) => {
-        const child = spawn(opts.nodeExec, [opts.agonEntry, ...opts.childArgs], { stdio: ['inherit', 'inherit', 'pipe'] });
-        child.stderr?.on('data', (d: Buffer) => { const s = d.toString(); process.stderr.write(s); stderrTail = (stderrTail + s).slice(-4000); });
-        child.on('error', (err: Error) => { stderrTail = (stderrTail + String(err)).slice(-4000); resolve(1); });
-        // 'close' (not 'exit') guarantees the piped stderr has fully flushed.
+        const child = spawn(opts.nodeExec, [opts.agonEntry, ...opts.childArgs], { stdio: ['inherit', 'pipe', 'pipe'] });
+        currentChild = child;
+        const cap = (s: string) => { outTail = (outTail + s).slice(-6000); };
+        child.stdout?.on('data', (d: Buffer) => { const s = d.toString(); process.stdout.write(s); cap(s); });
+        child.stderr?.on('data', (d: Buffer) => { const s = d.toString(); process.stderr.write(s); cap(s); });
+        child.on('error', (err: Error) => { cap(String(err)); resolve(1); });
+        // 'close' (not 'exit') guarantees the piped streams have fully flushed.
         child.on('close', (code: number | null) => resolve(code ?? 1));
       });
+      currentChild = null;
 
       // A Ctrl-C/SIGTERM during the child run means the human wants to stop —
       // the child has already checkpointed via its own SIGINT handler — so do
@@ -84,18 +100,25 @@ export async function runSupervisor(opts: {nodeExec:string, agonEntry:string, ch
 
       const state = loadJournal(opts.goalId);
       const journalDone = state ? isDone(state) : false;
-      const deterministic = isDeterministicExit(exitCode, stderrTail);
+      const deterministic = isDeterministicExit(exitCode, outTail);
       const decision = supervisorDecision({ exitCode, restarts, maxRestarts: opts.maxRestarts, journalDone, deterministic });
       if (decision.action === 'stop') { emit('supervisor-stop', decision.reason); return { restarts, reason: decision.reason }; }
 
       const delay = computeBackoffMs(restarts, opts.baseBackoffMs, opts.capBackoffMs);
       emit('supervisor-backoff', `${decision.reason}; resuming in ${Math.round(delay / 1000)}s`);
-      await new Promise<void>((r) => setTimeout(r, delay));
+      // Interruptible sleep: a signal (onSig) calls wakeBackoff to resolve it
+      // immediately, so Ctrl-C during backoff stops promptly instead of
+      // blocking up to capBackoffMs.
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => { wakeBackoff = null; resolve(); }, delay);
+        wakeBackoff = () => { clearTimeout(timer); wakeBackoff = null; resolve(); };
+      });
       if (stopping) { emit('supervisor-stop', 'interrupted'); return { restarts, reason: 'interrupted' }; }
       restarts += 1;
     }
   } finally {
     process.removeListener('SIGINT', onSig);
     process.removeListener('SIGTERM', onSig);
+    process.removeListener('SIGHUP', onSig);
   }
 }

@@ -91,6 +91,10 @@ return defineCommand({
     maxHours: { type: 'string', description: 'Optional wall-clock ceiling in hours — stop when reached (default 0 = no time limit).' },
     gateTimeout: { type: 'string', description: 'Per-gate timeout in seconds (default 1800)' },
     timeout: { type: 'string', description: 'Per-engine implement timeout in seconds' },
+    maxParkStreak: { type: 'string', description: 'Legacy consecutive-park abort cap (default 0 = OFF — the sliding-window breaker replaces it). Set >0 to also stop after N parks in a row.' },
+    maxNoProgress: { type: 'string', description: 'Stop after N cycles with no net decrease in remaining work (default max(5, attempts+2)) — catches retry-thrash.' },
+    breakerWindow: { type: 'string', description: 'Sliding-window breaker: number of recent TERMINAL outcomes to weigh (default 8; 0 disables it). A cluster of hard tasks shorter than this never aborts the run.' },
+    breakerMinSuccessRate: { type: 'string', description: 'Sliding-window breaker: stop when the fraction of "done" in the last --breaker-window outcomes is below this (default 0.125). Trips on a broken gate / uniformly-too-hard queue, not a hard cluster.' },
     cwd: { type: 'string', description: 'Repo working directory', default: process.cwd() },
     requireTests: { type: 'boolean', description: 'Reject a task whose diff changes source but adds no test (the witness has nothing to witness). Default true; --no-require-tests to allow test-free changes.', default: true },
     push: { type: 'boolean', description: 'Push the goal branch to origin after EACH task commits (build→review→fix→commit→push per task). Only the goal/* branch, never main.', default: false },
@@ -203,6 +207,15 @@ return defineCommand({
       if (v == null || (typeof v === 'string' && v.trim() === '')) return dflt;
       const n = Number(v);
       return Number.isFinite(n) && n >= 0 ? n : dflt;
+    };
+    // Optional numeric flag: absent OR unparseable -> undefined, so the
+    // controller's own default applies. (Using num(...,0) here would let a
+    // typo'd --max-no-progress coerce to 0, which the controller reads as
+    // DISABLED — silently worse than omitting the flag. Review finding.)
+    const optNum = (v: unknown): number | undefined => {
+      if (v == null || (typeof v === 'string' && v.trim() === '')) return undefined;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? n : undefined;
     };
 
     let tasks: Array<{ id: string; source: string; dependsOn?: string[] }> = [];
@@ -478,6 +491,13 @@ return defineCommand({
       requireTests: args.requireTests,
       gateTimeoutSec: num(args.gateTimeout, 1800),
       witnessCmd: args.witnessCmd?.trim() || undefined,
+      // Pass undefined when a flag is unset so the controller's own default
+      // applies — note `?? ` would NOT catch a coerced 0, so an unset flag
+      // must stay undefined (e.g. maxNoProgress 0 would WRONGLY disable it).
+      maxParkStreak: optNum(args.maxParkStreak),
+      maxNoProgress: optNum(args.maxNoProgress),
+      breakerWindow: optNum(args.breakerWindow),
+      breakerMinSuccessRate: optNum(args.breakerMinSuccessRate),
       signal: abort.signal,
       implement: implement as any,
       review: review as any,

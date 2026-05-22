@@ -44,10 +44,30 @@ export function taskParkDecision(task: GoalTask, maxAttempts: number): {park:boo
 }
 
 /**
- * Abort the whole run when too many tasks park back-to-back, or too many cycles pass with no net decrease in remaining work — the signal that the loop is thrashing and a human should look.
+ * Append a TERMINAL task outcome ('done' | 'parked') to the bounded ring that fuels the sliding-window breaker, dropping the oldest entries beyond `cap` (cap <= 0 = unbounded). Pure: the controller calls this once per task that reaches a terminal state.
  */
 // @kern-source: policy:47
-export function globalBreaker(state: JournalState, maxParkStreak: number, maxNoProgress: number): {stop:boolean, reason:string} {
+export function pushRecentOutcome(recent: string[], outcome: string, cap: number): string[] {
+  const next = [...recent, outcome];
+  if (cap > 0 && next.length > cap) {
+    return next.slice(-cap);
+  }
+  return next;
+}
+
+/**
+ * Abort the whole run only when it is genuinely thrashing — NOT when it merely hit a cluster of hard tasks. The PRIMARY long-run signal is the sliding-window success rate (`window`): over the last `window.size` terminal outcomes, if the fraction that are 'done' is below `window.minSuccessRate`, the gate/env is likely broken or the queue is uniformly too hard, so stop. The legacy consecutive park-streak (`maxParkStreak`) is kept only as an opt-in hard cap (0 = off, the new default) because a park DECREASES remaining work, so it never trips the no-progress breaker on its own. `maxNoProgress` still catches retry-thrash with no net progress.
+ */
+// @kern-source: policy:57
+export function globalBreaker(state: JournalState, maxParkStreak: number, maxNoProgress: number, window?: {size:number, minSuccessRate:number}): {stop:boolean, reason:string} {
+  const recent = state.recentOutcomes ?? [];
+  if (window && window.size > 0 && recent.length >= window.size) {
+    const windowEntries = recent.slice(-window.size);
+    const successRate = windowEntries.filter(o => o === 'done').length / window.size;
+    if (successRate < window.minSuccessRate) {
+      return { stop: true, reason: `success-rate ${(successRate * 100).toFixed(0)}% < ${(window.minSuccessRate * 100).toFixed(0)}% over last ${window.size} tasks` };
+    }
+  }
   if (maxParkStreak > 0 && state.parkedStreak >= maxParkStreak) {
     return { stop: true, reason: `park-streak >= ${maxParkStreak}` };
   }
@@ -60,7 +80,7 @@ export function globalBreaker(state: JournalState, maxParkStreak: number, maxNoP
 /**
  * Constraint-aware winner pick for the goal loop. Forge scores by fitness alone, so it can crown a higher-scoring patch that adds NO test while lower-scoring PASSING patches include one — the witness then parks it and the whole panel is wasted. When requireTests is on and this is not a fix pass, if the forge winner adds no test, return the highest-scoring PASSING candidate that DOES add a test; otherwise keep forge's winner (the witness will park it, correctly). Pure: the caller resolves each candidate's addsTest by inspecting its patch.
  */
-// @kern-source: policy:59
+// @kern-source: policy:77
 export function pickImplementWinner(forgeWinner: string, candidates: Array<{engine:string,pass:boolean,score:number,addsTest:boolean}>, requireTests: boolean, isFix: boolean): string {
   if (isFix || !requireTests) return forgeWinner;
   const w = candidates.find((c) => c.engine === forgeWinner);
@@ -75,7 +95,7 @@ export function pickImplementWinner(forgeWinner: string, candidates: Array<{engi
 /**
  * Cesar-style per-task implement roster: route a trivial gap to a single engine (cheap/fast) and a real feature to the full competitive panel. Pure mapping of Cesar's routing hints. solo when forgeScope is 'none' or the flow is quick-fix/answer/bug-fix or the escalationHint is self/delegate (and a soloEngine exists); otherwise compete with allEngines. escalate flags big/expensive tasks (forgeScope 'full', flow 'forge-full', or estimatedCostUsd over a positive threshold) so the caller can ask an LLM to confirm/adjust the roster. The all-engine REVIEW is unaffected — this only shapes IMPLEMENT.
  */
-// @kern-source: policy:72
+// @kern-source: policy:90
 export function chooseImplementRoster(params: {flow:string, forgeScope:string, escalationHint:string, estimatedCostUsd:number, allEngines:string[], soloEngine:string, escalateThresholdUsd:number}): {engines:string[], solo:boolean, escalate:boolean, reason:string} {
   const { flow, forgeScope, escalationHint, estimatedCostUsd, allEngines, soloEngine, escalateThresholdUsd } = params;
   const roster = allEngines.length > 0 ? allEngines : (soloEngine ? [soloEngine] : []);
@@ -93,7 +113,7 @@ export function chooseImplementRoster(params: {flow:string, forgeScope:string, e
 /**
  * True once cumulative spend reaches the goal's USD ceiling (0 = unlimited).
  */
-// @kern-source: policy:88
+// @kern-source: policy:106
 export function budgetExceeded(state: JournalState): boolean {
   const cap = state.spec.budgetUsd;
   return cap > 0 && state.spentUsd >= cap;
@@ -102,7 +122,7 @@ export function budgetExceeded(state: JournalState): boolean {
 /**
  * True once wall-clock since startedAt reaches the goal's hour ceiling (0 = unlimited).
  */
-// @kern-source: policy:95
+// @kern-source: policy:113
 export function timeExceeded(state: JournalState, now: number): boolean {
   if (!state.startedAt) return false;
   const cap = state.spec.maxHours;

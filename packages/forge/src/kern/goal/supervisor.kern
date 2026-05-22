@@ -1,0 +1,33 @@
+// ── agon goal — supervisor decision logic (pure) ───────────────────────
+// External-process supervisor for unattended overnight runs: a parent that
+// re-execs `agon goal --resume` when the child CRASHES (non-zero exit), with
+// exponential backoff, a restart cap, and a non-retryable (deterministic)
+// classifier so a misconfiguration doesn't fast-loop forever. The
+// process-spawning shell lives in the CLI; THESE are the testable judgement
+// calls (oracle: tests/unit/goal-supervisor.test.ts).
+
+interface name=SupervisorDecision export=true
+  doc "Whether the supervisor should re-exec a crashed goal child or give up."
+  field name=action type="'restart'|'stop'"
+  field name=reason type=string
+
+fn name=computeBackoffMs params="restarts:number, baseMs:number, capMs:number" returns=number export=true
+  doc "Exponential backoff capped at capMs: baseMs * 2^restarts, clamped to [baseMs, capMs]. A non-positive restart count yields the base delay (no negative exponent)."
+  handler <<<
+    // STUB — forge implements against goal-supervisor.test.ts.
+    return baseMs;
+  >>>
+
+fn name=isDeterministicExit params="exitCode:number, stderrTail:string" returns=boolean export=true
+  doc "True when the child failed for a NON-retryable reason — a frozen-oracle mismatch, a missing/invalid gate/queue/engine, or a refused branch. Restarting can't fix a misconfig, so the supervisor must stop instead of fast-looping. Heuristic: match known fatal phrases in the stderr tail, case-insensitively."
+  handler <<<
+    // STUB — forge implements against goal-supervisor.test.ts.
+    return false;
+  >>>
+
+fn name=supervisorDecision params="o:{exitCode:number, restarts:number, maxRestarts:number, journalDone:boolean, deterministic:boolean}" returns="SupervisorDecision" export=true
+  doc "Decide restart-vs-stop for a returned goal child. STOP when: the journal is complete; the child exited cleanly (0 — it reached a terminal state itself: done/budget/time/breaker, so resuming won't help); the failure is deterministic (non-retryable); or the restart cap is reached (restarts >= maxRestarts). Otherwise RESTART — a transient crash (non-zero exit) worth resuming from the journal."
+  handler <<<
+    // STUB — forge implements against goal-supervisor.test.ts.
+    return { action: 'stop', reason: 'stub' };
+  >>>

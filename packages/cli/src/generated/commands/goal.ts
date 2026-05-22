@@ -155,7 +155,7 @@ return defineCommand({
     // (`agon goal <same args> --resume`, supervisor-only flags stripped) so
     // an overnight run survives a crash. We delegate to runSupervisor here,
     // before the parent does any engine setup — the children own that.
-    if (args.supervised) {
+    if (args.supervised && !args.dryRun) {
       const maxRestarts = args.maxRestarts != null && Number.isFinite(Number(args.maxRestarts)) && Number(args.maxRestarts) >= 0
         ? Math.floor(Number(args.maxRestarts)) : 10;
       // Filter the RAW argv (robust to every goal flag without enumerating
@@ -201,6 +201,12 @@ return defineCommand({
       if (finalState) console.log(summarizeGoal(finalState));
       info(`Supervisor stopped: ${result.reason} — after ${result.restarts} restart(s).`);
       info(`Artifacts: ${goalDir(goalId)}`);
+      // Exit non-zero so automation distinguishes a FAILED supervised run
+      // (restart cap exhausted / deterministic misconfig) from success. A
+      // clean stop (done/budget/time/breaker) or an interrupt is exit 0.
+      if (result.reason.startsWith('restart cap') || result.reason.includes('deterministic')) {
+        process.exit(1);
+      }
       return;
     }
 

@@ -9,7 +9,7 @@ import { resolveWithin } from './paths.js';
 /**
  * A single canonical mutation applied to one changed line.
  */
-// @kern-source: mutation:12
+// @kern-source: mutation:18
 export interface Mutant {
   id: string;
   operator: string;
@@ -22,7 +22,7 @@ export interface Mutant {
 /**
  * Canonical mutants on the changed lines only (one per applicable operator/line).
  */
-// @kern-source: mutation:21
+// @kern-source: mutation:27
 export function generateMutants(source: string, changedLines: number[]): Mutant[] {
   const ops: Array<{ name: string; class: 'high-signal' | 'equiv-prone'; apply: (s: string) => string | null }> = [
     { name: 'arith:+→-', class: 'high-signal', apply: (s) => { const m = s.replace(/(?<!\+)\+(?![+=])/, '-'); return m !== s ? m : null; } },
@@ -31,6 +31,14 @@ export function generateMutants(source: string, changedLines: number[]): Mutant[
     { name: 'eq:!==→===', class: 'high-signal', apply: (s) => { const m = s.replace('!==', '==='); return m !== s ? m : null; } },
     { name: 'logic:&&→||', class: 'high-signal', apply: (s) => { const m = s.replace('&&', '||'); return m !== s ? m : null; } },
     { name: 'logic:||→&&', class: 'high-signal', apply: (s) => { const m = s.replace('||', '&&'); return m !== s ? m : null; } },
+    // Relational swaps are EQUIV-PRONE, not high-signal: although < → >= is a
+    // logical negation (killable in principle), in practice these survive on
+    // CORRECT code far more than value/logic mutations — guards on a never-hit
+    // boundary, comparisons on a value the test doesn't drive across the edge.
+    // The dogfood that motivated this gate had 40 surviving boundary flips on a
+    // verifiably-correct contract; treating them as high-signal would re-park
+    // exactly the work this calibration exists to land. (Promoting rel:* to
+    // high-signal becomes safe once survivors are coverage-gated — phase 2.)
     { name: 'rel:<→>=', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![<>=])<(?![<=])/, '>='); return m !== s ? m : null; } },
     { name: 'rel:>→<=', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![<>=-])>(?![>=])/, '<='); return m !== s ? m : null; } },
     { name: 'bool:true→false', class: 'high-signal', apply: (s) => { const m = s.replace(/\btrue\b/, 'false'); return m !== s ? m : null; } },
@@ -56,7 +64,7 @@ export function generateMutants(source: string, changedLines: number[]): Mutant[
 /**
  * Return source with the mutant's single line swapped in.
  */
-// @kern-source: mutation:53
+// @kern-source: mutation:67
 export function applyMutantToSource(source: string, mutant: Mutant): string {
   const lines = source.split('\n');
   const idx = mutant.line - 1;
@@ -68,7 +76,7 @@ export function applyMutantToSource(source: string, mutant: Mutant): string {
 /**
  * Apply each mutant to the file, run the witness tests; a mutant whose tests still PASS survived (weak test). Restores the original file in finally. Single-file by design — the controller calls this once per changed file. Rejects relFilePath that escapes the worktree.
  */
-// @kern-source: mutation:63
+// @kern-source: mutation:77
 export async function mutationSurvivors(opts: {worktree:string, relFilePath:string, source:string, mutants:Mutant[], testCmd:string, timeout:number}): Promise<Mutant[]> {
   const { worktree, relFilePath, source, mutants, testCmd, timeout } = opts;
   const absPath = resolveWithin(worktree, relFilePath);

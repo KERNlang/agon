@@ -2,8 +2,14 @@
 // The keystone defense (tribunal red-team R1/R2/R7): a "witnessed" test only
 // proves diff-sensitivity, not spec-correctness. After the agent's new tests
 // pass, we mutate the CHANGED lines with canonical operators and re-run those
-// tests. A surviving mutant (tests still pass on wrong code) means the test is
-// too weak -> park. This makes "encode the answer in the test" self-defeating.
+// tests. A surviving mutant (tests still pass on wrong code) signals a weak
+// test. Each mutant is tagged HIGH-SIGNAL (value/logic semantics — the
+// "answer encoded in the test" signatures) or EQUIV-PRONE (boundary/structural
+// swaps that often survive even strong tests); the controller GRADES survivors
+// via mutationGateDecision (park / review / land) rather than parking on any
+// single survivor. This keeps tautological tests costly (a high-signal survivor
+// parks or routes to ensemble review) WITHOUT the old zero-tolerance gate that
+// parked correct contracts on unkillable equivalent mutants.
 
 import from="node:fs" names="writeFileSync"
 import from="@agon/core" names="spawnWithTimeout"
@@ -28,6 +34,14 @@ fn name=generateMutants params="source:string, changedLines:number[]" returns="M
       { name: 'eq:!==→===', class: 'high-signal', apply: (s) => { const m = s.replace('!==', '==='); return m !== s ? m : null; } },
       { name: 'logic:&&→||', class: 'high-signal', apply: (s) => { const m = s.replace('&&', '||'); return m !== s ? m : null; } },
       { name: 'logic:||→&&', class: 'high-signal', apply: (s) => { const m = s.replace('||', '&&'); return m !== s ? m : null; } },
+      // Relational swaps are EQUIV-PRONE, not high-signal: although < → >= is a
+      // logical negation (killable in principle), in practice these survive on
+      // CORRECT code far more than value/logic mutations — guards on a never-hit
+      // boundary, comparisons on a value the test doesn't drive across the edge.
+      // The dogfood that motivated this gate had 40 surviving boundary flips on a
+      // verifiably-correct contract; treating them as high-signal would re-park
+      // exactly the work this calibration exists to land. (Promoting rel:* to
+      // high-signal becomes safe once survivors are coverage-gated — phase 2.)
       { name: 'rel:<→>=', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![<>=])<(?![<=])/, '>='); return m !== s ? m : null; } },
       { name: 'rel:>→<=', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![<>=-])>(?![>=])/, '<='); return m !== s ? m : null; } },
       { name: 'bool:true→false', class: 'high-signal', apply: (s) => { const m = s.replace(/\btrue\b/, 'false'); return m !== s ? m : null; } },

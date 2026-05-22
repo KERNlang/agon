@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateMutants } from '../../packages/forge/src/generated/goal/mutation.js';
 import type { Mutant } from '../../packages/forge/src/generated/goal/mutation.js';
-import { mutationGateDecision } from '../../packages/forge/src/generated/goal/policy.js';
+import { mutationGateDecision, foldMutationVerdicts } from '../../packages/forge/src/generated/goal/policy.js';
 
 // ── Mutation-gate calibration (tiered land / review / park) ──────────────
 // The zero-tolerance mutation gate (any surviving mutant -> hard park) parked
@@ -110,6 +110,36 @@ describe('mutationGateDecision — tiered land / review / park', () => {
     expect(mutationGateDecision(eq(39), eq(40), { survivorRatioCap: 2 }).verdict).toBe('land');
     // ratio < 0 -> clamp to 0 -> any equiv survivors at/above floor trip review
     expect(mutationGateDecision(eq(5), eq(40), { survivorRatioCap: -1 }).verdict).toBe('review');
+  });
+
+  it('falls back to the policy default on NaN / Infinity config (must not fail OPEN)', () => {
+    // NaN max must NOT disable the high-signal park: Math.max(0, NaN) is NaN and
+    // every comparison with NaN is false, so an unguarded gate would never park.
+    expect(mutationGateDecision(hi(5), hi(10), { highSignalReviewMax: NaN }).verdict).toBe('park'); // default 2 -> 5 > 2 parks
+    expect(mutationGateDecision(hi(5), hi(10), { highSignalReviewMax: Infinity }).verdict).toBe('park');
+    // NaN ratio cap must NOT disable the equiv-prone fallback (default 0.15).
+    expect(mutationGateDecision(eq(30), eq(40), { survivorRatioCap: NaN }).verdict).toBe('review'); // 0.75 > 0.15
+    // NaN floor falls back to default 3 — 2 survivors still land, 30 still review.
+    expect(mutationGateDecision(eq(2), eq(40), { floor: NaN }).verdict).toBe('land');
+    expect(mutationGateDecision(eq(30), eq(40), { floor: NaN }).verdict).toBe('review');
+  });
+
+  it('lands when no high-signal generated and there are no survivors at all (empty fallback)', () => {
+    expect(mutationGateDecision([], eq(5)).verdict).toBe('land'); // 0 survivors < floor -> land
+  });
+});
+
+describe('foldMutationVerdicts — per-file verdicts fold park > review > land', () => {
+  it('lands only when every file lands (or there are none)', () => {
+    expect(foldMutationVerdicts([])).toBe('land');
+    expect(foldMutationVerdicts(['land', 'land'])).toBe('land');
+  });
+  it('reviews when any file reviews and none park', () => {
+    expect(foldMutationVerdicts(['land', 'review', 'land'])).toBe('review');
+  });
+  it('parks when any file parks, regardless of the rest (worst file decides)', () => {
+    expect(foldMutationVerdicts(['land', 'review', 'park'])).toBe('park');
+    expect(foldMutationVerdicts(['park', 'land'])).toBe('park');
   });
 
   it('exposes survivor/generated counts and a reason for logging + the journal', () => {

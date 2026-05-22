@@ -19,7 +19,7 @@ import from="./oracle.js" names="snapshotOracle,witnessTest"
 import from="./mutation.js" names="generateMutants,mutationSurvivors"
 import from="./mutation.js" names="Mutant" types=true
 import from="./diff.js" names="parseChangedLines,newFilesInDiff,isTestFile"
-import from="./policy.js" names="gateFailureSignature,taskParkDecision,globalBreaker,budgetExceeded,timeExceeded,pushRecentOutcome,mutationGateDecision"
+import from="./policy.js" names="gateFailureSignature,taskParkDecision,globalBreaker,budgetExceeded,timeExceeded,pushRecentOutcome,mutationGateDecision,foldMutationVerdicts"
 import from="./types.js" names="JournalState,GoalSpec,GoalTask" types=true
 
 fn name=persistGateLog params="goalId:string, taskId:string, gateCmd:string, res:{stdout?:string, stderr?:string, exitCode?:number, timedOut?:boolean}" returns=string
@@ -291,14 +291,15 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
         // weak). Survivors are GRADED, not zero-tolerance: a line-regex mutator
         // inevitably yields EQUIVALENT mutants (boundary flips on guards,
         // return-undefined on early-outs) that no correct test can kill, so a
-        // single survivor must not park a correct contract. We aggregate all
-        // mutants + survivors across the changed files and decide on the
-        // HIGH-SIGNAL survivor count (the real "answer encoded in the test"
-        // signatures): >max parks; 1..max routes the diff to the ensemble REVIEW
-        // with the survivor list as evidence; 0 high-signal (with high-signal
-        // generated) lands. See mutationGateDecision in policy.kern.
-        const allGenerated: Mutant[] = [];
-        const allSurvivors: Mutant[] = [];
+        // single survivor must not park a correct contract. We grade EACH changed
+        // source file on its OWN mutants (so a well-tested file can't mask an
+        // under-tested sibling whose lines yield only equiv-prone mutants), then
+        // fold the per-file verdicts park > review > land. Per file: >max
+        // high-signal survivors park; 1..max route to the ensemble REVIEW with the
+        // survivor list as evidence; 0 (with high-signal generated) lands; no
+        // high-signal generated falls back to an equiv-prone ratio. See
+        // mutationGateDecision + foldMutationVerdicts in policy.kern.
+        const fileGrades: Array<{ file: string; verdict: 'land' | 'review' | 'park'; reason: string; survivors: Mutant[] }> = [];
         for (const [file, lines] of Object.entries(changed)) {
           if (isTestFile(file)) continue;
           const abs = resolveWithin(wt, file);
@@ -307,18 +308,24 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
           const mutants = generateMutants(source, lines);
           if (mutants.length === 0) continue;
           const survivors = await mutationSurvivors({ worktree: wt, relFilePath: file, source, mutants, testCmd: witnessCmd, timeout: witnessTimeoutSec });
-          for (const m of mutants) allGenerated.push(m);
-          for (const s of survivors) allSurvivors.push(s);
+          const md = mutationGateDecision(survivors, mutants, { highSignalReviewMax: opts.mutationHighSignalMax, survivorRatioCap: opts.mutationSurvivorRatio, floor: opts.mutationFloor });
+          fileGrades.push({ file, verdict: md.verdict, reason: md.reason, survivors });
         }
+        // Compact, file-scoped survivor list (capped) for park detail / review evidence.
+        const survDetail = (g: { file: string; survivors: Mutant[] }) =>
+          `${g.file}: ${g.survivors.slice(0, 12).map((m) => `${m.operator}@L${m.line}`).join(', ')}${g.survivors.length > 12 ? `, +${g.survivors.length - 12} more` : ''}`;
         let mutationEvidence: string | undefined;
-        if (allGenerated.length > 0) {
-          const md = mutationGateDecision(allSurvivors, allGenerated, { highSignalReviewMax: opts.mutationHighSignalMax, survivorRatioCap: opts.mutationSurvivorRatio, floor: opts.mutationFloor });
-          emit('mutation-graded', task.id, `${md.verdict}: ${md.reason}`);
-          if (md.verdict === 'park') {
-            throw { kind: 'mutation', count: allSurvivors.length, detail: `${md.reason} — survivors: ${allSurvivors.map((m) => `${m.operator}@L${m.line}`).join(', ')}` };
+        if (fileGrades.length > 0) {
+          const overall = foldMutationVerdicts(fileGrades.map((g) => g.verdict));
+          emit('mutation-graded', task.id, `${overall} — ${fileGrades.map((g) => `${g.file}:${g.verdict}`).join(', ')}`);
+          if (overall === 'park') {
+            const parked = fileGrades.filter((g) => g.verdict === 'park');
+            const count = parked.reduce((n, g) => n + g.survivors.length, 0);
+            throw { kind: 'mutation', count, detail: parked.map((g) => `${g.reason} [${survDetail(g)}]`).join(' | ') };
           }
-          if (md.verdict === 'review') {
-            mutationEvidence = `${md.reason}. Surviving mutants the witness tests did NOT kill: ${allSurvivors.map((m) => `${m.operator}@L${m.line}`).join(', ')}. A HIGH-SIGNAL survivor (===/!==, &&/||, +/-, true/false) means a test that does not pin core semantics — treat as a weak-test BLOCKER unless it is provably equivalent on this diff; a boundary/guard/return-undefined survivor is usually equivalent NOISE.`;
+          const flagged = fileGrades.filter((g) => g.verdict === 'review');
+          if (flagged.length > 0) {
+            mutationEvidence = `${flagged.map((g) => `${g.reason} — survivors ${survDetail(g)}`).join(' | ')}. A HIGH-SIGNAL survivor (===/!==, &&/||, +/-, true/false) means a test that does not pin core semantics — treat as a weak-test BLOCKER unless it is provably equivalent on this diff; a boundary/guard/return-undefined survivor is usually equivalent NOISE.`;
           }
         }
 
@@ -337,7 +344,13 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
             const logPath = persistGateLog(spec.goalId, task.id, spec.gate, gate2);
             throw { kind: 'gate', sig: gateFailureSignature(`${gate2.stderr || ''}\n${gate2.stdout || ''}`), detail: `gate failed after fix pass${logPath ? ` — output: ${logPath}` : ''}` };
           }
-          rev = await opts.review({ worktree: wt, baseSha, diff: worktreeChangedDiff(wt, baseSha), label: `goal ${spec.goalId} task ${task.id} (post-fix)`, mutationEvidence, signal: opts.signal });
+          // No mutationEvidence on the POST-FIX review: it was computed on the
+          // PRE-fix diff. The fix pass changed the code (often to strengthen the
+          // very tests the survivors flagged), but mutation is not re-run here, so
+          // re-asserting "these mutants survived — treat as BLOCKER" would make the
+          // panel spuriously re-block and park — the exact false-park this gate was
+          // calibrated to avoid. The reviewer assesses the fixed diff on its own.
+          rev = await opts.review({ worktree: wt, baseSha, diff: worktreeChangedDiff(wt, baseSha), label: `goal ${spec.goalId} task ${task.id} (post-fix)`, signal: opts.signal });
           attemptCost += rev.costUsd || 0;
           state = { ...state, spentUsd: state.spentUsd + (rev.costUsd || 0) };
           if (rev.blocking) throw { kind: 'review', detail: rev.summary };

@@ -14,16 +14,18 @@ import { snapshotOracle, witnessTest } from './oracle.js';
 
 import { generateMutants, mutationSurvivors } from './mutation.js';
 
+import type { Mutant } from './mutation.js';
+
 import { parseChangedLines, newFilesInDiff, isTestFile } from './diff.js';
 
-import { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pushRecentOutcome } from './policy.js';
+import { gateFailureSignature, taskParkDecision, globalBreaker, budgetExceeded, timeExceeded, pushRecentOutcome, mutationGateDecision, foldMutationVerdicts } from './policy.js';
 
 import type { JournalState, GoalSpec, GoalTask } from './types.js';
 
 /**
  * Persist the EXACT gate stdout/stderr to <goalDir>/<taskId>-gate.log so a parked task's failure is inspectable without re-running the gate by hand. Returns the path, or '' if it couldn't be written.
  */
-// @kern-source: controller:24
+// @kern-source: controller:25
 export function persistGateLog(goalId: string, taskId: string, gateCmd: string, res: {stdout?:string, stderr?:string, exitCode?:number, timedOut?:boolean}): string {
   try {
     const body = `$ ${gateCmd}\n[exit ${res.exitCode ?? '?'}${res.timedOut ? ' (timed out)' : ''}]\n\n--- stdout ---\n${res.stdout ?? ''}\n\n--- stderr ---\n${res.stderr ?? ''}\n`;
@@ -38,7 +40,7 @@ export function persistGateLog(goalId: string, taskId: string, gateCmd: string, 
 /**
  * Compact human digest of a finished (or stopped) run — gaps closed/parked/failed, commits, spend, wall-clock. The detached-delegation callback ships this, never a transcript dump.
  */
-// @kern-source: controller:37
+// @kern-source: controller:38
 export function summarizeGoal(state: JournalState): string {
   const by = (s: string) => state.tasks.filter((t) => t.status === s);
   const done = by('done'), parked = by('parked'), failed = by('failed');
@@ -77,7 +79,7 @@ export function summarizeGoal(state: JournalState): string {
 /**
  * Persist the durable terminal artifacts (result.json + summary.md) any session can read via `agon goal status <id>` — the source of truth when the originating CLI is long dead.
  */
-// @kern-source: controller:74
+// @kern-source: controller:75
 export function writeGoalArtifacts(state: JournalState): {resultPath:string, summaryPath:string} {
   assertSafeGoalId(state.spec.goalId);
   ensureAgonHome();
@@ -105,8 +107,8 @@ export function writeGoalArtifacts(state: JournalState): {resultPath:string, sum
 /**
  * Run the goal to a terminal state (done / budget / time / breaker / abort). Resumable: re-invoking with resume=true picks up the journal. Returns the final JournalState; durable artifacts are written before return.
  */
-// @kern-source: controller:100
-export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[]}>, oracleFiles?: string[], resume?: boolean, push?: boolean, remote?: string, requireTests?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, breakerWindow?: number, breakerMinSuccessRate?: number, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string, costUsd?:number}> }): Promise<JournalState> {
+// @kern-source: controller:101
+export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[]}>, oracleFiles?: string[], resume?: boolean, push?: boolean, remote?: string, requireTests?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, breakerWindow?: number, breakerMinSuccessRate?: number, mutationHighSignalMax?: number, mutationSurvivorRatio?: number, mutationFloor?: number, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, mutationEvidence?:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string, costUsd?:number}> }): Promise<JournalState> {
   const { spec, repoRoot } = opts;
   assertSafeGoalId(spec.goalId);
   ensureAgonHome();
@@ -293,7 +295,19 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
       }
 
       // MUTATION-WITNESS — gate is green; now canonical mutants on the changed
-      // SOURCE lines must die (a surviving mutant means the tests are too weak).
+      // SOURCE lines must die (a surviving mutant means the tests may be too
+      // weak). Survivors are GRADED, not zero-tolerance: a line-regex mutator
+      // inevitably yields EQUIVALENT mutants (boundary flips on guards,
+      // return-undefined on early-outs) that no correct test can kill, so a
+      // single survivor must not park a correct contract. We grade EACH changed
+      // source file on its OWN mutants (so a well-tested file can't mask an
+      // under-tested sibling whose lines yield only equiv-prone mutants), then
+      // fold the per-file verdicts park > review > land. Per file: >max
+      // high-signal survivors park; 1..max route to the ensemble REVIEW with the
+      // survivor list as evidence; 0 (with high-signal generated) lands; no
+      // high-signal generated falls back to an equiv-prone ratio. See
+      // mutationGateDecision + foldMutationVerdicts in policy.kern.
+      const fileGrades: Array<{ file: string; verdict: 'land' | 'review' | 'park'; reason: string; survivors: Mutant[] }> = [];
       for (const [file, lines] of Object.entries(changed)) {
         if (isTestFile(file)) continue;
         const abs = resolveWithin(wt, file);
@@ -302,11 +316,29 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
         const mutants = generateMutants(source, lines);
         if (mutants.length === 0) continue;
         const survivors = await mutationSurvivors({ worktree: wt, relFilePath: file, source, mutants, testCmd: witnessCmd, timeout: witnessTimeoutSec });
-        if (survivors.length > 0) throw { kind: 'mutation', count: survivors.length, detail: `${file}: ${survivors.map((m) => m.operator).join(', ')}` };
+        const md = mutationGateDecision(survivors, mutants, { highSignalReviewMax: opts.mutationHighSignalMax, survivorRatioCap: opts.mutationSurvivorRatio, floor: opts.mutationFloor });
+        fileGrades.push({ file, verdict: md.verdict, reason: md.reason, survivors });
+      }
+      // Compact, file-scoped survivor list (capped) for park detail / review evidence.
+      const survDetail = (g: { file: string; survivors: Mutant[] }) =>
+        `${g.file}: ${g.survivors.slice(0, 12).map((m) => `${m.operator}@L${m.line}`).join(', ')}${g.survivors.length > 12 ? `, +${g.survivors.length - 12} more` : ''}`;
+      let mutationEvidence: string | undefined;
+      if (fileGrades.length > 0) {
+        const overall = foldMutationVerdicts(fileGrades.map((g) => g.verdict));
+        emit('mutation-graded', task.id, `${overall} — ${fileGrades.map((g) => `${g.file}:${g.verdict}`).join(', ')}`);
+        if (overall === 'park') {
+          const parked = fileGrades.filter((g) => g.verdict === 'park');
+          const count = parked.reduce((n, g) => n + g.survivors.length, 0);
+          throw { kind: 'mutation', count, detail: parked.map((g) => `${g.reason} [${survDetail(g)}]`).join(' | ') };
+        }
+        const flagged = fileGrades.filter((g) => g.verdict === 'review');
+        if (flagged.length > 0) {
+          mutationEvidence = `${flagged.map((g) => `${g.reason} — survivors ${survDetail(g)}`).join(' | ')}. A HIGH-SIGNAL survivor (===/!==, &&/||, +/-, true/false) means a test that does not pin core semantics — treat as a weak-test BLOCKER unless it is provably equivalent on this diff; a boundary/guard/return-undefined survivor is usually equivalent NOISE.`;
+        }
       }
 
       // REVIEW — ensemble findings; one bounded FIX pass on blocking, then park.
-      let rev = await opts.review({ worktree: wt, baseSha, diff: diffText, label: `goal ${spec.goalId} task ${task.id}`, signal: opts.signal });
+      let rev = await opts.review({ worktree: wt, baseSha, diff: diffText, label: `goal ${spec.goalId} task ${task.id}`, mutationEvidence, signal: opts.signal });
       attemptCost += rev.costUsd || 0;
       state = { ...state, spentUsd: state.spentUsd + (rev.costUsd || 0) };
       if (rev.blocking) {
@@ -320,6 +352,12 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
           const logPath = persistGateLog(spec.goalId, task.id, spec.gate, gate2);
           throw { kind: 'gate', sig: gateFailureSignature(`${gate2.stderr || ''}\n${gate2.stdout || ''}`), detail: `gate failed after fix pass${logPath ? ` — output: ${logPath}` : ''}` };
         }
+        // No mutationEvidence on the POST-FIX review: it was computed on the
+        // PRE-fix diff. The fix pass changed the code (often to strengthen the
+        // very tests the survivors flagged), but mutation is not re-run here, so
+        // re-asserting "these mutants survived — treat as BLOCKER" would make the
+        // panel spuriously re-block and park — the exact false-park this gate was
+        // calibrated to avoid. The reviewer assesses the fixed diff on its own.
         rev = await opts.review({ worktree: wt, baseSha, diff: worktreeChangedDiff(wt, baseSha), label: `goal ${spec.goalId} task ${task.id} (post-fix)`, signal: opts.signal });
         attemptCost += rev.costUsd || 0;
         state = { ...state, spentUsd: state.spentUsd + (rev.costUsd || 0) };

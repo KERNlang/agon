@@ -2,8 +2,14 @@
 // The keystone defense (tribunal red-team R1/R2/R7): a "witnessed" test only
 // proves diff-sensitivity, not spec-correctness. After the agent's new tests
 // pass, we mutate the CHANGED lines with canonical operators and re-run those
-// tests. A surviving mutant (tests still pass on wrong code) means the test is
-// too weak -> park. This makes "encode the answer in the test" self-defeating.
+// tests. A surviving mutant (tests still pass on wrong code) signals a weak
+// test. Each mutant is tagged HIGH-SIGNAL (value/logic semantics — the
+// "answer encoded in the test" signatures) or EQUIV-PRONE (boundary/structural
+// swaps that often survive even strong tests); the controller GRADES survivors
+// via mutationGateDecision (park / review / land) rather than parking on any
+// single survivor. This keeps tautological tests costly (a high-signal survivor
+// parks or routes to ensemble review) WITHOUT the old zero-tolerance gate that
+// parked correct contracts on unkillable equivalent mutants.
 
 import from="node:fs" names="writeFileSync"
 import from="@agon/core" names="spawnWithTimeout"
@@ -16,23 +22,32 @@ interface name=Mutant export=true
   field name=line type=number
   field name=before type=string
   field name=after type=string
+  field name=class type="'high-signal'|'equiv-prone'"
 
 fn name=generateMutants params="source:string, changedLines:number[]" returns="Mutant[]" export=true
   doc "Canonical mutants on the changed lines only (one per applicable operator/line)."
   handler <<<
-    const ops: Array<{ name: string; apply: (s: string) => string | null }> = [
-      { name: 'arith:+→-', apply: (s) => { const m = s.replace(/(?<!\+)\+(?![+=])/, '-'); return m !== s ? m : null; } },
-      { name: 'arith:-→+', apply: (s) => { const m = s.replace(/(?<![-\w])-(?![-=>])/, '+'); return m !== s ? m : null; } },
-      { name: 'eq:===→!==', apply: (s) => { const m = s.replace('===', '!=='); return m !== s ? m : null; } },
-      { name: 'eq:!==→===', apply: (s) => { const m = s.replace('!==', '==='); return m !== s ? m : null; } },
-      { name: 'logic:&&→||', apply: (s) => { const m = s.replace('&&', '||'); return m !== s ? m : null; } },
-      { name: 'logic:||→&&', apply: (s) => { const m = s.replace('||', '&&'); return m !== s ? m : null; } },
-      { name: 'rel:<→>=', apply: (s) => { const m = s.replace(/(?<![<>=])<(?![<=])/, '>='); return m !== s ? m : null; } },
-      { name: 'rel:>→<=', apply: (s) => { const m = s.replace(/(?<![<>=-])>(?![>=])/, '<='); return m !== s ? m : null; } },
-      { name: 'bool:true→false', apply: (s) => { const m = s.replace(/\btrue\b/, 'false'); return m !== s ? m : null; } },
-      { name: 'bool:false→true', apply: (s) => { const m = s.replace(/\bfalse\b/, 'true'); return m !== s ? m : null; } },
-      { name: 'ret:→undefined', apply: (s) => { const m = s.replace(/\breturn\s+[^;]+;/, 'return undefined;'); return m !== s ? m : null; } },
-      { name: 'arr:[]→[0]', apply: (s) => { const m = s.replace(/(?<![\w\]])\[\](?!\])/, '[0]'); return m !== s ? m : null; } },
+    const ops: Array<{ name: string; class: 'high-signal' | 'equiv-prone'; apply: (s: string) => string | null }> = [
+      { name: 'arith:+→-', class: 'high-signal', apply: (s) => { const m = s.replace(/(?<!\+)\+(?![+=])/, '-'); return m !== s ? m : null; } },
+      { name: 'arith:-→+', class: 'high-signal', apply: (s) => { const m = s.replace(/(?<![-\w])-(?![-=>])/, '+'); return m !== s ? m : null; } },
+      { name: 'eq:===→!==', class: 'high-signal', apply: (s) => { const m = s.replace('===', '!=='); return m !== s ? m : null; } },
+      { name: 'eq:!==→===', class: 'high-signal', apply: (s) => { const m = s.replace('!==', '==='); return m !== s ? m : null; } },
+      { name: 'logic:&&→||', class: 'high-signal', apply: (s) => { const m = s.replace('&&', '||'); return m !== s ? m : null; } },
+      { name: 'logic:||→&&', class: 'high-signal', apply: (s) => { const m = s.replace('||', '&&'); return m !== s ? m : null; } },
+      // Relational swaps are EQUIV-PRONE, not high-signal: although < → >= is a
+      // logical negation (killable in principle), in practice these survive on
+      // CORRECT code far more than value/logic mutations — guards on a never-hit
+      // boundary, comparisons on a value the test doesn't drive across the edge.
+      // The dogfood that motivated this gate had 40 surviving boundary flips on a
+      // verifiably-correct contract; treating them as high-signal would re-park
+      // exactly the work this calibration exists to land. (Promoting rel:* to
+      // high-signal becomes safe once survivors are coverage-gated — phase 2.)
+      { name: 'rel:<→>=', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![<>=])<(?![<=])/, '>='); return m !== s ? m : null; } },
+      { name: 'rel:>→<=', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![<>=-])>(?![>=])/, '<='); return m !== s ? m : null; } },
+      { name: 'bool:true→false', class: 'high-signal', apply: (s) => { const m = s.replace(/\btrue\b/, 'false'); return m !== s ? m : null; } },
+      { name: 'bool:false→true', class: 'high-signal', apply: (s) => { const m = s.replace(/\bfalse\b/, 'true'); return m !== s ? m : null; } },
+      { name: 'ret:→undefined', class: 'equiv-prone', apply: (s) => { const m = s.replace(/\breturn\s+[^;]+;/, 'return undefined;'); return m !== s ? m : null; } },
+      { name: 'arr:[]→[0]', class: 'equiv-prone', apply: (s) => { const m = s.replace(/(?<![\w\]])\[\](?!\])/, '[0]'); return m !== s ? m : null; } },
     ];
     const lines = source.split('\n');
     const mutants: Mutant[] = [];
@@ -43,7 +58,7 @@ fn name=generateMutants params="source:string, changedLines:number[]" returns="M
       for (const op of ops) {
         const mutated = op.apply(original);
         if (mutated == null || mutated === original) continue;
-        mutants.push({ id: `${op.name}@L${ln}`, operator: op.name, line: ln, before: original, after: mutated });
+        mutants.push({ id: `${op.name}@L${ln}`, operator: op.name, line: ln, before: original, after: mutated, class: op.class });
       }
     }
     return mutants;

@@ -70,6 +70,7 @@ export interface JournalState {
   parkedStreak: number;
   noProgressStreak: number;
   lastRemainingCount: number;
+  recentOutcomes?: string[];
   oracleHash?: string;
   tasks: GoalTask[];
   events: GoalEvent[];

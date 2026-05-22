@@ -44,9 +44,27 @@ fn name=taskParkDecision params="task:GoalTask, maxAttempts:number" returns="{pa
     return { park: false, reason: '' };
   >>>
 
-fn name=globalBreaker params="state:JournalState, maxParkStreak:number, maxNoProgress:number" returns="{stop:boolean, reason:string}" export=true
-  doc "Abort the whole run when too many tasks park back-to-back, or too many cycles pass with no net decrease in remaining work — the signal that the loop is thrashing and a human should look."
+fn name=pushRecentOutcome params="recent:string[], outcome:string, cap:number" returns="string[]" export=true
+  doc "Append a TERMINAL task outcome ('done' | 'parked') to the bounded ring that fuels the sliding-window breaker, dropping the oldest entries beyond `cap` (cap <= 0 = unbounded). Pure: the controller calls this once per task that reaches a terminal state."
   handler <<<
+    const next = [...recent, outcome];
+    if (cap > 0 && next.length > cap) {
+      return next.slice(-cap);
+    }
+    return next;
+  >>>
+
+fn name=globalBreaker params="state:JournalState, maxParkStreak:number, maxNoProgress:number, window?:{size:number, minSuccessRate:number}" returns="{stop:boolean, reason:string}" export=true
+  doc "Abort the whole run only when it is genuinely thrashing — NOT when it merely hit a cluster of hard tasks. The PRIMARY long-run signal is the sliding-window success rate (`window`): over the last `window.size` terminal outcomes, if the fraction that are 'done' is below `window.minSuccessRate`, the gate/env is likely broken or the queue is uniformly too hard, so stop. The legacy consecutive park-streak (`maxParkStreak`) is kept only as an opt-in hard cap (0 = off, the new default) because a park DECREASES remaining work, so it never trips the no-progress breaker on its own. `maxNoProgress` still catches retry-thrash with no net progress."
+  handler <<<
+    const recent = state.recentOutcomes ?? [];
+    if (window && window.size > 0 && recent.length >= window.size) {
+      const windowEntries = recent.slice(-window.size);
+      const successRate = windowEntries.filter(o => o === 'done').length / window.size;
+      if (successRate < window.minSuccessRate) {
+        return { stop: true, reason: `success-rate ${successRate} is below minimum ${window.minSuccessRate}` };
+      }
+    }
     if (maxParkStreak > 0 && state.parkedStreak >= maxParkStreak) {
       return { stop: true, reason: `park-streak >= ${maxParkStreak}` };
     }

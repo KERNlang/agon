@@ -113,13 +113,21 @@ export function chooseImplementRoster(params: {flow:string, forgeScope:string, e
 }
 
 /**
- * Tiered mutation-gate calibration: decide on the HIGH-SIGNAL survivor count, not the raw count.
+ * Tiered mutation-gate calibration: decide on the HIGH-SIGNAL survivor count, not the raw count. PER-FILE — the controller calls this once per changed source file and folds the verdicts (foldMutationVerdicts), so a well-tested file's high-signal coverage cannot mask an under-tested sibling whose changed lines yield only equiv-prone mutants.
  */
 // @kern-source: policy:107
 export function mutationGateDecision(survivors: Mutant[], generated: Mutant[], cfg?: {highSignalReviewMax?:number, survivorRatioCap?:number, floor?:number}): {verdict:'land'|'review'|'park', highSignalSurvivors:number, equivProneSurvivors:number, highSignalGenerated:number, reason:string} {
-  const max   = Math.max(0, Math.floor(cfg?.highSignalReviewMax ?? 2));
-  const cap   = Math.min(1, Math.max(0, cfg?.survivorRatioCap ?? 0.15));
-  const floor = Math.max(0, Math.floor(cfg?.floor ?? 3));
+  // Defensive resolve: this fn is exported and callable programmatically, so a
+  // NaN / Infinity config must not silently fail the gate OPEN — Math.max(0, NaN)
+  // is NaN, and every comparison with NaN is false (gate never parks). Guard with
+  // Number.isFinite and fall back to the default, mirroring taskParkDecision's
+  // NaN handling. (Review finding — clamp + finite-check in core, not only the CLI.)
+  const rawMax = cfg?.highSignalReviewMax;
+  const rawCap = cfg?.survivorRatioCap;
+  const rawFloor = cfg?.floor;
+  const max   = Number.isFinite(rawMax) ? Math.max(0, Math.floor(rawMax as number)) : 2;
+  const cap   = Number.isFinite(rawCap) ? Math.min(1, Math.max(0, rawCap as number)) : 0.15;
+  const floor = Number.isFinite(rawFloor) ? Math.max(0, Math.floor(rawFloor as number)) : 3;
   const highSignalSurvivors = survivors.filter((m) => m.class === 'high-signal').length;
   const equivProneSurvivors = survivors.length - highSignalSurvivors;
   const highSignalGenerated = generated.filter((m) => m.class === 'high-signal').length;
@@ -134,15 +142,25 @@ export function mutationGateDecision(survivors: Mutant[], generated: Mutant[], c
   }
   const ratio = generated.length > 0 ? survivors.length / generated.length : 0;
   if (survivors.length >= floor && ratio > cap) {
-    return { verdict: 'review', highSignalSurvivors, equivProneSurvivors, highSignalGenerated, reason: `no high-signal coverage; ${survivors.length}/${generated.length} (${(ratio * 100).toFixed(0)}%) equiv-prone survivors > ${(cap * 100).toFixed(0)}% cap` };
+    return { verdict: 'review', highSignalSurvivors, equivProneSurvivors, highSignalGenerated, reason: `no high-signal coverage; ${survivors.length}/${generated.length} (${(ratio * 100).toFixed(1)}%) equiv-prone survivors > ${(cap * 100).toFixed(1)}% cap` };
   }
   return { verdict: 'land', highSignalSurvivors, equivProneSurvivors, highSignalGenerated, reason: `no high-signal coverage; ${survivors.length}/${generated.length} equiv-prone survivors within cap` };
 }
 
 /**
+ * Fold per-file mutation verdicts into one task verdict with precedence park > review > land (the worst file decides). Empty -> 'land'. The controller grades each changed source file independently (mutationGateDecision) then folds here, so a file whose changed lines yield only equiv-prone mutants still faces its OWN ratio fallback instead of being masked by a sibling file's high-signal coverage.
+ */
+// @kern-source: policy:140
+export function foldMutationVerdicts(verdicts: ('land'|'review'|'park')[]): 'land'|'review'|'park' {
+  if (verdicts.some((v) => v === 'park')) return 'park';
+  if (verdicts.some((v) => v === 'review')) return 'review';
+  return 'land';
+}
+
+/**
  * True once cumulative spend reaches the goal's USD ceiling (0 = unlimited).
  */
-// @kern-source: policy:132
+// @kern-source: policy:148
 export function budgetExceeded(state: JournalState): boolean {
   const cap = state.spec.budgetUsd;
   return cap > 0 && state.spentUsd >= cap;
@@ -151,7 +169,7 @@ export function budgetExceeded(state: JournalState): boolean {
 /**
  * True once wall-clock since startedAt reaches the goal's hour ceiling (0 = unlimited).
  */
-// @kern-source: policy:139
+// @kern-source: policy:155
 export function timeExceeded(state: JournalState, now: number): boolean {
   if (!state.startedAt) return false;
   const cap = state.spec.maxHours;

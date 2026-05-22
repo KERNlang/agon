@@ -8,6 +8,7 @@
 
 import from="node:crypto" names="createHash"
 import from="./types.js" names="JournalState,GoalTask" types=true
+import from="./mutation.js" names="Mutant" types=true
 
 fn name=gateFailureSignature params="output:string" returns=string export=true
   doc "Stable, volatility-stripped fingerprint of a gate failure. Normalizes away hex shas, durations, line:col numbers and absolute paths so the SAME logical failure hashes identically across runs — that identity is what the oscillation breaker keys on. Hashes the tail (where the real error usually is)."
@@ -101,6 +102,47 @@ fn name=chooseImplementRoster params="params:{flow:string, forgeScope:string, es
       ? `solo ${soloEngine} (${flow}/${forgeScope})`
       : `compete ${engines.length} engines (${flow}/${forgeScope})${escalate ? ' — escalate' : ''}`;
     return { engines, solo, escalate, reason };
+  >>>
+
+fn name=mutationGateDecision params="survivors:Mutant[], generated:Mutant[], cfg?:{highSignalReviewMax?:number, survivorRatioCap?:number, floor?:number}" returns="{verdict:'land'|'review'|'park', highSignalSurvivors:number, equivProneSurvivors:number, highSignalGenerated:number, reason:string}" export=true
+  doc "Tiered mutation-gate calibration: decide on the HIGH-SIGNAL survivor count, not the raw count. PER-FILE — the controller calls this once per changed source file and folds the verdicts (foldMutationVerdicts), so a well-tested file's high-signal coverage cannot mask an under-tested sibling whose changed lines yield only equiv-prone mutants."
+  handler <<<
+    // Defensive resolve: this fn is exported and callable programmatically, so a
+    // NaN / Infinity config must not silently fail the gate OPEN — Math.max(0, NaN)
+    // is NaN, and every comparison with NaN is false (gate never parks). Guard with
+    // Number.isFinite and fall back to the default, mirroring taskParkDecision's
+    // NaN handling. (Review finding — clamp + finite-check in core, not only the CLI.)
+    const rawMax = cfg?.highSignalReviewMax;
+    const rawCap = cfg?.survivorRatioCap;
+    const rawFloor = cfg?.floor;
+    const max   = Number.isFinite(rawMax) ? Math.max(0, Math.floor(rawMax as number)) : 2;
+    const cap   = Number.isFinite(rawCap) ? Math.min(1, Math.max(0, rawCap as number)) : 0.15;
+    const floor = Number.isFinite(rawFloor) ? Math.max(0, Math.floor(rawFloor as number)) : 3;
+    const highSignalSurvivors = survivors.filter((m) => m.class === 'high-signal').length;
+    const equivProneSurvivors = survivors.length - highSignalSurvivors;
+    const highSignalGenerated = generated.filter((m) => m.class === 'high-signal').length;
+    if (highSignalSurvivors > max) {
+      return { verdict: 'park', highSignalSurvivors, equivProneSurvivors, highSignalGenerated, reason: `${highSignalSurvivors} high-signal survivors > max ${max}` };
+    }
+    if (highSignalSurvivors >= 1) {
+      return { verdict: 'review', highSignalSurvivors, equivProneSurvivors, highSignalGenerated, reason: `${highSignalSurvivors} high-signal survivor(s) within 1..${max}` };
+    }
+    if (highSignalSurvivors === 0 && highSignalGenerated > 0) {
+      return { verdict: 'land', highSignalSurvivors, equivProneSurvivors, highSignalGenerated, reason: `${highSignalSurvivors}/${highSignalGenerated} high-signal mutants survived — core semantics pinned` };
+    }
+    const ratio = generated.length > 0 ? survivors.length / generated.length : 0;
+    if (survivors.length >= floor && ratio > cap) {
+      return { verdict: 'review', highSignalSurvivors, equivProneSurvivors, highSignalGenerated, reason: `no high-signal coverage; ${survivors.length}/${generated.length} (${(ratio * 100).toFixed(1)}%) equiv-prone survivors > ${(cap * 100).toFixed(1)}% cap` };
+    }
+    return { verdict: 'land', highSignalSurvivors, equivProneSurvivors, highSignalGenerated, reason: `no high-signal coverage; ${survivors.length}/${generated.length} equiv-prone survivors within cap` };
+  >>>
+
+fn name=foldMutationVerdicts params="verdicts:('land'|'review'|'park')[]" returns="'land'|'review'|'park'" export=true
+  doc "Fold per-file mutation verdicts into one task verdict with precedence park > review > land (the worst file decides). Empty -> 'land'. The controller grades each changed source file independently (mutationGateDecision) then folds here, so a file whose changed lines yield only equiv-prone mutants still faces its OWN ratio fallback instead of being masked by a sibling file's high-signal coverage."
+  handler <<<
+    if (verdicts.some((v) => v === 'park')) return 'park';
+    if (verdicts.some((v) => v === 'review')) return 'review';
+    return 'land';
   >>>
 
 fn name=budgetExceeded params="state:JournalState" returns=boolean export=true

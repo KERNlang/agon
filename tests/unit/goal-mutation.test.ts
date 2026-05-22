@@ -61,7 +61,7 @@ describe('mutation-witness — applyMutantToSource', () => {
     expect(out.split('\n')[1]).toBe('z');
   });
   it('returns source unchanged for an out-of-range line', () => {
-    expect(applyMutantToSource(src, { id: 'x', operator: 'x', line: 99, before: '', after: 'ZZ' })).toBe(src);
+    expect(applyMutantToSource(src, { id: 'x', operator: 'x', line: 99, before: '', after: 'ZZ', class: 'equiv-prone' })).toBe(src);
   });
 });
 

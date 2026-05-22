@@ -70,6 +70,7 @@
     "configEnv": "CLAUDE_CONFIG_DIR",
     "strictMcpArgs": ["--strict-mcp-config"],
     "personalPaths": ["~/.claude"],
+    "authFiles": [".credentials.json"],
     "supportsProjectMcp": true
   }
 }

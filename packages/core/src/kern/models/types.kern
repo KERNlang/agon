@@ -61,8 +61,8 @@ interface name=EngineDefinition
   field name=api type="{baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number}" optional=true
   field name=companion type=CompanionConfig optional=true
   field name=cliModels type=EngineCliModelConfig optional=true
-  field name=isolationHints type="{configEnv?:string, strictMcpArgs?:string[], personalPaths?:string[], supportsProjectMcp?:boolean}" optional=true
-    doc "Workspace-pure isolation knobs. configEnv = env var that repoints the engine's config dir to a clean throwaway (e.g. CLAUDE_CONFIG_DIR, CODEX_HOME), dropping the user's global config/plugins/hooks/MCP. strictMcpArgs = CLI flags appended to force no/limited MCP (e.g. claude '--strict-mcp-config', gemini '--allowed-mcp-server-names'). personalPaths = doc-only note of what is stripped. supportsProjectMcp = engine reads .mcp.json from cwd. ABSENT on API-only engines (kimi/minimax/zai): they spawn no local process and inherit no config, so they are already pure."
+  field name=isolationHints type="{configEnv?:string, strictMcpArgs?:string[], personalPaths?:string[], authFiles?:string[], supportsProjectMcp?:boolean}" optional=true
+    doc "Workspace-pure isolation knobs. configEnv = env var that repoints the engine's config dir to a clean throwaway (e.g. CLAUDE_CONFIG_DIR, CODEX_HOME), dropping the user's global config/plugins/hooks/MCP. authFiles = files (relative to the engine's real config home, personalPaths[0]) that hold ONLY login credentials and are copied into the clean dir so dispatch stays authenticated (e.g. claude '.credentials.json', codex 'auth.json'); harmless no-op when auth lives in the OS keychain. strictMcpArgs = CLI flags appended on the spawn path to force no/limited MCP (e.g. claude '--strict-mcp-config'). personalPaths[0] = the engine's real config home (also the doc-note of what is stripped). supportsProjectMcp = engine reads .mcp.json from cwd. ABSENT on API-only engines (kimi/minimax/zai): they spawn no local process and inherit no config, so they are already pure."
 
 interface name=DispatchOptions
   field name=engine type=EngineDefinition
@@ -81,8 +81,8 @@ interface name=DispatchOptions
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=onSpawn type="(pid:number)=>void" optional=true
-  field name=isolation type="'workspace-pure'|'bare'|'inherit'" optional=true
-    doc "Per-dispatch isolation override. When unset, the adapter resolves it from the AGON_ENGINE_ISOLATION env var, then config.engineIsolation, then the default (workspace-pure). workspace-pure = strip the user's personal/global engine config (plugins/hooks/global CLAUDE.md/MCP) but KEEP the project's repo CLAUDE.md/.mcp.json; bare = also strip project MCP context; inherit = legacy, inherit everything."
+  field name=isolation type="'workspace-pure'|'inherit'" optional=true
+    doc "Per-dispatch isolation override. When unset, the adapter resolves it from the AGON_ENGINE_ISOLATION env var, then config.engineIsolation, then the default (workspace-pure). workspace-pure = strip the user's personal/global engine config (plugins/hooks/global CLAUDE.md/MCP) via a clean per-engine config dir (auth preserved) but KEEP the project's repo CLAUDE.md/.mcp.json; inherit = inherit everything (legacy)."
 
 interface name=DispatchResult
   field name=exitCode type=number
@@ -254,14 +254,8 @@ config name=AgonConfig
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=hiddenEngines type="string[]" optional=true
   field name=engineModels type="Record<string,string>" optional=true
-  field name=engineIsolation type="'workspace-pure'|'bare'|'inherit'" default="'workspace-pure'"
-    doc "How much of the user's personal tooling a dispatched engine inherits. 'workspace-pure' (default) strips the personal/global layer (global CLAUDE.md, Claude Code plugins/hooks, user MCP servers) via a clean per-run config dir, but KEEPS the repo's project CLAUDE.md/.mcp.json so engines still see task-relevant rules. 'bare' also strips project MCP (benchmarks / pure ideation). 'inherit' is the legacy behavior — inherit everything (your full ~/.claude). A competitive arena should be clean of private user augmentation, not ignorant of the repo it operates on."
-  field name=engineIsolationByCommand type="Record<string,string>" optional=true
-    doc "Optional per-command isolation overrides keyed by command name (forge/goal/review/brainstorm/tribunal/...). Falls back to engineIsolation when a command is absent."
-  field name=projectMcpMode type="'keep'|'strip'|'allowlist'" default="'keep'"
-    doc "How the repo's project .mcp.json is treated under workspace-pure. 'keep' (default) honors all project MCP servers; 'strip' drops them; 'allowlist' keeps only projectMcpAllowlist entries (e.g. keep the KERN compile/review MCP, drop the rest)."
-  field name=projectMcpAllowlist type="string[]" optional=true
-    doc "MCP server names kept when projectMcpMode='allowlist' (e.g. ['kern'])."
+  field name=engineIsolation type="'workspace-pure'|'inherit'" default="'workspace-pure'"
+    doc "How much of the user's personal tooling a dispatched engine inherits. 'workspace-pure' (default) strips the personal/global layer (global CLAUDE.md, Claude Code plugins/hooks, user MCP servers) via a clean per-engine config dir (auth preserved), but KEEPS the repo's project CLAUDE.md/.mcp.json so engines still see task-relevant rules. 'inherit' is the legacy behavior — inherit everything (your full ~/.claude). A competitive arena should be clean of private user augmentation, not ignorant of the repo it operates on. Override per dispatch with --pure/--impure/--isolation or AGON_ENGINE_ISOLATION."
   field name=isolationMigrationNotified type=boolean default=false
     doc "Internal: set true once the one-time 'engines now run workspace-pure by default' migration notice has been shown, so it isn't repeated."
   field name=terminalMode type="'native'|'fullscreen'" default=native

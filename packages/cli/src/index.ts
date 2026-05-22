@@ -40,11 +40,13 @@ function consumeIsolationFlags() {
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === '--pure') { set('workspace-pure'); continue; }
-    if (arg === '--bare') { set('bare'); continue; }
     if (arg === '--impure') { set('inherit'); continue; }
     if (arg === '--isolation') {
       const next = args[i + 1];
-      if (next && !next.startsWith('-')) { set(next); i += 1; }
+      // Only consume the flag when a value follows; otherwise leave it in argv
+      // so the command parser can report the misuse instead of silently dropping it.
+      if (next && !next.startsWith('-')) { set(next); i += 1; continue; }
+      nextArgv.push(arg);
       continue;
     }
     if (arg.startsWith('--isolation=')) { set(arg.slice('--isolation='.length)); continue; }

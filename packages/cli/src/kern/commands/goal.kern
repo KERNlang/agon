@@ -207,6 +207,15 @@ const name=goalCommand type=any
           const n = Number(v);
           return Number.isFinite(n) && n >= 0 ? n : dflt;
         };
+        // Optional numeric flag: absent OR unparseable -> undefined, so the
+        // controller's own default applies. (Using num(...,0) here would let a
+        // typo'd --max-no-progress coerce to 0, which the controller reads as
+        // DISABLED — silently worse than omitting the flag. Review finding.)
+        const optNum = (v: unknown): number | undefined => {
+          if (v == null || (typeof v === 'string' && v.trim() === '')) return undefined;
+          const n = Number(v);
+          return Number.isFinite(n) && n >= 0 ? n : undefined;
+        };
 
         let tasks: Array<{ id: string; source: string; dependsOn?: string[] }> = [];
         if (queueSource) {
@@ -484,10 +493,10 @@ const name=goalCommand type=any
           // Pass undefined when a flag is unset so the controller's own default
           // applies — note `?? ` would NOT catch a coerced 0, so an unset flag
           // must stay undefined (e.g. maxNoProgress 0 would WRONGLY disable it).
-          maxParkStreak: args.maxParkStreak != null ? num(args.maxParkStreak, 0) : undefined,
-          maxNoProgress: args.maxNoProgress != null ? num(args.maxNoProgress, 0) : undefined,
-          breakerWindow: args.breakerWindow != null ? num(args.breakerWindow, 8) : undefined,
-          breakerMinSuccessRate: args.breakerMinSuccessRate != null ? num(args.breakerMinSuccessRate, 0.125) : undefined,
+          maxParkStreak: optNum(args.maxParkStreak),
+          maxNoProgress: optNum(args.maxNoProgress),
+          breakerWindow: optNum(args.breakerWindow),
+          breakerMinSuccessRate: optNum(args.breakerMinSuccessRate),
           signal: abort.signal,
           implement: implement as any,
           review: review as any,

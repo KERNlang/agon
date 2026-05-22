@@ -6,6 +6,7 @@ import {
   createJournal, addTasks, nextTask, markStatus, recordAttempt,
   remainingCount, isDone, logEvent, saveJournal, loadJournal, journalPath,
 } from '../../packages/forge/src/generated/goal/journal.js';
+import { pushRecentOutcome, globalBreaker } from '../../packages/forge/src/generated/goal/policy.js';
 import type { GoalSpec } from '../../packages/forge/src/generated/goal/types.js';
 
 const spec = (): GoalSpec => ({
@@ -129,6 +130,28 @@ describe('goal journal — persistence (sandboxed AGON_HOME)', () => {
     const loaded = loadJournal('g-test');
     expect(loaded).not.toBeNull();
     expect(loaded!.tasks[0]).toMatchObject({ id: 'a', status: 'done', commitSha: 'abc' });
+  });
+
+  it('persists the recentOutcomes breaker ring across save/load and feeds the window on resume', () => {
+    // Simulate the controller accumulating terminal outcomes across tasks
+    // (1 done then 7 parked — a hard cluster behind one success).
+    let ring: string[] = [];
+    for (const o of ['done', 'parked', 'parked', 'parked', 'parked', 'parked', 'parked', 'parked']) {
+      ring = pushRecentOutcome(ring, o, 50);
+    }
+    expect(ring.length).toBe(8);
+    let j = createJournal(spec());
+    j = { ...j, recentOutcomes: ring };
+    saveJournal(j);
+    const loaded = loadJournal('g-test');
+    expect(loaded).not.toBeNull();
+    // The ring survives the JSON round-trip — a resumed run sees its breaker state.
+    expect(loaded!.recentOutcomes).toEqual(ring);
+    // And the resumed ring drives the window: 1 done / 8 = 0.125, not < 0.125 -> keep going.
+    expect(globalBreaker(loaded!, 0, 0, { size: 8, minSuccessRate: 0.125 }).stop).toBe(false);
+    // Slide the lone success out of the window -> 0/8 -> abort on resume.
+    const allParked = { ...loaded!, recentOutcomes: Array(8).fill('parked') };
+    expect(globalBreaker(allParked, 0, 0, { size: 8, minSuccessRate: 0.125 }).stop).toBe(true);
   });
 
   it('loadJournal returns null for an unknown goal', () => {

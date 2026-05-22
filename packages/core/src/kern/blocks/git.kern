@@ -199,7 +199,7 @@ fn name=linkWorktreeNodeModules params="repoDir:string,worktreePath:string" retu
     }
   >>>
 
-fn name=hydrateWorktreeBuildArtifacts params="repoDir:string,worktreePath:string" returns=void export=false
+fn name=hydrateWorktreeBuildArtifacts params="repoDir:string,worktreePath:string" returns=void export=true
   doc "Git worktrees omit ignored package dist artifacts, but workspace package exports point at dist. Copy existing root artifacts into the candidate worktree so fitness commands can resolve local workspace packages without forcing every forge candidate to rebuild first."
   handler <<<
     const sourcePackages = join(repoDir, 'packages');
@@ -231,6 +231,50 @@ fn name=worktreeCreate params="repoDir:string,worktreePath:string,sha:string" re
     } catch (err) {
       throw new WorktreeError(
         `Failed to create worktree at ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  >>>
+
+fn name=absoluteGitDir params="cwd:string" returns=string
+  doc "Resolve the PER-CHECKOUT git-dir (never the shared common-dir): the main checkout -> <repo>/.git, a linked worktree -> <repo>/.git/worktrees/<name>. Keying an advisory lock here makes sessions sharing ONE checkout contend (same dir) while separate worktrees stay independent (distinct dirs)."
+  handler <<<
+    return git(['rev-parse', '--absolute-git-dir'], cwd);
+  >>>
+
+fn name=branchExists params="repoDir:string,branch:string" returns=boolean
+  doc "True if refs/heads/<branch> already exists in repoDir."
+  handler <<<
+    try {
+      git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], repoDir);
+      return true;
+    } catch {
+      return false;
+    }
+  >>>
+
+fn name=worktreeAddOnBranch params="repoDir:string,worktreePath:string,branch:string,base?:string,link?:boolean" returns=string
+  doc "Add a git worktree checked out on a NAMED branch — unlike worktreeCreate, which detaches for throwaway forge candidates. Prefers git's DWIM (an existing local branch, or a tracking branch when <branch> resolves on exactly one remote); only when that fails is a fresh branch created off base/HEAD. When link is not false, overlay node_modules + dist so the worktree is immediately buildable."
+  handler <<<
+    worktreePrune(repoDir);
+    // Guard the empty string: '' ?? 'HEAD' is '', which git rejects as a start-point.
+    const startPoint = (base && base.trim()) || 'HEAD';
+    try {
+      try {
+        // DWIM: checks out an existing local branch, or creates a tracking
+        // branch when <branch> resolves on exactly one remote.
+        git(['worktree', 'add', worktreePath, branch], repoDir);
+      } catch {
+        // <branch> resolves to no ref — create a fresh branch off the base.
+        git(['worktree', 'add', '-b', branch, worktreePath, startPoint], repoDir);
+      }
+      if (link !== false) {
+        linkWorktreeNodeModules(repoDir, worktreePath);
+        hydrateWorktreeBuildArtifacts(repoDir, worktreePath);
+      }
+      return worktreePath;
+    } catch (err) {
+      throw new WorktreeError(
+        `Failed to add worktree for branch ${branch} at ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   >>>

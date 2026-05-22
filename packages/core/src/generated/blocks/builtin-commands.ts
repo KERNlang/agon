@@ -71,6 +71,7 @@ export function registerBuiltinCommands(registry: CommandRegistry): void {
     { name: 'clear',     desc: '                        — reset session', category: 'session', aliases: ['clean'] },
 
     // Utility
+    { name: 'worktree',     desc: 'new|list|rm|prune|rehydrate <branch> — isolated per-session git worktrees', category: 'utility', aliases: ['wt'] },
     { name: 'create-skill', desc: '<name>                  — scaffold a new skill (.agon/skills/)', category: 'utility' },
     { name: 'img',  desc: '<path>                   — attach image to next prompt', category: 'utility' },
     { name: 'cp',   desc: '[N]                     — copy code block N to clipboard', category: 'utility' },

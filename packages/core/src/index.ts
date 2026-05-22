@@ -29,7 +29,18 @@ export {
   readOnlyDiff, diffLineCount, diffFileCount, applyPatch, recentCommits,
   currentBranch, isDirty,
   gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff,
+  absoluteGitDir, branchExists, worktreeAddOnBranch, hydrateWorktreeBuildArtifacts,
 } from './git.js';
+export {
+  createSessionWorktree, listSessionWorktrees, findSessionWorktree,
+  removeSessionWorktree, pruneSessionWorktrees, rehydrateSessionWorktree,
+  detectPackageManager, sessionWorktreesDir, worktreePathFor,
+} from './worktree-session.js';
+export type { SessionWorktree } from './worktree-session.js';
+export {
+  acquireApplyLock, releaseApplyLock, headChanged, branchChanged,
+} from './worktree-lock.js';
+export type { ApplyLockInfo, ApplyLockResult } from './worktree-lock.js';
 export { spawnWithTimeout, spawnStream } from './process.js';
 export type { SpawnOptions } from './process.js';
 export {

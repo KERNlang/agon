@@ -22,6 +22,7 @@ import { installAgentPromptsCommand } from './commands/install-agent-prompts.js'
 import { goalCommand } from './commands/goal.js';
 import { synthesisCommand } from './commands/synthesis.js';
 import { worktreeCommand } from './commands/worktree.js';
+import { loginCommand } from './commands/login.js';
 import { startRepl } from './repl.js';
 import { runOnboarding } from './onboarding.js';
 import { loadConfig, loadAllAuthKeys, configSet } from '@agon/core';
@@ -147,6 +148,7 @@ const main = defineCommand({
     synthesis: synthesisCommand,
     worktree: worktreeCommand,
     wt: worktreeCommand,
+    login: loginCommand,
   },
 });
 

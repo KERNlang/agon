@@ -4,15 +4,15 @@ import { defineCommand } from 'citty';
 
 import { spawnSync } from 'node:child_process';
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 
-import { tmpdir } from 'node:os';
+import { tmpdir, homedir } from 'node:os';
 
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 
 import { fileURLToPath } from 'node:url';
 
-import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, resolveDedupSidecar } from '@agon/core';
+import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, resolveDedupSidecar, agonPath } from '@agon/core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
@@ -144,6 +144,44 @@ export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: En
 }
 
 // @kern-source: doctor:122
+export interface IsolationDoctorEntry {
+  id: string;
+  authed: boolean;
+  detail: string;
+}
+
+/**
+ * Report whether ONE engine's clean workspace-pure config dir is (or will be) authenticated — the consumer surface for isolationHints.setupHint. Returns null for engines with no configEnv (API-only: nothing to isolate). If the clean dir already carries the authMarker it's authenticated. Otherwise, for FILE-BASED engines (authFiles non-empty, e.g. codex) the clean dir is seeded from the real config home on each dispatch, so the engine is effectively authenticated when those source creds exist — even before the first dispatch materialises the dir. Keychain-based engines (claude, empty authFiles) have nothing to seed, so an absent marker means a one-time `agon login` is genuinely required; surface the setupHint.
+ */
+// @kern-source: doctor:127
+export function diagnoseEngineIsolation(engine: EngineDefinition, cleanConfigDir: string): IsolationDoctorEntry|null {
+  const hints = engine.isolationHints;
+  if (!hints?.configEnv) return null;
+  const marker = hints.authMarker?.trim();
+  if (marker && existsSync(join(cleanConfigDir, basename(marker)))) {
+    return { id: engine.id, authed: true, detail: `clean dispatch authenticated (${cleanConfigDir})` };
+  }
+  if (!marker) {
+    return { id: engine.id, authed: true, detail: `no auth marker required (${cleanConfigDir})` };
+  }
+  // Clean dir not seeded yet — for file-based engines, check the seed source:
+  // a dispatch copies authFiles from the real config home, so present source
+  // creds mean it WILL authenticate. Tie this to the ACTUAL marker the dispatch
+  // gate checks: the marker must itself be one of the seeded files and present
+  // at the source — otherwise the seed wouldn't satisfy the gate and reporting
+  // "authed" would be a false positive.
+  const authFiles = hints.authFiles ?? [];
+  const markerSource = authFiles.find((rel: string) => basename(rel) === basename(marker));
+  if (markerSource) {
+    const realHome = process.env[hints.configEnv] || (hints.personalPaths?.[0] ?? '').replace(/^~(?=$|\/)/, homedir());
+    if (!!realHome && existsSync(join(realHome, markerSource))) {
+      return { id: engine.id, authed: true, detail: `will seed credentials from ${realHome} on dispatch` };
+    }
+  }
+  return { id: engine.id, authed: false, detail: hints.setupHint ?? `run \`agon login ${engine.id}\`` };
+}
+
+// @kern-source: doctor:156
 export interface PythonDoctorResult {
   status: 'ok'|'warn'|'fail';
   detail: string;
@@ -153,13 +191,13 @@ export interface PythonDoctorResult {
 /**
  * Every Python file the bridges actually spawn. Doctor confirms ALL of them are reachable through resolveDedupSidecar — a bad package that ships only some is still a problem.
  */
-// @kern-source: doctor:127
+// @kern-source: doctor:161
 export const EXPECTED_SIDECARS: string[] = ['history-search.py','syntax-validator.py','classifier.py','sidecar.py'];
 
 /**
  * Probe whether the Python interpreter exists, every expected sidecar file resolves, and the deps (fastembed, numpy, tree-sitter + grammars) are importable. Fail-soft: not having Python means semantic features fall back, not that agon is broken.
  */
-// @kern-source: doctor:130
+// @kern-source: doctor:164
 export function diagnoseDedupPython(): PythonDoctorResult {
   const python = process.env.AGON_PYTHON || 'python3';
   // Tiny probe — imports every dep used across the 4 sidecars in one shot.
@@ -230,7 +268,7 @@ export function diagnoseDedupPython(): PythonDoctorResult {
   };
 }
 
-// @kern-source: doctor:202
+// @kern-source: doctor:236
 export function checkDoctorWorktree(cwd: string): {ok:boolean; message:string; cleanupCommand:string} {
   let root = '';
   let tempDir = '';
@@ -267,7 +305,7 @@ export function checkDoctorWorktree(cwd: string): {ok:boolean; message:string; c
 /**
  * Diagnose the live Cesar harness: selected engine, backend capability, native/MCP session state, and observed tool reliability.
  */
-// @kern-source: doctor:236
+// @kern-source: doctor:270
 export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, cesar?: any): HarnessDoctorReport {
   const rows: string[][] = [];
   const selected = String((config as any)?.cesarEngine ?? (config as any)?.forgeFixedStarter ?? 'claude');
@@ -339,14 +377,14 @@ export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, 
   };
 }
 
-// @kern-source: doctor:309
+// @kern-source: doctor:343
 export interface ReviewDoctorReport {
   rows: string[][];
   ok: boolean;
   summary: string;
 }
 
-// @kern-source: doctor:314
+// @kern-source: doctor:348
 export const REVIEW_DOCTOR_DIFF: string = [
   'diff --git a/sample.ts b/sample.ts',
   'new file mode 100644',
@@ -362,7 +400,7 @@ export const REVIEW_DOCTOR_DIFF: string = [
 /**
  * Review-specific reliability smoke test (#8). For each engine, runs a real review of a tiny synthetic buggy diff through the full runReviewCore pipeline (prompt → dispatch → sentinel parse → repair) under a short hard timeout, then classifies whether the engine produced machine-parseable output. This catches engines that pass `doctor engines` (binary/key reachable) but hang or emit unparseable output in actual review use — the kimi/zai failure mode the user hit.
  */
-// @kern-source: doctor:326
+// @kern-source: doctor:360
 export async function runReviewDoctor(registry: EngineRegistry, config: any, adapter: any, engineIds: string[], timeoutSec: number): Promise<ReviewDoctorReport> {
   // Align the inner dispatch timeout with the orchestrator wall clock (+grace)
   // so a misbehaving dispatch path that defers abort still can't exceed the
@@ -418,7 +456,7 @@ export async function runReviewDoctor(registry: EngineRegistry, config: any, ada
   };
 }
 
-// @kern-source: doctor:383
+// @kern-source: doctor:417
 export const doctorCommand: any = defineCommand({
   meta: {
     name: 'doctor',
@@ -551,6 +589,21 @@ export const doctorCommand: any = defineCommand({
       warn(`Python sidecars unavailable: ${python.detail}`);
       if (python.installCommand) info(`Fix: ${python.installCommand}`);
       info('Agon still works — semantic history, syntax validator, dedup, and task classifier will use fallback paths.');
+    }
+
+    // Workspace-pure isolation: for each CLI engine with a clean config dir,
+    // report whether it's authenticated there. Surfaces isolationHints.setupHint
+    // so a silent fallback-to-personal-config is visible and actionable.
+    const isoEntries = registry.list()
+      .map((engine: EngineDefinition) => diagnoseEngineIsolation(engine, agonPath('pure', engine.id)))
+      .filter((e: IsolationDoctorEntry | null): e is IsolationDoctorEntry => e !== null);
+    if (isoEntries.length > 0) {
+      console.log('');
+      info('Workspace-pure isolation (clean per-engine config dirs):');
+      for (const e of isoEntries) {
+        if (e.authed) success(`  ${bold(e.id)}: ${e.detail}`);
+        else warn(`  ${bold(e.id)}: not logged in — ${e.detail}`);
+      }
     }
 
     const failing = entries.filter((entry: EngineDoctorEntry) => entry.status === 'fail');

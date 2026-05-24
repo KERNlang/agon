@@ -67,6 +67,22 @@ describe('Engine Config Validation', () => {
         expect(result.data.companion?.sandbox).toBe(raw.companion.sandbox);
       });
 
+      // Regression: the Zod schema strips any key it doesn't model. isolationHints
+      // was absent from the schema, so it was silently dropped at load and
+      // workspace-pure isolation never actually ran. The validated config MUST
+      // round-trip the engine's isolation knobs.
+      it('preserves isolationHints (configEnv/authMarker/loginArgs) in validated config', () => {
+        if (!raw.isolationHints) return;
+        const result = validateEngineConfig(raw, filename);
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.data.isolationHints).toBeDefined();
+        expect(result.data.isolationHints?.configEnv).toBe(raw.isolationHints.configEnv);
+        expect(result.data.isolationHints?.authMarker).toBe(raw.isolationHints.authMarker);
+        expect(result.data.isolationHints?.loginArgs).toEqual(raw.isolationHints.loginArgs);
+        expect(result.data.isolationHints?.authFiles).toEqual(raw.isolationHints.authFiles);
+      });
+
       it('passes Zod validation (with warnings for missing optionals)', () => {
         const result = validateEngineConfig(raw, filename);
         // Log warnings but don't fail — some configs are intentionally minimal
@@ -107,6 +123,33 @@ describe('Engine Config Validation', () => {
           expect(raw.api.apiKeyEnv.length).toBeGreaterThan(0);
         }
       }
+    });
+  });
+
+  // isolationHints.authFiles/authMarker get joined into filesystem paths (seed
+  // copy + the auth gate's existsSync). Validate that the schema rejects path
+  // traversal so an untrusted engine config can't escape the clean dir.
+  describe('isolationHints path-safety validation', () => {
+    const base = { schemaVersion: 3, id: 't', displayName: 't', isLocal: false, tier: 'builtin', timeout: 120 };
+
+    it('rejects authMarker containing path separators', () => {
+      expect(validateEngineConfig({ ...base, isolationHints: { configEnv: 'X', authMarker: '../../../etc/passwd' } }, 't.json').ok).toBe(false);
+    });
+
+    it('rejects authMarker of "." or ".." (basename would resolve to the dir itself)', () => {
+      expect(validateEngineConfig({ ...base, isolationHints: { authMarker: '.' } }, 't.json').ok).toBe(false);
+      expect(validateEngineConfig({ ...base, isolationHints: { authMarker: '..' } }, 't.json').ok).toBe(false);
+    });
+
+    it('rejects authFiles with traversal, absolute paths, or empty entries', () => {
+      expect(validateEngineConfig({ ...base, isolationHints: { authFiles: ['../secret'] } }, 't.json').ok).toBe(false);
+      expect(validateEngineConfig({ ...base, isolationHints: { authFiles: ['/etc/passwd'] } }, 't.json').ok).toBe(false);
+      expect(validateEngineConfig({ ...base, isolationHints: { authFiles: [''] } }, 't.json').ok).toBe(false);
+    });
+
+    it('accepts the real claude/codex isolationHints shapes', () => {
+      expect(validateEngineConfig({ ...base, isolationHints: { configEnv: 'CLAUDE_CONFIG_DIR', authFiles: [], authMarker: '.claude.json', loginArgs: ['auth', 'login'] } }, 't.json').ok).toBe(true);
+      expect(validateEngineConfig({ ...base, isolationHints: { configEnv: 'CODEX_HOME', authFiles: ['auth.json'], authMarker: 'auth.json', loginArgs: ['login'] } }, 't.json').ok).toBe(true);
     });
   });
 });

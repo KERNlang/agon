@@ -1,7 +1,7 @@
 import from="@agon/core" names="EngineDefinition,EngineMode,EngineModeConfig,ImageAttachment,EngineIsolationPlan" types=true
 import from="@agon/core" names="EngineNotFoundError,loadConfig,engineHealth,classifyDispatchFailure,resolveIsolationMode,planEngineIsolation,agonPath"
-import from="node:fs" names="statSync,mkdirSync,existsSync,copyFileSync"
-import from="node:path" names="join,dirname"
+import from="node:fs" names="statSync,mkdirSync,existsSync,copyFileSync,chmodSync,unlinkSync"
+import from="node:path" names="join,dirname,basename"
 import from="node:os" names="homedir"
 
 fn name=recordDispatchHealth params="engineId:string, result:{exitCode?:number,stderr?:string,timedOut?:boolean}" returns=void
@@ -37,17 +37,26 @@ fn name=computeEngineIsolation params="engine:EngineDefinition, opts:{isolation?
     }
     const cleanConfigDir = agonPath('pure', engine.id);
     try {
-      mkdirSync(cleanConfigDir, { recursive: true });
-      // Preserve login: copy ONLY the credential file(s) from the engine's real
-      // config home into the clean dir. Personal config (CLAUDE.md/plugins/hooks/
-      // MCP) is intentionally NOT copied. No-op when auth lives in the OS keychain.
+      mkdirSync(cleanConfigDir, { recursive: true, mode: 0o700 });
+      try { chmodSync(cleanConfigDir, 0o700); } catch { /* best effort */ } // holds credentials (mode above narrows the creation window)
+      // Seed FILE-based credentials (codex auth.json) from the engine's real
+      // config home — personal config (CLAUDE.md/plugins/hooks/MCP) is NOT
+      // copied. claude is KEYCHAIN-based: authFiles is empty (no copyable
+      // credential), and the clean dir is authenticated by a one-time
+      // `claude /login` instead (see isolationHints.setupHint).
       const realHome = process.env[hints.configEnv] || (hints.personalPaths?.[0] ?? '').replace(/^~(?=$|\/)/, homedir());
       for (const rel of hints.authFiles ?? []) {
         const src = join(realHome, rel);
+        const dst = join(cleanConfigDir, rel);
         if (realHome && existsSync(src)) {
-          const dst = join(cleanConfigDir, rel);
           mkdirSync(dirname(dst), { recursive: true });
           copyFileSync(src, dst);
+          try { chmodSync(dst, 0o600); } catch { /* best effort */ } // owner-only credential
+        } else if (existsSync(dst)) {
+          // Source credential is gone (engine logged out / signed out) — drop the
+          // stale copy so the authMarker check below reflects reality and we fall
+          // back to inherit instead of dispatching with dead credentials.
+          try { unlinkSync(dst); } catch { /* best effort */ }
         }
       }
     } catch {
@@ -55,7 +64,20 @@ fn name=computeEngineIsolation params="engine:EngineDefinition, opts:{isolation?
       // or broken dispatch; fall back to inheriting the real config for this call.
       return inherit;
     }
-    const plan = planEngineIsolation(engine, mode, { cleanConfigDir });
+    // Detection gate: isolate ONLY when the clean dir is actually authenticated
+    // (its authMarker exists on disk) — for claude that means a one-time
+    // `agon login claude` was done, for codex that the auth.json seed landed.
+    // Absent ⇒ planEngineIsolation falls back to inherit (never breaks a
+    // dispatch), carrying the setupHint. basename() keeps the lookup inside the
+    // clean dir even if a marker were misconfigured with path separators; an
+    // empty/whitespace marker is treated as "no marker" (assume authed) rather
+    // than silently passing the gate via JS falsiness. (A stale marker from a
+    // logged-out dir is a known false-positive: the dispatch then fails fast and
+    // recordDispatchHealth quarantines on auth-failed — acceptable vs. spawning
+    // an auth-status probe on every dispatch.)
+    const marker = hints.authMarker?.trim();
+    const authenticated = marker ? existsSync(join(cleanConfigDir, basename(marker))) : true;
+    const plan = planEngineIsolation(engine, mode, { cleanConfigDir, authenticated });
     const env = plan.isolate && Object.keys(plan.setEnv).length > 0 ? plan.setEnv : undefined;
     return { env, argsExtra: plan.argsExtra, plan };
   >>>

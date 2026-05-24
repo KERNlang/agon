@@ -67,6 +67,9 @@
     "configEnv": "CODEX_HOME",
     "personalPaths": ["~/.codex"],
     "authFiles": ["auth.json"],
+    "authMarker": "auth.json",
+    "loginArgs": ["login"],
+    "setupHint": "Clean codex dispatch needs codex signed in (so ~/.codex/auth.json exists). Run `agon login codex` or `codex login`.",
     "supportsProjectMcp": true
   }
 }

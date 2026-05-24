@@ -70,7 +70,10 @@
     "configEnv": "CLAUDE_CONFIG_DIR",
     "strictMcpArgs": ["--strict-mcp-config"],
     "personalPaths": ["~/.claude"],
-    "authFiles": [".credentials.json"],
+    "authFiles": [],
+    "authMarker": ".claude.json",
+    "loginArgs": ["auth", "login"],
+    "setupHint": "Clean claude dispatch needs a one-time login: run `agon login claude`. Until then claude dispatches use your normal config.",
     "supportsProjectMcp": true
   }
 }

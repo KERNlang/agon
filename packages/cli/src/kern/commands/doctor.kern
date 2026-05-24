@@ -1,10 +1,10 @@
 import from="citty" names="defineCommand"
 import from="node:child_process" names="spawnSync"
-import from="node:fs" names="mkdtempSync,rmSync,writeFileSync"
-import from="node:os" names="tmpdir"
-import from="node:path" names="join,dirname"
+import from="node:fs" names="mkdtempSync,rmSync,writeFileSync,existsSync"
+import from="node:os" names="tmpdir,homedir"
+import from="node:path" names="join,dirname,basename"
 import from="node:url" names="fileURLToPath"
-import from="@agon/core" names="EngineRegistry,loadConfig,resolveWorkingDir,repoRoot,headSha,worktreeCreate,worktreeRemoveBestEffort,resolveDedupSidecar"
+import from="@agon/core" names="EngineRegistry,loadConfig,resolveWorkingDir,repoRoot,headSha,worktreeCreate,worktreeRemoveBestEffort,resolveDedupSidecar,agonPath"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@agon/core" names="EngineDefinition" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
@@ -117,6 +117,40 @@ fn name=diagnoseEngineDoctorEntry params="engine:EngineDefinition, registry:Engi
       modes,
       detail: details.join('; '),
     };
+  >>>
+
+interface name=IsolationDoctorEntry
+  field name=id type=string
+  field name=authed type=boolean
+  field name=detail type=string
+
+fn name=diagnoseEngineIsolation params="engine:EngineDefinition, cleanConfigDir:string" returns="IsolationDoctorEntry|null" export=true
+  doc "Report whether ONE engine's clean workspace-pure config dir is (or will be) authenticated — the consumer surface for isolationHints.setupHint. Returns null for engines with no configEnv (API-only: nothing to isolate). If the clean dir already carries the authMarker it's authenticated. Otherwise, for FILE-BASED engines (authFiles non-empty, e.g. codex) the clean dir is seeded from the real config home on each dispatch, so the engine is effectively authenticated when those source creds exist — even before the first dispatch materialises the dir. Keychain-based engines (claude, empty authFiles) have nothing to seed, so an absent marker means a one-time `agon login` is genuinely required; surface the setupHint."
+  handler <<<
+    const hints = engine.isolationHints;
+    if (!hints?.configEnv) return null;
+    const marker = hints.authMarker?.trim();
+    if (marker && existsSync(join(cleanConfigDir, basename(marker)))) {
+      return { id: engine.id, authed: true, detail: `clean dispatch authenticated (${cleanConfigDir})` };
+    }
+    if (!marker) {
+      return { id: engine.id, authed: true, detail: `no auth marker required (${cleanConfigDir})` };
+    }
+    // Clean dir not seeded yet — for file-based engines, check the seed source:
+    // a dispatch copies authFiles from the real config home, so present source
+    // creds mean it WILL authenticate. Tie this to the ACTUAL marker the dispatch
+    // gate checks: the marker must itself be one of the seeded files and present
+    // at the source — otherwise the seed wouldn't satisfy the gate and reporting
+    // "authed" would be a false positive.
+    const authFiles = hints.authFiles ?? [];
+    const markerSource = authFiles.find((rel: string) => basename(rel) === basename(marker));
+    if (markerSource) {
+      const realHome = process.env[hints.configEnv] || (hints.personalPaths?.[0] ?? '').replace(/^~(?=$|\/)/, homedir());
+      if (!!realHome && existsSync(join(realHome, markerSource))) {
+        return { id: engine.id, authed: true, detail: `will seed credentials from ${realHome} on dispatch` };
+      }
+    }
+    return { id: engine.id, authed: false, detail: hints.setupHint ?? `run \`agon login ${engine.id}\`` };
   >>>
 
 interface name=PythonDoctorResult
@@ -514,6 +548,21 @@ const name=doctorCommand type="any"
           warn(`Python sidecars unavailable: ${python.detail}`);
           if (python.installCommand) info(`Fix: ${python.installCommand}`);
           info('Agon still works — semantic history, syntax validator, dedup, and task classifier will use fallback paths.');
+        }
+
+        // Workspace-pure isolation: for each CLI engine with a clean config dir,
+        // report whether it's authenticated there. Surfaces isolationHints.setupHint
+        // so a silent fallback-to-personal-config is visible and actionable.
+        const isoEntries = registry.list()
+          .map((engine: EngineDefinition) => diagnoseEngineIsolation(engine, agonPath('pure', engine.id)))
+          .filter((e: IsolationDoctorEntry | null): e is IsolationDoctorEntry => e !== null);
+        if (isoEntries.length > 0) {
+          console.log('');
+          info('Workspace-pure isolation (clean per-engine config dirs):');
+          for (const e of isoEntries) {
+            if (e.authed) success(`  ${bold(e.id)}: ${e.detail}`);
+            else warn(`  ${bold(e.id)}: not logged in — ${e.detail}`);
+          }
         }
 
         const failing = entries.filter((entry: EngineDoctorEntry) => entry.status === 'fail');

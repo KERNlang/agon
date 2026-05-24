@@ -47,6 +47,41 @@ export const ApiConfigSchema = z.object({
   format: z.enum(['openai', 'anthropic']).optional(),
 });
 
+// Workspace-pure isolation knobs. MUST be modelled here or Zod silently strips
+// it at load (z.object drops unknown keys), leaving every registry-loaded engine
+// with isolationHints=undefined — which makes computeEngineIsolation fall back to
+// inherit and isolation never actually happens. Mirrors EngineDefinition.isolationHints
+// in types.kern.
+// authFiles/authMarker are joined into filesystem paths (seed copy + the auth
+// gate's existsSync). Engine configs are normally trusted builtins, but user/
+// plugin-provided configs aren't — reject path traversal at load so a config
+// can't read outside the real config home or have its marker resolve to the dir
+// itself. (basename() at the use-sites is the runtime backstop; this surfaces
+// the misconfig loudly at load.)
+const RelAuthFile = z
+  .string()
+  .refine(
+    (v) => v.length > 0 && !v.startsWith('/') && !v.startsWith('\\') && !/(^|[\\/])\.\.([\\/]|$)/.test(v),
+    { message: 'authFiles entries must be non-empty relative paths without ".." segments' },
+  );
+const AuthMarker = z
+  .string()
+  .refine(
+    (v) => v === '' || (!/[\\/]/.test(v) && v !== '.' && v !== '..'),
+    { message: 'authMarker must be a bare filename (no path separators, not "." or "..")' },
+  );
+
+export const IsolationHintsSchema = z.object({
+  configEnv: z.string().optional(),
+  strictMcpArgs: z.array(z.string()).optional(),
+  personalPaths: z.array(z.string()).optional(),
+  authFiles: z.array(RelAuthFile).optional(),
+  authMarker: AuthMarker.optional(),
+  setupHint: z.string().optional(),
+  loginArgs: z.array(z.string()).optional(),
+  supportsProjectMcp: z.boolean().optional(),
+});
+
 export const EngineDefinitionSchema = z.object({
   schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   id: z.string().min(1),
@@ -72,6 +107,7 @@ export const EngineDefinitionSchema = z.object({
   systemPromptFlag: z.string().optional(),
   api: ApiConfigSchema.optional(),
   companion: CompanionConfigSchema.optional(),
+  isolationHints: IsolationHintsSchema.optional(),
 });
 
 export type ValidatedEngineDefinition = z.infer<typeof EngineDefinitionSchema>;

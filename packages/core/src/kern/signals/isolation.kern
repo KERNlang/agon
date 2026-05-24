@@ -35,6 +35,8 @@ interface name=EngineIsolationPlan export=true
     doc "The clean config dir applied via the engine's configEnv, when it has one."
   field name=strippedPersonal type=boolean
     doc "True when the user's personal/global layer was stripped (for the migration notice + provenance)."
+  field name=setupHint type=string optional=true
+    doc "Set only on the inherit-fallback plan when workspace-pure was requested but the engine's clean config dir isn't authenticated (e.g. claude's keychain login not yet established there). The one-time instruction to surface so the user can enable clean dispatch."
 
 fn name=isValidIsolationMode params="v:unknown" returns="boolean" export=true
   doc "Type-guard for untrusted isolation values (env var, config, CLI flag). Anything not a known mode is rejected so a typo falls through to the next source rather than corrupting dispatch."
@@ -50,13 +52,21 @@ fn name=resolveIsolationMode params="opts:{option?:string, env?:string, config?:
     return pick(opts.option) ?? pick(opts.env) ?? pick(opts.config) ?? 'workspace-pure';
   >>>
 
-fn name=planEngineIsolation params="engine:EngineDefinition, mode:'workspace-pure'|'inherit', opts:{cleanConfigDir:string}" returns="EngineIsolationPlan" export=true
-  doc "Decide what to strip for one engine dispatch. PURE: the caller materialises opts.cleanConfigDir (clean dir seeded with only the auth file) and merges the returned setEnv/argsExtra into the spawn. 'inherit' isolates nothing. An engine with no isolationHints (API-only: kimi/minimax/zai — no local process, no inherited config) is already pure, so isolate=false. Otherwise apply the engine's configEnv (clean config dir) + strictMcpArgs."
+fn name=planEngineIsolation params="engine:EngineDefinition, mode:'workspace-pure'|'inherit', opts:{cleanConfigDir:string, authenticated?:boolean}" returns="EngineIsolationPlan" export=true
+  doc "Decide what to strip for one engine dispatch. PURE: the caller materialises opts.cleanConfigDir and, for a config-dir engine, sets opts.authenticated = whether that clean dir is actually logged in (the adapter checks the engine's authMarker on disk; defaults true so a caller that omits it keeps the legacy 'assume authed' behavior). 'inherit' isolates nothing. An engine with no isolationHints (API-only: kimi/minimax/zai) is already pure. A configEnv engine that is NOT authenticated in its clean dir CANNOT be isolated without breaking auth — fall back to inherit (never break a dispatch) carrying the engine's setupHint. (claude's login is keychain-based and keyed to the DEFAULT config dir, so a redirected CLAUDE_CONFIG_DIR can't borrow it — the clean dir needs its own one-time `claude /login`; codex is file-based so its seeded auth.json doubles as the marker.) Otherwise apply the engine's configEnv (clean config dir) + strictMcpArgs."
   handler <<<
     const base = { engineId: engine.id, mode };
     const hints = engine.isolationHints;
     if (mode === 'inherit' || !hints) {
       return { ...base, isolate: false, setEnv: {}, argsExtra: [], strippedPersonal: false };
+    }
+    // A config-dir engine that isn't authenticated in its clean dir can't be
+    // isolated without logging it out — inherit instead, and tell the user how
+    // to enable clean dispatch. (authenticated defaults true: callers that
+    // pre-seed a file credential or skip the check keep isolating.)
+    const authenticated = opts.authenticated ?? true;
+    if (hints.configEnv && !authenticated) {
+      return { ...base, isolate: false, setEnv: {}, argsExtra: [], strippedPersonal: false, setupHint: hints.setupHint };
     }
     const setEnv: Record<string, string> = hints.configEnv ? { [hints.configEnv]: opts.cleanConfigDir } : {};
     const argsExtra: string[] = hints.strictMcpArgs ? [...hints.strictMcpArgs] : [];

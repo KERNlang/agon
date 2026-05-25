@@ -354,13 +354,20 @@ describe('Cesar Brain', () => {
       expect(tool.validate({ question: 'which?', mode: 'invalid' }, {} as any)).toContain('Invalid mode');
     });
 
-    it('all orchestration tools are read-only', () => {
-      const tools = [createForgeTool(), createBrainstormTool(), createTribunalTool(), createCampfireTool(), createPipelineTool(), createReportConfidenceTool()];
+    it('read-only orchestration tools are marked safe', () => {
+      const tools = [createForgeTool(), createBrainstormTool(), createTribunalTool(), createCampfireTool(), createReportConfidenceTool()];
       for (const t of tools) {
         expect(t.definition.isReadOnly).toBe(true);
         expect(t.definition.isConcurrencySafe).toBe(true);
         expect(t.checkPermission({}, {} as any).behavior).toBe('allow');
       }
+    });
+
+    it('Pipeline is marked mutating because it can apply review fixes', () => {
+      const tool = createPipelineTool();
+      expect(tool.definition.isReadOnly).toBe(false);
+      expect(tool.definition.isConcurrencySafe).toBe(false);
+      expect(tool.checkPermission({}, {} as any).behavior).toBe('allow');
     });
   });
 });

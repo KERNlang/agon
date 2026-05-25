@@ -107,7 +107,7 @@ export function shouldRunEagerRepairTool(toolName: string, meta: any, failedTool
  */
 // @kern-source: brain:77
 export function shouldStopAfterXmlToolCall(toolName: string): boolean {
-  const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'ProposePlan']);
+  const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan']);
   return HANDOFF_TOOLS.has(String(toolName ?? ''));
 }
 
@@ -147,7 +147,7 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
         ? (argsRecord.engine as string).split(/[,\s]+/).map((id) => id.trim().toLowerCase()).filter(Boolean)
         : []
     : [];
-  const delegatedTask = (argsRecord.task ?? argsRecord.question ?? argsRecord.topic ?? argsRecord.target ?? '') as string;
+  const delegatedTask = (argsRecord.task ?? argsRecord.question ?? argsRecord.topic ?? argsRecord.target ?? argsRecord.intent ?? '') as string;
   return {
     action: toolName.toLowerCase(),
     task: delegatedTask,
@@ -167,11 +167,17 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
     engines: Array.isArray(enginesRaw) ? (enginesRaw as string[]) : reviewEngines.length > 0 ? reviewEngines : undefined,
     taskKind: (taskKindRaw === 'investigate' ? 'investigate' : (taskKindRaw === 'edit' ? 'edit' : undefined)) as 'edit' | 'investigate' | undefined,
     maxTurns: typeof argsRecord.maxTurns === 'number' ? (argsRecord.maxTurns as number) : undefined,
+    queue: typeof argsRecord.queue === 'string' ? (argsRecord.queue as string) : undefined,
+    gate: typeof argsRecord.gate === 'string' ? (argsRecord.gate as string) : undefined,
+    push: (argsRecord.push as boolean) ?? undefined,
+    pr: (argsRecord.pr as boolean) ?? undefined,
+    maxHours: typeof argsRecord.maxHours === 'number' ? (argsRecord.maxHours as number) : undefined,
+    budget: typeof argsRecord.budget === 'number' ? (argsRecord.budget as number) : undefined,
     createdAt: Date.now(),
   };
 }
 
-// @kern-source: brain:138
+// @kern-source: brain:144
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) {
     dispatch({ type: 'streaming-end', engineId: cesarEngineId });
@@ -193,12 +199,12 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
     const action = pendingDel.team ? `team-${finalAction}` : finalAction;
     const mode = (finalAction === 'forge' && pendingDel.scope === 'slice' && !(delResult.team ?? pendingDel.team)) ? 'forge-slice' : action;
     const reasoning = delResult.userContext ? `${pendingDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : pendingDel.reasoning;
-    return { mode: mode as any, delegated: true, responded: true, action: action, task: pendingDel.task, reasoning: reasoning, decisionReason: 'tool-delegation', scope: pendingDel.scope, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns, ...telemetry ?? {} };
+    return { mode: mode as any, delegated: true, responded: true, action: action, task: pendingDel.task, reasoning: reasoning, decisionReason: 'tool-delegation', scope: pendingDel.scope, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns, queue: pendingDel.queue, gate: pendingDel.gate, push: pendingDel.push, pr: pendingDel.pr, maxHours: pendingDel.maxHours, budget: pendingDel.budget, ...telemetry ?? {} };
   }
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:160
+// @kern-source: brain:166
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) {
     dispatch({ type: 'streaming-end', engineId: cesarEngineId });
@@ -226,7 +232,7 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:182
+// @kern-source: brain:188
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -541,7 +547,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         const fastPathMode = simpleEditFastPath ? 'edit' : (answerFastPath ? 'answer' : '');
         const fastPathBaseBudget = simpleEditFastPath ? 5 : 3;
         const fastPathMaxBudget = simpleEditFastPath ? 8 : 4;
-        const FAST_PATH_BLOCKED_TOOLS = ['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Delegate', 'ProposePlan', 'QuickNero'];
+        const FAST_PATH_BLOCKED_TOOLS = ['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'Delegate', 'ProposePlan', 'QuickNero'];
         if (cesarFastPath && !restoreFastPathMode) {
           const hadPreviousFastPathMode = Object.prototype.hasOwnProperty.call(ctx.cesar as any, 'fastPathMode');
           const previousFastPathMode = (ctx.cesar as any).fastPathMode;
@@ -765,7 +771,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
               const toolName = chunk.content || 'tool';
               const toolStatus = (meta.status as string) ?? 'running';
-              const STREAM_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent']);
+              const STREAM_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal']);
               hadToolActivity = true;
               recordToolUse(toolName, ctx.cesar!.hasNativeTools ? 'native' : 'eager', toolInput, toolStatus);
               dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
@@ -1306,7 +1312,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   // Intercept orchestration signal tools — set _pendingDelegation.
                   // 'Agent' is in the set so Cesar can spawn autonomous parallel agents
                   // from a chat turn without requiring the user to type /agent (PFB-1, RT-1).
-                  const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent']);
+                  const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal']);
                   if (LOOP_ORCH.has(name)) {
                     if (cesarFastPath) {
                       return;
@@ -1714,7 +1720,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // pipeline so XML-tool engines (Kimi/Z.AI) actually execute, not just plan.
         // Source: campfire 2026-05-19 + multi-engine review (codex/gemini/...).
         const _AUTO_CONT_WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-        const _AUTO_CONT_LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent']);
+        const _AUTO_CONT_LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal']);
         // Continue-intent words signal multi-step work in progress; if present alongside
         // a write tool, treat as still-going rather than done. Catches gemini-review #4.
         const _AUTO_CONT_CONTINUE_RE = /\b(?:now i'?ll|next i'?ll|still need|let me also|i'?ll also|then i'?ll|next step|next up)\b/i;

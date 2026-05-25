@@ -266,13 +266,13 @@ fn name=createReviewTool returns=ToolHandler
   handler <<<
     const definition: ToolDefinition = {
       name: 'Review',
-      description: 'Delegate to code review — dispatches one or more engines to review uncommitted changes, a branch diff, or a specific commit. Use when the user asks for a code review, PR review, or diff review.\n\nENGINE SELECTION:\n- If the user explicitly names one engine ("review with gemini") → set engine.\n- If the user names multiple ("review with codex and gemini") → set engines.\n- If the user does NOT name engines, YOU decide based on stakes:\n  • HIGH-STAKES (contract changes, multi-file refactors, architecture, security-sensitive code, race conditions, error-handling rewrites, anything that risks regressions) → set engines: ["codex","gemini"] for diverse parallel review. Different model families catch different bug classes.\n  • ROUTINE (typo fixes, single-file tweaks, docs, formatting, low-risk cleanups) → omit engine and engines; let runtime auto-select one reviewer.\nWhen unsure, lean toward two engines — the cost (one extra ~3min review) is worth catching regressions early. After calling, STOP and wait.',
+      description: 'Delegate to read-only code review — dispatches one or more engines in parallel to review uncommitted changes, a branch diff, or a specific commit. Use when the user asks for review only. If the user asks to review AND fix, call Pipeline instead so findings are addressed immediately.\n\nENGINE SELECTION:\n- If the user explicitly names one engine ("review with gemini") → set engine.\n- If the user names multiple ("review with codex and claude", "review with codex and gemini") → set engines to the named reviewers.\n- If the user does NOT name engines, YOU decide based on stakes:\n  • HIGH-STAKES (contract changes, multi-file refactors, architecture, security-sensitive code, race conditions, error-handling rewrites, anything that risks regressions) → set two diverse engines such as ["codex","claude"] or ["codex","gemini"] for parallel review.\n  • ROUTINE (typo fixes, single-file tweaks, docs, formatting, low-risk cleanups) → omit engine and engines; let runtime auto-select one reviewer.\nWhen unsure, lean toward two engines — the cost (one extra ~3min review) is worth catching regressions early. After calling, STOP and wait.',
       inputSchema: {
         type: 'object',
         properties: {
           target: { type: 'string', description: 'Review target: "uncommitted" (default), "branch:NAME", or "commit:SHA".' },
           engine: { type: 'string', description: 'Specific engine for review. Set only when the user explicitly names a single engine; otherwise prefer engines (for high-stakes) or omit (for routine).' },
-          engines: { type: 'array', items: { type: 'string' }, description: 'Multiple engines for review. Set when user names multiple reviewers, OR when this is a high-stakes change (contract changes, multi-file refactors, architecture, security). Default for high-stakes: ["codex","gemini"].' },
+          engines: { type: 'array', items: { type: 'string' }, description: 'Multiple engines for parallel review. Set when user names multiple reviewers, OR when this is a high-stakes change (contract changes, multi-file refactors, architecture, security). Examples: ["codex","claude"], ["codex","gemini"].' },
         },
         required: [],
       },
@@ -301,7 +301,7 @@ fn name=createAgentTool returns=ToolHandler
   handler <<<
     const definition: ToolDefinition = {
       name: 'Agent',
-      description: 'Run an autonomous agent that takes multi-step actions on the codebase. Use for tasks that require open-ended exploration with tools (read/edit/grep/bash) over multiple turns. Set team:true and provide engines to fan out across multiple engines in parallel worktrees and synthesize the best result. Always set taskKind: "edit" for code-change tasks (gets a typecheck-or-fail fitness gate) or "investigate" for analysis tasks (audit, tracing, root-cause hunts that produce text reports, not patches). After calling, STOP and wait.',
+      description: 'Run an autonomous agent that takes multi-step actions on the codebase. Use for tasks that require open-ended exploration with tools (read/edit/grep/bash) over multiple turns. Agon launches CLI engines through its own harness with workspace-write sandbox and approval handling for agent/edit paths, so Codex/Claude CLI engines may edit/apply patches through the harness instead of claiming sandbox inability. Set team:true and provide engines to fan out across multiple engines in parallel worktrees and synthesize the best result. Always set taskKind: "edit" for code-change tasks (gets a typecheck-or-fail fitness gate) or "investigate" for analysis tasks (audit, tracing, root-cause hunts that produce text reports, not patches). After calling, STOP and wait.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -381,29 +381,65 @@ fn name=createQuickNeroTool returns=ToolHandler
     return { definition, validate, checkPermission, execute };
   >>>
 
+fn name=createGoalTool returns=ToolHandler
+  doc "Signal tool — delegates to the autonomous goal controller (agon goal). Forge implements each task in a throwaway worktree, the diff is witnessed, an ensemble review gates the commit, and the WINNING PATCH IS APPLIED onto a goal/* branch — never main."
+  handler <<<
+    const definition: ToolDefinition = {
+      name: 'Goal',
+      description: 'Delegate to the autonomous goal controller — drives a task queue to completion unattended: per task, forge implements in a throwaway worktree, the diff is witnessed, the frozen gate runs, an ensemble review gates the commit, then ONE commit lands on a goal/* branch (never main). Use for finite machine-verifiable queues. Unlike Forge/Agent, Goal forges AND applies + commits each task. After calling, STOP and wait — runs in the background; track with /jobs or `agon goal --status`.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          intent: { type: 'string', description: 'Human description of the goal (seeds the goal id and goal/<id> branch).' },
+          queue: { type: 'string', description: 'Task source: a directory or a .jsonl/.json of {id,source,dependsOn}. Required unless resuming.' },
+          gate: { type: 'string', description: 'Green-oracle command, frozen at start (e.g. "npm run build && npm run typecheck && npm test"). Strongly recommended.' },
+          push: { type: 'boolean', description: 'Push the goal/* branch to origin after each task commits. Never main. Default false.' },
+          pr: { type: 'boolean', description: 'With push, open a PR when the run finishes (needs gh). Default false.' },
+          maxHours: { type: 'number', description: 'Optional wall-clock ceiling in hours (0 = no limit).' },
+          budget: { type: 'number', description: 'Optional USD spend ceiling (0 = no limit).' },
+          engines: { type: 'array', items: { type: 'string' }, description: 'Optional implementer engines (forge roster). Omit for active roster.' },
+        },
+        required: ['intent'],
+      },
+      maxResultSizeChars: 500,
+      isReadOnly: false,
+      isConcurrencySafe: false,
+    };
+    const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+      if (!input.intent || typeof input.intent !== 'string' || !(input.intent as string).trim()) return 'Missing required parameter: intent';
+      if (input.engines !== undefined && !Array.isArray(input.engines)) return 'engines must be an array of engine IDs (string[])';
+      return null;
+    };
+    const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => { return { behavior: 'allow' }; };
+    const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => { return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' }; };
+    return { definition, validate, checkPermission, execute };
+  >>>
+
 fn name=createPipelineTool returns=ToolHandler
-  doc "Signal tool — delegates to full pipeline (brainstorm → forge → tribunal)."
+  doc "Signal tool — delegates to the build → parallel review → fix loop."
   handler <<<
     const definition: ToolDefinition = {
       name: 'Pipeline',
-      description: 'Delegate to the full pipeline — brainstorm then forge then tribunal. Call this for complex tasks that need the full treatment. After calling, STOP and wait.',
+      description: 'Delegate to the build → review → fix loop. Use when the user asks to review AND fix, when review findings should be addressed immediately, or when a task needs an implementer plus one or more reviewer engines. The runtime runs the builder through Agon’s agent harness with write-capable sandbox/approval handling, runs requested review engines in parallel, feeds blocking findings into the next fix iteration, and stops only when review/fitness passes or the iteration cap is hit. After calling, STOP and wait.',
       inputSchema: {
         type: 'object',
         properties: {
           task: { type: 'string', description: 'The task description' },
           fitnessCmd: { type: 'string', description: 'Optional test or fitness command to preserve for the pipeline run.' },
+          engines: { type: 'array', items: { type: 'string' }, description: 'Optional reviewer engines to run in parallel after each build/fix iteration, e.g. ["codex","claude"]. Use when the user names reviewers or stakes are high.' },
         },
         required: ['task'],
       },
       maxResultSizeChars: 500,
-      isReadOnly: true,
-      isConcurrencySafe: true,
+      isReadOnly: false,
+      isConcurrencySafe: false,
     };
 
     const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
       if (!input.task || typeof input.task !== 'string' || !(input.task as string).trim()) {
         return 'Missing required parameter: task';
       }
+      if (input.engines !== undefined && !Array.isArray(input.engines)) return 'engines must be an array of engine IDs (string[])';
       return null;
     };
 

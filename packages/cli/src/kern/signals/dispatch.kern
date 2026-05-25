@@ -41,7 +41,7 @@ import from="./todos.js" names="todosFromPlanSteps"
 // info notice so the user knows when Cesar reached for a heavy tool,
 // but the dispatch is no longer blocked — Cesar has autonomy. Slash
 // commands keep working as before (they bypass this announce path).
-const name=ORCHESTRATION_ACTIONS type="Set<string>" value={{ new Set(['forge', 'team-forge', 'brainstorm', 'team-brainstorm', 'tribunal', 'team-tribunal', 'campfire', 'pipeline', 'review']) }}
+const name=ORCHESTRATION_ACTIONS type="Set<string>" value={{ new Set(['forge', 'team-forge', 'brainstorm', 'team-brainstorm', 'tribunal', 'team-tribunal', 'campfire', 'pipeline', 'goal', 'review']) }}
 
 fn name=slashCommandForOrchestrationAction params="action:string,task:string,fitnessCmd?:string|null,tribunalMode?:string" returns=string
   handler lang="kern"
@@ -539,7 +539,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
         // workspace before the user has approved the proposed plan.
         const _planActive = cb.ctx.activePlan && ['planning', 'awaiting_approval'].includes(cb.ctx.activePlan.state);
         if (_planActive) {
-          const EXECUTION_ACTIONS = ['forge', 'team-forge', 'build', 'pipeline', 'agent', 'team-agent'];
+          const EXECUTION_ACTIONS = ['forge', 'team-forge', 'build', 'pipeline', 'agent', 'team-agent', 'goal'];
           if (EXECUTION_ACTIONS.includes(routeAction)) {
             cb.dispatch({ type: 'info', message: `Plan mode: converting ${routeAction} → brainstorm (no execution until plan approved)` });
             routeAction = 'brainstorm';
@@ -699,7 +699,34 @@ You still own the overall task. Integrate the forged slice with the rest of the 
           case 'pipeline': {
             cb.dispatch({ type: 'info', message: `Cesar → pipeline${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdPipe = resolveWorkingDir();
-            cb.runAsJob('pipeline', label, withThreadOutcome(_cwdPipe, 'pipeline', label, () => handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined), cb.ctx));
+            cb.runAsJob('pipeline', label, withThreadOutcome(_cwdPipe, 'pipeline', label, () => handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined, {
+              reviewEngines: Array.isArray(result.engines) ? result.engines as string[] : undefined,
+            }), cb.ctx));
+            return true;
+          }
+          case 'goal': {
+            const _gIntent = (result.task ?? '').trim();
+            if (!_gIntent) { cb.dispatch({ type: 'warning', message: 'Goal: missing intent — nothing to run.' }); return false; }
+            const _gQueue = typeof result.queue === 'string' ? result.queue.trim() : '';
+            const _gGate = typeof result.gate === 'string' ? result.gate.trim() : '';
+            const _gArgs: string[] = ['goal', _gIntent];
+            if (_gQueue) _gArgs.push('--queue', _gQueue);
+            if (_gGate) _gArgs.push('--gate', _gGate);
+            if (result.push) _gArgs.push('--push');
+            if (result.pr) _gArgs.push('--pr');
+            if (typeof result.maxHours === 'number' && result.maxHours > 0) _gArgs.push('--max-hours', String(result.maxHours));
+            if (typeof result.budget === 'number' && result.budget > 0) _gArgs.push('--budget', String(result.budget));
+            if (Array.isArray(result.engines) && result.engines.length > 0) _gArgs.push('-e', (result.engines as string[]).join(','));
+            const _gCmd = `agon ${_gArgs.map((part) => JSON.stringify(part)).join(' ')}`;
+            const _gCwd = resolveWorkingDir();
+            cb.dispatch({ type: 'info', message: 'Cesar → goal' });
+            cb.runAsJob('goal', label, withThreadOutcome(_gCwd, 'goal', label, async () => {
+              cb.dispatch({ type: 'info', message: `goal: launched in the background — \`${_gCmd}\`. Track with /jobs, /focus, or \`agon goal --status\`.` });
+              const res = await spawnWithTimeout({ command: 'agon', args: _gArgs, cwd: _gCwd, timeout: 24 * 60 * 60 * 1000 });
+              const tail = (res.stdout || '').slice(-4000);
+              if (tail.trim()) cb.dispatch({ type: 'text', content: tail });
+              if (res.exitCode !== 0) throw new Error((res.stderr || `agon goal exited ${res.exitCode}`).slice(-1000));
+            }, cb.ctx));
             return true;
           }
           case 'review':
@@ -835,7 +862,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
             }, cb.ctx));
             return true;
           }
-          case 'pipeline': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'pipeline', 'recovered delegation') }); cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
+          case 'pipeline': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'pipeline', 'recovered delegation') }); cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined, { reviewEngines: crashDel.engines })); return true;
           case 'review': {
             cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'review', 'recovered delegation') });
             const _cwdReview = resolveWorkingDir();
@@ -1011,7 +1038,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
                 }, cb.ctx));
                 return true;
               }
-              case 'pipeline': cb.dispatch({ type: 'info', message: 'Cesar → pipeline' }); cb.runAsJob('pipeline', label, () => handlePipeline(fallbackTask, cb.dispatch, cb.ctx, fallbackFitness ?? undefined)); return true;
+              case 'pipeline': cb.dispatch({ type: 'info', message: 'Cesar → pipeline' }); cb.runAsJob('pipeline', label, () => handlePipeline(fallbackTask, cb.dispatch, cb.ctx, fallbackFitness ?? undefined, { reviewEngines: Array.isArray(crashDel?.engines) ? crashDel.engines : undefined })); return true;
               case 'review': {
                 cb.dispatch({ type: 'info', message: 'Cesar → review' });
                 const _cwdReview = resolveWorkingDir();

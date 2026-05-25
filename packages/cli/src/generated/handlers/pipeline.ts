@@ -13,7 +13,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 import { buildAgentApprovalCallback } from './agent.js';
 
 // @kern-source: pipeline:8
-export async function handlePipeline(input: string, dispatch: Dispatch, ctx: HandlerContext, fitnessCmd?: string, opts?: {quiet?:boolean}): Promise<void> {
+export async function handlePipeline(input: string, dispatch: Dispatch, ctx: HandlerContext, fitnessCmd?: string, opts?: {quiet?:boolean,reviewEngines?:string[]}): Promise<void> {
   const abort = new AbortController();
   try {
     ensureAgonHome();
@@ -28,7 +28,13 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
     const cwd = resolveWorkingDir();
     const preferred = config.forgeFixedStarter ?? 'claude';
     const buildEngine = agentIds.includes(preferred) ? preferred : agentIds[0];
-    const reviewEngine = agentIds.find((id: string) => id !== buildEngine) ?? buildEngine;
+    const requestedReviewEngines = Array.isArray(opts?.reviewEngines)
+      ? Array.from(new Set(opts!.reviewEngines!.map((id: string) => ctx.registry.resolveId(String(id ?? '').trim())).filter(Boolean)))
+      : [];
+    const availableRequestedReviewEngines = requestedReviewEngines.filter((id: string) => agentIds.includes(id));
+    const reviewEngines = availableRequestedReviewEngines.length > 0
+      ? availableRequestedReviewEngines
+      : [agentIds.find((id: string) => id !== buildEngine) ?? buildEngine];
     const maxIterations = 3;
 
     const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
@@ -47,7 +53,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
     ctx.setActiveAbort(abort);
 
     if (!quiet) {
-      dispatch({ type: 'header', title: `Pipeline: ${buildEngine} builds → ${reviewEngine} reviews` });
+      dispatch({ type: 'header', title: `Pipeline: ${buildEngine} builds → ${reviewEngines.join(', ')} review` });
       dispatch({ type: 'info', message: `Task: ${input}` });
       if (fitnessCmd) dispatch({ type: 'info', message: `Fitness: ${fitnessCmd}` });
     }
@@ -149,11 +155,11 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         }
       }
 
-      // ── Step 3: Review (different engine) ──
-      if (buildEngine === reviewEngine || iteration >= maxIterations) break;
+      // ── Step 3: Review (one or more engines, in parallel) ──
+      const activeReviewEngines = reviewEngines.filter((id: string) => id !== buildEngine || reviewEngines.length === 1);
+      if (activeReviewEngines.length === 0 || iteration >= maxIterations) break;
 
-      const reviewColor = (ENGINE_COLORS as Record<string, number>)[reviewEngine] ?? 124;
-      dispatch({ type: 'spinner-start', message: `[${iteration}] ${reviewEngine} reviewing…`, color: reviewColor });
+      dispatch({ type: 'spinner-start', message: `[${iteration}] ${activeReviewEngines.join(', ')} reviewing in parallel…`, color: 214 });
 
       const critiquePrompt = buildCritiquePrompt({
         winnerEngine: buildEngine,
@@ -162,49 +168,76 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       });
 
       try {
-        const revEngine = ctx.registry.get(reviewEngine);
-        const reviewResult = await ctx.adapter.dispatch({
-          engine: revEngine,
-          prompt: critiquePrompt,
-          cwd,
-          mode: 'exec',
-          timeout: 60,
-          outputDir,
-          signal: abort.signal,
-        });
+        const reviewResults = await Promise.allSettled(activeReviewEngines.map(async (reviewEngine: string) => {
+          const revEngine = ctx.registry.get(reviewEngine);
+          const reviewResult = await ctx.adapter.dispatch({
+            engine: revEngine,
+            prompt: critiquePrompt,
+            cwd,
+            mode: 'exec',
+            timeout: 60,
+            outputDir,
+            signal: abort.signal,
+          });
+          return { reviewEngine, reviewOutput: reviewResult.stdout.trim() };
+        }));
         dispatch({ type: 'spinner-stop' });
-
-        const reviewOutput = reviewResult.stdout.trim();
 
         // Parse structured critiques — only iterate on blocking issues
         let hasBlockingIssues = false;
-        try {
-          const allMatches = [...reviewOutput.matchAll(/\[[\s\S]*?\]/g)];
-          const jsonStr = allMatches.length > 0 ? allMatches[allMatches.length - 1][0] : null;
-          if (jsonStr) {
-            const parsed = JSON.parse(jsonStr) as Array<{blocking?: boolean; problem?: string}>;
-            hasBlockingIssues = parsed.some((c) => c.blocking === true);
-            if (!hasBlockingIssues && parsed.length > 0) {
-              dispatch({ type: 'info', message: `[${iteration}] ${reviewEngine}: ${parsed.length} nit(s), no blocking issues.` });
-              break;
-            }
+        const blockingFeedback: string[] = [];
+        let completedReviews = 0;
+        for (const reviewResult of reviewResults) {
+          if (reviewResult.status === 'rejected') {
+            dispatch({ type: 'warning', message: `[${iteration}] Review failed: ${reviewResult.reason instanceof Error ? reviewResult.reason.message : String(reviewResult.reason)}` });
+            continue;
           }
-        } catch (_parseErr) {
-          // Fallback to string heuristic if JSON parse fails
-          hasBlockingIssues = reviewOutput.length > 10 && !reviewOutput.includes('[]');
+          const { reviewEngine, reviewOutput } = reviewResult.value;
+          if (!reviewOutput) {
+            dispatch({ type: 'warning', message: `[${iteration}] ${reviewEngine} returned no review output.` });
+            continue;
+          }
+          completedReviews++;
+          const reviewColor = (ENGINE_COLORS as Record<string, number>)[reviewEngine] ?? 124;
+          let engineBlocking = false;
+          try {
+            const allMatches = [...reviewOutput.matchAll(/\[[\s\S]*?\]/g)];
+            const jsonStr = allMatches.length > 0 ? allMatches[allMatches.length - 1][0] : null;
+            if (jsonStr) {
+              const parsed = JSON.parse(jsonStr) as Array<{blocking?: boolean; problem?: string}>;
+              engineBlocking = parsed.some((c) => c.blocking === true);
+              if (!engineBlocking && parsed.length > 0) {
+                dispatch({ type: 'info', message: `[${iteration}] ${reviewEngine}: ${parsed.length} nit(s), no blocking issues.` });
+              }
+            }
+          } catch (_parseErr) {
+            // Fallback to string heuristic if JSON parse fails
+            engineBlocking = reviewOutput.length > 10 && !reviewOutput.includes('[]');
+          }
+
+          if (engineBlocking) {
+            hasBlockingIssues = true;
+            blockingFeedback.push(`## ${reviewEngine}\n\n${reviewOutput}`);
+            if (!quiet) {
+              dispatch({ type: 'engine-block', engineId: reviewEngine, color: reviewColor, content: reviewOutput });
+            }
+          } else if (!reviewOutput.includes('[]') && !quiet) {
+            dispatch({ type: 'engine-block', engineId: reviewEngine, color: reviewColor, content: reviewOutput });
+          }
         }
 
-        if (!hasBlockingIssues) {
-          dispatch({ type: 'success', message: `[${iteration}] ${reviewEngine} approved — no blocking issues.` });
+        if (completedReviews === 0) {
+          dispatch({ type: 'warning', message: `[${iteration}] No review output returned — accepting build as-is.` });
           break;
         }
 
-        if (!quiet) {
-          dispatch({ type: 'engine-block', engineId: reviewEngine, color: reviewColor, content: reviewOutput });
-        } else {
-          dispatch({ type: 'info', message: `[${iteration}] ${reviewEngine} found blocking issues — fixing…` });
+        if (!hasBlockingIssues) {
+          dispatch({ type: 'success', message: `[${iteration}] ${activeReviewEngines.join(', ')} approved — no blocking issues.` });
+          break;
         }
-        lastReviewFeedback = reviewOutput;
+
+        dispatch({ type: 'info', message: `[${iteration}] Review found blocking issues — fixing…` });
+        lastReviewFeedback = blockingFeedback.join('\n\n---\n\n');
         // Continue to next iteration with review feedback
       } catch (err) {
         dispatch({ type: 'spinner-stop' });

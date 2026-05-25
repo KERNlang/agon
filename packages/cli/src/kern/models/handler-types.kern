@@ -236,6 +236,12 @@ interface name=PendingDelegation
   field name=engines type="string[]" optional=true
   field name=taskKind type="'edit'|'investigate'" optional=true
   field name=maxTurns type=number optional=true
+  field name=queue type=string optional=true
+  field name=gate type=string optional=true
+  field name=push type=boolean optional=true
+  field name=pr type=boolean optional=true
+  field name=maxHours type=number optional=true
+  field name=budget type=number optional=true
   field name=cesarEngineId type=string optional=true
   field name=cesarBackend type=string optional=true
   field name=hasNativeTools type=boolean optional=true
@@ -251,7 +257,7 @@ interface name=PendingDelegation
   field name=confidenceToolUsed type=boolean optional=true
   field name=createdAt type=number
 
-type name=CesarLiveMode values="self|self-nero|delegate|forge|forge-slice|team-forge|brainstorm|team-brainstorm|campfire|tribunal|team-tribunal|pipeline|review|agent|team-agent|plan"
+type name=CesarLiveMode values="self|self-nero|delegate|forge|forge-slice|team-forge|brainstorm|team-brainstorm|campfire|tribunal|team-tribunal|pipeline|goal|review|agent|team-agent|plan"
 
 interface name=CesarTurnOutcome
   field name=mode type=CesarLiveMode optional=true
@@ -271,6 +277,12 @@ interface name=CesarTurnOutcome
   field name=engines type="string[]" optional=true
   field name=taskKind type="'edit'|'investigate'" optional=true
   field name=maxTurns type=number optional=true
+  field name=queue type=string optional=true
+  field name=gate type=string optional=true
+  field name=push type=boolean optional=true
+  field name=pr type=boolean optional=true
+  field name=maxHours type=number optional=true
+  field name=budget type=number optional=true
 
 interface name=CesarState
   field name=busy type=boolean

@@ -44,6 +44,11 @@ describe('Pipeline', () => {
         expect(r.task).toBe('');
       }
     });
+
+    it('natural review-and-fix requests avoid read-only review dispatch', () => {
+      const r = detectIntent('review with codex and claude and fix what they find');
+      expect(r.type).toBe('auto');
+    });
   });
 
   describe('SLASH_COMMANDS', () => {

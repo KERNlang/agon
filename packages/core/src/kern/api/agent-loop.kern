@@ -23,6 +23,7 @@ import from="../signals/session-store.js" names="saveToolResultToDisk"
 import from="../tools/tool-retrieve.js" names="createRetrieveResultTool"
 import from="../tools/tool-web-fetch.js" names="createWebFetchTool"
 import from="../tools/tool-todo-write.js" names="createTodoWriteTool"
+import from="../tools/tool-web-search.js" names="createWebSearchTool"
 import from="../models/context-parts.js" names="ToolCacheEntry" types=true
 
 interface name=ApiAgentOptions
@@ -114,6 +115,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
     registry.register(createGrepTool());
     registry.register(createGlobTool());
     registry.register(createWebFetchTool());
+    registry.register(createWebSearchTool());
     registry.register(createTodoWriteTool());
     registry.register(createRetrieveResultTool(runCacheId));
 

@@ -293,6 +293,54 @@ fn name=continueCesarAfterResult async=true params="message:string, cb:DispatchC
     }
   >>>
 
+interface name=DelegatedContinuationInfo
+  field name=chatContext type=string
+  field name=result type=any
+  field name=success type=boolean
+  field name=errorMsg type=string
+
+fn name=runDelegatedJobThenContinue async=true params="cb:DispatchCallbacks, run:()=>Promise<any>, buildPrompt:(info:DelegatedContinuationInfo)=>(string|null), launchInputEpoch?:number, launchUserTurns?:number, maxChars?:number" returns="Promise<any>"
+  doc "Run a delegated orchestration handler and GUARANTEE a Cesar continuation afterward — even when the handler throws (exception paths used to dead-end) and even when no engine transcript was captured. Context is scoped to messages produced DURING this job (by id-snapshot diff), not the global recent tail, so concurrent jobs can't contaminate each other's continuation (codex review)."
+  handler <<<
+    const ctx = cb.ctx;
+    // Snapshot message ids BEFORE the job runs; diff after so the continuation
+    // sees only this job's engine output, not the global recent tail.
+    const priorIds = new Set<string>();
+    for (const m of ((ctx.chatSession?.messages ?? []) as any[])) {
+      if (typeof m.id === 'string') priorIds.add(m.id);
+    }
+    const priorLen = ctx.chatSession?.messages?.length ?? 0;
+    let success = true;
+    let errorMsg = '';
+    let result: any;
+    try {
+      result = await run();
+      return result;
+    } catch (err: any) {
+      success = false;
+      errorMsg = err?.message ?? String(err);
+      throw err; // re-throw so runAsJob / withThreadOutcome still record the failure
+    } finally {
+      // Continuation runs in finally → it fires on both the success and the
+      // throw path, so the Cesar loop never dead-ends after a delegated job.
+      try {
+        const all = (ctx.chatSession?.messages ?? []) as any[];
+        const fresh = all.filter((m: any, idx: number) =>
+          typeof m.id === 'string' ? !priorIds.has(m.id) : idx >= priorLen,
+        );
+        const cap = maxChars ?? 1500;
+        const chatContext = fresh
+          .filter((m: any) => m.role === 'engine' && m.content)
+          .map((m: any) => `[${m.engineId}]: ${String(m.content).slice(0, cap)}`)
+          .join('\n\n');
+        const prompt = buildPrompt({ chatContext, result, success, errorMsg });
+        if (prompt) await continueCesarAfterResult(prompt, cb, launchInputEpoch, launchUserTurns);
+      } catch (contErr) {
+        console.warn(`[agon] delegated continuation failed: ${contErr instanceof Error ? contErr.message : String(contErr)}`);
+      }
+    }
+  >>>
+
 interface name=DispatchResult
   field name=handled type=boolean
   field name=ranAsJob type=boolean
@@ -602,7 +650,15 @@ ${input}`;
             cb.dispatch({ type: 'info', message: `Cesar → ${displayMode}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdForge = resolveWorkingDir();
             cb.runAsJob('forge', label, withThreadOutcome(_cwdForge, isForgeSlice ? 'forge-slice' : 'forge', label, async () => {
-              const forgeResult = await handleForge(taskInput, fitnessCmd, cb.dispatch, cb.ctx, undefined, hardened, true);
+              let forgeResult;
+              try {
+                forgeResult = await handleForge(taskInput, fitnessCmd, cb.dispatch, cb.ctx, undefined, hardened, true);
+              } catch (forgeErr: any) {
+                // Never dead-end on a forge crash — hand the failure to Cesar so
+                // it can recover, then re-throw so the job is still marked failed.
+                await continueCesarAfterResult(`Forge failed for: "${taskInput.slice(0, 200)}": ${forgeErr?.message ?? String(forgeErr)}. Decide how to recover — retry with a different approach or continue the task directly with local tools.`, cb, continuationEpoch, continuationUserTurns);
+                throw forgeErr;
+              }
               if (isForgeSlice && forgeResult) {
                 if (!shouldAutoContinueDelegatedResult(continuationEpoch, continuationUserTurns, cb.ctx)) {
                   cb.dispatch({ type: 'info', message: 'Skipped Cesar forge-slice integration — user moved on while forge was running.' });
@@ -651,76 +707,77 @@ You still own the overall task. Integrate the forged slice with the rest of the 
           case 'brainstorm': {
             cb.dispatch({ type: 'info', message: `Cesar → brainstorm${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdBs = resolveWorkingDir();
-            cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdBs, 'brainstorm', label, async () => {
-              const bsResult = await handleBrainstorm(taskInput, cb.dispatch, cb.ctx);
-              if (bsResult) {
+            cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdBs, 'brainstorm', label, () =>
+              runDelegatedJobThenContinue(cb, () => handleBrainstorm(taskInput, cb.dispatch, cb.ctx), ({ result, success, errorMsg }) => {
+                if (!success) return `Brainstorm on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. Decide how to recover — retry with a different framing or continue the task directly.`;
+                if (!result) return `Brainstorm on: "${taskInput.slice(0, 200)}" produced no result. Continue the task directly or try a different approach.`;
                 cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
-                await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', taskInput, bsResult), cb, continuationEpoch, continuationUserTurns);
-              }
-              return bsResult; // returned value captured by withThreadOutcome for richer summary
-            }, cb.ctx));
+                return buildBrainstormContinuationMessage('Brainstorm complete', taskInput, result);
+              }, continuationEpoch, continuationUserTurns), cb.ctx));
             return true;
           }
           case 'team-brainstorm': {
             cb.dispatch({ type: 'info', message: `Cesar → team-brainstorm${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdTBs = resolveWorkingDir();
-            cb.runAsJob('team-brainstorm', label, withThreadOutcome(_cwdTBs, 'team-brainstorm', label, async () => {
-              await handleTeamBrainstorm(taskInput, cb.dispatch, cb.ctx);
-              const chatContext = collectRecentEngineContext(cb.ctx, 10, 1500);
-              if (chatContext) {
-                cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
-                await continueCesarAfterResult(`Team brainstorm completed. Here are the engine responses:\n\n${chatContext}\n\nSynthesize the winning approach into a concrete plan.`, cb, continuationEpoch, continuationUserTurns);
-              }
-            }, cb.ctx));
+            cb.runAsJob('team-brainstorm', label, withThreadOutcome(_cwdTBs, 'team-brainstorm', label, () =>
+              runDelegatedJobThenContinue(cb, () => handleTeamBrainstorm(taskInput, cb.dispatch, cb.ctx), ({ chatContext, success, errorMsg }) => {
+                if (!success) return `Team brainstorm on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial responses:\n\n${chatContext}\n\n` : ''}Decide how to recover or continue the task directly.`;
+                if (chatContext) cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+                return `Team brainstorm completed on: "${taskInput.slice(0, 200)}"\n\n${chatContext || '(no engine responses captured — check output above)'}\n\nSynthesize the winning approach into a concrete plan.`;
+              }, continuationEpoch, continuationUserTurns, 1500), cb.ctx));
             return true;
           }
           case 'tribunal': {
             cb.dispatch({ type: 'info', message: `Cesar → tribunal${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdTrib = resolveWorkingDir();
-            cb.runAsJob('tribunal', label, withThreadOutcome(_cwdTrib, 'tribunal', label, async () => {
-              await handleTribunal(taskInput, cb.dispatch, cb.ctx, tMode);
-              const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
-              if (chatContext) await continueCesarAfterResult(`Tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb, continuationEpoch, continuationUserTurns);
-            }, cb.ctx));
+            cb.runAsJob('tribunal', label, withThreadOutcome(_cwdTrib, 'tribunal', label, () =>
+              runDelegatedJobThenContinue(cb, () => handleTribunal(taskInput, cb.dispatch, cb.ctx, tMode), ({ chatContext, success, errorMsg }) =>
+                !success
+                  ? `Tribunal${tMode ? ` (${tMode})` : ''} on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial transcript:\n\n${chatContext}\n\n` : ''}Decide how to recover or continue the task with what you have.`
+                  : `Tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext || '(no transcript captured — check output above)'}\n\nSummarize the verdict and key takeaways.`,
+                continuationEpoch, continuationUserTurns), cb.ctx));
             return true;
           }
           case 'team-tribunal': {
             cb.dispatch({ type: 'info', message: `Cesar → team-tribunal${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdTTrib = resolveWorkingDir();
-            cb.runAsJob('team-tribunal', label, withThreadOutcome(_cwdTTrib, 'team-tribunal', label, async () => {
-              await handleTeamTribunal(taskInput, cb.dispatch, cb.ctx, tMode);
-              const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
-              if (chatContext) await continueCesarAfterResult(`Team tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb, continuationEpoch, continuationUserTurns);
-            }, cb.ctx));
+            cb.runAsJob('team-tribunal', label, withThreadOutcome(_cwdTTrib, 'team-tribunal', label, () =>
+              runDelegatedJobThenContinue(cb, () => handleTeamTribunal(taskInput, cb.dispatch, cb.ctx, tMode), ({ chatContext, success, errorMsg }) =>
+                !success
+                  ? `Team tribunal${tMode ? ` (${tMode})` : ''} on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial transcript:\n\n${chatContext}\n\n` : ''}Decide how to recover or continue the task with what you have.`
+                  : `Team tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext || '(no transcript captured — check output above)'}\n\nSummarize the verdict and key takeaways.`,
+                continuationEpoch, continuationUserTurns), cb.ctx));
             return true;
           }
           case 'campfire': {
             cb.dispatch({ type: 'info', message: `Cesar → campfire${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdCamp = resolveWorkingDir();
-            cb.runAsJob('campfire', label, withThreadOutcome(_cwdCamp, 'campfire', label, async () => {
-              await handleCampfire(taskInput, cb.dispatch, cb.ctx);
-              const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
-              if (chatContext) await continueCesarAfterResult(`Campfire discussion on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb, continuationEpoch, continuationUserTurns);
-            }, cb.ctx));
+            cb.runAsJob('campfire', label, withThreadOutcome(_cwdCamp, 'campfire', label, () =>
+              runDelegatedJobThenContinue(cb, () => handleCampfire(taskInput, cb.dispatch, cb.ctx), ({ chatContext, success, errorMsg }) =>
+                !success
+                  ? `Campfire on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial discussion:\n\n${chatContext}\n\n` : ''}Decide how to recover or continue the task directly.`
+                  : `Campfire discussion on: "${taskInput.slice(0, 200)}"\n\n${chatContext || '(no discussion captured — check output above)'}\n\nSummarize the key insights and any consensus reached.`,
+                continuationEpoch, continuationUserTurns), cb.ctx));
             return true;
           }
           case 'pipeline': {
             cb.dispatch({ type: 'info', message: `Cesar → pipeline${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdPipe = resolveWorkingDir();
-            cb.runAsJob('pipeline', label, withThreadOutcome(_cwdPipe, 'pipeline', label, async () => {
-              await handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined, {
+            // ALWAYS continue Cesar after pipeline, on success OR exception
+            // (codex review: thrown errors and empty transcripts both used to
+            // dead-end). handlePipeline returns void, so the job-scoped engine
+            // transcript is the only result signal — fall back to a status
+            // message when it's empty.
+            cb.runAsJob('pipeline', label, withThreadOutcome(_cwdPipe, 'pipeline', label, () =>
+              runDelegatedJobThenContinue(cb, () => handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined, {
                 reviewEngines: Array.isArray(result.engines) ? result.engines as string[] : undefined,
-              });
-              // ALWAYS continue Cesar after pipeline (codex review: gating on a
-              // non-empty transcript could still dead-end on early-failure / no-engine
-              // paths). handlePipeline returns void, so the engine transcript is the
-              // only result signal — fall back to a status message when it's empty.
-              const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
-              const pipeMsg = chatContext
-                ? `Pipeline completed on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize what the pipeline produced and take the next concrete step.`
-                : `Pipeline completed on: "${taskInput.slice(0, 200)}" — no engine transcript was captured (early exit or non-engine output); check the workspace diff/output above. Summarize the outcome and take the next concrete step.`;
-              await continueCesarAfterResult(pipeMsg, cb, continuationEpoch, continuationUserTurns);
-            }, cb.ctx));
+              }), ({ chatContext, success, errorMsg }) =>
+                !success
+                  ? `Pipeline on: "${taskInput.slice(0, 200)}" failed: ${errorMsg}. ${chatContext ? `Partial output:\n\n${chatContext}\n\n` : ''}Decide how to recover, or continue the task directly with local tools.`
+                  : (chatContext
+                      ? `Pipeline completed on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize what the pipeline produced and take the next concrete step.`
+                      : `Pipeline completed on: "${taskInput.slice(0, 200)}" — no engine transcript was captured (early exit or non-engine output); check the workspace diff/output above. Summarize the outcome and take the next concrete step.`),
+                continuationEpoch, continuationUserTurns), cb.ctx));
             return true;
           }
           case 'goal': {

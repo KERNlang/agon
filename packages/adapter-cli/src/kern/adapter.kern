@@ -235,7 +235,7 @@ service name=CliAdapter implements=EngineAdapter
         let name=systemPrompt value="[ options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.', projectCtx ? `## PROJECT CONTEXT\\n${projectCtx}` : '', ].filter(Boolean).join('\\n\\n')"
         let name=startTime value="Date.now()"
         let name=baselineDiff value="readOnlyDiff(cwd)"
-        let name=result value="await runApiAgentLoop({ api: apiConfig, prompt: options.prompt, systemPrompt, cwd, timeout: options.timeout, signal: options.signal, maxSteps: 40, permissionMode: options.permissionMode, allowedCommands: options.allowedCommands, toolPermissions: options.toolPermissions, onPermissionAsk: options.onApproval, })"
+        let name=result value="await runApiAgentLoop({ api: apiConfig, prompt: options.prompt, systemPrompt, cwd, timeout: options.timeout, signal: options.signal, maxSteps: 40, permissionMode: options.permissionMode, allowedCommands: options.allowedCommands, toolPermissions: options.toolPermissions, onPermissionAsk: options.onApproval, onTodos: options.onTodos, })"
         let name=postDiff value="readOnlyDiff(cwd)"
         let name=baselineFiles value="new Set(baselineDiff.split('\\n').filter((l: string) => l.startsWith('diff --git')))"
         let name=postLines value="postDiff.split('\\n')"

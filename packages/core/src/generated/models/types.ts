@@ -101,13 +101,14 @@ export interface DispatchOptions {
   allowedCommands?: string[];
   toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
   onSpawn?: (pid:number)=>void;
+  onTodos?: ((todos: Array<{id:string,text:string,state:string,kind?:string,note?:string}>) => void);
   isolation?: 'workspace-pure'|'inherit';
 }
 
 /**
  * Structured parts captured at stream time. Enables compaction to fold over typed data instead of parsing strings.
  */
-// @kern-source: types:87
+// @kern-source: types:89
 export interface DispatchResult {
   exitCode: number;
   stdout: string;
@@ -119,14 +120,14 @@ export interface DispatchResult {
   parts?: Array<{kind:'text',text:string}|{kind:'reasoning',text:string}|{kind:'tool_call',toolName:string,toolCallId:string,args:Record<string,unknown>}>;
 }
 
-// @kern-source: types:98
+// @kern-source: types:100
 export interface AgentDispatchResult extends DispatchResult {
   diff: string;
   diffLines: number;
   filesChanged: number;
 }
 
-// @kern-source: types:103
+// @kern-source: types:105
 export interface EngineAdapter {
   dispatch: (options:DispatchOptions)=>Promise<DispatchResult>;
   dispatchStream?: (options:DispatchOptions)=>AsyncGenerator<string, DispatchResult, void>;
@@ -136,7 +137,7 @@ export interface EngineAdapter {
   getVersion: (engine:EngineDefinition)=>Promise<string|null>;
 }
 
-// @kern-source: types:111
+// @kern-source: types:113
 export interface FitnessResult {
   pass: boolean;
   diffLines: number;
@@ -149,7 +150,7 @@ export interface FitnessResult {
   syntaxInvalidFiles?: string[];
 }
 
-// @kern-source: types:122
+// @kern-source: types:124
 export interface ScoreWeights {
   pass: number;
   quality: number;
@@ -158,7 +159,7 @@ export interface ScoreWeights {
   duration: number;
 }
 
-// @kern-source: types:129
+// @kern-source: types:131
 export interface ScoreComponents {
   passScore: number;
   qualityScore: number;
@@ -168,7 +169,7 @@ export interface ScoreComponents {
   composite: number;
 }
 
-// @kern-source: types:137
+// @kern-source: types:139
 export interface GlickoRating {
   mu: number;
   phi: number;
@@ -178,7 +179,7 @@ export interface GlickoRating {
   lastActive: string;
 }
 
-// @kern-source: types:145
+// @kern-source: types:147
 export interface EngineMeta {
   firstSeen: string;
   lastActive: string;
@@ -187,7 +188,7 @@ export interface EngineMeta {
   versions: string[];
 }
 
-// @kern-source: types:152
+// @kern-source: types:154
 export interface RatingRecord {
   global: Record<string,GlickoRating>;
   byMode: {forge:Record<string,GlickoRating>,brainstorm:Record<string,GlickoRating>,tribunal:Record<string,GlickoRating>};
@@ -196,7 +197,7 @@ export interface RatingRecord {
   lastUpdated: string;
 }
 
-// @kern-source: types:159
+// @kern-source: types:161
 export interface AgonConfig {
   debug?: boolean;
   timeout?: number;
@@ -365,7 +366,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   autoCredit: true,
 };
 
-// @kern-source: types:278
+// @kern-source: types:280
 export interface ScoutBid {
   engineId: string;
   confidence: number;
@@ -376,7 +377,7 @@ export interface ScoutBid {
   needsCompetition: boolean;
 }
 
-// @kern-source: types:287
+// @kern-source: types:289
 export interface RoutingDecision {
   action: 'chat'|'build'|'pipeline'|'campfire'|'forge'|'brainstorm'|'tribunal'|'agent'|'team-agent';
   leadEngine: string;
@@ -388,14 +389,14 @@ export interface RoutingDecision {
   bids: ScoutBid[];
 }
 
-// @kern-source: types:297
+// @kern-source: types:299
 export interface CampfireMessage {
   engineId: string;
   content: string;
   isLead: boolean;
 }
 
-// @kern-source: types:302
+// @kern-source: types:304
 export interface ForgeOptions {
   task: string;
   fitnessCmd: string;
@@ -421,7 +422,7 @@ export interface ForgeOptions {
   synthEngine?: string;
 }
 
-// @kern-source: types:331
+// @kern-source: types:333
 export interface EngineResult {
   engineId: string;
   pass: boolean;
@@ -443,14 +444,14 @@ export interface EngineResult {
   syntaxInvalidFiles?: string[];
 }
 
-// @kern-source: types:351
+// @kern-source: types:353
 export interface SkippedEngine {
   engineId: string;
   status: string;
   reason?: string;
 }
 
-// @kern-source: types:356
+// @kern-source: types:358
 export interface DispatchMetric {
   engineId: string;
   phase: 'stage1'|'stage1-fallback'|'stage2-scout'|'stage2-scout-fallback'|'stage2-follower'|'stage2-fallback'|'synthesis'|'gauntlet';
@@ -464,7 +465,7 @@ export interface DispatchMetric {
   tokens?: {prompt:number, response:number, costUsd:number};
 }
 
-// @kern-source: types:368
+// @kern-source: types:370
 export interface ForgeManifest {
   forgeId: string;
   forgeDir: string;
@@ -496,7 +497,7 @@ export interface ForgeManifest {
   gauntlet?: GauntletResult;
 }
 
-// @kern-source: types:398
+// @kern-source: types:400
 export interface ConvergenceEntry {
   file: string;
   fn: string;
@@ -504,7 +505,7 @@ export interface ConvergenceEntry {
   reason: string;
 }
 
-// @kern-source: types:404
+// @kern-source: types:406
 export interface ForgeJudgment {
   winner: string;
   strengths: { engineId: string; category: string; reason: string }[];
@@ -515,7 +516,7 @@ export interface ForgeJudgment {
 
 export type ForgeEventType = 'baseline:start' | 'baseline:done' | 'stage1:start' | 'stage1:dispatch' | 'stage1:score' | 'stage1:accepted' | 'stage2:start' | 'stage2:dispatch' | 'stage2:score' | 'stage2:done' | 'engine:failed' | 'engine:worktree' | 'winner:determined' | 'forge:no-candidate-diff' | 'synthesis:start' | 'synthesis:critique' | 'synthesis:refine' | 'synthesis:score' | 'synthesis:done' | 'elo:update' | 'gauntlet:start' | 'gauntlet:breaker-dispatch' | 'gauntlet:breaker-done' | 'gauntlet:attack-landed' | 'gauntlet:repair-start' | 'gauntlet:repair-done' | 'gauntlet:corpus-save' | 'gauntlet:done' | 'forge:done' | 'forge:engine-skipped' | 'forge:already-satisfied' | 'forge:single-survivor' | 'forge:no-engines-available' | 'forge:fatal' | 'forge:auto-finalize' | 'forge:health-check-start' | 'forge:health-check-done';
 
-// @kern-source: types:411
+// @kern-source: types:413
 export interface ForgeEvent {
   type: ForgeEventType;
   engineId?: string;
@@ -564,7 +565,7 @@ export interface ForgeEventMap {
 
 export type ForgeEventCallback = (event: ForgeEvent) => void;
 
-// @kern-source: types:450
+// @kern-source: types:452
 export interface BrainstormBid {
   engineId: string;
   confidence: number;
@@ -573,14 +574,14 @@ export interface BrainstormBid {
   score?: number;
 }
 
-// @kern-source: types:457
+// @kern-source: types:459
 export interface BrainstormGroup {
   members: string[];
   representative: string;
   similarity: number;
 }
 
-// @kern-source: types:462
+// @kern-source: types:464
 export interface BrainstormResult {
   question: string;
   bids: BrainstormBid[];
@@ -589,7 +590,7 @@ export interface BrainstormResult {
   groups?: BrainstormGroup[];
 }
 
-// @kern-source: types:469
+// @kern-source: types:471
 export interface BreakerArtifact {
   engineId: string;
   testScript: string;
@@ -599,7 +600,7 @@ export interface BreakerArtifact {
   validated: boolean;
 }
 
-// @kern-source: types:477
+// @kern-source: types:479
 export interface GauntletResult {
   winnerId: string;
   breakerArtifacts: BreakerArtifact[];
@@ -612,7 +613,7 @@ export interface GauntletResult {
   patchPath?: string;
 }
 
-// @kern-source: types:488
+// @kern-source: types:490
 export interface CorpusEntry {
   forgeId: string;
   taskClass: TaskClass;
@@ -622,7 +623,7 @@ export interface CorpusEntry {
   pattern?: string;
 }
 
-// @kern-source: types:496
+// @kern-source: types:498
 export interface GapPattern {
   pattern: string;
   taskClass: TaskClass;
@@ -633,7 +634,7 @@ export interface GapPattern {
   skillPath?: string;
 }
 
-// @kern-source: types:505
+// @kern-source: types:507
 export interface Critique {
   file: string;
   lines: string;
@@ -641,5 +642,5 @@ export interface Critique {
   minimalFix: string;
 }
 
-// @kern-source: types:511
+// @kern-source: types:513
 export const DEFAULT_CONFIG: Required<AgonConfig> = DEFAULT_AGON_CONFIG;

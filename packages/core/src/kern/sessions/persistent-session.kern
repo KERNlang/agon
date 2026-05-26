@@ -1596,23 +1596,56 @@ Respond with ONLY the summary, no preamble.`;
               break;
             }
 
-            // Check for tool call markers — robust parser handles all formats:
-            // <tool name="X">{json}</tool>, <tool_call>{json}</tool_call>,
-            // <toolcall>{json}</toolcall>, <tool_call_tool>{json}</tool_call_tool>
-            const parsed = parseToolCalls(fullResponse);
-            const extractedCalls = parsed.hasToolCalls
-              ? parsed.toolCalls.map((tc, i) => ({
-                  id: `call_${Date.now()}_${i}`,
-                  name: tc.name,
-                  args: tc.input,
-                  arguments: JSON.stringify(tc.input),
-                  parseError: false,
-                }))
-              : [];
+            // Tool-call resolution — STRUCTURED-FIRST, with text-parse fallback.
+            // Native function-calling engines surface tool calls as structured
+            // parts (lastDispatchParts, kind:'tool_call') with clean SDK args and
+            // real tool-call ids. Execute those DIRECTLY so the args are never
+            // round-tripped through <tool>{json}</tool> text + regex — that round
+            // trip can mangle any arg containing </tool> or nested JSON, and it
+            // mislabels native calls as "xml". Engines that emit tool syntax in
+            // prose (weak-native: Kimi/Z.AI in text mode) produce NO structured
+            // tool_call parts, so they fall through to the exact text-parse path
+            // they used before. Worst case (no structured parts) == prior behavior.
+            const _structuredToolCalls = (lastDispatchParts ?? []).filter((p: any) => p?.kind === 'tool_call' && p?.toolName);
+            let extractedCalls: Array<{ id: string; name: string; args: any; arguments: string; parseError: boolean }>;
+            let cleanText: string;
+            if (_structuredToolCalls.length > 0) {
+              extractedCalls = _structuredToolCalls.map((p: any, i: number) => ({
+                id: typeof p.toolCallId === 'string' && p.toolCallId ? p.toolCallId : `call_${Date.now()}_${i}`,
+                name: String(p.toolName),
+                args: p.args ?? {},
+                arguments: JSON.stringify(p.args ?? {}),
+                parseError: false,
+              }));
+              // Reconstruct the visible prose from the STRUCTURED text parts the
+              // SDK already separated from tool calls — never regex the serialized
+              // <tool> marker out of fullResponse. The marker's JSON args can hold
+              // a literal </tool>, and a non-greedy strip truncates there, leaving
+              // corrupted prose in the assistant history (codex review). Text parts
+              // carry only the model's real prose, so there is nothing to strip.
+              cleanText = (lastDispatchParts ?? [])
+                .filter((p: any) => p?.kind === 'text' && typeof p.text === 'string')
+                .map((p: any) => p.text as string)
+                .join('')
+                .trim();
+            } else {
+              // Robust text parser handles all prose formats: <tool name="X">{json}</tool>,
+              // <tool_call>{json}</tool_call>, <toolcall>…, <tool_call_tool>…
+              const parsed = parseToolCalls(fullResponse);
+              extractedCalls = parsed.hasToolCalls
+                ? parsed.toolCalls.map((tc, i) => ({
+                    id: `call_${Date.now()}_${i}`,
+                    name: tc.name,
+                    args: tc.input,
+                    arguments: JSON.stringify(tc.input),
+                    parseError: false,
+                  }))
+                : [];
+              cleanText = (parsed.textBefore + ' ' + parsed.textAfter).trim();
+            }
 
             if (extractedCalls.length > 0 && config.onToolCall) {
               // Model requested tool calls — execute and loop
-              const cleanText = (parsed.textBefore + ' ' + parsed.textAfter).trim();
 
               // Add assistant message with tool_calls + structured parts to history
               const assistToolMsg: any = {

@@ -485,6 +485,14 @@ service name=ContextThread export=true
     handler lang="kern"
       return value="this.projectPath"
 
+  method name=recentMessages params="limit?:number" returns="ThreadMessage[]"
+    doc "Public read of recent non-system thread turns, in chronological order, for rehydration — e.g. seeding a fresh ChatSession on `--continue`. Defaults to all non-system messages; pass a limit to take only the most recent N. Does not expose the private message array (returns a copy)."
+    handler <<<
+      const nonSystem = this.messages.filter(m => m.role !== 'system');
+      if (limit == null || limit >= nonSystem.length) return nonSystem.slice();
+      return nonSystem.slice(nonSystem.length - Math.max(0, limit));
+    >>>
+
   method name=append params="msg:Omit<ThreadMessage,'id'|'timestamp'|'tokens'>" returns=ThreadMessage
     doc "Append a message. Assigns id + timestamp. Estimates tokens. Marks the thread dirty. Caller must call save() to flush. The message's engineId (if set) updates engineHead so that engine is considered caught up through this message. Rejects role:'system' (red-team finding 2) and runs secret redaction (red-team finding 1)."
     handler lang="kern"

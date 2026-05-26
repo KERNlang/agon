@@ -1,6 +1,7 @@
 import from="node:fs" names="mkdirSync,appendFileSync,readFileSync,readdirSync,statSync,writeFileSync,unlinkSync"
 import from="node:path" names="join"
 import from="../utils/paths.js" names="runtimeAgonPath"
+import from="../cesar/context-thread.js" names="ContextThread" types=true
 
 interface name=ChatMessage
   field name=role type="'user'|'engine'"
@@ -204,6 +205,22 @@ fn name=formatChatContextForPrompt params="session:ChatSession|null|undefined, o
     if cond="history"
       do value="parts.push(`[Recent conversation]\\n${history}`)"
     return value="parts.join('\\n\\n')"
+
+fn name=seedChatSessionFromThread params="session:ChatSession, thread:ContextThread, opts?:{limit?:number}" returns=void export=true
+  doc "Hydrate an empty ChatSession from a durable ContextThread so a fresh process can continue a prior conversation (the `--continue` path). Seeded turns go through appendMessage, so they are persisted to this session's ndjson too — keeping `/chats resume` and loadChatSession consistent with what is in memory. Maps thread roles to chat roles (user->user, assistant->engine) and skips system/tool turns, which chat sessions do not render. No-op when the session already has messages, so it never clobbers an active conversation. The default limit (last 40 turns) bounds rehydration cost; the prompt formatter caps it further at render time."
+  handler <<<
+    if (session.messages.length > 0) return;
+    const recent = thread.recentMessages(opts?.limit ?? 40);
+    for (const m of recent) {
+      const timestamp = new Date(m.timestamp).toISOString();
+      if (m.role === 'user') {
+        appendMessage(session, { role: 'user', content: m.content, timestamp });
+      } else if (m.role === 'assistant') {
+        appendMessage(session, { role: 'engine', engineId: m.engineId, content: m.content, timestamp });
+      }
+      // 'system' / 'tool' turns are intentionally dropped — chat sessions only carry user/engine turns.
+    }
+  >>>
 
 fn name=buildHistoryPrimedPrompt params="session:ChatSession, input:string, maxTurns?:number" returns=string export=true
   doc "Concatenate recent conversation history with the current input so one-shot dispatches keep continuity. Used by fallback paths that bypass PersistentSession — API-only engines (no CLI binary) still get multi-turn context this way. Default: last 10 turns (20 messages)."

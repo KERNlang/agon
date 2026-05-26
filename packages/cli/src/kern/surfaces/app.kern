@@ -4,7 +4,7 @@
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,Static,render"
 import from="@kernlang/terminal/runtime" names="ScrollBox,AlternateScreen"
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,planCostEstimator,cancelCesarPlan,saveCesarPlan,listCesarPlans,loadCesarPlan,cesarPlanJsonPath"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,seedChatSessionFromThread,loadOrCreateActiveThread,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,planCostEstimator,cancelCesarPlan,saveCesarPlan,listCesarPlans,loadCesarPlan,cesarPlanJsonPath"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
@@ -119,7 +119,7 @@ screen name=App target=ink
   state name=sessionEngines type="string[]|null" initial="() => { const cfg = loadConfig(); return cfg.engineActivationMode === 'explicit' ? cfg.forgeEnabledEngines : null; }"
   state name=currentPlan type="Plan|null" initial="null"
   state name=activePlan type="any" initial="null"
-  state name=chatSession type=ChatSession initial="() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } return startChatSession({ cwd, branch }); }"
+  state name=chatSession type=ChatSession initial="() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } const session = startChatSession({ cwd, branch }); if (process.env.AGON_CONTINUE === '1') { try { seedChatSessionFromThread(session, loadOrCreateActiveThread(cwd)); } catch { /* best-effort: a fresh session is fine if no prior thread exists */ } } return session; }"
   state name=activeAbort type="AbortController|null" initial="null"
   state name=cesarSession type="PersistentSession|null" initial="null"
   state name=explorationMode type=boolean initial=false

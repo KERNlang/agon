@@ -625,6 +625,14 @@ Patch: ${forgeResult.patchPath ?? 'none'}
 Manifest: ${forgeResult.manifestPath}
 
 You still own the overall task. Integrate the forged slice with the rest of the work, keep the scope tight, and use your local tools directly if more edits or verification are needed. Avoid sending the same slice to forge again unless integration reveals a genuinely new hard subproblem.`, [], cb);
+              } else {
+                // Regular (non-slice) forge always continues Cesar — even on an
+                // empty/failed outcome (codex review) — so the flow never dead-ends,
+                // like Claude auto mode instead of stopping after the arena.
+                const outcome = forgeResult
+                  ? `Winner: ${forgeResult.winner ?? 'none'}\nPatch (NOT yet applied to the main workspace): ${forgeResult.patchPath ?? 'none'}\nManifest: ${forgeResult.manifestPath ?? 'none'}`
+                  : 'Forge produced no winning candidate (it may have failed or found no patch that passes the fitness gate).';
+                await continueCesarAfterResult(`Forge completed for: "${taskInput.slice(0, 200)}"\n\n${outcome}\n\nSummarize what forge produced and take the next concrete step — inspect or apply the winner patch, or continue/repair the task. Do not blindly re-run forge on the same task.`, cb, continuationEpoch, continuationUserTurns);
               }
               return forgeResult;
             }, cb.ctx));
@@ -699,9 +707,20 @@ You still own the overall task. Integrate the forged slice with the rest of the 
           case 'pipeline': {
             cb.dispatch({ type: 'info', message: `Cesar → pipeline${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdPipe = resolveWorkingDir();
-            cb.runAsJob('pipeline', label, withThreadOutcome(_cwdPipe, 'pipeline', label, () => handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined, {
-              reviewEngines: Array.isArray(result.engines) ? result.engines as string[] : undefined,
-            }), cb.ctx));
+            cb.runAsJob('pipeline', label, withThreadOutcome(_cwdPipe, 'pipeline', label, async () => {
+              await handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined, {
+                reviewEngines: Array.isArray(result.engines) ? result.engines as string[] : undefined,
+              });
+              // ALWAYS continue Cesar after pipeline (codex review: gating on a
+              // non-empty transcript could still dead-end on early-failure / no-engine
+              // paths). handlePipeline returns void, so the engine transcript is the
+              // only result signal — fall back to a status message when it's empty.
+              const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+              const pipeMsg = chatContext
+                ? `Pipeline completed on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize what the pipeline produced and take the next concrete step.`
+                : `Pipeline completed on: "${taskInput.slice(0, 200)}" — no engine transcript was captured (early exit or non-engine output); check the workspace diff/output above. Summarize the outcome and take the next concrete step.`;
+              await continueCesarAfterResult(pipeMsg, cb, continuationEpoch, continuationUserTurns);
+            }, cb.ctx));
             return true;
           }
           case 'goal': {

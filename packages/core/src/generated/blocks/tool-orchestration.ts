@@ -41,7 +41,7 @@ export function createForgeTool(): ToolHandler {
   };
 
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
-    return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
+    return { ok: true, content: 'Delegation accepted — end your turn now so the run can start. The orchestrator continues automatically with the result, so this is a hand-off, not a dead end.' };
   };
 
   return { definition, validate, checkPermission, execute };
@@ -80,7 +80,7 @@ export function createBrainstormTool(): ToolHandler {
   };
 
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
-    return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
+    return { ok: true, content: 'Delegation accepted — end your turn now so the run can start. The orchestrator continues automatically with the result, so this is a hand-off, not a dead end.' };
   };
 
   return { definition, validate, checkPermission, execute };
@@ -126,7 +126,7 @@ export function createTribunalTool(): ToolHandler {
   };
 
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
-    return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
+    return { ok: true, content: 'Delegation accepted — end your turn now so the run can start. The orchestrator continues automatically with the result, so this is a hand-off, not a dead end.' };
   };
 
   return { definition, validate, checkPermission, execute };
@@ -164,7 +164,7 @@ export function createCampfireTool(): ToolHandler {
   };
 
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
-    return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
+    return { ok: true, content: 'Delegation accepted — end your turn now so the run can start. The orchestrator continues automatically with the result, so this is a hand-off, not a dead end.' };
   };
 
   return { definition, validate, checkPermission, execute };
@@ -300,7 +300,7 @@ export function createReviewTool(): ToolHandler {
   };
 
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
-    return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
+    return { ok: true, content: 'Delegation accepted — end your turn now so the run can start. The orchestrator continues automatically with the result, so this is a hand-off, not a dead end.' };
   };
 
   return { definition, validate, checkPermission, execute };
@@ -354,7 +354,7 @@ export function createAgentTool(): ToolHandler {
   // (PFB-1) and routed via dispatch.kern → runAgentMode / runAgentTeam.
   // This execute is a fallback that should never run in practice.
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
-    return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
+    return { ok: true, content: 'Delegation accepted — end your turn now so the run can start. The orchestrator continues automatically with the result, so this is a hand-off, not a dead end.' };
   };
 
   return { definition, validate, checkPermission, execute };
@@ -466,7 +466,7 @@ export function createPipelineTool(): ToolHandler {
   };
 
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
-    return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
+    return { ok: true, content: 'Delegation accepted — end your turn now so the run can start. The orchestrator continues automatically with the result, so this is a hand-off, not a dead end.' };
   };
 
   return { definition, validate, checkPermission, execute };

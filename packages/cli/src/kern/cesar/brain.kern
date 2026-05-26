@@ -35,6 +35,18 @@ const name=splitBeforeToolMarkup type="(text:string) => { visible:string, hasToo
 
 const name=XML_TOOL_MARKUP_HOLD_CHARS type=number value=24
 
+fn name=isUserDirectedQuestion params="lastLine:string" returns=boolean export=true
+  doc "True when the last line of a Cesar turn is a question directed at the USER — either keyword-addressed (which/should/want/your call/…) OR an either/or fork ('A, or B?'). Auto-continuation uses this to STOP and wait for the user instead of treating the question as a mid-task stall and re-prompting Cesar (which caused fork questions like 'plan it all, or start with X?' to loop)."
+  handler <<<
+    const last = String(lastLine ?? '').trim();
+    if (!/\?\s*$/.test(last)) return false;
+    const userAddressed = /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|implement|which|what|how|do you|would you|can you|should i|shall i|prefer|pick|choose|decide|option)\b/i.test(last)
+      || /\b(your call|up to you|your decision|let me know|waiting on (?:you|your)|which way|either way)\b/i.test(last);
+    // Either/or fork ("… A, or B?") offers the user a choice → their turn.
+    const isForkChoice = /\bor\b[^?]{0,160}\?\s*$/i.test(last);
+    return userAddressed || isForkChoice;
+  >>>
+
 fn name=detectNarratedToolStall params="text:string" returns=boolean export=true
   doc "Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling."
   handler lang="kern"
@@ -1688,9 +1700,10 @@ ${reviewFollowup.prompt}`;
         const wroteSinceBaseline = _toolsUsed.slice(baselineToolCount).some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
         const lines = resp.split('\n').map((l: string) => l.trim()).filter(Boolean);
         const last = lines[lines.length - 1] ?? '';
-        const userAddressed = /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|implement|which|what|how|do you|would you|can you|should i)\b/i.test(last);
-        const endsWithQ = /\?\s*$/.test(last);
-        if (endsWithQ && userAddressed) return 'asks-user';
+        // A question directed at the user (keyword-addressed OR an either/or fork)
+        // means it's THEIR turn — stop, don't auto-continue. Extracted to the
+        // exported isUserDirectedQuestion so the classification is unit-tested.
+        if (isUserDirectedQuestion(last)) return 'asks-user';
         // New writes in continuation AND no "still in progress" signal → done
         if (wroteSinceBaseline && !_AUTO_CONT_CONTINUE_RE.test(resp)) return 'done';
         const effectSummary = /(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b[^.]{0,80}(?:\b(?:and|,)\b[^.]{0,80}\b(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b)/i.test(resp);

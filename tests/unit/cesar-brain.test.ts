@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall } from '../../packages/cli/src/handlers/cesar-brain.js';
-import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup } from '../../packages/cli/src/generated/cesar/brain.js';
+import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion } from '../../packages/cli/src/generated/cesar/brain.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 
 describe('Cesar Brain', () => {
@@ -31,6 +31,29 @@ describe('Cesar Brain', () => {
 
     it('does not flag normal answers', () => {
       expect(detectNarratedToolStall('The tools are wired, but Kimi may be weak at native tool calls.')).toBe(false);
+    });
+  });
+
+  describe('isUserDirectedQuestion (auto-continuation stop signal)', () => {
+    it('treats either/or forks as user-directed even without keyword triggers', () => {
+      // The exact phrasings that previously looped (no keyword → misread as stuck).
+      expect(isUserDirectedQuestion('Waiting on your call — plan the full 9-file modularization, or start with brain.kern first?')).toBe(true);
+      expect(isUserDirectedQuestion('Start with brain.kern modularization only, or plan the full 9-file effort upfront?')).toBe(true);
+    });
+
+    it('treats keyword-addressed and "your call"-style questions as user-directed', () => {
+      expect(isUserDirectedQuestion('Should I commit this as fix(cesar): drain timers?')).toBe(true);
+      expect(isUserDirectedQuestion('Which file did you mean — brain.kern or dispatch.kern?')).toBe(true);
+      expect(isUserDirectedQuestion('Ready to proceed?')).toBe(true);
+      expect(isUserDirectedQuestion('Your call?')).toBe(true);
+      expect(isUserDirectedQuestion('Either way works — up to you?')).toBe(true);
+    });
+
+    it('does NOT flag statements or rhetorical lines that are not questions to the user', () => {
+      expect(isUserDirectedQuestion('I checked whether the cache or the store was stale.')).toBe(false); // no ?
+      expect(isUserDirectedQuestion("Now I'll edit the file and run typecheck.")).toBe(false);
+      expect(isUserDirectedQuestion('Done — brain.kern timers added, typecheck green.')).toBe(false);
+      expect(isUserDirectedQuestion('')).toBe(false);
     });
   });
 

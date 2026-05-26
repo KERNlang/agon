@@ -8,9 +8,9 @@ import { ensureAgonHome, spawnWithTimeout, worktreeCreate, worktreeRemoveBestEff
 
 import { assertSafeGoalId, resolveWithin } from './paths.js';
 
-import { createJournal, loadJournal, saveJournal, addTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent, goalDir } from './journal.js';
+import { createJournal, loadJournal, saveJournal, addTasks, requeueInflightTasks, nextTask, markStatus, recordAttempt, remainingCount, isDone, logEvent, goalDir } from './journal.js';
 
-import { snapshotOracle, witnessTest } from './oracle.js';
+import { snapshotOracle, witnessTest, witnessVerifyCommand } from './oracle.js';
 
 import { generateMutants, mutationSurvivors } from './mutation.js';
 
@@ -108,7 +108,7 @@ export function writeGoalArtifacts(state: JournalState): {resultPath:string, sum
  * Run the goal to a terminal state (done / budget / time / breaker / abort). Resumable: re-invoking with resume=true picks up the journal. Returns the final JournalState; durable artifacts are written before return.
  */
 // @kern-source: controller:101
-export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[]}>, oracleFiles?: string[], resume?: boolean, push?: boolean, remote?: string, requireTests?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, breakerWindow?: number, breakerMinSuccessRate?: number, mutationHighSignalMax?: number, mutationSurvivorRatio?: number, mutationFloor?: number, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, mutationEvidence?:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string, costUsd?:number}> }): Promise<JournalState> {
+export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[],verify?:string}>, oracleFiles?: string[], resume?: boolean, push?: boolean, remote?: string, requireTests?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, breakerWindow?: number, breakerMinSuccessRate?: number, mutationHighSignalMax?: number, mutationSurvivorRatio?: number, mutationFloor?: number, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, mutationEvidence?:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string, costUsd?:number}> }): Promise<JournalState> {
   const { spec, repoRoot } = opts;
   assertSafeGoalId(spec.goalId);
   ensureAgonHome();
@@ -148,6 +148,19 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
   // 1. Journal: resume or create, then merge in the queue (idempotent).
   let state = (opts.resume ? loadJournal(spec.goalId) : null) ?? createJournal(spec);
   state = addTasks(state, opts.tasks);
+  // On resume, reset any task orphaned as 'inflight' (interrupted mid-attempt)
+  // back to 'queued' — nextTask only yields 'queued', so without this an
+  // orphaned task is silently skipped, never re-run (dogfood: a killed run
+  // dropped task-03). Atomic commit+ref-advance means no partial work landed.
+  if (opts.resume) {
+    const req = requeueInflightTasks(state);
+    if (req.count > 0) {
+      state = logEvent(req.state, 'resume-requeue', undefined, `${req.count} inflight task(s) interrupted mid-attempt — reset to queued`);
+      emit('resume-requeue', undefined, `${req.count} task(s) reset to queued`);
+    } else {
+      state = req.state;
+    }
+  }
 
   // 2. Freeze the oracle (gate string + oracle files) and record its hash.
   //    On resume, refuse if the oracle no longer matches the frozen hash —
@@ -294,6 +307,40 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
         throw { kind: 'gate', sig: gateFailureSignature(`${gate.stderr || ''}\n${gate.stdout || ''}`), detail: `${gate.timedOut ? 'gate timed out' : `gate exit ${gate.exitCode}`}${logPath ? ` — output: ${logPath}` : ''}` };
       }
 
+      // VERIFY — the task's FROZEN behavioral oracle, run BEFORE the expensive
+      // mutation+review so a behaviorally-wrong patch fails fast. This is the
+      // differential-execution backstop the witness can't be: the witness only
+      // proves the engine's OWN test goes red→green, which a non-executing
+      // toContain('math.floor') assertion satisfies without ever running the
+      // produced program. A task-authored verify (e.g. asserts pow(2,3)===8)
+      // must FAIL on base and PASS on head — the engine can neither author nor
+      // weaken it. Order matters (review: gemini+kimi):
+      //   1. fail-on-base FIRST. A verify that's GREEN on base pins no NEW
+      //      behavior — it's an INVALID oracle no engine retry can satisfy, so
+      //      PARK immediately with an actionable message (a TASK-SPEC defect).
+      //      Checking head first here would burn maxAttempts retries against a
+      //      spec that can never pass.
+      //   2. only once it's a valid oracle (red on base) does pass-on-head mean
+      //      anything. A miss there is the IMPLEMENTATION's fault → RETRY. It is
+      //      thrown as its OWN kind 'verify-head' (not 'gate'): a verify miss is
+      //      not a gate failure, and reusing 'gate' wrote a bogus 'verify' string
+      //      into gateFailureSignature, polluting the oscillation breaker.
+      // NOTE: verify runs in the head worktree (already built by the gate) but on
+      // base it runs in a FRESH worktree — so a verify must be SELF-CONTAINED
+      // (build + assert); a bare `node dist/x.js` would fail on base only because
+      // dist/ is absent, faking the differential. See the GoalTask.verify doc.
+      const verifyCmd = (task.verify ?? '').trim();
+      if (verifyCmd) {
+        const v = await witnessVerifyCommand({ repoRoot, baseSha, newWorktree: wt, verifyCmd, timeout: witnessTimeoutSec, signal: opts.signal });
+        if (!v.failedOnBase) {
+          throw { kind: 'verify', detail: `verify passes on base (exit ${v.baseExit}${v.baseTimedOut ? ', timed out' : ''}) — it does not pin NEW behavior, so it cannot prove the gap was closed; make the verify self-contained (build + assert) and ensure it fails on base: ${verifyCmd}` };
+        }
+        if (!v.passedOnNew) {
+          throw { kind: 'verify-head', detail: `verify failed on head (exit ${v.newExit}) — the implementation does not satisfy the task's behavioral oracle: ${verifyCmd}` };
+        }
+        emit('verify-ok', task.id, 'behavioral oracle witnessed (fail-on-base, pass-on-head)');
+      }
+
       // MUTATION-WITNESS — gate is green; now canonical mutants on the changed
       // SOURCE lines must die (a surviving mutant means the tests may be too
       // weak). Survivors are GRADED, not zero-tolerance: a line-regex mutator
@@ -397,6 +444,7 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
       const outcome =
         kind === 'gate' ? 'gate-fail' :
         kind === 'witness' ? 'witness-fail' :
+        kind === 'verify' || kind === 'verify-head' ? 'verify-fail' :
         kind === 'mutation' ? 'mutation-survived' :
         kind === 'review' ? 'review-block' : 'error';
       const message = err?.detail ?? (e instanceof Error ? e.message : String(e));
@@ -407,11 +455,14 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
         mutantsSurvived: err?.count,
         error: message,
       });
-      // Witness / mutation failures park immediately — they signal a weak or
-      // tautological test that retrying the same agent won't strengthen.
-      // Other failures retry until taskParkDecision says to park.
+      // Witness / mutation / non-discriminating-verify failures park immediately
+      // — they signal a weak or tautological test (or a vacuous verify) that
+      // retrying the same agent won't strengthen. (A verify that fails on HEAD is
+      // thrown as kind 'verify-head' above — NOT in this set — so it retries like
+      // a gate miss; only a verify that's non-discriminating on base reaches here
+      // as kind 'verify'.) Other failures retry until taskParkDecision says park.
       const updated = state.tasks.find((t) => t.id === task.id)!;
-      const park = (kind === 'witness' || kind === 'mutation') ? { park: true, reason: outcome } : taskParkDecision(updated, spec.maxAttempts);
+      const park = (kind === 'witness' || kind === 'mutation' || kind === 'verify') ? { park: true, reason: outcome } : taskParkDecision(updated, spec.maxAttempts);
       if (park.park) {
         state = markStatus(state, task.id, 'parked', { lastError: message, notes: `${park.reason} — ${message}`.slice(0, 300) });
         state = { ...state, parkedStreak: state.parkedStreak + 1, recentOutcomes: pushRecentOutcome(state.recentOutcomes ?? [], 'parked', outcomeRingCap) };

@@ -23,7 +23,7 @@ export interface GoalSpec {
 // @kern-source: types:19
 export interface AttemptRecord {
   at: number;
-  outcome: 'gate-pass'|'gate-fail'|'witness-fail'|'mutation-survived'|'review-block'|'error';
+  outcome: 'gate-pass'|'gate-fail'|'witness-fail'|'verify-fail'|'mutation-survived'|'review-block'|'error';
   gateFailureSignature?: string;
   mutantsSurvived?: number;
   error?: string;
@@ -40,6 +40,7 @@ export interface GoalTask {
   attempts: number;
   attemptLog: AttemptRecord[];
   dependsOn?: string[];
+  verify?: string;
   commitSha?: string;
   costUsd: number;
   lastError?: string;
@@ -49,7 +50,7 @@ export interface GoalTask {
 /**
  * Append-only audit entry.
  */
-// @kern-source: types:40
+// @kern-source: types:42
 export interface GoalEvent {
   ts: number;
   kind: string;
@@ -60,7 +61,7 @@ export interface GoalEvent {
 /**
  * The whole resumable goal state — the single source of truth for a run.
  */
-// @kern-source: types:47
+// @kern-source: types:49
 export interface JournalState {
   spec: GoalSpec;
   createdAt: number;

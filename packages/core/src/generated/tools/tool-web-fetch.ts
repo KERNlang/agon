@@ -3,32 +3,79 @@
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision } from '../models/tool-types.js';
 
 /**
- * True if a hostname is one we must never fetch: localhost, loopback, RFC-1918 private, CGNAT, or link-local (169.254/fe80) — the last also covers the cloud metadata endpoint 169.254.169.254. Hostnames that are not IP literals are allowed (DNS-rebinding to a private IP is a known v1 limitation).
+ * True if a hostname is one we must never fetch: localhost, loopback, RFC-1918 private, CGNAT, or link-local (169.254/fe80) — the last also covers the cloud metadata endpoint 169.254.169.254. Also decodes IPv4-mapped/compatible IPv6 (WHATWG serialises ::ffff:127.0.0.1 to hex ::ffff:7f00:1) and re-checks the embedded v4. Hostnames that are not IP literals are allowed (DNS-rebinding to a private IP is a known v1 limitation).
  */
 // @kern-source: tool-web-fetch:9
 function isBlockedHost(host: string): boolean {
   if (!host) return true;
-  const lower = host.toLowerCase();
-  if (lower === 'localhost' || lower.endsWith('.localhost')) return true;
-  let h = lower;
+  let h = host.toLowerCase();
+  if (h.endsWith('.')) h = h.slice(0, -1); // strip FQDN trailing dot
+  if (h === 'localhost' || h.endsWith('.localhost')) return true;
+  if (h === 'metadata.google.internal') return true; // GCP metadata DNS name (not an IP literal)
   if (h.startsWith('[') && h.endsWith(']')) h = h.slice(1, -1);
-  if (h.includes(':')) {
-    // IPv6
-    if (h === '::1' || h === '::') return true;
-    const first = h.split(':')[0];
-    if (first.startsWith('fc') || first.startsWith('fd')) return true; // unique-local fc00::/7
-    if (first.startsWith('fe8') || first.startsWith('fe9') || first.startsWith('fea') || first.startsWith('feb')) return true; // link-local fe80::/10
-    return false;
-  }
-  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (m) {
-    const a = Number(m[1]); const b = Number(m[2]);
+
+  // Shared IPv4 guard: loopback, RFC-1918 private, link-local/metadata, CGNAT.
+  const blockedV4 = (a: number, b: number): boolean => {
     if (a === 0 || a === 127 || a === 10) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 192 && b === 168) return true;
     if (a === 169 && b === 254) return true; // link-local + cloud metadata
     if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64/10
     return false;
+  };
+
+  if (h.includes(':')) {
+    // IPv6 (WHATWG lower-cased + compressed; any embedded v4 is already hex).
+    if (h === '::1' || h === '::' || h === '::0') return true;
+
+    // Expand a single "::" run into 8 numeric hextets, else null.
+    const expand = (addr: string): number[] | null => {
+      let a = addr;
+      // Defensively handle an embedded dotted IPv4 (::ffff:1.2.3.4 / ::1.2.3.4)
+      // in case it reaches us un-normalized — convert the quad to two hex groups.
+      const dq = a.match(/:(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+      if (dq) {
+        const o = [Number(dq[1]), Number(dq[2]), Number(dq[3]), Number(dq[4])];
+        if (o.some((n) => n > 255)) return null;
+        const hi = ((o[0] << 8) | o[1]).toString(16);
+        const lo = ((o[2] << 8) | o[3]).toString(16);
+        a = a.slice(0, a.length - dq[0].length) + ':' + hi + ':' + lo;
+      }
+      if (!/^[0-9a-f:]+$/.test(a)) return null;
+      const halves = a.split('::');
+      if (halves.length > 2) return null;
+      const head = halves[0] ? halves[0].split(':') : [];
+      const tail = halves.length === 2 ? (halves[1] ? halves[1].split(':') : []) : [];
+      let groups: string[];
+      if (halves.length === 2) {
+        const missing = 8 - head.length - tail.length;
+        if (missing < 0) return null;
+        groups = [...head, ...Array(missing).fill('0'), ...tail];
+      } else {
+        groups = head;
+      }
+      if (groups.length !== 8) return null;
+      const nums = groups.map((g) => parseInt(g || '0', 16));
+      return nums.some((n) => Number.isNaN(n) || n < 0 || n > 0xffff) ? null : nums;
+    };
+
+    const g = expand(h);
+    if (g) {
+      // IPv4-mapped (::ffff:a.b.c.d) or deprecated IPv4-compatible (::a.b.c.d):
+      // first five hextets zero, sixth is 0xffff or 0 — embedded v4 in g[6],g[7].
+      const mapped = g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && (g[5] === 0xffff || g[5] === 0);
+      if (mapped && blockedV4((g[6] >> 8) & 0xff, g[6] & 0xff)) return true;
+    }
+
+    const first = h.split(':')[0];
+    if (first.startsWith('fc') || first.startsWith('fd')) return true; // unique-local fc00::/7
+    if (first.startsWith('fe8') || first.startsWith('fe9') || first.startsWith('fea') || first.startsWith('feb')) return true; // link-local fe80::/10
+    return false;
+  }
+
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    return blockedV4(Number(m[1]), Number(m[2]));
   }
   return false;
 }
@@ -36,7 +83,7 @@ function isBlockedHost(host: string): boolean {
 /**
  * Parse + security-check a URL for WebFetch. Requires http/https and a non-blocked host. Returns { ok:true, url } on success, else { ok:false, reason }.
  */
-// @kern-source: tool-web-fetch:38
+// @kern-source: tool-web-fetch:85
 export function parseAndValidateUrl(raw: string): { ok: boolean; url?: string; reason?: string } {
   const trimmed = String(raw ?? '').trim();
   if (!trimmed) return { ok: false, reason: 'empty URL' };
@@ -54,7 +101,7 @@ export function parseAndValidateUrl(raw: string): { ok: boolean; url?: string; r
 /**
  * Strip an HTML document down to readable text: removes <script>/<style> blocks and their content, comments, and all tags; decodes common entities; collapses whitespace; caps length (default 100000).
  */
-// @kern-source: tool-web-fetch:54
+// @kern-source: tool-web-fetch:101
 export function htmlToText(html: string, maxChars?: number): string {
   const cap = typeof maxChars === 'number' && maxChars > 0 ? maxChars : 100000;
   let s = String(html ?? '');
@@ -73,7 +120,7 @@ export function htmlToText(html: string, maxChars?: number): string {
 /**
  * Factory for the WebFetch tool — fetches a public http(s) URL and returns its readable text.
  */
-// @kern-source: tool-web-fetch:71
+// @kern-source: tool-web-fetch:118
 export function createWebFetchTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'WebFetch',
@@ -106,31 +153,90 @@ export function createWebFetchTool(): ToolHandler {
     if (!v.ok || !v.url) return { ok: false, content: '', error: v.reason ?? 'invalid URL' };
     const maxChars = typeof input.maxChars === 'number' ? input.maxChars : 100000;
 
+    const MAX_BYTES = 5 * 1024 * 1024; // 5 MiB raw cap — guards against OOM/DoS
+    const MAX_REDIRECTS = 5;
+    const REQ_HEADERS = { 'user-agent': 'agon-webfetch/0.1', accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.5' };
+
     const controller = new AbortController();
     const timeoutMs = 15000;
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
     const onAbort = () => controller.abort();
-    if (ctx.abortSignal) ctx.abortSignal.addEventListener('abort', onAbort);
+    if (ctx.abortSignal) {
+      // Honor a signal that is *already* aborted — addEventListener would never fire.
+      if (ctx.abortSignal.aborted) controller.abort();
+      else ctx.abortSignal.addEventListener('abort', onAbort, { once: true });
+    }
 
     try {
-      const res = await fetch(v.url, {
-        signal: controller.signal,
-        redirect: 'follow',
-        headers: { 'user-agent': 'agon-webfetch/0.1', accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.5' },
-      });
+      // Follow redirects by hand so every hop is re-checked by the SSRF guard —
+      // `redirect: 'follow'` would let a public URL bounce us to an internal host.
+      let currentUrl = v.url;
+      let res: Response | null = null;
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        res = await fetch(currentUrl, { signal: controller.signal, redirect: 'manual', headers: REQ_HEADERS });
+        const loc = res.headers.get('location');
+        if (res.status >= 300 && res.status < 400 && loc) {
+          let next: string;
+          try { next = new URL(loc, currentUrl).toString(); } // resolve relative Location
+          catch { return { ok: false, content: '', error: `redirect to malformed URL: ${loc}` }; }
+          const rv = parseAndValidateUrl(next);
+          if (!rv.ok || !rv.url) {
+            return { ok: false, content: '', error: `blocked redirect → ${rv.reason ?? next}` };
+          }
+          currentUrl = rv.url;
+          res = null;
+          continue;
+        }
+        break; // final (non-redirect) response
+      }
+      if (!res) {
+        return { ok: false, content: '', error: `too many redirects (> ${MAX_REDIRECTS})` };
+      }
+
       const contentType = res.headers.get('content-type') ?? '';
-      const raw = await res.text();
+      const declared = Number(res.headers.get('content-length') ?? '');
+      if (Number.isFinite(declared) && declared > MAX_BYTES) {
+        return { ok: false, content: '', error: `response too large: ${declared} bytes exceeds ${MAX_BYTES}-byte cap` };
+      }
+
+      // Stream the body with a hard byte cap — content-length may be absent or lie.
+      const reader = res.body?.getReader();
+      let raw = '';
+      if (reader) {
+        const decoder = new TextDecoder();
+        let received = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            received += value.byteLength;
+            if (received > MAX_BYTES) {
+              await reader.cancel();
+              return { ok: false, content: '', error: `response too large: exceeded ${MAX_BYTES}-byte cap` };
+            }
+            raw += decoder.decode(value, { stream: true });
+          }
+        }
+        raw += decoder.decode();
+      } else {
+        // No readable stream → no body (204/304/HEAD). Nothing to buffer.
+        raw = '';
+      }
+
       const body = /html/i.test(contentType) ? htmlToText(raw, maxChars) : raw.slice(0, maxChars);
       if (!res.ok) {
         return { ok: false, content: body.slice(0, 2000), error: `HTTP ${res.status} ${res.statusText}` };
       }
-      return { ok: true, content: body, metadata: { url: v.url, status: res.status, contentType, bytes: raw.length } };
+      return { ok: true, content: body, metadata: { url: currentUrl, status: res.status, contentType, bytes: raw.length } };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return {
         ok: false,
         content: '',
-        error: controller.signal.aborted ? `fetch timed out after ${timeoutMs}ms` : `fetch failed: ${msg}`,
+        error: timedOut
+          ? `fetch timed out after ${timeoutMs}ms`
+          : controller.signal.aborted ? 'fetch aborted by caller' : `fetch failed: ${msg}`,
       };
     } finally {
       clearTimeout(timer);

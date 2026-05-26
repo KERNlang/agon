@@ -275,9 +275,12 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString(), images: images?.map(img => img.path) });
       appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
 
-      // Optional ContextThread continuity: off by default so new Agon
-      // processes do not inherit stale chat/agent attempts.
-      if ((config as any).sessionContinuity === true) {
+      // Persist every chat turn to the durable ContextThread, like Claude logs
+      // each conversation. Default-on; set `sessionContinuity: false` in config to
+      // opt out (privacy kill switch). The WRITE is local-only (~/.agon); READING it
+      // back into a fresh process is the explicit `--continue` path (AGON_CONTINUE)
+      // in surfaces/app.kern — so a bare `agon` never inherits stale context.
+      if ((config as any).sessionContinuity !== false) {
         try {
           const chatThread = loadOrCreateActiveThread(cwd);
           chatThread.append({ role: 'user', content: input });

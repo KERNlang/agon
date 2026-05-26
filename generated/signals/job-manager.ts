@@ -1,0 +1,71 @@
+// @kern-source: job-manager:1
+export interface Job {
+  id: string;
+  type: string;
+  state: 'running'|'done'|'failed'|'cancelled';
+  startedAt: string;
+  label: string;
+  error?: string;
+}
+
+// @kern-source: job-manager:9
+/**
+ * Manages background jobs for long-running commands (forge, tribunal, brainstorm, campfire).
+ */
+export class JobManager {
+  private jobs: Map<string,Job>;
+  private nextId: number;
+
+  constructor() {
+    this.jobs = new Map();
+    this.nextId = 1;
+  }
+
+  create(type: string, label: string): Job {
+    const id = String(this.nextId++);
+    const job: Job = {
+      id,
+      type,
+      state: 'running',
+      startedAt: new Date().toISOString(),
+      label,
+    };
+    this.jobs.set(id, job);
+    return job;
+  }
+
+  complete(id: string): void {
+    const job = this.jobs.get(id);
+    if (job && job.state === 'running') {
+      job.state = 'done';
+    }
+  }
+
+  fail(id: string, error: string): void {
+    const job = this.jobs.get(id);
+    if (job && job.state === 'running') {
+      job.state = 'failed';
+      job.error = error;
+    }
+  }
+
+  cancel(id: string): void {
+    const job = this.jobs.get(id);
+    if (job && job.state === 'running') {
+      job.state = 'cancelled';
+    }
+  }
+
+  get(id: string): Job|undefined {
+    return this.jobs.get(id);
+  }
+
+  list(): Job[] {
+    return [...this.jobs.values()];
+  }
+
+  running(): Job[] {
+    return [...this.jobs.values()].filter((j) => j.state === 'running');
+  }
+}
+

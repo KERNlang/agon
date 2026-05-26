@@ -1,0 +1,128 @@
+// @kern-source: install-agent-prompts:11
+import { defineCommand } from 'citty';
+
+// @kern-source: install-agent-prompts:12
+import { agonShim, codexSkillMarkdown, codexSkillOpenAiYaml } from './agent-guide-text.js';
+
+// @kern-source: install-agent-prompts:13
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+
+// @kern-source: install-agent-prompts:14
+import { homedir } from 'node:os';
+
+// @kern-source: install-agent-prompts:15
+import { join, dirname } from 'node:path';
+
+// @kern-source: install-agent-prompts:17
+export const installAgentPromptsCommand: any = defineCommand({
+  meta: {
+    name: 'install-agent-prompts',
+    description: 'Install lightweight Agon prompts/skills into other CLIs (Codex, Antigravity, Claude Code) — no MCP, no always-on tokens',
+  },
+  args: {
+    cli: {
+      type: 'string',
+      description: 'Comma list to target: codex,agy,claude. Default: every CLI whose config dir exists.',
+    },
+    force: {
+      type: 'boolean',
+      description: 'Overwrite an existing Agon integration file.',
+    },
+    dry: {
+      type: 'boolean',
+      description: 'Show what would be written without writing anything.',
+    },
+  },
+  run({ args }) {
+    const home = homedir();
+    type TargetFile = { file: string; content: string };
+    type Target = { id: string; label: string; baseDir: string; files: TargetFile[] };
+    const targets: Target[] = [
+      {
+        id: 'codex',
+        label: 'Codex',
+        baseDir: join(home, '.codex'),
+        files: [
+          { file: join(home, '.codex', 'skills', 'agon', 'SKILL.md'), content: codexSkillMarkdown() },
+          { file: join(home, '.codex', 'skills', 'agon', 'agents', 'openai.yaml'), content: codexSkillOpenAiYaml() },
+        ],
+      },
+      {
+        id: 'agy',
+        label: 'Antigravity (agy)',
+        baseDir: join(home, '.antigravity'),
+        files: [{ file: join(home, '.antigravity', 'commands', 'agon.toml'), content: agonShim('agy') }],
+      },
+      {
+        id: 'claude',
+        label: 'Claude Code',
+        baseDir: join(home, '.claude'),
+        files: [{ file: join(home, '.claude', 'commands', 'agon.md'), content: agonShim('claude') }],
+      },
+    ];
+
+    const requested = String(args.cli ?? '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    const dryRun = !!args.dry;
+    const force = !!args.force;
+
+    // Warn (do not silently drop) on unknown --cli ids, so typos surface.
+    const knownIds = targets.map((t) => t.id);
+    const unknown = requested.filter((id) => !knownIds.includes(id));
+    if (unknown.length > 0) {
+      process.stderr.write(`agon install-agent-prompts: ignoring unknown CLI "${unknown.join(', ')}" (known: ${knownIds.join(', ')})\n`);
+    }
+
+    const chosen = targets.filter((t) =>
+      requested.length > 0 ? requested.includes(t.id) : existsSync(t.baseDir),
+    );
+
+    if (chosen.length === 0) {
+      if (requested.length > 0) {
+        process.stderr.write(`agon install-agent-prompts: no known CLI matched "${requested.join(', ')}" (known: ${knownIds.join(', ')})\n`);
+      } else {
+        process.stderr.write('agon install-agent-prompts: no CLI config dirs found (~/.codex, ~/.antigravity, ~/.claude). Pass --cli codex,agy,claude to force.\n');
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    const fmt = (action: string, label: string, detail: string) =>
+      `${action.padEnd(15)} ${(label + ':').padEnd(12)} ${detail}`;
+
+    let hadError = false;
+    const lines: string[] = [];
+    for (const t of chosen) {
+      for (const out of t.files) {
+        const exists = existsSync(out.file);
+        if (exists && !force) {
+          lines.push(fmt('skip', t.label, `${out.file} (exists — use --force to overwrite)`));
+          continue;
+        }
+        if (dryRun) {
+          lines.push(fmt(exists ? 'would overwrite' : 'would write', t.label, out.file));
+          continue;
+        }
+        try {
+          mkdirSync(dirname(out.file), { recursive: true });
+          writeFileSync(out.file, out.content);
+          lines.push(fmt(exists ? 'updated' : 'wrote', t.label, out.file));
+        } catch (err) {
+          hadError = true;
+          lines.push(fmt('error', t.label, err instanceof Error ? err.message : String(err)));
+        }
+      }
+    }
+
+    process.stdout.write(lines.join('\n') + '\n');
+    if (hadError) {
+      process.stderr.write('\nSome integration files failed to install (see the "error" lines above).\n');
+      process.exitCode = 1;
+    } else if (!dryRun) {
+      process.stdout.write('\nDone. In Claude Code/Antigravity, type /agon. In Codex, start a new session and use $agon. Each path runs `agon agent-guide`, then orchestrates. No MCP; nothing is loaded until you invoke it.\n');
+    }
+  },
+});
+

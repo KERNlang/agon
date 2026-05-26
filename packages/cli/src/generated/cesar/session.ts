@@ -24,7 +24,7 @@ import { getSessionAllowList } from '../signals/output.js';
 
 import { buildRoutingContext } from './routing.js';
 
-import { extractDelegation } from './brain.js';
+import { extractDelegation } from './brain-helpers.js';
 
 import { applyCesarSelfTurnApproval, approvalArgsFromCommand } from './self-turn-approval.js';
 
@@ -97,7 +97,7 @@ CRITICAL: You have orchestration modes as DIRECT TOOL CALLS. NEVER use Bash to r
 
   Review(target?, engine?, engines?)
     Code review. target: "uncommitted" (default), "branch:NAME", "commit:SHA".
-    Set engine ONLY when the user explicitly names one ("review with gemini"). If the user names multiple reviewers ("review with codex and claude", "review with codex gemini"), set engines:["codex","claude"] or the named set. For high-stakes code review, you may set two diverse engines yourself. Otherwise omit engine/engines; Agon auto-selects the reviewer.
+    Set engine ONLY when the user explicitly names one ("review with agy"). If the user names multiple reviewers ("review with codex and claude", "review with codex agy"), set engines:["codex","claude"] or the named set. For high-stakes code review, you may set two diverse engines yourself. Otherwise omit engine/engines; Agon auto-selects the reviewer.
     USE WHEN: user asks only to review code, changes, PR, or diff. If they ask to fix the findings too, call Pipeline instead.
 
   QuickNero(reason?)
@@ -125,7 +125,7 @@ CRITICAL: You have orchestration modes as DIRECT TOOL CALLS. NEVER use Bash to r
       - Plain-chat questions ("what does X do") — that's not multi-step work.
       - Anything under 30 chars of input (the runtime guard will downgrade to solo anyway).
     EXAMPLE (solo, edit): "Fix the flaky test in auth.test.ts" → Agent(task:"fix the flaky test...", taskKind:"edit")
-    EXAMPLE (team, edit): "Refactor auth middleware to stop storing plaintext tokens" → Agent(task:"refactor auth middleware...", team:true, taskKind:"edit", engines:["claude","codex","gemini"])
+    EXAMPLE (team, edit): "Refactor auth middleware to stop storing plaintext tokens" → Agent(task:"refactor auth middleware...", team:true, taskKind:"edit", engines:["claude","codex","agy"])
     EXAMPLE (solo, investigate): "Investigate why the dispatch loop is slow" → Agent(task:"investigate why...", taskKind:"investigate")
     EXAMPLE (team, investigate): "Audit the auth layer for security issues" → Agent(task:"audit auth layer...", team:true, taskKind:"investigate")
     ALWAYS set taskKind explicitly. Mismatched taskKind silently breaks the synthesis path.
@@ -276,7 +276,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       wiring imports, stub creation, documentation, verification. A 4-file refactor
       with a clear target pattern is a self step, not forge.
     - delegate: Send to ONE engine when that engine has a clear strength advantage for
-      a bounded subtask (e.g., "gemini is 90% win rate on TypeScript refactors, delegate
+      a bounded subtask (e.g., "agy is 90% win rate on TypeScript refactors, delegate
       the type surgery"). Prefer over forge when you're confident in one engine.
     - forge: ONLY when (a) the approach is genuinely ambiguous and parallel exploration
       beats sequential self-work, (b) the task is risky enough that best-of-N is worth
@@ -988,7 +988,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   }
 
   // ── Inject Agon orchestration MCP server for CLI companion engines ──
-  // Gives Codex/Gemini/OpenCode/Claude real MCP tools for Tribunal, Brainstorm,
+  // Gives Codex/Antigravity/OpenCode/Claude real MCP tools for Tribunal, Brainstorm,
   // AND for AgonBash/AgonEdit/AgonWrite, instead of XML prose they can't call.
   //
   // Claude (stream-json) MUST be included: createStreamJsonSession launches it

@@ -78,7 +78,7 @@ export interface EngineDefinition {
   imageFlag?: string;
   systemPromptFlag?: string;
   agent?: EngineModeConfig;
-  api?: {baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number};
+  api?: {baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, contextWindow?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number};
   companion?: CompanionConfig;
   cliModels?: EngineCliModelConfig;
   isolationHints?: {configEnv?:string, strictMcpArgs?:string[], personalPaths?:string[], authFiles?:string[], authMarker?:string, setupHint?:string, loginArgs?:string[], supportsProjectMcp?:boolean};
@@ -297,7 +297,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   goalReviewEngines: [],
   forgeRequireBaselineCheck: true,
   engineActivationMode: 'auto',
-  forgeEnabledEngines: ['claude','codex','gemini'],
+  forgeEnabledEngines: ['claude','codex','agy'],
   forgeFitnessTimeout: 120,
   forgeSynthesisTimeout: 300,
   forgeEarlyFinalizeEnabled: true,

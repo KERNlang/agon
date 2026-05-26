@@ -142,6 +142,21 @@ fn name=buildCommand params="engine:EngineDefinition, mode:EngineMode, prompt:st
       effectivePrompt = labels.join('\n') + '\n\nPlease read and analyze the image(s) above.\n\n' + prompt;
     }
 
+    // agy (Antigravity) print mode is agentic by default: left to itself it writes
+    // the answer to artifact FILES, asks clarifying questions, and runs many tool
+    // rounds — which blows past the timeout and returns prose the caller can't parse.
+    // For non-agent dispatch (exec/review → ask/brainstorm/tribunal/review) force a
+    // single-pass, inline, plain-text answer. Agent mode is left agentic on purpose.
+    if (engine.id === 'agy' && mode !== 'agent') {
+      effectivePrompt =
+        'OUTPUT RULES (important): Reply with your COMPLETE final answer as plain text in THIS response only. ' +
+        'Do NOT create, write, edit, or reference any files or artifacts. ' +
+        'Do NOT ask clarifying questions — make reasonable assumptions and proceed. ' +
+        'Do NOT use slash commands or start an interactive session. ' +
+        'Do all the work in a single pass and output the final result directly as text now.\n\n' +
+        effectivePrompt;
+    }
+
     const vars: Record<string, string> = {
       prompt: effectivePrompt,
       // Never let a {cwd} placeholder resolve to '' — engines that template it

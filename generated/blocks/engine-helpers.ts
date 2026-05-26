@@ -1,0 +1,110 @@
+// @kern-source: engine-helpers:1
+export function parseToolInputPayload(input: string): any {
+  const rawInput = String(input ?? '');
+  let parsed: Record<string, unknown> = {};
+  try {
+    if (rawInput.trim().startsWith('{')) {
+      parsed = JSON.parse(rawInput);
+    }
+  } catch (e) {
+    parsed = {};
+  }
+  return { rawInput: rawInput, parsed: parsed };
+}
+
+// @kern-source: engine-helpers:12
+export function extractPatchText(rawInput: string, parsed: any): string {
+  const values = [parsed?.patch, parsed?.content, parsed?.diff, parsed?.input].filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0);
+  const fromParsed = values.find((value: string) => value.includes('*** Begin Patch') || value.includes('diff --git') || value.split('\n').some((line: string) => line.startsWith('@@')));
+  if (fromParsed) {
+    return fromParsed;
+  }
+  if (rawInput.includes('*** Begin Patch') || rawInput.includes('diff --git') || rawInput.split('\n').some((line: string) => line.startsWith('@@'))) {
+    return rawInput;
+  }
+  return values[0] ?? '';
+}
+
+// @kern-source: engine-helpers:22
+export function parsePatchPreview(rawInput: string, parsed: any): { files:string[]; lines:string[]; additions:number; deletions:number } {
+  const patchText = extractPatchText(rawInput, parsed);
+  const files: string[] = [];
+  const lines: string[] = [];
+  let additions = 0;
+  let deletions = 0;
+  const addFile = (filePath: string) => {
+    const clean = filePath.trim().replace(/^["']|["']$/g, '');
+    if (clean && !files.includes(clean)) files.push(clean);
+  };
+  
+  for (const line of patchText.split('\n')) {
+    const customFile = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/);
+    if (customFile) {
+      addFile(customFile[1]);
+      continue;
+    }
+    const diffFile = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+    if (diffFile) {
+      addFile(diffFile[2]);
+      continue;
+    }
+    if (line.startsWith('+++ b/')) {
+      addFile(line.slice('+++ b/'.length));
+      continue;
+    }
+    if (line.startsWith('--- a/')) {
+      addFile(line.slice('--- a/'.length));
+      continue;
+    }
+    if (line.startsWith('@@')) {
+      lines.push(line);
+      continue;
+    }
+    if (line.startsWith('+') && !line.startsWith('+++')) {
+      additions += 1;
+      lines.push(line);
+      continue;
+    }
+    if (line.startsWith('-') && !line.startsWith('---')) {
+      deletions += 1;
+      lines.push(line);
+    }
+  }
+  
+  return { files, lines, additions, deletions };
+}
+
+// @kern-source: engine-helpers:71
+export function extractSummary(text: string, maxLen: number): string {
+  let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+  s = s.replace(/^#+\s+.+\n/gm, '');
+  s = s.replace(/^\s*[-*]\s+/gm, '');
+  s = s.replace(/\*\*/g, '');
+  s = s.trim();
+  const firstSentence = s.match(/^[^.!?\n]{10,}[.!?]/);
+  const summary = firstSentence ? firstSentence[0] : s.slice(0, maxLen);
+  return (summary.length > maxLen) ? (summary.slice(0, maxLen - 1) + '…') : summary;
+}
+
+// @kern-source: engine-helpers:82
+/**
+ * Remove reasoning-scaffolding blocks (<think>/<thinking>/<reasoning>) that reasoning models (MiniMax, DeepSeek, Qwen) emit before their real answer and sometimes leak into persisted output. Strips CLOSED blocks only — the common leak case — using a backreference so the open and close tags must match. Engine-agnostic: apply wherever raw engine output is persisted or parsed so scaffolding never reaches users or a structured-findings parser.
+ */
+export function stripReasoning(text: string): string {
+  return text.replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>\s*/gi, '').trim();
+}
+
+// @kern-source: engine-helpers:88
+/**
+ * Strip claude TUI thinking-animation chrome that leaks into pty-captured output. The animation redraws on one line, so ANSI-stripping flattens its frames into a glyph/label/counter soup ('·✢✳✶✻✽…This one needs a moment…Working through it…95%…Review …'). Spinner glyph frames and the input-bar prompt char (❯) are NEVER legitimate content, so they're always removed. The …-terminated spinner labels (claude invents endless ones — 'Cogitating…', 'Untangling some thoughts…' — so enumerating them is hopeless) and the leading token/elapsed counter residue are removed ONLY when glyph frames were present, i.e. proof this is TUI chrome. That glyph-gate means API engines (gemini/kimi/zai — no TUI) never have real content touched.
+ */
+export function stripTuiChrome(text: string): string {
+  const hadChrome = /[·✢✳✶✻✽⎿]/.test(text);
+  let s = text.replace(/[·✢✳✴✵✶✷✸✹✺✻✼✽✾⎿]/g, '').replace(/❯/g, '');
+  if (hadChrome) {
+    s = s.replace(/[A-Z][^\n…]{0,40}…/g, '');
+    s = s.replace(/^[\s\d%]+/, '');
+  }
+  return s.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}
+

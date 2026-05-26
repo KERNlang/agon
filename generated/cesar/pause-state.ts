@@ -1,0 +1,60 @@
+// @kern-source: pause-state:5
+export type PauseMenuAction = 'resume' | 'retry' | 'cancel' | 'checkpoint' | 'noop';
+
+// @kern-source: pause-state:7
+export interface PauseState {
+  active: boolean;
+  runId?: string;
+  mode?: string;
+  menuIndex: number;
+  actions: PauseMenuAction[];
+}
+
+// @kern-source: pause-state:15
+export const PAUSE_MENU_ITEMS: {label:string,action:PauseMenuAction}[] = [{ label: '▶  Resume', action: 'resume' as PauseMenuAction }, { label: '↻ Retry last step', action: 'retry' as PauseMenuAction }, { label: '⚑  Show checkpoint', action: 'checkpoint' as PauseMenuAction }, { label: '✘ Cancel run', action: 'cancel' as PauseMenuAction }];
+
+// @kern-source: pause-state:17
+export function createPauseState(runId?: string, mode?: string): PauseState {
+  return { active: true, runId: runId ?? undefined, mode: mode ?? undefined, menuIndex: 0, actions: PAUSE_MENU_ITEMS.map((i) => i.action) };
+}
+
+// @kern-source: pause-state:21
+export function dismissPauseState(): PauseState {
+  return { active: false, menuIndex: 0, actions: [] };
+}
+
+// @kern-source: pause-state:25
+export function movePauseCursor(state: PauseState, direction: 'up'|'down'): PauseState {
+  if (!state.active || state.actions.length === 0) {
+    return state;
+  }
+  const delta = (direction === 'up') ? (-1) : 1;
+  const next = state.menuIndex + delta;
+  state.menuIndex = (next % state.actions.length + state.actions.length) % state.actions.length;
+  return state;
+}
+
+// @kern-source: pause-state:34
+export function selectPauseAction(state: PauseState): {state:PauseState,action:PauseMenuAction} {
+  const action = state.actions[state.menuIndex] ?? 'noop';
+  if (action === 'cancel' || action === 'resume') {
+    return { state: dismissPauseState(), action: action };
+  }
+  return { state: state, action: action };
+}
+
+// @kern-source: pause-state:41
+export function renderPauseMenu(state: PauseState): string {
+  if (!state.active) return '';
+  const lines: string[] = [];
+  lines.push('');
+  lines.push(`⏸  Paused${state.mode ? ` — ${state.mode}` : ''}`);
+  for (let i = 0; i < PAUSE_MENU_ITEMS.length; i++) {
+    const item = PAUSE_MENU_ITEMS[i];
+    const prefix = i === state.menuIndex ? '> ' : '  ';
+    lines.push(`${prefix}${item.label}`);
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+

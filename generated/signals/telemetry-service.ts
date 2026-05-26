@@ -1,0 +1,421 @@
+// @kern-source: telemetry-service:1
+import { EngineRegistry, EventBus, engineHealth } from '@agon/core';
+
+// @kern-source: telemetry-service:2
+import { computeOverallHealth, createEngineVitals, markEngineStalled, updateEngineVitals } from '../cesar/telemetry.js';
+
+// @kern-source: telemetry-service:3
+import type { EngineVitals, EngineVitalState, TelemetrySnapshot } from '../cesar/telemetry.js';
+
+// @kern-source: telemetry-service:4
+import { totalmem } from 'node:os';
+
+// @kern-source: telemetry-service:6
+export const DEFAULT_SAMPLE_INTERVAL_MS: number = 1000;
+
+// @kern-source: telemetry-service:7
+export const DEFAULT_STALL_THRESHOLD_MS: number = 30000;
+
+// @kern-source: telemetry-service:8
+export const DEFAULT_NETWORK_PROBE_URL: string = "https://example.com";
+
+// @kern-source: telemetry-service:10
+export interface TelemetryServiceOptions {
+  registry: EngineRegistry;
+  eventBus?: EventBus|undefined;
+  jobManager?: any;
+  getProgressEngines?: (() => Array<{id:string,status?:string,elapsed?:number}>)|undefined;
+  getScoreboard?: (() => {engineIds:string[],title?:string}|null|undefined)|undefined;
+  getActiveEnginePids?: (() => Map<string,number>)|undefined;
+  getActiveEngineIds?: (() => string[])|undefined;
+  isPaused?: (() => boolean)|undefined;
+  sampleIntervalMs?: number;
+  stallThresholdMs?: number;
+  networkProbeUrl?: string;
+  __test?: boolean;
+}
+
+// @kern-source: telemetry-service:24
+/**
+ * 1Hz telemetry sampler for engine vitals with heartbeat/stall/fallback bus events.
+ */
+export class TelemetryService {
+  private opts: TelemetryServiceOptions;
+  private vitals: Map<string,EngineVitals>;
+  private snapshot: TelemetrySnapshot;
+  private subscribers: Set<(snapshot:TelemetrySnapshot)=>void>;
+  private stalledIds: Set<string>;
+  private running: boolean;
+  private sampleIntervalMs: number;
+  private stallThresholdMs: number;
+  private networkProbeUrl: string;
+  private samplerTask: Promise<void>|null;
+  private recentFallbacks: {from:string,to:string,reason:string,at:number}[];
+  private pidusageLoader: Promise<any>|null;
+
+  constructor(opts: TelemetryServiceOptions) {
+    this.opts = opts;
+    if (opts.__test) {
+      this.sampleIntervalMs = Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS);
+      this.stallThresholdMs = Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS);
+    } else {
+      this.sampleIntervalMs = Math.max(250, Number(opts.sampleIntervalMs ?? DEFAULT_SAMPLE_INTERVAL_MS));
+      this.stallThresholdMs = Math.max(1000, Number(opts.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS));
+    }
+    this.networkProbeUrl = String(opts.networkProbeUrl ?? DEFAULT_NETWORK_PROBE_URL);
+    this.vitals = new Map();
+    this.subscribers = new Set();
+    this.stalledIds = new Set();
+    this.running = false;
+    this.samplerTask = null;
+    this.recentFallbacks = [];
+    this.pidusageLoader = null;
+    const now = Date.now();
+    const engines: EngineVitals[] = [];
+    for (const id of opts.registry.listIds()) {
+      const vital = createEngineVitals(id, { state: 'idle' as EngineVitalState, lastHeartbeatAt: now });
+      this.vitals.set(id, vital);
+      engines.push(vital);
+    }
+    this.snapshot = { timestamp: now, engines: engines, overallHealth: computeOverallHealth(engines), activeRuns: this.runningJobCount(), recentFallbacks: [] };
+  }
+
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    this.samplerTask = (async () => {
+      const stream = this.sampler();
+      while (this.running) {
+        const next = await stream.next();
+        if (next.done) break;
+      }
+    })().catch(() => {});
+  }
+
+  stop(): void {
+    this.running = false;
+  }
+
+  isRunning(): boolean {
+    return this.running;
+  }
+
+  subscribe(callback: (snapshot:TelemetrySnapshot)=>void): () => void {
+    this.subscribers.add(callback);
+    try { callback(this.getSnapshot()); }
+    catch { /* subscriber errors are isolated */ }
+    return () => {
+      this.subscribers.delete(callback);
+    };
+  }
+
+  getSnapshot(): TelemetrySnapshot {
+    return { timestamp: this.snapshot.timestamp, engines: this.snapshot.engines.map((v: EngineVitals) => Object.assign({}, v)), overallHealth: this.snapshot.overallHealth, activeRuns: this.snapshot.activeRuns, recentFallbacks: this.snapshot.recentFallbacks.map((fb: any) => Object.assign({}, fb)) };
+  }
+
+  async probeNow(): Promise<TelemetrySnapshot> {
+    if (this.opts.isPaused && this.opts.isPaused()) {
+      return this.getSnapshot();
+    }
+    const snap = await this.collectSnapshot();
+    this.publish(snap);
+    return this.getSnapshot();
+  }
+
+  private async *sampler(): AsyncGenerator<TelemetrySnapshot, void, void> {
+    while (this.running) {
+      if (!(this.opts.isPaused && this.opts.isPaused())) {
+        const snap = await this.collectSnapshot();
+        this.publish(snap);
+        yield snap;
+      }
+      await this.sleep(this.sampleIntervalMs);
+    }
+  }
+
+  private publish(snap: TelemetrySnapshot): void {
+    this.snapshot = snap;
+    for (const cb of this.subscribers) {
+      try { cb(this.getSnapshot()); }
+      catch { /* subscriber errors are isolated */ }
+    }
+  }
+
+  private async collectSnapshot(): Promise<TelemetrySnapshot> {
+    const ids = this.opts.registry.listIds();
+    const assignmentMap = this.buildAssignmentMap();
+    const nextVitals: EngineVitals[] = [];
+    for (const id of ids) {
+      const prior = this.vitals.get(id) ?? createEngineVitals(id, { state: 'idle' as EngineVitalState });
+      const assignment = assignmentMap.get(id);
+      let sampled = await this.sampleOneEngine(id, prior, assignment);
+      const wasStalled = this.stalledIds.has(id);
+      const isStalled = sampled.state === 'stalled';
+      if (isStalled && !wasStalled) {
+        this.stalledIds.add(id);
+        this.emitEvent('engine:stall-detected', { source: 'telemetry-service', engineId: id, at: Date.now(), stallDurationMs: sampled.stallDurationMs ?? 0 });
+        const candidate = this.pickFallbackCandidate(id);
+        if (candidate) {
+          const reason = `stall>${this.stallThresholdMs}ms`;
+          sampled = { ...sampled, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason };
+          this.recentFallbacks = [...this.recentFallbacks.slice(-7), { from: id, to: candidate, reason: reason, at: Date.now() }];
+          this.emitEvent('engine:fallback', { source: 'telemetry-service', from: id, to: candidate, reason: reason, at: Date.now() });
+        }
+      } else if (!isStalled && wasStalled) {
+        this.stalledIds.delete(id);
+      }
+      this.vitals.set(id, sampled);
+      nextVitals.push(sampled);
+    }
+    // Drop vitals for engines that were removed from registry.
+    const liveIds = new Set(ids);
+    for (const staleId of Array.from(this.vitals.keys())) {
+      if (!liveIds.has(staleId)) {
+        this.vitals.delete(staleId);
+        this.stalledIds.delete(staleId);
+      }
+    }
+    const snapshot: TelemetrySnapshot = { timestamp: Date.now(), engines: nextVitals, overallHealth: computeOverallHealth(nextVitals), activeRuns: this.runningJobCount(), recentFallbacks: this.recentFallbacks.slice(-8) };
+    return snapshot;
+  }
+
+  private async sampleOneEngine(engineId: string, prior: EngineVitals, assignment?: string): Promise<EngineVitals> {
+    let engine: any = null;
+    try { engine = this.opts.registry.get(engineId); }
+    catch { engine = null; }
+    
+    const now = Date.now();
+    const pid = this.resolvePid(engineId);
+    const pidStats = await this.readPidusage(pid);
+    const net = await this.sampleNetwork(engine);
+    
+    const hasBinary = !!(engine?.binary && this.opts.registry.findBinary(engine));
+    const hasApiKey = !!(engine?.api?.apiKeyEnv && process.env[engine.api.apiKeyEnv]);
+    const staticallyAvailable = hasBinary || hasApiKey || (!engine?.binary && !engine?.api);
+    
+    // Engine-health overlay: an engine that's statically available but has been
+    // quarantined this session for auth-failed or unreachable should show as
+    // offline in the status bar, not 'idle' — otherwise the user thinks
+    // qwen/minimax is healthy when they have expired tokens.
+    const healthRecord = engineHealth.get(engineId);
+    const quarantined = healthRecord && (healthRecord.status === 'auth-failed' || healthRecord.status === 'unreachable');
+    const available = staticallyAvailable && !quarantined;
+    
+    let state: EngineVitalState = available ? (assignment ? 'busy' as EngineVitalState : 'idle' as EngineVitalState) : 'offline' as EngineVitalState;
+    const rssBytes = Number(pidStats.rssBytes ?? 0);
+    const memPercent = rssBytes > 0 ? Math.max(0, Math.min(100, (rssBytes / Math.max(1, this.totalSystemMemory())) * 100)) : undefined;
+    const cpuPercent = Number.isFinite(pidStats.cpuPercent) ? Math.max(0, Math.min(100, Number(pidStats.cpuPercent))) : undefined;
+    const detailParts: string[] = [];
+    if (Number.isFinite(pid) && pid > 0) detailParts.push(`pid ${pid}`);
+    if (rssBytes > 0) detailParts.push(`rss ${(rssBytes / (1024 * 1024)).toFixed(1)}MB`);
+    if (assignment) detailParts.push(assignment);
+    
+    const heartbeatOk = pidStats.ok || net.network === 'healthy';
+    const partial: Partial<EngineVitals> = {
+      state,
+      cpuPercent,
+      memPercent,
+      network: net.network,
+      latencyMs: net.latencyMs,
+      task: available
+        ? (assignment ? assignment : hasBinary ? 'cli ready' : hasApiKey ? 'api reachable' : 'ready')
+        : (quarantined ? `${healthRecord!.status} this session` : 'missing binary/API key'),
+      taskDetail: detailParts.length > 0 ? detailParts.join(' - ') : undefined,
+      lastHeartbeatAt: heartbeatOk ? now : prior.lastHeartbeatAt,
+    };
+    
+    let merged = updateEngineVitals(prior, partial);
+    merged = markEngineStalled(merged, this.stallThresholdMs);
+    
+    this.emitEvent('engine:heartbeat', {
+      source: 'telemetry-service',
+      engineId,
+      at: now,
+      cpuPercent: cpuPercent ?? null,
+      rssBytes: rssBytes > 0 ? rssBytes : null,
+      latencyMs: net.latencyMs,
+      network: net.network,
+      assignment: assignment ?? null,
+    });
+    
+    return merged;
+  }
+
+  private buildAssignmentMap(): Map<string,string> {
+    const assignments = new Map<string, string>();
+    
+    const progress = this.opts.getProgressEngines ? (this.opts.getProgressEngines() ?? []) : [];
+    for (const entry of progress) {
+      const id = String((entry as any)?.id ?? '').trim();
+      if (!id) continue;
+      const status = String((entry as any)?.status ?? 'running').trim();
+      const elapsed = Number((entry as any)?.elapsed ?? 0);
+      assignments.set(id, Number.isFinite(elapsed) && elapsed > 0 ? `${status} (${elapsed}s)` : status);
+    }
+    
+    const scoreboard = this.opts.getScoreboard ? this.opts.getScoreboard() : null;
+    if (scoreboard && Array.isArray(scoreboard.engineIds)) {
+      for (const rawId of scoreboard.engineIds) {
+        const id = String(rawId ?? '').trim();
+        if (!id) continue;
+        if (!assignments.has(id)) {
+          const label = String(scoreboard.title ?? 'scoreboard').trim();
+          assignments.set(id, label ? `${label} run` : 'scoreboard run');
+        }
+      }
+    }
+    
+    const running = this.opts.jobManager?.running?.() ?? [];
+    if (running.length > 0) {
+      const summary = running
+        .slice(0, 2)
+        .map((job: any) => {
+          const type = String(job?.type ?? 'job').trim();
+          const label = String(job?.label ?? '').trim();
+          return label ? `${type}: ${label}` : type;
+        })
+        .join(' | ');
+      if (summary) {
+        for (const [id, task] of assignments.entries()) {
+          assignments.set(id, `${task} - ${summary}`);
+        }
+      }
+    }
+    
+    return assignments;
+  }
+
+  private runningJobCount(): number {
+    const jobs = this.opts.jobManager?.running?.();
+    return Array.isArray(jobs) ? jobs.length : 0;
+  }
+
+  private pickFallbackCandidate(engineId: string): string|undefined {
+    try {
+      const chain = this.opts.registry.getFallbackChain(engineId, 'telemetry', this.opts.getActiveEngineIds?.());
+      if (Array.isArray(chain) && chain.length > 0) {
+        const candidate = String(chain[0] ?? '').trim();
+        return candidate || undefined;
+      }
+    } catch { /* registry may not support a chain for this engine */ }
+    return undefined;
+  }
+
+  private resolvePid(engineId: string): number {
+    const pidMap = this.opts.getActiveEnginePids ? this.opts.getActiveEnginePids() : undefined;
+    const mapped = Number(pidMap?.get(engineId) ?? 0);
+    if (Number.isFinite(mapped) && mapped > 0) return mapped;
+    return process.pid;
+  }
+
+  private async readPidusage(pid: number): Promise<{ok:boolean,cpuPercent?:number,rssBytes?:number}> {
+    try {
+      const pidusage = await this.loadPidusage();
+      if (!pidusage) {
+        return { ok: false };
+      }
+      const stats = await pidusage(pid);
+      const cpuPercent = Number(stats?.cpu ?? 0);
+      const rssBytes = Number(stats?.memory ?? 0);
+      return { ok: true, cpuPercent: Number.isFinite(cpuPercent) ? cpuPercent : undefined, rssBytes: Number.isFinite(rssBytes) ? Math.max(0, rssBytes) : undefined };
+    } catch (e) {
+      return { ok: false };
+    }
+  }
+
+  private async loadPidusage(): Promise<any> {
+    if (this.pidusageLoader) return this.pidusageLoader;
+    this.pidusageLoader = import('pidusage')
+      .then((mod: any) => (mod?.default ?? mod))
+      .catch(() => null);
+    return this.pidusageLoader;
+  }
+
+  private async sampleNetwork(engine: any): Promise<{network:'healthy'|'degraded'|'unreachable',latencyMs:number}> {
+    const target = String(engine?.api?.baseUrl ?? this.networkProbeUrl);
+    const started = Date.now();
+    
+    if (typeof fetch === 'function') {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1200);
+      try {
+        const res = await fetch(target, { method: 'HEAD', signal: controller.signal } as any);
+        const latencyMs = Math.max(1, Date.now() - started);
+        const network = res.status >= 500 ? 'degraded' as const : 'healthy' as const;
+        return { network, latencyMs };
+      } catch {
+        // Fall through to ping probe.
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    
+    const pingTarget = '1.1.1.1';
+    try {
+      const result = await this.pingHost(pingTarget, 1200);
+      if (result.ok) return { network: 'degraded', latencyMs: result.latencyMs };
+    } catch { /* ignore */ }
+    
+    return { network: 'unreachable', latencyMs: Math.max(1, Date.now() - started) };
+  }
+
+  private async pingHost(host: string, timeoutMs: number): Promise<{ok:boolean,latencyMs:number}> {
+    try {
+      const { spawn } = await import('node:child_process');
+      const started = Date.now();
+      const proc = spawn('ping', ['-c', '1', '-t', '1', host], { stdio: ['ignore', 'pipe', 'ignore'] });
+      let output = '';
+      proc.stdout.on('data', (chunk: any) => {
+        output += String(chunk ?? '');
+      });
+    
+      const result = await new Promise<{ok:boolean,latencyMs:number}>((resolve) => {
+        const timer = setTimeout(() => {
+          try { proc.kill('SIGKILL'); } catch { /* ignore */ }
+          resolve({ ok: false, latencyMs: Math.max(1, Date.now() - started) });
+        }, timeoutMs);
+    
+        proc.on('close', (code: number) => {
+          clearTimeout(timer);
+          if (code !== 0) {
+            resolve({ ok: false, latencyMs: Math.max(1, Date.now() - started) });
+            return;
+          }
+          const parsed = output.match(/time[=<]\s*([\d.]+)\s*ms/i);
+          const latencyMs = parsed ? Math.max(1, Math.round(Number(parsed[1]) || 1)) : Math.max(1, Date.now() - started);
+          resolve({ ok: true, latencyMs });
+        });
+    
+        proc.on('error', () => {
+          clearTimeout(timer);
+          resolve({ ok: false, latencyMs: Math.max(1, Date.now() - started) });
+        });
+      });
+    
+      return result;
+    } catch {
+      return { ok: false, latencyMs: Math.max(1, timeoutMs) };
+    }
+  }
+
+  private emitEvent(event: string, data: Record<string,unknown>): void {
+    if (!this.opts.eventBus) {
+      return;
+    }
+    this.opts.eventBus.emit(event, data).catch(() => {});
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private totalSystemMemory(): number {
+    return Number(totalmem()) || 1;
+  }
+}
+
+// @kern-source: telemetry-service:402
+export function createTelemetryService(opts: TelemetryServiceOptions): TelemetryService {
+  return new TelemetryService(opts);
+}
+

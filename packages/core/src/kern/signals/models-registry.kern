@@ -153,6 +153,8 @@ fn name=searchModels params="entries:ModelEntry[], query:string" returns="ModelE
       'o3': ['openai'],
       'o4': ['openai'],
       gemini: ['google'],
+      agy: ['google'],
+      antigravity: ['google'],
       flash: ['google'],
       qwen: ['alibaba', 'alibaba-cn'],
       mistral: ['mistral'],

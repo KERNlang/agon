@@ -33,7 +33,7 @@ export function estimateCost(engineId: string, tokens: number, model?: string): 
   if (model && MODEL_COST[model]) {
     return tokens / 1000000 * MODEL_COST[model];
   }
-  const ENGINE_COST: Record<string, number> = { claude: 9.00, codex: 5.00, gemini: 1.25, ollama: 0.00, aider: 9.00, openrouter: 3.00, qwen: 0.50, mistral: 0.50, opencode: 5.00 };
+  const ENGINE_COST: Record<string, number> = { claude: 9.00, codex: 5.00, agy: 1.25, ollama: 0.00, aider: 9.00, openrouter: 3.00, qwen: 0.50, mistral: 0.50, opencode: 5.00 };
   const rate = ENGINE_COST[engineId] ?? 2.00;
   return tokens / 1000000 * rate;
 }

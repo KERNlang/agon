@@ -1,0 +1,173 @@
+// @kern-source: engine:1
+import { defineCommand } from 'citty';
+
+// @kern-source: engine:2
+import { join } from 'node:path';
+
+// @kern-source: engine:3
+import { EngineRegistry, getEngineGlickoRating, loadConfig, configSet } from '@agon/core';
+
+// @kern-source: engine:4
+import type { AgonConfig } from '@agon/core';
+
+// @kern-source: engine:5
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
+
+// @kern-source: engine:6
+import { createCliAdapter } from '@agon/adapter-cli';
+
+// @kern-source: engine:7
+import { header, success, fail, info, table, bold, green, red, dim } from '../blocks/output-format.js';
+
+// @kern-source: engine:9
+export const engineCommand: any = defineCommand({
+  meta: {
+    name: 'engine',
+    description: 'Manage AI engines',
+  },
+  args: {
+    action: {
+      type: 'positional',
+      description: 'Action: list | info <id> | add <id> | remove <id>',
+      required: true,
+    },
+    id: {
+      type: 'string',
+      description: 'Engine ID (for info)',
+    },
+  },
+  async run({ args }) {
+    const registry = new EngineRegistry();
+    registry.load(resolveBuiltinEnginesDir());
+
+    const adapter = createCliAdapter(registry);
+
+    // Handle "agon engine info claude" — citty may merge into action or use _ rest args
+    let action = args.action;
+    let id = args.id;
+    const splitAction = action.match(/^(info|add|enable|remove|disable|hide)\s+(.+)$/);
+    if (splitAction) {
+      action = splitAction[1];
+      id = splitAction[2];
+    } else if (['info', 'add', 'enable', 'remove', 'disable', 'hide'].includes(action) && !id) {
+      // Check for remaining args from process.argv
+      const extraArgs = process.argv.slice(4);
+      if (extraArgs.length > 0 && !extraArgs[0].startsWith('-')) {
+        id = extraArgs[0];
+      }
+    }
+
+    switch (action) {
+      case 'list': {
+        header('Engines');
+        const engines = registry.list();
+        const rows: string[][] = [];
+
+        for (const engine of engines) {
+          const available = registry.isAvailable(engine);
+          const version = available
+            ? (await adapter.getVersion(engine)) ?? dim('unknown')
+            : '';
+
+          rows.push([
+            available ? green(engine.id) : red(engine.id),
+            engine.displayName,
+            available ? green('installed') : red('missing'),
+            version,
+            engine.tier,
+          ]);
+        }
+
+        table(['ID', 'Name', 'Status', 'Version', 'Tier'], rows);
+        break;
+      }
+
+      case 'info': {
+        if (!id) {
+          fail('Usage: agon engine info <id>');
+          process.exit(1);
+        }
+
+        try {
+          const engine = registry.get(id);
+          const available = registry.isAvailable(engine);
+          const rating = getEngineGlickoRating(id);
+
+          header(`Engine: ${engine.displayName}`);
+          console.log(`  ID:         ${bold(engine.id)}`);
+          console.log(`  Binary:     ${engine.binary ?? dim('(API-only)')}`);
+          if (engine.api) {
+            console.log(`  API:        ${engine.api.baseUrl}`);
+            console.log(`  Auth:       ${engine.api.apiKeyEnv}`);
+            console.log(`  Model:      ${engine.api.model}`);
+          }
+          console.log(`  Status:     ${available ? green('available') : red('not available')}`);
+          const modes = [engine.exec ? 'exec' : '', engine.review ? 'review' : '', engine.agent ? 'agent' : ''].filter(Boolean);
+          console.log(`  Modes:      ${modes.join(', ') || 'none'}`);
+          console.log(`  Timeout:    ${engine.timeout}s`);
+          console.log(`  Tier:       ${engine.tier}`);
+          console.log(`  Rating:     ${rating.mu}+-${Math.round(rating.phi)} (W:${rating.wins} L:${rating.losses})`);
+
+          if (!available && engine.installHint) {
+            console.log('');
+            info(`Install: ${engine.installHint}`);
+          }
+        } catch {
+          fail(`Engine "${id}" not found`);
+          process.exit(1);
+        }
+        break;
+      }
+
+      case 'add':
+      case 'enable': {
+        if (!id) {
+          fail('Usage: agon engine add <id>');
+          process.exit(1);
+        }
+        try {
+          const engine = registry.get(id);
+          if (!registry.isAvailable(engine)) {
+            fail(`Engine "${id}" is not available on this machine`);
+            if (engine.installHint) info(`Install: ${engine.installHint}`);
+            process.exit(1);
+          }
+          const config = loadConfig();
+          const next = Array.from(new Set([...(config.forgeEnabledEngines ?? []), id]));
+          const hidden = ((config as any).hiddenEngines ?? []).filter((engineId: string) => engineId !== id);
+          configSet('engineActivationMode' as any, 'explicit' as any);
+          configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
+          configSet('hiddenEngines', hidden as any);
+          success(`Added ${id}`);
+        } catch {
+          fail(`Engine "${id}" not found`);
+          process.exit(1);
+        }
+        break;
+      }
+
+      case 'remove':
+      case 'disable':
+      case 'hide': {
+        if (!id) {
+          fail('Usage: agon engine remove <id>');
+          process.exit(1);
+        }
+        const config = loadConfig();
+        const next = (config.forgeEnabledEngines ?? []).filter((engineId: string) => engineId !== id);
+        const hidden = Array.from(new Set([...((config as any).hiddenEngines ?? []), id]));
+        configSet('engineActivationMode' as any, 'explicit' as any);
+        configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
+        configSet('hiddenEngines', hidden as any);
+        success(`Removed ${id}`);
+        break;
+      }
+
+      default:
+        fail(`Unknown action: ${args.action}`);
+        info('Available: list, info, add, remove');
+        process.exit(1);
+    }
+  },
+});
+

@@ -28,7 +28,7 @@ export const RESET: string = '\x1b[0m';
 
 export const LOGO_COLORS: number[] = [208, 214, 220, 226, 228, 230, 255];
 
-export const ENGINE_COLORS: Record<string, number> = { claude: 208, codex: 34, gemini: 33, ollama: 255, aider: 141, openrouter: 197, qwen: 45, mistral: 75, opencode: 156, minimax: 124, zai: 124 };
+export const ENGINE_COLORS: Record<string, number> = { claude: 208, codex: 34, agy: 33, ollama: 255, aider: 141, openrouter: 197, qwen: 45, mistral: 75, opencode: 156, minimax: 124, zai: 124 };
 
 export function fg256(code: number, text: string): string {
   return `\x1b[38;5;${code}m${text}${RESET}`;

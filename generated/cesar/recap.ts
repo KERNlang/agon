@@ -1,0 +1,345 @@
+// @kern-source: recap:6
+export function createCesarRecapCapture(input: string, startedAt?: number): any {
+  return { input: String(input ?? ''), startedAt: startedAt ?? Date.now(), toolEventsByKey: {} as Record<string, any>, toolOrder: [] as string[], warnings: [] as string[], errors: [] as string[], confidence: null as number | null, confidenceReasoning: '', engineId: '', durationMs: null as number | null };
+}
+
+// @kern-source: recap:10
+export function parseRecapJsonObject(input: unknown): Record<string,unknown> {
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    return input as Record<string, unknown>;
+  }
+  const raw = String(input ?? '').trim();
+  if (!raw.startsWith('{')) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? (parsed as Record<string, unknown>) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+// @kern-source: recap:23
+export function recapToolLabel(tool: unknown): string {
+  const key = String(tool ?? '').toLowerCase();
+  if (key === 'bash' || key === 'run' || key === 'agonbash') {
+    return 'Bash';
+  }
+  if (key === 'read') {
+    return 'Read';
+  }
+  if (key === 'grep' || key === 'search') {
+    return 'Search';
+  }
+  if (key === 'glob' || key === 'find') {
+    return 'Find';
+  }
+  if (key === 'edit' || key === 'update' || key === 'agonedit') {
+    return 'Edit';
+  }
+  if (key === 'write' || key === 'agonwrite') {
+    return 'Write';
+  }
+  if (key === 'applypatch' || key === 'apply_patch') {
+    return 'Patch';
+  }
+  if (key === 'reportconfidence') {
+    return 'Confidence';
+  }
+  if (key === 'quicknero') {
+    return 'QuickNero';
+  }
+  return String(tool ?? 'Tool');
+}
+
+// @kern-source: recap:46
+export function extractRecapCommand(tool: unknown, input: unknown): string {
+  const key = String(tool ?? '').toLowerCase();
+  if (key !== 'bash' && key !== 'run' && key !== 'agonbash') {
+    return '';
+  }
+  const parsed = parseRecapJsonObject(input);
+  const command = String(parsed.command ?? parsed.cmd ?? input ?? '').trim();
+  return command;
+}
+
+// @kern-source: recap:55
+export function classifyRecapCommand(command: string): string {
+  const cmd = String(command ?? '').trim();
+  const lower = cmd.toLowerCase();
+  if (!cmd) {
+    return 'command';
+  }
+  if (/\bkern:compile\b/.test(lower)) {
+    return 'compile';
+  }
+  if (/\bnpm\s+run\s+typecheck\b|\btsc\s+-b\b/.test(lower)) {
+    return 'typecheck';
+  }
+  if (/\bnpm\s+run\s+build\b|\bcargo\s+build\b|\bgo\s+build\b/.test(lower)) {
+    return 'build';
+  }
+  if (/\bnpm\s+run\s+lint\b|\beslint\b/.test(lower)) {
+    return 'lint';
+  }
+  if (/\bnpm\s+test\b|\bvitest\b|\bpytest\b|\bcargo\s+test\b|\bgo\s+test\b/.test(lower)) {
+    return 'tests';
+  }
+  if (/\bgit\s+commit\b/.test(lower)) {
+    return 'commit';
+  }
+  if (/\bgit\s+push\b/.test(lower)) {
+    return 'push';
+  }
+  if (/\bgit\s+status\b/.test(lower)) {
+    return 'git status';
+  }
+  return cmd.split(/\s+/).slice(0, 3).join(' ');
+}
+
+// @kern-source: recap:79
+export function shortenRecapText(value: unknown, max: number): string {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  if (text.length <= max) {
+    return text;
+  }
+  return text.slice(0, Math.max(0, max - 1)) + '…';
+}
+
+// @kern-source: recap:86
+export function readRecapConfidence(input: unknown): { value:number|null; reasoning:string } {
+  const parsed = parseRecapJsonObject(input);
+  const rawValue = parsed.value ?? parsed.confidence ?? parsed.score;
+  let value = Number(rawValue);
+  if (!Number.isFinite(value)) {
+    const match = String(input ?? '').match(/(\d{1,3})(?:\.\d+)?\s*%/);
+    if (match) {
+      value = Number(match[1]);
+    }
+  }
+  if (Number.isFinite(value) && value <= 1 && value > 0) {
+    value = Math.round(value * 100);
+  }
+  const normalized = Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : null;
+  const reasoning = shortenRecapText(parsed.reasoning ?? parsed.reason ?? parsed.thought ?? '', 220);
+  return { value: normalized, reasoning: reasoning };
+}
+
+// @kern-source: recap:101
+export function recordCesarRecapEvent(capture: any, event: any): void {
+  if (!capture || !event || typeof event !== 'object') return;
+  const type = String(event.type ?? '');
+  if (type === 'tool-call') {
+    const tool = String(event.tool ?? 'Tool');
+    const key = `${tool}\u0000${String(event.input ?? '').slice(0, 2000)}`;
+    if (!capture.toolEventsByKey[key]) {
+      capture.toolEventsByKey[key] = {
+        tool,
+        input: String(event.input ?? ''),
+        status: String(event.status ?? 'running'),
+        output: String(event.output ?? ''),
+        engineId: String(event.engineId ?? ''),
+      };
+      capture.toolOrder.push(key);
+    } else {
+      capture.toolEventsByKey[key] = {
+        ...capture.toolEventsByKey[key],
+        status: String(event.status ?? capture.toolEventsByKey[key].status ?? 'running'),
+        output: String(event.output ?? capture.toolEventsByKey[key].output ?? ''),
+        engineId: String(event.engineId ?? capture.toolEventsByKey[key].engineId ?? ''),
+      };
+    }
+    if (!capture.engineId && event.engineId) capture.engineId = String(event.engineId);
+    if (String(tool).toLowerCase() === 'reportconfidence') {
+      const conf = readRecapConfidence(event.input);
+      if (conf.value !== null) capture.confidence = conf.value;
+      if (conf.reasoning) capture.confidenceReasoning = conf.reasoning;
+    }
+    return;
+  }
+  if (type === 'confidence-update') {
+    const value = Number(event.value);
+    capture.confidence = Number.isFinite(value) ? Math.round(value) : null;
+    return;
+  }
+  if (type === 'thinking-chunk') {
+    const chunk = String(event.chunk ?? '').trim();
+    const match = chunk.match(/^Confidence reasoning(?:\s*[^:]*)?:\s*(.+)$/i);
+    if (match) capture.confidenceReasoning = shortenRecapText(match[1], 220);
+    if (!capture.engineId && event.engineId) capture.engineId = String(event.engineId);
+    return;
+  }
+  if (type === 'warning' && event.message) {
+    capture.warnings.push(shortenRecapText(event.message, 180));
+    return;
+  }
+  if (type === 'error' && event.message) {
+    capture.errors.push(shortenRecapText(event.message, 180));
+    return;
+  }
+  if ((type === 'engine-block' || type === 'response-meta') && event.engineId && !capture.engineId) {
+    capture.engineId = String(event.engineId);
+  }
+  if (type === 'response-meta' && Number.isFinite(Number(event.elapsed))) {
+    capture.durationMs = Number(event.elapsed);
+  }
+}
+
+// @kern-source: recap:161
+export function buildRecapTouchedFiles(beforeFiles: any[], afterFiles: any[]): any[] {
+  const before = new Map<string, any>();
+  for (const beforeFile of Array.isArray(beforeFiles) ? beforeFiles : []) {
+    if (beforeFile?.path) {
+      before.set(String(beforeFile.path), beforeFile);
+    }
+  }
+  const touched: any[] = [];
+  for (const afterFile of Array.isArray(afterFiles) ? afterFiles : []) {
+    if (!afterFile?.path) {
+      continue;
+    }
+    const prev = before.get(String(afterFile.path));
+    const changed = !prev || prev.touchCount !== afterFile.touchCount || prev.lastTouchedAt !== afterFile.lastTouchedAt || prev.status !== afterFile.status;
+    if (!changed) {
+      continue;
+    }
+    touched.push({ path: String(afterFile.path), relPath: String(afterFile.relPath ?? afterFile.path), status: String(afterFile.status ?? 'read'), touchCount: Number(afterFile.touchCount ?? 0) });
+  }
+  touched.sort((a, b) => String(a.status).localeCompare(String(b.status)) || a.relPath.localeCompare(b.relPath));
+  return touched;
+}
+
+// @kern-source: recap:179
+export function buildCesarRecapDiffPreview(files: any[], diffsByPath: Record<string,string>, maxFiles?: number, maxLinesPerFile?: number): any {
+  const previews: any[] = [];
+  const fileLimit = maxFiles ?? 4;
+  const lineLimit = maxLinesPerFile ?? 6;
+  for (const file of Array.isArray(files) ? files : []) {
+    if (previews.length >= fileLimit) {
+      break;
+    }
+    const status = String(file?.status ?? '');
+    if (status === 'read') {
+      continue;
+    }
+    const path = String(file?.path ?? '');
+    const relPath = String(file?.relPath ?? path);
+    const diff = String(diffsByPath?.[path] ?? diffsByPath?.[relPath] ?? '').trim();
+    if (!diff) {
+      continue;
+    }
+    let additions = 0;
+    let deletions = 0;
+    let candidateLines = 0;
+    const visibleLines: string[] = [];
+    for (const line of diff.split('\n')) {
+      if (line.startsWith('+') && !line.startsWith('+++')) {
+        additions += 1;
+      }
+      if (line.startsWith('-') && !line.startsWith('---')) {
+        deletions += 1;
+      }
+      const interesting = line.startsWith('@@') || line.startsWith('+') && !line.startsWith('+++') || line.startsWith('-') && !line.startsWith('---');
+      if (!interesting) {
+        continue;
+      }
+      candidateLines += 1;
+      if (visibleLines.length < lineLimit) {
+        visibleLines.push(shortenRecapText(line, 120));
+      }
+    }
+    previews.push({ path: path, relPath: relPath, status: status, additions: additions, deletions: deletions, lines: visibleLines, omitted: Math.max(0, candidateLines - visibleLines.length) });
+  }
+  return { files: previews, totalFiles: previews.length };
+}
+
+// @kern-source: recap:213
+export function buildCesarTurnRecapEvent(capture: any, result: any, beforeFiles: any[], afterFiles: any[]): any {
+  const orderedTools = (capture?.toolOrder ?? [])
+    .map((key: string) => capture.toolEventsByKey?.[key])
+    .filter(Boolean);
+  const toolCounts: Record<string, number> = {};
+  let failedTools = 0;
+  const commands: any[] = [];
+  const checkpoints: any[] = [];
+  for (const t of orderedTools) {
+    const label = recapToolLabel(t.tool);
+    toolCounts[label] = (toolCounts[label] ?? 0) + 1;
+    if (String(t.status).toLowerCase() === 'error') failedTools += 1;
+    const checkpoint = String(t.output ?? '').match(/\bcheckpoint\s+([a-z0-9]{6,12})\b/i);
+    if (checkpoint && !checkpoints.some((c: any) => c.id === checkpoint[1])) {
+      checkpoints.push({ id: checkpoint[1], label });
+    }
+    const command = extractRecapCommand(t.tool, t.input);
+    if (command) {
+      commands.push({
+        label: classifyRecapCommand(command),
+        command: shortenRecapText(command.split('\n')[0] ?? command, 120),
+        status: String(t.status ?? 'done'),
+      });
+    }
+  }
+  const toolSummary = Object.entries(toolCounts)
+    .map(([name, count]) => count > 1 ? `${name} x${count}` : name);
+  const mode = String(result?.mode ?? result?.action ?? 'self');
+  const delegated = result?.delegated === true;
+  const action = String(result?.action ?? result?.mode ?? '').trim();
+  const outcome = delegated
+    ? `Handed off to ${action || mode}`
+    : result?.responded === false ? 'No response' : 'Completed';
+  const confidence = capture?.confidence ?? null;
+  const durationMs = Number.isFinite(Number(capture?.durationMs))
+    ? Number(capture.durationMs)
+    : Date.now() - Number(capture?.startedAt ?? Date.now());
+  const files = buildRecapTouchedFiles(beforeFiles, afterFiles);
+  let createdCount = 0;
+  let editedCount = 0;
+  let readCount = 0;
+  for (const f of files) {
+    const s = String(f.status);
+    if (s === 'created') createdCount += 1;
+    else if (s === 'edited') editedCount += 1;
+    else readCount += 1;
+  }
+  const changeSummary = { created: createdCount, edited: editedCount, read: readCount };
+  const verifyLabels = new Set(['compile', 'typecheck', 'build', 'tests', 'lint']);
+  const verification: any[] = [];
+  const seenVerify = new Set<string>();
+  for (const c of commands) {
+    const label = String(c.label);
+    if (!verifyLabels.has(label) || seenVerify.has(label)) continue;
+    seenVerify.add(label);
+    verification.push({ label, ok: String(c.status).toLowerCase() !== 'error' });
+  }
+  return {
+    type: 'cesar-recap',
+    engineId: String(result?.cesarEngineId ?? capture?.engineId ?? 'cesar'),
+    mode,
+    outcome,
+    durationMs,
+    confidence,
+    confidenceReasoning: String(capture?.confidenceReasoning ?? ''),
+    toolCount: orderedTools.length,
+    failedTools,
+    toolSummary,
+    commands,
+    files,
+    changeSummary,
+    verification,
+    checkpoints,
+    warnings: [...(capture?.warnings ?? []), ...(capture?.errors ?? [])].slice(0, 4),
+  };
+}
+
+// @kern-source: recap:291
+export function shouldEmitCesarRecap(event: any): boolean {
+  if (!event || event.type !== 'cesar-recap') {
+    return false;
+  }
+  if (String(event.outcome ?? '').startsWith('Handed off to ')) {
+    return true;
+  }
+  return Number(event.toolCount ?? 0) > 0 || Array.isArray(event.files) && event.files.length > 0 || event.diffPreview && Array.isArray(event.diffPreview.files) && event.diffPreview.files.length > 0 || Array.isArray(event.commands) && event.commands.length > 0 || Array.isArray(event.warnings) && event.warnings.length > 0 || typeof event.confidence === 'number';
+}
+

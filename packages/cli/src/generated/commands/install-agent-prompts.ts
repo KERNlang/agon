@@ -14,12 +14,12 @@ import { join, dirname } from 'node:path';
 export const installAgentPromptsCommand: any = defineCommand({
   meta: {
     name: 'install-agent-prompts',
-    description: 'Install lightweight Agon prompts/skills into other CLIs (Codex, Gemini, Claude Code) — no MCP, no always-on tokens',
+    description: 'Install lightweight Agon prompts/skills into other CLIs (Codex, Antigravity, Claude Code) — no MCP, no always-on tokens',
   },
   args: {
     cli: {
       type: 'string',
-      description: 'Comma list to target: codex,gemini,claude. Default: every CLI whose config dir exists.',
+      description: 'Comma list to target: codex,agy,claude. Default: every CLI whose config dir exists.',
     },
     force: {
       type: 'boolean',
@@ -45,10 +45,10 @@ export const installAgentPromptsCommand: any = defineCommand({
         ],
       },
       {
-        id: 'gemini',
-        label: 'Gemini CLI',
-        baseDir: join(home, '.gemini'),
-        files: [{ file: join(home, '.gemini', 'commands', 'agon.toml'), content: agonShim('gemini') }],
+        id: 'agy',
+        label: 'Antigravity (agy)',
+        baseDir: join(home, '.antigravity'),
+        files: [{ file: join(home, '.antigravity', 'commands', 'agon.toml'), content: agonShim('agy') }],
       },
       {
         id: 'claude',
@@ -80,7 +80,7 @@ export const installAgentPromptsCommand: any = defineCommand({
       if (requested.length > 0) {
         process.stderr.write(`agon install-agent-prompts: no known CLI matched "${requested.join(', ')}" (known: ${knownIds.join(', ')})\n`);
       } else {
-        process.stderr.write('agon install-agent-prompts: no CLI config dirs found (~/.codex, ~/.gemini, ~/.claude). Pass --cli codex,gemini,claude to force.\n');
+        process.stderr.write('agon install-agent-prompts: no CLI config dirs found (~/.codex, ~/.antigravity, ~/.claude). Pass --cli codex,agy,claude to force.\n');
       }
       process.exitCode = 1;
       return;
@@ -118,7 +118,7 @@ export const installAgentPromptsCommand: any = defineCommand({
       process.stderr.write('\nSome integration files failed to install (see the "error" lines above).\n');
       process.exitCode = 1;
     } else if (!dryRun) {
-      process.stdout.write('\nDone. In Claude Code/Gemini, type /agon. In Codex, start a new session and use $agon. Each path runs `agon agent-guide`, then orchestrates. No MCP; nothing is loaded until you invoke it.\n');
+      process.stdout.write('\nDone. In Claude Code/Antigravity, type /agon. In Codex, start a new session and use $agon. Each path runs `agon agent-guide`, then orchestrates. No MCP; nothing is loaded until you invoke it.\n');
     }
   },
 });

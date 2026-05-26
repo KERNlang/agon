@@ -43,7 +43,7 @@ import from="../../generated/blocks/controls.js" names="EnginePicker,ModelPicker
 import from="../../generated/blocks/composer.js" names="ComposerView"
 import from="../../generated/surfaces/agent.js" names="AgentProgressView"
 import from="../../generated/blocks/rendering.js" names="contentWidth,withContentWidthOverride,color256toHex,engineColor,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES"
-import from="../../generated/blocks/engine.js" names="LOGO_LINES,VERSION,BRAND"
+import from="../../generated/blocks/engine.js" names="LOGO_LINES,VERSION,KERN_VERSION,BRAND"
 import from="./app-views.js" names="ChromeBar,StreamingView,ToolDetailBlock,TranscriptRowView"
 import from="../signals/file-tracker.js" names="recordToolCall,listFiles,getFileTrackerVersion,clearFileTracker"
 import from="../blocks/file-rail.js" names="FileRail"
@@ -2271,8 +2271,9 @@ module name=AppHelpers
             pushSpacer(`${baseKey}-dash-gap-1`);
             pushSegmentsRow(`${baseKey}-dash-tag`, 0, [{ text: '     Any AI can join. They compete. You ship.', color: '#d4a041', italic: true }]);
             pushSegmentsRow(`${baseKey}-dash-version`, 0, [
-              { text: `     v${VERSION}  Powered by `, dimColor: true },
-              { text: 'KERNlang', color: '#fbbf24', bold: true },
+              { text: `     v${VERSION}  ·  Powered by `, dimColor: true },
+              { text: 'KERNlang.dev', color: '#fbbf24', bold: true },
+              { text: KERN_VERSION ? ` (KERN ${KERN_VERSION})` : '', dimColor: true },
             ]);
             pushSegmentsRow(`${baseKey}-dash-engines`, 0, [
               { text: '  Engines: ', color: '#f97316' },

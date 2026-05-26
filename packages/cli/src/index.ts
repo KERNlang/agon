@@ -21,6 +21,7 @@ import { agentGuideCommand } from './commands/agent-guide.js';
 import { installAgentPromptsCommand } from './commands/install-agent-prompts.js';
 import { goalCommand } from './commands/goal.js';
 import { synthesisCommand } from './commands/synthesis.js';
+import { askCommand } from './commands/ask.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { loginCommand } from './commands/login.js';
 import { startRepl } from './repl.js';
@@ -146,6 +147,7 @@ const main = defineCommand({
     'install-agent-prompts': installAgentPromptsCommand,
     goal: goalCommand,
     synthesis: synthesisCommand,
+    ask: askCommand,
     worktree: worktreeCommand,
     wt: worktreeCommand,
     login: loginCommand,

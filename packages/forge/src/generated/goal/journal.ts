@@ -69,10 +69,10 @@ export function loadJournal(goalId: string): JournalState | null {
 }
 
 /**
- * Append queued tasks, skipping any id already present (idempotent on resume).
+ * Append queued tasks, skipping any id already present (idempotent on resume — so a resumed task keeps its ORIGINAL verify; a changed verify only applies to new ids).
  */
 // @kern-source: journal:64
-export function addTasks(state: JournalState, items: Array<{id:string,source:string,dependsOn?:string[]}>): JournalState {
+export function addTasks(state: JournalState, items: Array<{id:string,source:string,dependsOn?:string[],verify?:string}>): JournalState {
   const existing = new Set(state.tasks.map((t) => t.id));
   const added: GoalTask[] = [];
   for (const it of items) {
@@ -85,6 +85,7 @@ export function addTasks(state: JournalState, items: Array<{id:string,source:str
       attempts: 0,
       attemptLog: [],
       dependsOn: it.dependsOn,
+      verify: it.verify,
       costUsd: 0,
     });
   }
@@ -93,9 +94,22 @@ export function addTasks(state: JournalState, items: Array<{id:string,source:str
 }
 
 /**
+ * Resume safety: reset any task left 'inflight' back to 'queued'. A loaded journal's inflight task was interrupted mid-attempt (crash / kill / context limit). Because a task only reaches a TERMINAL state via the atomic commit + ref-advance at the very end of its cycle, an interruption lands no partial work (the worktree is thrown away), so re-running from 'queued' is correct and idempotent. Without this, nextTask — which only yields 'queued' — silently skips the orphaned task forever (dogfood: a killed run dropped task-03). Pure; the caller logs the count and re-saves.
+ */
+// @kern-source: journal:87
+export function requeueInflightTasks(state: JournalState): {state:JournalState, count:number} {
+  let count = 0;
+  const tasks = state.tasks.map((t) => {
+    if (t.status === 'inflight') { count++; return { ...t, status: 'queued' as const }; }
+    return t;
+  });
+  return { state: count > 0 ? { ...state, tasks } : state, count };
+}
+
+/**
  * First queued task whose dependsOn are all done; null if none runnable.
  */
-// @kern-source: journal:86
+// @kern-source: journal:98
 export function nextTask(state: JournalState): GoalTask | null {
   const byId = new Map(state.tasks.map((t) => [t.id, t] as const));
   for (const t of state.tasks) {
@@ -113,7 +127,7 @@ export function nextTask(state: JournalState): GoalTask | null {
 /**
  * Set a task's status (and optional field patch). No-op if id unknown.
  */
-// @kern-source: journal:102
+// @kern-source: journal:114
 export function markStatus(state: JournalState, taskId: string, status: GoalTask['status'], patch?: Partial<GoalTask>): JournalState {
   const tasks = state.tasks.map((t) =>
     t.id === taskId ? { ...t, status, ...(patch ?? {}) } : t
@@ -124,7 +138,7 @@ export function markStatus(state: JournalState, taskId: string, status: GoalTask
 /**
  * Append an attempt record and bump the task's attempt count.
  */
-// @kern-source: journal:111
+// @kern-source: journal:123
 export function recordAttempt(state: JournalState, taskId: string, rec: AttemptRecord): JournalState {
   const tasks = state.tasks.map((t) =>
     t.id === taskId
@@ -137,7 +151,7 @@ export function recordAttempt(state: JournalState, taskId: string, rec: AttemptR
 /**
  * Tasks still queued or in flight.
  */
-// @kern-source: journal:122
+// @kern-source: journal:134
 export function remainingCount(state: JournalState): number {
   return state.tasks.filter((t) => t.status === 'queued' || t.status === 'inflight').length;
 }
@@ -145,7 +159,7 @@ export function remainingCount(state: JournalState): number {
 /**
  * No queued or in-flight tasks remain.
  */
-// @kern-source: journal:128
+// @kern-source: journal:140
 export function isDone(state: JournalState): boolean {
   return state.tasks.filter((t) => t.status === 'queued' || t.status === 'inflight').length === 0;
 }
@@ -153,13 +167,13 @@ export function isDone(state: JournalState): boolean {
 /**
  * Max audit events retained in a journal's events[]. The journal is rewritten whole on every checkpoint, so this bounds a 24h run's per-checkpoint cost; ~500 keeps a generous recent window while staying small.
  */
-// @kern-source: journal:134
+// @kern-source: journal:146
 export const GOAL_EVENT_CAP: number = 500;
 
 /**
  * Keep the audit trail bounded so a long run's per-checkpoint full-rewrite stays O(1) in event count rather than O(n) (an unbounded events[] makes 24h persistence O(n^2)). When events exceed cap, drop the OLDEST and report how many were dropped so the caller can accumulate a running total. cap <= 0 = unbounded. Pure: events are audit-only — resume logic reads tasks/counters, never events — so trimming the oldest is safe.
  */
-// @kern-source: journal:137
+// @kern-source: journal:149
 export function boundEvents(events: GoalEvent[], cap: number): {events:GoalEvent[], dropped:number} {
   if (cap <= 0 || events.length <= cap) return { events, dropped: 0 };
   const dropped = events.length - cap;
@@ -169,7 +183,7 @@ export function boundEvents(events: GoalEvent[], cap: number): {events:GoalEvent
 /**
  * Append an audit event, keeping events[] bounded (the journal is rewritten whole on every checkpoint).
  */
-// @kern-source: journal:145
+// @kern-source: journal:157
 export function logEvent(state: JournalState, kind: string, taskId?: string, detail?: string): JournalState {
   const appended = [...state.events, { ts: Date.now(), kind, taskId, detail }];
   const { events, dropped } = boundEvents(appended, GOAL_EVENT_CAP);

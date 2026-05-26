@@ -56,7 +56,9 @@ fn name=createCesarMemory params="" returns=CesarMemory
           const sessionLines = [...session.values()]
             .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
             .slice(0, 15)
-            .map(e => `- [${e.category}] ${e.key}: ${e.value}`);
+            // Show category + value only — the key is an internal id (e.g.
+            // "turn:<ts>") that is noise to the model.
+            .map(e => `- [${e.category}] ${e.value}`);
           parts.push(`## SESSION MEMORY (this conversation)\n${sessionLines.join('\n')}`);
         }
 

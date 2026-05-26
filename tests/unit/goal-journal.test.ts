@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  createJournal, addTasks, nextTask, markStatus, recordAttempt,
+  createJournal, addTasks, requeueInflightTasks, nextTask, markStatus, recordAttempt,
   remainingCount, isDone, logEvent, boundEvents, saveJournal, loadJournal, journalPath,
 } from '../../packages/forge/src/generated/goal/journal.js';
 import { pushRecentOutcome, globalBreaker } from '../../packages/forge/src/generated/goal/policy.js';
@@ -42,6 +42,41 @@ describe('goal journal — pure transforms', () => {
     expect(j.tasks.map((t) => t.id)).toEqual(['a', 'b', 'c']);
     // adding only known ids returns the same reference
     expect(addTasks(before, [{ id: 'a', source: 'x' }])).toBe(before);
+  });
+
+  it('addTasks carries a per-task verify command and dedupes keep the original', () => {
+    let j = createJournal(spec());
+    j = addTasks(j, [{ id: 'a', source: 'gap-a', verify: 'node check.mjs' }, { id: 'b', source: 'gap-b' }]);
+    expect(j.tasks[0].verify).toBe('node check.mjs');
+    expect(j.tasks[1].verify).toBeUndefined();
+    // re-adding 'a' with a DIFFERENT verify is a no-op — a resumed task keeps its frozen original.
+    j = addTasks(j, [{ id: 'a', source: 'gap-a', verify: 'echo weakened' }]);
+    expect(j.tasks[0].verify).toBe('node check.mjs');
+  });
+
+  it('requeueInflightTasks resets orphaned inflight tasks to queued (resume safety)', () => {
+    let j = createJournal(spec());
+    j = addTasks(j, [{ id: 'a', source: 'a' }, { id: 'b', source: 'b' }, { id: 'c', source: 'c' }]);
+    j = markStatus(j, 'a', 'done', { commitSha: 'sha-a' });
+    j = markStatus(j, 'b', 'inflight'); // interrupted mid-attempt (the bug: silently skipped on resume)
+    // c stays queued. Before requeue, nextTask skips the orphaned inflight 'b' and hands back 'c'.
+    expect(nextTask(j)!.id).toBe('c');
+
+    const { state: req, count } = requeueInflightTasks(j);
+    expect(count).toBe(1);
+    expect(req.tasks.find((t) => t.id === 'b')!.status).toBe('queued');
+    expect(req.tasks.find((t) => t.id === 'a')!.status).toBe('done'); // terminal states untouched
+    // 'b' now re-enters the queue ahead of 'c' (declared order), so it is no longer dropped.
+    expect(nextTask(req)!.id).toBe('b');
+  });
+
+  it('requeueInflightTasks is a no-op (same reference) when nothing is inflight', () => {
+    let j = createJournal(spec());
+    j = addTasks(j, [{ id: 'a', source: 'a' }]);
+    j = markStatus(j, 'a', 'done');
+    const { state: req, count } = requeueInflightTasks(j);
+    expect(count).toBe(0);
+    expect(req).toBe(j);
   });
 
   it('nextTask returns the first runnable queued task and respects dependsOn', () => {

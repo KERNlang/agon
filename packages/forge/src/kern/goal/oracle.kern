@@ -106,3 +106,29 @@ fn name=witnessTest async=true params="opts:{repoRoot:string, baseSha:string, ne
       worktreeRemoveBestEffort(repoRoot, baseWt);
     }
   >>>
+
+fn name=witnessVerifyCommand async=true params="opts:{repoRoot:string, baseSha:string, newWorktree:string, verifyCmd:string, timeout:number, signal?:AbortSignal}" returns="Promise<WitnessResult>" export=true
+  doc "Differential behavioral oracle for a task's frozen --verify command. Runs the SAME command verbatim in a fresh base-SHA worktree (must FAIL, and not merely time out) and in the head worktree (must PASS). Unlike witnessTest it copies no files: verify is a self-contained, task-AUTHORED command (build + assert the produced artifact's behavior), so the implementing engine cannot author or weaken it. fail-on-base proves the command targets NEW behavior (not something already green); pass-on-head proves the implementation actually delivers it — the one signal a non-executing toContain test can never fake. The agent never sees this worktree; the command string lives in the journal, frozen like the gate. SECURITY: verify is run via /bin/sh exactly like the gate — it is TRUSTED operator/queue input, not untrusted-hosted content (agon's local-trust model). The base worktree is built fresh, so verify must be SELF-CONTAINED (run its own build); a bare `node dist/x.js` would fail on base only for lack of artifacts, faking the differential. Honours opts.signal so an interrupted run aborts the in-flight command instead of waiting out the timeout."
+  handler <<<
+    const { repoRoot, baseSha, newWorktree, verifyCmd, timeout } = opts;
+    const baseWt = join(agonPath('goals', 'tmp'), `verify-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+    const timeoutMs = Math.max(1, timeout) * 1000;
+    try {
+      worktreeCreate(repoRoot, baseWt, baseSha);
+      const base = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', verifyCmd], cwd: baseWt, timeout: timeoutMs, signal: opts.signal });
+      const fresh = await spawnWithTimeout({ command: '/bin/sh', args: ['-c', verifyCmd], cwd: newWorktree, timeout: timeoutMs, signal: opts.signal });
+      // A timeout on base is NOT a valid "failed on base" — it cannot bless a vacuous verify.
+      const failedOnBase = base.exitCode !== 0 && !base.timedOut;
+      const passedOnNew = fresh.exitCode === 0 && !fresh.timedOut;
+      return {
+        witnessed: failedOnBase && passedOnNew,
+        failedOnBase,
+        passedOnNew,
+        baseTimedOut: base.timedOut,
+        baseExit: base.exitCode,
+        newExit: fresh.exitCode,
+      };
+    } finally {
+      worktreeRemoveBestEffort(repoRoot, baseWt);
+    }
+  >>>

@@ -61,8 +61,8 @@ fn name=loadJournal params="goalId:string" returns="JournalState | null" export=
     }
   >>>
 
-fn name=addTasks params="state:JournalState, items:Array<{id:string,source:string,dependsOn?:string[]}>" returns="JournalState" export=true
-  doc "Append queued tasks, skipping any id already present (idempotent on resume)."
+fn name=addTasks params="state:JournalState, items:Array<{id:string,source:string,dependsOn?:string[],verify?:string}>" returns="JournalState" export=true
+  doc "Append queued tasks, skipping any id already present (idempotent on resume — so a resumed task keeps its ORIGINAL verify; a changed verify only applies to new ids)."
   handler <<<
     const existing = new Set(state.tasks.map((t) => t.id));
     const added: GoalTask[] = [];
@@ -76,11 +76,23 @@ fn name=addTasks params="state:JournalState, items:Array<{id:string,source:strin
         attempts: 0,
         attemptLog: [],
         dependsOn: it.dependsOn,
+        verify: it.verify,
         costUsd: 0,
       });
     }
     if (added.length === 0) return state;
     return { ...state, tasks: [...state.tasks, ...added] };
+  >>>
+
+fn name=requeueInflightTasks params="state:JournalState" returns="{state:JournalState, count:number}" export=true
+  doc "Resume safety: reset any task left 'inflight' back to 'queued'. A loaded journal's inflight task was interrupted mid-attempt (crash / kill / context limit). Because a task only reaches a TERMINAL state via the atomic commit + ref-advance at the very end of its cycle, an interruption lands no partial work (the worktree is thrown away), so re-running from 'queued' is correct and idempotent. Without this, nextTask — which only yields 'queued' — silently skips the orphaned task forever (dogfood: a killed run dropped task-03). Pure; the caller logs the count and re-saves."
+  handler <<<
+    let count = 0;
+    const tasks = state.tasks.map((t) => {
+      if (t.status === 'inflight') { count++; return { ...t, status: 'queued' as const }; }
+      return t;
+    });
+    return { state: count > 0 ? { ...state, tasks } : state, count };
   >>>
 
 fn name=nextTask params="state:JournalState" returns="GoalTask | null" export=true

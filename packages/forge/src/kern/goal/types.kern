@@ -19,7 +19,7 @@ interface name=GoalSpec export=true
 interface name=AttemptRecord export=true
   doc "One implement->gate cycle for a task; fuels the park / oscillation breakers."
   field name=at type=number
-  field name=outcome type="'gate-pass'|'gate-fail'|'witness-fail'|'mutation-survived'|'review-block'|'error'"
+  field name=outcome type="'gate-pass'|'gate-fail'|'witness-fail'|'verify-fail'|'mutation-survived'|'review-block'|'error'"
   field name=gateFailureSignature type=string optional=true
   field name=mutantsSurvived type=number optional=true
   field name=error type=string optional=true
@@ -32,6 +32,8 @@ interface name=GoalTask export=true
   field name=attempts type=number
   field name=attemptLog type="AttemptRecord[]"
   field name=dependsOn type="string[]" optional=true
+  field name=verify type=string optional=true
+    doc "Optional frozen, task-authored behavioral oracle (a shell command). Run AFTER the gate inside the task's worktree and required to FAIL on base / PASS on head — differential execution the implementing engine cannot author or weaken. Closes the 'green-but-broken' gap where an engine's self-authored test asserts on generated SOURCE (e.g. toContain('math.floor')) yet never EXECUTES the produced artifact: such a test passes the witness (red→green) and kills source-line mutants, so the whole stack rubber-stamps unimplemented behavior. A verify that actually runs the program (e.g. asserts pow(2,3)===8) cannot be satisfied that way. fail-on-base proves it targets NEW behavior; pass-on-head proves the implementation delivers it. Must be SELF-CONTAINED (run its own build): it executes in a fresh base worktree, so a bare `node dist/x.js` would fail on base only for missing artifacts, faking the proof. Run via /bin/sh like --gate — TRUSTED queue input under agon's local-trust model, not untrusted-hosted content."
   field name=commitSha type=string optional=true
   field name=costUsd type=number
   field name=lastError type=string optional=true

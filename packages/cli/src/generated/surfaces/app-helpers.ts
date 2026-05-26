@@ -88,7 +88,7 @@ import { AgentProgressView } from '../../generated/surfaces/agent.js';
 
 import { contentWidth, withContentWidthOverride, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from '../../generated/blocks/rendering.js';
 
-import { LOGO_LINES, VERSION, BRAND } from '../../generated/blocks/engine.js';
+import { LOGO_LINES, VERSION, KERN_VERSION, BRAND } from '../../generated/blocks/engine.js';
 
 import { ChromeBar, StreamingView, ToolDetailBlock, TranscriptRowView } from './app-views.js';
 
@@ -2408,8 +2408,9 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         pushSpacer(`${baseKey}-dash-gap-1`);
         pushSegmentsRow(`${baseKey}-dash-tag`, 0, [{ text: '     Any AI can join. They compete. You ship.', color: '#d4a041', italic: true }]);
         pushSegmentsRow(`${baseKey}-dash-version`, 0, [
-          { text: `     v${VERSION}  Powered by `, dimColor: true },
-          { text: 'KERNlang', color: '#fbbf24', bold: true },
+          { text: `     v${VERSION}  ·  Powered by `, dimColor: true },
+          { text: 'KERNlang.dev', color: '#fbbf24', bold: true },
+          { text: KERN_VERSION ? ` (KERN ${KERN_VERSION})` : '', dimColor: true },
         ]);
         pushSegmentsRow(`${baseKey}-dash-engines`, 0, [
           { text: '  Engines: ', color: '#f97316' },

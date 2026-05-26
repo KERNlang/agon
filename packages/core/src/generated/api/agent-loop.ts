@@ -65,9 +65,11 @@ export interface ApiAgentOptions {
   toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
   sessionAllowList?: string[];
   onPermissionAsk?: (tool:string, command:string, reason:string)=>Promise<boolean|string>;
+  maxDispatchRetries?: number;
+  retryBaseMs?: number;
 }
 
-// @kern-source: agent-loop:50
+// @kern-source: agent-loop:52
 export interface ApiAgentResult {
   response: string;
   toolCalls: number;
@@ -77,7 +79,7 @@ export interface ApiAgentResult {
 /**
  * Attempt to repair malformed JSON tool arguments. Handles common LLM mistakes: markdown fencing, trailing commas, single quotes, unquoted keys.
  */
-// @kern-source: agent-loop:55
+// @kern-source: agent-loop:57
 export function repairToolArgs(raw: string): Record<string,unknown>|null {
   let cleaned = raw.trim();
 
@@ -108,7 +110,7 @@ export function repairToolArgs(raw: string): Record<string,unknown>|null {
 /**
  * Auto-correct tool name case mismatches. Maps 'read' → 'Read', 'GREP' → 'Grep', etc.
  */
-// @kern-source: agent-loop:84
+// @kern-source: agent-loop:86
 export function repairToolName(name: string, registry: any): string {
   // Check if exact match exists
   if (registry.has?.(name) || registry.get?.(name)) return name;
@@ -127,9 +129,21 @@ export function repairToolName(name: string, registry: any): string {
 }
 
 /**
+ * True when an API dispatch failure looks transient (worth a backoff+retry) rather than permanent. Transient: request timeout (exitCode 124), rate limit (429), upstream 5xx, stream errors, connection resets / DNS hiccups, overloaded. Permanent (never retried): missing/invalid API key, 401/403 auth, 400 bad request. Aborts (exitCode 130 / signal) are handled by the caller, not here.
+ */
+// @kern-source: agent-loop:105
+export function isTransientDispatchFailure(stderr: string, exitCode?: number): boolean {
+  const s = String(stderr ?? '').toLowerCase();
+  if (exitCode === 124) return true; // request timed out
+  // Permanent failures — surfacing them immediately is correct; retrying wastes the budget.
+  if (/missing api key|invalid api key|unauthorized|forbidden|\b401\b|\b403\b|\b400\b|bad request/.test(s)) return false;
+  return /\b429\b|rate.?limit|timed out|timeout|stream error|fetch failed|socket hang up|econnreset|etimedout|enotfound|eai_again|network error|\b502\b|\b503\b|\b504\b|overloaded|temporarily/.test(s);
+}
+
+/**
  * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
  */
-// @kern-source: agent-loop:103
+// @kern-source: agent-loop:115
 export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentResult> {
   // Run-scoped cache ID: prevents concurrent forge runs from colliding
   const runCacheId = `${opts.api.model || 'api-agent'}-${randomUUID().slice(0, 8)}`;
@@ -208,7 +222,12 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     }
   };
 
-  const MAX_STEPS = opts.maxSteps ?? 10;
+  // Auto-mode: the loop is bounded by TIME (totalDeadline + the per-step
+  // remaining-time check below), like a native CLI agent that runs until done —
+  // NOT by a low step count. MAX_STEPS is only a runaway safety ceiling now.
+  // Callers that want a deliberately short scoped sub-task (synthesis,
+  // speculation) still pass an explicit small maxSteps.
+  const MAX_STEPS = opts.maxSteps ?? 200;
   const totalDeadline = Date.now() + opts.timeout * 1000; // Total timeout for entire loop
   let step = 0;
   let totalToolCalls = 0;
@@ -220,29 +239,75 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     let fullResponse = '';
     let dispatchResult: any = null;
 
-    // Per-step timeout: remaining time, not the full configured timeout
-    const remaining = Math.max(30, Math.floor((totalDeadline - Date.now()) / 1000));
-    if (remaining <= 30) {
-      // Less than 30s left — bail out with what we have
-      return { response: finalResponse || '[Timeout — ran out of time]', toolCalls: totalToolCalls, steps: step };
-    }
-
-    const gen = apiStreamDispatchWithHistory(opts.api, messageHistory as any, remaining, opts.signal, nativeTools);
-    try {
-      while (true) {
-        const { value, done } = await gen.next();
-        if (done) {
-          dispatchResult = value as any;
-          if (dispatchResult?.stderr) {
-            return { response: `Error: ${dispatchResult.stderr}`, toolCalls: totalToolCalls, steps: step };
-          }
-          break;
-        }
-        fullResponse += value as string;
-        if (opts.onChunk) opts.onChunk(value as string);
+    // Step 2 (auto-mode): transient-failure resilience. Re-dispatch the SAME
+    // step with exponential backoff on transient API failures (timeout /
+    // rate-limit / 5xx / stream / reset) instead of ending the session — so a
+    // network blip never drops Cesar mid-task. messageHistory is untouched
+    // until we get a usable response, so a retry re-sends a clean request.
+    // Caller aborts and permanent failures (auth/400) are NOT retried.
+    const maxDispatchRetries = opts.maxDispatchRetries ?? 3;
+    const retryBaseMs = opts.retryBaseMs ?? 500;
+    let dispatchAttempt = 0;
+    let dispatchSettled = false;
+    while (!dispatchSettled) {
+      // Per-step timeout, RECOMPUTED every attempt so backoff sleeps + prior
+      // failed attempts can never hand a stale (too-large) timeout to dispatch
+      // or let a retry overrun totalDeadline.
+      const remaining = Math.max(30, Math.floor((totalDeadline - Date.now()) / 1000));
+      if (remaining <= 30) {
+        // Less than 30s left — bail out with what we have.
+        return { response: finalResponse || '[Timeout — ran out of time]', toolCalls: totalToolCalls, steps: step };
       }
-    } catch (err: any) {
-      return { response: fullResponse || `Error: ${err.message ?? String(err)}`, toolCalls: totalToolCalls, steps: step };
+
+      fullResponse = '';
+      dispatchResult = null;
+      let transientReason: string | null = null;
+
+      const gen = apiStreamDispatchWithHistory(opts.api, messageHistory as any, remaining, opts.signal, nativeTools);
+      try {
+        while (true) {
+          const { value, done } = await gen.next();
+          if (done) {
+            dispatchResult = value as any;
+            if (dispatchResult?.stderr) {
+              // Caller abort → stop now (a cancel is not a failure to retry).
+              if (opts.signal?.aborted || dispatchResult.exitCode === 130) {
+                return { response: `Error: ${dispatchResult.stderr}`, toolCalls: totalToolCalls, steps: step };
+              }
+              // Only retry when nothing was streamed yet (a clean re-send).
+              if (!fullResponse && isTransientDispatchFailure(dispatchResult.stderr, dispatchResult.exitCode)) {
+                transientReason = dispatchResult.stderr;
+              } else {
+                return { response: `Error: ${dispatchResult.stderr}`, toolCalls: totalToolCalls, steps: step };
+              }
+            }
+            break;
+          }
+          fullResponse += value as string;
+          if (opts.onChunk) opts.onChunk(value as string);
+        }
+      } catch (err: any) {
+        const msg = err?.message ?? String(err);
+        if (!fullResponse && !opts.signal?.aborted && isTransientDispatchFailure(msg, undefined)) {
+          transientReason = msg;
+        } else {
+          return { response: fullResponse || `Error: ${msg}`, toolCalls: totalToolCalls, steps: step };
+        }
+      }
+
+      if (!transientReason) { dispatchSettled = true; break; }
+
+      // Transient — back off and retry, if attempts + time budget allow.
+      dispatchAttempt++;
+      const backoffMs = Math.min(4000, retryBaseMs * 2 ** (dispatchAttempt - 1));
+      if (dispatchAttempt > maxDispatchRetries || opts.signal?.aborted || (totalDeadline - Date.now()) <= backoffMs + 30000) {
+        return { response: `Error: API engine failed after ${dispatchAttempt} attempt(s) (${transientReason})`, toolCalls: totalToolCalls, steps: step };
+      }
+      console.warn(`[agon] api-agent-loop: transient failure (${transientReason}); reconnecting attempt ${dispatchAttempt}/${maxDispatchRetries} in ${backoffMs}ms`);
+      await new Promise((r) => setTimeout(r, backoffMs));
+      if (opts.signal?.aborted) {
+        return { response: 'Error: aborted during reconnect', toolCalls: totalToolCalls, steps: step };
+      }
     }
 
     if (!fullResponse) {
@@ -464,7 +529,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
 
   if (!finalResponse && totalToolCalls > 0) {
     return {
-      response: `API engine reached the ${MAX_STEPS}-step tool loop limit after ${totalToolCalls} tool calls; evaluating any candidate worktree changes with fitness.`,
+      response: `API engine reached the ${MAX_STEPS}-step tool loop limit (runaway safety ceiling) after ${totalToolCalls} tool calls; evaluating any candidate worktree changes with fitness.`,
       toolCalls: totalToolCalls,
       steps: step,
     };

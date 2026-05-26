@@ -296,16 +296,19 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
       appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
 
       // Persist every chat turn to the durable ContextThread, like Claude logs
-      // each conversation. The WRITE is unconditional; READING it back into a
-      // fresh process is the explicit `--continue` path (AGON_CONTINUE) handled
+      // each conversation. Default-on; set `sessionContinuity: false` in config to
+      // opt out (privacy kill switch). The WRITE is local-only (~/.agon); READING it
+      // back into a fresh process is the explicit `--continue` path (AGON_CONTINUE)
       // in surfaces/app.kern — so a bare `agon` never inherits stale context.
-      try {
-        const chatThread = loadOrCreateActiveThread(cwd);
-        chatThread.append({ role: 'user', content: input });
-        chatThread.append({ role: 'assistant', content: response, engineId });
-        await chatThread.save();
-      } catch (threadErr) {
-        console.warn(`[agon] context-thread: chat turn not persisted: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
+      if ((config as any).sessionContinuity !== false) {
+        try {
+          const chatThread = loadOrCreateActiveThread(cwd);
+          chatThread.append({ role: 'user', content: input });
+          chatThread.append({ role: 'assistant', content: response, engineId });
+          await chatThread.save();
+        } catch (threadErr) {
+          console.warn(`[agon] context-thread: chat turn not persisted: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
+        }
       }
 
       if (dispatchResult?.usage) {

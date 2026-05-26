@@ -207,16 +207,16 @@ fn name=formatChatContextForPrompt params="session:ChatSession|null|undefined, o
     return value="parts.join('\\n\\n')"
 
 fn name=seedChatSessionFromThread params="session:ChatSession, thread:ContextThread, opts?:{limit?:number}" returns=void export=true
-  doc "Hydrate an empty in-memory ChatSession from a durable ContextThread so a fresh process can continue a prior conversation (the `--continue` path). Maps thread roles to chat roles (user->user, assistant->engine) and skips system/tool turns, which chat sessions do not render. No-op when the session already has messages, so it never clobbers an active conversation. The default limit (last 40 turns) bounds rehydration cost; the prompt formatter caps it further at render time."
+  doc "Hydrate an empty ChatSession from a durable ContextThread so a fresh process can continue a prior conversation (the `--continue` path). Seeded turns go through appendMessage, so they are persisted to this session's ndjson too — keeping `/chats resume` and loadChatSession consistent with what is in memory. Maps thread roles to chat roles (user->user, assistant->engine) and skips system/tool turns, which chat sessions do not render. No-op when the session already has messages, so it never clobbers an active conversation. The default limit (last 40 turns) bounds rehydration cost; the prompt formatter caps it further at render time."
   handler <<<
     if (session.messages.length > 0) return;
     const recent = thread.recentMessages(opts?.limit ?? 40);
     for (const m of recent) {
       const timestamp = new Date(m.timestamp).toISOString();
       if (m.role === 'user') {
-        session.messages.push({ role: 'user', content: m.content, timestamp });
+        appendMessage(session, { role: 'user', content: m.content, timestamp });
       } else if (m.role === 'assistant') {
-        session.messages.push({ role: 'engine', engineId: m.engineId, content: m.content, timestamp });
+        appendMessage(session, { role: 'engine', engineId: m.engineId, content: m.content, timestamp });
       }
       // 'system' / 'tool' turns are intentionally dropped — chat sessions only carry user/engine turns.
     }

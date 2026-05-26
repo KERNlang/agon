@@ -2010,13 +2010,22 @@ ${reviewFollowup.prompt}`;
             if (followUp.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: followUp.trim() });
           }
         } else if (asksConfirmation) {
+          // Yes/No is not enough — always offer a third "type your own answer"
+          // option so the user can redirect Cesar with a free-text instruction
+          // ("do X instead") instead of being boxed into y/n. Mirrors the fork
+          // path's "my own idea" choice. Picking it ends the turn and frees the
+          // composer; what the user types next goes to Cesar with the question
+          // still in chat history for context.
           const answer = await new Promise<string>((resolve) => {
             dispatch({ type: 'question', prompt: `${cesarEngineId}: ${lastLine.length > 80 ? lastLine.slice(0, 80) + '…' : lastLine}`, choices: [
               { key: 'y', label: 'Yes', color: '#4ade80' },
               { key: 'n', label: 'No', color: '#ef4444' },
+              { key: '3', label: '✎ tell Cesar what to do (type it)', color: '#9ca3af' },
             ], resolve } as any);
           });
-          if (answer === 'y' && session.alive && !abort.signal.aborted) {
+          if (answer === '3') {
+            dispatch({ type: 'info', message: 'Type your instruction below and press Enter — Cesar has the question in context.' });
+          } else if (answer === 'y' && session.alive && !abort.signal.aborted) {
             dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
             let followUp = '';
             const gen = session.send({ message: 'yes', signal: abort.signal });

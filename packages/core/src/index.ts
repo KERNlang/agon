@@ -122,7 +122,7 @@ export { discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat } f
 export type { McpServerConfig } from './generated/tools/mcp-discovery.js';
 export { buildToolSystemPrompt, processToolResponse, runToolLoop } from './generated/tools/tool-loop.js';
 export type { ToolLoopCallbacks, ToolLoopResult } from './generated/tools/tool-loop.js';
-export { startChatSession, appendMessage, appendUserTurnIfAbsent, updateChatSummary, formatChatHistoryForPrompt, formatChatContextForPrompt, buildHistoryPrimedPrompt, loadChatSession, resumeChatSession, listChatSessions, latestChatSession } from './chat-store.js';
+export { startChatSession, appendMessage, appendUserTurnIfAbsent, updateChatSummary, formatChatHistoryForPrompt, formatChatContextForPrompt, buildHistoryPrimedPrompt, seedChatSessionFromThread, loadChatSession, resumeChatSession, listChatSessions, latestChatSession } from './chat-store.js';
 export type { ChatMessage as StoredChatMessage, ChatSession } from './chat-store.js';
 export {
   isImagePath, mimeFromExt, resolveImagePath,

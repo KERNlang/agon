@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 3,
+  "id": "antigravity",
+  "displayName": "Antigravity (Google)",
+  "binary": "agy",
+  "searchPaths": [
+    "${HOME}/.local/bin",
+    "/usr/local/bin"
+  ],
+  "versionCmd": ["--version"],
+  "isLocal": false,
+  "tier": "builtin",
+  "installHint": "Install the Antigravity CLI (agy) from https://antigravity.google",
+  "timeout": 120,
+
+  "exec": {
+    "args": ["-p", "{prompt}"]
+  },
+  "review": {
+    "args": ["-p", "{prompt}"]
+  },
+
+  "test": { "args": ["--version"] }
+}

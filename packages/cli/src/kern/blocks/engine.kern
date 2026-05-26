@@ -26,6 +26,13 @@ const name=LOGO_LINES type="string[]" value={{ ['    █████╗  ██�
 
 const name=VERSION type=string value={{ '0.1.0' }}
 
+// agon's own version is intentionally pinned at 0.1.0 — the @kernlang/* family is
+// the source of truth. KERN_VERSION surfaces the KERN toolchain version the build
+// runs against, so the banner reflects what actually MOVES rather than looking
+// frozen. Tracks @kernlang/cli (its package.json is exports-locked, so this is a
+// display literal); kern:compile validates the resolved family — bump on upgrade.
+const name=KERN_VERSION type=string value={{ '3.5.3' }}
+
 
 // ── Interface: OutputBlock ──────────────────────────────────────────
 
@@ -250,7 +257,7 @@ screen name=DashboardView target=ink export=true
           ))}
           <Text> </Text>
           <Text italic color="#d4a041">{'     Any AI can join. They compete. You ship.'}</Text>
-          <Text dimColor>{'     v'}{VERSION}{'  Powered by '}<Text bold color="#fbbf24">{'KERNlang'}</Text></Text>
+          <Text dimColor>{'     v'}{VERSION}{'  ·  Powered by '}<Text bold color="#fbbf24">{'KERNlang.dev'}</Text>{KERN_VERSION ? ` (KERN ${KERN_VERSION})` : ''}</Text>
           <Text> </Text>
 
           <Box>

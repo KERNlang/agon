@@ -52,9 +52,23 @@ export const splitBeforeToolMarkup: (text:string) => { visible:string, hasToolMa
 export const XML_TOOL_MARKUP_HOLD_CHARS: number = 24;
 
 /**
- * Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling.
+ * True when the last line of a Cesar turn is a question directed at the USER — either keyword-addressed (which/should/want/your call/…) OR an either/or fork ('A, or B?'). Auto-continuation uses this to STOP and wait for the user instead of treating the question as a mid-task stall and re-prompting Cesar (which caused fork questions like 'plan it all, or start with X?' to loop).
  */
 // @kern-source: brain:38
+export function isUserDirectedQuestion(lastLine: string): boolean {
+  const last = String(lastLine ?? '').trim();
+  if (!/\?\s*$/.test(last)) return false;
+  const userAddressed = /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|implement|which|what|how|do you|would you|can you|should i|shall i|prefer|pick|choose|decide|option)\b/i.test(last)
+    || /\b(your call|up to you|your decision|let me know|waiting on (?:you|your)|which way|either way)\b/i.test(last);
+  // Either/or fork ("… A, or B?") offers the user a choice → their turn.
+  const isForkChoice = /\bor\b[^?]{0,160}\?\s*$/i.test(last);
+  return userAddressed || isForkChoice;
+}
+
+/**
+ * Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling.
+ */
+// @kern-source: brain:50
 export function detectNarratedToolStall(text: string): boolean {
   const body = String(text ?? '').trim();
   if (!body) {
@@ -72,7 +86,7 @@ export function detectNarratedToolStall(text: string): boolean {
 /**
  * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
  */
-// @kern-source: brain:52
+// @kern-source: brain:64
 export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
   const names: string[] = [];
   for (const result of results ?? []) {
@@ -90,7 +104,7 @@ export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
 /**
  * Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch.
  */
-// @kern-source: brain:64
+// @kern-source: brain:76
 export function shouldRunEagerRepairTool(toolName: string, meta: any, failedToolNames: string[], usedToolNames: string[]): boolean {
   const name = String(toolName ?? '').trim();
   if (!name) return false;
@@ -105,7 +119,7 @@ export function shouldRunEagerRepairTool(toolName: string, meta: any, failedTool
 /**
  * Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet.
  */
-// @kern-source: brain:77
+// @kern-source: brain:89
 export function shouldStopAfterXmlToolCall(toolName: string): boolean {
   const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan']);
   return HANDOFF_TOOLS.has(String(toolName ?? ''));
@@ -114,7 +128,7 @@ export function shouldStopAfterXmlToolCall(toolName: string): boolean {
 /**
  * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
  */
-// @kern-source: brain:83
+// @kern-source: brain:95
 export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
   const trimmed = input.trim();
   const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
@@ -135,7 +149,7 @@ export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): {
   return { matched: true, prompt: prompt };
 }
 
-// @kern-source: brain:102
+// @kern-source: brain:114
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;
@@ -177,7 +191,7 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
   };
 }
 
-// @kern-source: brain:144
+// @kern-source: brain:156
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) {
     dispatch({ type: 'streaming-end', engineId: cesarEngineId });
@@ -204,7 +218,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:166
+// @kern-source: brain:178
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) {
     dispatch({ type: 'streaming-end', engineId: cesarEngineId });
@@ -232,7 +246,7 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:188
+// @kern-source: brain:200
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -601,6 +615,19 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (routeReliability && routeDowngrade) {
           enrichedInput = `[CESAR TOOL RELIABILITY POLICY]\n${formatCesarReliabilityLine(routeReliability)}\nFor this tool-heavy task, do not pretend direct multi-step tooling happened. Prefer ProposePlan, Agent, Forge, Review, or another direct orchestration tool when execution is needed; if staying self, keep the answer advisory and explicit.\n\n${enrichedInput}`;
         }
+
+        // ── Session-memory digest (re-surfaced PER TURN) ──
+        // cesarMemory accumulates decisions/findings each turn, but it is only
+        // injected into the turn-1 system prompt — which is empty then — and reused
+        // sessions never rebuild that prompt, so the engine otherwise NEVER sees its
+        // own accumulated context. Re-inject the digest here on later turns so Cesar
+        // builds on what it already established instead of cold-starting (RULE 1).
+        try {
+          const sessionDigest = ctx.cesarMemory?.toPromptContext?.();
+          if (sessionDigest) {
+            enrichedInput = `[SESSION MEMORY — you already established this earlier this session; build on it, do NOT re-investigate what is already here]\n${sessionDigest}\n\n${enrichedInput}`;
+          }
+        } catch { /* session memory is best-effort */ }
 
         // ── Heartbeat timer + turn timeout ──
         const cesarTimeout = (config as any).cesarTimeout ?? 300;
@@ -1735,9 +1762,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const wroteSinceBaseline = _toolsUsed.slice(baselineToolCount).some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
           const lines = resp.split('\n').map((l: string) => l.trim()).filter(Boolean);
           const last = lines[lines.length - 1] ?? '';
-          const userAddressed = /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|implement|which|what|how|do you|would you|can you|should i)\b/i.test(last);
-          const endsWithQ = /\?\s*$/.test(last);
-          if (endsWithQ && userAddressed) return 'asks-user';
+          // A question directed at the user (keyword-addressed OR an either/or fork)
+          // means it's THEIR turn — stop, don't auto-continue. Extracted to the
+          // exported isUserDirectedQuestion so the classification is unit-tested.
+          if (isUserDirectedQuestion(last)) return 'asks-user';
           // New writes in continuation AND no "still in progress" signal → done
           if (wroteSinceBaseline && !_AUTO_CONT_CONTINUE_RE.test(resp)) return 'done';
           const effectSummary = /(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b[^.]{0,80}(?:\b(?:and|,)\b[^.]{0,80}\b(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b)/i.test(resp);
@@ -2057,13 +2085,22 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               if (followUp.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: followUp.trim() });
             }
           } else if (asksConfirmation) {
+            // Yes/No is not enough — always offer a third "type your own answer"
+            // option so the user can redirect Cesar with a free-text instruction
+            // ("do X instead") instead of being boxed into y/n. Mirrors the fork
+            // path's "my own idea" choice. Picking it ends the turn and frees the
+            // composer; what the user types next goes to Cesar with the question
+            // still in chat history for context.
             const answer = await new Promise<string>((resolve) => {
               dispatch({ type: 'question', prompt: `${cesarEngineId}: ${lastLine.length > 80 ? lastLine.slice(0, 80) + '…' : lastLine}`, choices: [
                 { key: 'y', label: 'Yes', color: '#4ade80' },
                 { key: 'n', label: 'No', color: '#ef4444' },
+                { key: '3', label: '✎ tell Cesar what to do (type it)', color: '#9ca3af' },
               ], resolve } as any);
             });
-            if (answer === 'y' && session.alive && !abort.signal.aborted) {
+            if (answer === '3') {
+              dispatch({ type: 'info', message: 'Type your instruction below and press Enter — Cesar has the question in context.' });
+            } else if (answer === 'y' && session.alive && !abort.signal.aborted) {
               dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
               let followUp = '';
               const gen = session.send({ message: 'yes', signal: abort.signal });

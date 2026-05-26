@@ -27,12 +27,13 @@ export const goalCommand: any = (() => {
 const slug = (s: string): string =>
   String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 128);
 
-const toTask = (o: { id?: string; source?: string; dependsOn?: string[] }, i: number) => {
+const toTask = (o: { id?: string; source?: string; dependsOn?: string[]; verify?: string }, i: number) => {
   const id = slug(o.id ?? '') || `task-${i}`;
-  return { id, source: String(o.source ?? o.id ?? id), dependsOn: o.dependsOn };
+  const verify = typeof o.verify === 'string' && o.verify.trim() ? o.verify.trim() : undefined;
+  return { id, source: String(o.source ?? o.id ?? id), dependsOn: o.dependsOn, verify };
 };
 
-const loadQueue = (queuePath: string): Array<{ id: string; source: string; dependsOn?: string[] }> => {
+const loadQueue = (queuePath: string): Array<{ id: string; source: string; dependsOn?: string[]; verify?: string }> => {
   const abs = resolve(queuePath);
   if (!existsSync(abs)) throw new Error(`queue not found: ${queuePath}`);
   const st = statSync(abs);
@@ -60,7 +61,7 @@ const loadQueue = (queuePath: string): Array<{ id: string; source: string; depen
     const arr = Array.isArray(parsed)
       ? parsed
       : (parsed && Array.isArray((parsed as { tasks?: unknown[] }).tasks) ? (parsed as { tasks: unknown[] }).tasks : [parsed]);
-    return arr.map((o, i) => toTask(o as { id?: string; source?: string; dependsOn?: string[] }, i));
+    return arr.map((o, i) => toTask(o as { id?: string; source?: string; dependsOn?: string[]; verify?: string }, i));
   }
   if (abs.endsWith('.jsonl')) {
     return readFileSync(abs, 'utf-8').split('\n').map((l) => l.trim()).filter(Boolean).map((line, i) => {
@@ -78,7 +79,7 @@ return defineCommand({
   },
   args: {
     intent: { type: 'positional', description: 'What the goal is (human description; also seeds the goal id)', required: false },
-    queue: { type: 'string', alias: 'q', description: 'Task source: a directory (one task per file) or a .jsonl of {id,source,dependsOn}' },
+    queue: { type: 'string', alias: 'q', description: 'Task source: a directory (one task per file) or a .jsonl/.json of {id,source,dependsOn,verify}. Optional per-task "verify" is a frozen behavioral command run fail-on-base/pass-on-head (e.g. "npm run build && node check.mjs") — the engine cannot weaken it, so a non-executing toContain test can no longer close the task.' },
     gate: { type: 'string', alias: 'g', description: 'Green oracle command — the authoritative pass/fail, frozen at start (e.g. "npm run build && npm run typecheck && npm test")' },
     witnessCmd: { type: 'string', description: 'Test-only command for witness + mutation steps (defaults to --gate). A narrower command makes fail-on-base witnessing precise.' },
     branch: { type: 'string', alias: 'b', description: 'Goal branch (default goal/<id>) — never main; one commit per closed task' },
@@ -150,7 +151,7 @@ return defineCommand({
     }
     const queueSource = (args.queue ?? '').trim();
     if (!queueSource && !args.resume) {
-      fail('A --queue is required (a directory of tasks or a .jsonl). E.g. --queue .kern-gaps/.');
+      fail('A --queue is required (a directory of tasks or a .jsonl/.json file). E.g. --queue .kern-gaps/.');
       process.exit(1);
     }
 
@@ -282,7 +283,7 @@ return defineCommand({
       return Number.isFinite(n) && n >= 0 ? n : undefined;
     };
 
-    let tasks: Array<{ id: string; source: string; dependsOn?: string[] }> = [];
+    let tasks: Array<{ id: string; source: string; dependsOn?: string[]; verify?: string }> = [];
     if (queueSource) {
       try { tasks = loadQueue(queueSource); }
       catch (e) { fail(`Could not load queue: ${e instanceof Error ? e.message : String(e)}`); process.exit(1); }
@@ -329,10 +330,18 @@ return defineCommand({
     // IMPLEMENT — forge races engines to satisfy the gate inside the task
     // worktree; we apply the winning patch. A fixContext re-runs forge to
     // address blocking review findings on the existing changes.
-    const implement = async (a: { task: { id: string; source: string }; worktree: string; baseSha: string; repoRoot: string; fixContext?: string; signal?: AbortSignal }) => {
+    const implement = async (a: { task: { id: string; source: string; verify?: string }; worktree: string; baseSha: string; repoRoot: string; fixContext?: string; signal?: AbortSignal }) => {
+      // Surface the task's frozen behavioral oracle so the engine knows the
+      // exact acceptance bar. It cannot weaken it (verify lives in the journal,
+      // not the worktree, and runs fail-on-base/pass-on-head out of tree), so
+      // telling the engine only raises the pass rate — and signals that a
+      // source-string assertion won't be enough; the produced artifact must run.
+      const verifyHint = a.task.verify
+        ? `\n\nThis task has a behavioral acceptance check that will be run automatically (it must FAIL on the base code and PASS after your change). Your implementation MUST make this command pass — and note it EXECUTES the produced artifact, so a test that only asserts on generated source is not sufficient:\n  ${a.task.verify}`
+        : '';
       const task = a.fixContext
         ? `These changes have BLOCKING review findings. Fix them without regressing the gate or weakening tests:\n${a.fixContext}`
-        : `Close this gap: ${a.task.source}\n\nImplement the fix AND add a test that FAILS before your change and PASSES after. Do not weaken or skip existing tests.`;
+        : `Close this gap: ${a.task.source}\n\nImplement the fix AND add a test that FAILS before your change and PASSES after. Do not weaken or skip existing tests.${verifyHint}`;
       const { path: forgeDir } = createRunDir({ mode: 'forge', label: `goal-${a.task.id}` });
 
       // Cesar routes the implement roster per task: a trivial gap goes to a
@@ -578,7 +587,9 @@ return defineCommand({
         switch (e.kind) {
           case 'preflight-start': info('Pre-flight: verifying the gate is green at base (runs your gate once)…'); break;
           case 'preflight-ok': success('✓ gate is green at base'); break;
+          case 'resume-requeue': info(`↺ resume: ${e.detail ?? ''}`); break;
           case 'task-start': info(`▶ implementing${id}: ${e.detail ?? ''}`); break;
+          case 'verify-ok': success(`✓ behavioral verify witnessed${id} (fail-on-base, pass-on-head)`); break;
           case 'task-done': success(`✓ closed${id} → ${String(e.detail ?? '').slice(0, 8)}`); break;
           case 'task-pushed': info(`⇡ pushed${id} → ${e.detail ?? ''}`); break;
           case 'push-failed': warn(`⇡ push failed${id}: ${e.detail ?? ''} (commit is safe locally)`); break;

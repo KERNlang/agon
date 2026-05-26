@@ -24,6 +24,15 @@ async function* streamTextToolCall(toolName: string, input: Record<string, unkno
   return {};
 }
 
+// Mirrors apiStreamDispatchWithHistory for a NATIVE function-call: the SDK
+// yields a display-only <tool> marker into the text AND returns a structured
+// tool_call part in the done value. Structured-first execution must use the
+// part's clean args, never re-parse the marker text.
+async function* streamStructuredToolCall(toolName: string, input: Record<string, unknown>, toolCallId = 'call_sdk_1') {
+  yield `\n<tool name="${toolName}">${JSON.stringify(input)}</tool>\n`;
+  return { parts: [{ kind: 'tool_call', toolName, toolCallId, args: input }] };
+}
+
 async function* streamStaleReadRetryBatch(count: number) {
   const calls = Array.from({ length: count }, (_, index) =>
     `<tool name="Read">${JSON.stringify({ file_path: `src/file-${index}.ts` })}</tool>`,
@@ -354,6 +363,47 @@ describe('persistent session streaming dedupe', () => {
     }
 
     expect(readCount).toBe(2);
+  });
+
+  it('executes native tool calls from structured parts, not the text round-trip (args containing </tool> survive)', async () => {
+    const { createResumeSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+    // An arg value that WOULD be mangled by the <tool>{json}</tool> regex round-trip.
+    const trickyArgs = { command: 'echo "</tool> and <tool name=\\"x\\">"' };
+    let captured: { name: string; args: any } | null = null;
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(() => streamStructuredToolCall('Bash', trickyArgs, 'call_sdk_42'))
+      .mockImplementationOnce(async function* () { yield 'Done.'; return {}; });
+
+    const session = createResumeSession({
+      engine: {
+        id: 'api-test',
+        api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test' },
+      } as any,
+      binaryPath: '',
+      cwd: process.cwd(),
+      systemPrompt: 'You are Cesar.',
+      nativeTools: [{ type: 'function', function: { name: 'Bash', description: 'run', parameters: {} } }] as any,
+      onToolCall: async (name: string, args: Record<string, unknown>) => {
+        captured = { name, args };
+        return 'ok';
+      },
+      toolLoopBaseBudget: 3,
+      toolLoopMaxBudget: 3,
+    });
+
+    await session.start();
+    for await (const _chunk of session.send({ message: 'run it', toolLoopBaseBudget: 3, toolLoopMaxBudget: 3 })) {
+      // Drain the generator.
+    }
+
+    // Structured-first: clean SDK args preserved exactly (regex round-trip would have mangled this).
+    expect(captured).not.toBeNull();
+    expect(captured!.name).toBe('Bash');
+    expect(captured!.args).toEqual(trickyArgs);
+    // History reconstruction uses the SDK's real tool_call id, not a synthetic one.
+    const history = session.getMessageHistory();
+    const assistantWithCalls = history.find((m: any) => m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0);
+    expect(assistantWithCalls?.tool_calls?.[0]?.id).toBe('call_sdk_42');
   });
 
   it('recovers once from repeated stale-read retry batches before hard-stopping', async () => {

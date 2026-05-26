@@ -197,7 +197,12 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     }
   };
 
-  const MAX_STEPS = opts.maxSteps ?? 10;
+  // Auto-mode: the loop is bounded by TIME (totalDeadline + the per-step
+  // remaining-time check below), like a native CLI agent that runs until done —
+  // NOT by a low step count. MAX_STEPS is only a runaway safety ceiling now.
+  // Callers that want a deliberately short scoped sub-task (synthesis,
+  // speculation) still pass an explicit small maxSteps.
+  const MAX_STEPS = opts.maxSteps ?? 200;
   const totalDeadline = Date.now() + opts.timeout * 1000; // Total timeout for entire loop
   let step = 0;
   let totalToolCalls = 0;
@@ -453,7 +458,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
 
   if (!finalResponse && totalToolCalls > 0) {
     return {
-      response: `API engine reached the ${MAX_STEPS}-step tool loop limit after ${totalToolCalls} tool calls; evaluating any candidate worktree changes with fitness.`,
+      response: `API engine reached the ${MAX_STEPS}-step tool loop limit (runaway safety ceiling) after ${totalToolCalls} tool calls; evaluating any candidate worktree changes with fitness.`,
       toolCalls: totalToolCalls,
       steps: step,
     };

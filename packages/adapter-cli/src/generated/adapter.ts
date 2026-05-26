@@ -257,7 +257,7 @@ export class CliAdapter implements EngineAdapter {
       const systemPrompt = [options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.', projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : ''].filter(Boolean).join('\n\n');
       const startTime = Date.now();
       const baselineDiff = readOnlyDiff(cwd);
-      const result = await runApiAgentLoop({ api: apiConfig, prompt: options.prompt, systemPrompt: systemPrompt, cwd: cwd, timeout: options.timeout, signal: options.signal, maxSteps: 40, permissionMode: options.permissionMode, allowedCommands: options.allowedCommands, toolPermissions: options.toolPermissions, onPermissionAsk: options.onApproval });
+      const result = await runApiAgentLoop({ api: apiConfig, prompt: options.prompt, systemPrompt: systemPrompt, cwd: cwd, timeout: options.timeout, signal: options.signal, maxSteps: 200, permissionMode: options.permissionMode, allowedCommands: options.allowedCommands, toolPermissions: options.toolPermissions, onPermissionAsk: options.onApproval });
       const postDiff = readOnlyDiff(cwd);
       const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
       const postLines = postDiff.split('\n');

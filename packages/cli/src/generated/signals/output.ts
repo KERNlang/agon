@@ -72,6 +72,7 @@ export interface OutputActions {
   flushStream: () => void;
   getEngineColor: (engineId:string) => number;
   setCesarConfidence: (val:number|null) => void;
+  setCesarContext: (val:{pct:number,used:number,limit:number,compacted:number,cached:number}|null) => void;
   setLiveScoreboard: (val:any) => void;
   setLiveRationale: (val:any) => void;
   setAgentProgress: (updater:Record<string,AgentProgressSnapshot> | ((prev:Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => void;
@@ -79,16 +80,16 @@ export interface OutputActions {
   setTodos: (updater:Todo[] | ((prev:Todo[]) => Todo[])) => void;
 }
 
-// @kern-source: output:68
+// @kern-source: output:69
 export const _thinkingBuffer: {engineId:string,content:string} = { engineId: '', content: '' };
 
-// @kern-source: output:71
+// @kern-source: output:72
 export const _permissionQueue: Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>;
 
-// @kern-source: output:73
+// @kern-source: output:74
 export const _sessionAllowList: string[] = [] as string[];
 
-// @kern-source: output:75
+// @kern-source: output:76
 export function getSessionAllowList(): string[] {
   return _sessionAllowList;
 }
@@ -96,7 +97,7 @@ export function getSessionAllowList(): string[] {
 /**
  * Reject all queued permissions and clear the queue. Called on interrupt/cancel.
  */
-// @kern-source: output:77
+// @kern-source: output:78
 export function clearPermissionQueue(): void {
   while (_permissionQueue.length > 0) {
     const entry = _permissionQueue.shift()!;
@@ -107,25 +108,25 @@ export function clearPermissionQueue(): void {
 /**
  * Drop any buffered thinking-chunk content. Called on interrupt / clear / SIGINT so the next turn doesn't emit stale content as a fresh block.
  */
-// @kern-source: output:84
+// @kern-source: output:85
 export function clearThinkingBuffer(): void {
   _thinkingBuffer.engineId = '';
   _thinkingBuffer.content = '';
 }
 
-// @kern-source: output:96
+// @kern-source: output:97
 export const TOOL_CALL_GROUP_FLUSH_MS: number = 500;
 
-// @kern-source: output:98
+// @kern-source: output:99
 export const _pendingToolCalls: any[] = [] as any[];
 
-// @kern-source: output:100
+// @kern-source: output:101
 export const _pendingFlushTimer: { timer: any, actions: any } = ({ timer: null, actions: null }) as any;
 
-// @kern-source: output:103
+// @kern-source: output:104
 export const _liveToolStreams: Record<string,any> = {} as Record<string, any>;
 
-// @kern-source: output:105
+// @kern-source: output:106
 function toolCallKey(event: any): string {
   return [String(event?.engineId ?? ''), String(event?.tool ?? ''), String(event?.input ?? '')].join('\x00');
 }
@@ -133,7 +134,7 @@ function toolCallKey(event: any): string {
 /**
  * Emit any buffered tool-call events as a single tool-call-group block.
  */
-// @kern-source: output:109
+// @kern-source: output:110
 export function flushPendingToolCalls(actions: OutputActions): void {
   if (_pendingFlushTimer.timer) {
     clearTimeout(_pendingFlushTimer.timer);
@@ -148,7 +149,7 @@ export function flushPendingToolCalls(actions: OutputActions): void {
 /**
  * Debounce-flush pending tool-calls after a quiet period — covers turns that end on a tool-call without any trailing event.
  */
-// @kern-source: output:122
+// @kern-source: output:123
 export function schedulePendingFlush(actions: OutputActions): void {
   _pendingFlushTimer.actions = actions;
   if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
@@ -161,7 +162,7 @@ export function schedulePendingFlush(actions: OutputActions): void {
 /**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
-// @kern-source: output:133
+// @kern-source: output:134
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
@@ -181,7 +182,7 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
-// @kern-source: output:150
+// @kern-source: output:151
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -241,7 +242,7 @@ function _showNextPermission(actions: OutputActions): void {
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
-// @kern-source: output:207
+// @kern-source: output:208
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
@@ -265,7 +266,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     'tool-call', 'clear',
     'spinner-start', 'spinner-stop', 'spinner-update',
     'progress-update', 'progress-clear',
-    'confidence-update',
+    'confidence-update', 'context-usage',
     'streaming-chunk', 'streaming-start',
     'thinking-chunk', 'thinking-start', 'thinking-stop',
     'tool-stream-start', 'tool-stream-chunk', 'tool-stream-end',
@@ -454,6 +455,11 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     }
     case 'confidence-update': {
       actions.setCesarConfidence((event as any).value);
+      return;
+    }
+    case 'context-usage': {
+      const e = event as any;
+      actions.setCesarContext({ pct: e.pct, used: e.used, limit: e.limit, compacted: e.compacted ?? 0, cached: e.cached ?? 0 });
       return;
     }
     case 'agent-step-start': {

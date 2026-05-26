@@ -3,7 +3,7 @@
 //
 // Drops a thin per-CLI shim into each detected CLI's prompt/command dir:
 //   Codex       -> ~/.codex/skills/agon/SKILL.md (+ agents/openai.yaml)
-//   Gemini CLI  -> ~/.gemini/commands/agon.toml
+//   Antigravity -> ~/.antigravity/commands/agon.toml
 //   Claude Code -> ~/.claude/commands/agon.md
 // Each shim/skill tells the engine to run `agon agent-guide` and drive agon
 // from its normal shell. Nothing runs until invoked by the user.
@@ -19,12 +19,12 @@ const name=installAgentPromptsCommand type=any
     defineCommand({
       meta: {
         name: 'install-agent-prompts',
-        description: 'Install lightweight Agon prompts/skills into other CLIs (Codex, Gemini, Claude Code) — no MCP, no always-on tokens',
+        description: 'Install lightweight Agon prompts/skills into other CLIs (Codex, Antigravity, Claude Code) — no MCP, no always-on tokens',
       },
       args: {
         cli: {
           type: 'string',
-          description: 'Comma list to target: codex,gemini,claude. Default: every CLI whose config dir exists.',
+          description: 'Comma list to target: codex,agy,claude. Default: every CLI whose config dir exists.',
         },
         force: {
           type: 'boolean',
@@ -50,10 +50,10 @@ const name=installAgentPromptsCommand type=any
             ],
           },
           {
-            id: 'gemini',
-            label: 'Gemini CLI',
-            baseDir: join(home, '.gemini'),
-            files: [{ file: join(home, '.gemini', 'commands', 'agon.toml'), content: agonShim('gemini') }],
+            id: 'agy',
+            label: 'Antigravity (agy)',
+            baseDir: join(home, '.antigravity'),
+            files: [{ file: join(home, '.antigravity', 'commands', 'agon.toml'), content: agonShim('agy') }],
           },
           {
             id: 'claude',
@@ -85,7 +85,7 @@ const name=installAgentPromptsCommand type=any
           if (requested.length > 0) {
             process.stderr.write(`agon install-agent-prompts: no known CLI matched "${requested.join(', ')}" (known: ${knownIds.join(', ')})\n`);
           } else {
-            process.stderr.write('agon install-agent-prompts: no CLI config dirs found (~/.codex, ~/.gemini, ~/.claude). Pass --cli codex,gemini,claude to force.\n');
+            process.stderr.write('agon install-agent-prompts: no CLI config dirs found (~/.codex, ~/.antigravity, ~/.claude). Pass --cli codex,agy,claude to force.\n');
           }
           process.exitCode = 1;
           return;
@@ -123,7 +123,7 @@ const name=installAgentPromptsCommand type=any
           process.stderr.write('\nSome integration files failed to install (see the "error" lines above).\n');
           process.exitCode = 1;
         } else if (!dryRun) {
-          process.stdout.write('\nDone. In Claude Code/Gemini, type /agon. In Codex, start a new session and use $agon. Each path runs `agon agent-guide`, then orchestrates. No MCP; nothing is loaded until you invoke it.\n');
+          process.stdout.write('\nDone. In Claude Code/Antigravity, type /agon. In Codex, start a new session and use $agon. Each path runs `agon agent-guide`, then orchestrates. No MCP; nothing is loaded until you invoke it.\n');
         }
       },
     })

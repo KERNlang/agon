@@ -1,0 +1,194 @@
+// @kern-source: app-input:4
+import { getGhostCompletion } from './ghost-text.js';
+
+// @kern-source: app-input:5
+import { stripBracketedPasteMarkers } from '../../input-utils.js';
+
+// @kern-source: app-input:7
+/**
+ * Strip bracketed paste escapes from input while preserving pasted content.
+ */
+export function cleanInputValue(value: string): string {
+  return stripBracketedPasteMarkers(value);
+}
+
+// @kern-source: app-input:10
+/**
+ * Strip paste escapes and trim for submission.
+ */
+export function cleanSubmitValue(value: string): string {
+  return stripBracketedPasteMarkers(value).trim();
+}
+
+// @kern-source: app-input:13
+/**
+ * Find the single contiguous edit between two input values.
+ */
+export function findInputChange(previous: string, next: string): {start:number, removed:string, inserted:string} {
+  let start = 0;
+  while (start < previous.length && start < next.length && previous[start] === next[start]) {
+    start++;
+  }
+  
+  let previousEnd = previous.length;
+  let nextEnd = next.length;
+  while (previousEnd > start && nextEnd > start && previous[previousEnd - 1] === next[nextEnd - 1]) {
+    previousEnd--;
+    nextEnd--;
+  }
+  
+  return {
+    start,
+    removed: previous.slice(start, previousEnd),
+    inserted: next.slice(start, nextEnd),
+  };
+}
+
+// @kern-source: app-input:35
+/**
+ * Navigate input history up/down.
+ */
+export function navigateHistory(direction: 'up'|'down', currentIndex: number, history: string[]): {index:number, value:string} {
+  if (direction === 'up' && history.length > 0) {
+    const newIndex = (currentIndex === -1) ? (history.length - 1) : Math.max(0, currentIndex - 1);
+    return { index: newIndex, value: history[newIndex] };
+  }
+  if (direction === 'down' && currentIndex >= 0) {
+    const newIndex = currentIndex + 1;
+    if (newIndex >= history.length) {
+      return { index: -1, value: '' };
+    }
+    return { index: newIndex, value: history[newIndex] };
+  }
+  return { index: currentIndex, value: '' };
+}
+
+// @kern-source: app-input:48
+/**
+ * Append a submitted composer command with duplicate pruning and a bounded history length.
+ */
+export function appendInputHistory(history: string[], input: string, maxEntries?: number): string[] {
+  const max = Math.max(1, Math.floor(maxEntries ?? 200));
+  const entry = String(input ?? '').trim();
+  if (!entry) {
+    return history.slice(-max);
+  }
+  const deduped = history.filter((item: string) => item !== entry);
+  return [...deduped, entry].slice(-max);
+}
+
+// @kern-source: app-input:58
+/**
+ * Parse first-class /auto controls. /auto <task> intentionally returns null so normal autonomous task routing still works.
+ */
+export function parseAutoModeCommand(input: string): 'on'|'off'|'toggle'|'status'|null {
+  const trimmed = String(input ?? '').trim().toLowerCase();
+  const match = trimmed.match(/^\/(?:auto|autonomous)(?:\s+(on|off|toggle|status))?$/);
+  if (!match) {
+    return null;
+  }
+  return (match[1] as 'on' | 'off' | 'toggle' | 'status' | undefined) ?? 'toggle';
+}
+
+// @kern-source: app-input:67
+/**
+ * True when /btw should run as a side-channel instead of falling through to normal command dispatch.
+ */
+export function hasBtwSideChannelTarget(opts: {replState:string,activePlanState?:string|null,runningJobCount?:number}): boolean {
+  if (opts.replState !== 'idle') {
+    return true;
+  }
+  if ((opts.runningJobCount ?? 0) > 0) {
+    return true;
+  }
+  const planState = String(opts.activePlanState ?? '');
+  return ['planning', 'awaiting_approval', 'running', 'paused'].includes(planState);
+}
+
+// @kern-source: app-input:77
+export interface EscapeDecision {
+  action: 'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'clear-input'|'noop';
+}
+
+// @kern-source: app-input:80
+/**
+ * Resolve Esc behavior without destructive transcript clearing.
+ */
+export function resolveEscapeAction(opts: {replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean}): EscapeDecision {
+  if (opts.slashPickerOpen) {
+    return { action: 'close-slash' };
+  }
+  if (opts.enginePickerOpen) {
+    return { action: 'close-engine-picker' };
+  }
+  if (opts.questionOpen) {
+    return { action: 'cancel-question' };
+  }
+  if (opts.replState !== 'idle') {
+    return { action: 'interrupt' };
+  }
+  if (opts.inputValue) {
+    return { action: 'clear-input' };
+  }
+  return { action: 'noop' };
+}
+
+// @kern-source: app-input:95
+/**
+ * Get ghost text completion for current input.
+ */
+export function tryGhostComplete(inputValue: string, commands: any[], engineIds: string[]): string|null {
+  return getGhostCompletion(inputValue, commands, engineIds);
+}
+
+// @kern-source: app-input:98
+/**
+ * Rank slash-command matches so prefix hits stay on top while substring hits remain reachable.
+ */
+export function getSlashMatches(filter: string, commands: any[]): any[] {
+  const normalizedFilter = filter.trim().toLowerCase();
+  return commands
+    .map((c: any) => {
+      const name = c.cmd.toLowerCase().replace(/^\//, '');
+      const startsWith = normalizedFilter ? name.startsWith(normalizedFilter) : true;
+      const includes = normalizedFilter ? name.includes(normalizedFilter) : true;
+      const rank = !normalizedFilter ? 0 : startsWith ? 0 : includes ? 1 : 2;
+      const { rank: _rank, ...command } = { ...c, rank };
+      return { command, rank };
+    })
+    .filter((entry: any) => entry.rank < 2)
+    .sort((a: any, b: any) => a.rank - b.rank || a.command.cmd.localeCompare(b.command.cmd))
+    .map((entry: any) => entry.command);
+}
+
+// @kern-source: app-input:116
+/**
+ * Move a picker cursor with wrap-around.
+ */
+export function movePickerCursor(direction: 'up'|'down', currentIndex: number, itemCount: number): number {
+  if (itemCount <= 0) {
+    return 0;
+  }
+  if (direction === 'up') {
+    return (currentIndex <= 0) ? (itemCount - 1) : (currentIndex - 1);
+  }
+  return (currentIndex >= itemCount - 1) ? 0 : (currentIndex + 1);
+}
+
+// @kern-source: app-input:125
+/**
+ * Only queue plan mode from Tab when the composer is idle and empty.
+ */
+export function shouldQueuePlanModeOnTab(opts: {replState:string,inputValue:string,activePlanState?:string|null}): boolean {
+  if (opts.replState !== 'idle') {
+    return false;
+  }
+  if (opts.inputValue.trim()) {
+    return false;
+  }
+  if (opts.activePlanState && ['planning', 'awaiting_approval', 'running', 'paused'].includes(opts.activePlanState)) {
+    return false;
+  }
+  return true;
+}
+

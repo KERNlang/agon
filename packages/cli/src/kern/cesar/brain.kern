@@ -14,144 +14,7 @@ import from="./routing.js" names="buildRoutingContext,deriveRoutingHints,shouldS
 import from="./reliability.js" names="readCesarToolReliability,formatCesarReliabilityLine,shouldDowngradeCesarToolWork,buildWhatHappenedSummary"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval"
 import from="./tool-observability.js" names="createCesarTurnId,recordCesarApprovalDecision,recordCesarToolTimeline"
-
-// Yield a macrotask so Ink can paint — await Promise.resolve() is NOT enough
-const name=yieldToInk type="() => Promise<void>" value={{ () => new Promise<void>(resolve => setImmediate(resolve)) }}
-
-const name=splitBeforeToolMarkup type="(text:string) => { visible:string, hasToolMarkup:boolean }"
-  handler <<<
-    (text: string) => {
-      const markers = ['<tool ', '<invoke ', '<tool_call', '<toolcall', '<tool_call_tool>', '<function=', '[TOOL_CALLS]'];
-      const lower = text.toLowerCase();
-      let idx = -1;
-      for (const marker of markers) {
-        const pos = lower.indexOf(marker.toLowerCase());
-        if (pos >= 0 && (idx === -1 || pos < idx)) idx = pos;
-      }
-      if (idx < 0) return { visible: text, hasToolMarkup: false };
-      return { visible: text.slice(0, idx), hasToolMarkup: true };
-    }
-  >>>
-
-const name=XML_TOOL_MARKUP_HOLD_CHARS type=number value=24
-
-fn name=isUserDirectedQuestion params="lastLine:string" returns=boolean export=true
-  doc "True when the last line of a Cesar turn is a question directed at the USER — either keyword-addressed (which/should/want/your call/…) OR an either/or fork ('A, or B?'). Auto-continuation uses this to STOP and wait for the user instead of treating the question as a mid-task stall and re-prompting Cesar (which caused fork questions like 'plan it all, or start with X?' to loop)."
-  handler <<<
-    const last = String(lastLine ?? '').trim();
-    if (!/\?\s*$/.test(last)) return false;
-    const userAddressed = /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|implement|which|what|how|do you|would you|can you|should i|shall i|prefer|pick|choose|decide|option)\b/i.test(last)
-      || /\b(your call|up to you|your decision|let me know|waiting on (?:you|your)|which way|either way)\b/i.test(last);
-    // Either/or fork ("… A, or B?") offers the user a choice → their turn.
-    const isForkChoice = /\bor\b[^?]{0,160}\?\s*$/i.test(last);
-    return userAddressed || isForkChoice;
-  >>>
-
-fn name=detectNarratedToolStall params="text:string" returns=boolean export=true
-  doc "Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling."
-  handler lang="kern"
-    let name=body value="String(text ?? '').trim()"
-    if cond="!body"
-      return value="false"
-    let name=tail value="body.slice(-700)"
-    let name=FAKE_GATE_RE value="/\\b(?:need (?:user )?(?:permission|approval)|await(?:ing)? approval|tool (?:keeps )?blocking me|(?:edit|write|bash|command) tool (?:keeps )?blocking me|blocked by (?:the )?(?:edit|write|bash) tool|let me try writing|try writing the full file|since i(?:'ve| have) already read it)\\b/i"
-    let name=READ_INTENT_RE value="/\\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|see|review|open|view)\\s+[`\"']?[a-zA-Z0-9_./-]+\\.[a-zA-Z]{1,6}[`\"']?/i"
-    let name=SEARCH_INTENT_RE value="/\\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:search|grep|find|look)\\s+(?:for\\s+)?[`\"']?.+?[`\"']?\\s*(?:in\\s+|$)/i"
-    let name=DIR_INTENT_RE value="/\\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:check|see|look at|list|find)\\s+(?:what's in |files in |the )?\\s*[`\"']?[a-zA-Z0-9_./-]+\\/[`\"']?/i"
-    let name=STALL_RE value="/\\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|now (?:let me|i'll)|continu(?:e|ing)|keep (?:reading|investigating|looking)|next[,.]?\\s*(?:i|let)|before (?:i can|proceeding|implementing|deciding))\\b/i"
-    return value="FAKE_GATE_RE.test(tail) || READ_INTENT_RE.test(tail) || SEARCH_INTENT_RE.test(tail) || DIR_INTENT_RE.test(tail) || STALL_RE.test(tail)"
-
-fn name=eagerFailedToolNames params="results:ToolCallResult[]" returns="string[]" export=true
-  doc "Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed."
-  handler lang="kern"
-    let name=names type="string[]" value="[]"
-    each name=result in="results ?? []"
-      if cond="result?.result?.ok"
-        continue
-      let name=name value="String(result?.toolName ?? '').trim()"
-      if cond="name && !names.includes(name)"
-        do value="names.push(name)"
-    return value="names"
-
-fn name=shouldRunEagerRepairTool params="toolName:string,meta:any,failedToolNames:string[],usedToolNames:string[]" returns=boolean export=true
-  doc "Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch."
-  handler <<<
-    const name = String(toolName ?? '').trim();
-    if (!name) return false;
-    if (!failedToolNames.includes(name)) return false;
-    if (usedToolNames.includes(name)) return false;
-    const status = String(meta?.status ?? 'running').toLowerCase();
-    if (status !== 'running' && status !== 'native') return false;
-    if (!meta || !('input' in meta)) return false;
-    return true;
-  >>>
-
-fn name=shouldStopAfterXmlToolCall params="toolName:string" returns=boolean export=true
-  doc "Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet."
-  handler lang="kern"
-    let name=HANDOFF_TOOLS value="new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan'])"
-    return value="HANDOFF_TOOLS.has(String(toolName ?? ''))"
-
-fn name=buildReviewFollowupPrompt params="input:string, ctx:HandlerContext" returns="{ matched: boolean; prompt: string }" export=true
-  doc "Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history."
-  handler lang="kern"
-    let name=trimmed value="input.trim()"
-    let name=match value="trimmed.match(/^fix it(?:\\s+with\\s+([a-z0-9._-]+))?[\\s?!.,;:]*$/i)"
-    let name=review value="ctx.lastReviewResult"
-    if cond="!match || !review"
-      return value="{ matched: false, prompt: input }"
-    let name=ageMs value="Date.now() - Number(review.timestamp ?? 0)"
-    let name=maxAgeMs value="30 * 60 * 1000"
-    if cond="!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxAgeMs"
-      return value="{ matched: false, prompt: input }"
-    let name=requestedEngine value="match[1]?.toLowerCase()"
-    let name=reviewOutput value="String(review.reviewOutput ?? '').trim()"
-    let name=cappedReview value="reviewOutput.length > 8000 ? `${reviewOutput.slice(0, 8000)}\\n… [review output truncated]` : reviewOutput"
-    let name=label value="String(review.label ?? review.target ?? 'uncommitted changes').trim() || 'uncommitted changes'"
-    let name=prompt value="[ '[REVIEW FOLLOW-UP]', 'The user\\'s \"fix it\" refers to the MOST RECENT code review below.', `Review target: ${label}`, `Review engine: ${String(review.engineId ?? 'unknown')}`, requestedEngine ? `Preferred implementation engine: ${requestedEngine}` : null, 'Do not ask which findings they mean. Address the review findings in the current workspace, prioritizing blocking and important issues first.', '', '## REVIEW FINDINGS', cappedReview || '(review output missing)', '', '## USER FOLLOW-UP', trimmed, ].filter(Boolean).join('\\n')"
-    return value="{ matched: true, prompt }"
-
-fn name=extractDelegation params="toolName:string, args:Record<string,unknown>" returns="PendingDelegation"
-  handler <<<
-    const argsRecord = args as Record<string, unknown>;
-    const taskKindRaw = argsRecord.taskKind;
-    const enginesRaw = argsRecord.engines;
-    const reviewEngines = toolName.toLowerCase() === 'review'
-      ? Array.isArray(enginesRaw)
-        ? (enginesRaw as unknown[]).map((id) => String(id).trim().toLowerCase()).filter(Boolean)
-        : typeof argsRecord.engine === 'string'
-          ? (argsRecord.engine as string).split(/[,\s]+/).map((id) => id.trim().toLowerCase()).filter(Boolean)
-          : []
-      : [];
-    const delegatedTask = (argsRecord.task ?? argsRecord.question ?? argsRecord.topic ?? argsRecord.target ?? argsRecord.intent ?? '') as string;
-    return {
-      action: toolName.toLowerCase(),
-      task: delegatedTask,
-      reasoning: delegatedTask,
-      scope: (argsRecord.scope === 'slice' || argsRecord.scope === 'full') ? argsRecord.scope as 'slice' | 'full' : undefined,
-      fitnessCmd: typeof argsRecord.fitnessCmd === 'string'
-        ? (argsRecord.fitnessCmd as string)
-        : typeof argsRecord.fitness === 'string'
-          ? (argsRecord.fitness as string)
-          : undefined,
-      hardened: (argsRecord.hardened as boolean) ?? false,
-      tribunalMode: argsRecord.mode as string | undefined,
-      team: (argsRecord.team as boolean) ?? false,
-      target: argsRecord.target as string | undefined,
-      engineId: reviewEngines[0] ?? argsRecord.engine as string | undefined,
-      // Phase 4: Agent tool args
-      engines: Array.isArray(enginesRaw) ? (enginesRaw as string[]) : reviewEngines.length > 0 ? reviewEngines : undefined,
-      taskKind: (taskKindRaw === 'investigate' ? 'investigate' : (taskKindRaw === 'edit' ? 'edit' : undefined)) as 'edit' | 'investigate' | undefined,
-      maxTurns: typeof argsRecord.maxTurns === 'number' ? (argsRecord.maxTurns as number) : undefined,
-      queue: typeof argsRecord.queue === 'string' ? (argsRecord.queue as string) : undefined,
-      gate: typeof argsRecord.gate === 'string' ? (argsRecord.gate as string) : undefined,
-      push: (argsRecord.push as boolean) ?? undefined,
-      pr: (argsRecord.pr as boolean) ?? undefined,
-      maxHours: typeof argsRecord.maxHours === 'number' ? (argsRecord.maxHours as number) : undefined,
-      budget: typeof argsRecord.budget === 'number' ? (argsRecord.budget as number) : undefined,
-      createdAt: Date.now(),
-    };
-  >>>
+import from="./brain-helpers.js" names="yieldToInk,splitBeforeToolMarkup,XML_TOOL_MARKUP_HOLD_CHARS,isUserDirectedQuestion,detectNarratedToolStall,eagerFailedToolNames,shouldRunEagerRepairTool,shouldStopAfterXmlToolCall,buildReviewFollowupPrompt,extractDelegation"
 
 fn name=commitTurnAndDelegate async=true params="pendingDel:PendingDelegation, input:string, response:string, cesarEngineId:string, streaming:boolean, dispatch:Dispatch, ctx:HandlerContext, telemetry?:Record<string,unknown>" returns="Promise<CesarTurnOutcome>"
   handler lang="kern"
@@ -445,6 +308,12 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       let sawStreamingXmlToolCall = false;
       let xmlDisplayHold = '';
       let hadToolActivity = false; // tracks if native tool calls were shown to user
+      // Engine-failure tracking: when a send yields an `error` chunk or returns
+      // empty (overflow, rate limit, content filter, dead session), capture the
+      // REAL reason so the auto-continue loop surfaces it instead of swallowing
+      // it into '[No response from engine]' and spinning the canned closure.
+      let _engineErrored = false;
+      let _engineErrorMsg = '';
     let secondOpinionPromise: Promise<any> | null = null;
     let usedQuickNero = false;
       const eagerPromises: Promise<ToolCallResult>[] = [];
@@ -731,6 +600,20 @@ ${reviewFollowup.prompt}`;
 
           if (chunk.type === 'status') {
             const statusText = String(chunk.content ?? '');
+            // Live context gauge: surface as a context-usage event for the status
+            // strip; don't overwrite the spinner with it.
+            const _ctxMeta = (chunk.metadata ?? {}) as Record<string, unknown>;
+            if (_ctxMeta.kind === 'context-usage') {
+              dispatch({
+                type: 'context-usage',
+                pct: Number(_ctxMeta.pct ?? 0),
+                used: Number(_ctxMeta.used ?? 0),
+                limit: Number(_ctxMeta.limit ?? 0),
+                compacted: Number(_ctxMeta.compacted ?? 0),
+                cached: Number(_ctxMeta.cached ?? 0),
+              } as any);
+              continue;
+            }
             if (/auto-executing\b/i.test(statusText)) {
               _autoToolExecutions++;
             }
@@ -1275,10 +1158,14 @@ ${reviewFollowup.prompt}`;
                     typeof meta.output === 'string' ? meta.output : undefined,
                   );
                 }
+                if (chunk.type === 'error' && !nextResponse.trim()) {
+                  _engineErrored = true;
+                  _engineErrorMsg = String(chunk.content ?? '').slice(0, 300);
+                }
                 if (chunk.type === 'done' || chunk.type === 'error') break;
               }
               dispatch({ type: 'spinner-stop' });
-              if (!nextResponse.trim()) return '[No response from engine]';
+              if (!nextResponse.trim()) return _engineErrorMsg ? `[Engine error: ${_engineErrorMsg}]` : '[No response from engine]';
               return nextResponse.trim();
             },
             response, toolCtx, toolRegistry,
@@ -1770,6 +1657,7 @@ ${reviewFollowup.prompt}`;
         && !ctx.cesar!.pendingDelegation
         && session.alive
         && !abort.signal.aborted
+        && !_engineErrored
         && response.trim().length > 0;
       if (_shouldAutoContinue) {
         const MAX_CONTINUATIONS = 5;
@@ -1814,14 +1702,28 @@ ${reviewFollowup.prompt}`;
             for await (const chunk of contGen) {
               if (abort.signal.aborted) break;
               if (chunk.type === 'text') contResponse += chunk.content;
+              if (chunk.type === 'error' && !contResponse.trim()) {
+                _engineErrored = true;
+                _engineErrorMsg = String(chunk.content ?? '').slice(0, 300);
+              }
               if (chunk.type === 'done' || chunk.type === 'error') break;
             }
-          } catch {
+          } catch (contErr) {
             dispatch({ type: 'spinner-stop' });
+            _engineErrored = true;
+            _engineErrorMsg = contErr instanceof Error ? contErr.message : String(contErr);
             break;
           }
           dispatch({ type: 'spinner-stop' });
           const cleanCont = contResponse.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+          // Engine failed to produce a continuation (overflow / rate limit / dead
+          // session). Surface the REAL reason and stop — don't keep nudging into
+          // the misleading canned "paused mid-task" closure (the spin bug).
+          if (_engineErrored) {
+            const _reason = _engineErrorMsg || 'no response';
+            dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) stopped — engine did not respond: ${_reason.slice(0, 160)}. Try again, /compact, or switch engine with /engine.` });
+            break;
+          }
           if (!cleanCont) break;
           // Handoff check — let delegation tool calls short-circuit out of the loop
           try {
@@ -1849,10 +1751,14 @@ ${reviewFollowup.prompt}`;
                     });
                     for await (const chunk of gen) {
                       if (chunk.type === 'text') nextResp += chunk.content;
+                      if (chunk.type === 'error' && !nextResp.trim()) {
+                        _engineErrored = true;
+                        _engineErrorMsg = String(chunk.content ?? '').slice(0, 300);
+                      }
                       if (chunk.type === 'done' || chunk.type === 'error') break;
                     }
                     dispatch({ type: 'spinner-stop' });
-                    return nextResp.trim() || '[No response from engine]';
+                    return nextResp.trim() || (_engineErrorMsg ? `[Engine error: ${_engineErrorMsg}]` : '[No response from engine]');
                   },
                   cleanCont, toolCtx, toolRegistry, _buildContToolLoopOpts(),
                 );
@@ -1896,7 +1802,14 @@ ${reviewFollowup.prompt}`;
         // (cap or no-progress) while still 'stuck' — no done/asks-user signal — force
         // one short closing line so the user always knows the state: done, blocked, or
         // a decision they must make. Deterministic fallback if the engine stays silent.
-        if (_detectTurnState(response, _loopStartToolCount) === 'stuck'
+        // BUT if the engine is erroring (overflow/rate-limit/dead session), the
+        // closure send will also fail — don't paper over it with a fake "paused
+        // mid-task" line; the in-loop error warning already named the real reason.
+        if (_engineErrored) {
+          const _errLine = `Engine ${cesarEngineId} stopped responding (${(_engineErrorMsg || 'no response').slice(0, 120)}). Nothing was lost — re-prompt, /compact to shrink context, or /engine to switch.`;
+          dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _errLine });
+          response = response + '\n\n' + _errLine;
+        } else if (_detectTurnState(response, _loopStartToolCount) === 'stuck'
           && session.alive && !abort.signal.aborted && !ctx.cesar!.pendingDelegation) {
           dispatch({ type: 'spinner-start', message: 'Cesar wrapping up…', color });
           let _closure = '';
@@ -1913,13 +1826,24 @@ ${reviewFollowup.prompt}`;
             for await (const _chunk of _closureGen) {
               if (abort.signal.aborted) break;
               if (_chunk.type === 'text') _closure += _chunk.content;
+              if (_chunk.type === 'error' && !_closure.trim()) {
+                _engineErrored = true;
+                _engineErrorMsg = String(_chunk.content ?? '').slice(0, 300);
+              }
               if (_chunk.type === 'done' || _chunk.type === 'error') break;
             }
-          } catch { /* best effort — fallback below still guarantees closure */ }
+          } catch (closureErr) {
+            _engineErrored = true;
+            _engineErrorMsg = closureErr instanceof Error ? closureErr.message : String(closureErr);
+          }
           dispatch({ type: 'spinner-stop' });
           const _cleanClosure = _closure.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+          // If even this one-line closure send came back empty, the engine is not
+          // responding — say THAT, not a fabricated "I paused mid-task" line.
           const _finalClosure = _cleanClosure
-            || 'I paused mid-task without finishing, and I am not blocked on anything specific from you. Re-prompt me with the next step, or say "continue" to keep going.';
+            || (_engineErrored
+              ? `Engine ${cesarEngineId} stopped responding (${(_engineErrorMsg || 'no response').slice(0, 120)}). Re-prompt, /compact to shrink context, or /engine to switch.`
+              : 'I paused mid-task without finishing, and I am not blocked on anything specific from you. Re-prompt me with the next step, or say "continue" to keep going.');
           dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _finalClosure });
           response = response + '\n\n' + _finalClosure;
         }

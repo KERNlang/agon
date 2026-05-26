@@ -23,7 +23,7 @@ fn name=estimateCost params="engineId:string, tokens:number, model?:string" retu
     let name=MODEL_COST type="Record<string, number>" value="{ 'claude-opus-4-6': 45.00, 'claude-sonnet-4-6': 9.00, 'claude-haiku-4-5': 2.00, 'gpt-4.1': 6.00, 'gpt-4.1-mini': 1.20, 'gpt-4.1-nano': 0.30, 'gemini-2.5-pro': 5.00, 'gemini-2.5-flash': 0.60, 'o3': 30.00, 'o4-mini': 2.80, }"
     if cond="model && MODEL_COST[model]"
       return value="(tokens / 1000000) * MODEL_COST[model]"
-    let name=ENGINE_COST type="Record<string, number>" value="{ claude: 9.00, codex: 5.00, gemini: 1.25, ollama: 0.00, aider: 9.00, openrouter: 3.00, qwen: 0.50, mistral: 0.50, opencode: 5.00, }"
+    let name=ENGINE_COST type="Record<string, number>" value="{ claude: 9.00, codex: 5.00, agy: 1.25, ollama: 0.00, aider: 9.00, openrouter: 3.00, qwen: 0.50, mistral: 0.50, opencode: 5.00, }"
     let name=rate value="ENGINE_COST[engineId] ?? 2.00"
     return value="(tokens / 1000000) * rate"
 

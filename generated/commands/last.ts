@@ -1,0 +1,71 @@
+// @kern-source: last:15
+import { defineCommand } from 'citty';
+
+// @kern-source: last:16
+import { findLatestRunDir, ensureAgonHome } from '@agon/core';
+
+// @kern-source: last:17
+import { readFileSync, existsSync } from 'node:fs';
+
+// @kern-source: last:18
+import { join } from 'node:path';
+
+// @kern-source: last:20
+export const lastCommand: any = defineCommand({
+  meta: {
+    name: 'last',
+    description: 'Print the path of the most recent run directory (orchestrators: composes with cat/jq)',
+  },
+  args: {
+    engine: {
+      type: 'string',
+      alias: 'e',
+      description: 'Restrict to the most recent run that contains <engineId>-output.txt',
+    },
+    mode: {
+      type: 'string',
+      alias: 'm',
+      description: 'Restrict to the most recent run of a specific mode (brainstorm|forge|tribunal|campfire|review)',
+    },
+    status: {
+      type: 'boolean',
+      description: 'Print status.json contents instead of the path. Exits 1 if status.json is absent.',
+    },
+  },
+  run({ args }) {
+    ensureAgonHome();
+    const filter: { mode?: string; engineId?: string } = {};
+    if (args.mode) filter.mode = String(args.mode).trim();
+    if (args.engine) filter.engineId = String(args.engine).trim();
+    const dir = findLatestRunDir(
+      (filter.mode || filter.engineId) ? filter : undefined,
+    );
+    if (!dir) {
+      process.stderr.write(
+        filter.mode || filter.engineId
+          ? `agon last: no run matches the given filters\n`
+          : `agon last: no runs found in ~/.agon/runs\n`,
+      );
+      process.exit(1);
+      return;
+    }
+    if (args.status) {
+      const statusPath = join(dir, 'status.json');
+      if (!existsSync(statusPath)) {
+        process.stderr.write(`agon last: ${dir}/status.json is missing — run may have crashed before finalizing\n`);
+        process.exit(1);
+        return;
+      }
+      try {
+        process.stdout.write(readFileSync(statusPath, 'utf-8'));
+      } catch (err) {
+        process.stderr.write(`agon last: failed to read ${statusPath}: ${err instanceof Error ? err.message : String(err)}\n`);
+        process.exit(1);
+        return;
+      }
+      return;
+    }
+    process.stdout.write(dir + '\n');
+  },
+});
+

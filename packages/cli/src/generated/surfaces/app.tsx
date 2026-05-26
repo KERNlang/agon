@@ -335,6 +335,30 @@ export function App() {
       }
     };
   }, []);
+  const [cesarContext, _setCesarContextRaw] = useState<{pct:number,used:number,limit:number,compacted:number,cached:number}|null>(null);
+  const setCesarContext = useMemo(() => {
+    let _lastCall = 0;
+    let _pendingValue: React.SetStateAction<{pct:number,used:number,limit:number,compacted:number,cached:number}|null>;
+    let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
+    return (value: React.SetStateAction<{pct:number,used:number,limit:number,compacted:number,cached:number}|null>) => {
+      const now = Date.now();
+      const elapsed = now - _lastCall;
+      if (elapsed >= 200) {
+        _lastCall = now;
+        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
+        setTimeout(() => _setCesarContextRaw(value), 0);
+      } else {
+        _pendingValue = value;
+        if (!_pendingTimer) {
+          _pendingTimer = setTimeout(() => {
+            _lastCall = Date.now();
+            _pendingTimer = null;
+            _setCesarContextRaw(_pendingValue);
+          }, 200 - elapsed);
+        }
+      }
+    };
+  }, []);
   const [liveScoreboard, _setLiveScoreboardRaw] = useState<Scoreboard|null>(null);
   const setLiveScoreboard = useMemo(() => __inkSafe(_setLiveScoreboardRaw), [_setLiveScoreboardRaw]);
   const [liveRationale, _setLiveRationaleRaw] = useState<ModeRationale|null>(null);
@@ -723,6 +747,7 @@ export function App() {
             },
             getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
             setCesarConfidence,
+            setCesarContext,
             setLiveScoreboard: (val: Scoreboard | null) => setLiveScoreboard(val),
             setLiveRationale: (val: ModeRationale | null) => setLiveRationale(val),
             setAgentProgress: (updater: Record<string,AgentProgressSnapshot> | ((prev: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => {
@@ -1229,7 +1254,7 @@ export function App() {
     let providerFilter = '';
     if (engineId === 'claude' || env.includes('anthropic') || baseUrl.includes('anthropic') || display.includes('anthropic')) providerFilter = 'provider:anthropic';
     else if (engineId === 'codex' || env.includes('openai') || baseUrl.includes('openai') || display.includes('openai')) providerFilter = 'provider:openai';
-    else if (engineId === 'gemini' || env.includes('google') || baseUrl.includes('google') || display.includes('google')) providerFilter = 'provider:google';
+    else if (engineId === 'agy' || engineId === 'antigravity' || env.includes('google') || baseUrl.includes('google') || display.includes('google') || display.includes('antigravity')) providerFilter = 'provider:google';
     else if (engineId === 'openrouter' || env.includes('openrouter') || baseUrl.includes('openrouter')) providerFilter = 'provider:openrouter';
     else if (engineId === 'mistral' || display.includes('mistral')) providerFilter = 'provider:mistral';
     else if (engineId === 'qwen' || display.includes('qwen')) providerFilter = 'provider:qwen';
@@ -2289,7 +2314,7 @@ export function App() {
         {(() => {
           const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>
-            <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
+            <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
             {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} telemetryVitals={telemetryVitals} />}
           </>);
         })()}
@@ -2384,7 +2409,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:82
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2102
+// @kern-source: app:2104
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

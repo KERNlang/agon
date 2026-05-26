@@ -1,0 +1,165 @@
+// @kern-source: brain-helpers:5
+import type { ToolCallResult } from '@agon/core';
+
+// @kern-source: brain-helpers:6
+import type { HandlerContext, PendingDelegation } from '../../handlers/types.js';
+
+// @kern-source: brain-helpers:9
+export const yieldToInk: () => Promise<void> = () => new Promise<void>(resolve => setImmediate(resolve));
+
+// @kern-source: brain-helpers:11
+export const splitBeforeToolMarkup: (text:string) => { visible:string, hasToolMarkup:boolean } = (text: string) => {
+  const markers = ['<tool ', '<invoke ', '<tool_call', '<toolcall', '<tool_call_tool>', '<function=', '[TOOL_CALLS]'];
+  const lower = text.toLowerCase();
+  let idx = -1;
+  for (const marker of markers) {
+    const pos = lower.indexOf(marker.toLowerCase());
+    if (pos >= 0 && (idx === -1 || pos < idx)) idx = pos;
+  }
+  if (idx < 0) return { visible: text, hasToolMarkup: false };
+  return { visible: text.slice(0, idx), hasToolMarkup: true };
+};
+
+// @kern-source: brain-helpers:26
+export const XML_TOOL_MARKUP_HOLD_CHARS: number = 24;
+
+// @kern-source: brain-helpers:28
+/**
+ * True when the last line of a Cesar turn is a question directed at the USER — either keyword-addressed (which/should/want/your call/…) OR an either/or fork ('A, or B?'). Auto-continuation uses this to STOP and wait for the user instead of treating the question as a mid-task stall and re-prompting Cesar (which caused fork questions like 'plan it all, or start with X?' to loop).
+ */
+export function isUserDirectedQuestion(lastLine: string): boolean {
+  const last = String(lastLine ?? '').trim();
+  if (!/\?\s*$/.test(last)) return false;
+  const userAddressed = /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|implement|which|what|how|do you|would you|can you|should i|shall i|prefer|pick|choose|decide|option)\b/i.test(last)
+    || /\b(your call|up to you|your decision|let me know|waiting on (?:you|your)|which way|either way)\b/i.test(last);
+  // Either/or fork ("… A, or B?") offers the user a choice → their turn.
+  const isForkChoice = /\bor\b[^?]{0,160}\?\s*$/i.test(last);
+  return userAddressed || isForkChoice;
+}
+
+// @kern-source: brain-helpers:40
+/**
+ * Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling.
+ */
+export function detectNarratedToolStall(text: string): boolean {
+  const body = String(text ?? '').trim();
+  if (!body) {
+    return false;
+  }
+  const tail = body.slice(-700);
+  const FAKE_GATE_RE = /\b(?:need (?:user )?(?:permission|approval)|await(?:ing)? approval|tool (?:keeps )?blocking me|(?:edit|write|bash|command) tool (?:keeps )?blocking me|blocked by (?:the )?(?:edit|write|bash) tool|let me try writing|try writing the full file|since i(?:'ve| have) already read it)\b/i;
+  const READ_INTENT_RE = /\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|see|review|open|view)\s+[`"']?[a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6}[`"']?/i;
+  const SEARCH_INTENT_RE = /\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:search|grep|find|look)\s+(?:for\s+)?[`"']?.+?[`"']?\s*(?:in\s+|$)/i;
+  const DIR_INTENT_RE = /\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:check|see|look at|list|find)\s+(?:what's in |files in |the )?\s*[`"']?[a-zA-Z0-9_./-]+\/[`"']?/i;
+  const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|now (?:let me|i'll)|continu(?:e|ing)|keep (?:reading|investigating|looking)|next[,.]?\s*(?:i|let)|before (?:i can|proceeding|implementing|deciding))\b/i;
+  return FAKE_GATE_RE.test(tail) || READ_INTENT_RE.test(tail) || SEARCH_INTENT_RE.test(tail) || DIR_INTENT_RE.test(tail) || STALL_RE.test(tail);
+}
+
+// @kern-source: brain-helpers:54
+/**
+ * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
+ */
+export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
+  const names: string[] = [];
+  for (const result of results ?? []) {
+    if (result?.result?.ok) {
+      continue;
+    }
+    const name = String(result?.toolName ?? '').trim();
+    if (name && !names.includes(name)) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+// @kern-source: brain-helpers:66
+/**
+ * Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch.
+ */
+export function shouldRunEagerRepairTool(toolName: string, meta: any, failedToolNames: string[], usedToolNames: string[]): boolean {
+  const name = String(toolName ?? '').trim();
+  if (!name) return false;
+  if (!failedToolNames.includes(name)) return false;
+  if (usedToolNames.includes(name)) return false;
+  const status = String(meta?.status ?? 'running').toLowerCase();
+  if (status !== 'running' && status !== 'native') return false;
+  if (!meta || !('input' in meta)) return false;
+  return true;
+}
+
+// @kern-source: brain-helpers:79
+/**
+ * Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet.
+ */
+export function shouldStopAfterXmlToolCall(toolName: string): boolean {
+  const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan']);
+  return HANDOFF_TOOLS.has(String(toolName ?? ''));
+}
+
+// @kern-source: brain-helpers:85
+/**
+ * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
+ */
+export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
+  const trimmed = input.trim();
+  const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
+  const review = ctx.lastReviewResult;
+  if (!match || !review) {
+    return { matched: false, prompt: input };
+  }
+  const ageMs = Date.now() - Number(review.timestamp ?? 0);
+  const maxAgeMs = 30 * 60 * 1000;
+  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxAgeMs) {
+    return { matched: false, prompt: input };
+  }
+  const requestedEngine = match[1]?.toLowerCase();
+  const reviewOutput = String(review.reviewOutput ?? '').trim();
+  const cappedReview = (reviewOutput.length > 8000) ? `${reviewOutput.slice(0, 8000)}\n… [review output truncated]` : reviewOutput;
+  const label = String(review.label ?? review.target ?? 'uncommitted changes').trim() || 'uncommitted changes';
+  const prompt = ['[REVIEW FOLLOW-UP]', 'The user\'s "fix it" refers to the MOST RECENT code review below.', `Review target: ${label}`, `Review engine: ${String(review.engineId ?? 'unknown')}`, requestedEngine ? `Preferred implementation engine: ${requestedEngine}` : null, 'Do not ask which findings they mean. Address the review findings in the current workspace, prioritizing blocking and important issues first.', '', '## REVIEW FINDINGS', cappedReview || '(review output missing)', '', '## USER FOLLOW-UP', trimmed].filter(Boolean).join('\n');
+  return { matched: true, prompt: prompt };
+}
+
+// @kern-source: brain-helpers:104
+export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
+  const argsRecord = args as Record<string, unknown>;
+  const taskKindRaw = argsRecord.taskKind;
+  const enginesRaw = argsRecord.engines;
+  const reviewEngines = toolName.toLowerCase() === 'review'
+    ? Array.isArray(enginesRaw)
+      ? (enginesRaw as unknown[]).map((id) => String(id).trim().toLowerCase()).filter(Boolean)
+      : typeof argsRecord.engine === 'string'
+        ? (argsRecord.engine as string).split(/[,\s]+/).map((id) => id.trim().toLowerCase()).filter(Boolean)
+        : []
+    : [];
+  const delegatedTask = (argsRecord.task ?? argsRecord.question ?? argsRecord.topic ?? argsRecord.target ?? argsRecord.intent ?? '') as string;
+  return {
+    action: toolName.toLowerCase(),
+    task: delegatedTask,
+    reasoning: delegatedTask,
+    scope: (argsRecord.scope === 'slice' || argsRecord.scope === 'full') ? argsRecord.scope as 'slice' | 'full' : undefined,
+    fitnessCmd: typeof argsRecord.fitnessCmd === 'string'
+      ? (argsRecord.fitnessCmd as string)
+      : typeof argsRecord.fitness === 'string'
+        ? (argsRecord.fitness as string)
+        : undefined,
+    hardened: (argsRecord.hardened as boolean) ?? false,
+    tribunalMode: argsRecord.mode as string | undefined,
+    team: (argsRecord.team as boolean) ?? false,
+    target: argsRecord.target as string | undefined,
+    engineId: reviewEngines[0] ?? argsRecord.engine as string | undefined,
+    // Phase 4: Agent tool args
+    engines: Array.isArray(enginesRaw) ? (enginesRaw as string[]) : reviewEngines.length > 0 ? reviewEngines : undefined,
+    taskKind: (taskKindRaw === 'investigate' ? 'investigate' : (taskKindRaw === 'edit' ? 'edit' : undefined)) as 'edit' | 'investigate' | undefined,
+    maxTurns: typeof argsRecord.maxTurns === 'number' ? (argsRecord.maxTurns as number) : undefined,
+    queue: typeof argsRecord.queue === 'string' ? (argsRecord.queue as string) : undefined,
+    gate: typeof argsRecord.gate === 'string' ? (argsRecord.gate as string) : undefined,
+    push: (argsRecord.push as boolean) ?? undefined,
+    pr: (argsRecord.pr as boolean) ?? undefined,
+    maxHours: typeof argsRecord.maxHours === 'number' ? (argsRecord.maxHours as number) : undefined,
+    budget: typeof argsRecord.budget === 'number' ? (argsRecord.budget as number) : undefined,
+    createdAt: Date.now(),
+  };
+}
+

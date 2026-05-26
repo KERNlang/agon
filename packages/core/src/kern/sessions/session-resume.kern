@@ -364,6 +364,16 @@ Respond with ONLY the summary, no preamble.`;
             const cachedCount = toolCacheManifest.length;
             const compactedCount = compactionSummary?.messagesCompacted ?? 0;
 
+            // Surface the live context gauge to the UI EVERY turn (not just when
+            // tight) via a metadata-tagged status chunk. The orchestrator turns
+            // this into a `context-usage` event the status strip renders, so the
+            // user can SEE window occupancy instead of it only going to the model.
+            yield {
+              type: 'status' as const,
+              content: `context ${ctxPct}%`,
+              metadata: { kind: 'context-usage', pct: ctxPct, used: ctxTokens, limit: CONTEXT_LIMIT, compacted: compactedCount, cached: cachedCount },
+            };
+
             if (ctxPct > 60 || compactedCount > 0) {
               const statusParts: string[] = [
                 `[Context: ${ctxPct}% used (${ctxTokens}/${CONTEXT_LIMIT} tokens)]`,
@@ -417,6 +427,27 @@ Respond with ONLY the summary, no preamble.`;
           let repeatedReadOnlyRetrySteps = 0;
           let readOnlyLoopRecoveryUsed = false;
           let lastReadOnlySignature = '';
+          // One-shot emergency recovery: if a request fails with an overflow-shaped
+          // error, hard-trim history once and retry the same step instead of
+          // surfacing an empty response (the spin trigger). Token estimates can be
+          // wrong; this is the backstop when proactive compaction under-shot.
+          let emergencyTrimmed = false;
+          const OVERFLOW_RE = /context|too\s*long|maximum\s+context|context_length|too many tokens|exceeds?\b.*(context|token)|reduce the length|input is too large|413|payload too large/i;
+          const emergencyTrim = (): boolean => {
+            const hasSystem = messageHistory[0]?.role === 'system';
+            const sys = hasSystem ? [messageHistory[0]] : [];
+            const keepLast = 6; // keep the most recent few messages verbatim
+            if (messageHistory.length - sys.length <= keepLast) return false;
+            const recent = messageHistory.slice(-keepLast);
+            const droppedCount = messageHistory.length - sys.length - recent.length;
+            messageHistory.length = 0;
+            messageHistory.push(
+              ...sys,
+              { role: 'user' as const, content: `[Emergency context trim — ${droppedCount} older messages dropped after an overflow error. Ask if you need detail from earlier.]` },
+              ...recent,
+            );
+            return true;
+          };
 
           // ── Solo-coding gate: track investigation vs write behavior ──
           // Architecture, not prompts: block writes that skip investigation
@@ -445,6 +476,7 @@ Respond with ONLY the summary, no preamble.`;
           while (step < budget) {
             step++;
             let fullResponse = '';
+            let lastStderr = ''; // captured non-throwing error from the dispatch result
             let lastDispatchParts: any[] | undefined; // Structured parts from dispatch
 
             // ── Status update so the UI shows activity during API tool loops ──
@@ -465,8 +497,13 @@ Respond with ONLY the summary, no preamble.`;
                     lastDispatchParts = result.parts;
                   }
                   if (result?.stderr) {
+                    lastStderr = String(result.stderr);
                     if (fullResponse.length === 0) {
-                      yield { type: 'error' as const, content: result.stderr };
+                      // Don't surface yet — the empty-response block below decides
+                      // whether to recover (overflow) or surface the error.
+                      if (!OVERFLOW_RE.test(lastStderr) || emergencyTrimmed) {
+                        yield { type: 'error' as const, content: result.stderr };
+                      }
                     } else {
                       console.warn(`[agon] API warning (response preserved): ${result.stderr.slice(0, 200)}`);
                     }
@@ -479,6 +516,16 @@ Respond with ONLY the summary, no preamble.`;
             } catch (err: any) {
               // Retry once on stream failure before giving up — but only if we have NO output
               if (fullResponse.length === 0) {
+                const errText = String(err?.message ?? err);
+                // Overflow-shaped failure → emergency-trim history once and retry,
+                // so the turn recovers instead of yielding an empty response that
+                // makes the orchestrator spin the canned "paused mid-task" closure.
+                if (!emergencyTrimmed && OVERFLOW_RE.test(errText) && emergencyTrim()) {
+                  emergencyTrimmed = true;
+                  yield { type: 'status' as const, content: 'context overflow — trimmed history, retrying…' };
+                  step--; // retry the same step with the trimmed history
+                  continue;
+                }
                 if (step === 1) {
                   yield { type: 'error' as const, content: `API stream failed, retrying… (${err.message ?? String(err)})` };
                   await new Promise(r => setTimeout(r, 1000));
@@ -498,11 +545,21 @@ Respond with ONLY the summary, no preamble.`;
             }
 
             if (!fullResponse) {
+              // Overflow returned as a non-throwing error (e.g. provider 400 in
+              // stderr) → emergency-trim once and retry, same as the throw path.
+              if (!emergencyTrimmed && OVERFLOW_RE.test(lastStderr) && emergencyTrim()) {
+                emergencyTrimmed = true;
+                yield { type: 'status' as const, content: 'context overflow — trimmed history, retrying…' };
+                step--;
+                continue;
+              }
               // Empty response after successful stream: usually means the model returned
               // an empty completion (rate limit, content filter, or format mismatch — common
               // with Kimi/ZAI when tool-use format doesn't line up). Surface it so the
               // upper layer can warn the user instead of silently breaking.
-              yield { type: 'error' as const, content: 'Engine returned an empty response (possible rate limit, content filter, or tool-format mismatch).' };
+              yield { type: 'error' as const, content: lastStderr && OVERFLOW_RE.test(lastStderr)
+                ? `Engine context overflow could not be recovered: ${lastStderr.slice(0, 160)}`
+                : 'Engine returned an empty response (possible rate limit, content filter, or tool-format mismatch).' };
               break;
             }
 

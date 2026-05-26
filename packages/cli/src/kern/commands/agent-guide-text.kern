@@ -5,7 +5,7 @@
 // whose tool schemas load into context on every turn.
 
 fn name=agentGuideMarkdown returns=string export=true
-  doc "Compact how-to-call-agon overview for any external engine (Codex, Gemini, Claude, OpenCode)."
+  doc "Compact how-to-call-agon overview for any external engine (Codex, Antigravity, Claude, OpenCode)."
   handler <<<
     return [
       '# How to call Agon',
@@ -23,7 +23,7 @@ fn name=agentGuideMarkdown returns=string export=true
       '- `agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"` — autonomous controller: drives a task queue to completion unattended, looping build -> witness -> gate -> review (panel + judge) -> fix -> commit per task on a goal/ branch. Bound it with `--max-hours`/`--budget`; `--push` pushes each task. Long-running (designed for 8-24h).',
       '',
       '## Common flags',
-      '- `--engines claude,codex,gemini` — limit which engines compete',
+      '- `--engines claude,codex,agy` — limit which engines compete',
       '- `--timeout <sec>` — per-engine timeout',
       '',
       '## Machine-readable output',
@@ -48,7 +48,7 @@ fn name=agentGuideMarkdown returns=string export=true
   >>>
 
 fn name=agonShim params="format:string" returns=string export=true
-  doc "Per-CLI /agon slash-command shim. format is one of gemini | claude | markdown."
+  doc "Per-CLI /agon slash-command shim. format is one of agy | claude | markdown."
   handler <<<
     const body = [
       'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, campfire, review, goal).',
@@ -56,7 +56,7 @@ fn name=agonShim params="format:string" returns=string export=true
       'Call agon with your normal shell/Bash tool — there is no MCP and nothing is loaded until you invoke it.',
     ].join('\n');
 
-    if (format === 'gemini') {
+    if (format === 'agy') {
       return [
         'description = "Use Agon multi-AI orchestration (forge/synthesis/tribunal/brainstorm/review/goal)"',
         'prompt = """',

@@ -8,7 +8,7 @@ import { agentGuideMarkdown } from './agent-guide-text.js';
 export const agentGuideCommand: any = defineCommand({
   meta: {
     name: 'agent-guide',
-    description: 'Print how to call agon — a compact overview for any external engine (Codex, Gemini, Claude, OpenCode)',
+    description: 'Print how to call agon — a compact overview for any external engine (Codex, Antigravity, Claude, OpenCode)',
   },
   args: {
     json: {
@@ -27,7 +27,7 @@ export const agentGuideCommand: any = defineCommand({
           { name: 'review', cmd: 'agon review uncommitted', use: 'multi-engine code review' },
           { name: 'goal', cmd: 'agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"', use: 'autonomously drive a task queue to completion (build->review->fix->commit per task); long-running' },
         ],
-        flags: ['--engines claude,codex,gemini', '--timeout <sec>'],
+        flags: ['--engines claude,codex,agy', '--timeout <sec>'],
         machineReadable: 'agon call <mode> "<input>" [flags] --jsonl',
         results: { lastDir: 'agon last', summary: 'cat "$(agon last)/summary.json"', status: 'agon last --status' },
       }, null, 2) + '\n');

@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 3,
+  "id": "agy",
+  "displayName": "Antigravity (Google)",
+  "binary": "agy",
+  "searchPaths": [
+    "${HOME}/.local/bin",
+    "${HOME}/.npm-global/bin",
+    "/usr/local/bin"
+  ],
+  "versionCmd": ["--version"],
+  "isLocal": false,
+  "tier": "builtin",
+  "installHint": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+  "timeout": 420,
+
+  "exec": {
+    "args": ["--print-timeout", "400s", "--print", "{prompt}", "--dangerously-skip-permissions"]
+  },
+  "review": {
+    "args": ["--print-timeout", "400s", "--print", "{prompt}", "--dangerously-skip-permissions"]
+  },
+  "agent": {
+    "args": ["--print-timeout", "580s", "--print", "{prompt}", "--dangerously-skip-permissions"]
+  },
+
+  "api": {
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "apiKeyEnv": "GOOGLE_API_KEY",
+    "model": "gemini-3.1-pro",
+    "maxTokens": 8192
+  },
+
+  "env": {
+    "GOOGLE_API_KEY": { "required": false }
+  },
+
+  "test": { "args": ["--version"] },
+
+  "cliModels": {
+    "default": "gemini-3.5-flash-high",
+    "list": [
+      { "id": "gemini-3.5-flash-high", "name": "Gemini 3.5 Flash (High)" },
+      { "id": "gemini-3.5-flash-medium", "name": "Gemini 3.5 Flash (Medium)" },
+      { "id": "gemini-3.5-flash-low", "name": "Gemini 3.5 Flash (Low)" },
+      { "id": "gemini-3.1-pro-high", "name": "Gemini 3.1 Pro (High)" },
+      { "id": "gemini-3.1-pro-low", "name": "Gemini 3.1 Pro (Low)" },
+      { "id": "claude-opus-4-6-thinking", "name": "Claude Opus 4.6 (Thinking)" },
+      { "id": "claude-sonnet-4-6-thinking", "name": "Claude Sonnet 4.6 (Thinking)" },
+      { "id": "gpt-oss-120b-medium", "name": "GPT-OSS 120B (Medium)" }
+    ],
+    "dynamicListCmd": ["__pty:/model"]
+  },
+
+  "capabilities": ["vision"]
+}

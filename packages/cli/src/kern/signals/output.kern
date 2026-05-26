@@ -58,6 +58,7 @@ interface name=OutputActions
   field name=flushStream type="() => void"
   field name=getEngineColor type="(engineId:string) => number"
   field name=setCesarConfidence type="(val:number|null) => void"
+  field name=setCesarContext type="(val:{pct:number,used:number,limit:number,compacted:number,cached:number}|null) => void"
   field name=setLiveScoreboard type="(val:any) => void"
   field name=setLiveRationale type="(val:any) => void"
   field name=setAgentProgress type="(updater:Record<string,AgentProgressSnapshot> | ((prev:Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => void"
@@ -229,7 +230,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       'tool-call', 'clear',
       'spinner-start', 'spinner-stop', 'spinner-update',
       'progress-update', 'progress-clear',
-      'confidence-update',
+      'confidence-update', 'context-usage',
       'streaming-chunk', 'streaming-start',
       'thinking-chunk', 'thinking-start', 'thinking-stop',
       'tool-stream-start', 'tool-stream-chunk', 'tool-stream-end',
@@ -418,6 +419,11 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       }
       case 'confidence-update': {
         actions.setCesarConfidence((event as any).value);
+        return;
+      }
+      case 'context-usage': {
+        const e = event as any;
+        actions.setCesarContext({ pct: e.pct, used: e.used, limit: e.limit, compacted: e.compacted ?? 0, cached: e.cached ?? 0 });
         return;
       }
       case 'agent-step-start': {

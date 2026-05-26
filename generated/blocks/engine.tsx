@@ -1,0 +1,1125 @@
+// @kern-source: engine:3
+import React from 'react';
+
+// @kern-source: engine:4
+import { Box, Text } from 'ink';
+
+// @kern-source: engine:5
+import { parseMarkdownBlocks, cleanEngineOutput } from './markdown.js';
+
+// @kern-source: engine:6
+import type { ContentSegment } from './markdown.js';
+
+// @kern-source: engine:7
+import { parseProseToRichLines } from './rich-text.js';
+
+// @kern-source: engine:8
+import type { RichLine } from './rich-text.js';
+
+// @kern-source: engine:9
+import { ENGINE_COLORS, shortToolPath, isCesarTelemetryLine, formatConfidenceToolLabel } from './output-format.js';
+
+// @kern-source: engine:10
+import { icons } from '../signals/icons.js';
+
+// @kern-source: engine:11
+import type { OutputEvent, EngineProgress } from '../../handlers/types.js';
+
+// @kern-source: engine:12
+import { contentWidth, color256toHex, engineColor, RenderedSegments, RichLineView, DiffLine, SyntaxLine, GradientLine, AnsiLine, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from './rendering.js';
+
+// @kern-source: engine:13
+import { truncateCodeLine } from './markdown.js';
+
+// @kern-source: engine:14
+import { ForgeArena, BrainstormStorm, CampfireFire, TribunalCourt } from './arena.js';
+
+// @kern-source: engine:15
+import { PlanProposalView, PlanExecutionView } from './plan-view.js';
+
+// @kern-source: engine:16
+import { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary } from './engine-helpers.js';
+
+// @kern-source: engine:18
+// ── Module: EngineHelperExports ──
+
+export { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary } from './engine-helpers.js';
+
+// @kern-source: engine:23
+export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const;
+
+// @kern-source: engine:25
+export const LOGO_LINES: string[] = ['    █████╗  ██████╗  ██████╗ ███╗   ██╗', '   ██╔══██╗██╔════╝ ██╔═══██╗████╗  ██║', '   ███████║██║  ███╗██║   ██║██╔██╗ ██║', '   ██╔══██╗██║   ██╗██║   ██║██║╚██╗██║', '   ██║  ██║╚██████╔╝╚██████╔╝██║ ╚████║', '   ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝'];
+
+// @kern-source: engine:27
+export const VERSION: string = '0.1.0';
+
+// @kern-source: engine:34
+export const KERN_VERSION: string = '3.5.3';
+
+// @kern-source: engine:39
+export interface OutputBlock {
+  id: number;
+  event: OutputEvent;
+}
+
+// @kern-source: engine:45
+
+export function EngineProgressView({ engines, mode }: { engines: EngineProgress[]; mode?: string }) {
+        // Use explicit mode if it's an arena mode, otherwise detect from status text
+        const arenaModes = ['forge', 'brainstorm', 'campfire', 'tribunal'];
+        const detected = (mode && arenaModes.includes(mode)) ? mode : (() => {
+          const s = engines[0]?.status ?? '';
+          if (s.startsWith('drafting')) return 'brainstorm';
+          if (s.startsWith('thinking')) return 'campfire';
+          if (['preparing','queued','building'].some(k => s.startsWith(k)) || s.startsWith('done (')) return 'forge';
+          if (s.startsWith('R') || s.startsWith('waiting')) return 'tribunal';
+          return 'default';
+        })();
+  
+        if (detected === 'forge') return <ForgeArena engines={engines} />;
+        if (detected === 'brainstorm') return <BrainstormStorm engines={engines} />;
+        if (detected === 'campfire') return <CampfireFire engines={engines} />;
+        if (detected === 'tribunal') return <TribunalCourt engines={engines} />;
+  
+        // Default: plain list (fallback for unknown modes)
+        return (
+          <Box flexDirection="column">
+            {engines.map((engine: EngineProgress) => (
+              <Box key={engine.id}>
+                <Text color={engine.done ? 'green' : engine.failed ? 'red' : 'yellow'}>
+                  {engine.done ? icons().success : engine.failed ? icons().fail : icons().dotOn}
+                </Text>
+                <Text> </Text>
+                <Box width={14}>
+                  <Text bold color={engineColor(engine.id)}>
+                    {engine.id}
+                  </Text>
+                </Box>
+                <Text dimColor>{engine.status}</Text>
+              </Box>
+            ))}
+          </Box>
+        );
+}
+
+
+// @kern-source: engine:89
+
+export function EngineBlock({ engineId, color, content }: { engineId: string; color: number; content: string }) {
+        const wrapWidth = contentWidth(8);
+        const cleaned = cleanEngineOutput(content);
+        const hexColor = color256toHex(color);
+  
+        if (!cleaned.trim()) {
+          return (
+            <Box flexDirection="column" marginY={0} paddingLeft={2}>
+              <Text color={hexColor}>{'\u250c\u2500\u2500 '}<Text bold>{engineId}</Text></Text>
+              <Text color={hexColor}>{'\u2502 '}<Text dimColor>{'(no response)'}</Text></Text>
+              <Text color={hexColor}>{'\u2514\u2500\u2500'}</Text>
+            </Box>
+          );
+        }
+  
+        const segments = parseMarkdownBlocks(cleaned);
+  
+        return (
+          <Box flexDirection="column" marginY={1} paddingLeft={2}>
+            <Text color={hexColor}>{'\u250c\u2500\u2500 '}<Text bold color={hexColor}>{engineId}</Text></Text>
+            <Text color={hexColor}>{'\u2502'}</Text>
+            <RenderedSegments segments={segments} borderColor={hexColor} wrapWidth={wrapWidth} />
+            <Text color={hexColor}>{'\u2514\u2500\u2500'}</Text>
+          </Box>
+        );
+}
+
+
+// @kern-source: engine:123
+
+export function ConversationalResponse({ engineId, content }: { engineId: string; content: string }) {
+        const wrapWidth = contentWidth(2);
+        const cleaned = cleanEngineOutput(content);
+        if (!cleaned.trim()) return null;
+        const segments = parseMarkdownBlocks(cleaned);
+        const accentColor = color256toHex(ENGINE_COLORS[engineId] ?? 124);
+        return (
+          <Box flexDirection="column" marginTop={1} marginBottom={0} paddingLeft={1}>
+            <Text><Text color={accentColor} bold>{icons().dotOn + ' '}{engineId}</Text></Text>
+            <Text>{' '}</Text>
+            <RenderedSegments segments={segments} borderColor={''} wrapWidth={wrapWidth} />
+          </Box>
+        );
+}
+
+
+// @kern-source: engine:144
+
+export function CesarRecapBlock({ event }: { event: OutputEvent & { type: 'cesar-recap' } }) {
+        const files = Array.isArray((event as any).files) ? (event as any).files : [];
+        const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
+        const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
+        const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
+        const checkpoints = Array.isArray((event as any).checkpoints) ? (event as any).checkpoints : [];
+        const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
+        const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
+        const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
+        const failedTools = Number((event as any).failedTools ?? 0);
+        const statusColor = failedTools > 0 ? '#fbbf24' : '#4ade80';
+        const statusIcon = failedTools > 0 ? icons().warning : icons().success;
+        const change = (event as any).changeSummary ?? { created: 0, edited: 0, read: 0 };
+        const createdCount = Number(change.created ?? 0);
+        const editedCount = Number(change.edited ?? 0);
+        const readCount = Number(change.read ?? 0);
+        const changedTotal = createdCount + editedCount;
+        const changeParts: string[] = [];
+        if (createdCount > 0) changeParts.push(`+${createdCount} created`);
+        if (editedCount > 0) changeParts.push(`~${editedCount} edited`);
+        const verification = Array.isArray((event as any).verification) ? (event as any).verification : [];
+        const changedFiles = files.filter((f: any) => String(f.status) !== 'read');
+        const toolLine = toolSummary.length > 0
+          ? `${(event as any).toolCount ?? toolSummary.length} tools: ${toolSummary.slice(0, 8).join(', ')}${toolSummary.length > 8 ? ', ...' : ''}`
+          : `${(event as any).toolCount ?? 0} tools`;
+        const commandStatus = (status: string) => String(status).toLowerCase() === 'error' ? icons().fail : icons().success;
+        const fileGlyph = (status: string) => status === 'edited' ? 'M' : status === 'created' ? '+' : 'r';
+        return (
+          <Box flexDirection="column" paddingLeft={1} marginTop={1}>
+            <Text color="#f97316" bold>{'\u25c6 Cesar recap'}</Text>
+            <Text>
+              <Text color={statusColor}>{statusIcon}</Text>
+              <Text>{' '}{(event as any).outcome ?? 'Completed'}</Text>
+              <Text dimColor>{' \u00b7 '}{(event as any).mode ?? 'self'}</Text>
+              {confidence ? <Text dimColor>{' \u00b7 '}{confidence}</Text> : null}
+              {seconds ? <Text dimColor>{' \u00b7 '}{seconds}</Text> : null}
+            </Text>
+            {changedTotal > 0 ? (
+              <Text>
+                <Text color="#4ade80" bold>{'  changes: '}</Text>
+                <Text color="#4ade80">{changeParts.join(', ')}</Text>
+                {readCount > 0 ? <Text dimColor>{' · '}{readCount}{' read'}</Text> : null}
+              </Text>
+            ) : (
+              <Text>
+                <Text color="#fbbf24" bold>{'  changes: '}</Text>
+                <Text color="#fbbf24">{'none (explored only)'}</Text>
+                {readCount > 0 ? <Text dimColor>{' · '}{readCount}{' read'}</Text> : null}
+              </Text>
+            )}
+            {verification.length > 0 ? (
+              <Text>
+                <Text dimColor>{'  verified: '}</Text>
+                {verification.map((v: any, i: number) => (
+                  <Text key={`verify-${i}`}>
+                    <Text color={v.ok ? '#4ade80' : '#ef4444'}>{v.ok ? icons().success : icons().fail}</Text>
+                    <Text>{' '}{v.label}</Text>
+                    {i < verification.length - 1 ? <Text dimColor>{' · '}</Text> : null}
+                  </Text>
+                ))}
+              </Text>
+            ) : null}
+            <Text dimColor>{'  '}{toolLine}{failedTools > 0 ? ` · ${failedTools} failed` : ''}</Text>
+            {(event as any).confidenceReasoning ? (
+              <Text italic color="#a8a8a8">{'  why: '}{(event as any).confidenceReasoning}</Text>
+            ) : null}
+            {commands.slice(0, 5).map((cmd: any, index: number) => (
+              <Text key={`cmd-${index}`}>
+                <Text color={String(cmd.status).toLowerCase() === 'error' ? '#ef4444' : '#4ade80'}>{'  '}{commandStatus(cmd.status)}</Text>
+                <Text>{' '}{cmd.label}</Text>
+                <Text dimColor>{' · '}{cmd.command}</Text>
+              </Text>
+            ))}
+            {changedFiles.length > 0 && (
+              <Text dimColor>{'  files: '}{changedFiles.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}{changedFiles.length > 5 ? `, +${changedFiles.length - 5} more` : ''}</Text>
+            )}
+            {checkpoints.length > 0 ? (
+              <Text color="#22d3ee">{'  checkpoint: '}{checkpoints[0].id}{checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''}<Text dimColor>{` · /undo ${checkpoints[0].id} reverts checkpoint`}</Text></Text>
+            ) : null}
+            {diffFiles.slice(0, 4).map((file: any, index: number) => (
+              <Box key={`diff-${index}`} flexDirection="column">
+                <Text>
+                  <Text color="#22d3ee">{'  \u0394 '}{file.relPath ?? file.path}</Text>
+                  <Text dimColor>{' +'}{Number(file.additions ?? 0)}{' -'}{Number(file.deletions ?? 0)}</Text>
+                </Text>
+                {(Array.isArray(file.lines) ? file.lines : []).slice(0, 6).map((line: string, lineIndex: number) => (
+                  <Text key={`diff-line-${index}-${lineIndex}`} color={line.startsWith('+') ? '#4ade80' : line.startsWith('-') ? '#ef4444' : '#fbbf24'} dimColor={line.startsWith('@@')}>
+                    {'    '}{line}
+                  </Text>
+                ))}
+                {Number(file.omitted ?? 0) > 0 ? <Text dimColor>{'    \u2026 '}{Number(file.omitted)}{' more diff lines'}</Text> : null}
+              </Box>
+            ))}
+            {warnings.slice(0, 3).map((warning: string, index: number) => (
+              <Text key={`warn-${index}`} color="#fbbf24">{'  '}{icons().warning}{' '}{warning}</Text>
+            ))}
+          </Box>
+        );
+}
+
+
+// @kern-source: engine:249
+
+export function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }) {
+        return (
+          <Box flexDirection="column" paddingX={1} paddingY={1}>
+            {LOGO_LINES.map((line: string, i: number) => (
+              <GradientLine key={i} text={line} colors={BRAND} />
+            ))}
+            <Text> </Text>
+            <Text italic color="#d4a041">{'     Any AI can join. They compete. You ship.'}</Text>
+            <Text dimColor>{'     v'}{VERSION}{'  ·  Powered by '}<Text bold color="#fbbf24">{'KERNlang.dev'}</Text>{KERN_VERSION ? ` (KERN ${KERN_VERSION})` : ''}</Text>
+            <Text> </Text>
+  
+            <Box>
+              <Text color="#f97316">{'  Engines: '}</Text>
+              {event.enabled.map((id: string, i: number) => (
+                <Text key={id}>
+                  <Text color={engineColor(id)} bold>{id}</Text>
+                  {i < event.enabled.length - 1 && <Text dimColor>{' '}</Text>}
+                </Text>
+              ))}
+              {event.eloTop && (
+                <>
+                  <Text dimColor>{' \u00b7 '}</Text>
+                  <Text color="#fbbf24">{'\u265b '}</Text>
+                  <Text bold color={engineColor(event.eloTop.id)}>{event.eloTop.id}</Text>
+                  <Text dimColor>{' '}{String(event.eloTop.rating)}{' ELO'}</Text>
+                </>
+              )}
+            </Box>
+  
+            <Text> </Text>
+            <Box flexDirection="column">
+              <Box>
+                <Text dimColor>{'  '}</Text>
+                <Text italic dimColor>{'"explain the auth flow"'}</Text>
+                <Text dimColor>{'                      '}</Text>
+                <Text color="#fbbf24">{'\u2192 chat'}</Text>
+              </Box>
+              <Box>
+                <Text dimColor>{'  '}</Text>
+                <Text italic dimColor>{'"codex how would you do this?"'}</Text>
+                <Text dimColor>{'                '}</Text>
+                <Text color="#22d3ee">{'\u2192 codex'}</Text>
+              </Box>
+              <Box>
+                <Text dimColor>{'  '}</Text>
+                <Text italic dimColor>{'"fix login bug, test with npm test"'}</Text>
+                <Text dimColor>{'           '}</Text>
+                <Text color="#f97316">{'\u2192 forge'}</Text>
+              </Box>
+              <Box>
+                <Text dimColor>{'  '}</Text>
+                <Text italic dimColor>{'"should we use REST or GraphQL?"'}</Text>
+                <Text dimColor>{'              '}</Text>
+                <Text color="#a78bfa">{'\u2192 tribunal'}</Text>
+              </Box>
+            </Box>
+            <Text> </Text>
+            <Text dimColor>
+              {'  Just talk, type '}<Text color="#f97316">{'/'}</Text>{' for commands, '}
+              <Text color="#f97316">{'Tab'}</Text>{' plan, '}
+              <Text color="#f97316">{'Ctrl+A'}</Text>{' auto.'}
+            </Text>
+            <Text> </Text>
+          </Box>
+        );
+}
+
+
+// @kern-source: engine:321
+
+function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
+        const widths = headers.map((h: string, i: number) =>
+          Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
+        );
+        return (
+          <Box flexDirection="column" paddingLeft={2} marginY={1}>
+            <Box>
+              {headers.map((h: string, i: number) => (
+                <Box key={h} width={widths[i]}><Text bold>{h}</Text></Box>
+              ))}
+            </Box>
+            <Text dimColor>{'\u2500'.repeat(widths.reduce((a: number, b: number) => a + b, 0))}</Text>
+            {rows.map((row: string[], ri: number) => (
+              <Box key={`row-${ri}-${row[0] ?? ''}`}>
+                {row.map((cell: string, ci: number) => (
+                  <Box key={`${headers[ci]}-${ci}`} width={widths[ci]}><Text>{cell}</Text></Box>
+                ))}
+              </Box>
+            ))}
+          </Box>
+        );
+}
+
+
+// @kern-source: engine:350
+
+export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event: OutputEvent; mode: string; toolOutputExpanded?: boolean; thinkingExpanded?: boolean }) {
+        switch (event.type) {
+          case 'text': {
+            const wrapWidth = contentWidth(4);
+            const richLines = parseProseToRichLines(event.content, wrapWidth);
+            return (
+              <Box flexDirection="column" paddingLeft={2}>
+                {richLines.map((line: RichLine, i: number) => <RichLineView key={`text-${i}`} line={line} />)}
+              </Box>
+            );
+          }
+          case 'user-message': return (
+            <Box paddingLeft={1} marginTop={1} marginBottom={0} flexDirection="row">
+              <Text color="#f97316" bold>{'\u276f '}</Text>
+              <Text bold>{event.content}</Text>
+            </Box>
+          );
+          case 'engine-block': return mode === 'chat'
+            ? <ConversationalResponse engineId={event.engineId} content={event.content} />
+            : <EngineBlock engineId={event.engineId} color={event.color} content={event.content} />;
+          case 'separator': return <Text>{' '}</Text>;
+          case 'header': return <Box flexDirection="column"><Text>{' '}</Text><Text bold color="cyan">{'  ' + icons().header + ' '}{event.title}</Text></Box>;
+          case 'success': return <Text>{'  '}<Text color="#4ade80">{icons().success}</Text>{' '}{event.message}</Text>;
+          case 'error': {
+            const errLines = event.message.split('\n');
+            const firstLine = errLines[0] ?? '';
+            const errMatch = firstLine.match(/^(\w+Error):\s*(.*)/);
+            const fileMatch = event.message.match(/at\s+.*?([^\s/]+\.\w+:\d+(?::\d+)?)/);
+            if (errMatch || errLines.length > 1) {
+              return (
+                <Box flexDirection="column" paddingLeft={2}>
+                  <Text>
+                    <Text color="#ef4444" bold>{icons().fail + ' '}{errMatch ? errMatch[1] : 'Error'}</Text>
+                    <Text color="#ef4444">{errMatch ? ': ' + errMatch[2] : ': ' + firstLine}</Text>
+                  </Text>
+                  {fileMatch && (
+                    <Text dimColor>{'    at '}<Text color="#a78bfa">{fileMatch[1]}</Text></Text>
+                  )}
+                  {errLines.length > 1 && errLines.slice(1, 5).map((line: string, i: number) => (
+                    <Text key={`err-${i}`} dimColor>{'    '}{line.trim()}</Text>
+                  ))}
+                  {errLines.length > 5 && <Text dimColor>{'    \u2026 '}{errLines.length - 5}{' more lines'}</Text>}
+                </Box>
+              );
+            }
+            return <Text>{'  '}<Text color="#ef4444">{icons().fail}</Text>{' '}{event.message}</Text>;
+          }
+          case 'warning': return <Text>{'  '}<Text color="#fbbf24">{icons().warning}</Text>{' '}{event.message}</Text>;
+          case 'info': {
+            const message = String(event.message ?? '');
+            const cesarTelemetry = isCesarTelemetryLine(message);
+            return cesarTelemetry
+              ? <Text italic color="#a8a8a8">{'  '}{message}</Text>
+              : <Text dimColor>{'  '}{message}</Text>;
+          }
+          case 'permission-ask': {
+            const permCmd = (event as any).command as string;
+            const permDesc = (event as any).description as string | undefined;
+            const permReason = (event as any).reason as string;
+            const permTool = (event as any).tool as string;
+            const cmdLines = permCmd.split('\n').slice(0, 6);
+            const moreLines = permCmd.split('\n').length > 6;
+            const { rawInput, parsed } = parseToolInputPayload(permCmd);
+            const permToolKey = String(permTool ?? '').toLowerCase();
+            const previewRows: React.ReactNode[] = [];
+            const addDiffPreview = (key: string, lines: string[], sign: string, color: string) => {
+              lines.slice(0, 3).forEach((line: string, i: number) => {
+                previewRows.push(<Text key={`${key}-${i}`} color={color}>{'    '}{sign}{truncateCodeLine(line, contentWidth(12))}</Text>);
+              });
+              if (lines.length > 3) previewRows.push(<Text key={`${key}-more`} dimColor>{'    \u2026 '}{lines.length - 3}{' more lines'}</Text>);
+            };
+            if (permToolKey === 'edit' || permToolKey === 'update' || permToolKey === 'agonedit') {
+              const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+              const oldLines = String((parsed.old_string as string) || (parsed.oldString as string) || '').split('\n').filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1);
+              const newLines = String((parsed.new_string as string) || (parsed.newString as string) || '').split('\n').filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1);
+              previewRows.push(<Text key="preview-head"><Text color="#22d3ee">{'  Preview update'}</Text>{filePath ? <Text color="#a78bfa">{' '}{shortToolPath(filePath)}</Text> : null}<Text dimColor>{' -'}{oldLines.length}{' +'}{newLines.length}</Text></Text>);
+              addDiffPreview('preview-old', oldLines, '-', '#ef4444');
+              addDiffPreview('preview-new', newLines, '+', '#4ade80');
+            } else if (permToolKey === 'write' || permToolKey === 'agonwrite') {
+              const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+              const contentLines = String((parsed.content as string) || '').split('\n').filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1);
+              previewRows.push(<Text key="preview-head"><Text color="#22d3ee">{'  Preview write'}</Text>{filePath ? <Text color="#a78bfa">{' '}{shortToolPath(filePath)}</Text> : null}<Text dimColor>{' +'}{contentLines.length}</Text></Text>);
+              addDiffPreview('preview-write', contentLines, '+', '#4ade80');
+            } else if (permToolKey === 'applypatch' || permToolKey === 'apply_patch') {
+              const patch = parsePatchPreview(rawInput, parsed);
+              if (patch.lines.length > 0 || patch.files.length > 0) {
+                previewRows.push(<Text key="preview-head"><Text color="#22d3ee">{'  Preview patch'}</Text><Text dimColor>{' -'}{patch.deletions}{' +'}{patch.additions}</Text>{patch.files.length > 0 ? <Text color="#a78bfa">{' '}{patch.files.slice(0, 2).map((filePath: string) => shortToolPath(filePath)).join(', ')}</Text> : null}</Text>);
+                patch.lines.slice(0, 6).forEach((line: string, i: number) => {
+                  previewRows.push(<Text key={`preview-patch-${i}`} color={line.startsWith('+') ? '#4ade80' : line.startsWith('-') ? '#ef4444' : '#fbbf24'} dimColor={line.startsWith('@@')}>{'    '}{truncateCodeLine(line, contentWidth(12))}</Text>);
+                });
+                if (patch.lines.length > 6) previewRows.push(<Text key="preview-patch-more" dimColor>{'    \u2026 '}{patch.lines.length - 6}{' more lines'}</Text>);
+              }
+            }
+            return (
+              <Box flexDirection="column" paddingLeft={1} marginY={1}>
+                <Box borderStyle="bold" borderColor="#fbbf24" paddingX={1} flexDirection="column">
+                  <Text color="#fbbf24" bold>
+                    {permTool === 'Bash' || permTool === 'bash' ? `${icons().bash} Bash` : `${icons().warning} ${permTool}`}
+                    <Text color="#ef4444">{' \u2014 APPROVAL REQUIRED'}</Text>
+                  </Text>
+                  <Text> </Text>
+                  {cmdLines.map((line: string, i: number) => (
+                    <Text key={`perm-cmd-${i}`}>
+                      <Text dimColor>{'  '}{i === 0 ? '$ ' : '  '}</Text>
+                      <Text>{line}</Text>
+                    </Text>
+                  ))}
+                  {moreLines && <Text dimColor>{'    \u2026'}</Text>}
+                  {previewRows.length > 0 && (
+                    <>
+                      <Text> </Text>
+                      {previewRows}
+                    </>
+                  )}
+                  {permDesc && (
+                    <>
+                      <Text> </Text>
+                      <Text dimColor>{'  '}{permDesc}</Text>
+                    </>
+                  )}
+                  <Text> </Text>
+                  <Text color="#fbbf24">{permReason}</Text>
+                  <Text dimColor>{'  Press '}<Text bold color="#4ade80">{'Y'}</Text>{' to approve, '}<Text bold color="#ef4444">{'N'}</Text>{' to deny, '}<Text bold color="#60a5fa">{'A'}</Text>{' to always allow'}</Text>
+                </Box>
+              </Box>
+            );
+          }
+          case 'table': return <TableView headers={event.headers} rows={event.rows} />;
+          case 'thinking-chunk': {
+            if (thinkingExpanded === false) return null;
+            const thinkText = event.chunk as string;
+            const lines = thinkText.split('\n').filter((l: string) => l.trim());
+            return (
+              <Box flexDirection="column" paddingLeft={2}>
+                {lines.map((line: string, i: number) => (
+                  <Text key={`think-${i}`} italic color="#a8a8a8">{'  \u25B9 '}{line}</Text>
+                ))}
+              </Box>
+            );
+          }
+          case 'streaming-chunk': {
+            const chunkText = event.chunk as string;
+            const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
+            if (isThinking) {
+              if (thinkingExpanded === false) return null;
+              return <Text italic color="#a8a8a8">{'  \u25B9 '}{chunkText}</Text>;
+            }
+            return <Text>{'  '}{chunkText}</Text>;
+          }
+          case 'kern-draft': {
+            const eColor = engineColor(event.engineId);
+            const wrapWidth = contentWidth(8);
+            const segments = parseMarkdownBlocks(event.content.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, ''));
+            return (
+              <Box flexDirection="column" paddingLeft={2}>
+                <Text color={eColor}>{'\u250c\u2500\u2500 '}<Text bold>{event.engineId}</Text>{event.critique ? <Text color="green">{' '}{event.critique}</Text> : ''}</Text>
+                <Text color={eColor}>{'\u2502'}</Text>
+                <RenderedSegments segments={segments} borderColor={eColor} wrapWidth={wrapWidth} />
+                <Text color={eColor}>{'\u2514\u2500\u2500'}</Text>
+              </Box>
+            );
+          }
+          case 'debate-round': {
+            const dColor = engineColor(event.engineId);
+            const wrapWidth = contentWidth(8);
+            const segments = parseMarkdownBlocks(event.argument.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, ''));
+            return (
+              <Box flexDirection="column" paddingLeft={2}>
+                <Text color={dColor}>{'\u250c\u2500\u2500 '}<Text bold>{event.engineId}</Text>{' '}<Text dimColor>{'('}{event.position}{')'}</Text></Text>
+                <Text color={dColor}>{'\u2502'}</Text>
+                <RenderedSegments segments={segments} borderColor={dColor} wrapWidth={wrapWidth} />
+                <Text color={dColor}>{'\u2514\u2500\u2500'}</Text>
+              </Box>
+            );
+          }
+          case 'verdict': {
+            const wrapWidth = contentWidth(4);
+            const richLines = parseProseToRichLines(event.summary.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, ''), wrapWidth);
+            return (
+              <Box flexDirection="column" paddingLeft={2}>
+                {richLines.map((line: RichLine, i: number) => <RichLineView key={`v-${i}`} line={line} />)}
+              </Box>
+            );
+          }
+          case 'scoreboard': return (
+            <Box flexDirection="column" paddingLeft={2} marginY={1}>
+              <Text bold>{event.title}</Text>
+              {event.winner && <Text bold color="green">{'  \u2605 Winner: '}{event.winner}</Text>}
+              <Text dimColor>{'  '}{('\u2500').repeat(46)}</Text>
+              {event.metrics.map((m: { label: string; values: string[] }) => (
+                <Box key={m.label}>
+                  <Text>{'  '}</Text>
+                  <Box width={16}><Text bold>{m.label}</Text></Box>
+                  <Text>{m.values.join('  \u2502  ')}</Text>
+                </Box>
+              ))}
+            </Box>
+          );
+          case 'plan': return (
+            <Box flexDirection="column" paddingLeft={2} marginY={1}>
+              <Text bold color="cyan">{'\u25b8 Plan: '}{event.plan.id.slice(0, 12)}</Text>
+              <Text>{'  State: '}<Text bold>{event.plan.state}</Text></Text>
+              <Text>{'  Task:  '}{event.plan.action.task}</Text>
+              <Text dimColor>{'  '}{('\u2500').repeat(46)}</Text>
+              {event.plan.steps.map((step: any) => (
+                <Box key={step.id}>
+                  <Text>{'  '}</Text>
+                  <Text color={step.result.state === 'completed' ? 'green' : step.result.state === 'failed' ? 'red' : step.result.state === 'running' ? 'yellow' : undefined}>
+                    {step.result.state === 'completed' ? icons().success : step.result.state === 'failed' ? icons().fail : step.result.state === 'running' ? icons().dotOn : icons().dotOff}
+                  </Text>
+                  <Text> {step.label}</Text>
+                </Box>
+              ))}
+              {event.plan.state === 'draft' && (
+                <Text dimColor>{'\n  Awaiting approval — '}<Text bold color="green">{'Y'}</Text>{' accept  '}<Text bold color="red">{'N'}</Text>{' cancel'}</Text>
+              )}
+            </Box>
+          );
+          case 'plan-list': return (
+            <Box flexDirection="column" paddingLeft={2}>
+              {event.plans.map((p: any) => (
+                <Box key={p.id}>
+                  <Box width={14}><Text dimColor>{p.id.slice(0, 12)}</Text></Box>
+                  <Box width={12}><Text color={p.state === 'completed' ? 'green' : p.state === 'failed' ? 'red' : undefined}>{p.state}</Text></Box>
+                  <Text>{p.action.task.slice(0, 40)}</Text>
+                </Box>
+              ))}
+            </Box>
+          );
+          case 'tool-call': {
+            // Suppress empty internal tool calls (e.g. Codex Delegate with no input)
+            if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return null;
+  
+            const toolColor = event.status === 'error' ? '#ef4444' : event.status === 'done' ? '#4ade80' : '#fbbf24';
+            const icon = event.status === 'error' ? icons().fail : event.status === 'done' ? icons().success : '\u27f3';
+            const eColor = engineColor(event.engineId);
+            const codeWidth = contentWidth(10);
+            const nest = <Text color={eColor}>{' \u23bf '}</Text>;
+  
+            // Parse structured input (JSON from handler, or raw string from other engines)
+            let parsed: Record<string, unknown> = {};
+            const rawInput = event.input || '';
+            try {
+              if (rawInput.startsWith('{')) parsed = JSON.parse(rawInput);
+            } catch { /* not JSON — rawInput used as fallback */ }
+            const toolKey = event.tool.toLowerCase();
+            const forceExpanded = ['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey);
+            // Tool blocks are committed into native terminal scrollback via
+            // <Static> once finalized — so a per-block "Ctrl+E expand" hint
+            // would be misleading (Ink cannot re-render past Static items).
+            const collapsedHint = null;
+  
+            if (toolKey === 'reportconfidence') {
+              return (
+                <Box paddingLeft={2}>
+                  <Text italic color="#a8a8a8">{'  \u25B9 '}{formatConfidenceToolLabel(parsed, rawInput)}</Text>
+                </Box>
+              );
+            }
+  
+            // ── Bash / Run ──
+            if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
+              const cmd = (parsed.command as string) || rawInput || '';
+              const desc = parsed.description as string | undefined;
+              if (!cmd) {
+                // No input data (e.g. ACP streaming) — just show tool name
+                return (
+                  <Box paddingLeft={2}>
+                    <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'Bash'}</Text></Text>{desc ? <Text dimColor>{' \u00b7 '}{desc}</Text> : ''}</Text>
+                  </Box>
+                );
+              }
+              // Collapsed: 1-line summary
+              if (!toolOutputExpanded) {
+                const outputLines = event.output ? event.output.split('\n').length : 0;
+                const cmdPreview = desc || cmd.split('\n')[0].slice(0, 60);
+                return (
+                  <Box paddingLeft={2}>
+                    <Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'Bash'}</Text></Text>
+                      <Text dimColor>{desc ? ' \u00b7 ' : ' $ '}{cmdPreview}{cmdPreview.length >= 60 ? '\u2026' : ''}</Text>
+                      {outputLines > 0 && event.status !== 'running' && <Text dimColor>{' \u2192 '}{outputLines}{' lines'}</Text>}
+                      {collapsedHint}
+                    </Text>
+                  </Box>
+                );
+              }
+              const cmdLines = cmd.split('\n').slice(0, 3);
+              const moreCmd = cmd.split('\n').length > 3;
+              return (
+                <Box paddingLeft={2} flexDirection="column">
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'Bash'}</Text></Text>{desc ? <Text dimColor>{' \u00b7 '}{desc}</Text> : ''}</Text>
+                  <Text> </Text>
+                  {cmdLines.map((line: string, i: number) => (
+                    <Text key={`cmd-${i}`}>
+                      <Text dimColor>{'    '}{i === 0 ? '$ ' : '  '}</Text>
+                      <Text>{truncateCodeLine(line, codeWidth)}</Text>
+                    </Text>
+                  ))}
+                  {moreCmd && <Text dimColor>{'      \u2026'}</Text>}
+                  {event.output && event.status !== 'running' && (() => {
+                    const outLines = event.output.split('\n');
+                    const total = outLines.length;
+                    const maxHead = total > 80 ? 30 : 50;
+                    const tailCount = 5;
+                    const showTail = total > maxHead + tailCount;
+                    const headLines = outLines.slice(0, showTail ? maxHead : total);
+                    const tailLines = showTail ? outLines.slice(-tailCount) : [];
+                    const skipped = total - maxHead - tailLines.length;
+                    const renderLine = (line: string, i: number, prefix: string) => (
+                      <Box key={`${prefix}-${i}`}>
+                        <Text dimColor>{'    '}</Text>
+                        {event.status === 'error'
+                          ? <Text color="#ef4444">{truncateCodeLine(line, codeWidth)}</Text>
+                          : <AnsiLine text={line} maxWidth={codeWidth} fallbackDim={true} />}
+                      </Box>
+                    );
+                    return (
+                      <>
+                        <Text> </Text>
+                        {headLines.map((line: string, i: number) => renderLine(line, i, 'head'))}
+                        {skipped > 0 && <Text dimColor>{'    \u2026 '}{skipped}{' more lines \u2026'}</Text>}
+                        {tailLines.map((line: string, i: number) => renderLine(line, i, 'tail'))}
+                      </>
+                    );
+                  })()}
+                </Box>
+              );
+            }
+  
+            // ── Edit ──
+            if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') {
+              const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
+              const oldStr = (parsed.old_string as string) || (parsed.oldString as string) || '';
+              const newStr = (parsed.new_string as string) || (parsed.newString as string) || '';
+              const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
+              const addedCount = newStr ? newStr.split('\n').length : 0;
+              const removedCount = oldStr ? oldStr.split('\n').length : 0;
+              // Collapsed: single-line summary.
+              if (!toolOutputExpanded && !forceExpanded) {
+                return (
+                  <Box paddingLeft={2}>
+                    <Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{' '}<Text dimColor>\u00b7 </Text><Text color="#ef4444">-{removedCount}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{addedCount}</Text>{' lines'}<Text dimColor>{''}</Text>
+                    </Text>
+                  </Box>
+                );
+              }
+              // When expanded: show all lines.
+              const maxLines = Infinity;
+              return (
+                <Box paddingLeft={2} flexDirection="column">
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
+                  {(oldStr || newStr) && event.status !== 'running' && (() => {
+                    const oldLines = oldStr.split('\n').slice(0, maxLines);
+                    const newLines = newStr.split('\n').slice(0, maxLines);
+                    const gutterW = Math.max(String(Math.max(removedCount, addedCount)).length, 2);
+                    const pad = (n: number) => String(n).padStart(gutterW);
+                    return (
+                      <>
+                        <Text dimColor>{'    '}<Text color="#ef4444">{'-'}{removedCount}</Text>{' '}<Text color="#4ade80">{'+'}{addedCount}</Text>{' lines'}</Text>
+                        {oldLines.map((line: string, i: number) => (
+                          <Text key={`old-${i}`}>
+                            <Text color="#6b7280">{' '}{pad(i + 1)}{' '}</Text>
+                            <DiffLine line={`-${line}`} maxWidth={codeWidth - gutterW - 2} />
+                          </Text>
+                        ))}
+                        {removedCount > maxLines && <Text dimColor>{'    \u2026 '}{removedCount - maxLines}{' more removed'}</Text>}
+                        {newLines.map((line: string, i: number) => (
+                          <Text key={`new-${i}`}>
+                            <Text color="#6b7280">{' '}{pad(i + 1)}{' '}</Text>
+                            <DiffLine line={`+${line}`} maxWidth={codeWidth - gutterW - 2} />
+                          </Text>
+                        ))}
+                        {addedCount > maxLines && <Text dimColor>{'    \u2026 '}{addedCount - maxLines}{' more added'}</Text>}
+                      </>
+                    );
+                  })()}
+                </Box>
+              );
+            }
+  
+            // ── Write ──
+            if (toolKey === 'write' || toolKey === 'agonwrite') {
+              const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
+              const content = (parsed.content as string) || '';
+              const shortPath = shortToolPath(filePath);
+              const lineCount = content ? content.split('\n').length : 0;
+              // Collapsed: single-line summary.
+              if (!toolOutputExpanded && !forceExpanded) {
+                return (
+                  <Box paddingLeft={2}>
+                    <Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{lineCount > 0 && <><Text dimColor>{' \u00b7 '}</Text><Text color="#4ade80">+{lineCount}</Text><Text dimColor>{' lines'}</Text></>}<Text dimColor>{''}</Text>
+                    </Text>
+                  </Box>
+                );
+              }
+              // When expanded: show all lines.
+              const maxLines = Infinity;
+              return (
+                <Box paddingLeft={2} flexDirection="column">
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
+                  {content && event.status !== 'running' && (() => {
+                    const allLines = content.split('\n');
+                    const shown = allLines.slice(0, maxLines);
+                    const gutterW = Math.max(String(lineCount).length, 2);
+                    const pad = (n: number) => String(n).padStart(gutterW);
+                    return (
+                      <>
+                        <Text dimColor>{'    '}<Text color="#4ade80">{'+'}{lineCount}</Text>{' lines'}</Text>
+                        {shown.map((line: string, i: number) => (
+                          <Text key={`w-${i}`}>
+                            <Text color="#6b7280">{' '}{pad(i + 1)}{' '}</Text>
+                            <DiffLine line={`+${line}`} maxWidth={codeWidth - gutterW - 2} />
+                          </Text>
+                        ))}
+                        {lineCount > maxLines && <Text dimColor>{'    \u2026 '}{lineCount - maxLines}{' more lines'}</Text>}
+                      </>
+                    );
+                  })()}
+                </Box>
+              );
+            }
+  
+            // ── Apply Patch ──
+            if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
+              const patch = parsePatchPreview(rawInput, parsed);
+              const fileSummary = patch.files.length > 0
+                ? patch.files.slice(0, 2).map((filePath: string) => shortToolPath(filePath)).join(', ') + (patch.files.length > 2 ? ', …' : '')
+                : '';
+              const maxLines = 80;
+              const shown = patch.lines.slice(0, maxLines);
+              const omitted = Math.max(0, patch.lines.length - shown.length);
+              return (
+                <Box paddingLeft={2} flexDirection="column">
+                  <Text>
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Patch'}</Text></Text>
+                    {fileSummary ? <Text>{'('}<Text color="#a78bfa">{fileSummary}</Text>{')'}</Text> : ''}
+                    <Text dimColor>{' \u00b7 '}</Text><Text color="#ef4444">-{patch.deletions}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{patch.additions}</Text><Text dimColor>{' lines'}</Text>
+                  </Text>
+                  {shown.map((line: string, i: number) => (
+                    <DiffLine key={`patch-${i}`} line={line} maxWidth={codeWidth} />
+                  ))}
+                  {omitted > 0 && <Text dimColor>{'    \u2026 '}{omitted}{' more patch lines'}</Text>}
+                </Box>
+              );
+            }
+  
+            // ── Read ──
+            if (toolKey === 'read') {
+              const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
+              const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
+              if (!toolOutputExpanded) {
+                const lineCount = event.output ? event.output.split('\n').length : 0;
+                return (
+                  <Box paddingLeft={2}>
+                    <Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().read + ' Read'}</Text></Text>
+                      {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
+                      {lineCount > 0 && event.status === 'done' && <Text dimColor>{' '}{lineCount}{' lines'}</Text>}
+                      {collapsedHint}
+                    </Text>
+                  </Box>
+                );
+              }
+              return (
+                <Box paddingLeft={2} flexDirection="column">
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().read + ' Read'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
+                  {event.output && event.status === 'done' && (
+                    <Text dimColor>{'  '}{event.output.split('\n').length}{' lines ('}{Math.ceil(event.output.length / 1024)}{'kb)'}</Text>
+                  )}
+                </Box>
+              );
+            }
+  
+            // ── Grep / Search ──
+            if (toolKey === 'grep' || toolKey === 'search') {
+              const pattern = (parsed.pattern as string) || rawInput || '';
+              const path = (parsed.path as string) || '';
+              const shortPath = path ? path.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
+              if (!toolOutputExpanded) {
+                const matchCount = event.output ? event.output.split('\n').length : 0;
+                return (
+                  <Box paddingLeft={2}>
+                    <Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().search + ' Search'}</Text></Text>
+                      {' '}<Text color="#a78bfa">{pattern}</Text>
+                      {matchCount > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{matchCount}{' matches'}</Text>}
+                      {collapsedHint}
+                    </Text>
+                  </Box>
+                );
+              }
+              return (
+                <Box paddingLeft={2} flexDirection="column">
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().search + ' Search'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text>{shortPath ? <Text dimColor>{' in '}{shortPath}</Text> : ''}</Text>
+                  {event.output && event.status === 'done' && (
+                    <Text dimColor>{'  '}{event.output.split('\n').length}{' matches'}</Text>
+                  )}
+                </Box>
+              );
+            }
+  
+            // ── Glob / Find ──
+            if (toolKey === 'glob' || toolKey === 'find') {
+              const pattern = (parsed.pattern as string) || rawInput || '';
+              if (!toolOutputExpanded) {
+                const fileCount = event.output ? event.output.split('\n').filter((l: string) => l.trim()).length : 0;
+                return (
+                  <Box paddingLeft={2}>
+                    <Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().find + ' Find'}</Text></Text>
+                      {' '}<Text color="#a78bfa">{pattern}</Text>
+                      {fileCount > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{fileCount}{' files'}</Text>}
+                      {collapsedHint}
+                    </Text>
+                  </Box>
+                );
+              }
+              return (
+                <Box paddingLeft={2} flexDirection="column">
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().find + ' Find'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text></Text>
+                  {event.output && event.status === 'done' && (
+                    <Text dimColor>{'  '}{event.output.split('\n').filter((l: string) => l.trim()).length}{' files'}</Text>
+                  )}
+                </Box>
+              );
+            }
+  
+            // ── Fallback: generic tool ──
+            const ic = icons();
+            const toolLabels: Record<string, string> = {
+              'Read': `${ic.read} Read`, 'Edit': `${ic.edit} Edit`, 'Write': `${ic.write} Write`,
+              'Bash': `${ic.bash} Run`, 'Grep': `${ic.search} Search`, 'Glob': `${ic.find} Find`,
+              'tool': `${ic.tool} Tool`,
+            };
+            const label = toolLabels[event.tool] ?? `${ic.tool} ${event.tool}`;
+            const inputPreview = event.input.length > 80 ? event.input.slice(0, 80) + '\u2026' : event.input;
+            // Collapsed: 1-line summary for generic tools
+            if (!toolOutputExpanded && !forceExpanded) {
+              const outLines = event.output ? event.output.split('\n').length : 0;
+              return (
+                <Box paddingLeft={2}>
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{label}</Text></Text>{' '}<Text dimColor>{inputPreview}</Text>{outLines > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{outLines}{' lines'}</Text>}{collapsedHint}</Text>
+                </Box>
+              );
+            }
+            return (
+              <Box paddingLeft={2} flexDirection="column">
+                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{label}</Text></Text>{' '}<Text dimColor>{inputPreview}</Text></Text>
+                {event.output && event.status === 'done' && event.output.length <= 200 && (
+                  <Text dimColor>{'    '}{event.output.length > 120 ? event.output.slice(0, 120) + '\u2026' : event.output}</Text>
+                )}
+                {event.output && event.status === 'done' && event.output.length > 200 && (
+                  <Text dimColor>{'    '}{event.output.split('\n').length}{' lines ('}{Math.ceil(event.output.length / 1024)}{'kb)'}</Text>
+                )}
+              </Box>
+            );
+          }
+          case 'response-meta': {
+            const secs = (event.elapsed / 1000).toFixed(1);
+            const tokens = (event as any).inputTokens || (event as any).outputTokens
+              ? `${((event as any).inputTokens ?? 0) + ((event as any).outputTokens ?? 0)} tok`
+              : '';
+            const cost = (event as any).cost ? `$${(event as any).cost.toFixed(4)}` : '';
+            const parts = [event.engineId, `${secs}s`, tokens, cost].filter(Boolean);
+            return (
+              <Box paddingLeft={2}>
+                <Text dimColor>{parts.join(' \u00b7 ')}</Text>
+              </Box>
+            );
+          }
+          case 'cesar-recap': return <CesarRecapBlock event={event as OutputEvent & { type: 'cesar-recap' }} />;
+          case 'file-changes': {
+            const files = (event as any).files as { path: string; status: string; additions: number; deletions: number }[];
+            if (!files || files.length === 0) return null;
+            const cwd = process.cwd();
+            return (
+              <Box flexDirection="column" paddingLeft={2} marginY={1}>
+                <Text bold>{'Files changed'}</Text>
+                {files.map((f: any) => {
+                  const shortPath = f.path.replace(cwd + '/', '');
+                  const total = f.additions + f.deletions;
+                  const barW = 10;
+                  const addBar = total > 0 ? Math.max(1, Math.round((f.additions / total) * barW)) : 0;
+                  const delBar = barW - addBar;
+                  return (
+                    <Box key={f.path}>
+                      <Text color={f.status === 'created' ? '#22d3ee' : f.status === 'deleted' ? '#ef4444' : '#4ade80'}>
+                        {f.status === 'created' ? icons().dotOn : f.status === 'deleted' ? '\u2296' : icons().success}
+                      </Text>
+                      <Text>{' '}{shortPath}</Text>
+                      <Text dimColor>{' +'}{f.additions}{' -'}{f.deletions}{' '}</Text>
+                      <Text><Text color="#4ade80">{'\u2588'.repeat(addBar)}</Text><Text color="#ef4444">{'\u2588'.repeat(delBar)}</Text></Text>
+                    </Box>
+                  );
+                })}
+              </Box>
+            );
+          }
+          case 'dashboard': return <DashboardView event={event as OutputEvent & { type: 'dashboard' }} />;
+          case 'plan-proposal': return <PlanProposalView plan={event.plan} markdown={(event as any).markdown} />;
+          case 'plan-execution': return <PlanExecutionView plan={(event as any).plan} />;
+          case 'tool-call-group': return <ToolCallGroup blocks={(event as any).blocks} />;
+          default: return null;
+        }
+}
+
+
+// @kern-source: engine:967
+
+export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
+        const labelForTool = (raw: unknown) => {
+          const toolKey = String(raw ?? '').toLowerCase();
+          if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') return 'Bash';
+          if (toolKey === 'read') return 'Read';
+          if (toolKey === 'grep' || toolKey === 'search') return 'Search';
+          if (toolKey === 'glob' || toolKey === 'find') return 'Find';
+          if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') return 'Update';
+          if (toolKey === 'write' || toolKey === 'agonwrite') return 'Write';
+          if (toolKey === 'applypatch' || toolKey === 'apply_patch') return 'Patch';
+          if (toolKey === 'reportconfidence') return 'Confidence';
+          if (toolKey === 'quicknero') return 'QuickNero';
+          return String(raw ?? 'Tool');
+        };
+        const toolCounts: Record<string, number> = {};
+        let confidenceLabel = '';
+        let errors = 0;
+        let running = 0;
+        const changedFiles: string[] = [];
+        const changeEvents: any[] = [];
+        const changeRows: { key:string; text:string }[] = [];
+        let omittedChangeRows = 0;
+        const pushChangeRow = (key: string, text: string) => {
+          if (changeRows.length < 14) changeRows.push({ key, text });
+          else omittedChangeRows += 1;
+        };
+        for (const b of blocks) {
+          const ev = b.event as any;
+          const rawName = ev.tool || 'tool';
+          const toolKey = String(rawName).toLowerCase();
+          const { rawInput, parsed } = parseToolInputPayload(ev.input ?? '');
+          const name = labelForTool(rawName);
+          if (ev.status === 'error') errors++;
+          if (ev.status === 'running') running++;
+          if (toolKey === 'reportconfidence') {
+            confidenceLabel = formatConfidenceToolLabel(parsed, rawInput);
+            continue;
+          }
+          toolCounts[name] = (toolCounts[name] || 0) + 1;
+          if ((toolKey === 'edit' || toolKey === 'update' || toolKey === 'write' || toolKey === 'agonedit' || toolKey === 'agonwrite') && typeof ev.input === 'string' && ev.input.trim().startsWith('{')) {
+            try {
+              const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
+              if (filePath) {
+                const shortPath = shortToolPath(filePath);
+                if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
+              }
+            } catch { /* ignore malformed tool input */ }
+          }
+          if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') {
+            changeEvents.push(ev);
+            const oldLines = String((parsed.old_string as string) || (parsed.oldString as string) || '').split('\n');
+            const newLines = String((parsed.new_string as string) || (parsed.newString as string) || '').split('\n');
+            oldLines.slice(0, 3).forEach((line: string, index: number) => pushChangeRow(`${b.id}-old-${index}`, `-${line}`));
+            newLines.slice(0, 3).forEach((line: string, index: number) => pushChangeRow(`${b.id}-new-${index}`, `+${line}`));
+            omittedChangeRows += Math.max(0, oldLines.length - 3) + Math.max(0, newLines.length - 3);
+          } else if (toolKey === 'write' || toolKey === 'agonwrite') {
+            changeEvents.push(ev);
+            const lines = String((parsed.content as string) || '').split('\n');
+            lines.slice(0, 6).forEach((line: string, index: number) => pushChangeRow(`${b.id}-write-${index}`, `+${line}`));
+            omittedChangeRows += Math.max(0, lines.length - 6);
+          } else if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
+            changeEvents.push(ev);
+            const patch = parsePatchPreview(rawInput, parsed);
+            for (const patchFile of patch.files) {
+              const shortPath = shortToolPath(patchFile);
+              if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
+            }
+            patch.lines.slice(0, 8).forEach((line: string, index: number) => pushChangeRow(`${b.id}-patch-${index}`, line));
+            omittedChangeRows += Math.max(0, patch.lines.length - 8);
+          }
+        }
+        const summary = Object.entries(toolCounts)
+          .map(([name, count]: [string, number]) => count > 1 ? `${name}\u00d7${count}` : name)
+          .join(', ');
+        const statusSummary = errors > 0
+          ? ` \u00b7 ${errors} error${errors === 1 ? '' : 's'}`
+          : running > 0 ? ' \u00b7 running' : '';
+        const changedSummary = changedFiles.length > 0
+          ? ` \u00b7 changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', \u2026' : ''}`
+          : '';
+  
+        return (
+          <Box paddingLeft={2} flexDirection="column">
+            {confidenceLabel && (
+              <Text>
+                <Text italic color="#a8a8a8">{'  \u25B9 '}{confidenceLabel}</Text>
+              </Text>
+            )}
+            <Text dimColor>{'    '}{blocks.length}{' tool calls'}{summary ? ` \u00b7 ${summary}` : ''}{statusSummary}{changedSummary}{'  '}<Text color="#f59e0b">{'Ctrl+E'}</Text></Text>
+            {changeRows.map((row: { key:string; text:string }) => (
+              <DiffLine key={row.key} line={row.text} maxWidth={contentWidth(10)} />
+            ))}
+            {omittedChangeRows > 0 && (
+              <Text dimColor>{'    \u2026 '}{omittedChangeRows}{' more changed lines'}</Text>
+            )}
+          </Box>
+        );
+}
+
+
+// @kern-source: engine:1074
+
+export function DebateGroup({ blocks }: { blocks: OutputBlock[] }) {
+        const round = (blocks[0]?.event as any)?.round ?? '?';
+        const w = contentWidth(6);
+        return (
+          <Box flexDirection="column" paddingLeft={2}>
+            <Text color="#a78bfa" bold>{'\u250c\u2500\u2500 Round '}{round}{' \u2500\u2500'}</Text>
+            {blocks.map((b: any, i: number) => {
+              const ev = b.event as any;
+              const eColor = engineColor(ev.engineId);
+              const summary = extractSummary(ev.argument || '', w - 30);
+              return (
+                <Text key={`dr-${i}`}>
+                  <Text color="#a78bfa">{'\u2502  '}</Text>
+                  <Text color={eColor} bold>{ev.engineId}</Text>
+                  <Text dimColor>{' ('}{ev.position}{'): '}</Text>
+                  <Text>{summary}</Text>
+                </Text>
+              );
+            })}
+            <Text color="#a78bfa">{'\u2514'}<Text color="#f59e0b">{''}</Text></Text>
+          </Box>
+        );
+}
+
+
+// @kern-source: engine:1103
+
+export function BidGroup({ blocks }: { blocks: OutputBlock[] }) {
+        const w = contentWidth(6);
+        return (
+          <Box flexDirection="column" paddingLeft={2}>
+            <Text color="#22d3ee" bold>{'\u250c\u2500\u2500 Brainstorm Bids \u2500\u2500'}</Text>
+            {blocks.map((b: any, i: number) => {
+              const ev = b.event as any;
+              const eColor = engineColor(ev.engineId);
+              const isWinner = ev.critique && ev.critique.includes('best');
+              const scoreMatch = ev.critique ? ev.critique.match(/score:\s*(\d+)/) : null;
+              const score = scoreMatch ? scoreMatch[1] : '?';
+              const icon = isWinner ? '\u2b50' : '\u2713';
+              const summary = extractSummary(ev.content || '', w - 30);
+              return (
+                <Text key={`bid-${i}`}>
+                  <Text color="#22d3ee">{'\u2502  '}</Text>
+                  <Text>{icon}{' '}</Text>
+                  <Text color={eColor} bold>{ev.engineId}</Text>
+                  <Text dimColor>{' ('}{score}{'): '}</Text>
+                  <Text>{summary}</Text>
+                </Text>
+              );
+            })}
+            <Text color="#22d3ee">{'\u2514'}<Text color="#f59e0b">{''}</Text></Text>
+          </Box>
+        );
+}
+
+

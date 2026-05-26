@@ -304,7 +304,8 @@ screen name=ModelPicker target=ink
         const providerAliasByTerm: Record<string, string> = {
           claude: 'anthropic',
           codex: 'openai',
-          gemini: 'google',
+          agy: 'google',
+          antigravity: 'google',
           anthropic: 'anthropic',
           openai: 'openai',
           google: 'google',

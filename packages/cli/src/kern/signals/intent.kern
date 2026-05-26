@@ -66,7 +66,7 @@ module name=IntentParsing
 
   const name=AUTOCREDIT_ON_KEYWORDS type=RegExp value={{ /\b(?:schalt(?:e|)?\s+(?:das|es|autoCredit)\s+an|mach(?:e|)?\s+(?:das|es|autoCredit)\s+an|(?:autoCredit|co[\s-]?authored?|contributor)\s+an)\b/i }}
 
-  const name=KNOWN_COLLAB_ENGINE_IDS type="Set<string>" value={{ new Set([ 'claude', 'codex', 'gemini', 'qwen', 'kimi', 'opencode', 'open-code', 'minimax', 'zai', 'aider', 'cursor', 'gpt', 'openai' ]) }}
+  const name=KNOWN_COLLAB_ENGINE_IDS type="Set<string>" value={{ new Set([ 'claude', 'codex', 'agy', 'antigravity', 'qwen', 'kimi', 'opencode', 'open-code', 'minimax', 'zai', 'aider', 'cursor', 'gpt', 'openai' ]) }}
 
   fn name=classifyTask params="input:string" returns="'code'|'question'|'ambiguous'"
     handler lang="kern"
@@ -104,11 +104,14 @@ module name=IntentParsing
       let name=cleaned value="part .trim() .toLowerCase() .replace(/^@+/, '') .replace(/^[^\\w-]+|[^\\w-]+$/g, '')"
       if cond="!cleaned"
         return value="null"
+      comment raw="// 'antigravity' is an alias for the agy engine (binary: agy)."
+      if cond="cleaned === 'antigravity'"
+        return value="'agy'"
       if cond="KNOWN_COLLAB_ENGINE_IDS.has(cleaned)"
         return value="cleaned"
       comment raw="// Let model IDs like kimi-for-coding-k2p6 or zai-coding-plan-glm-5.1"
       comment raw="// through when they are explicitly introduced by \"with\"/\"ask\"."
-      if cond="/^(?:claude|codex|gemini|qwen|kimi|opencode|open-code|minimax|zai|aider|cursor|gpt|openai)[\\w.-]*$/i.test(cleaned)"
+      if cond="/^(?:claude|codex|agy|antigravity|qwen|kimi|opencode|open-code|minimax|zai|aider|cursor|gpt|openai)[\\w.-]*$/i.test(cleaned)"
         return value="cleaned"
       return value="null"
 

@@ -1,0 +1,1067 @@
+// @kern-source: forge:1
+import { join } from 'node:path';
+
+// @kern-source: forge:2
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+
+// @kern-source: forge:3
+import { execFileSync } from 'node:child_process';
+
+// @kern-source: forge:4
+import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, tracker, resolveWorkingDir, loadOrCreateActiveThread, applyPatchWithUndo, acquireApplyLock, releaseApplyLock, headChanged, branchChanged, headSha, currentBranch } from '@agon/core';
+
+// @kern-source: forge:5
+import type { Plan, PlanStepInput, ApprovalLevel } from '@agon/core';
+
+// @kern-source: forge:6
+import { runForge } from '@agon/forge';
+
+// @kern-source: forge:7
+import { ENGINE_COLORS } from '../blocks/output-format.js';
+
+// @kern-source: forge:8
+import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
+
+// @kern-source: forge:9
+import { cesarJudgeForge, cesarConvergeForge, cesarReviewForgeOutcome } from '../../handlers/cesar-brain.js';
+
+// @kern-source: forge:10
+import { sessionResultStore } from '../models/session-results.js';
+
+// @kern-source: forge:11
+import { createScoreboard, scoreboardStartEngine, scoreboardUpdateProgress, scoreboardFinishEngine, scoreboardFailEngine, renderScoreboard } from '../cesar/scoreboard.js';
+
+// @kern-source: forge:12
+import { buildCheckpoint, recordCheckpoint } from '../cesar/checkpoint.js';
+
+// @kern-source: forge:13
+import { recordRun, formatRunSummary } from '../../telemetry/index.js';
+
+// @kern-source: forge:14
+import { filterDefaultOrchestrationEngines } from './engine-filter.js';
+
+// @kern-source: forge:16
+function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,string>, dispatch: Dispatch, ctx: HandlerContext): Plan {
+  if (ctx.currentPlan?.state === 'cancelled') return plan;
+  const id = event.engineId ?? '';
+  
+  switch (event.type) {
+    case 'baseline:start':
+      plan = mergeStepResult(plan, 'baseline', { state: 'running', attempts: [{ startedAt: new Date().toISOString() }] });
+      break;
+    case 'baseline:done':
+      plan = mergeStepResult(plan, 'baseline', { state: 'completed' });
+      if (event.data?.passes) {
+        dispatch({ type: 'warning', message: 'Baseline passes — fitness may be non-discriminating. Add a failing regression test, use forge validate mode, or allow no-diff validation.' });
+      }
+      break;
+    case 'stage1:dispatch':
+      plan = mergeStepResult(plan, 'dispatch', { state: 'running', attempts: [{ startedAt: new Date().toISOString() }] });
+      engineStatus[id] = 'building';
+      break;
+    case 'stage2:dispatch':
+      engineStatus[id] = 'building';
+      break;
+    case 'engine:worktree': {
+      if (id) {
+        engineStatus[id] = 'building';
+        const worktreePath = String(event.data?.worktreePath ?? '');
+        if (worktreePath && engineStatus[`${id}:worktree`] !== worktreePath) {
+          engineStatus[`${id}:worktree`] = worktreePath;
+          dispatch({ type: 'info', message: `Forge worktree ${id}: ${worktreePath}` });
+        }
+      }
+      break;
+    }
+    case 'engine:pid':
+      dispatch({ type: 'engine-pid', engineId: id, pid: Number(event.data?.pid ?? 0), phase: event.data?.phase } as any);
+      break;
+    case 'engine:pid-clear':
+      dispatch({ type: 'engine-pid-clear', engineId: id } as any);
+      break;
+    case 'engine:fallback':
+      engineStatus[String(event.data?.to ?? '')] = 'fallback';
+      dispatch({ type: 'warning', message: `${String(event.data?.from ?? id)} failed during ${String(event.data?.phase ?? 'forge')} — retrying on ${String(event.data?.to ?? 'fallback')}` });
+      break;
+    case 'engine:failed': {
+      engineStatus[id] = 'failed';
+      engineStatus[`${id}:score`] = '0';
+      const errMsg = String(event.data?.error ?? 'failed');
+      engineStatus[`${id}:error`] = errMsg;
+      const snippet = errMsg.length > 120 ? errMsg.slice(0, 120) + '…' : errMsg;
+      dispatch({ type: 'warning', message: `${id} failed: ${snippet}` });
+      dispatch({ type: 'engine-pid-clear', engineId: id } as any);
+      break;
+    }
+    case 'stage1:accepted':
+      engineStatus[id] = 'done';
+      engineStatus[`${id}:score`] = String(event.data?.score ?? '?');
+      break;
+    case 'stage1:score':
+    case 'stage2:score': {
+      if (id) {
+        const passed = event.data?.pass !== false;
+        engineStatus[id] = passed ? 'done' : 'failed';
+        engineStatus[`${id}:score`] = String(event.data?.score ?? '?');
+        if (!passed) engineStatus[`${id}:error`] = Number(event.data?.score ?? 0) === 0 ? 'no candidate changes or fitness failed' : 'fitness failed';
+      }
+      const scoreStep = plan.steps.find((s: any) => s.id === 'score');
+      if (scoreStep && scoreStep.result.state === 'pending') {
+        plan = mergeStepResult(plan, 'score', { state: 'running', attempts: [{ startedAt: new Date().toISOString() }] });
+      }
+      break;
+    }
+    case 'winner:determined': {
+      plan = mergeStepResult(plan, 'dispatch', { state: 'completed' });
+      plan = mergeStepResult(plan, 'score', { state: 'completed' });
+      plan = mergeStepResult(plan, 'winner', { state: 'completed' });
+      if (event.data?.winner) {
+        const winnerId = String(event.data.winner);
+        engineStatus[winnerId] = 'done';
+        engineStatus[`${winnerId}:score`] = String(event.data.bestScore ?? '?');
+        engineStatus['__winner'] = winnerId;
+      }
+      break;
+    }
+    case 'forge:no-candidate-diff': {
+      const count = Number(event.data?.count ?? 0);
+      const toolLoopLimit = Number(event.data?.toolLoopLimit ?? 0);
+      if (toolLoopLimit > 0) {
+        dispatch({ type: 'warning', message: `Forge produced no candidate diff: ${toolLoopLimit}/${count} engine(s) hit the tool-loop limit before producing a patch.` });
+      } else {
+        dispatch({ type: 'warning', message: `Forge produced no candidate diff from ${count} engine(s).` });
+      }
+      break;
+    }
+    case 'synthesis:start': {
+      plan = mergeStepResult(plan, 'synthesis', { state: 'running', attempts: [{ startedAt: new Date().toISOString() }] });
+      const winnerId = id || engineStatus['__winner'] || '';
+      if (winnerId) engineStatus[winnerId] = 'synthesizing';
+      break;
+    }
+    case 'synthesis:done': {
+      plan = mergeStepResult(plan, 'synthesis', { state: 'completed' });
+      const winnerId = id || engineStatus['__winner'] || '';
+      if (winnerId && engineStatus[winnerId] === 'synthesizing') engineStatus[winnerId] = 'done';
+      break;
+    }
+  }
+  ctx.setCurrentPlan(plan);
+  return plan;
+}
+
+// @kern-source: forge:126
+/**
+ * Auto-apply a winning forge patch to the working tree, guarded against the shared-checkout hazard: a HEAD/branch compare-and-swap (refuse if another session moved the ground since this run started) and an advisory apply-lock (refuse if another apply is in flight here). Both refusals return false so the caller falls back to manual /apply — the patch is never lost.
+ */
+function applyForgePatchToWorkspace(winnerId: string, patchContent: string, dispatch: Dispatch, baseSha?: string|null, baseBranch?: string|null): boolean {
+  if (!patchContent.trim()) {
+    dispatch({ type: 'info', message: `Winner ${winnerId} produced an empty patch.` });
+    return true;
+  }
+  const cwd = resolveWorkingDir();
+  
+  // HEAD-CAS: if HEAD/branch moved since this run started, another session
+  // changed the ground under us — don't auto-apply to the wrong base.
+  const movedHead = headChanged(cwd, baseSha ?? null);
+  if (movedHead.changed) {
+    dispatch({ type: 'warning', message: `HEAD moved (${(baseSha ?? '?').slice(0, 8)} → ${(movedHead.current ?? '?').slice(0, 8)}) since this run started — not auto-applying. Review with /apply.` });
+    return false;
+  }
+  const movedBranch = branchChanged(cwd, baseBranch ?? null);
+  if (movedBranch.changed) {
+    dispatch({ type: 'warning', message: `Branch changed (${baseBranch} → ${movedBranch.current ?? '?'}) since this run started — not auto-applying. Review with /apply.` });
+    return false;
+  }
+  
+  // Advisory apply-lock: serialize concurrent applies in this checkout.
+  const lock = acquireApplyLock(cwd, `forge-apply ${winnerId}`);
+  if (!lock.acquired) {
+    const who = lock.heldBy ? ` (pid ${lock.heldBy.pid}: ${lock.heldBy.action})` : '';
+    dispatch({ type: 'warning', message: `Another apply is in progress in this checkout${who} — not auto-applying. Review with /apply once it finishes.` });
+    return false;
+  }
+  try {
+    const result = applyPatchWithUndo(cwd, patchContent);
+    if (result.ok) {
+      dispatch({ type: 'success', message: `Applied winner patch from ${winnerId}` });
+      if (result.undoToken) dispatch({ type: 'info', message: 'Undo available: /undo' });
+      return true;
+    }
+    dispatch({ type: 'warning', message: `Winner patch not applied automatically: ${result.error ?? 'unknown error'}` });
+    return false;
+  } finally {
+    if (lock.sessionUUID) releaseApplyLock(cwd, lock.sessionUUID);
+  }
+}
+
+// @kern-source: forge:169
+/**
+ * Parse Cesar's command-only fitness response. Accepts strict JSON first, then a plain one-line command.
+ */
+export function extractFitnessCommandFromCesarOutput(output: string): string|null {
+  let text = String(output ?? '').trim();
+  if (!text) return null;
+  text = text
+    .replace(/^```(?:json|bash|sh)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  
+  let candidate: string | null = null;
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed && typeof parsed.fitnessCmd === 'string') candidate = parsed.fitnessCmd;
+      else if (parsed && typeof parsed.command === 'string') candidate = parsed.command;
+    } catch {
+      // Fall back to plain command parsing below.
+    }
+  }
+  if (!candidate) {
+    candidate = text
+      .split(/\r?\n/)
+      .map((line: string) => line.trim())
+      .find((line: string) => line.length > 0 && !/^(```|fitnessCmd\s*:|command\s*:)/i.test(line)) ?? null;
+  }
+  if (!candidate) return null;
+  candidate = candidate.replace(/^`|`$/g, '').trim();
+  candidate = candidate.replace(/^(fitnessCmd|command)\s*:\s*/i, '').trim();
+  if (!candidate || candidate.length > 500 || /[\r\n\0]/.test(candidate)) return null;
+  return candidate;
+}
+
+// @kern-source: forge:203
+function extractGithubLiterals(text: string): string[] {
+  return [...new Set((String(text ?? '').match(/(?:https?:\/\/)?github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/g) ?? []).map((m: string) => m.replace(/^https?:\/\//, '').replace(/[).,;:'"`\]]+$/g, '')))];
+}
+
+// @kern-source: forge:205
+/**
+ * Keep literal GitHub repo URLs in Cesar-generated fitness commands aligned with the user's task. Prevents small hallucinated typos from making all engines optimize for the wrong marker.
+ */
+export function repairFitnessCommandTaskLiterals(task: string, command: string): string {
+  const taskUrls = extractGithubLiterals(task);
+  if (taskUrls.length === 0) return command;
+  const taskUrlSet = new Set(taskUrls);
+  let repaired = command;
+  for (const cmdUrl of extractGithubLiterals(command)) {
+    if (taskUrlSet.has(cmdUrl)) continue;
+    const cmdParts = cmdUrl.split('/');
+    const replacement = taskUrls.length === 1
+      ? taskUrls[0]
+      : taskUrls.find((url: string) => {
+          const parts = url.split('/');
+          return parts[2]?.toLowerCase() === cmdParts[2]?.toLowerCase();
+        });
+    if (replacement) {
+      repaired = repaired.split(cmdUrl).join(replacement);
+    }
+  }
+  return repaired;
+}
+
+// @kern-source: forge:228
+export function normalizeGithubRemoteLiteral(remote: string): string|null {
+  const raw = String(remote ?? '').trim();
+  if (!raw) {
+    return null;
+  }
+  const cleaned = raw.replace(/\.git$/, '');
+  const ssh = cleaned.match(/^git@github\.com:([^/]+)\/(.+)$/);
+  if (ssh) {
+    return `github.com/${ssh[1]}/${ssh[2]}`;
+  }
+  const https = cleaned.match(/^https?:\/\/github\.com\/([^/]+)\/(.+)$/);
+  if (https) {
+    return `github.com/${https[1]}/${https[2]}`;
+  }
+  return null;
+}
+
+// @kern-source: forge:242
+function detectGithubRemoteLiteral(cwd: string): string|null {
+  try {
+    const remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+    return normalizeGithubRemoteLiteral(remote);
+  } catch (e) {
+    return null;
+  }
+}
+
+// @kern-source: forge:250
+/**
+ * For current-repository README/docs checks, prefer the actual git origin over stale chat examples or old repo names.
+ */
+export function repairFitnessCommandRepositoryLiteral(command: string, repoLiteral: string|null): string {
+  if (!repoLiteral) {
+    return command;
+  }
+  let repaired = command;
+  for (const cmdUrl of extractGithubLiterals(command)) {
+    if (cmdUrl === repoLiteral) {
+      continue;
+    }
+    repaired = repaired.split(cmdUrl).join(repoLiteral);
+  }
+  return repaired;
+}
+
+// @kern-source: forge:262
+function taskExplicitlyMentionsLiteral(task: string, literal: string): boolean {
+  const taskLower = String(task ?? '').toLowerCase();
+  const literalLower = String(literal ?? '').toLowerCase();
+  if (!literalLower) {
+    return false;
+  }
+  if (taskLower.includes(literalLower)) {
+    return true;
+  }
+  const escaped = literalLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b(?:no|avoid|without|forbid|exclude|do not mention)\\s+${escaped}\\b`, 'i').test(taskLower);
+}
+
+// @kern-source: forge:273
+/**
+ * Decide whether a fitness command may assert a GitHub/repository URL. This is semantic intent, not literal echoing: public README/footer/link tasks can check the local git origin; normal local docs tasks should not.
+ */
+export function taskWantsRepositoryLinkCheck(task: string): boolean {
+  const t = String(task ?? '').toLowerCase();
+  if (/github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+/i.test(t)) {
+    return true;
+  }
+  return /\b(?:github|repo(?:sitory)?\s+(?:url|link)|project\s+(?:url|link)|source\s+(?:url|link)|footer\s+(?:with|containing|link)|public\s+(?:repo|repository|link|url))\b/i.test(t);
+}
+
+// @kern-source: forge:281
+/**
+ * Remove forbidden literals that are local identity facts rather than internal details. Example: avoid KERN compilation must not become forbidden=['KERNlang'] when KERNlang is the GitHub owner.
+ */
+export function repairOverbroadForbiddenLiterals(task: string, command: string, repoLiteral: string|null): string {
+  const forbidden = extractFitnessStringArray(command, 'forbidden');
+  if (forbidden.length === 0 || !repoLiteral) return command;
+  const parts = repoLiteral.split('/');
+  const protectedLiterals = new Set<string>();
+  if (parts[1]) protectedLiterals.add(parts[1]);
+  if (parts[2]) protectedLiterals.add(parts[2]);
+  protectedLiterals.add(repoLiteral);
+  protectedLiterals.add(`https://${repoLiteral}`);
+  
+  const kept = forbidden.filter((f: string) => {
+    const isProtected = [...protectedLiterals].some((p: string) => p.toLowerCase() === f.toLowerCase());
+    if (!isProtected) return true;
+    return taskExplicitlyMentionsLiteral(task, f);
+  });
+  if (kept.length === forbidden.length) return command;
+  
+  const serialized = kept.map((v: string) => `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`).join(',');
+  return command.replace(/forbidden\s*=\s*\[[^\]]*\]/, `forbidden=[${serialized}]`);
+}
+
+// @kern-source: forge:304
+function extractFitnessStringArray(command: string, name: string): string[] {
+  const re = new RegExp(`${name}\\s*=\\s*\\[([^\\]]*)\\]`);
+  const match = String(command ?? '').match(re);
+  if (!match) return [];
+  const values: string[] = [];
+  const body = match[1];
+  const stringRe = /(['"])((?:\\.|(?!\1).)*)\1/g;
+  let m;
+  while ((m = stringRe.exec(body)) !== null) {
+    values.push(m[2].replace(/\\(['"\\])/g, '$1'));
+  }
+  return values;
+}
+
+// @kern-source: forge:319
+/**
+ * Remove forbidden string literals that are required as part of another fitness assertion. Cesar sometimes requires github.com/KERNlang/agon and also forbids KERNlang, making the check impossible.
+ */
+export function repairContradictoryFitnessLiterals(command: string): string {
+  const required = extractFitnessStringArray(command, 'required');
+  const forbidden = extractFitnessStringArray(command, 'forbidden');
+  if (required.length === 0 || forbidden.length === 0) return command;
+  
+  const kept = forbidden.filter((f: string) => {
+    const lower = f.toLowerCase();
+    return !required.some((r: string) => {
+      const req = r.toLowerCase();
+      return req.includes(lower) || lower.includes(req);
+    });
+  });
+  if (kept.length === forbidden.length) return command;
+  
+  const serialized = kept.map((v: string) => `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`).join(',');
+  return command.replace(/forbidden\s*=\s*\[[^\]]*\]/, `forbidden=[${serialized}]`);
+}
+
+// @kern-source: forge:339
+/**
+ * Reject Cesar-generated fitness checks that drift from task intent. Fitness may inspect local files and exact requested literals, but should not add GitHub/repo assertions unless the task semantically asks for a public repo link.
+ */
+export function validateFitnessCommandIntent(task: string, command: string, repoLiteral: string|null): {ok:boolean,reason?:string} {
+  const cmd = String(command ?? '');
+  if (!cmd.trim()) {
+    return { ok: false, reason: 'empty fitness command' };
+  }
+  const githubLiterals = extractGithubLiterals(cmd);
+  if (githubLiterals.length > 0 && !taskWantsRepositoryLinkCheck(task)) {
+    return { ok: false, reason: `fitness added repository URL check without repo-link intent: ${githubLiterals.join(', ')}` };
+  }
+  const required = extractFitnessStringArray(cmd, 'required');
+  const forbidden = extractFitnessStringArray(cmd, 'forbidden');
+  for (const r of required) {
+    const req = r.toLowerCase();
+    for (const f of forbidden) {
+      const forb = f.toLowerCase();
+      if (req.includes(forb) || forb.includes(req)) {
+        return { ok: false, reason: `fitness requires and forbids overlapping literal "${f}"` };
+      }
+    }
+  }
+  if (repoLiteral) {
+    const owner = repoLiteral.split('/')[1] ?? '';
+    if (owner) {
+      const overbroad = forbidden.find((f: string) => f.toLowerCase() === owner.toLowerCase() && !taskExplicitlyMentionsLiteral(task, f));
+      if (overbroad) {
+        return { ok: false, reason: `fitness forbids local repo identity "${overbroad}" without explicit task intent` };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+// @kern-source: forge:364
+/**
+ * Normalize current-repository GitHub literals in a forge task before displaying the plan or sending the prompt to engines.
+ */
+export function repairForgeTaskRepositoryLiteral(task: string, cwd: string): string {
+  const repoLiteral = detectGithubRemoteLiteral(cwd);
+  return repairFitnessCommandRepositoryLiteral(task, repoLiteral);
+}
+
+// @kern-source: forge:370
+function describeProjectFitnessOptions(cwd: string): string {
+  const lines: string[] = [];
+  const packageJsonPath = join(cwd, 'package.json');
+  if (existsSync(packageJsonPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+      const scripts = (pkg && typeof pkg === 'object' && pkg.scripts && typeof pkg.scripts === 'object') ? Object.keys(pkg.scripts as Record<string, unknown>).sort() : [];
+      if (scripts.length > 0) {
+        lines.push(`package.json scripts: ${scripts.join(', ')}`);
+      }
+    } catch (e) {
+      lines.push('package.json exists but could not be parsed');
+    }
+  }
+  if (existsSync(join(cwd, 'Cargo.toml'))) {
+    lines.push('Cargo.toml present');
+  }
+  if (existsSync(join(cwd, 'go.mod'))) {
+    lines.push('go.mod present');
+  }
+  if (existsSync(join(cwd, 'pyproject.toml'))) {
+    lines.push('pyproject.toml present');
+  }
+  if (existsSync(join(cwd, 'README.md'))) {
+    lines.push('README.md present');
+  }
+  const repoLiteral = detectGithubRemoteLiteral(cwd);
+  if (repoLiteral) {
+    lines.push(`git origin: ${repoLiteral}`);
+  }
+  return (lines.length > 0) ? lines.join('\n') : 'No common project test metadata found.';
+}
+
+// @kern-source: forge:395
+/**
+ * Ask Cesar to prepare a task-specific fitness command when a forge call omitted one. This keeps UX non-interactive without hardcoding task-specific checks in the handler.
+ */
+export async function prepareForgeFitnessCommand(task: string, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
+  const config = ctx.config;
+  const cwd = resolveWorkingDir();
+  const cesarEngineId = String((config as any).cesarEngine ?? config.forgeFixedStarter ?? ctx.activeEngines()[0] ?? '').trim();
+  if (!cesarEngineId) return null;
+  
+  let engine: any = null;
+  try { engine = ctx.registry.get(cesarEngineId); } catch { return null; }
+  if (!engine) return null;
+  
+  const outputDir = join(RUNS_DIR, `fitness-${Date.now()}`);
+  mkdirSync(outputDir, { recursive: true });
+  dispatch({ type: 'info', message: `Cesar preparing fitness check with ${cesarEngineId}…` });
+  
+  const prompt = [
+    'Prepare one shell fitness command for a forge run.',
+    '',
+    'Return strict JSON only: {"fitnessCmd":"<command>","reason":"<short reason>"}',
+    '',
+    'Rules:',
+    '- The command must be non-interactive and suitable to run from the repository root.',
+    '- Interpret the task semantically. Do not convert every phrase into a literal grep.',
+    '- The command should verify the task requirements as specifically as possible using local files and local project facts.',
+    '- Do not add GitHub/repository URL checks unless the task explicitly asks for a public repo link, GitHub URL, or footer/source link.',
+    '- If a repo link is needed, use the git origin shown in Project signals as the source of truth.',
+    '- Preserve exact literals only when the task actually requires those literals. Do not correct or invent spellings.',
+    '- Do not turn broad wording like "avoid internal build details" into forbidding local identity names such as the GitHub owner or repo name.',
+    '- Prefer existing project scripts when they fit; otherwise write a small shell/node/python check.',
+    '- Do not include markdown, prose, or multiple commands outside the JSON string.',
+    '',
+    `Task:\n${task}`,
+    '',
+    `Project signals:\n${describeProjectFitnessOptions(cwd)}`,
+  ].join('\n');
+  
+  try {
+    const result = await ctx.adapter.dispatch({
+      engine,
+      prompt,
+      cwd,
+      mode: 'exec' as any,
+      timeout: Math.min((config.timeout ?? 90), 90),
+      outputDir,
+    });
+    const cmd = extractFitnessCommandFromCesarOutput(String(result.stdout ?? ''));
+    if (cmd) {
+      const repoLiteral = detectGithubRemoteLiteral(cwd);
+      const taskRepaired = repairFitnessCommandTaskLiterals(task, cmd);
+      const repoRepaired = repairFitnessCommandRepositoryLiteral(taskRepaired, repoLiteral);
+      const forbiddenRepaired = repairOverbroadForbiddenLiterals(task, repoRepaired, repoLiteral);
+      const repaired = repairContradictoryFitnessLiterals(forbiddenRepaired);
+      const validation = validateFitnessCommandIntent(task, repaired, repoLiteral);
+      if (!validation.ok) {
+        dispatch({ type: 'warning', message: `Rejected Cesar fitness check: ${validation.reason}` });
+        return null;
+      }
+      if (repaired !== cmd) {
+        dispatch({ type: 'warning', message: `Repaired Cesar fitness literal: ${cmd} -> ${repaired}` });
+      }
+      dispatch({ type: 'info', message: `Cesar fitness check: ${repaired}` });
+      return repaired;
+    }
+  } catch (err) {
+    dispatch({ type: 'warning', message: `Cesar could not prepare a fitness check: ${err instanceof Error ? err.message : String(err)}` });
+  }
+  return null;
+}
+
+// @kern-source: forge:465
+/**
+ * Pick a non-interactive fallback fitness command from the current project when the user or Cesar did not provide one.
+ */
+export function inferProjectFitnessCommand(cwd: string): string {
+  const packageJsonPath = join(cwd, 'package.json');
+  if (existsSync(packageJsonPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+      const scripts = pkg && typeof pkg === 'object' && pkg.scripts && typeof pkg.scripts === 'object'
+        ? pkg.scripts as Record<string, unknown>
+        : {};
+      const hasScript = (name: string) => typeof scripts[name] === 'string' && String(scripts[name]).trim().length > 0;
+      if (hasScript('test:ts')) return 'npm run test:ts';
+      if (hasScript('test')) return 'npm test';
+      if (hasScript('typecheck')) return 'npm run typecheck';
+      if (hasScript('build')) return 'npm run build';
+    } catch {
+      // Fall through to generic checks when package.json cannot be parsed.
+    }
+  }
+  if (existsSync(join(cwd, 'Cargo.toml'))) return 'cargo test';
+  if (existsSync(join(cwd, 'go.mod'))) return 'go test ./...';
+  if (existsSync(join(cwd, 'pyproject.toml'))) return 'python -m pytest';
+  return 'git diff --check';
+}
+
+// @kern-source: forge:490
+export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
+  const forgeAbort = new AbortController();
+  try {
+    ensureAgonHome();
+    
+    if (!task) {
+      dispatch({ type: 'warning', message: 'No task provided. Usage: "fix the auth bug, test with npm test"' });
+      return null;
+    }
+    const forgeCwd = resolveWorkingDir();
+    // Snapshot HEAD/branch now so auto-apply can refuse if another session
+    // moves the working tree out from under this run (the shared-checkout hazard).
+    const preflightHead: string | null = (() => { try { return headSha(forgeCwd); } catch { return null; } })();
+    const preflightBranch: string | null = (() => { try { return currentBranch(forgeCwd); } catch { return null; } })();
+    const originalTask = task;
+    task = repairForgeTaskRepositoryLiteral(task, forgeCwd);
+    if (task !== originalTask) {
+      dispatch({ type: 'warning', message: 'Repaired forge task repository link to match git origin.' });
+    }
+    
+    let fitness = fitnessCmd;
+    if (!fitness) {
+      fitness = await prepareForgeFitnessCommand(task, dispatch, ctx);
+    }
+    if (!fitness) {
+      fitness = inferProjectFitnessCommand(resolveWorkingDir());
+      dispatch({ type: 'warning', message: `Cesar did not provide a fitness check; falling back to: ${fitness}` });
+    }
+    
+    const allEngines = ctx.activeEngines();
+    const engines = filterDefaultOrchestrationEngines(allEngines);
+    const excluded = allEngines.filter((id: string) => !engines.includes(id));
+    if (excluded.length > 0) dispatch({ type: 'info', message: `Skipping disabled orchestration engines: ${excluded.join(', ')}` });
+    if (engines.length === 0) {
+      dispatch({ type: 'error', message: 'No engines available. Install at least one AI CLI tool.' });
+      return null;
+    }
+    
+    const config = ctx.config;
+    let plan: Plan;
+    
+    if (existingPlan) {
+      plan = startPlan(existingPlan);
+      ctx.setCurrentPlan(plan);
+      savePlan(plan);
+    } else {
+      const ws = getActiveWorkspace();
+      const snapshot = ws
+        ? snapshotWorkspace(ws)
+        : { id: 'cwd', path: forgeCwd, headSha: 'unknown', branch: 'unknown', dirty: false };
+    
+      const forgeSteps: PlanStepInput[] = [
+        { id: 'baseline', kind: 'fitness', label: 'Baseline fitness check', effects: ['exec'] },
+        { id: 'dispatch', kind: 'dispatch', label: `Dispatch engines: ${engines.join(', ')}`, effects: ['exec', 'write', 'network'] },
+        { id: 'score', kind: 'fitness', label: 'Score engine results', effects: ['exec', 'read'] },
+        { id: 'winner', kind: 'dispatch', label: 'Determine winner', effects: ['read'] },
+      ];
+      if (config.forgeEnableSynthesis) {
+        forgeSteps.push({ id: 'synthesis', kind: 'synthesis', label: 'Critique & synthesize', effects: ['exec', 'write', 'network'] });
+      }
+    
+      plan = createPlan(
+        { type: 'forge', task, fitnessCmd: fitness, engines, hardened: hardened ?? false },
+        snapshot,
+        forgeSteps,
+      );
+      ctx.setCurrentPlan(plan);
+    
+      dispatch({ type: 'plan', plan });
+    
+      const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
+      if (!skipPlanApproval && approvalLevel !== 'auto') {
+        const answer = await ctx.askQuestion('Approve plan? [Y/n]');
+        if (answer.trim().toLowerCase() === 'n') {
+          plan = cancelPlan(plan);
+          ctx.setCurrentPlan(plan);
+          savePlan(plan);
+          dispatch({ type: 'info', message: 'Plan cancelled.' });
+          return null;
+        }
+      }
+    
+      plan = approvePlan(plan);
+      plan = startPlan(plan);
+      ctx.setCurrentPlan(plan);
+      savePlan(plan);
+    }
+    
+    const forgeDir = join(RUNS_DIR, `forge-${Date.now()}`);
+    mkdirSync(forgeDir, { recursive: true });
+    dispatch({ type: 'info', message: `Forge run dir: ${forgeDir}` });
+    
+    const projectCtx = scanProjectContext(forgeCwd, config.projectContext || undefined, config.contextFormat);
+    
+    const engineStatus: Record<string, string> = {};
+    const startTime = Date.now();
+    
+    // ── Scoreboard + Checkpoint ──
+    const runId = `forge-${Date.now()}`;
+    const scoreboard = createScoreboard(runId, 'forge', engines);
+    const preCp = buildCheckpoint(runId, 'pre-dispatch', 'forge', engines, { task, fitnessCmd: fitness, hardened: hardened ?? false });
+    recordCheckpoint(preCp);
+    
+    // Phase 5c: pre-compute which engines have agent-mode config, so the
+    // progress tick (called every 250ms) doesn't re-query the registry.
+    const agentEngineIds = new Set<string>();
+    for (const id of engines) {
+      try {
+        const eng = ctx.registry.get(id);
+        if ((eng as any).agent || (eng as any).api) agentEngineIds.add(id);
+      } catch { /* engine not resolvable — treat as non-agent */ }
+    }
+    
+    const progressInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const progress: EngineProgress[] = engines.map((id: string) => {
+        const status = engineStatus[id] ?? 'preparing';
+        return {
+          id,
+          status: status === 'done' ? `done (${engineStatus[`${id}:score`] ?? '?'})` : status,
+          elapsed,
+          done: status === 'done',
+          failed: status === 'failed',
+          score: engineStatus[`${id}:score`],
+          isAgent: agentEngineIds.has(id),
+        };
+      });
+      dispatch({ type: 'progress-update', engines: progress });
+      // Sync scoreboard with engineStatus for live display
+      for (const id of engines) {
+        const s = engineStatus[id] ?? 'waiting';
+        if (s === 'building') scoreboardUpdateProgress(scoreboard, id, Math.min(95, elapsed * 2));
+        else if (s === 'done') scoreboardFinishEngine(scoreboard, id, { score: Number(engineStatus[`${id}:score`]) || undefined });
+        else if (s === 'failed') scoreboardFailEngine(scoreboard, id, engineStatus[`${id}:error`] ?? 'failed');
+      }
+    }, 250);
+    
+    ctx.setActiveAbort(forgeAbort);
+    
+    let manifest: any;
+    try {
+      manifest = await runForge(
+        {
+          task,
+          fitnessCmd: fitness,
+          cwd: forgeCwd,
+          forgeDir,
+          engines,
+          context: projectCtx,
+          hardened: hardened ?? false,
+          // Interactive forge: Cesar synthesizes the best-of-all result (only
+          // active when config.forgeEnableSynthesis is on). Falls back to the
+          // winner engine if cesarEngine is unset/unknown.
+          synthEngine: String((ctx.config as any).cesarEngine ?? '').trim() || undefined,
+          synthesize: 'always',
+          signal: forgeAbort.signal,
+        },
+        ctx.registry,
+        ctx.adapter,
+        (event: any) => {
+          plan = handleForgeEvent(event, plan, engineStatus, dispatch, ctx);
+        },
+      );
+    } catch (err) {
+      clearInterval(progressInterval);
+      dispatch({ type: 'progress-clear' });
+      ctx.setActiveAbort(null);
+      if (ctx.currentPlan?.state !== 'cancelled') {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        plan = failPlan(plan, errorMsg);
+        ctx.setCurrentPlan(plan);
+        savePlan(plan);
+      }
+      throw err;
+    }
+    
+    clearInterval(progressInterval);
+    dispatch({ type: 'progress-clear' });
+    
+    // runForge now never throws — it returns a manifest with error set on
+    // fatal failure. Surface that as a user-visible warning so the run isn't
+    // silently treated as successful with no winner.
+    if (manifest.error) {
+      dispatch({ type: 'warning', message: `Forge failed: ${manifest.error}` });
+      // Cesar narrates the failure with concrete next steps before we exit.
+      try { await cesarReviewForgeOutcome(manifest, dispatch, ctx); }
+      catch (err) { console.warn(`[agon] Cesar review (error path) failed: ${err instanceof Error ? err.message : String(err)}`); }
+      // runForge no longer throws — but plan-mode still expects to see the
+      // plan transition to 'failed' on a fatal forge failure. Without this,
+      // the plan stays 'started'/'pending' and the orchestrator never moves on.
+      if (ctx.currentPlan?.state !== 'cancelled') {
+        plan = failPlan(plan, manifest.error);
+        ctx.setCurrentPlan(plan);
+        savePlan(plan);
+      }
+      recordRun({
+        mode: 'forge',
+        intent: task,
+        winner: undefined,
+        success: false,
+        durationMs: Date.now() - startTime,
+        engineIds: engines,
+        fitnessCmd: fitness ?? undefined,
+        completionState: 'crashed',
+        error: manifest.error,
+      });
+      ctx.setActiveAbort(null);
+      return null;
+    }
+    if (manifest.alreadySatisfied) {
+      dispatch({ type: 'info', message: 'Forge: task already satisfied — fitness command passes on baseline, no engines dispatched.' });
+      try { await cesarReviewForgeOutcome(manifest, dispatch, ctx); }
+      catch (err) { console.warn(`[agon] Cesar review (already-satisfied path) failed: ${err instanceof Error ? err.message : String(err)}`); }
+      // alreadySatisfied = success, distinct from no-winner. Without this
+      // early return, the rest of the handler (scoreboard, judge, plan-finalize)
+      // sees an empty manifest.results and reports "No winner — all engines
+      // failed", marking the plan failed.
+      recordRun({
+        mode: 'forge',
+        intent: task,
+        winner: undefined,
+        success: true,
+        durationMs: Date.now() - startTime,
+        engineIds: engines,
+        fitnessCmd: fitness ?? undefined,
+        completionState: 'completed',
+      });
+      ctx.setActiveAbort(null);
+      return { winner: null, patchPath: null, manifestPath: `${forgeDir}/manifest.json`, task, fitnessCmd: fitness };
+    }
+    if (manifest.singleSurvivor && manifest.winner) {
+      const winner = manifest.winner;
+      const score = (manifest.results as any)[winner]?.score ?? 0;
+      dispatch({ type: 'warning', message: `Only ${winner} produced a passing result (score ${score}). Other engines failed.` });
+      // Cesar reads the surviving patch and tells the user accept/retry.
+      try { await cesarReviewForgeOutcome(manifest, dispatch, ctx); }
+      catch (err) { console.warn(`[agon] Cesar review (single-survivor path) failed: ${err instanceof Error ? err.message : String(err)}`); }
+    }
+    // Note: the no-winner-with-no-error case is handled below, after the
+    // scoreboard renders, so the user sees the metrics first then Cesar's
+    // diagnosis. The cesarJudgeForge call (multi-pass case) stays where it was.
+    
+    // Finalize scoreboard + post-dispatch checkpoint
+    for (const id of engines) {
+      const s = engineStatus[id] ?? 'waiting';
+      if (s === 'done') scoreboardFinishEngine(scoreboard, id, { score: Number(engineStatus[`${id}:score`]) || undefined });
+      else if (s === 'failed') scoreboardFailEngine(scoreboard, id, engineStatus[`${id}:error`] ?? 'failed');
+    }
+    dispatch({ type: 'info', message: renderScoreboard(scoreboard) });
+    const postCp = buildCheckpoint(runId, 'post-dispatch', 'forge', engines, { winner: manifest.winner ?? null, task });
+    recordCheckpoint(postCp);
+    
+    const engineIds = Object.keys(manifest.results);
+    const results = Object.values(manifest.results) as any[];
+    
+    dispatch({
+      type: 'scoreboard',
+      title: 'Forge Scoreboard',
+      engineIds,
+      winner: manifest.winner ?? undefined,
+      metrics: [
+        { label: 'Fitness', values: results.map((r: any) => r.pass ? `PASS (${r.score})` : 'FAIL') },
+        { label: 'Score', values: results.map((r: any) => String(r.score)) },
+        { label: 'Diff size', values: results.map((r: any) => `${r.diffLines} lines`) },
+        { label: 'Files changed', values: results.map((r: any) => String(r.filesChanged)) },
+        { label: 'Time', values: results.map((r: any) => `${r.durationSec}s`) },
+      ],
+    });
+    
+    // Route through Cesar for judgment + convergence analysis
+    let judgment: any = null;
+    const passingEngines = Object.values(manifest.results).filter((r: any) => r.pass).length;
+    if (passingEngines >= 2 && ctx.cesarSession) {
+      try {
+        judgment = await cesarJudgeForge(manifest, dispatch, ctx);
+      } catch (err) {
+        console.warn(`[agon] Cesar judge failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    } else if (passingEngines === 0 && !manifest.alreadySatisfied && ctx.cesarSession) {
+      // No-winner-no-error: Cesar diagnoses the failure pattern so the user
+      // gets a real next-step instead of just a "no winner" scoreboard.
+      try { await cesarReviewForgeOutcome(manifest, dispatch, ctx); }
+      catch (err) { console.warn(`[agon] Cesar review (no-winner path) failed: ${err instanceof Error ? err.message : String(err)}`); }
+    }
+    
+    // Use Cesar's winner if available, otherwise fall back to automatic
+    const finalWinner = judgment?.winner ?? manifest.winner;
+    
+    // Convergence: if Cesar says merge best-of-breed, synthesize a converged patch
+    if (judgment?.shouldConverge && judgment.convergencePlan.length > 0 && finalWinner) {
+      dispatch({ type: 'info', message: 'Cesar recommends convergence — synthesizing best-of-breed…' });
+      const answer = await ctx.askQuestion('Converge best parts from all engines? [Y/n]');
+      if (answer.trim().toLowerCase() !== 'n') {
+        try {
+          const convergedPath = await cesarConvergeForge(manifest, judgment, dispatch, ctx);
+          if (convergedPath) {
+            dispatch({ type: 'success', message: 'Convergence complete — merged patch ready' });
+            const convergedContent = readFileSync(convergedPath, 'utf-8');
+            const applied = applyForgePatchToWorkspace('convergence', convergedContent, dispatch, preflightHead, preflightBranch);
+            if (!applied) dispatch({ type: 'patch-review' as any, winnerId: 'convergence', patchPath: convergedPath, patchContent: convergedContent });
+    
+            if ((ctx.config as any).sessionContinuity === true) {
+              try {
+                const convergeThread = loadOrCreateActiveThread(resolveWorkingDir());
+                const capped = convergedContent.length > 90000
+                  ? convergedContent.slice(0, 90000) + `\n\n[... ${convergedContent.length - 90000} more chars truncated — full patch at ${convergedPath}]`
+                  : convergedContent;
+                convergeThread.append({
+                  role: 'assistant',
+                  content: `[forge-convergence-diff] winner: convergence (best-of-breed)\npatch path: ${convergedPath}\n\n${capped}`,
+                });
+                await convergeThread.save();
+              } catch (threadErr) {
+                dispatch({ type: 'warning', message: `Convergence diff NOT persisted to thread: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}` });
+              }
+            }
+    
+            // Skip normal winner patch — convergence replaces it
+            dispatch({ type: 'info', message: `Manifest: ${forgeDir}/manifest.json` });
+            dispatch({ type: 'info', message: `Result bundle: ${manifest.resultBundlePath ?? `${forgeDir}/result.json`}` });
+    
+            for (const step of plan.steps) {
+              if (step.result.state === 'pending' || step.result.state === 'running') {
+                plan = mergeStepResult(plan, step.id, { state: 'completed' });
+              }
+            }
+            const winnerArtifacts = [
+              { type: 'manifest' as const, path: `${forgeDir}/manifest.json` },
+              { type: 'patch' as const, path: convergedPath, engineId: 'convergence' },
+            ];
+            plan = mergeStepResult(plan, 'winner', { state: 'completed', artifacts: winnerArtifacts });
+            ctx.setCurrentPlan(plan);
+            savePlan(plan);
+          dispatch({ type: 'info', message: `Plan: ${plan.id}` });
+          sessionResultStore.add({
+              type: 'forge',
+              timestamp: new Date().toISOString(),
+              question: task,
+              engines: engineIds,
+              winner: 'convergence',
+              data: {
+                scoreboard: engineIds.map((id: string) => {
+                  const r = (manifest.results as any)[id];
+                  return { engineId: id, pass: r.pass, score: r.score, diffLines: r.diffLines, filesChanged: r.filesChanged, durationSec: r.durationSec };
+                }),
+                winner: 'convergence',
+                synthesis: manifest.synthesis ?? undefined,
+              },
+            });
+            for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
+              tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
+            }
+            recordRun({
+              mode: 'forge',
+              intent: task,
+              winner: 'convergence',
+              success: true,
+              durationMs: Date.now() - startTime,
+              engineIds: engineIds,
+              fitnessCmd: fitness ?? undefined,
+              completionState: 'completed',
+            });
+            return {
+              winner: 'convergence',
+              patchPath: convergedPath,
+              manifestPath: `${forgeDir}/manifest.json`,
+              task,
+              fitnessCmd: fitness!,
+            }; // Early return — convergence handled everything
+          }
+        } catch (err) {
+          dispatch({ type: 'warning', message: `Convergence failed: ${err instanceof Error ? err.message : String(err)}. Falling back to winner.` });
+        }
+      }
+    }
+    
+    if (finalWinner) {
+      if (!judgment) dispatch({ type: 'success', message: `Winner: ${finalWinner}` });
+      const patchPath = manifest.patches[finalWinner];
+      dispatch({ type: 'info', message: `Patch: ${patchPath}` });
+      if (patchPath) {
+        try {
+          const patchContent = readFileSync(patchPath, 'utf-8');
+          const applied = applyForgePatchToWorkspace(finalWinner, patchContent, dispatch, preflightHead, preflightBranch);
+          if (!applied) dispatch({ type: 'patch-review' as any, winnerId: finalWinner, patchPath, patchContent });
+    
+          if ((ctx.config as any).sessionContinuity === true) {
+            try {
+              const cwd = resolveWorkingDir();
+              const forgeThread = loadOrCreateActiveThread(cwd);
+              const capped = patchContent.length > 90000
+                ? patchContent.slice(0, 90000) + `\n\n[... ${patchContent.length - 90000} more chars truncated — full patch at ${patchPath}]`
+                : patchContent;
+              forgeThread.append({
+                role: 'assistant',
+                content: `[forge-diff] winner: ${finalWinner}\npatch path: ${patchPath}\n\n${capped}`,
+              });
+              await forgeThread.save();
+            } catch (threadErr) {
+              dispatch({ type: 'warning', message: `Winner diff NOT persisted to thread: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}` });
+            }
+          }
+        } catch (err) {
+          console.warn(`[agon] failed to read winning patch ${patchPath}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    } else {
+      if (manifest.noDiffSummary) {
+        const summary = manifest.noDiffSummary as any;
+        if (Number(summary.toolLoopLimit ?? 0) > 0) {
+          dispatch({ type: 'error', message: `No candidate diff — ${summary.toolLoopLimit}/${summary.count} engine(s) hit the tool-loop limit before producing a patch.` });
+        } else {
+          dispatch({ type: 'warning', message: 'No candidate diff — engines produced no patch. Use validate/improve mode or a more discriminating fitness command for already-passing work.' });
+        }
+      } else {
+        dispatch({ type: 'error', message: 'No winner — all engines failed' });
+      }
+    }
+    dispatch({ type: 'info', message: `Manifest: ${forgeDir}/manifest.json` });
+    dispatch({ type: 'info', message: `Result bundle: ${manifest.resultBundlePath ?? `${forgeDir}/result.json`}` });
+    
+    for (const step of plan.steps) {
+      if (step.result.state === 'pending' || step.result.state === 'running') {
+        plan = mergeStepResult(plan, step.id, { state: 'completed' });
+      }
+    }
+    
+    const anyPassed = Object.values(manifest.results).some((r: any) => r.pass);
+    // Use Cesar's chosen winner (finalWinner) for plan artifacts, not automatic manifest.winner
+    const winnerForPlan = finalWinner ?? manifest.winner;
+    const winnerArtifacts = [
+      { type: 'manifest' as const, path: `${forgeDir}/manifest.json` },
+      ...(winnerForPlan && manifest.patches[winnerForPlan]
+        ? [{ type: 'patch' as const, path: manifest.patches[winnerForPlan], engineId: winnerForPlan }]
+        : []),
+    ];
+    plan = mergeStepResult(plan, 'winner', { state: 'completed', artifacts: winnerArtifacts });
+    
+    if (!anyPassed) {
+      plan = { ...plan, state: 'failed', currentStepId: null, updatedAt: new Date().toISOString() } as Plan;
+    }
+    ctx.setCurrentPlan(plan);
+    savePlan(plan);
+    dispatch({ type: 'info', message: `Plan: ${plan.id}` });
+    
+    sessionResultStore.add({
+      type: 'forge',
+      timestamp: new Date().toISOString(),
+      question: task,
+      engines: engineIds,
+      winner: finalWinner ?? null,
+      data: {
+        scoreboard: engineIds.map((id: string, i: number) => {
+          const r = results[i] as any;
+          return { engineId: id, pass: r.pass, score: r.score, diffLines: r.diffLines, filesChanged: r.filesChanged, durationSec: r.durationSec };
+        }),
+        winner: finalWinner ?? null,
+        synthesis: manifest.synthesis ?? undefined,
+      },
+    });
+    
+    for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
+      tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
+    }
+    
+    const runRecord = recordRun({
+      mode: 'forge',
+      intent: task,
+      winner: finalWinner ?? undefined,
+      success: anyPassed,
+      durationMs: Date.now() - startTime,
+      engineIds: engineIds,
+      fitnessCmd: fitness ?? undefined,
+      completionState: 'completed',
+    });
+    if (!process.env.AGON_NO_SUMMARY) {
+      dispatch({ type: 'info', message: formatRunSummary(runRecord) });
+    }
+    
+    return {
+      winner: finalWinner ?? null,
+      patchPath: finalWinner && manifest.patches[finalWinner] ? manifest.patches[finalWinner] : null,
+      manifestPath: `${forgeDir}/manifest.json`,
+      task,
+      fitnessCmd: fitness!,
+    };
+  } finally {
+    ctx.setActiveAbort(null);
+  }
+}
+

@@ -137,6 +137,38 @@ describe('runApiAgentLoop', () => {
     }
   });
 
+  it('runs well past 10 tool steps by default (time-bounded, not capped at 10)', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+    let calls = 0;
+
+    // Call a tool 12 times, then answer. Old default (10) would have bailed with
+    // the "tool loop limit" message at step 10; the new default lets it finish.
+    apiStreamDispatchWithHistoryMock.mockImplementation(() => {
+      calls++;
+      return calls <= 12
+        ? streamChunks(['<tool name="Read">{"file_path":"missing.txt"}</tool>'])
+        : streamChunks(['finished after twelve tool calls']);
+    });
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Keep going until done',
+        cwd,
+        timeout: 120,
+        // NOTE: no maxSteps — exercises the default safety ceiling (200), not a small cap.
+      });
+
+      expect(result.response).toBe('finished after twelve tool calls');
+      expect(result.response).not.toContain('tool loop limit');
+      expect(calls).toBeGreaterThan(11);
+      expect(result.toolCalls).toBe(12);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('does not return empty output when the tool loop reaches max steps', async () => {
     const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(cwd, { recursive: true });

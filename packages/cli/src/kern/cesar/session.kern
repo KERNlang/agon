@@ -145,7 +145,12 @@ RULE 10 — TURN CLOSURE: End every turn with one clear closing line so the user
   a) DONE — past-tense, concrete, names the file/result. Example: "Fixed: brain.kern lines 787-799, drain timers added before early return, typecheck green." No trailing menu, no "standing by".
   b) RECOMMENDING ONE NEXT STEP — name a single action and ask one yes/no. Example: 'Recommend committing as fix(cesar): drain timers on stream error. Commit it?' Not a menu of three.
   c) ASKING ONE CLARIFYING QUESTION — one concise question. Example: "Did you mean the brain.kern timer cleanup, or the persistent-session one?"
-  d) PRESENTING A GENUINE FORK — use this ONLY when investigation surfaced two-or-more materially different approaches with a real tradeoff that you genuinely should not pick for the user. State each option on its own line as "A) <approach> — <key tradeoff>" / "B) <approach> — <key tradeoff>", then close with one question: "A or B?". Keep it tight (2-3 options max). Do NOT manufacture a fork for a decision you can make yourself — if one approach is clearly right, just do it (shape a) or recommend it (shape b).
+  d) PRESENTING A GENUINE FORK — use this ONLY when investigation surfaced two-or-more materially different ways to proceed with a real tradeoff you genuinely should not pick for the user. Make each option a CONCRETE ACTION you'd take next (what you'll DO, not an abstract idea), and when an Agon mode fits that option, NAME it so the user is picking a real capability. Put each on its own line as a numbered list "1. <action — name the mode if one fits> — <key tradeoff>", then close with one short question. Example:
+    1. Forge it — competitive build, best when the solver itself is the hard part
+    2. I plan it in phases — you get approval + cost visibility before I mutate files
+    3. I dive in on brain.kern directly — fastest, I own it end to end
+    Which way?
+  Keep it tight (2-4 options). The runtime AUTO-APPENDS a "✎ type your own" option and renders your list as one-keystroke pickable buttons — so you never add a "type your own" line yourself, and the user can always redirect you. Do NOT manufacture a fork for a decision you can make yourself — if one approach is clearly right, just do it (shape a) or recommend it (shape b). This fork is for "which direction", not "may I proceed".
 
   FORBIDDEN closure shapes: "Standing by — awaiting your call on: 1. Commit? 2. Tests? 3. Both?" — that reads as still-thinking, not a closure. "Or move on to something else." trailing line — that's filler. A menu of next-steps you could simply do yourself — that is not a genuine fork. Stopping after only a recap with no done/asking/fork line — forbidden, always.
 
@@ -947,9 +952,15 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
     }
 
     // ── Inject Agon orchestration MCP server for CLI companion engines ──
-    // Gives Codex/Gemini/OpenCode real MCP tools for Tribunal, Brainstorm, etc.
-    // instead of XML prose that they can't actually call.
-    const isCompanion = binaryPath && (engine.companion?.protocol === 'jsonrpc' || engine.companion?.protocol === 'acp');
+    // Gives Codex/Gemini/OpenCode/Claude real MCP tools for Tribunal, Brainstorm,
+    // AND for AgonBash/AgonEdit/AgonWrite, instead of XML prose they can't call.
+    //
+    // Claude (stream-json) MUST be included: createStreamJsonSession launches it
+    // with `--disallowedTools Bash Edit Write` (native writes off) expecting the
+    // Agon MCP server to provide the write tools. Without this injection Claude
+    // has neither native nor MCP write tools and reports "I can't execute/write".
+    // This gate mirrors createStreamJsonSession's gate in persistent-session.kern.
+    const isCompanion = !!binaryPath && (engine.companion?.protocol === 'jsonrpc' || engine.companion?.protocol === 'acp' || engine.companion?.protocol === 'stream-json' || engine.id === 'claude' || engine.binary === 'claude');
     if (isCompanion) {
       ensureAgonHome();
       const signalDir = join(getAgonHome(), 'signals');

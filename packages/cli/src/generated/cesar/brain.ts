@@ -616,6 +616,19 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           enrichedInput = `[CESAR TOOL RELIABILITY POLICY]\n${formatCesarReliabilityLine(routeReliability)}\nFor this tool-heavy task, do not pretend direct multi-step tooling happened. Prefer ProposePlan, Agent, Forge, Review, or another direct orchestration tool when execution is needed; if staying self, keep the answer advisory and explicit.\n\n${enrichedInput}`;
         }
 
+        // ── Session-memory digest (re-surfaced PER TURN) ──
+        // cesarMemory accumulates decisions/findings each turn, but it is only
+        // injected into the turn-1 system prompt — which is empty then — and reused
+        // sessions never rebuild that prompt, so the engine otherwise NEVER sees its
+        // own accumulated context. Re-inject the digest here on later turns so Cesar
+        // builds on what it already established instead of cold-starting (RULE 1).
+        try {
+          const sessionDigest = ctx.cesarMemory?.toPromptContext?.();
+          if (sessionDigest) {
+            enrichedInput = `[SESSION MEMORY — you already established this earlier this session; build on it, do NOT re-investigate what is already here]\n${sessionDigest}\n\n${enrichedInput}`;
+          }
+        } catch { /* session memory is best-effort */ }
+
         // ── Heartbeat timer + turn timeout ──
         const cesarTimeout = (config as any).cesarTimeout ?? 300;
         const heartbeat = setInterval(() => {

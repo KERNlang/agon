@@ -31,5 +31,5 @@ __pycache__/
 *.py[cod]
 kern_engines/*.egg-info/
 
-# Antigravity CLI (agy) per-repo working dir
+# Antigravity CLI (agy) local working dir
 .antigravitycli/

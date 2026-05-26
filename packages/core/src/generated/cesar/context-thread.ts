@@ -514,6 +514,12 @@ export class ContextThread {
     return this.projectPath;
   }
 
+  recentMessages(limit?: number): ThreadMessage[] {
+    const nonSystem = this.messages.filter(m => m.role !== 'system');
+    if (limit == null || limit >= nonSystem.length) return nonSystem.slice();
+    return nonSystem.slice(nonSystem.length - Math.max(0, limit));
+  }
+
   append(msg: Omit<ThreadMessage,'id'|'timestamp'|'tokens'>): ThreadMessage {
     if (msg.role === 'system') {
       throw new Error('ContextThread: role="system" messages must not be persisted. Pass systemPrompt via constructor config instead.');
@@ -996,12 +1002,12 @@ export class ContextThread {
   }
 }
 
-// @kern-source: context-thread:974
+// @kern-source: context-thread:982
 export interface ActivePointerMap {
   byProject: Record<string,string>;
 }
 
-// @kern-source: context-thread:977
+// @kern-source: context-thread:985
 export function loadActivePointer(): ActivePointerMap {
   try {
     const path = activePointerPath();
@@ -1018,7 +1024,7 @@ export function loadActivePointer(): ActivePointerMap {
   return { byProject: {} };
 }
 
-// @kern-source: context-thread:994
+// @kern-source: context-thread:1002
 export function saveActivePointer(pointer: ActivePointerMap): void {
   ensureAgonHome();
   const path = activePointerPath();
@@ -1028,16 +1034,16 @@ export function saveActivePointer(pointer: ActivePointerMap): void {
   renameSync(tmpPath, path);
 }
 
-// @kern-source: context-thread:1008
+// @kern-source: context-thread:1016
 export const _WeakRefCtor: (new (value:any)=>{deref:()=>any})|undefined = (globalThis as any).WeakRef as (new (value:any)=>{deref:()=>any})|undefined;
 
-// @kern-source: context-thread:1010
+// @kern-source: context-thread:1018
 export const _exitFlushRegistry: Set<{deref:()=>any}> = new Set<{deref:()=>any}>();
 
-// @kern-source: context-thread:1012
+// @kern-source: context-thread:1020
 export const _exitHandlerRegistered: {value:boolean} = { value: false };
 
-// @kern-source: context-thread:1014
+// @kern-source: context-thread:1022
 export function _registerExitFlush(thread: ContextThread): void {
   _exitFlushRegistry.add(_WeakRefCtor ? new _WeakRefCtor(thread) : { deref: () => thread });
   if (_exitHandlerRegistered.value) return;
@@ -1074,7 +1080,7 @@ export function _registerExitFlush(thread: ContextThread): void {
 /**
  * The canonical entry point for callers. Reads the active-pointer map, finds the current thread for this project (or creates one), hydrates it, and writes the pointer back if a new thread was created. Returns a ready-to-use ContextThread. Phase A.5: registers the thread with the process-exit flush registry so Ctrl+C saves partial work.
  */
-// @kern-source: context-thread:1048
+// @kern-source: context-thread:1056
 export function loadOrCreateActiveThread(projectPath: string, systemPrompt?: string): ContextThread {
   const pointer = loadActivePointer();
   const sha = projectSha8(projectPath);
@@ -1091,7 +1097,7 @@ export function loadOrCreateActiveThread(projectPath: string, systemPrompt?: str
 /**
  * Start a new thread for a project (abandoning the previous active pointer). Used when the user explicitly wants a fresh context — e.g. a /agent --new-thread flag. The old thread file remains on disk for history. Review finding #5: await save() fully before updating active.json — otherwise a concurrent loadOrCreateActiveThread could see the new pointer but no file, and fork again, losing the original fork.
  */
-// @kern-source: context-thread:1061
+// @kern-source: context-thread:1069
 export async function forkActiveThread(projectPath: string, systemPrompt?: string): Promise<ContextThread> {
   const thread = new ContextThread({ projectPath: projectPath, systemPrompt: systemPrompt });
   // Ensure the thread file exists on disk BEFORE we repoint active.json.
@@ -1109,7 +1115,7 @@ export async function forkActiveThread(projectPath: string, systemPrompt?: strin
 /**
  * List every thread-file uuid that exists on disk for this project. Used by a future /threads command to let the user browse or fork past conversations.
  */
-// @kern-source: context-thread:1076
+// @kern-source: context-thread:1084
 export function listThreadsForProject(projectPath: string): string[] {
   const dir = threadDirFor(projectPath);
   if (!existsSync(dir)) return [];
@@ -1123,7 +1129,7 @@ export function listThreadsForProject(projectPath: string): string[] {
   }
 }
 
-// @kern-source: context-thread:1104
+// @kern-source: context-thread:1112
 export interface SummarizeOptions {
   thread: ContextThread;
   api: any;
@@ -1134,7 +1140,7 @@ export interface SummarizeOptions {
 /**
  * Summarize the oldest N messages in the thread using a single cheap LLM call. Records the result as a ThreadCheckpoint. Non-destructive — original messages are preserved. Returns the checkpoint on success, null on API failure.
  */
-// @kern-source: context-thread:1110
+// @kern-source: context-thread:1118
 export async function summarizeOlderMessages(opts: SummarizeOptions): Promise<ThreadCheckpoint|null> {
   const messages = opts.thread.getAllMessages().filter((m: any) => m.role !== 'system');
   const n = Math.min(opts.messagesToSummarize ?? 30, messages.length - KEEP_LAST_K);
@@ -1177,7 +1183,7 @@ export async function summarizeOlderMessages(opts: SummarizeOptions): Promise<Th
 /**
  * Delete a thread file from disk. Idempotent — returns false if the file didn't exist. Does NOT update active.json; caller must fork a new thread if deleting the currently active one.
  */
-// @kern-source: context-thread:1151
+// @kern-source: context-thread:1159
 export function deleteThread(projectPath: string, threadId: string): boolean {
   try {
     unlinkSync(threadFilePath(projectPath, threadId));

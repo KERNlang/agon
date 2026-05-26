@@ -147,6 +147,7 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
       outputDir,
       signal: abort.signal,
       onApproval: buildAgentApprovalCallback(dispatch, ctx, engineId),
+      onTodos: (todos: { id: string; text: string; state: string }[]) => dispatch({ type: 'todos-set', todos }),
       permissionMode: (config as any).permissionMode ?? 'ask',
       allowedCommands: (config as any).allowedCommands ?? [],
       toolPermissions: (config as any).toolPermissions ?? {},

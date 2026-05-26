@@ -36,9 +36,15 @@ import { saveToolResultToDisk } from '../signals/session-store.js';
 
 import { createRetrieveResultTool } from '../tools/tool-retrieve.js';
 
+import { createWebFetchTool } from '../tools/tool-web-fetch.js';
+
+import { createTodoWriteTool } from '../tools/tool-todo-write.js';
+
+import { createWebSearchTool } from '../tools/tool-web-search.js';
+
 import type { ToolCacheEntry } from '../models/context-parts.js';
 
-// @kern-source: agent-loop:26
+// @kern-source: agent-loop:29
 export interface ApiAgentOptions {
   api: ApiConfig;
   prompt: string;
@@ -49,6 +55,7 @@ export interface ApiAgentOptions {
   maxSteps?: number;
   onChunk?: (text:string)=>void;
   onToolCall?: (name:string,args:Record<string,unknown>)=>void;
+  onTodos?: (todos: Array<{id:string,text:string,state:string,kind?:string,note?:string}>)=>void;
   heavyToolSemaphore?: Semaphore;
   historyMessages?: Array<Record<string,unknown>>;
   onHistoryEntry?: (entry:Record<string,unknown>)=>void;
@@ -60,7 +67,7 @@ export interface ApiAgentOptions {
   onPermissionAsk?: (tool:string, command:string, reason:string)=>Promise<boolean|string>;
 }
 
-// @kern-source: agent-loop:46
+// @kern-source: agent-loop:50
 export interface ApiAgentResult {
   response: string;
   toolCalls: number;
@@ -70,7 +77,7 @@ export interface ApiAgentResult {
 /**
  * Attempt to repair malformed JSON tool arguments. Handles common LLM mistakes: markdown fencing, trailing commas, single quotes, unquoted keys.
  */
-// @kern-source: agent-loop:51
+// @kern-source: agent-loop:55
 export function repairToolArgs(raw: string): Record<string,unknown>|null {
   let cleaned = raw.trim();
 
@@ -101,7 +108,7 @@ export function repairToolArgs(raw: string): Record<string,unknown>|null {
 /**
  * Auto-correct tool name case mismatches. Maps 'read' → 'Read', 'GREP' → 'Grep', etc.
  */
-// @kern-source: agent-loop:80
+// @kern-source: agent-loop:84
 export function repairToolName(name: string, registry: any): string {
   // Check if exact match exists
   if (registry.has?.(name) || registry.get?.(name)) return name;
@@ -122,7 +129,7 @@ export function repairToolName(name: string, registry: any): string {
 /**
  * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
  */
-// @kern-source: agent-loop:99
+// @kern-source: agent-loop:103
 export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentResult> {
   // Run-scoped cache ID: prevents concurrent forge runs from colliding
   const runCacheId = `${opts.api.model || 'api-agent'}-${randomUUID().slice(0, 8)}`;
@@ -135,6 +142,9 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   registry.register(createBashTool());
   registry.register(createGrepTool());
   registry.register(createGlobTool());
+  registry.register(createWebFetchTool());
+  registry.register(createWebSearchTool());
+  registry.register(createTodoWriteTool());
   registry.register(createRetrieveResultTool(runCacheId));
 
   const nativeTools = toolsToOpenAIFormat(registry);
@@ -154,6 +164,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     toolPermissions: opts.toolPermissions ?? {},
     virtualFs: opts.virtualFs,
     sessionAllowList: opts.sessionAllowList ?? [],
+    onTodos: opts.onTodos,
     source: 'orchestrator' as const,
   };
 

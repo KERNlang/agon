@@ -14,7 +14,7 @@ import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-
 export const brainstormCommand = defineCommand({
   meta: {
     name: 'brainstorm',
-    description: 'Confidence-bidding brainstorm — engines bid, highest confidence answers',
+    description: 'Confidence-bidding brainstorm — engines bid, highest-quality answer wins (quality = substance + calibrated confidence)',
   },
   args: {
     question: {
@@ -104,12 +104,16 @@ export const brainstormCommand = defineCommand({
 
     console.log('');
     header('Bids');
+    // Quality is the actual ranking key (answer substance + calibrated
+    // confidence); the winner is the top Quality, not the top Confidence.
+    // Show both so the winner is legible.
     const rows = result.bids.map((b: BrainstormBid) => [
       b.engineId === result.winner ? green(`${icons().winner} ${b.engineId}`) : b.engineId,
+      b.score != null ? String(Math.round(b.score)) : '—',
       String(b.confidence),
       b.reasoning.slice(0, 60),
     ]);
-    table(['Engine', 'Confidence', 'Reasoning'], rows);
+    table(['Engine', 'Quality', 'Confidence', 'Reasoning'], rows);
 
     console.log('');
     header(`Response from ${bold(result.winner)}`);

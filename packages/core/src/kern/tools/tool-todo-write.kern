@@ -1,0 +1,106 @@
+// ── TodoWrite Tool ───────────────────────────────────────────────────
+// Lets the agent maintain a rolling, always-visible task list (Cesar gap
+// #3). The todos-set/update/clear OutputEvents, reducers, and todo-rail UI
+// already exist — this tool is the missing agent-facing entry point. It
+// normalizes the model's input (incl. Claude-style content/status) onto
+// agon's native Todo shape and surfaces it via ctx.onTodos (the CLI wires a
+// dispatcher; the API loop leaves it unset and the model still sees the
+// checklist in the tool result). Read-only: no filesystem effects.
+
+import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolHandler,ToolDefinition,PermissionDecision" types=true
+
+interface name=NormalizedTodo export=true
+  field name=id type=string
+  field name=text type=string
+  field name=state type="'pending'|'running'|'done'|'failed'|'cancelled'"
+
+fn name=normalizeTodos params="raw:unknown" returns="NormalizedTodo[]" export=true
+  doc "Map an agent's todo array onto agon's native Todo shape. Accepts both Claude-style {content,status} and native {text,state}; maps in_progress->running, completed->done; defaults unknown/missing state to pending; assigns t<index> ids when none are given. Non-array input yields []."
+  handler <<<
+    if (!Array.isArray(raw)) return [];
+    const mapState = (s: unknown): NormalizedTodo['state'] => {
+      const v = String(s ?? '').toLowerCase();
+      if (v === 'running' || v === 'in_progress' || v === 'in-progress' || v === 'active') return 'running';
+      if (v === 'done' || v === 'completed' || v === 'complete') return 'done';
+      if (v === 'failed' || v === 'error') return 'failed';
+      if (v === 'cancelled' || v === 'canceled') return 'cancelled';
+      return 'pending';
+    };
+    const out: NormalizedTodo[] = [];
+    for (let i = 0; i < raw.length; i += 1) {
+      const item = raw[i] as Record<string, unknown>;
+      if (!item || typeof item !== 'object') continue;
+      const text = String(item.text ?? item.content ?? '').trim();
+      if (!text) continue;
+      out.push({
+        id: item.id != null ? String(item.id) : `t${out.length + 1}`,
+        text,
+        state: mapState(item.state ?? item.status),
+      });
+    }
+    return out;
+  >>>
+
+fn name=renderTodoChecklist params="todos:NormalizedTodo[]" returns=string export=false
+  doc "Render todos as a compact checklist the model can read back across turns."
+  handler <<<
+    if (todos.length === 0) return 'Todo list cleared (no items).';
+    const mark: Record<string, string> = { pending: '[ ]', running: '[~]', done: '[x]', failed: '[!]', cancelled: '[-]' };
+    return todos.map((t) => `${mark[t.state] ?? '[ ]'} ${t.text}`).join('\n');
+  >>>
+
+fn name=createTodoWriteTool returns=ToolHandler export=true
+  doc "Factory for the TodoWrite tool — sets the agent's rolling task list."
+  handler <<<
+    const definition: ToolDefinition = {
+      name: 'TodoWrite',
+      description: 'Maintain a rolling task list for the current multi-step task. Call it to declare the plan up front, then call again to mark items running/done as you progress. Pass the FULL list each time (it replaces the previous one); pass an empty array to clear. Use for any task with 3+ steps so your plan stays visible and you do not lose track across turns.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          todos: {
+            type: 'array',
+            description: 'The complete task list. Each item: { text (or content), state (or status): pending|running|done|failed|cancelled, id? }.',
+            items: {
+              type: 'object',
+              properties: {
+                text: { type: 'string', description: 'What the task is' },
+                state: { type: 'string', description: 'pending | running | done | failed | cancelled' },
+                id: { type: 'string', description: 'Optional stable id; auto-assigned if omitted' },
+              },
+              required: ['text'],
+            },
+          },
+        },
+        required: ['todos'],
+      },
+      maxResultSizeChars: 8000,
+      isReadOnly: true,
+      isConcurrencySafe: false,
+    };
+
+    const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+      if (!Array.isArray(input.todos)) return 'Missing required parameter: todos (an array of { text, state })';
+      return null;
+    };
+
+    const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
+      return { behavior: 'allow' as const };
+    };
+
+    const execute = async (input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> => {
+      const todos = normalizeTodos(input.todos);
+      if (ctx.onTodos) {
+        try { ctx.onTodos(todos); } catch { /* best-effort UI surface; never fail the tool on a render hook */ }
+      }
+      const running = todos.filter((t) => t.state === 'running').length;
+      const done = todos.filter((t) => t.state === 'done').length;
+      return {
+        ok: true,
+        content: `${renderTodoChecklist(todos)}\n\n(${done} done, ${running} in progress, ${todos.length} total)`,
+        metadata: { count: todos.length, done, running },
+      };
+    };
+
+    return { definition, validate, checkPermission, execute };
+  >>>

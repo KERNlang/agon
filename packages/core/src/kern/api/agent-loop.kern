@@ -22,6 +22,7 @@ import from="../blocks/file-state-cache.js" names="getProjectFileStateCache"
 import from="../signals/session-store.js" names="saveToolResultToDisk"
 import from="../tools/tool-retrieve.js" names="createRetrieveResultTool"
 import from="../tools/tool-web-fetch.js" names="createWebFetchTool"
+import from="../tools/tool-todo-write.js" names="createTodoWriteTool"
 import from="../models/context-parts.js" names="ToolCacheEntry" types=true
 
 interface name=ApiAgentOptions
@@ -34,6 +35,7 @@ interface name=ApiAgentOptions
   field name=maxSteps type=number optional=true
   field name=onChunk type="(text:string)=>void" optional=true
   field name=onToolCall type="(name:string,args:Record<string,unknown>)=>void" optional=true
+  field name=onTodos type="(todos: Array<{id:string,text:string,state:string,kind?:string,note?:string}>)=>void" optional=true
   field name=heavyToolSemaphore type=Semaphore optional=true
   field name=historyMessages type="Array<Record<string,unknown>>" optional=true
   field name=onHistoryEntry type="(entry:Record<string,unknown>)=>void" optional=true
@@ -112,6 +114,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
     registry.register(createGrepTool());
     registry.register(createGlobTool());
     registry.register(createWebFetchTool());
+    registry.register(createTodoWriteTool());
     registry.register(createRetrieveResultTool(runCacheId));
 
     const nativeTools = toolsToOpenAIFormat(registry);
@@ -131,6 +134,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
       toolPermissions: opts.toolPermissions ?? {},
       virtualFs: opts.virtualFs,
       sessionAllowList: opts.sessionAllowList ?? [],
+      onTodos: opts.onTodos,
       source: 'orchestrator' as const,
     };
 

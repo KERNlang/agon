@@ -6,7 +6,7 @@ import { Box, Static, Text, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@agon/core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
@@ -297,7 +297,7 @@ export function App() {
   const setCurrentPlan = useMemo(() => __inkSafe(_setCurrentPlanRaw), [_setCurrentPlanRaw]);
   const [activePlan, _setActivePlanRaw] = useState<any>(null);
   const setActivePlan = useMemo(() => __inkSafe(_setActivePlanRaw), [_setActivePlanRaw]);
-  const [chatSession, _setChatSessionRaw] = useState<ChatSession>(() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } return startChatSession({ cwd, branch }); });
+  const [chatSession, _setChatSessionRaw] = useState<ChatSession>(() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } const session = startChatSession({ cwd, branch }); if (process.env.AGON_CONTINUE === '1') { try { seedChatSessionFromThread(session, loadOrCreateActiveThread(cwd)); } catch { /* best-effort: a fresh session is fine if no prior thread exists */ } } return session; });
   const setChatSession = useMemo(() => __inkSafe(_setChatSessionRaw), [_setChatSessionRaw]);
   const [activeAbort, _setActiveAbortRaw] = useState<AbortController|null>(null);
   const setActiveAbort = useMemo(() => __inkSafe(_setActiveAbortRaw), [_setActiveAbortRaw]);

@@ -113,8 +113,22 @@ function consumeTelemetryDebugFlags() {
   process.argv = nextArgv;
 }
 
+// `agon --continue` / `agon -c` — resume the most recent conversation for this
+// directory, exactly like `claude --continue`. Only consumed as the FIRST arg
+// (the bare-REPL path) so it can never shadow a subcommand's own -c flag. Sets
+// AGON_CONTINUE, which surfaces/app.kern reads to rehydrate the chat session
+// from the durable ContextThread. A bare `agon` stays fresh (no inheritance).
+function consumeContinueFlag() {
+  const first = process.argv[2];
+  if (first === '--continue' || first === '-c') {
+    process.env.AGON_CONTINUE = '1';
+    process.argv = [...process.argv.slice(0, 2), ...process.argv.slice(3)];
+  }
+}
+
 consumeTelemetryDebugFlags();
 consumeIsolationFlags();
+consumeContinueFlag();
 maybeNotifyIsolationMigration();
 
 const main = defineCommand({

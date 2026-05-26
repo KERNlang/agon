@@ -275,17 +275,17 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString(), images: images?.map(img => img.path) });
       appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
 
-      // Optional ContextThread continuity: off by default so new Agon
-      // processes do not inherit stale chat/agent attempts.
-      if ((config as any).sessionContinuity === true) {
-        try {
-          const chatThread = loadOrCreateActiveThread(cwd);
-          chatThread.append({ role: 'user', content: input });
-          chatThread.append({ role: 'assistant', content: response, engineId });
-          await chatThread.save();
-        } catch (threadErr) {
-          console.warn(`[agon] context-thread: chat turn not persisted: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
-        }
+      // Persist every chat turn to the durable ContextThread, like Claude logs
+      // each conversation. The WRITE is unconditional; READING it back into a
+      // fresh process is the explicit `--continue` path (AGON_CONTINUE) handled
+      // in surfaces/app.kern — so a bare `agon` never inherits stale context.
+      try {
+        const chatThread = loadOrCreateActiveThread(cwd);
+        chatThread.append({ role: 'user', content: input });
+        chatThread.append({ role: 'assistant', content: response, engineId });
+        await chatThread.save();
+      } catch (threadErr) {
+        console.warn(`[agon] context-thread: chat turn not persisted: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
       }
 
       if (dispatchResult?.usage) {

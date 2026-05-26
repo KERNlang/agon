@@ -30,3 +30,6 @@ packages/*/src/**/*.d.ts.map
 __pycache__/
 *.py[cod]
 kern_engines/*.egg-info/
+
+# Antigravity CLI (agy) per-repo working dir
+.antigravitycli/

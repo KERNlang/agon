@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { clearConversation, loadConversation, loadSessionState, saveConversation, saveSessionState } from '@agon/core';
-import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, clearPersistedSessionContext, collectRecentEngineContext, extractExecutionSpec, failedPlanStepIsFallbackRetryable, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, handleProposedCesarPlan, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, normalizeCesarActingFallbackMode, preparePlanFallbackRetry, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, clearPersistedSessionContext, collectRecentEngineContext, extractExecutionSpec, failedPlanStepIsFallbackRetryable, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, handleProposedCesarPlan, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, normalizeCesarActingFallbackMode, preparePlanFallbackRetry, runDelegatedJobThenContinue, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -397,5 +397,74 @@ describe('Dispatch routing helpers', () => {
     expect(shouldAutoContinueDelegatedResult(8, 1, ctx)).toBe(false);
     expect(shouldAutoContinueDelegatedResult(7, 2, ctx)).toBe(false);
     expect(shouldAutoContinueDelegatedResult(undefined, undefined, ctx)).toBe(true);
+  });
+
+  // runDelegatedJobThenContinue: the seam that makes every delegated mode
+  // continue Cesar on BOTH the success and the throw path, with job-scoped
+  // (not global) engine context. A mismatched epoch short-circuits the
+  // continuation guard so these tests never reach the heavy routeWithCesar.
+  it('continues with job-scoped context on success and excludes pre-existing engine messages', async () => {
+    const events: any[] = [];
+    const ctx = {
+      inputEpoch: 1,
+      chatSession: {
+        messages: [
+          { id: 'old-1', role: 'engine', engineId: 'claude', content: 'STALE answer from a prior job' },
+        ],
+      },
+    } as any;
+    const cb = { dispatch: (e: any) => events.push(e), ctx } as any;
+
+    let seen: any;
+    const out = await runDelegatedJobThenContinue(
+      cb,
+      async () => {
+        ctx.chatSession.messages.push({ id: 'new-1', role: 'engine', engineId: 'gemini', content: 'FRESH job output' });
+        return { winner: 'gemini' };
+      },
+      (info: any) => { seen = info; return `prompt: ${info.chatContext}`; },
+      999, // mismatched epoch → continuation guard short-circuits
+      1,
+    );
+
+    expect(out).toEqual({ winner: 'gemini' });
+    expect(seen.success).toBe(true);
+    expect(seen.result).toEqual({ winner: 'gemini' });
+    expect(seen.chatContext).toContain('FRESH job output');
+    expect(seen.chatContext).not.toContain('STALE answer'); // job-scoped, not global tail
+    // continuation was attempted but guarded off (no routeWithCesar)
+    expect(events.some((e) => typeof e.message === 'string' && e.message.includes('Skipped Cesar follow-up'))).toBe(true);
+  });
+
+  it('still continues (with success=false + errorMsg) when the delegated handler throws, then re-throws', async () => {
+    const events: any[] = [];
+    const ctx = { inputEpoch: 1, chatSession: { messages: [] } } as any;
+    const cb = { dispatch: (e: any) => events.push(e), ctx } as any;
+
+    let seen: any;
+    await expect(
+      runDelegatedJobThenContinue(
+        cb,
+        async () => { throw new Error('handler exploded'); },
+        (info: any) => { seen = info; return `recover: ${info.errorMsg}`; },
+        999,
+        1,
+      ),
+    ).rejects.toThrow('handler exploded');
+
+    expect(seen.success).toBe(false);
+    expect(seen.errorMsg).toContain('handler exploded');
+    // continuation fired even though the job failed → no dead-end
+    expect(events.some((e) => typeof e.message === 'string' && e.message.includes('Skipped Cesar follow-up'))).toBe(true);
+  });
+
+  it('returning null from buildPrompt skips continuation entirely (no dead-end, no noise)', async () => {
+    const events: any[] = [];
+    const ctx = { inputEpoch: 1, chatSession: { messages: [] } } as any;
+    const cb = { dispatch: (e: any) => events.push(e), ctx } as any;
+
+    await runDelegatedJobThenContinue(cb, async () => undefined, () => null, 999, 1);
+
+    expect(events.some((e) => typeof e.message === 'string' && e.message.includes('Skipped Cesar follow-up'))).toBe(false);
   });
 });

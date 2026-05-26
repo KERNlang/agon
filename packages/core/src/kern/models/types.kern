@@ -81,6 +81,8 @@ interface name=DispatchOptions
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=onSpawn type="(pid:number)=>void" optional=true
+  field name=onTodos type="((todos: Array<{id:string,text:string,state:string,kind?:string,note?:string}>) => void)" optional=true
+    doc "Forwarded to the API agent loop's ToolContext.onTodos so a TodoWrite tool call surfaces the rolling task list. Handlers with a UI dispatch (build, pipeline) pass a callback that emits a todos-set OutputEvent to render the todo-rail. Only fires on the runApiAgentLoop path (API-only engines); native CLI engines use their own todo UI."
   field name=isolation type="'workspace-pure'|'inherit'" optional=true
     doc "Per-dispatch isolation override. When unset, the adapter resolves it from the AGON_ENGINE_ISOLATION env var, then config.engineIsolation, then the default (workspace-pure). workspace-pure = strip the user's personal/global engine config (plugins/hooks/global CLAUDE.md/MCP) via a clean per-engine config dir (auth preserved) but KEEP the project's repo CLAUDE.md/.mcp.json; inherit = inherit everything (legacy)."
 

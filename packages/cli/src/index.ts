@@ -21,6 +21,7 @@ import { agentGuideCommand } from './commands/agent-guide.js';
 import { installAgentPromptsCommand } from './commands/install-agent-prompts.js';
 import { goalCommand } from './commands/goal.js';
 import { synthesisCommand } from './commands/synthesis.js';
+import { askCommand } from './commands/ask.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { loginCommand } from './commands/login.js';
 import { startRepl } from './repl.js';
@@ -113,8 +114,22 @@ function consumeTelemetryDebugFlags() {
   process.argv = nextArgv;
 }
 
+// `agon --continue` / `agon -c` — resume the most recent conversation for this
+// directory, exactly like `claude --continue`. Only the bare-REPL form (the flag
+// as the SOLE argument) is consumed; `agon --continue doctor` is left untouched so
+// continuity is never silently enabled for an unrelated subcommand and the flag can
+// never shadow a subcommand's own -c. Sets AGON_CONTINUE, which surfaces/app.kern
+// reads to rehydrate the chat session. A bare `agon` stays fresh (no inheritance).
+function consumeContinueFlag() {
+  if (process.argv.length === 3 && (process.argv[2] === '--continue' || process.argv[2] === '-c')) {
+    process.env.AGON_CONTINUE = '1';
+    process.argv = process.argv.slice(0, 2);
+  }
+}
+
 consumeTelemetryDebugFlags();
 consumeIsolationFlags();
+consumeContinueFlag();
 maybeNotifyIsolationMigration();
 
 const main = defineCommand({
@@ -146,6 +161,7 @@ const main = defineCommand({
     'install-agent-prompts': installAgentPromptsCommand,
     goal: goalCommand,
     synthesis: synthesisCommand,
+    ask: askCommand,
     worktree: worktreeCommand,
     wt: worktreeCommand,
     login: loginCommand,

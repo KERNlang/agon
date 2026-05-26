@@ -90,6 +90,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
             outputDir,
             signal: abort.signal,
             onApproval: buildAgentApprovalCallback(dispatch, ctx, buildEngine),
+            onTodos: (todos: { id: string; text: string; state: string }[]) => dispatch({ type: 'todos-set', todos }),
             permissionMode: (config as any).permissionMode ?? 'ask',
             allowedCommands: (config as any).allowedCommands ?? [],
             toolPermissions: (config as any).toolPermissions ?? {},

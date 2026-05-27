@@ -59,6 +59,18 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('maps think with a --critic engine', () => {
+    expect(buildCallCommands({
+      workflow: 'think',
+      input: 'pick a storage engine',
+      strategy: 'tot',
+      branches: '3',
+      critic: 'codex',
+    }).commands).toEqual([
+      ['think', 'pick a storage engine', '--strategy', 'tot', '--branches', '3', '--critic', 'codex'],
+    ]);
+  });
+
   it('maps think with no optional flags', () => {
     expect(buildCallCommands({ workflow: 'think', input: 'decompose this' }).commands).toEqual([
       ['think', 'decompose this'],

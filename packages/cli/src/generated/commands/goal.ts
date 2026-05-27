@@ -12,7 +12,7 @@ import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@agon/adapter-cli';
 
-import { runForge, runDelegate, runGoalController, runSupervisor, loadJournal, summarizeGoal, goalDir, isTestFile, parseChangedLines, pickImplementWinner, chooseImplementRoster } from '@agon/forge';
+import { runForge, runDelegate, runGoalController, runSupervisor, loadJournal, summarizeGoal, goalDir, isTestFile, parseChangedLines, pickImplementWinner, chooseImplementRoster, runThinkChain } from '@agon/forge';
 
 import { deriveRoutingHints } from '../cesar/routing.js';
 
@@ -107,6 +107,8 @@ return defineCommand({
     resume: { type: 'boolean', description: 'Resume an existing goal from its journal', default: false },
     status: { type: 'boolean', description: 'Print the status/summary of an existing goal (by id or intent) and exit', default: false },
     dryRun: { type: 'boolean', description: 'Resolve the queue + spec and print the plan without running', default: false },
+    think: { type: 'boolean', description: 'Run a sequential-thinking decompose pass on the intent BEFORE the run — surface sub-problems, open questions, and grounding, and feed a refined spec as the goal intent. Frontloads reasoning so an 8-24h run never starts from a half-understood prompt.', default: false },
+    thinkStrategy: { type: 'string', description: 'Strategy for --think (linear|reflexion|tot|graph|hypothesis). Default hypothesis — surface competing problem framings.', default: 'hypothesis' },
     supervised: { type: 'boolean', description: 'Run UNATTENDED: a supervisor re-execs `agon goal --resume` if the run CRASHES (non-zero exit), with exponential backoff + a restart cap, until done / a clean stop / a deterministic misconfig / the cap. Survives a terminal close or transient crash overnight; the journal makes each restart resume where it left off.', default: false },
     maxRestarts: { type: 'string', description: 'With --supervised: max crash-restarts before giving up (default 10; 0 = one-shot).' },
   },
@@ -223,6 +225,51 @@ return defineCommand({
       process.exit(1);
     }
 
+    // --think: frontload reasoning before a long autonomous run. Decompose the
+    // intent, surface sub-problems + open questions, and feed the refined spec
+    // back in as the goal intent. Informational + intent-refining — it never
+    // blocks or alters the queue/controller.
+    let thinkRefinedIntent: string | undefined;
+    if (args.think && (args.intent ?? '').toString().trim()) {
+      const thinkEngine = (() => {
+        if (args.engines) {
+          const first = String(args.engines).split(',').map((s: string) => s.trim()).filter(Boolean)[0];
+          if (first) { const id = registry.resolveId(first); if (available.includes(id)) return id; }
+        }
+        return available[0];
+      })();
+      const { path: thinkDir } = createRunDir({ mode: 'think', label: goalId, announce: false });
+      info(cyan(`Thinking through the goal first (${args.thinkStrategy}, ${thinkEngine})...`));
+      const tr = await runThinkChain({
+        problem: (args.intent ?? goalId).toString(),
+        strategy: String(args.thinkStrategy || 'hypothesis'),
+        engineId: thinkEngine,
+        registry,
+        adapter,
+        maxThoughts: 8,
+        timeout: parseInt(String(args.timeout ?? '120'), 10) || 120,
+        outputDir: thinkDir,
+        ground: true,
+      });
+      if (tr.ok) {
+        for (const t of tr.thoughts) info(`  • [${t.kind}] ${t.thought.slice(0, 160)}`);
+        if (tr.openQuestions.length > 0) {
+          warn(`Open questions before this run is fully specified:`);
+          for (const q of tr.openQuestions) warn(`  ? ${q}`);
+        }
+        if (tr.groundingIssues.length > 0) {
+          warn(`Grounding warnings (thoughts cited paths that don't exist):`);
+          for (const g of tr.groundingIssues) warn(`  ⚠ ${g}`);
+        }
+        if (tr.refinedSpec && tr.refinedSpec.trim()) {
+          thinkRefinedIntent = tr.refinedSpec.trim();
+          info(green(`Refined intent: ${thinkRefinedIntent.slice(0, 200)}`));
+        }
+      } else {
+        warn('Think pass produced no usable chain — proceeding with the original intent.');
+      }
+    }
+
     let requestedEngines: string[] | undefined;
     if (args.engines) {
       // resolveId echoes unknown ids back rather than returning empty, so
@@ -292,7 +339,7 @@ return defineCommand({
 
     const spec = {
       goalId,
-      intent: (args.intent ?? goalId).toString(),
+      intent: (thinkRefinedIntent ?? args.intent ?? goalId).toString(),
       branch,
       gate,
       queueSource: queueSource || '(resume)',

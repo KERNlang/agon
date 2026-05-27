@@ -274,6 +274,15 @@ fn name=loadChatSession params="id:string" returns="ChatSession|null"
         if (msg.role) messages.push(msg);
       }
 
+      // Resume parity with the live path: the ndjson holds every body, but the
+      // turns already folded into `summary` (indices 0..summarizedMessageCount)
+      // don't need their raw bodies in memory. Free them so resuming a long chat
+      // (e.g. `agon --continue`) doesn't restore the unbounded RAM footprint the
+      // live session already avoids. Tail + summary still carry all live context.
+      if (typeof summarizedMessageCount === 'number' && summarizedMessageCount > 0) {
+        freeSummarizedMessageBodies(messages, 0, Math.min(summarizedMessageCount, messages.length));
+      }
+
       return {
         id: header.id ?? id,
         startedAt: header.startedAt ?? '',

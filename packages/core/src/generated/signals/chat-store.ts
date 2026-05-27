@@ -334,6 +334,15 @@ export function loadChatSession(id: string): ChatSession|null {
       if (msg.role) messages.push(msg);
     }
 
+    // Resume parity with the live path: the ndjson holds every body, but the
+    // turns already folded into `summary` (indices 0..summarizedMessageCount)
+    // don't need their raw bodies in memory. Free them so resuming a long chat
+    // (e.g. `agon --continue`) doesn't restore the unbounded RAM footprint the
+    // live session already avoids. Tail + summary still carry all live context.
+    if (typeof summarizedMessageCount === 'number' && summarizedMessageCount > 0) {
+      freeSummarizedMessageBodies(messages, 0, Math.min(summarizedMessageCount, messages.length));
+    }
+
     return {
       id: header.id ?? id,
       startedAt: header.startedAt ?? '',
@@ -353,12 +362,12 @@ export function loadChatSession(id: string): ChatSession|null {
 /**
  * Load an existing session for continued use. Returns null if not found.
  */
-// @kern-source: chat-store:293
+// @kern-source: chat-store:302
 export function resumeChatSession(id: string): ChatSession|null {
   return loadChatSession(id);
 }
 
-// @kern-source: chat-store:296
+// @kern-source: chat-store:305
 export function listChatSessions(limit: number): ChatSession[] {
   ensureChatsDir();
   try {
@@ -382,7 +391,7 @@ export function listChatSessions(limit: number): ChatSession[] {
   }
 }
 
-// @kern-source: chat-store:320
+// @kern-source: chat-store:329
 export function latestChatSession(): ChatSession|null {
   const sessions = listChatSessions(1);
   return (sessions.length > 0) ? sessions[0] : null;

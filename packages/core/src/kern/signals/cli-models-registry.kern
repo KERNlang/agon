@@ -29,11 +29,20 @@ interface name=CliProviderGroup
   field name=installed type=boolean
   field name=version type="string|null"
   field name=models type="CliModelEntry[]"
+  field name=effortLevels type="string[]" optional=true doc="Reasoning-effort levels this engine accepts (claude/codex). Empty/absent = engine has no effort dimension (e.g. agy bakes it into model tiers)."
 
 // ── Engine binary → models.dev provider mapping ──
 // This is the only static config needed: which CLI binary maps to which API provider.
 
-const name=ENGINE_PROVIDER_MAP type="Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[], listCmd?:string[]}>" value={{ ({ anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'], listCmd: ['__pty:/model'] }, openai: { providerId: 'openai', engineId: 'codex', engineBinary: 'codex', versionCmd: ['--version'], listCmd: ['__pty:/model'] }, google: { providerId: 'google', engineId: 'agy', engineBinary: 'agy', versionCmd: ['--version'], listCmd: ['__pty:/model'] }, opencode: { providerId: 'opencode', engineId: 'opencode', engineBinary: 'opencode', versionCmd: ['--version'], listCmd: ['models'] }, mistral: { providerId: 'mistral', engineId: 'mistral', engineBinary: 'mistral', versionCmd: ['--version'] }, openrouter: { providerId: 'openrouter', engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] } }) }}
+// effortLevels mirrors each engine.json's effort.levels (source of truth is engines/*.json,
+// consumed by the adapter's resolveEffort/buildCommand). Listed here so the /models picker can
+// offer them without loading every engine def. claude → --effort flag; codex → -c config key; agy
+// bakes effort into its model tiers (no effort dimension), so it has none.
+const name=ENGINE_PROVIDER_MAP type="Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[], listCmd?:string[], effortLevels?:string[]}>" value={{ ({ anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'], listCmd: ['__pty:/model'], effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] }, openai: { providerId: 'openai', engineId: 'codex', engineBinary: 'codex', versionCmd: ['--version'], listCmd: ['__pty:/model'], effortLevels: ['low', 'medium', 'high', 'xhigh'] }, google: { providerId: 'google', engineId: 'agy', engineBinary: 'agy', versionCmd: ['--version'], listCmd: ['__pty:/model'] }, opencode: { providerId: 'opencode', engineId: 'opencode', engineBinary: 'opencode', versionCmd: ['--version'], listCmd: ['models'] }, mistral: { providerId: 'mistral', engineId: 'mistral', engineBinary: 'mistral', versionCmd: ['--version'] }, openrouter: { providerId: 'openrouter', engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] } }) }}
+
+// CLI-view group label: name the ENGINE (what you invoke), not the API provider — the CLI picker
+// is about CLIs. agy's provider is "google" but the engine is Antigravity, so show that.
+const name=ENGINE_DISPLAY_NAMES type="Record<string,string>" value={{ ({ claude: 'Claude', codex: 'Codex', agy: 'Antigravity', opencode: 'OpenCode', mistral: 'Mistral', openrouter: 'OpenRouter' }) }}
 
 // ── Minimal fallback when API is unreachable ──
 
@@ -232,8 +241,9 @@ fn name=buildCliModelGroups returns="CliProviderGroup[]" export=true
       let name=version value="installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null"
       let name=fallbackModels value="FALLBACK_MODELS[key] ?? []"
       let name=probedSync value="readProbedCliModels(eng.engineId)"
-      let name=models type="CliModelEntry[]" value="(probedSync && probedSync.length > 0) ? probedSync.map((m: ProbedModel) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true })) : fallbackModels.map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }))"
-      do value="groups.push({ providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, })"
+      let name=displayName value="ENGINE_DISPLAY_NAMES[eng.engineId] ?? (eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1))"
+      let name=models type="CliModelEntry[]" value="(probedSync && probedSync.length > 0) ? probedSync.map((m: ProbedModel) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true })) : fallbackModels.map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }))"
+      do value="groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, effortLevels: eng.effortLevels ?? [], })"
     return value="groups"
 
 fn name=buildCliModelGroupsAsync async=true returns="Promise<CliProviderGroup[]>" export=true
@@ -258,12 +268,12 @@ fn name=buildCliModelGroupsAsync async=true returns="Promise<CliProviderGroup[]>
       const binaryPath = findBinary(eng.engineBinary);
       const installed = binaryPath !== null;
       const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
-      const displayName = key.charAt(0).toUpperCase() + key.slice(1);
+      const displayName = ENGINE_DISPLAY_NAMES[eng.engineId] ?? (eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1));
       const probed = readProbedCliModels(eng.engineId);
       const models: CliModelEntry[] = (probed && probed.length > 0)
         ? probed.map((m) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }))
         : (FALLBACK_MODELS[key] ?? []).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
-      groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models });
+      groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, effortLevels: eng.effortLevels ?? [] });
     }
     return groups;
   >>>

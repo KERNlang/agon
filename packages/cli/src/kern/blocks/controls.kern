@@ -246,6 +246,7 @@ interface name=ModelPickerEntry
   field name=contextWindow type=number optional=true
   field name=costInput type=number optional=true
   field name=costOutput type=number optional=true
+  field name=effort type="string|null" optional=true
 
 screen name=ModelPicker target=ink
   prop name=entries type="ModelPickerEntry[]"
@@ -257,17 +258,28 @@ screen name=ModelPicker target=ink
   prop name=cliGroups type="CliProviderGroup[]" optional=true
   prop name=activeEngineIds type="string[]" optional=true
   prop name=onToggleCliEngine type="(engineId:string, active:boolean) => void" optional=true
+  prop name=engineEfforts type="Record<string,string>" optional=true
   state name=cursor type=number initial="0"
   state name=filter type=string initial="''"
-  state name=phase type="'search'|'apikey'|'cli'" initial="'search'"
+  state name=phase type="'search'|'apikey'|'cli'|'effort'" initial="'search'"
   state name=selectedEntry type="ModelPickerEntry|null" initial="null"
   state name=apiKeyInput type=string initial="''"
   state name=activeTab type="'api'|'cli'" initial="'api'"
+  state name=pendingCli type="{ group: CliProviderGroup; model: CliModelEntry }|null" initial="null"
+  state name=effortCursor type=number initial="0"
   render
     handler <<<
       const panelTitle = title ?? 'Select model';
       const groups = cliGroups ?? [];
       const activeCliEngines = new Set(activeEngineIds ?? []);
+      const efforts = engineEfforts ?? {};
+      // Effort sub-picker options for the pending CLI model: "Default" (defer to the CLI's own
+      // config) at the top, then the engine's accepted levels.
+      const effortLevels = pendingCli?.group.effortLevels ?? [];
+      const effortOptions: { label: string; value: string | null }[] = [
+        { label: 'Default (use CLI config)', value: null },
+        ...effortLevels.map((l: string) => ({ label: l, value: l })),
+      ];
 
       useEffect(() => {
         setFilter(initialFilter ?? '');
@@ -350,6 +362,31 @@ screen name=ModelPicker target=ink
         const isForwardDelete = input === '\x1b[3~';
         const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
 
+        // ── Effort sub-picker (entered from CLI tab when an engine has effort levels) ──
+        if (phase === 'effort') {
+          if (key.escape) { setPhase('search'); setActiveTab('cli'); setPendingCli(null); setEffortCursor(0); return; }
+          if (key.upArrow) { setEffortCursor((i: number) => Math.max(0, i - 1)); return; }
+          if (key.downArrow) { setEffortCursor((i: number) => Math.min(effortOptions.length - 1, i + 1)); return; }
+          if (key.return) {
+            const opt = effortOptions[effortCursor];
+            const item = pendingCli;
+            if (item && opt) {
+              onSelect({
+                providerId: item.group.engineId,
+                providerName: item.group.providerName,
+                modelId: item.model.id,
+                modelName: item.model.name,
+                baseUrl: '',
+                apiKeyEnv: '',
+                format: 'openai',
+                effort: opt.value,
+              });
+            }
+            return;
+          }
+          return;
+        }
+
         // Tab switching (any phase)
         if (key.leftArrow) {
           setActiveTab('api');
@@ -393,6 +430,17 @@ screen name=ModelPicker target=ink
           if (key.return) {
             const item = cliFiltered[cursor];
             if (item && item.group.installed && !item.missing) {
+              const levels = item.group.effortLevels ?? [];
+              if (levels.length > 0) {
+                // Engine has a reasoning-effort dimension → ask for it (model → effort → done),
+                // mirroring codex's own "Select Model and Effort" flow.
+                setPendingCli({ group: item.group, model: item.model });
+                const cur = efforts[item.group.engineId];
+                const at = cur ? levels.indexOf(cur) : -1;
+                setEffortCursor(at >= 0 ? at + 1 : 0);
+                setPhase('effort');
+                return;
+              }
               onSelect({
                 providerId: item.group.engineId,
                 providerName: item.group.providerName,
@@ -471,6 +519,31 @@ screen name=ModelPicker target=ink
               <Text dimColor>{'\u2588'}</Text>
             </Box>
             <Text dimColor>{'  Enter key \u2022 Enter to skip \u2022 Esc back'}</Text>
+          </Box>
+        );
+      }
+
+      if (phase === 'effort' && pendingCli) {
+        const eng = pendingCli.group;
+        const cur = efforts[eng.engineId] ?? null;
+        return (
+          <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+            <Text bold color="cyan">{'Reasoning effort — '}{eng.providerName}</Text>
+            <Text dimColor>{'─'.repeat(48)}</Text>
+            <Text>{'  Model: '}<Text bold>{pendingCli.model.name}</Text></Text>
+            <Text>{''}</Text>
+            {effortOptions.map((opt: { label: string; value: string | null }, i: number) => {
+              const isCur = opt.value === cur || (opt.value === null && !cur);
+              return (
+                <Box key={`eff-${i}`}>
+                  <Text color={i === effortCursor ? 'cyan' : undefined} bold={i === effortCursor}>{i === effortCursor ? ' ❯ ' : '   '}</Text>
+                  <Text color={i === effortCursor ? 'cyan' : undefined} bold={i === effortCursor}>{opt.label}</Text>
+                  {isCur ? <Text color="green">{'  ● current'}</Text> : null}
+                </Box>
+              );
+            })}
+            <Text>{''}</Text>
+            <Text dimColor>{'  ↑↓ navigate  Enter select  Esc back'}</Text>
           </Box>
         );
       }

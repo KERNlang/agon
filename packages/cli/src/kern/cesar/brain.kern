@@ -1096,6 +1096,7 @@ ${reviewFollowup.prompt}`;
             permissionMode: (config as any).permissionMode ?? 'ask', explorationMode,
             allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {},
             onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
+            onTodos: (todos: any[]) => dispatch({ type: 'todos-set', todos }),
             readOnlyMode: true, // Phase 1: investigate only — mutating tools blocked until after escalation check
             blockedTools: cesarFastPath ? FAST_PATH_BLOCKED_TOOLS : undefined,
             blockedToolMessage: cesarFastPath ? `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` : undefined,

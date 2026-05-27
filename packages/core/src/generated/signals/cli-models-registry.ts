@@ -8,9 +8,13 @@ import { join } from 'node:path';
 
 import { homedir } from 'node:os';
 
+import { createRequire } from 'node:module';
+
 import { getCacheDir } from '../utils/paths.js';
 
-// @kern-source: cli-models-registry:11
+import { spawnWithTimeout } from '../blocks/process.js';
+
+// @kern-source: cli-models-registry:13
 export interface CliModelEntry {
   id: string;
   name: string;
@@ -23,7 +27,7 @@ export interface CliModelEntry {
   reasoning?: boolean;
 }
 
-// @kern-source: cli-models-registry:22
+// @kern-source: cli-models-registry:24
 export interface CliProviderGroup {
   providerId: string;
   providerName: string;
@@ -34,16 +38,94 @@ export interface CliProviderGroup {
   models: CliModelEntry[];
 }
 
-// @kern-source: cli-models-registry:34
+// @kern-source: cli-models-registry:36
 export const ENGINE_PROVIDER_MAP: Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[]}> = ({ anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'] }, openai: { providerId: 'openai', engineId: 'codex', engineBinary: 'codex', versionCmd: ['--version'] }, google: { providerId: 'google', engineId: 'agy', engineBinary: 'agy', versionCmd: ['--version'] }, mistral: { providerId: 'mistral', engineId: 'mistral', engineBinary: 'mistral', versionCmd: ['--version'] }, openrouter: { providerId: 'openrouter', engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] } });
 
-// @kern-source: cli-models-registry:38
+// @kern-source: cli-models-registry:40
 export const FALLBACK_MODELS: Record<string, {id:string, name:string, contextWindow?:number, toolCall?:boolean, reasoning?:boolean}[]> = ({ anthropic: [ { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextWindow: 200000, toolCall: true, reasoning: true }, { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', contextWindow: 200000, toolCall: true, reasoning: true } ], openai: [ { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'o4-mini', name: 'o4-mini', contextWindow: 200000, toolCall: true, reasoning: true } ], google: [ { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', contextWindow: 1048576, toolCall: true, reasoning: true } ], mistral: [ { id: 'mistral-large-latest', name: 'Mistral Large', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'codestral-latest', name: 'Codestral', contextWindow: 256000, toolCall: true, reasoning: false } ], openrouter: [ { id: 'auto', name: 'Auto (best for task)', toolCall: true, reasoning: false } ] });
 
-// @kern-source: cli-models-registry:40
+// @kern-source: cli-models-registry:42
 export const CACHE_TTL_MS: number = 3600000;
 
-// @kern-source: cli-models-registry:44
+// @kern-source: cli-models-registry:50
+export const PROBE_TTL_MS: number = 86400000;
+
+// @kern-source: cli-models-registry:52
+export interface ProbedModel {
+  id: string;
+  name: string;
+  current: boolean;
+}
+
+// @kern-source: cli-models-registry:57
+export function probedModelsCacheFile(engineId: string): string {
+  return join(getCacheDir(), `cli-models-${engineId.replace(/[^a-zA-Z0-9_-]/g, '-')}.json`);
+}
+
+/**
+ * Read the cached live /model probe for an engine, or null when absent/stale/empty. Synchronous so the picker's group builders can prefer it without going async.
+ */
+// @kern-source: cli-models-registry:59
+export function readProbedCliModels(engineId: string, ttlMs?: number): ProbedModel[]|null {
+  try {
+    const file = probedModelsCacheFile(engineId);
+    if (!existsSync(file)) return null;
+    const age = Date.now() - statSync(file).mtimeMs;
+    if (age > (ttlMs ?? PROBE_TTL_MS)) return null;
+    const data = JSON.parse(readFileSync(file, 'utf-8'));
+    const raw = Array.isArray(data?.models) ? data.models : [];
+    const models: ProbedModel[] = raw
+      .map((m: any) => ({ id: String(m.id ?? ''), name: String(m.name ?? m.id ?? ''), current: !!m.current }))
+      .filter((m: ProbedModel) => m.name);
+    return models.length > 0 ? models : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Locate kern_engines/cli/model_probe.py via the @agon/kern-engines package (hoisted to root node_modules). The probe self-bootstraps its package path, so the absolute file path is all the caller needs — no PYTHONPATH.
+ */
+// @kern-source: cli-models-registry:78
+export function resolveModelProbeScript(): string|null {
+  try {
+    const req = createRequire(import.meta.url);
+    const pkgJson = req.resolve('@agon/kern-engines/package.json');
+    const script = join(pkgJson, '..', 'cli', 'model_probe.py');
+    return existsSync(script) ? script : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Probe an engine's live /model list via the python pty probe and cache it. Best-effort: returns false (caller keeps the static / models.dev list) on any failure, timeout, or empty result. Slow (~5-8s, spawns the engine TUI) — call it behind a loading state, not in a hot path.
+ */
+// @kern-source: cli-models-registry:91
+export async function refreshProbedCliModels(engineId: string, binary: string, slashCmd?: string, pythonBin?: string): Promise<boolean> {
+  const script = resolveModelProbeScript();
+  if (!script) return false;
+  try {
+    const result = await spawnWithTimeout({
+      command: pythonBin ?? 'python3',
+      args: [script, binary, slashCmd ?? '/model'],
+      cwd: process.cwd(),
+      timeout: 45000,
+    });
+    if (result.timedOut || !result.stdout.trim()) return false;
+    const parsed = JSON.parse(result.stdout.trim());
+    const models = Array.isArray(parsed?.models) ? parsed.models : [];
+    if (models.length === 0) return false;
+    const dir = getCacheDir();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(probedModelsCacheFile(engineId), JSON.stringify({ ts: Date.now(), engineId, models }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// @kern-source: cli-models-registry:118
 export async function fetchCliModelsRegistry(): Promise<Record<string, any> | null> {
   const cacheDir = getCacheDir();
   const cacheFile = join(cacheDir, 'models-dev.json');
@@ -81,7 +163,7 @@ export async function fetchCliModelsRegistry(): Promise<Record<string, any> | nu
   }
 }
 
-// @kern-source: cli-models-registry:82
+// @kern-source: cli-models-registry:156
 export function findBinary(binary: string): string|null {
   try {
     const result = execSync(`which ${binary}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -101,7 +183,7 @@ export function findBinary(binary: string): string|null {
   return null;
 }
 
-// @kern-source: cli-models-registry:97
+// @kern-source: cli-models-registry:171
 export function getBinaryVersion(binary: string, versionCmd: string[]): string|null {
   if (!versionCmd.length) {
     return null;
@@ -117,7 +199,7 @@ export function getBinaryVersion(binary: string, versionCmd: string[]): string|n
 /**
  * Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync.
  */
-// @kern-source: cli-models-registry:107
+// @kern-source: cli-models-registry:181
 export function buildCliModelGroups(): CliProviderGroup[] {
   const groups: CliProviderGroup[] = [];
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
@@ -125,7 +207,8 @@ export function buildCliModelGroups(): CliProviderGroup[] {
     const installed = binaryPath !== null;
     const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
     const fallbackModels = FALLBACK_MODELS[key] ?? [];
-    const models: CliModelEntry[] = fallbackModels.map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+    const probedSync = readProbedCliModels(eng.engineId);
+    const models: CliModelEntry[] = (probedSync && probedSync.length > 0) ? probedSync.map((m: ProbedModel) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true })) : fallbackModels.map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
     groups.push({ providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, installed: installed, version: version, models: models });
   }
   return groups;
@@ -134,7 +217,7 @@ export function buildCliModelGroups(): CliProviderGroup[] {
 /**
  * Build CLI provider groups with latest models from models.dev API. Falls back to static list on failure.
  */
-// @kern-source: cli-models-registry:120
+// @kern-source: cli-models-registry:195
 export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
   let registry: Record<string, any> | null = null;
   try {
@@ -162,6 +245,11 @@ export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
     }
     // Determine display name
     const displayName = registry?.[eng.providerId]?.name ?? key.charAt(0).toUpperCase() + key.slice(1);
+    // Prefer the engine's live /model probe (e.g. agy's real CLI tiers) over models.dev when a fresh probe is cached.
+    const probedAsync = readProbedCliModels(eng.engineId);
+    if (probedAsync && probedAsync.length > 0) {
+      models = probedAsync.map((m: ProbedModel) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }));
+    }
     groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed: installed, version: version, models: models });
   }
   return groups;

@@ -6,7 +6,9 @@ import from="node:child_process" names="execSync"
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,existsSync,statSync"
 import from="node:path" names="join"
 import from="node:os" names="homedir"
+import from="node:module" names="createRequire"
 import from="../utils/paths.js" names="getCacheDir"
+import from="../blocks/process.js" names="spawnWithTimeout"
 
 interface name=CliModelEntry
   field name=id type=string
@@ -38,6 +40,78 @@ const name=ENGINE_PROVIDER_MAP type="Record<string, {providerId:string, engineId
 const name=FALLBACK_MODELS type="Record<string, {id:string, name:string, contextWindow?:number, toolCall?:boolean, reasoning?:boolean}[]>" value={{ ({ anthropic: [ { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextWindow: 200000, toolCall: true, reasoning: true }, { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', contextWindow: 200000, toolCall: true, reasoning: true } ], openai: [ { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'o4-mini', name: 'o4-mini', contextWindow: 200000, toolCall: true, reasoning: true } ], google: [ { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', contextWindow: 1048576, toolCall: true, reasoning: true } ], mistral: [ { id: 'mistral-large-latest', name: 'Mistral Large', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'codestral-latest', name: 'Codestral', contextWindow: 256000, toolCall: true, reasoning: false } ], openrouter: [ { id: 'auto', name: 'Auto (best for task)', toolCall: true, reasoning: false } ] }) }}
 
 const name=CACHE_TTL_MS type=number value=3600000
+
+// ── Live CLI model probe (dynamicListCmd) ──────────────────────────────────
+// Some CLIs (agy/Antigravity) expose no --list-models flag — their real model
+// lineup lives only in the interactive /model picker. kern_engines/cli/model_probe.py
+// scrapes it under a pty. We cache the result per engine and let the picker's
+// existing async builders prefer it over models.dev / the static fallback.
+
+const name=PROBE_TTL_MS type=number value=86400000
+
+interface name=ProbedModel
+  field name=id type=string
+  field name=name type=string
+  field name=current type=boolean
+
+fn name=probedModelsCacheFile params="engineId:string" returns=string expr={{ return join(getCacheDir(), `cli-models-${engineId.replace(/[^a-zA-Z0-9_-]/g, '-')}.json`); }}
+
+fn name=readProbedCliModels params="engineId:string, ttlMs?:number" returns="ProbedModel[]|null" export=true
+  doc "Read the cached live /model probe for an engine, or null when absent/stale/empty. Synchronous so the picker's group builders can prefer it without going async."
+  handler <<<
+    try {
+      const file = probedModelsCacheFile(engineId);
+      if (!existsSync(file)) return null;
+      const age = Date.now() - statSync(file).mtimeMs;
+      if (age > (ttlMs ?? PROBE_TTL_MS)) return null;
+      const data = JSON.parse(readFileSync(file, 'utf-8'));
+      const raw = Array.isArray(data?.models) ? data.models : [];
+      const models: ProbedModel[] = raw
+        .map((m: any) => ({ id: String(m.id ?? ''), name: String(m.name ?? m.id ?? ''), current: !!m.current }))
+        .filter((m: ProbedModel) => m.name);
+      return models.length > 0 ? models : null;
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=resolveModelProbeScript returns="string|null"
+  doc "Locate kern_engines/cli/model_probe.py via the @agon/kern-engines package (hoisted to root node_modules). The probe self-bootstraps its package path, so the absolute file path is all the caller needs — no PYTHONPATH."
+  handler <<<
+    try {
+      const req = createRequire(import.meta.url);
+      const pkgJson = req.resolve('@agon/kern-engines/package.json');
+      const script = join(pkgJson, '..', 'cli', 'model_probe.py');
+      return existsSync(script) ? script : null;
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=refreshProbedCliModels async=true params="engineId:string, binary:string, slashCmd?:string, pythonBin?:string" returns="Promise<boolean>" export=true
+  doc "Probe an engine's live /model list via the python pty probe and cache it. Best-effort: returns false (caller keeps the static / models.dev list) on any failure, timeout, or empty result. Slow (~5-8s, spawns the engine TUI) — call it behind a loading state, not in a hot path."
+  handler <<<
+    const script = resolveModelProbeScript();
+    if (!script) return false;
+    try {
+      const result = await spawnWithTimeout({
+        command: pythonBin ?? 'python3',
+        args: [script, binary, slashCmd ?? '/model'],
+        cwd: process.cwd(),
+        timeout: 45000,
+      });
+      if (result.timedOut || !result.stdout.trim()) return false;
+      const parsed = JSON.parse(result.stdout.trim());
+      const models = Array.isArray(parsed?.models) ? parsed.models : [];
+      if (models.length === 0) return false;
+      const dir = getCacheDir();
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(probedModelsCacheFile(engineId), JSON.stringify({ ts: Date.now(), engineId, models }));
+      return true;
+    } catch {
+      return false;
+    }
+  >>>
 
 // ── Fetch models from models.dev API (shared cache with models-registry) ──
 
@@ -113,7 +187,8 @@ fn name=buildCliModelGroups returns="CliProviderGroup[]" export=true
       let name=installed value="binaryPath !== null"
       let name=version value="installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null"
       let name=fallbackModels value="FALLBACK_MODELS[key] ?? []"
-      let name=models type="CliModelEntry[]" value="fallbackModels.map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }))"
+      let name=probedSync value="readProbedCliModels(eng.engineId)"
+      let name=models type="CliModelEntry[]" value="(probedSync && probedSync.length > 0) ? probedSync.map((m: ProbedModel) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true })) : fallbackModels.map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }))"
       do value="groups.push({ providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, })"
     return value="groups"
 
@@ -143,5 +218,9 @@ fn name=buildCliModelGroupsAsync async=true returns="Promise<CliProviderGroup[]>
         assign target="models" value="fallbackModels.map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }))"
       comment raw="// Determine display name"
       let name=displayName value="registry?.[eng.providerId]?.name ?? (key.charAt(0).toUpperCase() + key.slice(1))"
+      comment raw="// Prefer the engine's live /model probe (e.g. agy's real CLI tiers) over models.dev when a fresh probe is cached."
+      let name=probedAsync value="readProbedCliModels(eng.engineId)"
+      if cond="probedAsync && probedAsync.length > 0"
+        assign target="models" value="probedAsync.map((m: ProbedModel) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }))"
       do value="groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, })"
     return value="groups"

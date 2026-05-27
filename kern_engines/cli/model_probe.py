@@ -30,7 +30,15 @@ import termios
 import struct
 import re
 
-from .pty_session import strip_ansi_bytes
+try:
+    # Normal package import (python3 -m kern_engines.cli.model_probe).
+    from .pty_session import strip_ansi_bytes
+except ImportError:
+    # Direct-script invocation (python3 /abs/path/.../cli/model_probe.py):
+    # bootstrap the package root onto sys.path so the TS caller doesn't need
+    # to set PYTHONPATH or know the module layout.
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    from kern_engines.cli.pty_session import strip_ansi_bytes
 
 
 def _set_winsize(fd: int, rows: int, cols: int) -> None:

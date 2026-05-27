@@ -1168,6 +1168,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
                 if (!session.alive || abort.signal.aborted) return '';
                 dispatch({ type: 'spinner-start', message: 'Cesar processing results…', color });
+                // Reset per send: _engineErrored must reflect the LATEST send, not
+                // "ever errored this turn". A transient error in an early tool-loop
+                // iteration would otherwise latch true and silently block
+                // auto-continue at the !_engineErrored gate even after recovery.
+                _engineErrored = false;
+                _engineErrorMsg = '';
                 let nextResponse = '';
                 const gen = session.send({
                   message,
@@ -1771,6 +1777,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                       if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
                       if (!session.alive || abort.signal.aborted) return '';
                       dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
+                      // Reset per send (see initial tool loop): flag tracks the
+                      // latest send's outcome, not a sticky turn-level latch.
+                      _engineErrored = false;
+                      _engineErrorMsg = '';
                       let nextResp = '';
                       const gen = session.send({
                         message,
@@ -1868,11 +1878,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             dispatch({ type: 'spinner-stop' });
             const _cleanClosure = _closure.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
             // If even this one-line closure send came back empty, the engine is not
-            // responding — say THAT, not a fabricated "I paused mid-task" line.
+            // responding — say THAT, not a fabricated "I paused mid-task" line. An
+            // empty reply to a direct "write one closing line" prompt means the
+            // engine is non-responsive (silent overflow / rate-limit / dead session)
+            // whether or not it emitted an explicit error chunk — so the honest
+            // message applies in BOTH cases. The old `: 'I paused mid-task…'` branch
+            // was the canned-closure spin: it fabricated a deliberate-pause story for
+            // what was actually a dead engine.
             const _finalClosure = _cleanClosure
-              || (_engineErrored
-                ? `Engine ${cesarEngineId} stopped responding (${(_engineErrorMsg || 'no response').slice(0, 120)}). Re-prompt, /compact to shrink context, or /engine to switch.`
-                : 'I paused mid-task without finishing, and I am not blocked on anything specific from you. Re-prompt me with the next step, or say "continue" to keep going.');
+              || `Engine ${cesarEngineId} stopped responding (${(_engineErrorMsg || 'no response').slice(0, 120)}). Nothing was lost — re-prompt, /compact to shrink context, or /engine to switch.`;
             dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _finalClosure });
             response = response + '\n\n' + _finalClosure;
           }

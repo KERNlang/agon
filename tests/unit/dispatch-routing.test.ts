@@ -348,7 +348,9 @@ describe('Dispatch routing helpers', () => {
     expect(prompt).toContain('Review target: main...dev');
     expect(prompt).toContain('Review engine: codex');
     expect(prompt).toContain('Finding: handleReview stores findings but Cesar never sees them.');
-    expect(prompt).toContain('concrete fix plan');
+    // New contract: distil findings into a tracked fix-list and either apply or offer to.
+    expect(prompt).toContain('prioritized fix-list');
+    expect(prompt).toContain('TodoWrite');
     expect(prompt).toContain('Do not say you lack the review output');
   });
 
@@ -363,7 +365,10 @@ describe('Dispatch routing helpers', () => {
     });
 
     expect(prompt).toContain('... [review output truncated]');
-    expect(prompt.length).toBeLessThan(12_700);
+    // Review OUTPUT is still capped at 12k (the variable swamp risk); the richer
+    // fix-list/TodoWrite instructions add ~1.1k of fixed overhead, so total stays
+    // bounded just above 13k.
+    expect(prompt.length).toBeLessThan(13_300);
   });
 
   it('resumes only when the same user turn is still active', () => {

@@ -1294,6 +1294,17 @@ export function App() {
     });
   }, [registry,dispatch]);
 
+  const persistEffort = useCallback((engineId:string, effort?:string|null) => {
+    // undefined → engine has no effort dimension (e.g. agy), leave config untouched.
+    // null → user chose "Default (use CLI config)", so clear any agon override and defer
+    // to the CLI's own config. string → explicit override.
+    if (effort === undefined) return;
+    const next = { ...((loadConfig() as any).engineEfforts ?? {}) };
+    if (effort === null) delete next[engineId];
+    else next[engineId] = effort;
+    configSet('engineEfforts' as any, next as any);
+  }, []);
+
   const openResultsPager = useCallback(() => {
     let content = '';
     let tmpFile = '';
@@ -2193,6 +2204,7 @@ export function App() {
     {modelPickerOpen && (
       <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle} cliGroups={modelPickerCliGroups}
         activeEngineIds={activeEngines()}
+        engineEfforts={(config as any).engineEfforts ?? {}}
         onToggleCliEngine={(engineId: string, active: boolean) => {
           const current = sessionEngines ?? registry.activeIds(config as any);
           const next = active
@@ -2218,8 +2230,9 @@ export function App() {
             const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
             nextModels[modelPickerTargetEngine] = entry.modelId;
             configSet('engineModels', nextModels as any);
+            persistEffort(modelPickerTargetEngine, entry.effort);
             setConfigVersion((v: number) => v + 1);
-            dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}` } as any);
+            dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}${entry.effort ? ` (effort: ${entry.effort})` : ''}` } as any);
             setModelPickerTargetEngine(null);
             setModelPickerInitialFilter('');
             setModelPickerTitle('Select model');
@@ -2233,9 +2246,10 @@ export function App() {
             const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
             nextModels[engineId] = entry.modelId;
             configSet('engineModels', nextModels as any);
+            persistEffort(engineId, entry.effort);
             setConfigVersion((v: number) => v + 1);
             setModelPickerOpen(false);
-            dispatch({ type: 'success', message: `CLI model set: ${engineId} → ${entry.modelId}` } as any);
+            dispatch({ type: 'success', message: `CLI model set: ${engineId} → ${entry.modelId}${entry.effort ? ` (effort: ${entry.effort})` : ''}` } as any);
             return;
           }
           setModelPickerOpen(false);
@@ -2413,7 +2427,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:82
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2108
+// @kern-source: app:2123
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

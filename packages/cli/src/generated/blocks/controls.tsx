@@ -39,6 +39,7 @@ export interface ModelPickerEntry {
   contextWindow?: number;
   costInput?: number;
   costOutput?: number;
+  effort?: string|null;
 }
 
 // @kern-source: controls:23
@@ -257,8 +258,8 @@ export function EnginePicker({ available, initialSelected, userEngines, modelOve
   );
 }
 
-// @kern-source: controls:250
-export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilter, title, cliGroups, activeEngineIds, onToggleCliEngine }: { entries:ModelPickerEntry[]; onSelect:(entry: ModelPickerEntry) => void; onCancel:() => void; loading?:boolean; initialFilter?:string; title?:string; cliGroups?:CliProviderGroup[]; activeEngineIds?:string[]; onToggleCliEngine?:(engineId:string, active:boolean) => void }) {
+// @kern-source: controls:251
+export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilter, title, cliGroups, activeEngineIds, onToggleCliEngine, engineEfforts }: { entries:ModelPickerEntry[]; onSelect:(entry: ModelPickerEntry) => void; onCancel:() => void; loading?:boolean; initialFilter?:string; title?:string; cliGroups?:CliProviderGroup[]; activeEngineIds?:string[]; onToggleCliEngine?:(engineId:string, active:boolean) => void; engineEfforts?:Record<string,string> }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
     return (value) => setTimeout(() => setter(value), 0);
@@ -268,7 +269,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   const setCursor = useMemo(() => __inkSafe(_setCursorRaw), [_setCursorRaw]);
   const [filter, _setFilterRaw] = useState<string>('');
   const setFilter = useMemo(() => __inkSafe(_setFilterRaw), [_setFilterRaw]);
-  const [phase, _setPhaseRaw] = useState<'search'|'apikey'|'cli'>('search');
+  const [phase, _setPhaseRaw] = useState<'search'|'apikey'|'cli'|'effort'>('search');
   const setPhase = useMemo(() => __inkSafe(_setPhaseRaw), [_setPhaseRaw]);
   const [selectedEntry, _setSelectedEntryRaw] = useState<ModelPickerEntry|null>(null);
   const setSelectedEntry = useMemo(() => __inkSafe(_setSelectedEntryRaw), [_setSelectedEntryRaw]);
@@ -276,10 +277,22 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   const setApiKeyInput = useMemo(() => __inkSafe(_setApiKeyInputRaw), [_setApiKeyInputRaw]);
   const [activeTab, _setActiveTabRaw] = useState<'api'|'cli'>('api');
   const setActiveTab = useMemo(() => __inkSafe(_setActiveTabRaw), [_setActiveTabRaw]);
+  const [pendingCli, _setPendingCliRaw] = useState<{ group: CliProviderGroup; model: CliModelEntry }|null>(null);
+  const setPendingCli = useMemo(() => __inkSafe(_setPendingCliRaw), [_setPendingCliRaw]);
+  const [effortCursor, _setEffortCursorRaw] = useState<number>(0);
+  const setEffortCursor = useMemo(() => __inkSafe(_setEffortCursorRaw), [_setEffortCursorRaw]);
 
   const panelTitle = title ?? 'Select model';
   const groups = cliGroups ?? [];
   const activeCliEngines = new Set(activeEngineIds ?? []);
+  const efforts = engineEfforts ?? {};
+  // Effort sub-picker options for the pending CLI model: "Default" (defer to the CLI's own
+  // config) at the top, then the engine's accepted levels.
+  const effortLevels = pendingCli?.group.effortLevels ?? [];
+  const effortOptions: { label: string; value: string | null }[] = [
+    { label: 'Default (use CLI config)', value: null },
+    ...effortLevels.map((l: string) => ({ label: l, value: l })),
+  ];
 
   useEffect(() => {
     setFilter(initialFilter ?? '');
@@ -362,6 +375,31 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
     const isForwardDelete = input === '\x1b[3~';
     const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
 
+    // ── Effort sub-picker (entered from CLI tab when an engine has effort levels) ──
+    if (phase === 'effort') {
+      if (key.escape) { setPhase('search'); setActiveTab('cli'); setPendingCli(null); setEffortCursor(0); return; }
+      if (key.upArrow) { setEffortCursor((i: number) => Math.max(0, i - 1)); return; }
+      if (key.downArrow) { setEffortCursor((i: number) => Math.min(effortOptions.length - 1, i + 1)); return; }
+      if (key.return) {
+        const opt = effortOptions[effortCursor];
+        const item = pendingCli;
+        if (item && opt) {
+          onSelect({
+            providerId: item.group.engineId,
+            providerName: item.group.providerName,
+            modelId: item.model.id,
+            modelName: item.model.name,
+            baseUrl: '',
+            apiKeyEnv: '',
+            format: 'openai',
+            effort: opt.value,
+          });
+        }
+        return;
+      }
+      return;
+    }
+
     // Tab switching (any phase)
     if (key.leftArrow) {
       setActiveTab('api');
@@ -405,6 +443,17 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
       if (key.return) {
         const item = cliFiltered[cursor];
         if (item && item.group.installed && !item.missing) {
+          const levels = item.group.effortLevels ?? [];
+          if (levels.length > 0) {
+            // Engine has a reasoning-effort dimension → ask for it (model → effort → done),
+            // mirroring codex's own "Select Model and Effort" flow.
+            setPendingCli({ group: item.group, model: item.model });
+            const cur = efforts[item.group.engineId];
+            const at = cur ? levels.indexOf(cur) : -1;
+            setEffortCursor(at >= 0 ? at + 1 : 0);
+            setPhase('effort');
+            return;
+          }
           onSelect({
             providerId: item.group.engineId,
             providerName: item.group.providerName,
@@ -483,6 +532,31 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
           <Text dimColor>{'\u2588'}</Text>
         </Box>
         <Text dimColor>{'  Enter key \u2022 Enter to skip \u2022 Esc back'}</Text>
+      </Box>
+    );
+  }
+
+  if (phase === 'effort' && pendingCli) {
+    const eng = pendingCli.group;
+    const cur = efforts[eng.engineId] ?? null;
+    return (
+      <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+        <Text bold color="cyan">{'Reasoning effort — '}{eng.providerName}</Text>
+        <Text dimColor>{'─'.repeat(48)}</Text>
+        <Text>{'  Model: '}<Text bold>{pendingCli.model.name}</Text></Text>
+        <Text>{''}</Text>
+        {effortOptions.map((opt: { label: string; value: string | null }, i: number) => {
+          const isCur = opt.value === cur || (opt.value === null && !cur);
+          return (
+            <Box key={`eff-${i}`}>
+              <Text color={i === effortCursor ? 'cyan' : undefined} bold={i === effortCursor}>{i === effortCursor ? ' ❯ ' : '   '}</Text>
+              <Text color={i === effortCursor ? 'cyan' : undefined} bold={i === effortCursor}>{opt.label}</Text>
+              {isCur ? <Text color="green">{'  ● current'}</Text> : null}
+            </Box>
+          );
+        })}
+        <Text>{''}</Text>
+        <Text dimColor>{'  ↑↓ navigate  Enter select  Esc back'}</Text>
       </Box>
     );
   }
@@ -598,7 +672,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   );
 }
 
-// @kern-source: controls:591
+// @kern-source: controls:664
 export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
   const eColor = engineColor(event.winnerId);
   const codeWidth = contentWidth(10);
@@ -637,7 +711,7 @@ export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(
   );
 }
 
-// @kern-source: controls:633
+// @kern-source: controls:706
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines:string[]; currentCesar:string; onSelect:(engineId: string) => void; onCancel:() => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

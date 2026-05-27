@@ -76,6 +76,21 @@ describe('CLI live-model probe cache', () => {
     expect(ids).toContain('kimi-for-coding/k2p6');
   });
 
+  it('labels CLI groups by engine (Antigravity, not Google) and carries effort levels', () => {
+    home = setupTestAgonHome('probe-labels');
+    const groups = buildCliModelGroups();
+    const agy = groups.find((g) => g.engineId === 'agy');
+    const claude = groups.find((g) => g.engineId === 'claude');
+    const codex = groups.find((g) => g.engineId === 'codex');
+    // CLI view names the engine, not the API provider.
+    expect(agy!.providerName).toBe('Antigravity');
+    expect(claude!.providerName).toBe('Claude');
+    // Effort dimension: claude/codex have levels; agy bakes effort into its model tiers.
+    expect(claude!.effortLevels).toContain('high');
+    expect(codex!.effortLevels).toContain('xhigh');
+    expect(agy!.effortLevels ?? []).toHaveLength(0);
+  });
+
   it('falls back to the static google list when no probe is cached', () => {
     home = setupTestAgonHome('probe-fallback');
     const groups = buildCliModelGroups();

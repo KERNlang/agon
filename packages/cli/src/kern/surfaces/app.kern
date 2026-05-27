@@ -1341,6 +1341,18 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       });
     >>>
 
+  callback name=persistEffort params="engineId:string, effort?:string|null" deps=""
+    handler <<<
+      // undefined → engine has no effort dimension (e.g. agy), leave config untouched.
+      // null → user chose "Default (use CLI config)", so clear any agon override and defer
+      // to the CLI's own config. string → explicit override.
+      if (effort === undefined) return;
+      const next = { ...((loadConfig() as any).engineEfforts ?? {}) };
+      if (effort === null) delete next[engineId];
+      else next[engineId] = effort;
+      configSet('engineEfforts' as any, next as any);
+    >>>
+
   callback name=openResultsPager params="" deps="dispatch,mode,chatSession"
     handler <<<
       let content = '';
@@ -1899,6 +1911,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         {modelPickerOpen && (
           <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle} cliGroups={modelPickerCliGroups}
             activeEngineIds={activeEngines()}
+            engineEfforts={(config as any).engineEfforts ?? {}}
             onToggleCliEngine={(engineId: string, active: boolean) => {
               const current = sessionEngines ?? registry.activeIds(config as any);
               const next = active
@@ -1924,8 +1937,9 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
                 const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
                 nextModels[modelPickerTargetEngine] = entry.modelId;
                 configSet('engineModels', nextModels as any);
+                persistEffort(modelPickerTargetEngine, entry.effort);
                 setConfigVersion((v: number) => v + 1);
-                dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}` } as any);
+                dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}${entry.effort ? ` (effort: ${entry.effort})` : ''}` } as any);
                 setModelPickerTargetEngine(null);
                 setModelPickerInitialFilter('');
                 setModelPickerTitle('Select model');
@@ -1939,9 +1953,10 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
                 const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
                 nextModels[engineId] = entry.modelId;
                 configSet('engineModels', nextModels as any);
+                persistEffort(engineId, entry.effort);
                 setConfigVersion((v: number) => v + 1);
                 setModelPickerOpen(false);
-                dispatch({ type: 'success', message: `CLI model set: ${engineId} → ${entry.modelId}` } as any);
+                dispatch({ type: 'success', message: `CLI model set: ${engineId} → ${entry.modelId}${entry.effort ? ` (effort: ${entry.effort})` : ''}` } as any);
                 return;
               }
               setModelPickerOpen(false);

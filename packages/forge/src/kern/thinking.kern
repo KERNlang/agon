@@ -153,28 +153,49 @@ fn name=buildThinkPrompt params="problem:string, strategy:string, maxThoughts:nu
 // ── Robust JSON extraction (engines wrap output in fences / prose) ──
 
 fn name=extractThinkJson params="raw:string" returns="any|null" export=true
-  doc "Pull the first balanced top-level JSON object out of an engine response, tolerating code fences and surrounding prose."
+  doc "Pull the first balanced top-level JSON object out of an engine response, tolerating code fences and surrounding prose. String-aware: braces inside JSON string values (these thoughts are about code, so they are full of { }) are ignored, and escaped quotes are handled, so a thought like '{ foo }' no longer corrupts the depth count."
   handler <<<
     const stripped = raw.replace(/```(?:json)?/gi, '');
     let depth = 0;
     let start = -1;
+    let inStr = false;
+    let esc = false;
+    let firstParsed: any = null;
     for (let i = 0; i < stripped.length; i++) {
       const ch = stripped[i];
-      if (ch === '{') {
+      if (inStr) {
+        if (esc) {
+          esc = false;
+        } else if (ch === '\\') {
+          esc = true;
+        } else if (ch === '"') {
+          inStr = false;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inStr = true;
+      } else if (ch === '{') {
         if (depth === 0) start = i;
         depth++;
       } else if (ch === '}') {
+        if (depth === 0) continue; // stray closing brace in prose
         depth--;
         if (depth === 0 && start !== -1) {
           try {
-            return JSON.parse(stripped.slice(start, i + 1));
+            const obj = JSON.parse(stripped.slice(start, i + 1));
+            // Prefer the object that actually carries our chain; a trivial
+            // `{}` in surrounding prose must not short-circuit the real one.
+            if (obj && typeof obj === 'object' && Array.isArray(obj.thoughts)) return obj;
+            if (firstParsed === null) firstParsed = obj;
           } catch {
-            start = -1;
+            /* keep scanning for the next balanced object */
           }
+          start = -1;
         }
       }
     }
-    return null;
+    return firstParsed;
   >>>
 
 // ── Parse + normalize the chain ─────────────────────────────────────

@@ -90,6 +90,9 @@ interface name=CesarPlan
   field name=selfReview type=boolean optional=true
   field name=reviewCyclesUsed type=number optional=true
   field name=fallbackRetriesUsed type="Record<string, number>" optional=true
+  doc "Set when Cesar leaves plan mode via ExitPlanMode — the plan is archived as cancelled with the reason Cesar gave, so the exit is auditable and the proposal isn't silently erased."
+  field name=exitReason type=string optional=true
+  field name=exitedAt type=string optional=true
 
 fn name=createCesarPlan params="intent:string,steps:CesarPlanStep[]" returns=CesarPlan
   doc "Create a new CesarPlan in 'planning' state. Steps with dependsOn are marked 'blocked', others 'pending'."
@@ -178,6 +181,17 @@ fn name=cancelCesarPlan params="plan:CesarPlan" returns=CesarPlan export=true
       updatedAt: new Date().toISOString(),
       activeStepId: null,
       currentStepId: null,
+    };
+  >>>
+
+fn name=exitCesarPlan params="plan:CesarPlan, reason:string" returns=CesarPlan export=true
+  doc "Archive a plan when Cesar leaves plan mode via ExitPlanMode. Cancels it (same step handling as cancelCesarPlan) and records the exit reason + timestamp so the exit is auditable. The pending proposal is preserved on disk as a cancelled record rather than erased."
+  handler <<<
+    const cancelled = cancelCesarPlan(plan);
+    return {
+      ...cancelled,
+      exitReason: reason && reason.trim() ? reason.trim() : 'no reason given',
+      exitedAt: new Date().toISOString(),
     };
   >>>
 

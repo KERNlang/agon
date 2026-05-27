@@ -235,17 +235,17 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
         const stats = tracker.getStats();
         let budgetWarning = '';
         if (stats.totalCostUsd > 0.50) {
-          budgetWarning = `\n\nURGENT: Planning has spent $${stats.totalCostUsd.toFixed(2)}. You MUST call ProposePlan NOW. No more investigation.`;
+          budgetWarning = `\n\nURGENT: Planning has spent $${stats.totalCostUsd.toFixed(2)}. Stop investigating and decide NOW — call ProposePlan or ExitPlanMode.`;
         } else if (stats.totalCostUsd > 0.25) {
-          budgetWarning = `\n\nWARNING: Planning has spent $${stats.totalCostUsd.toFixed(2)}. Wrap up and call ProposePlan.`;
+          budgetWarning = `\n\nWARNING: Planning has spent $${stats.totalCostUsd.toFixed(2)}. Wrap up and decide — call ProposePlan or ExitPlanMode.`;
         }
-        systemParts.push(`RULE 9 — PLAN MODE: You are in PLAN MODE. You MUST call ProposePlan before your turn ends. This is not optional.
+        systemParts.push(`RULE 9 — PLAN MODE: You are in PLAN MODE because the user asked for planning, so proposing a plan is usually the right call here. But you are NEVER trapped and never forced: if you decide a plan is not the right approach — the task is simple enough to do live, or planning is blocking progress — call ExitPlanMode with a one-line reason and work live instead. You decide.
 
   PROTOCOL:
 
   1. INVESTIGATE — Go as deep as needed. Read files, Grep for patterns, trace call chains, understand the full scope. Use Brainstorm/Tribunal/Campfire/Delegate freely if the task is complex and you need other engines' input. Take your time here — thorough investigation makes better plans.
 
-  2. PROPOSE — When you understand the task, call ProposePlan with a structured plan. This is MANDATORY. Your turn MUST end with a ProposePlan call. Do NOT respond with text instead of calling ProposePlan. Do NOT skip this step.
+  2. PROPOSE or EXIT — End your turn with a decision. If staged multi-step execution genuinely helps, call ProposePlan with a structured plan. If you've concluded a plan is unnecessary or wrong for this task, call ExitPlanMode (give a reason) and proceed live next turn. Do NOT stall — narrating without calling either one is the one thing that fails plan mode.
 
   PLAN QUALITY CHECKLIST — every ProposePlan call must:
     1. Write a real intent (1-3 sentences: what the user asked + your overall approach), not a one-word title.
@@ -320,7 +320,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   BLOCKED: Forge, Pipeline, Agent, Edit, Write. No code execution until the plan is approved.
   ALLOWED: Read, Grep, Glob, Bash (read-only), Delegate, Brainstorm, Tribunal, Campfire, ReportConfidence, ProposePlan.
 
-  HARD RULE: Your turn MUST end with a ProposePlan call. If you respond with text only, the plan mode fails. Call ProposePlan.${budgetWarning}`);
+  RULE: End your turn by calling EITHER ProposePlan (if a plan helps) OR ExitPlanMode (if it doesn't) — not with plain narration. Both are valid; you choose.${budgetWarning}`);
         }
       }
 
@@ -516,6 +516,16 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       }
     }
 
+    if (name === 'ExitPlanMode') {
+      // Cesar's escape hatch — delegate to the shared handler so the native
+      // onToolCall path and the MCP/XML signal paths in brain.kern all
+      // archive + clear plan state identically. The dispatch is only for UI
+      // events; pass null when planDispatch is unavailable rather than
+      // blocking the exit (state cleanup does not depend on it).
+      const { handleExitPlanMode } = await import('../handlers/plan-mode.js');
+      return handleExitPlanMode(String((args as any).reason ?? ''), ctx.cesar?.planDispatch ?? null, ctx);
+    }
+
     if (name === 'ProposePlan') {
       const activePlan = ctx.activePlan;
       // An awaiting_approval plan is only a proposal the user hasn't accepted —
@@ -644,7 +654,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:613
+// @kern-source: session:623
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -819,7 +829,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:789
+// @kern-source: session:799
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -853,7 +863,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:823
+// @kern-source: session:833
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -877,7 +887,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:847
+// @kern-source: session:857
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -889,7 +899,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:854
+// @kern-source: session:864
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -909,7 +919,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:872
+// @kern-source: session:882
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -934,7 +944,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:898
+// @kern-source: session:908
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

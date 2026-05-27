@@ -17,6 +17,7 @@ export function agentGuideMarkdown(): string {
     '- `agon brainstorm "<question>"` — engines bid confidence, the most confident answers. Cheap second opinion.',
     '- `agon tribunal "<question>" [--mode adversarial|steelman|socratic|red-team|synthesis|postmortem]` — structured multi-engine debate. Use for decisions with real tradeoffs.',
     '- `agon campfire "<topic>"` — open multi-engine discussion, no winner. For exploration.',
+    '- `agon think "<problem>" [--strategy linear|reflexion] [--steps N] [--branches N]` — sequential thinking: decompose a problem into structured thoughts (reflexion forces a self-critique+revision per step; --branches explores alternatives), surface open questions, and emit a refined spec to hand to `agon goal`. Use to think before acting, or for engines with weak built-in reasoning.',
     '- `agon review <uncommitted|branch:NAME|commit:SHA>` — non-interactive multi-engine code review.',
     '- `agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"` — autonomous controller: drives a task queue to completion unattended, looping build -> witness -> gate -> review (panel + judge) -> fix -> commit per task on a goal/ branch. Bound it with `--max-hours`/`--budget`; `--push` pushes each task. Long-running (designed for 8-24h).',
     '',
@@ -38,6 +39,7 @@ export function agentGuideMarkdown(): string {
     '- a decision with tradeoffs           -> tribunal',
     '- need ideas / unsure                 -> brainstorm',
     '- explore, no decision needed         -> campfire',
+    '- think before acting / decompose     -> think',
     '- judge existing code                 -> review',
     '- drive a whole task queue to done    -> goal',
     '',
@@ -48,7 +50,7 @@ export function agentGuideMarkdown(): string {
 /**
  * Per-CLI /agon slash-command shim. format is one of agy | claude | markdown.
  */
-// @kern-source: agent-guide-text:50
+// @kern-source: agent-guide-text:52
 export function agonShim(format: string): string {
   const body = [
     'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, campfire, review, goal).',
@@ -96,7 +98,7 @@ export function agonShim(format: string): string {
 /**
  * Native Codex skill that exposes Agon as $agon.
  */
-// @kern-source: agent-guide-text:96
+// @kern-source: agent-guide-text:98
 export function codexSkillMarkdown(): string {
   return [
     '---',
@@ -131,7 +133,7 @@ export function codexSkillMarkdown(): string {
 /**
  * Codex UI metadata for the Agon skill.
  */
-// @kern-source: agent-guide-text:129
+// @kern-source: agent-guide-text:131
 export function codexSkillOpenAiYaml(): string {
   return [
     'interface:',

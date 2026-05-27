@@ -19,6 +19,8 @@ export interface CallCommandOptions {
   finalizeOnScore?: string;
   gate?: string;
   queue?: string;
+  steps?: string;
+  branches?: string;
 }
 
 export interface BuiltCallCommands {
@@ -112,6 +114,20 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...timeout,
       ...engines,
     ]);
+  } else if (workflow === 'think') {
+    // Sequential thinking. External CLIs can decompose a problem (and optionally
+    // branch) before handing the refined spec to forge/goal. --strategy is
+    // linear|reflexion here (distinct from campfire's lead-first/all-respond).
+    const problem = requireInput(workflow, opts.input);
+    commands.push([
+      'think',
+      problem,
+      ...textFlag('--strategy', opts.strategy),
+      ...textFlag('--steps', opts.steps),
+      ...textFlag('--branches', opts.branches),
+      ...timeout,
+      ...engines,
+    ]);
   } else if (workflow === 'review') {
     commands.push(['review', opts.input?.trim() || 'uncommitted', ...timeout, ...engines]);
   } else if (workflow === 'goal') {
@@ -144,7 +160,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
     commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
   } else {
-    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, campfire, pipeline, review, goal, doctor, or a team-* workflow.`);
+    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, campfire, think, pipeline, review, goal, doctor, or a team-* workflow.`);
   }
 
   return { cwd, commands };
@@ -205,7 +221,7 @@ export const callCommand = defineCommand({
   args: {
     workflow: {
       type: 'positional',
-      description: 'Workflow: forge, brainstorm, synthesis, tribunal, campfire, pipeline, review, goal, doctor, or team-*',
+      description: 'Workflow: forge, brainstorm, synthesis, tribunal, campfire, think, pipeline, review, goal, doctor, or team-*',
       required: true,
     },
     input: {
@@ -257,7 +273,15 @@ export const callCommand = defineCommand({
     },
     strategy: {
       type: 'string',
-      description: 'Campfire strategy: lead-first or all-respond',
+      description: 'Campfire strategy (lead-first|all-respond) or think strategy (linear|reflexion)',
+    },
+    steps: {
+      type: 'string',
+      description: 'For think: max thoughts (steps of thought), 1..20',
+    },
+    branches: {
+      type: 'string',
+      description: 'For think: alternative reasoning branches to explore, 1..8',
     },
     lead: {
       type: 'string',
@@ -301,6 +325,8 @@ export const callCommand = defineCommand({
         finalizeOnScore: args.finalizeOnScore,
         gate: args.gate,
         queue: args.queue,
+        steps: args.steps,
+        branches: args.branches,
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

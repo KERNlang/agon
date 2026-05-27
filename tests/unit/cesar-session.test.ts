@@ -132,6 +132,35 @@ describe('cesar MCP session config', () => {
     ]);
   });
 
+  it('caps a huge transcript message so a review/brainstorm reply does not flood Cesar context', () => {
+    const huge = 'x'.repeat(30_000); // e.g. a full review or brainstorm engine reply
+    const snapshot = buildCesarConversationSnapshot({
+      engineId: 'codex',
+      getMessageHistory: () => [],
+    } as any, {
+      messages: [
+        { role: 'engine', engineId: 'codex', content: huge },
+      ],
+    });
+
+    expect(snapshot).toHaveLength(1);
+    const content = snapshot[0].content as string;
+    // Prefix + 4000-char cap + truncation marker — nowhere near the 30k original.
+    expect(content.startsWith('[codex] ')).toBe(true);
+    expect(content.length).toBeLessThan(4200);
+    expect(content).toContain('chars truncated for Cesar context');
+  });
+
+  it('leaves a normal-sized transcript message untouched', () => {
+    const snapshot = buildCesarConversationSnapshot({
+      engineId: 'codex',
+      getMessageHistory: () => [],
+    } as any, {
+      messages: [{ role: 'engine', engineId: 'codex', content: 'short reply' }],
+    });
+    expect(snapshot[0].content).toBe('[codex] short reply');
+  });
+
   it('reports blocked fast-path orchestration as a native tool error', async () => {
     const onToolCall = buildOnToolCall({
       cesar: { fastPathMode: 'answer' },

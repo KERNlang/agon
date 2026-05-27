@@ -132,6 +132,15 @@ fn name=appendSummaryRecord params="session:ChatSession" returns=void export=fal
     let name=filePath value="join(chatsDir(), `${session.id}.ndjson`)"
     do value="appendFileSync(filePath, JSON.stringify({ _type: 'summary', summary: session.summary ?? '', summarizedMessageCount: session.summarizedMessageCount ?? 0, timestamp: new Date().toISOString(), }) + '\\n')"
 
+fn name=freeSummarizedMessageBodies params="messages:ChatMessage[], from:number, to:number" returns=void export=false
+  doc "Null out the in-memory content of messages[from..to). Those turns are already folded into the rolling summary AND persisted to disk (appendMessage writes the ndjson), so dropping their bodies bounds session RAM without losing anything callers need. Objects are kept so indices/summarizedMessageCount/resume accounting stay valid."
+  handler <<<
+    for (let i = from; i < to; i++) {
+      const m = messages[i];
+      if (m && typeof m.content === 'string') m.content = '';
+    }
+  >>>
+
 fn name=updateChatSummary params="session:ChatSession" returns=boolean export=true
   doc "Incrementally compact older current-session chat into a bounded summary. The newest tail remains available as raw capped turns; older turns become a compact digest for Cesar/API respawns without replaying the full transcript."
   handler lang="kern"
@@ -142,6 +151,13 @@ fn name=updateChatSummary params="session:ChatSession" returns=boolean export=tr
     if cond="targetCount <= already"
       return value="false"
     let name=additions value="session.messages.slice(already, targetCount) .filter((msg: any) => msg && typeof msg.content === 'string' && msg.content.trim()) .map((msg: ChatMessage) => compactChatMessage(msg))"
+    comment raw="// Free the heavy content of the turns now folded into the rolling summary. The"
+    comment raw="// full message is already on disk (appendMessage writes the ndjson before this),"
+    comment raw="// and the summary + the un-summarized tail carry forward all the context callers"
+    comment raw="// use — so keeping the raw bodies in memory only grows RAM unbounded for the whole"
+    comment raw="// session (the long-run / post-forge lag → crash). Blank the content but KEEP the"
+    comment raw="// objects so indices, summarizedMessageCount, and resume accounting stay valid."
+    do value="freeSummarizedMessageBodies(session.messages, already, targetCount)"
     if cond="additions.length === 0"
       assign target="session.summarizedMessageCount" value="targetCount"
       return value="true"
@@ -256,6 +272,15 @@ fn name=loadChatSession params="id:string" returns="ChatSession|null"
           continue;
         }
         if (msg.role) messages.push(msg);
+      }
+
+      // Resume parity with the live path: the ndjson holds every body, but the
+      // turns already folded into `summary` (indices 0..summarizedMessageCount)
+      // don't need their raw bodies in memory. Free them so resuming a long chat
+      // (e.g. `agon --continue`) doesn't restore the unbounded RAM footprint the
+      // live session already avoids. Tail + summary still carry all live context.
+      if (typeof summarizedMessageCount === 'number' && summarizedMessageCount > 0) {
+        freeSummarizedMessageBodies(messages, 0, Math.min(summarizedMessageCount, messages.length));
       }
 
       return {

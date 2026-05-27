@@ -1,0 +1,207 @@
+// @kern-source: worktree:10
+import { defineCommand } from 'citty';
+
+// @kern-source: worktree:11
+import { execFileSync } from 'node:child_process';
+
+// @kern-source: worktree:12
+import { ensureAgonHome, repoRoot, createSessionWorktree, listSessionWorktrees, removeSessionWorktree, pruneSessionWorktrees, rehydrateSessionWorktree } from '@agon/core';
+
+// @kern-source: worktree:13
+import { header, success, fail, warn, info, table, bold, dim } from '../blocks/output-format.js';
+
+// @kern-source: worktree:15
+export const worktreeCommand: any = defineCommand({
+  meta: {
+    name: 'worktree',
+    description: 'Isolated per-session git worktrees (new/list/rm/prune/rehydrate)',
+  },
+  args: {
+    action: {
+      type: 'positional',
+      required: true,
+      description: 'Action: new <branch> | list | rm <branch> | prune | rehydrate <branch>',
+    },
+    branch: {
+      type: 'positional',
+      required: false,
+      description: 'Branch name (for new / rm / rehydrate)',
+    },
+    base: {
+      type: 'string',
+      description: 'Base ref for a new branch (default: current HEAD)',
+    },
+    deps: {
+      type: 'string',
+      description: 'Dependency setup: link (fast node_modules overlay, default) | install (run the project package manager) | none',
+      default: 'link',
+    },
+    'older-than': {
+      type: 'string',
+      description: 'Age threshold for prune (e.g. 7d, 24h, 30m)',
+      default: '7d',
+    },
+    'dry-run': {
+      type: 'boolean',
+      description: 'For prune: report what would be removed without removing it',
+      default: false,
+    },
+    force: {
+      type: 'boolean',
+      description: 'rm/prune: remove even when the worktree has uncommitted changes (discards them)',
+      default: false,
+    },
+  },
+  run({ args }) {
+    ensureAgonHome();
+
+    // citty hands a repeated flag back as an array; collapse to the last.
+    const coerce = (v: unknown): string | undefined =>
+      typeof v === 'string' ? v : Array.isArray(v) && v.length > 0 ? String(v[v.length - 1]) : undefined;
+    const rest: string[] = Array.isArray(args._) ? args._.filter((x: unknown) => typeof x === 'string').map(String) : [];
+    const action = (coerce(args.action) ?? rest[0] ?? '').toString();
+    // Trust the declared positional; only fall back to args._ when citty
+    // didn't bind it. (rest[0] is the action when both land in args._.)
+    const branch = coerce(args.branch) ?? (rest[0] === action ? rest[1] : rest[0]);
+
+    let root: string;
+    try {
+      root = repoRoot(process.cwd());
+    } catch {
+      fail('Not inside a git repository — `agon worktree` operates on the current repo.');
+      process.exit(1);
+      return;
+    }
+
+    const home = process.env.HOME;
+    // Prefix-only replace — String.replace(str) hits the first occurrence
+    // anywhere, which would mangle paths where HOME is a substring.
+    const short = (p: string): string => (home && p.startsWith(home) ? `~${p.slice(home.length)}` : p);
+
+    const parseDuration = (s: string): number | null => {
+      const m = /^(\d+)\s*([dhm])$/.exec(s.trim());
+      if (!m) return null;
+      const n = parseInt(m[1], 10);
+      return m[2] === 'd' ? n * 86_400_000 : m[2] === 'h' ? n * 3_600_000 : n * 60_000;
+    };
+
+    switch (action) {
+      case 'new': {
+        if (!branch) {
+          fail('Usage: agon worktree new <branch> [--base <ref>] [--deps link|install|none]');
+          process.exit(1);
+          return;
+        }
+        const deps = (coerce(args.deps) ?? 'link').toLowerCase();
+        if (deps !== 'link' && deps !== 'install' && deps !== 'none') {
+          fail(`Invalid --deps "${deps}". Use: link, install, or none.`);
+          process.exit(1);
+          return;
+        }
+        let m;
+        try {
+          m = createSessionWorktree({ repoRoot: root, branch, base: coerce(args.base), link: deps === 'link' });
+        } catch (e) {
+          fail(e instanceof Error ? e.message : String(e));
+          process.exit(1);
+          return;
+        }
+        const pm = m.packageManager ?? 'npm';
+        if (deps === 'install') {
+          info(`Installing dependencies with ${pm}...`);
+          try {
+            // shell:true on Windows so npm/pnpm/yarn/bun (.cmd shims) resolve.
+            execFileSync(pm, ['install'], { cwd: m.path, stdio: 'inherit', shell: process.platform === 'win32' });
+          } catch (e) {
+            warn(`'${pm} install' failed in the worktree (${e instanceof Error ? e.message : String(e)}). Run it manually in ${m.path}.`);
+          }
+        }
+        success(`Session worktree ready on ${bold(m.branch)}`);
+        console.log(`  ${bold(`cd ${short(m.path)}`)}`);
+        if (deps === 'link') {
+          info(`node_modules linked from the main install (fast). If this branch changes dependencies or uses yarn PnP/bun, run \`${pm} install\` here or recreate with \`--deps install\`.`);
+        } else if (deps === 'none') {
+          info(`No dependencies set up. Run \`${pm} install\` in the worktree before building.`);
+        }
+        break;
+      }
+
+      case 'list':
+      case 'ls': {
+        const items = listSessionWorktrees(root);
+        if (items.length === 0) {
+          info('No session worktrees yet. Create one with `agon worktree new <branch>`.');
+          break;
+        }
+        header('Session worktrees');
+        table(
+          ['Branch', 'Path', 'Created', 'PM'],
+          items.map((m) => [m.branch, dim(short(m.path)), m.createdAt.replace('T', ' ').slice(0, 16), m.packageManager ?? '—']),
+        );
+        break;
+      }
+
+      case 'rm':
+      case 'remove': {
+        if (!branch) {
+          fail('Usage: agon worktree rm <branch> [--force]');
+          process.exit(1);
+          return;
+        }
+        try {
+          if (removeSessionWorktree(root, branch, !!args.force)) {
+            success(`Removed the session worktree for ${bold(branch)} (the git branch is kept).`);
+          } else {
+            fail(`No session worktree found for "${branch}".`);
+            process.exit(1);
+          }
+        } catch (e) {
+          fail(e instanceof Error ? e.message : String(e));
+          process.exit(1);
+        }
+        break;
+      }
+
+      case 'prune': {
+        const olderThan = coerce(args['older-than']) ?? '7d';
+        const ms = parseDuration(olderThan);
+        if (ms === null) {
+          fail(`Invalid --older-than "${olderThan}". Use e.g. 7d, 24h, 30m.`);
+          process.exit(1);
+          return;
+        }
+        const dryRun = !!args['dry-run'];
+        const removed = pruneSessionWorktrees(root, ms, dryRun, !!args.force);
+        if (removed.length === 0) {
+          info(`No session worktrees older than ${olderThan} (dirty worktrees are skipped unless --force).`);
+        } else if (dryRun) {
+          info(`Would prune ${removed.length}: ${removed.join(', ')}`);
+        } else {
+          success(`Pruned ${removed.length}: ${removed.join(', ')}`);
+        }
+        break;
+      }
+
+      case 'rehydrate': {
+        if (!branch) {
+          fail('Usage: agon worktree rehydrate <branch>');
+          process.exit(1);
+          return;
+        }
+        if (rehydrateSessionWorktree(root, branch)) {
+          success(`Re-linked node_modules + dist for ${bold(branch)}.`);
+        } else {
+          fail(`No session worktree found for "${branch}".`);
+          process.exit(1);
+        }
+        break;
+      }
+
+      default:
+        fail(`Unknown action: ${action || '(none)'}`);
+        info('Available: new <branch>, list, rm <branch>, prune, rehydrate <branch>');
+        process.exit(1);
+    }
+  },
+});
+

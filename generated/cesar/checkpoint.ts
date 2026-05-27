@@ -1,0 +1,102 @@
+// @kern-source: checkpoint:5
+import { join } from 'node:path';
+
+// @kern-source: checkpoint:6
+import { mkdirSync, appendFileSync, existsSync, readFileSync } from 'node:fs';
+
+// @kern-source: checkpoint:7
+import { RUNS_DIR, resolveWorkingDir, currentBranch, gitChangedFiles } from '@agon/core';
+
+// @kern-source: checkpoint:9
+export type CheckpointPhase = 'pre-dispatch' | 'post-dispatch' | 'post-judgment' | 'user-pause';
+
+// @kern-source: checkpoint:11
+export interface Checkpoint {
+  id: string;
+  runId: string;
+  phase: CheckpointPhase;
+  ts: number;
+  cwd: string;
+  branch: string;
+  changedFiles: string[];
+  mode: string;
+  engineIds: string[];
+  metadata?: Record<string,unknown>;
+}
+
+// @kern-source: checkpoint:23
+function createCheckpointId(): string {
+  return `chk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+// @kern-source: checkpoint:25
+export function buildCheckpoint(runId: string, phase: CheckpointPhase, mode: string, engineIds: string[], metadata?: Record<string,unknown>): Checkpoint {
+  const cwd = resolveWorkingDir();
+  let branch = '';
+  let changedFiles: string[] = [];
+  try { branch = currentBranch(cwd); } catch { /* noop */ }
+  try { changedFiles = gitChangedFiles(cwd); } catch { /* noop */ }
+  return {
+    id: createCheckpointId(),
+    runId,
+    phase,
+    ts: Date.now(),
+    cwd,
+    branch,
+    changedFiles,
+    mode,
+    engineIds,
+    metadata,
+  };
+}
+
+// @kern-source: checkpoint:46
+/**
+ * Append checkpoint to JSONL.  Best-effort: never throws.
+ */
+export function recordCheckpoint(cp: Checkpoint, runsDir?: string): void {
+  try {
+    const dir = runsDir ?? RUNS_DIR;
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(join(dir, 'checkpoints.jsonl'), JSON.stringify(cp) + '\n');
+  } catch { /* checkpoints are advisory */ }
+}
+
+// @kern-source: checkpoint:56
+export function listCheckpoints(opts?: {runId?:string,phase?:CheckpointPhase,limit?:number,runsDir?:string}): Checkpoint[] {
+  const dir = opts?.runsDir ?? RUNS_DIR;
+  const path = join(dir, 'checkpoints.jsonl');
+  if (!existsSync(path)) return [];
+  let raw = '';
+  try {
+    raw = readFileSync(path, 'utf-8');
+  } catch { return []; }
+  const out: Checkpoint[] = [];
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as Checkpoint;
+      if (opts?.runId && parsed.runId !== opts.runId) continue;
+      if (opts?.phase && parsed.phase !== opts.phase) continue;
+      out.push(parsed);
+    } catch { /* skip corrupt */ }
+  }
+  out.sort((a, b) => b.ts - a.ts);
+  const limit = opts?.limit ?? 50;
+  return out.slice(0, limit);
+}
+
+// @kern-source: checkpoint:81
+export function lastCheckpointForRun(runId: string, runsDir?: string): Checkpoint|undefined {
+  return listCheckpoints({ runId, limit: 1, runsDir })[0];
+}
+
+// @kern-source: checkpoint:83
+export function formatCheckpointLine(cp: Checkpoint): string {
+  const ago = Math.round((Date.now() - cp.ts) / 1000);
+  const agoText = (ago < 60) ? `${ago}s ago` : ((ago < 3600) ? `${Math.round(ago / 60)}m ago` : `${Math.round(ago / 3600)}h ago`);
+  const files = (cp.changedFiles.length > 0) ? ` (${cp.changedFiles.length} changed)` : '';
+  return `${cp.phase} ${cp.mode} ${cp.engineIds.join('+')}${files} — ${agoText}`;
+}
+

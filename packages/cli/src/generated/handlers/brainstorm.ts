@@ -63,6 +63,11 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
     recordCheckpoint(preCp);
 
     const startTime = Date.now();
+    // Poll at 250ms for a responsive elapsed counter, but only DISPATCH when the
+    // rendered signature actually changes (i.e. once a second when elapsed ticks).
+    // Without this guard brainstorm fired a progress-update — and a full arena
+    // re-render — 4×/sec for the whole run (forge already does this; this matches it).
+    let _lastBrainstormProgressSig = '';
     const progressInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = engines.map((id: string) => ({
@@ -72,7 +77,11 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
         done: false,
         failed: false,
       }));
-      dispatch({ type: 'progress-update', engines: progress });
+      const sig = `${engines.join(',')}@${elapsed}`;
+      if (sig !== _lastBrainstormProgressSig) {
+        _lastBrainstormProgressSig = sig;
+        dispatch({ type: 'progress-update', engines: progress });
+      }
     }, 250);
 
     let result: any;

@@ -140,6 +140,26 @@ describe('chat-store', () => {
     expect(context).toContain('message-19');
   });
 
+  it('frees in-memory bodies of summarized messages so a long session stays bounded', () => {
+    const session = startChatSession();
+    for (let i = 0; i < 40; i++) {
+      appendMessage(session, { role: 'engine', engineId: 'codex', content: `BODY-${i}-` + 'x'.repeat(2000), timestamp: new Date().toISOString() });
+    }
+    const tail = 12; // CHAT_SUMMARY_TAIL_MESSAGES
+    const older = session.messages.slice(0, session.messages.length - tail);
+    const recent = session.messages.slice(-tail);
+    // Older turns are folded into the summary and their heavy bodies freed…
+    expect(older.length).toBeGreaterThan(0);
+    expect(older.every((m: any) => m.content === '')).toBe(true);
+    // …while the recent tail keeps full content for live context.
+    expect(recent.some((m: any) => (m.content?.length ?? 0) > 1000)).toBe(true);
+    // Total in-memory content is bounded by the tail, not the whole session.
+    const totalChars = session.messages.reduce((n: number, m: any) => n + (m.content?.length ?? 0), 0);
+    expect(totalChars).toBeLessThan(tail * 2100 + 200);
+    // Nothing is lost: the freed turns are captured in the summary (and on disk).
+    expect(session.summary).toContain('BODY-0');
+  });
+
   it('persists rolling summary records for resumed chats', () => {
     const session = startChatSession();
     for (let i = 0; i < 18; i++) {
@@ -152,5 +172,21 @@ describe('chat-store', () => {
     expect(loaded?.summary).toBe(session.summary);
     expect(loaded?.summarizedMessageCount).toBe(session.summarizedMessageCount);
     expect(formatChatContextForPrompt(loaded, { maxMessages: 3 })).toContain('persisted-0');
+  });
+
+  it('frees already-summarized bodies on resume so a long --continue does not restore the RAM footprint', () => {
+    const session = startChatSession();
+    for (let i = 0; i < 40; i++) {
+      appendMessage(session, { role: 'engine', engineId: 'codex', content: `RESUME-${i}-` + 'y'.repeat(2000), timestamp: new Date().toISOString() });
+    }
+    const loaded = loadChatSession(session.id);
+    expect(loaded).not.toBeNull();
+    const count = loaded!.summarizedMessageCount ?? 0;
+    expect(count).toBeGreaterThan(0);
+    // The summarized prefix is reloaded as empty bodies (covered by the summary + disk)…
+    expect(loaded!.messages.slice(0, count).every((m: any) => m.content === '')).toBe(true);
+    // …the tail keeps full content, and old turns are still recoverable via the summary.
+    expect(loaded!.messages.slice(count).some((m: any) => (m.content?.length ?? 0) > 1000)).toBe(true);
+    expect(loaded!.summary).toContain('RESUME-0');
   });
 });

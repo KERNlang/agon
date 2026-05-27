@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { shouldUseCompanionForAgent, buildCommand, resolveArgs, computeEngineIsolation } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
+import { shouldUseCompanionForAgent, buildCommand, resolveArgs, computeEngineIsolation, resolveClaudePtyExtraArgs } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
 
 describe('adapter helper routing', () => {
   it('uses one-shot agent companion only for JSON-RPC engines', () => {
@@ -75,10 +75,13 @@ describe('computeEngineIsolation (auth-gated clean-dir materialisation)', () => 
     rmSync(codexRealHome, { recursive: true, force: true });
   });
 
-  it('claude with NO marker in the clean dir → inherit (no env override)', () => {
+  // NOTE: every dispatch now also carries AGON_DISPATCH_DEPTH (recursion guard marker),
+  // so even "inherit" returns an env containing just that marker (no isolation keys).
+  it('claude with NO marker in the clean dir → inherit (only the dispatch-depth marker)', () => {
     const iso = computeEngineIsolation(claude, {});
     expect(iso.plan.isolate).toBe(false);
-    expect(iso.env).toBeUndefined();
+    expect(iso.env).toMatchObject({ AGON_DISPATCH_DEPTH: expect.any(String) });
+    expect(iso.env?.CLAUDE_CONFIG_DIR).toBeUndefined();
     // The clean dir is still created (ready for `agon login claude`).
     expect(existsSync(join(agonHome, 'pure', 'claude'))).toBe(true);
   });
@@ -89,7 +92,7 @@ describe('computeEngineIsolation (auth-gated clean-dir materialisation)', () => 
     writeFileSync(join(cleanDir, '.claude.json'), '{}');
     const iso = computeEngineIsolation(claude, {});
     expect(iso.plan.isolate).toBe(true);
-    expect(iso.env).toEqual({ CLAUDE_CONFIG_DIR: cleanDir });
+    expect(iso.env).toMatchObject({ CLAUDE_CONFIG_DIR: cleanDir, AGON_DISPATCH_DEPTH: expect.any(String) });
     expect(iso.argsExtra).toEqual(['--strict-mcp-config']);
   });
 
@@ -98,7 +101,7 @@ describe('computeEngineIsolation (auth-gated clean-dir materialisation)', () => 
     const iso = computeEngineIsolation(codex, {});
     const cleanDir = join(agonHome, 'pure', 'codex');
     expect(iso.plan.isolate).toBe(true);
-    expect(iso.env).toEqual({ CODEX_HOME: cleanDir });
+    expect(iso.env).toMatchObject({ CODEX_HOME: cleanDir, AGON_DISPATCH_DEPTH: expect.any(String) });
     expect(existsSync(join(cleanDir, 'auth.json'))).toBe(true); // seeded
   });
 
@@ -110,7 +113,8 @@ describe('computeEngineIsolation (auth-gated clean-dir materialisation)', () => 
     const iso = computeEngineIsolation(codex, {});
     expect(existsSync(join(cleanDir, 'auth.json'))).toBe(false); // cleaned
     expect(iso.plan.isolate).toBe(false);                        // marker gone → inherit
-    expect(iso.env).toBeUndefined();
+    expect(iso.env).toMatchObject({ AGON_DISPATCH_DEPTH: expect.any(String) });
+    expect(iso.env?.CODEX_HOME).toBeUndefined();
   });
 
   it('an empty-string authMarker is treated as "no marker" (assume authed), not a falsy bypass', () => {
@@ -119,7 +123,7 @@ describe('computeEngineIsolation (auth-gated clean-dir materialisation)', () => 
     // No real marker to satisfy, but an empty marker must not silently pass as a
     // "found" file — it's normalised to no-marker ⇒ assume authed ⇒ isolate.
     expect(iso.plan.isolate).toBe(true);
-    expect(iso.env).toEqual({ EM_HOME: join(agonHome, 'pure', 'em') });
+    expect(iso.env).toMatchObject({ EM_HOME: join(agonHome, 'pure', 'em'), AGON_DISPATCH_DEPTH: expect.any(String) });
   });
 
   it('inherit mode (AGON_ENGINE_ISOLATION=inherit) overrides everything → no isolation', () => {
@@ -129,6 +133,89 @@ describe('computeEngineIsolation (auth-gated clean-dir materialisation)', () => 
     writeFileSync(join(cleanDir, '.claude.json'), '{}'); // even fully authed
     const iso = computeEngineIsolation(claude, {});
     expect(iso.plan.isolate).toBe(false);
-    expect(iso.env).toBeUndefined();
+    expect(iso.env).toMatchObject({ AGON_DISPATCH_DEPTH: expect.any(String) });
+    expect(iso.env?.CLAUDE_CONFIG_DIR).toBeUndefined();
+  });
+
+  it('stamps an incrementing AGON_DISPATCH_DEPTH so a dispatched engine cannot recurse into agon', () => {
+    const prior = process.env.AGON_DISPATCH_DEPTH;
+    try {
+      delete process.env.AGON_DISPATCH_DEPTH;
+      expect(computeEngineIsolation(claude, {}).env?.AGON_DISPATCH_DEPTH).toBe('1');
+      process.env.AGON_DISPATCH_DEPTH = '1';
+      expect(computeEngineIsolation(claude, {}).env?.AGON_DISPATCH_DEPTH).toBe('2');
+    } finally {
+      if (prior === undefined) delete process.env.AGON_DISPATCH_DEPTH;
+      else process.env.AGON_DISPATCH_DEPTH = prior;
+    }
+  });
+});
+
+// Reasoning effort + "defer to the CLI's own config by default" (model/effort
+// are only forced when the user explicitly picks them in agon; otherwise the
+// CLI uses its own setting — which also keeps agon working if the /model probe
+// ever breaks because the CLI changed its TUI).
+describe('reasoning effort + respect-CLI-own-config', () => {
+  it('claude-style effort applies as [--effort, level]', () => {
+    const eng = {
+      id: 'claude-test', exec: { args: ['--print', '{prompt}'] },
+      effort: { flag: '--effort', levels: ['low', 'high'], default: 'high' },
+    } as any;
+    const { args } = buildCommand(eng, 'exec', 'hi', '/wt', 180, 'claude');
+    const i = args.indexOf('--effort');
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(args[i + 1]).toBe('high');
+  });
+
+  it('codex-style effort applies as [-c, key=level]', () => {
+    const eng = {
+      id: 'codex-test', exec: { args: ['exec', '{prompt}'] },
+      effort: { configKey: 'model_reasoning_effort', levels: ['low', 'high'], default: 'high' },
+    } as any;
+    const { args } = buildCommand(eng, 'exec', 'hi', '/wt', 180, 'codex');
+    const i = args.indexOf('-c');
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(args[i + 1]).toBe('model_reasoning_effort=high');
+  });
+
+  it('no effort is forced when the engine has no default and nothing is picked (uses the CLI own setting)', () => {
+    const eng = {
+      id: 'codex-noeffort', exec: { args: ['exec', '{prompt}'] },
+      effort: { configKey: 'model_reasoning_effort', levels: ['low', 'high'] },
+    } as any;
+    const { args } = buildCommand(eng, 'exec', 'hi', '/wt', 180, 'codex');
+    expect(args).not.toContain('-c');
+    expect(args).toEqual(['exec', 'hi']);
+  });
+
+  it('no --model is forced when there is no default and nothing is picked (defers to the CLI config)', () => {
+    const eng = {
+      id: 'codex-nomodeldefault', model: { configKey: 'codex_model', flag: '--model' },
+      exec: { args: ['exec', '{prompt}'] },
+    } as any;
+    const { args } = buildCommand(eng, 'exec', 'hi', '/wt', 180, 'codex');
+    expect(args).not.toContain('--model');
+    expect(args).toEqual(['exec', 'hi']);
+  });
+
+  // The interactive (pty) claude path must honor a /models pick too — not just
+  // the --print fallback. resolveClaudePtyExtraArgs builds the launch flags it
+  // forwards to the pty exec.
+  it('claude pty path forwards [--model, X, --effort, Y] when explicitly set', () => {
+    const eng = {
+      id: 'claude-ptytest',
+      model: { configKey: 'agon_pty_test_model', flag: '--model', default: 'opus' },
+      effort: { flag: '--effort', levels: ['low', 'high'], default: 'high' },
+    } as any;
+    expect(resolveClaudePtyExtraArgs(eng, '/wt')).toEqual(['--model', 'opus', '--effort', 'high']);
+  });
+
+  it('claude pty path forwards nothing when nothing is picked (defers to claude own config)', () => {
+    const eng = {
+      id: 'claude-ptynone',
+      model: { configKey: 'agon_pty_test_model_unset', flag: '--model' },
+      effort: { flag: '--effort', levels: ['low', 'high'] },
+    } as any;
+    expect(resolveClaudePtyExtraArgs(eng, '/wt')).toEqual([]);
   });
 });

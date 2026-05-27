@@ -229,7 +229,7 @@ export function createDelegateTool(): ToolHandler {
     inputSchema: {
       type: 'object',
       properties: {
-        engine: { type: 'string', description: 'Engine ID to delegate to (e.g., "claude", "codex", "gemini"). Must be a different engine than yourself.' },
+        engine: { type: 'string', description: 'Engine ID to delegate to (e.g., "claude", "codex", "agy"). Must be a different engine than yourself.' },
         task: { type: 'string', description: 'The subtask prompt to send to the target engine. Be specific — include relevant code snippets or file contents the engine needs.' },
         mode: { type: 'string', description: 'Dispatch mode: "exec" (default, single response), "review" (code review), or "agent" (multi-step with tool use). Optional.' },
       },
@@ -242,7 +242,7 @@ export function createDelegateTool(): ToolHandler {
 
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.engine || typeof input.engine !== 'string' || !(input.engine as string).trim()) {
-      return 'Missing required parameter: engine (e.g., "claude", "codex", "gemini")';
+      return 'Missing required parameter: engine (e.g., "claude", "codex", "agy")';
     }
     if (!input.task || typeof input.task !== 'string' || !(input.task as string).trim()) {
       return 'Missing required parameter: task';
@@ -276,13 +276,13 @@ export function createDelegateTool(): ToolHandler {
 export function createReviewTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Review',
-    description: 'Delegate to read-only code review — dispatches one or more engines in parallel to review uncommitted changes, a branch diff, or a specific commit. Use when the user asks for review only. If the user asks to review AND fix, call Pipeline instead so findings are addressed immediately.\n\nENGINE SELECTION:\n- If the user explicitly names one engine ("review with gemini") → set engine.\n- If the user names multiple ("review with codex and claude", "review with codex and gemini") → set engines to the named reviewers.\n- If the user does NOT name engines, YOU decide based on stakes:\n  • HIGH-STAKES (contract changes, multi-file refactors, architecture, security-sensitive code, race conditions, error-handling rewrites, anything that risks regressions) → set two diverse engines such as ["codex","claude"] or ["codex","gemini"] for parallel review.\n  • ROUTINE (typo fixes, single-file tweaks, docs, formatting, low-risk cleanups) → omit engine and engines; let runtime auto-select one reviewer.\nWhen unsure, lean toward two engines — the cost (one extra ~3min review) is worth catching regressions early. After calling, STOP and wait.',
+    description: 'Delegate to read-only code review — dispatches one or more engines in parallel to review uncommitted changes, a branch diff, or a specific commit. Use when the user asks for review only. If the user asks to review AND fix, call Pipeline instead so findings are addressed immediately.\n\nENGINE SELECTION:\n- If the user explicitly names one engine ("review with agy") → set engine.\n- If the user names multiple ("review with codex and claude", "review with codex and agy") → set engines to the named reviewers.\n- If the user does NOT name engines, YOU decide based on stakes:\n  • HIGH-STAKES (contract changes, multi-file refactors, architecture, security-sensitive code, race conditions, error-handling rewrites, anything that risks regressions) → set two diverse engines such as ["codex","claude"] or ["codex","agy"] for parallel review.\n  • ROUTINE (typo fixes, single-file tweaks, docs, formatting, low-risk cleanups) → omit engine and engines; let runtime auto-select one reviewer.\nWhen unsure, lean toward two engines — the cost (one extra ~3min review) is worth catching regressions early. After calling, STOP and wait.',
     inputSchema: {
       type: 'object',
       properties: {
         target: { type: 'string', description: 'Review target: "uncommitted" (default), "branch:NAME", or "commit:SHA".' },
         engine: { type: 'string', description: 'Specific engine for review. Set only when the user explicitly names a single engine; otherwise prefer engines (for high-stakes) or omit (for routine).' },
-        engines: { type: 'array', items: { type: 'string' }, description: 'Multiple engines for parallel review. Set when user names multiple reviewers, OR when this is a high-stakes change (contract changes, multi-file refactors, architecture, security). Examples: ["codex","claude"], ["codex","gemini"].' },
+        engines: { type: 'array', items: { type: 'string' }, description: 'Multiple engines for parallel review. Set when user names multiple reviewers, OR when this is a high-stakes change (contract changes, multi-file refactors, architecture, security). Examples: ["codex","claude"], ["codex","agy"].' },
       },
       required: [],
     },

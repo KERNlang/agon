@@ -296,7 +296,7 @@ describe('Engine Registry Integration', () => {
     expect(ids.length).toBe(engineConfigCount);
     expect(ids).toContain('claude');
     expect(ids).toContain('codex');
-    expect(ids).toContain('gemini');
+    expect(ids).toContain('agy');
   });
 
   it('get throws EngineNotFoundError for unknown engine', async () => {
@@ -310,19 +310,19 @@ describe('Engine Registry Integration', () => {
     const { EngineRegistry } = await import('../../packages/core/src/engine-registry.js');
     const registry = new EngineRegistry();
 
-    const starter = registry.pickStarter(['claude', 'codex', 'gemini'], 'fixed');
+    const starter = registry.pickStarter(['claude', 'codex', 'agy'], 'fixed');
     expect(starter).toBe('claude'); // fixed strategy picks first
 
-    const rotated = registry.pickStarter(['claude', 'codex', 'gemini'], 'rotate');
-    expect(['claude', 'codex', 'gemini']).toContain(rotated);
+    const rotated = registry.pickStarter(['claude', 'codex', 'agy'], 'rotate');
+    expect(['claude', 'codex', 'agy']).toContain(rotated);
   });
 
   it('pickStarter respects preferred engine', async () => {
     const { EngineRegistry } = await import('../../packages/core/src/engine-registry.js');
     const registry = new EngineRegistry();
 
-    const starter = registry.pickStarter(['claude', 'codex', 'gemini'], 'fixed', 'gemini');
-    expect(starter).toBe('gemini');
+    const starter = registry.pickStarter(['claude', 'codex', 'agy'], 'fixed', 'agy');
+    expect(starter).toBe('agy');
   });
 });
 

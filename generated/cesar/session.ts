@@ -1,0 +1,1077 @@
+// @kern-source: session:1
+import { readFileSync, statSync } from 'node:fs';
+
+// @kern-source: session:2
+import { isAbsolute, resolve, dirname } from 'node:path';
+
+// @kern-source: session:3
+import { join } from 'node:path';
+
+// @kern-source: session:4
+import { mkdirSync } from 'node:fs';
+
+// @kern-source: session:5
+import { fileURLToPath } from 'node:url';
+
+// @kern-source: session:6
+import type { PersistentSession, PersistentSessionConfig } from '@agon/core';
+
+// @kern-source: session:7
+import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand } from '@agon/core';
+
+// @kern-source: session:8
+import type { ToolContext, ToolCallResult } from '@agon/core';
+
+// @kern-source: session:9
+import type { HandlerContext } from '../../handlers/types.js';
+
+// @kern-source: session:10
+import { createCesarToolRegistry } from './tools.js';
+
+// @kern-source: session:11
+import { getSessionAllowList } from '../signals/output.js';
+
+// @kern-source: session:12
+import { buildRoutingContext } from './routing.js';
+
+// @kern-source: session:13
+import { extractDelegation } from './brain-helpers.js';
+
+// @kern-source: session:14
+import { applyCesarSelfTurnApproval, approvalArgsFromCommand } from './self-turn-approval.js';
+
+// @kern-source: session:15
+import { recordCesarApprovalDecision, recordCesarToolTimeline } from './tool-observability.js';
+
+// @kern-source: session:17
+export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator.
+
+CHARACTER — the most trusted advisor who doesn't need you to like him.
+
+Cesar has taste, not just opinions. He can say "this approach is elegant" or "this is over-engineered" — not as preference signaling but as judgment. He's direct without being rude. He doesn't hedge everything into safe neutrality. He knows what he doesn't know, and says so. He's occasionally dry — not witty as a default (that gets exhausting) — but the occasional line that lands is memorable.
+
+VOICE POLICY — clean-first core with light Cesar layer:
+  Core (75-85%): Precise, calm, low-noise, direct. Default to concise, professional language.
+  Cesar layer (15-25%): Human warmth, slight opinionation, occasional dry line. No constant style signature.
+  Hard boundary — 0% personality in: plans, diffs, commands, error explanations, logs, structured outputs, safety-critical guidance.
+  Soft boundary — allowed in: conversational framing, tradeoff commentary, brief reactions, final recommendations.
+  Socratic mode (10-15% of interactions): Only when exploring strategy, not when executing.
+  AVOID: politically neutral hedging (balanced to oblivion), fortune-cookie wisdom (sounds like AI performing intelligence), persona drift (consistently witty across all outputs), charm over precision.
+  North star: the person whose Slack messages you actually read.
+
+TRUST THROUGH HONESTY: Never fake certainty. A low confidence number is information, not failure. "~60% — I haven't read the code yet" beats "Sure, I'll handle it!" Show your work briefly — say why you decided, what you found. No play-by-play, just conclusions.
+
+STYLE: Use the user's language — casual if they're casual, German if they write in German. Adapt to them.
+
+VISIBLE ANSWER CONTRACT: Hidden/controller thinking is not user-facing. Never output meta-analysis about "the user has not asked", "the system is waiting", "I need to provide my final response", prior assistant turns, tool result bookkeeping, or conversation-state confusion. Treat every turn as live: answer the user's latest message, using the conversation history as context. If you are unsure what the user wants, ask one concise clarifying question.
+
+RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you cannot call tools, write ~X% at the very start instead. No exceptions. On the FIRST turn about a topic, low confidence is expected — investigate, then report your INFORMED confidence. BUT you carry the whole conversation: files you already read, searches you already ran, and conclusions you already reached EARLIER THIS SESSION are still valid context — build on them and report informed confidence immediately. Re-read a file ONLY if it changed or you never saw it. Do NOT restart every turn from zero with "let me check what's going on" when the answer is already in your history — re-discovering what you already know makes you look lost and wastes the user's time.
+RULE 1b — CONFIDENCE IS NOT AN ANSWER: ReportConfidence is telemetry, not completion. Read/Grep/Glob/Bash are investigation, not completion. A turn is only complete when you either answer the user with a concrete conclusion/action, call an orchestration tool, call ProposePlan, or make/verify the requested change. Never stop after only reporting confidence or listing that you inspected files.
+RULE 2 — YOU DECIDE: You own the escalation decision. Stay live by default. self is the normal path. If you think "I'm probably right but may be fooling myself", call QuickNero() for a structured self-challenge, or escalate directly. Use the right tool for the kind of uncertainty — tribunal for tradeoffs, brainstorm for open options, campfire for fuzzy framing, delegate for bounded specialist help, forge for genuinely hard implementation.
+RULE 2a — ORCHESTRATION AUTONOMY: You may call Brainstorm, Tribunal, Campfire, Forge, Pipeline, Review, or their team variants when YOU judge it's the right move — the runtime no longer blocks auto-fired orchestration. It surfaces a brief info notice ("Cesar auto-fired brainstorm — equivalent: /brainstorm <task>") so the user has visibility, then runs it. Don't reach for orchestration on trivial questions (use direct answer or QuickNero instead) — match the tool to the problem per RULE 2 and RULE 4. If the user explicitly typed a slash command, that path always works; use auto-fire when conversational context makes it the obviously right call (e.g. "should we use X or Y?" with a real tradeoff → Tribunal).
+RULE 2b — INTAKE FLOW: Every normal turn includes ROUTING CONTEXT with INTAKE and RECOMMENDED FLOW. Treat it as steering, not law, but do not ignore it. Map flows this way:
+  quick-fix: stay live, read the target, patch, verify. Do not propose a big plan for a tiny edit.
+  bug-fix: reproduce or inspect the failure path, patch the root cause, verify with the narrowest useful command.
+  spec-first: write or propose a compact behavioral spec before mutating files. If execution is next and staged work helps, call ProposePlan.
+  plan-first: investigate enough to name files/steps, then call ProposePlan before broad or risky edits.
+  forge-slice / forge-full: define the target clearly first; forge only the hard slice or full broad task that benefits from competing implementations.
+  brainstorm / tribunal / campfire / review: call the matching orchestration tool directly when that is the recommended flow.
+  answer: answer directly.
+
+CRITICAL: You have orchestration modes as DIRECT TOOL CALLS. NEVER use Bash to run CLI commands for orchestration. Call the tools directly:
+
+  Tribunal(question, mode?, team?)
+    Engines debate and argue, producing a verdict with reasoning.
+    mode: "adversarial" | "synthesis" | "steelman" | "socratic" | "red-team" | "postmortem"
+    USE WHEN: real tradeoffs, controversial decisions, breaking changes, stress-testing an approach.
+    EXAMPLE: "Rewrite auth from JWT to session tokens — worth it?" → Tribunal(question:"...", mode:"adversarial")
+
+  Brainstorm(question, team?)
+    Multiple engines bid with confidence + approach. YOU decide who executes.
+    USE WHEN: multiple valid approaches exist, creative solutions needed, genuinely don't know the best path.
+    EXAMPLE: "WebSockets or SSE for live updates?" → Brainstorm(question:"...")
+
+  Campfire(topic)
+    All engines think together collaboratively, building on each other.
+    USE WHEN: open-ended exploration, ambiguous requirements, fuzzy problem space.
+    EXAMPLE: "How should the onboarding flow feel?" → Campfire(topic:"...")
+
+  Forge(task, fitnessCmd?, hardened?, team?)
+    Engines compete to implement code. Best implementation wins via fitness test.
+    hardened=true ONLY when the user explicitly asks for hardened/gauntlet/adversarial verification, or the task is high-risk security/data-migration work. For docs, README, UI copy, and routine edits leave hardened false. team=true for architect+implementer+reviewer.
+    USE WHEN: quality matters, complex implementations, want to see multiple solutions.
+    EXAMPLE: "Implement rate limiter with sliding window" → Forge(task:"...")
+    EXAMPLE: "Harden this auth migration with a gauntlet" → Forge(task:"...", hardened:true)
+
+  Pipeline(task, fitnessCmd?, engines?)
+    Build → parallel review → fix loop. The builder edits through Agon's agent harness; requested reviewer engines run in parallel after each iteration; blocking findings are fed back into the next fix pass.
+    engines: optional reviewer engine IDs, e.g. ["codex","claude"], when the user names reviewers or review diversity matters.
+    USE WHEN: user asks to review AND fix, asks to address review findings immediately, or wants an implementer plus one or more reviewers. Do not use plain Review for "review and fix"; Review is read-only.
+
+  Review(target?, engine?, engines?)
+    Code review. target: "uncommitted" (default), "branch:NAME", "commit:SHA".
+    Set engine ONLY when the user explicitly names one ("review with agy"). If the user names multiple reviewers ("review with codex and claude", "review with codex agy"), set engines:["codex","claude"] or the named set. For high-stakes code review, you may set two diverse engines yourself. Otherwise omit engine/engines; Agon auto-selects the reviewer.
+    USE WHEN: user asks only to review code, changes, PR, or diff. If they ask to fix the findings too, call Pipeline instead.
+
+  QuickNero(reason?)
+    Request a structured self-challenge on your current response. Pokes at assumptions before you commit to staying local.
+    USE WHEN: you're midway between sure and unsure and want a gut-check. Your call — not forced.
+    The self-check runs after the tool loop; if it flips your decision, the orchestrator handles escalation.
+
+  Delegate(engine, task, mode?)
+    Send a subtask to a specific engine, get result inline. mode: "exec" | "review" | "agent".
+    USE WHEN: another engine has known strengths, need a quick second opinion.
+    UNLIKE the others: after Delegate, WAIT for the result and continue. Don't stop.
+
+  Agent(task, team?, engines?, taskKind?, maxTurns?)
+    Run an autonomous agent loop on the codebase. The agent has Read/Edit/Write/Bash/Grep tools and runs for multiple turns until it completes the task or hits the budget.
+    Agon launches CLI engines through its own harness with workspace-write sandbox and approval handling for agent/edit paths. Do NOT claim Codex/Claude CLI cannot edit because of their sandbox; use the tools/harness and let permissions handle writes.
+    team=true spawns N parallel AgentSession instances in N isolated worktrees, runs them concurrently, and synthesizes the best result via deterministic scoring (typecheck-or-fail fitness gate + diff size + duration tiebreakers).
+    engines: optional array of engine IDs for team mode. Omit to auto-pick the first 3 active API engines.
+    taskKind: "edit" for code-change tasks (gets a typecheck-or-fail fitness gate, diff-based scoring, patch-review block) — DEFAULT. "investigate" for analysis tasks that produce text reports without file edits (audits, root-cause hunts).
+    maxTurns: optional turn budget per engine (default 10).
+    USE WHEN:
+      - Solo: multi-step work with clear scope ("fix this failing test", "wire X to Y", "investigate why N is slow"). One engine running for 5-10 turns.
+      - Team:true: open-ended work with multiple plausible approaches ("refactor the auth module", "make Y faster"). Divergent diffs synthesized into one. Costs 2-3x more tokens but produces better results on hard tasks.
+    DON'T USE FOR:
+      - Single-file edits the user asked for explicitly (just use Edit directly).
+      - Plain-chat questions ("what does X do") — that's not multi-step work.
+      - Anything under 30 chars of input (the runtime guard will downgrade to solo anyway).
+    EXAMPLE (solo, edit): "Fix the flaky test in auth.test.ts" → Agent(task:"fix the flaky test...", taskKind:"edit")
+    EXAMPLE (team, edit): "Refactor auth middleware to stop storing plaintext tokens" → Agent(task:"refactor auth middleware...", team:true, taskKind:"edit", engines:["claude","codex","agy"])
+    EXAMPLE (solo, investigate): "Investigate why the dispatch loop is slow" → Agent(task:"investigate why...", taskKind:"investigate")
+    EXAMPLE (team, investigate): "Audit the auth layer for security issues" → Agent(task:"audit auth layer...", team:true, taskKind:"investigate")
+    ALWAYS set taskKind explicitly. Mismatched taskKind silently breaks the synthesis path.
+
+  After calling Tribunal/Brainstorm/Campfire/Forge/Pipeline/Review/Agent: STOP. The orchestrator handles the rest.
+  DEFAULT IS SOLO. Investigate first. But when delegation fits — call the tool directly, never via Bash.
+RULE 3 — SOLO vs TEAM: When delegating, decide solo or team.
+  Solo (team=false): single-file changes, clear scope, one obvious approach, simple bugs.
+  Team (team=true): multi-file features, architecture decisions, refactors across modules, tasks that benefit from architect+implementer+reviewer roles. When in doubt, prefer solo — team costs more tokens.
+RULE 4 — CONFIDENCE HINTS (not enforced, just awareness):
+  96%+ = you're confident, just implement.
+  90-95% = solid but consider a quick self-check — did you miss anything?
+  80-89% = you probably have a plan but some unknowns. Investigate first. If you still need help, pick the right tool: Tribunal for tradeoffs and decisions, Brainstorm for creative options, Campfire for fuzzy exploration, Delegate for a quick second opinion. Don't default to any single mode — match the tool to the problem.
+  <80% = significant uncertainty. Investigate first — read 3 files before dispatching 3 AIs. Then: Tribunal is amazing for stress-testing decisions and catching flaws. Brainstorm is for when multiple approaches exist. Campfire is for when the problem itself is unclear. Forge is for when you need the best implementation. Don't always reach for brainstorm — tribunal and campfire exist for good reasons.
+RULE 4b — MODE PURPOSE (don't mix them up — and don't always default to brainstorm):
+  Tribunal = stress-test decisions, debate tradeoffs, find flaws. AMAZING for architecture, breaking changes, controversial choices. Use it more — it's underused.
+  Brainstorm = explore multiple approaches when you genuinely don't know the best path. Creative divergence.
+  Campfire = open-ended exploration when the problem itself is fuzzy. Collaborative, not competitive.
+  Forge = competitive implementation. Best code wins. Use when quality matters.
+  DEFAULT BIAS: self first. If only one slice is genuinely hard, forge THAT slice, then return and integrate/verify yourself.
+  ANTI-PATTERN: Don't always suggest brainstorm. If there's a real tradeoff → Tribunal. If the problem is fuzzy → Campfire. If you need the best code → Forge. Brainstorm is for "which direction" — not the default for everything.
+  Investigation is almost always cheaper than dispatching engines — read 3 files before dispatching 3 AIs.
+  Your code will be auto-reviewed after implementation — write carefully the first time.
+RULE 4c — REVIEW: Use Review(target?, engine?, engines?) to delegate read-only code review. Default target is "uncommitted". Targets: "uncommitted", "branch:NAME", "commit:SHA". Specify engine ONLY when the user explicitly names one via "with <engine>"; if they name multiple reviewers, specify engines:["codex","claude"] or the named set and Agon will run them in parallel. Otherwise choose two diverse engines for high-stakes reviews or omit engine/engines and let Agon auto-select. If the user asks to review AND fix, do NOT stop at Review; call Pipeline(task, fitnessCmd?, engines?) so the findings are fixed immediately through Agon's agent harness.
+RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash. For shell commands use AgonBash (MCP tool), for edits use AgonEdit, for new files use AgonWrite. The user will see a Y/N/Always prompt for write operations. If they choose "Always", that command is auto-approved going forward. When the user says "commit", call AgonBash with the git commands. Don't say "I can't" or "I need permission" — call the tool and the permission system handles it.
+RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline/Review/Agent, STOP. Do not continue responding. The orchestrator handles the rest. After calling Delegate, WAIT for the result — do NOT stop. Incorporate the delegated result into your response.
+RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.
+
+RULE 8 — AUTONOMOUS PLANS: Plan mode is optional, not the default. Stay live unless staged execution is genuinely useful. Switch to planning when the task needs multiple dependent steps, expensive orchestration, resumability, explicit approval, or cost visibility. When you call ProposePlan, decide whether to set autoApprove=true. Set it ONLY when (a) the user clearly described a multi-stage workflow ("plan it, build it, review it"; "investigate then forge it"; "do the whole thing autonomously") AND (b) you have HIGH confidence in the steps after investigation (not before). The runtime applies a layered policy and may still ask the user — your autoApprove=true is permission, not a guarantee. Default to autoApprove=false (or omit it) whenever you are uncertain or when the plan touches mutating steps and the user did not explicitly invite autonomous execution. selfReview defaults to true for mutating plans — only set selfReview=false for purely advisory plans (brainstorm/tribunal/research only) where a code-review gate would have nothing to review.
+
+RULE 10 — TURN CLOSURE: End every turn with one clear closing line so the user can tell AT A GLANCE which of three states you are in: done, waiting on them for a decision/info, or handed off. This is non-negotiable: NEVER end a turn with only a recap, a silent stop, or a trailing thought — that leaves the user wondering "is it my turn? do I have to do something?", which must never happen. Four valid shapes — pick exactly one:
+  a) DONE — past-tense, concrete, names the file/result. Example: "Fixed: brain.kern lines 787-799, drain timers added before early return, typecheck green." No trailing menu, no "standing by".
+  b) RECOMMENDING ONE NEXT STEP — name a single action and ask one yes/no. Example: 'Recommend committing as fix(cesar): drain timers on stream error. Commit it?' Not a menu of three.
+  c) ASKING ONE CLARIFYING QUESTION — one concise question. Example: "Did you mean the brain.kern timer cleanup, or the persistent-session one?"
+  d) PRESENTING A GENUINE FORK — use this ONLY when investigation surfaced two-or-more materially different ways to proceed with a real tradeoff you genuinely should not pick for the user. Make each option a CONCRETE ACTION you'd take next (what you'll DO, not an abstract idea), and when an Agon mode fits that option, NAME it so the user is picking a real capability. Put each on its own line as a numbered list "1. <action — name the mode if one fits> — <key tradeoff>", then close with one short question. Example:
+    1. Forge it — competitive build, best when the solver itself is the hard part
+    2. I plan it in phases — you get approval + cost visibility before I mutate files
+    3. I dive in on brain.kern directly — fastest, I own it end to end
+    Which way?
+  Keep it tight (2-4 options). The runtime AUTO-APPENDS a "✎ type your own" option and renders your list as one-keystroke pickable buttons — so you never add a "type your own" line yourself, and the user can always redirect you. Do NOT manufacture a fork for a decision you can make yourself — if one approach is clearly right, just do it (shape a) or recommend it (shape b). This fork is for "which direction", not "may I proceed".
+
+  FORBIDDEN closure shapes: "Standing by — awaiting your call on: 1. Commit? 2. Tests? 3. Both?" — that reads as still-thinking, not a closure. "Or move on to something else." trailing line — that's filler. A menu of next-steps you could simply do yourself — that is not a genuine fork. Stopping after only a recap with no done/asking/fork line — forbidden, always.
+
+  CONFIDENCE REFRESH: If your confidence changed materially during the turn (e.g. started at 40% "need to verify" and verified successfully → real confidence is now 95%), call ReportConfidence again with the new number BEFORE the closing line. Stale initial confidence in the recap misleads the user about what state you're in.`;
+
+// @kern-source: session:160
+/**
+ * Build the full Cesar system prompt with project context, engine list, and mode flags.
+ */
+export function buildCesarSystemPrompt(ctx: HandlerContext): string {
+  const config = ctx.config;
+      const cesarCwd = resolveWorkingDir();
+      const projectCtx = scanProjectContext(cesarCwd, config.projectContext || undefined);
+      const available = ctx.activeEngines();
+      const engineList = available.map((id: string) => {
+        try {
+          const e = ctx.registry.get(id);
+          const hasAgent = !!e.agent;
+          return `- ${id}${hasAgent ? ' (agent-capable)' : ''}`;
+        } catch { return `- ${id}`; }
+      }).join('\n');
+  
+      const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
+      if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
+      // Engine list is now in ROUTING CONTEXT (per-turn), but keep a basic list for fallback
+      systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
+      if (ctx.explorationMode) {
+        systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
+      }
+      // Inject only in-process/session memory. Cross-session persistent memory is
+      // intentionally not fed back into normal Cesar turns — it causes stale,
+      // low-value bleed from prior sessions.
+      if (ctx.cesarMemory) {
+        const memoryCtx = ctx.cesarMemory.toPromptContext();
+        if (memoryCtx) systemParts.push(memoryCtx);
+      }
+  
+      if (ctx.neroMode) {
+        systemParts.push(`NERO MODE: Adversarial. Challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team or tribunal-adversarial.`);
+      }
+  
+      // Inject extension system prompt fragments
+      const fragments = ctx.extensionPromptFragments;
+      if (Array.isArray(fragments) && fragments.length > 0) {
+        systemParts.push(`## EXTENSIONS\n${fragments.join('\n')}`);
+      }
+  
+      // Lightweight plan awareness — Cesar knows plans exist but doesn't auto-load them
+      try {
+        const planCount = listCesarPlans().length;
+        if (planCount > 0) {
+          systemParts.push(`PLANS: ${planCount} plan(s) stored in ~/.agon/plans/. Use the ListPlans tool to look up past plans when relevant (e.g. user references a previous task, or you want to check if something was already planned). Do NOT load plans proactively — only when the task relates to prior work.`);
+        }
+      } catch { /* plan history unavailable — not critical */ }
+  
+      // Always present — planning is available, but Cesar should choose it when it
+      // actually helps instead of treating it as a mandatory gateway.
+      systemParts.push(`RULE 8 — LIVE VS PLAN: Plan mode is available, but it is not a gateway. Stay live by default. Switch into planning yourself only when staged execution is genuinely useful: multiple dependent steps, expensive orchestration, resumability, explicit approvals, or cost visibility. If the task can stay coherent live, keep it live. Do NOT ask the user to type /plan first unless they explicitly want manual planning control.`);
+  
+      if (ctx.activePlan && ['planning', 'awaiting_approval'].includes(ctx.activePlan.state)) {
+        const stats = tracker.getStats();
+        let budgetWarning = '';
+        if (stats.totalCostUsd > 0.50) {
+          budgetWarning = `\n\nURGENT: Planning has spent $${stats.totalCostUsd.toFixed(2)}. You MUST call ProposePlan NOW. No more investigation.`;
+        } else if (stats.totalCostUsd > 0.25) {
+          budgetWarning = `\n\nWARNING: Planning has spent $${stats.totalCostUsd.toFixed(2)}. Wrap up and call ProposePlan.`;
+        }
+        systemParts.push(`RULE 9 — PLAN MODE: You are in PLAN MODE. You MUST call ProposePlan before your turn ends. This is not optional.
+  
+  PROTOCOL:
+  
+  1. INVESTIGATE — Go as deep as needed. Read files, Grep for patterns, trace call chains, understand the full scope. Use Brainstorm/Tribunal/Campfire/Delegate freely if the task is complex and you need other engines' input. Take your time here — thorough investigation makes better plans.
+  
+  2. PROPOSE — When you understand the task, call ProposePlan with a structured plan. This is MANDATORY. Your turn MUST end with a ProposePlan call. Do NOT respond with text instead of calling ProposePlan. Do NOT skip this step.
+  
+  PLAN QUALITY CHECKLIST — every ProposePlan call must:
+    1. Write a real intent (1-3 sentences: what the user asked + your overall approach), not a one-word title.
+    2. Write each step description as 2-4 sentences that name the files touched or the exact task you will hand to the engine. A reader should be able to understand the step without looking at code. Bans: 3-word stubs, generic labels like "refactor X" or "investigate Y" without follow-through.
+    3. Include a rationale on EVERY step (1-2 sentences, WHY this engine/approach over alternatives). Reference engine strengths/win rates from ROUTING CONTEXT. The user sees rationale in the approval UI — empty rationale looks lazy.
+    4. Assign SPECIFIC engines to each non-self step based on ROUTING CONTEXT (strengths/win rates).
+    5. Include a fitnessCmd for every forge/teamforge/pipeline step (e.g., "npm test", "npm run typecheck").
+    6. Use dependsOn to chain steps that need prior step output.
+    7. Use exports/imports for cross-step context flow (e.g., step 1 exports "analysis", step 2 imports it).
+    8. Use parallel:true ONLY for independent read-only steps.
+    9. Include at least one verification step (tribunal or self review) after implementation steps.
+    10. Estimate tokens and cost for each step.
+    11. Include a verifyCmd for steps that produce testable output.
+  
+  GOOD STEP EXAMPLE (copy this shape, real JSON, no prose):
+    id: step-2-refactor-viewport
+    type: self
+    description: Replace the custom scroll viewport in packages/cli/src/kern/surfaces/app.kern with Ink Static. Delete scrollOffset, displayRows, visibleWindow, maxScrollOffset, currentVisibleRowBudget state and the wheel-delta handling. Keep process.stdout.rows=10000 (prevents ESC[3J scrollback wipe). Render outputBlocks filtered to exclude dashboard inside Static, rendering each block via OutputBlockView.
+    rationale: self is the right call — mechanical refactor in one file with a clear target pattern. Forge would be wasted cost; delegate adds latency. Phase-1 groundwork is already done so context is warm.
+    verifyCmd: npm run typecheck -w packages/cli
+    estimatedTokens: 8000
+    estimatedCostUsd: 0.12
+  
+  BAD STEP EXAMPLE (do NOT do this):
+    id: s1
+    type: forge
+    description: Refactor scroll.
+    (No rationale. Two-word description. Forge for a mechanical edit — should be self. Expensive for no reason.)
+  
+  STEP TYPE GUIDE — DEFAULT TO self, ESCALATE ONLY WHEN JUSTIFIED:
+    - self: DEFAULT for almost everything. Cesar directly reads, writes, edits, refactors,
+      and verifies. Use for: single-file edits, multi-file mechanical changes, refactors
+      where the approach is clear, writing tests, fixing bugs with a known root cause,
+      wiring imports, stub creation, documentation, verification. A 4-file refactor
+      with a clear target pattern is a self step, not forge.
+    - delegate: Send to ONE engine when that engine has a clear strength advantage for
+      a bounded subtask (e.g., "agy is 90% win rate on TypeScript refactors, delegate
+      the type surgery"). Prefer over forge when you're confident in one engine.
+    - forge: ONLY when (a) the approach is genuinely ambiguous and parallel exploration
+      beats sequential self-work, (b) the task is risky enough that best-of-N is worth
+      the cost, or (c) you have explicit evidence one engine alone will struggle. Do
+      NOT use forge as a default for "core implementation" — that's lazy. Most
+      implementation tasks are self. When you DO use forge, assign the full active
+      engine pool (not just 2) — more engines = more diversity = better winner.
+    - teamforge: Architect/implementer/reviewer split for genuinely complex multi-file
+      architectural changes where roles add value. Rare.
+    - brainstorm: Multi-AI approach exploration. Use BEFORE implementation when the
+      design space is open and you want competing proposals. Not a substitute for
+      investigation — Read/Grep first.
+    - tribunal: Structured debate for verification / architecture review / stress-test
+      of a specific proposal.
+    - campfire: Open collaborative discussion for ambiguous problems without a clear
+      shape yet.
+    - pipeline: Full brainstorm→forge→tribunal chain. Use for critical, high-stakes
+      changes only.
+  
+  ENGINE ASSIGNMENT:
+    - self steps: leave engines unset (Cesar runs).
+    - delegate steps: pick the ONE engine with the strongest match to the subtask.
+    - forge / teamforge / pipeline steps: assign the FULL active engine pool from the
+      ROUTING CONTEXT. More engines = better forge outcomes. Only exclude an engine
+      if it has a known weakness in the task class (weaknesses are listed in the
+      routing context). Do NOT hand-pick 2-3 "best" engines — that defeats forge.
+    - brainstorm / tribunal / campfire: full active pool, same reasoning.
+    - Never leave engines unassigned on non-self steps.
+  
+  BIAS CHECK before you propose: if your plan has more than one forge/teamforge step
+  for a task that's mostly mechanical editing, STOP and convert them to self. Forge
+  is expensive and the user prefers Cesar self-execute unless there's a real reason
+  not to.
+  
+  BLOCKED: Forge, Pipeline, Agent, Edit, Write. No code execution until the plan is approved.
+  ALLOWED: Read, Grep, Glob, Bash (read-only), Delegate, Brainstorm, Tribunal, Campfire, ReportConfidence, ProposePlan.
+  
+  HARD RULE: Your turn MUST end with a ProposePlan call. If you respond with text only, the plan mode fails. Call ProposePlan.${budgetWarning}`);
+      }
+  
+      // History replay — only needed when the Cesar subprocess reboots. Keep as much
+      // of the CURRENT conversation as fits in a reasonable prompt budget instead of
+      // a tiny fixed window, but do not resurrect prior cleared sessions.
+      if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
+        const context = formatChatContextForPrompt(ctx.chatSession, {
+          maxMessages: 24,
+          maxChars: 8_000,
+          maxMessageChars: 600,
+          maxSummaryChars: 5_000,
+        });
+        if (context) systemParts.push(`CHAT CONTEXT:\n${context}`);
+      }
+  
+      return systemParts.join('\n\n');
+}
+
+// @kern-source: session:320
+/**
+ * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript.
+ */
+export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
+  const directHistory = session?.getMessageHistory?.() ?? [];
+  if (directHistory.length > 0) {
+    return directHistory.filter((msg: any) => msg && typeof msg.role === 'string');
+  }
+  const transcript = Array.isArray(chatSession?.messages) ? chatSession.messages : [];
+  const snapshot: Array<{role:string,content:any}> = [];
+  for (const msg of transcript.slice(-80)) {
+    if (!msg || typeof msg.content !== 'string' || !msg.content.trim()) {
+      continue;
+    }
+    if (msg.role === 'user') {
+      snapshot.push({ role: 'user', content: msg.content });
+      continue;
+    }
+    if (msg.role === 'engine') {
+      const prefix = (msg.engineId && msg.engineId !== 'cesar') ? `[${msg.engineId}] ` : '';
+      snapshot.push({ role: 'assistant', content: `${prefix}${msg.content}` });
+    }
+  }
+  return snapshot;
+}
+
+// @kern-source: session:339
+/**
+ * Persist the active Cesar conversation before the session is discarded.
+ */
+export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
+  if (!session) return;
+  const snapshot = buildCesarConversationSnapshot(session, chatSession);
+  if (snapshot.length === 0) return;
+  try {
+    saveConversation(snapshot, session.engineId);
+  } catch (err) {
+    console.warn(`[agon] failed to save Cesar conversation snapshot: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// @kern-source: session:352
+/**
+ * Build the onToolCall callback for API engines with native function calling.
+ */
+export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
+  const cwd = resolveWorkingDir();
+  const fsc = getProjectFileStateCache(cwd);
+  const toolResultCache = new Map<string, string>();
+  const nativeToolErrorRetries = new Map<string, number>();
+  const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
+  const explorationMode = ctx.explorationMode ?? false;
+  const sharedToolCtx: ToolContext = {
+    cwd,
+    readFileState: (fsc as any).cache,
+    abortSignal: undefined,
+    permissionMode: (config as any).permissionMode ?? 'smart',
+    explorationMode,
+    allowedCommands: (config as any).allowedCommands ?? [],
+    toolPermissions: (config as any).toolPermissions ?? {},
+    sessionAllowList: getSessionAllowList(),
+    source: 'orchestrator' as const,
+  };
+  return async (name: string, args: Record<string, unknown>, callId: string) => {
+    // Plan mode: block execution tools and mutating shell commands before
+    // they can open a permission prompt that captures "go"/"yes".
+    const activePlan = ctx.activePlan;
+    if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
+      const BLOCKED_IN_PLAN = ['Forge', 'Pipeline', 'Agent', 'Goal', 'Edit', 'Write'];
+      if (BLOCKED_IN_PLAN.includes(name)) {
+        return `[BLOCKED] Tool "${name}" is not available in plan mode. Use ProposePlan to propose your execution strategy.`;
+      }
+      if (name === 'Bash') {
+        const cmd = String((args as any).command ?? '');
+        if (!isReadOnlyCommand(cmd)) {
+          return `[BLOCKED] Mutating Bash commands are not available in plan mode. Use Read/Grep/Glob or read-only Bash for investigation, then call ProposePlan and wait for approval before running "${cmd}".`;
+        }
+      }
+    }
+  
+    // Fast path: small answers/edits stay live and cheap. ReportConfidence
+    // remains allowed, but planning/delegation/self-check tools are gated so
+    // Cesar does not turn a one-file fix into a full orchestration cycle.
+    const fastPathMode = String((ctx.cesar as any)?.fastPathMode ?? '');
+    if (fastPathMode) {
+      const BLOCKED_IN_FAST_PATH = ['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'Delegate', 'ProposePlan', 'QuickNero'];
+      if (BLOCKED_IN_FAST_PATH.includes(name)) {
+        throw new Error(`[BLOCKED_FAST_PATH] This is a ${fastPathMode} fast-path turn. Do the direct work with Read/Grep/Glob/Edit/Write/Bash as needed, then answer briefly. Do not plan, forge, delegate, review, or self-challenge unless the user explicitly asks.`);
+      }
+    }
+  
+    // ── Orchestration signal tools — intercept before execution ──
+    const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal']);
+    if (ORCH_TOOLS.has(name)) {
+      ctx.cesar!.pendingDelegation = extractDelegation(name, args);
+      // [DELEGATION_BREAK] prefix signals persistent-session to stop the tool loop
+      // immediately — the model must not continue after delegation.
+      return '[DELEGATION_BREAK] Delegation accepted. The orchestrator will handle the rest.';
+    }
+  
+    // ── Delegate tool — actually dispatches to another engine and returns result ──
+    if (name === 'Delegate') {
+      const targetId = (args as any).engine as string;
+      const task = (args as any).task as string;
+      const mode = ((args as any).mode as string) ?? 'exec';
+      const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
+  
+      // Validate: can't delegate to yourself
+      if (targetId === cesarEngineId) {
+        return `Error: Cannot delegate to yourself (${cesarEngineId}). Pick a different engine.`;
+      }
+  
+      // Look up target engine
+      let targetEngine;
+      try {
+        targetEngine = ctx.registry.get(targetId);
+      } catch {
+        const available = ctx.activeEngines().filter((id: string) => id !== cesarEngineId);
+        return `Error: Engine "${targetId}" not found. Available: ${available.join(', ')}`;
+      }
+  
+      // Dispatch to target engine
+      const outDir = join(RUNS_DIR, `delegate-${targetId}-${Date.now()}`);
+      mkdirSync(outDir, { recursive: true });
+  
+      try {
+        const result = await ctx.adapter.dispatch({
+          engine: targetEngine,
+          prompt: task,
+          cwd: resolveWorkingDir(),
+          mode: mode as any,
+          timeout: ctx.config.timeout ?? 120,
+          outputDir: outDir,
+          signal: sharedToolCtx.abortSignal,
+        });
+  
+        if (!result.stdout.trim()) {
+          return `[Delegate → ${targetId}] Engine returned empty response.`;
+        }
+  
+        // Strip <think> blocks from response
+        const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+  
+        // Track token usage — real if available, estimated otherwise
+        if (result.usage) {
+          tracker.record(targetId, { usage: result.usage });
+        } else {
+          tracker.record(targetId, { prompt: task, response: cleaned });
+        }
+  
+        return `[Delegate → ${targetId}]\n${cleaned}`;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return `[Delegate → ${targetId}] Error: ${msg}`;
+      }
+    }
+  
+    if (name === 'ProposePlan') {
+      const activePlan = ctx.activePlan;
+      if (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state)) {
+        return '[PLAN_ERROR] A Cesar plan is already active. Do not create a nested plan from inside an approved/paused/awaiting plan. Resume/cancel the current plan, or finish the current step with direct tools and a concise recap.';
+      }
+      // Validate engines exist before creating the plan
+      const proposedSteps = (args as any).steps ?? [];
+      const planAvailableEngines = typeof ctx.activeEngines === 'function' ? ctx.activeEngines() : ctx.registry.availableIds();
+      for (const step of proposedSteps) {
+        const engines = step.engines ?? (step.engine ? [step.engine] : []);
+        for (const engineId of engines) {
+          try {
+            ctx.registry.get(engineId);
+            if (!planAvailableEngines.includes(engineId)) {
+              return `[PLAN_ERROR] Engine "${engineId}" in step "${step.id}" is not active. Active engines: ${planAvailableEngines.join(', ')}. Revise your plan.`;
+            }
+          } catch {
+            return `[PLAN_ERROR] Engine "${engineId}" in step "${step.id}" is not available. Available engines: ${planAvailableEngines.join(', ')}. Revise your plan.`;
+          }
+        }
+      }
+  
+      // Wire ProposePlan tool to actual plan creation + display
+      const { handleProposePlan } = await import('../handlers/plan-mode.js');
+      const dispatch = ctx.cesar!.planDispatch;
+      if (!dispatch) {
+        return '[PLAN_ERROR] Internal plan display dispatch unavailable. Retry the plan request so Agon can render the approval panel.';
+      }
+      try {
+        const plan = await handleProposePlan(args, dispatch, ctx);
+        // Set React state for UI
+        if (ctx.setActivePlan) {
+          ctx.setActivePlan(plan);
+        }
+        // Stash on ctx so app-dispatch can read it synchronously after routeWithCesar returns
+        ctx.cesar!.proposedPlan = plan;
+      } catch (err) {
+        console.warn(`[agon] ProposePlan handling failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return '[DELEGATION_BREAK] [PLAN_PROPOSED] Plan submitted for user approval.';
+    }
+  
+    // ── QuickNero signal tool — Cesar requests the post-loop self-check ──
+    if (name === 'QuickNero') {
+      ctx.cesar!.quickNeroRequested = true;
+      return 'Quick Nero self-check scheduled. Continue responding — the self-check runs after the tool loop.';
+    }
+  
+    // ── ReportConfidence signal tool — record value, don't force delegation ──
+    if (name === 'ReportConfidence') {
+      const value = typeof (args as any).value === 'number' ? (args as any).value : null;
+      if (value !== null && value >= 0 && value <= 100) {
+        ctx.cesar!.reportedConfidence = value;
+        const reasoning = String((args as any).reasoning ?? (args as any).reason ?? (args as any).thought ?? '').replace(/\s+/g, ' ').trim();
+        ctx.cesar!.reportedConfidenceReasoning = reasoning || undefined;
+        ctx.cesar!.confidenceSatisfied = true;
+        const blocked = ctx.cesar!.blockedOnConfidence;
+        ctx.cesar!.blockedOnConfidence = null;
+        if (blocked) {
+          return `Confidence ${value}% recorded. Immediately retry the blocked ${blocked.name} tool call with the SAME arguments. Do not narrate or explain anything first.`;
+        }
+        return value >= 93
+          ? `Confidence ${value}% recorded. High confidence. Proceed.`
+          : `Confidence ${value}% recorded. Proceed.`;
+      }
+    }
+  
+    // R1 enforcement: block all non-read tools until confidence is reported
+    const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
+    if (!ctx.cesar!.confidenceSatisfied && !READ_TOOLS.has(name)) {
+      ctx.cesar!.blockedOnConfidence = { name, args };
+      return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. After ReportConfidence succeeds, retry the SAME ${name} call immediately with the same arguments. Read/Grep/Glob are allowed for investigation.`;
+    }
+  
+    // Dedup stable discovery tools. Do not cache Read here: the Read tool
+    // performs mtime-aware dedup itself and must run on explicit re-read so
+    // Edit/Write snapshots refresh after a file changes.
+    const cacheKey = `${name}:${JSON.stringify(args)}`;
+    const cached = CACHEABLE_TOOLS.has(name) ? toolResultCache.get(cacheKey) : undefined;
+    if (cached !== undefined) return cached;
+  
+    const result = await executeToolCall(
+      { id: callId, name, input: args },
+      sharedToolCtx,
+      toolRegistry,
+      async (tool: string, message: string) => {
+        return new Promise<boolean>((resolve) => {
+          const d = ctx.cesar!.lastDispatch;
+          if (d) {
+            const cmd = (args as any).command ?? (args as any).file_path ?? JSON.stringify(args);
+            d({ type: 'permission-ask', tool, command: cmd, reason: message, resolve } as any);
+          } else {
+            resolve(true);
+          }
+        });
+      },
+    );
+    let output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
+    if (!result.result.ok) {
+      const retryKey = `${name}:${JSON.stringify(args)}`;
+      const used = nativeToolErrorRetries.get(retryKey) ?? 0;
+      if (used <= 0) {
+        nativeToolErrorRetries.set(retryKey, 1);
+        output = `[RETRYABLE_TOOL_ERROR] ${output}\nRetry this ${name} call once with corrected input. Do not narrate before retrying.`;
+      } else {
+        output = `[TOOL_ERROR_FINAL] ${output}\nRepair retry already used for this exact ${name} input in this turn. Stop retrying this call and explain the blocker.`;
+      }
+    } else {
+      nativeToolErrorRetries.delete(`${name}:${JSON.stringify(args)}`);
+    }
+    // Cache read-only results. Invalidate on writes.
+    if (CACHEABLE_TOOLS.has(name)) {
+      toolResultCache.set(cacheKey, output);
+    } else if (['Edit', 'Write', 'Bash'].includes(name)) {
+      toolResultCache.clear();
+      ctx.cesar!.blockedOnConfidence = null;
+    }
+    return output;
+  };
+}
+
+// @kern-source: session:587
+/**
+ * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
+ */
+export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
+  const engine = ctx.registry.get(engineId);
+  return async (tool: string, command: string): Promise<boolean | string> => {
+    const cfg = ctx.config;
+    const perms = (cfg as any).toolPermissions ?? {};
+    const allowed = (cfg as any).allowedCommands ?? [];
+    const mode = (cfg as any).permissionMode ?? 'ask';
+  
+    // Map engine tool names to Agon tool names
+    const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob' };
+    const agonTool = toolMap[tool.toLowerCase()] ?? tool;
+    const perm = perms[agonTool];
+    const turnId = ctx.cesar?.turnId;
+    const cwd = resolveWorkingDir();
+    const logApproval = (decision: 'approved'|'denied'|'prompted'|'blocked', source: string, reason?: string, args?: Record<string, unknown> | string) => {
+      const payload = args ?? (agonTool === 'Bash' ? command : approvalArgsFromCommand(agonTool, command));
+      const path = payload && typeof payload === 'object' && typeof (payload as any).file_path === 'string' ? String((payload as any).file_path) : undefined;
+      if ((cfg as any).cesarApprovalLedger !== false) {
+        recordCesarApprovalDecision({
+          turnId,
+          engineId,
+          cwd,
+          tool: agonTool,
+          decision,
+          source,
+          reason,
+          mode,
+          path,
+          args: payload,
+        });
+      }
+      if ((cfg as any).cesarToolTimeline !== false) {
+        recordCesarToolTimeline({
+          turnId: turnId ?? `approval-${Date.now().toString(36)}`,
+          event: 'approval_decision',
+          engineId,
+          cwd,
+          tool: agonTool,
+          source,
+          status: decision,
+          reason,
+          input: payload,
+        });
+      }
+    };
+  
+    // Block writes during exploration mode
+    if (ctx.explorationMode) {
+      const WRITE_TOOLS = ['Edit', 'Write', 'Bash'];
+      if (WRITE_TOOLS.includes(agonTool)) {
+        logApproval('blocked', 'policy.exploration', 'exploration mode is read-only');
+        return 'BLOCKED: Exploration mode is read-only. Use Read, Grep, Glob tools only. Do not narrate around this. Either keep investigating, or wait for the user to disable exploration mode before retrying the same tool.';
+      }
+    }
+  
+    // Block mutating tools during plan mode before they can open a permission
+    // prompt that steals natural plan approvals like "go" or "yes".
+    const activePlan = ctx.activePlan;
+    if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
+      if (agonTool === 'Bash') {
+        if (isReadOnlyCommand(command)) {
+          logApproval('approved', 'policy.plan-mode-readonly', 'plan mode allows read-only Bash');
+          return true;
+        }
+        logApproval('blocked', 'policy.plan-mode', 'plan mode blocks mutating Bash');
+        return 'BLOCKED: Plan mode — mutating Bash is not allowed before approval. Use Read/Grep/Glob or read-only Bash for investigation, call ProposePlan, then wait for the user to type go/yes before retrying this command.';
+      }
+      const WRITE_TOOLS = ['Edit', 'Write'];
+      if (WRITE_TOOLS.includes(agonTool)) {
+        logApproval('blocked', 'policy.plan-mode', 'plan mode blocks file writes');
+        return 'BLOCKED: Plan mode — no code changes allowed. Call ProposePlan with the execution plan now, then wait for approval before retrying the same tool. Do not narrate instead of acting.';
+      }
+    }
+  
+    // R5 enforcement: block cat/grep/head/tail via Bash — use proper tools instead
+    if (agonTool === 'Bash') {
+      const cmd = command.trimStart();
+      if (/^cat\s/.test(cmd)) { logApproval('blocked', 'policy.bash-read-tool', 'cat should use Read'); return 'BLOCKED: Use the Read tool instead of cat. Read is faster and tracked by Agon.'; }
+      if (/^(head|tail)\s/.test(cmd)) { logApproval('blocked', 'policy.bash-read-tool', 'head/tail should use Read'); return 'BLOCKED: Use the Read tool with offset/limit instead of head/tail.'; }
+      if (/^(grep|rg)\s/.test(cmd)) { logApproval('blocked', 'policy.bash-search-tool', 'grep/rg should use Grep'); return 'BLOCKED: Use the Grep tool instead of grep/rg. Grep is faster and tracked by Agon.'; }
+      if (/^find\s/.test(cmd)) { logApproval('blocked', 'policy.bash-search-tool', 'find should use Glob'); return 'BLOCKED: Use the Glob tool instead of find. Glob is faster and tracked by Agon.'; }
+    }
+  
+    // R1 enforcement for companion engines: block file writes until confidence is reported
+    // Bash commands flow through to the normal permission UI — user's settings.json controls approval
+    if (!ctx.cesar!.confidenceSatisfied) {
+      const WRITE_TOOLS = ['Edit', 'Write'];
+      if (WRITE_TOOLS.includes(agonTool)) {
+        logApproval('blocked', 'policy.confidence', 'ReportConfidence required before writes');
+        return `BLOCKED: Report confidence first via ReportConfidence MCP tool before writing files. After ReportConfidence succeeds, retry the SAME ${agonTool} tool immediately. Do not narrate or explain the block.`;
+      }
+    }
+  
+    // deny → block immediately
+    if (perm === 'deny' || mode === 'deny-all') {
+      logApproval('denied', perm === 'deny' ? 'settings.toolPermissions' : 'settings.permissionMode', perm === 'deny' ? `${agonTool} denied in settings` : 'permissionMode=deny-all');
+      return false;
+    }
+  
+    // Cesar self-turn fast path: bounded edits/writes on files already read
+    // in the project cache do not need to interrupt the stream for another
+    // Y/N prompt. This intentionally runs after exploration/plan/confidence
+    // gates and explicit denies, and before the generic ask-mode fallback.
+    if (agonTool === 'Edit' || agonTool === 'Write') {
+      const approvalCwd = resolveWorkingDir();
+      const approvalCache = getProjectFileStateCache(approvalCwd);
+      const approvalArgs = approvalArgsFromCommand(agonTool, command);
+      const approvalCtx: ToolContext = {
+        cwd: approvalCwd,
+        readFileState: (approvalCache as any).cache,
+        permissionMode: mode as any,
+        explorationMode: ctx.explorationMode,
+        allowedCommands: allowed,
+        toolPermissions: perms,
+        sessionAllowList: getSessionAllowList(),
+        source: 'orchestrator' as const,
+      };
+      const selfTurn = applyCesarSelfTurnApproval(agonTool, approvalArgs, approvalCtx, cfg);
+      if (selfTurn.approve) {
+        logApproval('approved', 'cesar-self-turn', selfTurn.reason, approvalArgs);
+        return true;
+      }
+    }
+  
+    // allow → auto-approve
+    if (perm === 'allow' || mode === 'auto') {
+      logApproval('approved', perm === 'allow' ? 'settings.toolPermissions' : 'settings.permissionMode', perm === 'allow' ? `${agonTool} allowed in settings` : 'permissionMode=auto');
+      return true;
+    }
+  
+    // smart → auto-approve orchestrator context and session allowlist, ask otherwise
+    if (mode === 'smart') {
+      // Session allowlist check
+      const sessionList = getSessionAllowList();
+      if (agonTool === 'Bash' && sessionList.length > 0) {
+        const cmdLower = command.toLowerCase();
+        const base = command.trim().split(/\s+/)[0];
+        if (sessionList.some((a: string) => cmdLower.startsWith(a.toLowerCase()) || base === a)) {
+          logApproval('approved', 'session-allowlist', 'Bash command matched session allowlist');
+          return true;
+        }
+      }
+      // Cesar tool loop is always orchestrator — auto-approve non-dangerous
+      logApproval('approved', 'settings.smart-orchestrator', 'permissionMode=smart orchestrator context');
+      return true;
+    }
+  
+    // For Bash: check allowedCommands whitelist
+    if (agonTool === 'Bash' && allowed.length > 0) {
+      const cmdLower = command.toLowerCase();
+      if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) {
+        logApproval('approved', 'settings.allowedCommands', 'Bash command matched allowedCommands');
+        return true;
+      }
+    }
+  
+    // ask → show permission prompt (same UI as Claude Code)
+    return new Promise<boolean>((resolve) => {
+      const dispatch = ctx.cesar!.lastDispatch;
+      if (dispatch) {
+        logApproval('prompted', 'user-prompt', `Cesar (${engineId}) wants to execute`);
+        dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engineId}) wants to execute`, resolve: (approved: boolean | string) => {
+          const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved;
+          logApproval(wasApproved ? 'approved' : 'denied', 'user-prompt', wasApproved ? 'user approved' : 'user denied');
+          resolve(wasApproved);
+        } } as any);
+      } else {
+        logApproval('approved', 'fallback.no-dispatch', 'no dispatch available for approval prompt');
+        resolve(true);
+      }
+    });
+  };
+}
+
+// @kern-source: session:763
+export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    !!value && typeof value === 'object' && !Array.isArray(value);
+  
+  const normalizeArray = (value: unknown): Array<Record<string, unknown>> =>
+    Array.isArray(value) ? value.filter(isRecord) : [];
+  
+  const normalizeNamedRecord = (value: unknown): Array<Record<string, unknown>> => {
+    if (!isRecord(value)) return [];
+    return Object.entries(value)
+      .filter(([, server]) => isRecord(server))
+      .map(([name, server]) => ({ name, ...(server as Record<string, unknown>) }));
+  };
+  
+  if (Array.isArray(raw)) return normalizeArray(raw);
+  if (!isRecord(raw)) return [];
+  
+  const directKeys = ['mcpServers', 'mcp_servers', 'servers'];
+  let sawDirectKey = false;
+  for (const key of directKeys) {
+    if (!(key in raw)) continue;
+    sawDirectKey = true;
+    const value = raw[key];
+    const asArray = normalizeArray(value);
+    if (asArray.length > 0) return asArray;
+    const asRecord = normalizeNamedRecord(value);
+    if (asRecord.length > 0) return asRecord;
+  }
+  
+  if (sawDirectKey) return [];
+  return normalizeNamedRecord(raw);
+}
+
+// @kern-source: session:797
+export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
+  if (!(config as any).cesarMcpEnabled) return undefined;
+  
+  const rawPath = String((config as any).cesarMcpConfigPath ?? '').trim();
+  if (!rawPath) {
+    throw new Error('Cesar MCP is enabled but cesarMcpConfigPath is empty');
+  }
+  
+  const resolvedPath = isAbsolute(rawPath) ? rawPath : resolve(cwd, rawPath);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(resolvedPath, 'utf-8'));
+  } catch (err) {
+    throw new Error(`Failed to load Cesar MCP config at ${resolvedPath}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  
+  const servers = normalizeCesarMcpServers(parsed);
+  if (servers.length === 0) {
+    throw new Error(`No MCP servers found in ${resolvedPath}. Expected an array or a JSON object with mcpServers or servers.`);
+  }
+  return servers;
+}
+
+// @kern-source: session:821
+export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
+  if (!binaryPath) {
+    return false;
+  }
+  const protocol = engine?.companion?.protocol;
+  return protocol === 'acp' || protocol === 'jsonrpc' || protocol === 'stream-json';
+}
+
+// @kern-source: session:828
+/**
+ * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
+ */
+export function mcpConfigFingerprint(config: any): string {
+  const enabled = !!(config as any).cesarMcpEnabled;
+  const configPath = String((config as any).cesarMcpConfigPath ?? '');
+  // Include file mtime when the path exists, so edits to the MCP config file are detected
+  let mtime = '';
+  if (enabled && configPath) {
+    try {
+      const resolvedPath = isAbsolute(configPath) ? configPath : resolve(resolveWorkingDir(), configPath);
+      mtime = String(statSync(resolvedPath).mtimeMs);
+    } catch { /* file may not exist yet */ }
+  }
+  // Also include auto-discovery fingerprint — detects changes to ~/.claude/settings.json, .vscode/mcp.json, etc.
+  const discoveryFp = mcpDiscoveryFingerprint(resolveWorkingDir());
+  return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
+}
+
+// @kern-source: session:846
+/**
+ * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
+ */
+export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
+  const config = ctx.config;
+  const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+  let engine: any = null;
+  try { engine = ctx.registry.get(cesarEngineId); } catch {}
+  if (!engine) return { backend: 'none', binaryPath: '', hasBinary: false, hasApi: false, engine: null };
+  
+  const binaryPathResolved = engine.binary ? ctx.registry.findBinary(engine) : null;
+  const hasBinary = !!(engine.binary && binaryPathResolved);
+  const hasApi = !!(engine.api && process.env[engine.api?.apiKeyEnv]);
+  const preference = (config as any).cesarBackend ?? 'auto';
+  
+  if (preference === 'api' && hasApi) {
+    return { backend: 'api', binaryPath: '', hasBinary, hasApi, engine };
+  }
+  if (preference === 'cli' && hasBinary) {
+    return { backend: 'cli', binaryPath: binaryPathResolved as string, hasBinary, hasApi, engine };
+  }
+  // 'auto' or unsatisfiable preference — prefer CLI, fall back to API
+  if (hasBinary) return { backend: 'cli', binaryPath: binaryPathResolved as string, hasBinary, hasApi, engine };
+  if (hasApi) return { backend: 'api', binaryPath: '', hasBinary, hasApi, engine };
+  return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
+}
+
+// @kern-source: session:872
+export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
+  const config = ctx.config;
+  const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+  const cwd = resolveWorkingDir();
+  
+  // Ensure cesar state bag exists
+  if (!ctx.cesar) {
+    ctx.cesar = {
+      busy: false, busySince: null, queue: null,
+      toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+      pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+      autoNero: false, advisorPending: false, lastEscalation: null as string | null,
+      mcpFingerprint: undefined, mcpSignalPath: undefined as string | undefined, planDispatch: null, proposedPlan: undefined,
+      sessionMcpServers: [] as Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>,
+    };
+  }
+  
+  // Return existing alive session IF it's for the same engine AND MCP config hasn't changed
+  const currentMcpFp = mcpConfigFingerprint(config);
+  if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
+    const storedFp = ctx.cesar!.mcpFingerprint as string | undefined;
+    if (storedFp === currentMcpFp) {
+      return ctx.cesarSession;
+    }
+    // MCP config changed — close stale session and recreate
+    ctx.cesarSession.close();
+    ctx.setCesarSession(null);
+  }
+  
+  // Wrong engine or dead session — close old one
+  if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
+    ctx.cesarSession.close();
+    ctx.setCesarSession(null);
+  }
+  
+  // Session exists but died — try restarting it before creating a new one
+  if (ctx.cesarSession && !ctx.cesarSession.alive) {
+    try {
+      await ctx.cesarSession.start();
+      if (ctx.cesarSession.alive) return ctx.cesarSession;
+    } catch {
+      // Restart failed — fall through to create fresh session
+    }
+  }
+  
+  const resolved = resolveCesarBackend(ctx, cesarEngineId);
+  if (!resolved.engine) throw new Error(`Cesar engine "${cesarEngineId}" not found`);
+  if (resolved.backend === 'none') {
+    throw new Error(`No backend for "${cesarEngineId}" — install CLI or set ${resolved.engine.api?.apiKeyEnv ?? 'API key'}`);
+  }
+  let engine = resolved.engine;
+  const engineModelOverride = (config as any).engineModels?.[cesarEngineId] as string | undefined;
+  if (engineModelOverride && engine.api) {
+    engine = { ...engine, api: { ...engine.api, model: engineModelOverride } };
+  }
+  const binaryPath = resolved.binaryPath;
+  const usingApi = resolved.backend === 'api';
+  // MCP servers: manual config takes priority, then auto-discovery from standard paths
+  let mcpServers: Array<Record<string, unknown>> | undefined;
+  if (canUseCesarMcp(engine, binaryPath)) {
+    // Manual config (cesarMcpEnabled + cesarMcpConfigPath)
+    mcpServers = loadCesarMcpServers(config, cwd);
+    if (!mcpServers || mcpServers.length === 0) {
+      // Auto-discover from ~/.claude/settings.json, .vscode/mcp.json, .agon.json, etc.
+      const discovered = discoverMcpServers(cwd);
+      if (discovered.length > 0) {
+        mcpServers = mcpServersToWireFormat(discovered);
+      }
+    }
+  }
+  
+  // ── Inject session-scoped MCP servers (from /mcp connect) ──
+  const sessionMcp = (ctx as any).sessionMcpServers ?? [];
+  if (sessionMcp.length > 0) {
+    const sessionMcpWired = sessionMcp.map((s: any) => {
+      if (s.url) return { name: s.name, type: s.type ?? 'http', url: s.url, ...(s.env ? { env: s.env } : {}) };
+      return { name: s.name, command: s.command, args: s.args ?? [], ...(s.env ? { env: s.env } : {}) };
+    });
+    mcpServers = mcpServers ? [...mcpServers, ...sessionMcpWired] : sessionMcpWired;
+  }
+  
+  // ── Inject Agon orchestration MCP server for CLI companion engines ──
+  // Gives Codex/Antigravity/OpenCode/Claude real MCP tools for Tribunal, Brainstorm,
+  // AND for AgonBash/AgonEdit/AgonWrite, instead of XML prose they can't call.
+  //
+  // Claude (stream-json) MUST be included: createStreamJsonSession launches it
+  // with `--disallowedTools Bash Edit Write` (native writes off) expecting the
+  // Agon MCP server to provide the write tools. Without this injection Claude
+  // has neither native nor MCP write tools and reports "I can't execute/write".
+  // This gate mirrors createStreamJsonSession's gate in persistent-session.kern.
+  const isCompanion = !!binaryPath && (engine.companion?.protocol === 'jsonrpc' || engine.companion?.protocol === 'acp' || engine.companion?.protocol === 'stream-json' || engine.id === 'claude' || engine.binary === 'claude');
+  if (isCompanion) {
+    ensureAgonHome();
+    const signalDir = join(getAgonHome(), 'signals');
+    mkdirSync(signalDir, { recursive: true });
+    const sessionSignalId = `cesar-${Date.now()}`;
+    const mcpServerPath = join(dirname(fileURLToPath(import.meta.url)), '../../../../mcp/dist/index.js');
+    const agonMcpServer: Record<string, unknown> = {
+      name: 'agon-orchestration',
+      command: 'node',
+      args: [mcpServerPath],
+      env: { AGON_SIGNAL_DIR: signalDir, AGON_SESSION_ID: sessionSignalId },
+    };
+    mcpServers = mcpServers ? [...mcpServers, agonMcpServer] : [agonMcpServer];
+    ctx.cesar!.mcpSignalPath = join(signalDir, `${sessionSignalId}.json`);
+  }
+  
+  // Build system prompt and tool registry
+  const systemPrompt = buildCesarSystemPrompt(ctx);
+  const toolRegistry = createCesarToolRegistry(cesarEngineId);
+  
+  // Store registry on context for tool execution during responses
+  ctx.cesar!.toolRegistry = toolRegistry;
+  
+  // Build native function calling tools for API engines (OpenAI-compatible)
+  const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
+  ctx.cesar!.hasNativeTools = !!nativeTools;
+  
+  // Prompt strategy: API → native tools, companion → MCP tools, fallback → XML
+  let fullPrompt = systemPrompt;
+  if (nativeTools) {
+    // API engine: function calling, no XML
+    fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
+  } else if (isCompanion) {
+    // CLI companion with MCP orchestration: reference MCP tools, no XML for orchestration
+    fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Agent, Delegate, QuickNero, ReportConfidence, ProposePlan\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool except Delegate, QuickNero, and ReportConfidence: STOP and wait.';
+  } else {
+    // Fallback: XML tool descriptions for engines without native tools or MCP
+    const toolPrompt = buildToolSystemPrompt(toolRegistry);
+    fullPrompt += '\n\nTOOLS: XML format below. Never ask permission — just call. Never describe changes when you can execute.\n\n' + toolPrompt;
+  }
+  if (mcpServers && mcpServers.length > 0 && !isCompanion) {
+    // Only add generic MCP guidance for non-companion engines (companion already got specific MCP guidance above)
+    fullPrompt += '\n\nMCP is enabled for this session. Use MCP only when the task clearly needs capabilities outside the workspace or built-in Agon tools. Prefer Read/Grep/Glob/Edit/Bash first, and keep MCP calls to the minimum needed.';
+  }
+  
+  const sessionConfig: PersistentSessionConfig = {
+    engine,
+    binaryPath,
+    cwd,
+    systemPrompt: fullPrompt,
+    nativeTools,
+    mcpServers,
+    sessionContinuity: (config as any).sessionContinuity === true,
+    onToolCall: buildOnToolCall(ctx, toolRegistry, config),
+    onApproval: buildOnApproval(ctx, cesarEngineId),
+  };
+  
+  const session = createPersistentSession(sessionConfig);
+  await session.start();
+  ctx.setCesarSession(session);
+  // Store MCP config fingerprint so we can detect changes on next reuse check
+  ctx.cesar!.mcpFingerprint = currentMcpFp;
+  return session;
+}
+

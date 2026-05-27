@@ -45,6 +45,26 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('maps think to the sequential-thinking bridge with strategy/steps/branches', () => {
+    expect(buildCallCommands({
+      workflow: 'think',
+      input: 'Token bucket or sliding window?',
+      strategy: 'reflexion',
+      steps: '20',
+      branches: '5',
+      engineTimeout: '120',
+      engines: 'codex',
+    }).commands).toEqual([
+      ['think', 'Token bucket or sliding window?', '--strategy', 'reflexion', '--steps', '20', '--branches', '5', '--timeout', '120', '--engines', 'codex'],
+    ]);
+  });
+
+  it('maps think with no optional flags', () => {
+    expect(buildCallCommands({ workflow: 'think', input: 'decompose this' }).commands).toEqual([
+      ['think', 'decompose this'],
+    ]);
+  });
+
   it('maps synthesis to the synthesis command bridge', () => {
     expect(buildCallCommands({
       workflow: 'synthesis',

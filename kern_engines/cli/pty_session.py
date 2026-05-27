@@ -364,6 +364,7 @@ class PtyTuiSession:
         *,
         env_overrides: Optional[dict[str, str]] = None,
         mode: str = "exec",
+        extra_argv: tuple[str, ...] = (),
     ) -> None:
         """Spawn a child session.
 
@@ -371,11 +372,17 @@ class PtyTuiSession:
           - ``"exec"`` (default): plain chat/exec mode → ``config.extra_argv``
           - ``"agent"``: tools + permission bypass → ``config.agent_extra_argv``
             (or ``extra_argv`` if the engine has no separate agent argv)
+
+        ``extra_argv`` are caller-supplied launch flags appended AFTER the
+        config argv (e.g. agon forwarding ``--model opus --effort high`` so the
+        interactive subscription path honors a /models pick, matching the
+        ``--print`` fallback). Empty by default → the engine uses its own config.
         """
         if mode not in ("exec", "agent"):
             raise ValueError(f"unknown mode {mode!r}")
         self._cfg = config
         self._mode = mode
+        self._extra_argv = tuple(extra_argv)
         # mode-aware idle threshold used by ask/ask_stream done-detection
         self._response_idle_ms = (
             config.agent_response_idle_ms if mode == "agent" else config.response_idle_ms
@@ -416,6 +423,8 @@ class PtyTuiSession:
             argv = self._cfg.agent_extra_argv or self._cfg.extra_argv
         else:
             argv = self._cfg.extra_argv
+        # Caller-supplied launch flags (model/effort) follow the config argv.
+        argv = (*argv, *self._extra_argv)
         try:
             os.execvp(self._cfg.binary, [self._cfg.binary, *argv])
         except FileNotFoundError:

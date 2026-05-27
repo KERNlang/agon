@@ -75,6 +75,7 @@ Pick by the **shape** of the problem, not the topic:
 | One refined output from many opinions | **synthesis** | Engines draft, improve each other's drafts over swap rounds, and a judge picks the best evolved result. |
 | A decision with real tradeoffs settled | **tribunal** | Structured debate (adversarial / steelman / socratic / red-team / synthesis / postmortem) that argues the sides. |
 | Open exploration, no decision yet | **campfire** | Relaxed multi-engine discussion — no scoring, no winner. |
+| A problem decomposed before you act | **think** | Sequential thinking — linear or reflexion (forced self-critique), optional branches; surfaces open questions + a `goal` handoff. |
 | Code built competitively against a test | **forge** | Engines race on the same task in isolated worktrees; the best test-passing patch is applied. |
 | The **first** passing solution, fast | **speculate** | N engines race; the first to pass the test wins and is applied immediately. |
 | A routine build with one engine | **pipeline** | Single-engine build → review → fix loop; no competition overhead. |
@@ -92,6 +93,7 @@ Pick by the **shape** of the problem, not the topic:
 - Need code built competitively → `forge`
 - Need the first green solution fast → `speculate`
 - Need a task queue executed → `goal`
+- Need to think a problem through before acting → `think`
 
 **forge vs. speculate vs. synthesis** — all three run multiple engines, but they pick the winner differently:
 - **forge** *scores* every candidate against the test and applies the best.
@@ -114,6 +116,21 @@ Competitive cross-pollination. Engines draft independently, then improve each ot
 /synthesis "Evolve this design doc into a concrete implementation plan" --swaps 2 --timeout 90
 agon synthesis "Evolve this design doc into a concrete implementation plan" --swaps 2 --timeout 90
 ```
+
+### Think
+Native sequential thinking. One engine decomposes a problem into structured, numbered thoughts before any code is written — the scaffold forces it off the laziest answer. Opt-in and composable: it surfaces open questions and emits a refined spec you can hand straight to `agon goal`.
+
+```bash
+agon think "Should the rate limiter use a token bucket or a sliding window?"
+agon think "Rework auth to JWT" --strategy reflexion        # force a self-critique + revision each step
+agon think "Design the cache layer" --steps 20 --branches 5 # explore 5 alternative reasoning branches
+agon think "..." --json                                     # emit the ThinkResult (handoff artifact), pipe-friendly
+```
+
+- **Strategies** — `linear` (classic sequential thinking) or `reflexion` (each step is force-followed by a critique then a revision). `tot`/`graph`/`hypothesis` are planned; the method is a swappable state machine so they drop in without a rewrite.
+- **Steps & branches** — `--steps N` (1–20) caps the chain; `--branches N` (1–8) explores alternative reasoning paths tagged with a branch id.
+- **Tool-grounding** — thoughts that cite repo files which don't exist are flagged (`--no-ground` to disable), so a plan never hands `goal` phantom paths.
+- **Machine-validated** — a `reflexion` chain that never actually critiques+revises is rejected by the underlying `ThinkChain` state machine.
 
 ### Brainstorm
 Engines bid their confidence level on how they would tackle a complex problem. Engines with higher confidence bids are allocated more tokens and priority.

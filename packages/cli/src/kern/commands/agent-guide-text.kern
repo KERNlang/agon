@@ -5,7 +5,7 @@
 // whose tool schemas load into context on every turn.
 
 fn name=agentGuideMarkdown returns=string export=true
-  doc "Compact how-to-call-agon overview for any external engine (Codex, Gemini, Claude, OpenCode)."
+  doc "Compact how-to-call-agon overview for any external engine (Codex, Antigravity, Claude, OpenCode)."
   handler <<<
     return [
       '# How to call Agon',
@@ -19,11 +19,12 @@ fn name=agentGuideMarkdown returns=string export=true
       '- `agon brainstorm "<question>"` — engines bid confidence, the most confident answers. Cheap second opinion.',
       '- `agon tribunal "<question>" [--mode adversarial|steelman|socratic|red-team|synthesis|postmortem]` — structured multi-engine debate. Use for decisions with real tradeoffs.',
       '- `agon campfire "<topic>"` — open multi-engine discussion, no winner. For exploration.',
+      '- `agon think "<problem>" [--strategy linear|reflexion] [--steps N] [--branches N]` — sequential thinking: decompose a problem into structured thoughts (reflexion forces a self-critique+revision per step; --branches explores alternatives), surface open questions, and emit a refined spec to hand to `agon goal`. Use to think before acting, or for engines with weak built-in reasoning.',
       '- `agon review <uncommitted|branch:NAME|commit:SHA>` — non-interactive multi-engine code review.',
       '- `agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"` — autonomous controller: drives a task queue to completion unattended, looping build -> witness -> gate -> review (panel + judge) -> fix -> commit per task on a goal/ branch. Bound it with `--max-hours`/`--budget`; `--push` pushes each task. Long-running (designed for 8-24h).',
       '',
       '## Common flags',
-      '- `--engines claude,codex,gemini` — limit which engines compete',
+      '- `--engines claude,codex,agy` — limit which engines compete',
       '- `--timeout <sec>` — per-engine timeout',
       '',
       '## Machine-readable output',
@@ -40,6 +41,7 @@ fn name=agentGuideMarkdown returns=string export=true
       '- a decision with tradeoffs           -> tribunal',
       '- need ideas / unsure                 -> brainstorm',
       '- explore, no decision needed         -> campfire',
+      '- think before acting / decompose     -> think',
       '- judge existing code                 -> review',
       '- drive a whole task queue to done    -> goal',
       '',
@@ -48,7 +50,7 @@ fn name=agentGuideMarkdown returns=string export=true
   >>>
 
 fn name=agonShim params="format:string" returns=string export=true
-  doc "Per-CLI /agon slash-command shim. format is one of gemini | claude | markdown."
+  doc "Per-CLI /agon slash-command shim. format is one of agy | claude | markdown."
   handler <<<
     const body = [
       'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, campfire, review, goal).',
@@ -56,7 +58,7 @@ fn name=agonShim params="format:string" returns=string export=true
       'Call agon with your normal shell/Bash tool — there is no MCP and nothing is loaded until you invoke it.',
     ].join('\n');
 
-    if (format === 'gemini') {
+    if (format === 'agy') {
       return [
         'description = "Use Agon multi-AI orchestration (forge/synthesis/tribunal/brainstorm/review/goal)"',
         'prompt = """',

@@ -30,7 +30,7 @@ fn name=createProposePlanTool returns=ToolHandler export=true
                 imports: { type: 'array', items: { type: 'string' } },
                 estimatedTokens: { type: 'number' },
                 estimatedCostUsd: { type: 'number' },
-                rationale: { type: 'string', description: 'REQUIRED in practice (the UI surfaces this to the user). 1-2 sentences explaining WHY this engine/approach was chosen over alternatives. Reference engine strengths, win rates, or task characteristics from ROUTING CONTEXT. Example: "gemini has 92% win rate on TypeScript refactors and this is pure type surgery; self would be slower and forge is overkill."' },
+                rationale: { type: 'string', description: 'REQUIRED in practice (the UI surfaces this to the user). 1-2 sentences explaining WHY this engine/approach was chosen over alternatives. Reference engine strengths, win rates, or task characteristics from ROUTING CONTEXT. Example: "agy has 92% win rate on TypeScript refactors and this is pure type surgery; self would be slower and forge is overkill."' },
                 verifyCmd: { type: 'string', description: 'Bash command to verify step output (e.g., npm test, npm run typecheck). Include for any step that produces testable output.' },
               },
               required: ['id', 'type', 'description', 'estimatedTokens', 'estimatedCostUsd'],

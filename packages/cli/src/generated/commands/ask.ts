@@ -44,7 +44,7 @@ export const askCommand: any = defineCommand({
   args: {
     engine: {
       type: 'positional',
-      description: 'Engine id (codex, gemini, claude, ...). Omit to use the default (first active) engine.',
+      description: 'Engine id (codex, agy, claude, ...). Omit to use the default (first active) engine.',
       required: false,
     },
     prompt: {

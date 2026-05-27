@@ -1,0 +1,298 @@
+// @kern-source: pipeline:1
+import { join } from 'node:path';
+
+// @kern-source: pipeline:2
+import { mkdirSync } from 'node:fs';
+
+// @kern-source: pipeline:3
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, readOnlyDiff, diffLineCount, diffFileCount, buildCritiquePrompt, spawnWithTimeout, resolveWorkingDir, formatChatContextForPrompt } from '@agon/core';
+
+// @kern-source: pipeline:4
+import { ENGINE_COLORS } from '../blocks/output-format.js';
+
+// @kern-source: pipeline:5
+import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+
+// @kern-source: pipeline:6
+import { buildAgentApprovalCallback } from './agent.js';
+
+// @kern-source: pipeline:8
+export async function handlePipeline(input: string, dispatch: Dispatch, ctx: HandlerContext, fitnessCmd?: string, opts?: {quiet?:boolean,reviewEngines?:string[]}): Promise<void> {
+  const abort = new AbortController();
+  try {
+    ensureAgonHome();
+    
+    const agentIds = ctx.registry.agentCapableIds(ctx.config as any);
+    if (agentIds.length === 0) {
+      dispatch({ type: 'error', message: 'No agent-capable engines available.' });
+      return;
+    }
+    
+    const config = ctx.config;
+    const cwd = resolveWorkingDir();
+    const preferred = config.forgeFixedStarter ?? 'claude';
+    const buildEngine = agentIds.includes(preferred) ? preferred : agentIds[0];
+    const requestedReviewEngines = Array.isArray(opts?.reviewEngines)
+      ? Array.from(new Set(opts!.reviewEngines!.map((id: string) => ctx.registry.resolveId(String(id ?? '').trim())).filter(Boolean)))
+      : [];
+    const availableRequestedReviewEngines = requestedReviewEngines.filter((id: string) => agentIds.includes(id));
+    const reviewEngines = availableRequestedReviewEngines.length > 0
+      ? availableRequestedReviewEngines
+      : [agentIds.find((id: string) => id !== buildEngine) ?? buildEngine];
+    const maxIterations = 3;
+    
+    const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
+    const outputDir = join(RUNS_DIR, `pipeline-${Date.now()}`);
+    mkdirSync(outputDir, { recursive: true });
+    
+    const sessionHistory = formatChatContextForPrompt(ctx.chatSession, {
+      maxMessages: 10,
+      maxChars: 6_000,
+      maxMessageChars: 700,
+      maxSummaryChars: 3_000,
+    });
+    
+    const quiet = opts?.quiet ?? false;
+    
+    ctx.setActiveAbort(abort);
+    
+    if (!quiet) {
+      dispatch({ type: 'header', title: `Pipeline: ${buildEngine} builds → ${reviewEngines.join(', ')} review` });
+      dispatch({ type: 'info', message: `Task: ${input}` });
+      if (fitnessCmd) dispatch({ type: 'info', message: `Fitness: ${fitnessCmd}` });
+    }
+    
+    let iteration = 0;
+    let lastReviewFeedback = '';
+    
+    while (iteration < maxIterations) {
+      iteration++;
+      if (abort.signal.aborted) break;
+    
+      // ── Step 1: Build ──
+      const buildColor = (ENGINE_COLORS as Record<string, number>)[buildEngine] ?? 124;
+      dispatch({ type: 'spinner-start', message: `[${iteration}/${maxIterations}] ${buildEngine} building…`, color: buildColor });
+    
+      const buildPrompt = [
+        projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '',
+        sessionHistory ? `## SESSION HISTORY (recent messages)\n${sessionHistory}` : '',
+        `## TASK\n${input}`,
+        lastReviewFeedback ? `## REVIEW FEEDBACK FROM PREVIOUS ITERATION\nAddress these issues:\n${lastReviewFeedback}` : '',
+        fitnessCmd ? `## FITNESS TEST\nRun this to verify: \`${fitnessCmd}\`` : '',
+        `## CONSTRAINTS\n- You have full tool access. Read files, edit code, run commands.\n- Modify only what's necessary.\n- ${fitnessCmd ? 'Run the fitness test and iterate until it passes.' : 'Exit when the task is complete.'}`,
+      ].filter(Boolean).join('\n\n');
+    
+      try {
+        const engine = ctx.registry.get(buildEngine);
+        if (ctx.adapter.dispatchAgent) {
+          await ctx.adapter.dispatchAgent({
+            engine,
+            prompt: buildPrompt,
+            cwd,
+            mode: 'agent',
+            timeout: config.agentTimeout ?? 600,
+            outputDir,
+            signal: abort.signal,
+            onApproval: buildAgentApprovalCallback(dispatch, ctx, buildEngine),
+            onTodos: (todos: { id: string; text: string; state: string }[]) => dispatch({ type: 'todos-set', todos }),
+            permissionMode: (config as any).permissionMode ?? 'ask',
+            allowedCommands: (config as any).allowedCommands ?? [],
+            toolPermissions: (config as any).toolPermissions ?? {},
+          });
+        } else {
+          await ctx.adapter.dispatch({
+            engine,
+            prompt: buildPrompt,
+            cwd,
+            mode: 'review',
+            timeout: engine.timeout,
+            outputDir,
+            signal: abort.signal,
+          });
+        }
+      } catch (err) {
+        dispatch({ type: 'spinner-stop' });
+        dispatch({ type: 'error', message: `Build failed: ${err instanceof Error ? err.message : String(err)}` });
+        break;
+      }
+    
+      dispatch({ type: 'spinner-stop' });
+      if (abort.signal.aborted) break;
+    
+      // ── Check diff (read-only — don't stage unrelated files) ──
+      const diff = readOnlyDiff(cwd);
+      const lines = diffLineCount(diff);
+      const files = diff ? diff.split('\n').filter((l: string) => l.startsWith('diff --git')).length : 0;
+    
+      if (!diff || lines === 0) {
+        dispatch({ type: 'warning', message: `[${iteration}] ${buildEngine} made no changes.` });
+        break;
+      }
+    
+      dispatch({ type: 'info', message: `[${iteration}] ${buildEngine}: ${files} file(s), ${lines} line(s) changed` });
+    
+      // ── Step 2: Fitness test (if provided) ──
+      if (fitnessCmd) {
+        dispatch({ type: 'spinner-start', message: `[${iteration}] Running fitness: ${fitnessCmd.slice(0, 50)}` });
+        try {
+          const fitnessResult = await spawnWithTimeout({
+            command: '/bin/sh',
+            args: ['-c', fitnessCmd],
+            cwd,
+            timeout: 120000,
+          });
+          dispatch({ type: 'spinner-stop' });
+          if (fitnessResult.exitCode === 0) {
+            dispatch({ type: 'success', message: `[${iteration}] Fitness passed!` });
+            // Tests pass — still review for quality, but don't iterate further
+            break;
+          } else {
+            dispatch({ type: 'warning', message: `[${iteration}] Fitness failed (exit ${fitnessResult.exitCode})` });
+            if (fitnessResult.stderr.trim()) {
+              lastReviewFeedback = `Fitness test failed:\n${fitnessResult.stderr.trim().slice(0, 2000)}`;
+              // Continue to next iteration with error feedback
+              continue;
+            }
+          }
+        } catch (err) {
+          dispatch({ type: 'spinner-stop' });
+          dispatch({ type: 'warning', message: `[${iteration}] Fitness command failed: ${err instanceof Error ? err.message : String(err)}` });
+        }
+      }
+    
+      // ── Step 3: Review (one or more engines, in parallel) ──
+      const activeReviewEngines = reviewEngines.filter((id: string) => id !== buildEngine || reviewEngines.length === 1);
+      if (activeReviewEngines.length === 0 || iteration >= maxIterations) break;
+    
+      dispatch({ type: 'spinner-start', message: `[${iteration}] ${activeReviewEngines.join(', ')} reviewing in parallel…`, color: 214 });
+    
+      const critiquePrompt = buildCritiquePrompt({
+        winnerEngine: buildEngine,
+        diff,
+        maxCritiques: 3,
+      });
+    
+      try {
+        const reviewResults = await Promise.allSettled(activeReviewEngines.map(async (reviewEngine: string) => {
+          const revEngine = ctx.registry.get(reviewEngine);
+          const reviewResult = await ctx.adapter.dispatch({
+            engine: revEngine,
+            prompt: critiquePrompt,
+            cwd,
+            mode: 'exec',
+            timeout: 60,
+            outputDir,
+            signal: abort.signal,
+          });
+          return { reviewEngine, reviewOutput: reviewResult.stdout.trim() };
+        }));
+        dispatch({ type: 'spinner-stop' });
+    
+        // Parse structured critiques — only iterate on blocking issues
+        let hasBlockingIssues = false;
+        const blockingFeedback: string[] = [];
+        let completedReviews = 0;
+        for (const reviewResult of reviewResults) {
+          if (reviewResult.status === 'rejected') {
+            dispatch({ type: 'warning', message: `[${iteration}] Review failed: ${reviewResult.reason instanceof Error ? reviewResult.reason.message : String(reviewResult.reason)}` });
+            continue;
+          }
+          const { reviewEngine, reviewOutput } = reviewResult.value;
+          if (!reviewOutput) {
+            dispatch({ type: 'warning', message: `[${iteration}] ${reviewEngine} returned no review output.` });
+            continue;
+          }
+          completedReviews++;
+          const reviewColor = (ENGINE_COLORS as Record<string, number>)[reviewEngine] ?? 124;
+          let engineBlocking = false;
+          try {
+            const allMatches = [...reviewOutput.matchAll(/\[[\s\S]*?\]/g)];
+            const jsonStr = allMatches.length > 0 ? allMatches[allMatches.length - 1][0] : null;
+            if (jsonStr) {
+              const parsed = JSON.parse(jsonStr) as Array<{blocking?: boolean; problem?: string}>;
+              engineBlocking = parsed.some((c) => c.blocking === true);
+              if (!engineBlocking && parsed.length > 0) {
+                dispatch({ type: 'info', message: `[${iteration}] ${reviewEngine}: ${parsed.length} nit(s), no blocking issues.` });
+              }
+            }
+          } catch (_parseErr) {
+            // Fallback to string heuristic if JSON parse fails
+            engineBlocking = reviewOutput.length > 10 && !reviewOutput.includes('[]');
+          }
+    
+          if (engineBlocking) {
+            hasBlockingIssues = true;
+            blockingFeedback.push(`## ${reviewEngine}\n\n${reviewOutput}`);
+            if (!quiet) {
+              dispatch({ type: 'engine-block', engineId: reviewEngine, color: reviewColor, content: reviewOutput });
+            }
+          } else if (!reviewOutput.includes('[]') && !quiet) {
+            dispatch({ type: 'engine-block', engineId: reviewEngine, color: reviewColor, content: reviewOutput });
+          }
+        }
+    
+        if (completedReviews === 0) {
+          dispatch({ type: 'warning', message: `[${iteration}] No review output returned — accepting build as-is.` });
+          break;
+        }
+    
+        if (!hasBlockingIssues) {
+          dispatch({ type: 'success', message: `[${iteration}] ${activeReviewEngines.join(', ')} approved — no blocking issues.` });
+          break;
+        }
+    
+        dispatch({ type: 'info', message: `[${iteration}] Review found blocking issues — fixing…` });
+        lastReviewFeedback = blockingFeedback.join('\n\n---\n\n');
+        // Continue to next iteration with review feedback
+      } catch (err) {
+        dispatch({ type: 'spinner-stop' });
+        dispatch({ type: 'warning', message: `[${iteration}] Review failed: ${err instanceof Error ? err.message : String(err)} — accepting build as-is.` });
+        break;
+      }
+    }
+    
+    // ── Summary + auto-escalation ──
+    const finalDiff = readOnlyDiff(cwd);
+    const finalLines = diffLineCount(finalDiff);
+    const finalFiles = diffFileCount(cwd);
+    
+    // Check if fitness passed on last iteration
+    let fitnessPassed = false;
+    if (fitnessCmd && finalLines > 0) {
+      try {
+        const finalFitness = await spawnWithTimeout({
+          command: '/bin/sh',
+          args: ['-c', fitnessCmd],
+          cwd,
+          timeout: 120000,
+        });
+        fitnessPassed = finalFitness.exitCode === 0;
+      } catch (err) {
+        console.warn(`[agon] final fitness check failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    
+    if (finalLines > 0 && (!fitnessCmd || fitnessPassed)) {
+      dispatch({ type: 'success', message: `Pipeline complete: ${finalFiles} file(s), ${finalLines} line(s) changed in ${iteration} iteration(s)` });
+      appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+      appendMessage(ctx.chatSession, { role: 'engine', engineId: buildEngine, content: `Pipeline: ${finalFiles} files, ${finalLines} lines in ${iteration} iteration(s)`, timestamp: new Date().toISOString() });
+      tracker.record(buildEngine, { prompt: input, response: `pipeline:${finalLines}lines` });
+    } else if (fitnessCmd && !fitnessPassed && iteration >= maxIterations) {
+      // Auto-escalation: pipeline exhausted → suggest forge
+      dispatch({ type: 'warning', message: `Pipeline exhausted ${maxIterations} iterations without passing fitness.` });
+      dispatch({ type: 'info', message: `Escalating → forge competition. Run: /forge ${input} test with ${fitnessCmd}` });
+      appendMessage(ctx.chatSession, { role: 'engine', engineId: 'pipeline', content: `Pipeline failed after ${maxIterations} iterations. Suggested escalation to forge.`, timestamp: new Date().toISOString() });
+    } else if (finalLines === 0) {
+      dispatch({ type: 'info', message: 'Pipeline complete — no changes made.' });
+    } else {
+      dispatch({ type: 'success', message: `Pipeline complete: ${finalFiles} file(s), ${finalLines} line(s) changed in ${iteration} iteration(s)` });
+      appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+      appendMessage(ctx.chatSession, { role: 'engine', engineId: buildEngine, content: `Pipeline: ${finalFiles} files, ${finalLines} lines`, timestamp: new Date().toISOString() });
+      tracker.record(buildEngine, { prompt: input, response: `pipeline:${finalLines}lines` });
+    }
+  } finally {
+    dispatch({ type: 'spinner-stop' });
+    ctx.setActiveAbort(null);
+  }
+}
+

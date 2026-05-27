@@ -26,8 +26,12 @@
 
   "model": {
     "configKey": "codex_model",
-    "flag": "--model",
-    "default": "gpt-5.3-codex"
+    "flag": "--model"
+  },
+
+  "effort": {
+    "configKey": "model_reasoning_effort",
+    "levels": ["low", "medium", "high", "xhigh"]
   },
 
   "api": {
@@ -55,12 +59,7 @@
   "test": { "args": ["--version"] },
 
   "cliModels": {
-    "default": "gpt-5.3-codex",
-    "list": [
-      { "id": "gpt-5.3-codex", "name": "GPT-5.3 Codex" },
-      { "id": "gpt-5.4", "name": "GPT-5.4" },
-      { "id": "gpt-5.3-codex-spark", "name": "GPT-5.3 Codex Spark" }
-    ]
+    "dynamicListCmd": ["__pty:/model"]
   },
 
   "isolationHints": {

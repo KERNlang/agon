@@ -8,7 +8,7 @@ import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, 
 
 import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, sessionContext, resolveWorkingDir, engineHealth, classifyDispatchFailure } from '@agon/core';
 
-import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth, shouldUseCompanionForAgent, shouldUseClaudePty, runClaudePtyDispatch, runClaudePtyStreamDispatch, computeEngineIsolation } from './adapter-helpers.js';
+import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth, shouldUseCompanionForAgent, shouldUseClaudePty, runClaudePtyDispatch, runClaudePtyStreamDispatch, resolveClaudePtyExtraArgs, computeEngineIsolation } from './adapter-helpers.js';
 
 // @kern-source: adapter:7
 export class CliAdapter implements EngineAdapter {
@@ -64,7 +64,7 @@ export class CliAdapter implements EngineAdapter {
     // Subscription path: drive interactive `claude` TUI via pty when opted-in (AGON_CLAUDE_PTY=1).
     // Avoids `claude -p` (SDK credits). If kern-engines peer deps are missing, falls through.
     if (shouldUseClaudePty(options.engine)) {
-      const ptyResult = await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt, iso.env);
+      const ptyResult = await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
       if (!ptyResult.unavailable) {
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
@@ -124,7 +124,7 @@ export class CliAdapter implements EngineAdapter {
     // Subscription pty path for claude — yields response deltas, returns final result.
     // Falls through if peer deps missing (unavailable:true).
     if (shouldUseClaudePty(options.engine)) {
-      const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt, iso.env);
+      const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
       let last: DispatchResult | undefined;
       while (true) {
         const next = await gen.next();
@@ -222,7 +222,7 @@ export class CliAdapter implements EngineAdapter {
     if (shouldUseClaudePty(options.engine)) {
       const ptyStart = Date.now();
       const ptyBaseline = readOnlyDiff(options.cwd);
-      const ptyResult = await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env);
+      const ptyResult = await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
       if (!ptyResult.unavailable) {
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
@@ -376,7 +376,7 @@ export class CliAdapter implements EngineAdapter {
     // Subscription pty path for claude (agent mode). Same diff capture as dispatchAgent.
     if (shouldUseClaudePty(options.engine)) {
       const baselineDiff = readOnlyDiff(options.cwd);
-      const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env);
+      const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
       let last: DispatchResult & { unavailable?: boolean } | undefined;
       const collected: string[] = [];
       while (true) {

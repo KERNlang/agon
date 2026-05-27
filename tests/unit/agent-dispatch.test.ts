@@ -38,23 +38,25 @@ describe('Agent Dispatch', () => {
       expect(args).toContain('exec');
     });
 
-    it('uses agent args for gemini with -p for non-interactive subprocess use', () => {
+    it('uses agent args for agy with --print for non-interactive subprocess use', () => {
       const reg = loadRegistry();
-      const engine = reg.get('gemini');
-      const binary = '/usr/local/bin/gemini';
+      const engine = reg.get('agy');
+      const binary = '/usr/local/bin/agy';
       const { args } = buildCommand(engine, 'agent', 'fix the bug', '/tmp', 120, binary);
-      expect(args).toContain('yolo');
-      expect(args).toContain('-p');
+      expect(args).toContain('--print');
+      expect(args).toContain('--dangerously-skip-permissions');
+      expect(args).not.toContain('yolo');
     });
 
-    it('keeps gemini model flags outside the -p prompt pair', () => {
+    it('agy passes no --model flag (the agy CLI has none) and prompt follows --print', () => {
       const reg = loadRegistry();
-      const engine = reg.get('gemini');
-      const binary = '/usr/local/bin/gemini';
+      const engine = reg.get('agy');
+      const binary = '/usr/local/bin/agy';
+      // agent mode is left agentic — no inline-answer preamble — so the prompt is verbatim.
       const { args } = buildCommand(engine, 'agent', 'fix the bug', '/tmp', 120, binary);
-      const promptFlagIdx = args.indexOf('-p');
-      expect(args[promptFlagIdx + 1]).toBe('fix the bug');
-      expect(args.indexOf('--model')).toBeLessThan(promptFlagIdx);
+      expect(args).not.toContain('--model');
+      const printIdx = args.indexOf('--print');
+      expect(args[printIdx + 1]).toBe('fix the bug');
     });
 
     it('throws for engines without agent config', () => {
@@ -70,7 +72,7 @@ describe('Agent Dispatch', () => {
       const reg = loadRegistry();
       expect(supportsAgentMode(reg.get('claude'))).toBe(true);
       expect(supportsAgentMode(reg.get('codex'))).toBe(true);
-      expect(supportsAgentMode(reg.get('gemini'))).toBe(true);
+      expect(supportsAgentMode(reg.get('agy'))).toBe(true);
     });
 
     it('returns false for text-only engines', () => {
@@ -111,12 +113,15 @@ describe('Agent Dispatch', () => {
       expect(result!.args).not.toContain('--dangerously-skip-permissions');
     });
 
-    it('swaps flags for plan permission (gemini)', () => {
+    it('swaps agy auto-approve for --sandbox in plan permission (not the Claude flag)', () => {
       const reg = loadRegistry();
-      const result = resolveAgentArgs(reg.get('gemini'), 'plan');
+      const result = resolveAgentArgs(reg.get('agy'), 'plan');
       expect(result).not.toBeNull();
-      expect(result!.args).toContain('plan');
-      expect(result!.args).not.toContain('yolo');
+      // Plan mode must never keep agy's auto-approve-everything flag, and must use
+      // agy's real restriction flag (--sandbox), not Claude's --permission-mode.
+      expect(result!.args).not.toContain('--dangerously-skip-permissions');
+      expect(result!.args).toContain('--sandbox');
+      expect(result!.args).not.toContain('--permission-mode=plan');
     });
   });
 

@@ -66,6 +66,18 @@ npm run typecheck      # tsc -b (type check only)
 - Tests: `tests/unit/*.test.ts`, `tests/integration/*.test.ts`
 - Vitest for testing, tsc for type checking
 
+## Adding a New Mode — ALWAYS update these
+
+When you add an agon mode/command (e.g. the `think` mode = sequential thinking, in `packages/forge/src/kern/thinking.kern` + `packages/cli/src/kern/commands/think.kern`), it is NOT done until every surface below is updated in the SAME change. Don't ship a mode that only `agon <mode>` knows about.
+
+1. **Core/orchestration** — `packages/forge/src/kern/<mode>.kern` (the `run*` fn, takes `registry`+`adapter`), exported from `packages/forge/src/index.ts`.
+2. **CLI command** — `packages/cli/src/kern/commands/<mode>.kern`, facade `packages/cli/src/commands/<mode>.ts`, registered in `packages/cli/src/index.ts` `subCommands`.
+3. **External-CLI bridge** — add a branch in `packages/cli/src/commands/call.ts` (so `agon call <mode>` works) and a test in `tests/unit/call-command.test.ts`.
+4. **Agent guide** (what `install-agent-prompts` ships to Codex/Antigravity/Claude) — `packages/cli/src/kern/commands/agent-guide.kern` (JSON `modes`) AND `agent-guide-text.kern` (prose + "Pick a mode").
+5. **README.md** — the "You need… / Use / Why" table, the rule-of-thumb list, and a `### <Mode>` section with usage.
+6. **This CLAUDE.md** and the **top-level `~/.claude/CLAUDE.md`** (the buddies→agon mapping) — so future sessions know the mode exists and how to call it.
+7. **Tests** — `tests/unit/<mode>.test.ts` for the pure logic.
+
 ## Key Patterns
 
 - `spawnWithTimeout(opts)` — spawns external process with timeout + abort signal (KERN: `blocks/process.kern`)

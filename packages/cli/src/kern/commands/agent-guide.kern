@@ -1,6 +1,6 @@
 // `agon agent-guide` — print a compact overview of how to call agon.
 //
-// The universal mechanism: any external engine (Codex, Gemini, Claude,
+// The universal mechanism: any external engine (Codex, agy, Claude,
 // OpenCode, anything with a shell) runs this once and immediately knows how
 // to drive agon — no MCP, no always-on token cost. The per-CLI slash-command
 // shims written by `agon install-agent-prompts` just point back here.
@@ -13,7 +13,7 @@ const name=agentGuideCommand type=any
     defineCommand({
       meta: {
         name: 'agent-guide',
-        description: 'Print how to call agon — a compact overview for any external engine (Codex, Gemini, Claude, OpenCode)',
+        description: 'Print how to call agon — a compact overview for any external engine (Codex, Antigravity, Claude, OpenCode)',
       },
       args: {
         json: {
@@ -29,10 +29,11 @@ const name=agentGuideCommand type=any
               { name: 'brainstorm', cmd: 'agon brainstorm "<question>"', use: 'cheap second opinion / ideas' },
               { name: 'tribunal', cmd: 'agon tribunal "<question>" --mode adversarial', use: 'decisions with real tradeoffs' },
               { name: 'campfire', cmd: 'agon campfire "<topic>"', use: 'open exploration, no winner' },
+              { name: 'think', cmd: 'agon think "<problem>" --strategy reflexion [--steps N --branches N]', use: 'sequential thinking — decompose a problem (optionally branch) and surface open questions before acting' },
               { name: 'review', cmd: 'agon review uncommitted', use: 'multi-engine code review' },
               { name: 'goal', cmd: 'agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"', use: 'autonomously drive a task queue to completion (build->review->fix->commit per task); long-running' },
             ],
-            flags: ['--engines claude,codex,gemini', '--timeout <sec>'],
+            flags: ['--engines claude,codex,agy', '--timeout <sec>'],
             machineReadable: 'agon call <mode> "<input>" [flags] --jsonl',
             results: { lastDir: 'agon last', summary: 'cat "$(agon last)/summary.json"', status: 'agon last --status' },
           }, null, 2) + '\n');

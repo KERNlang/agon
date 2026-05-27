@@ -22,6 +22,7 @@ import { installAgentPromptsCommand } from './commands/install-agent-prompts.js'
 import { goalCommand } from './commands/goal.js';
 import { synthesisCommand } from './commands/synthesis.js';
 import { askCommand } from './commands/ask.js';
+import { thinkCommand } from './commands/think.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { loginCommand } from './commands/login.js';
 import { startRepl } from './repl.js';
@@ -127,9 +128,26 @@ function consumeContinueFlag() {
   }
 }
 
+// Hard guard against recursive agon: a dispatched engine carries AGON_DISPATCH_DEPTH>0
+// (stamped by computeEngineIsolation). If such a child tries to run agon again — e.g. it
+// saw a "use agon" instruction — refuse, so we can't fan out into nested agon processes
+// that exhaust RAM. Escape hatch: AGON_ALLOW_NESTED=1 for a deliberate nested invocation.
+function guardAgainstRecursiveDispatch() {
+  const depth = parseInt(process.env.AGON_DISPATCH_DEPTH ?? '0', 10) || 0;
+  if (depth > 0 && process.env.AGON_ALLOW_NESTED !== '1') {
+    process.stderr.write(
+      `[agon] Refusing to run: a dispatched engine tried to invoke agon recursively ` +
+        `(AGON_DISPATCH_DEPTH=${depth}). This guards against runaway nested-process / RAM fan-out. ` +
+        `Set AGON_ALLOW_NESTED=1 to override if this nesting is intentional.\n`,
+    );
+    process.exit(1);
+  }
+}
+
 consumeTelemetryDebugFlags();
 consumeIsolationFlags();
 consumeContinueFlag();
+guardAgainstRecursiveDispatch();
 maybeNotifyIsolationMigration();
 
 const main = defineCommand({
@@ -162,6 +180,7 @@ const main = defineCommand({
     goal: goalCommand,
     synthesis: synthesisCommand,
     ask: askCommand,
+    think: thinkCommand,
     worktree: worktreeCommand,
     wt: worktreeCommand,
     login: loginCommand,

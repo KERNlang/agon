@@ -1,0 +1,37 @@
+[
+  {
+    "id": "split-dispatch",
+    "source": "Split packages/cli/src/kern/signals/dispatch.kern (3178 lines) into focused sub-modules each under 500 lines. Identify logical groupings (e.g. orchestration dispatch, chat/session dispatch, plan dispatch, utility helpers, import-only blocks). Extract each group into a new .kern file in packages/cli/src/kern/signals/ with proper imports/exports. Keep dispatch.kern as a thin router that re-exports or delegates. Target: no file over 500 lines.",
+    "dependsOn": []
+  },
+  {
+    "id": "split-app-helpers",
+    "source": "Split packages/cli/src/kern/surfaces/app-helpers.kern (2359 lines) into focused sub-modules each under 500 lines. Identify logical groupings (e.g. render helpers, event handlers, state helpers, UI builders). Extract each group into new .kern files in packages/cli/src/kern/surfaces/. Keep app-helpers.kern as a thin re-export hub. Target: no file over 500 lines.",
+    "dependsOn": []
+  },
+  {
+    "id": "split-app",
+    "source": "Split packages/cli/src/kern/surfaces/app.kern (2135 lines) into focused sub-modules each under 500 lines. This is the main CLI surface — extract render sections, sub-surface components, hook helpers into new .kern files. Target: no file over 500 lines.",
+    "dependsOn": ["split-dispatch", "split-app-helpers"]
+  },
+  {
+    "id": "split-brain",
+    "source": "Split packages/cli/src/kern/cesar/brain.kern (1987 lines) into focused sub-modules each under 500 lines. The Cesar brain handles orchestration logic — extract prompt building, routing decisions, context management, suggestion parsing into separate .kern files in packages/cli/src/kern/cesar/. Target: no file over 500 lines.",
+    "dependsOn": ["split-dispatch"]
+  },
+  {
+    "id": "split-agent",
+    "source": "Split packages/cli/src/kern/handlers/agent.kern (1384 lines) into focused sub-modules each under 500 lines. Extract agent lifecycle, team-agent logic, permission handling, output parsing into separate .kern files in packages/cli/src/kern/handlers/. Target: no file over 500 lines.",
+    "dependsOn": ["split-dispatch"]
+  },
+  {
+    "id": "split-engine",
+    "source": "Split packages/cli/src/kern/blocks/engine.kern (1132 lines) into focused sub-modules each under 500 lines. Extract engine config blocks, model selection UI, engine status display into separate .kern files in packages/cli/src/kern/blocks/. Target: no file over 500 lines.",
+    "dependsOn": []
+  },
+  {
+    "id": "split-session",
+    "source": "Split packages/cli/src/kern/cesar/session.kern (1027 lines) into focused sub-modules each under 500 lines. Extract session prompt building, context resolution, companion logic into separate .kern files in packages/cli/src/kern/cesar/. Target: no file over 500 lines.",
+    "dependsOn": ["split-brain"]
+  }
+]

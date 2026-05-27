@@ -32,166 +32,9 @@ import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
 
 import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline } from './tool-observability.js';
 
+import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, isUserDirectedQuestion, detectNarratedToolStall, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
+
 // @kern-source: brain:19
-export const yieldToInk: () => Promise<void> = () => new Promise<void>(resolve => setImmediate(resolve));
-
-// @kern-source: brain:21
-export const splitBeforeToolMarkup: (text:string) => { visible:string, hasToolMarkup:boolean } = (text: string) => {
-  const markers = ['<tool ', '<invoke ', '<tool_call', '<toolcall', '<tool_call_tool>', '<function=', '[TOOL_CALLS]'];
-  const lower = text.toLowerCase();
-  let idx = -1;
-  for (const marker of markers) {
-    const pos = lower.indexOf(marker.toLowerCase());
-    if (pos >= 0 && (idx === -1 || pos < idx)) idx = pos;
-  }
-  if (idx < 0) return { visible: text, hasToolMarkup: false };
-  return { visible: text.slice(0, idx), hasToolMarkup: true };
-};
-
-// @kern-source: brain:36
-export const XML_TOOL_MARKUP_HOLD_CHARS: number = 24;
-
-/**
- * True when the last line of a Cesar turn is a question directed at the USER — either keyword-addressed (which/should/want/your call/…) OR an either/or fork ('A, or B?'). Auto-continuation uses this to STOP and wait for the user instead of treating the question as a mid-task stall and re-prompting Cesar (which caused fork questions like 'plan it all, or start with X?' to loop).
- */
-// @kern-source: brain:38
-export function isUserDirectedQuestion(lastLine: string): boolean {
-  const last = String(lastLine ?? '').trim();
-  if (!/\?\s*$/.test(last)) return false;
-  const userAddressed = /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|implement|which|what|how|do you|would you|can you|should i|shall i|prefer|pick|choose|decide|option)\b/i.test(last)
-    || /\b(your call|up to you|your decision|let me know|waiting on (?:you|your)|which way|either way)\b/i.test(last);
-  // Either/or fork ("… A, or B?") offers the user a choice → their turn.
-  const isForkChoice = /\bor\b[^?]{0,160}\?\s*$/i.test(last);
-  return userAddressed || isForkChoice;
-}
-
-/**
- * Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling.
- */
-// @kern-source: brain:50
-export function detectNarratedToolStall(text: string): boolean {
-  const body = String(text ?? '').trim();
-  if (!body) {
-    return false;
-  }
-  const tail = body.slice(-700);
-  const FAKE_GATE_RE = /\b(?:need (?:user )?(?:permission|approval)|await(?:ing)? approval|tool (?:keeps )?blocking me|(?:edit|write|bash|command) tool (?:keeps )?blocking me|blocked by (?:the )?(?:edit|write|bash) tool|let me try writing|try writing the full file|since i(?:'ve| have) already read it)\b/i;
-  const READ_INTENT_RE = /\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|see|review|open|view)\s+[`"']?[a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6}[`"']?/i;
-  const SEARCH_INTENT_RE = /\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:search|grep|find|look)\s+(?:for\s+)?[`"']?.+?[`"']?\s*(?:in\s+|$)/i;
-  const DIR_INTENT_RE = /\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:check|see|look at|list|find)\s+(?:what's in |files in |the )?\s*[`"']?[a-zA-Z0-9_./-]+\/[`"']?/i;
-  const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|now (?:let me|i'll)|continu(?:e|ing)|keep (?:reading|investigating|looking)|next[,.]?\s*(?:i|let)|before (?:i can|proceeding|implementing|deciding))\b/i;
-  return FAKE_GATE_RE.test(tail) || READ_INTENT_RE.test(tail) || SEARCH_INTENT_RE.test(tail) || DIR_INTENT_RE.test(tail) || STALL_RE.test(tail);
-}
-
-/**
- * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
- */
-// @kern-source: brain:64
-export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
-  const names: string[] = [];
-  for (const result of results ?? []) {
-    if (result?.result?.ok) {
-      continue;
-    }
-    const name = String(result?.toolName ?? '').trim();
-    if (name && !names.includes(name)) {
-      names.push(name);
-    }
-  }
-  return names;
-}
-
-/**
- * Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch.
- */
-// @kern-source: brain:76
-export function shouldRunEagerRepairTool(toolName: string, meta: any, failedToolNames: string[], usedToolNames: string[]): boolean {
-  const name = String(toolName ?? '').trim();
-  if (!name) return false;
-  if (!failedToolNames.includes(name)) return false;
-  if (usedToolNames.includes(name)) return false;
-  const status = String(meta?.status ?? 'running').toLowerCase();
-  if (status !== 'running' && status !== 'native') return false;
-  if (!meta || !('input' in meta)) return false;
-  return true;
-}
-
-/**
- * Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet.
- */
-// @kern-source: brain:89
-export function shouldStopAfterXmlToolCall(toolName: string): boolean {
-  const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan']);
-  return HANDOFF_TOOLS.has(String(toolName ?? ''));
-}
-
-/**
- * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
- */
-// @kern-source: brain:95
-export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
-  const trimmed = input.trim();
-  const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
-  const review = ctx.lastReviewResult;
-  if (!match || !review) {
-    return { matched: false, prompt: input };
-  }
-  const ageMs = Date.now() - Number(review.timestamp ?? 0);
-  const maxAgeMs = 30 * 60 * 1000;
-  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxAgeMs) {
-    return { matched: false, prompt: input };
-  }
-  const requestedEngine = match[1]?.toLowerCase();
-  const reviewOutput = String(review.reviewOutput ?? '').trim();
-  const cappedReview = (reviewOutput.length > 8000) ? `${reviewOutput.slice(0, 8000)}\n… [review output truncated]` : reviewOutput;
-  const label = String(review.label ?? review.target ?? 'uncommitted changes').trim() || 'uncommitted changes';
-  const prompt = ['[REVIEW FOLLOW-UP]', 'The user\'s "fix it" refers to the MOST RECENT code review below.', `Review target: ${label}`, `Review engine: ${String(review.engineId ?? 'unknown')}`, requestedEngine ? `Preferred implementation engine: ${requestedEngine}` : null, 'Do not ask which findings they mean. Address the review findings in the current workspace, prioritizing blocking and important issues first.', '', '## REVIEW FINDINGS', cappedReview || '(review output missing)', '', '## USER FOLLOW-UP', trimmed].filter(Boolean).join('\n');
-  return { matched: true, prompt: prompt };
-}
-
-// @kern-source: brain:114
-export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
-  const argsRecord = args as Record<string, unknown>;
-  const taskKindRaw = argsRecord.taskKind;
-  const enginesRaw = argsRecord.engines;
-  const reviewEngines = toolName.toLowerCase() === 'review'
-    ? Array.isArray(enginesRaw)
-      ? (enginesRaw as unknown[]).map((id) => String(id).trim().toLowerCase()).filter(Boolean)
-      : typeof argsRecord.engine === 'string'
-        ? (argsRecord.engine as string).split(/[,\s]+/).map((id) => id.trim().toLowerCase()).filter(Boolean)
-        : []
-    : [];
-  const delegatedTask = (argsRecord.task ?? argsRecord.question ?? argsRecord.topic ?? argsRecord.target ?? argsRecord.intent ?? '') as string;
-  return {
-    action: toolName.toLowerCase(),
-    task: delegatedTask,
-    reasoning: delegatedTask,
-    scope: (argsRecord.scope === 'slice' || argsRecord.scope === 'full') ? argsRecord.scope as 'slice' | 'full' : undefined,
-    fitnessCmd: typeof argsRecord.fitnessCmd === 'string'
-      ? (argsRecord.fitnessCmd as string)
-      : typeof argsRecord.fitness === 'string'
-        ? (argsRecord.fitness as string)
-        : undefined,
-    hardened: (argsRecord.hardened as boolean) ?? false,
-    tribunalMode: argsRecord.mode as string | undefined,
-    team: (argsRecord.team as boolean) ?? false,
-    target: argsRecord.target as string | undefined,
-    engineId: reviewEngines[0] ?? argsRecord.engine as string | undefined,
-    // Phase 4: Agent tool args
-    engines: Array.isArray(enginesRaw) ? (enginesRaw as string[]) : reviewEngines.length > 0 ? reviewEngines : undefined,
-    taskKind: (taskKindRaw === 'investigate' ? 'investigate' : (taskKindRaw === 'edit' ? 'edit' : undefined)) as 'edit' | 'investigate' | undefined,
-    maxTurns: typeof argsRecord.maxTurns === 'number' ? (argsRecord.maxTurns as number) : undefined,
-    queue: typeof argsRecord.queue === 'string' ? (argsRecord.queue as string) : undefined,
-    gate: typeof argsRecord.gate === 'string' ? (argsRecord.gate as string) : undefined,
-    push: (argsRecord.push as boolean) ?? undefined,
-    pr: (argsRecord.pr as boolean) ?? undefined,
-    maxHours: typeof argsRecord.maxHours === 'number' ? (argsRecord.maxHours as number) : undefined,
-    budget: typeof argsRecord.budget === 'number' ? (argsRecord.budget as number) : undefined,
-    createdAt: Date.now(),
-  };
-}
-
-// @kern-source: brain:156
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) {
     dispatch({ type: 'streaming-end', engineId: cesarEngineId });
@@ -218,7 +61,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:178
+// @kern-source: brain:41
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) {
     dispatch({ type: 'streaming-end', engineId: cesarEngineId });
@@ -246,7 +89,7 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:200
+// @kern-source: brain:63
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -494,6 +337,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         let sawStreamingXmlToolCall = false;
         let xmlDisplayHold = '';
         let hadToolActivity = false; // tracks if native tool calls were shown to user
+        // Engine-failure tracking: when a send yields an `error` chunk or returns
+        // empty (overflow, rate limit, content filter, dead session), capture the
+        // REAL reason so the auto-continue loop surfaces it instead of swallowing
+        // it into '[No response from engine]' and spinning the canned closure.
+        let _engineErrored = false;
+        let _engineErrorMsg = '';
       let secondOpinionPromise: Promise<any> | null = null;
       let usedQuickNero = false;
         const eagerPromises: Promise<ToolCallResult>[] = [];
@@ -780,6 +629,20 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
 
             if (chunk.type === 'status') {
               const statusText = String(chunk.content ?? '');
+              // Live context gauge: surface as a context-usage event for the status
+              // strip; don't overwrite the spinner with it.
+              const _ctxMeta = (chunk.metadata ?? {}) as Record<string, unknown>;
+              if (_ctxMeta.kind === 'context-usage') {
+                dispatch({
+                  type: 'context-usage',
+                  pct: Number(_ctxMeta.pct ?? 0),
+                  used: Number(_ctxMeta.used ?? 0),
+                  limit: Number(_ctxMeta.limit ?? 0),
+                  compacted: Number(_ctxMeta.compacted ?? 0),
+                  cached: Number(_ctxMeta.cached ?? 0),
+                } as any);
+                continue;
+              }
               if (/auto-executing\b/i.test(statusText)) {
                 _autoToolExecutions++;
               }
@@ -1262,6 +1125,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               permissionMode: (config as any).permissionMode ?? 'ask', explorationMode,
               allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {},
               onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
+              onTodos: (todos: any[]) => dispatch({ type: 'todos-set', todos }),
               readOnlyMode: true, // Phase 1: investigate only — mutating tools blocked until after escalation check
               blockedTools: cesarFastPath ? FAST_PATH_BLOCKED_TOOLS : undefined,
               blockedToolMessage: cesarFastPath ? `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` : undefined,
@@ -1305,6 +1169,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
                 if (!session.alive || abort.signal.aborted) return '';
                 dispatch({ type: 'spinner-start', message: 'Cesar processing results…', color });
+                // Reset per send: _engineErrored must reflect the LATEST send, not
+                // "ever errored this turn". A transient error in an early tool-loop
+                // iteration would otherwise latch true and silently block
+                // auto-continue at the !_engineErrored gate even after recovery.
+                _engineErrored = false;
+                _engineErrorMsg = '';
                 let nextResponse = '';
                 const gen = session.send({
                   message,
@@ -1324,10 +1194,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                       typeof meta.output === 'string' ? meta.output : undefined,
                     );
                   }
+                  if (chunk.type === 'error' && !nextResponse.trim()) {
+                    _engineErrored = true;
+                    _engineErrorMsg = String(chunk.content ?? '').slice(0, 300);
+                  }
                   if (chunk.type === 'done' || chunk.type === 'error') break;
                 }
                 dispatch({ type: 'spinner-stop' });
-                if (!nextResponse.trim()) return '[No response from engine]';
+                if (!nextResponse.trim()) return _engineErrorMsg ? `[Engine error: ${_engineErrorMsg}]` : '[No response from engine]';
                 return nextResponse.trim();
               },
               response, toolCtx, toolRegistry,
@@ -1819,6 +1693,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           && !ctx.cesar!.pendingDelegation
           && session.alive
           && !abort.signal.aborted
+          && !_engineErrored
           && response.trim().length > 0;
         if (_shouldAutoContinue) {
           const MAX_CONTINUATIONS = 5;
@@ -1863,14 +1738,28 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               for await (const chunk of contGen) {
                 if (abort.signal.aborted) break;
                 if (chunk.type === 'text') contResponse += chunk.content;
+                if (chunk.type === 'error' && !contResponse.trim()) {
+                  _engineErrored = true;
+                  _engineErrorMsg = String(chunk.content ?? '').slice(0, 300);
+                }
                 if (chunk.type === 'done' || chunk.type === 'error') break;
               }
-            } catch {
+            } catch (contErr) {
               dispatch({ type: 'spinner-stop' });
+              _engineErrored = true;
+              _engineErrorMsg = contErr instanceof Error ? contErr.message : String(contErr);
               break;
             }
             dispatch({ type: 'spinner-stop' });
             const cleanCont = contResponse.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+            // Engine failed to produce a continuation (overflow / rate limit / dead
+            // session). Surface the REAL reason and stop — don't keep nudging into
+            // the misleading canned "paused mid-task" closure (the spin bug).
+            if (_engineErrored) {
+              const _reason = _engineErrorMsg || 'no response';
+              dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) stopped — engine did not respond: ${_reason.slice(0, 160)}. Try again, /compact, or switch engine with /engine.` });
+              break;
+            }
             if (!cleanCont) break;
             // Handoff check — let delegation tool calls short-circuit out of the loop
             try {
@@ -1889,6 +1778,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                       if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
                       if (!session.alive || abort.signal.aborted) return '';
                       dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
+                      // Reset per send (see initial tool loop): flag tracks the
+                      // latest send's outcome, not a sticky turn-level latch.
+                      _engineErrored = false;
+                      _engineErrorMsg = '';
                       let nextResp = '';
                       const gen = session.send({
                         message,
@@ -1898,10 +1791,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                       });
                       for await (const chunk of gen) {
                         if (chunk.type === 'text') nextResp += chunk.content;
+                        if (chunk.type === 'error' && !nextResp.trim()) {
+                          _engineErrored = true;
+                          _engineErrorMsg = String(chunk.content ?? '').slice(0, 300);
+                        }
                         if (chunk.type === 'done' || chunk.type === 'error') break;
                       }
                       dispatch({ type: 'spinner-stop' });
-                      return nextResp.trim() || '[No response from engine]';
+                      return nextResp.trim() || (_engineErrorMsg ? `[Engine error: ${_engineErrorMsg}]` : '[No response from engine]');
                     },
                     cleanCont, toolCtx, toolRegistry, _buildContToolLoopOpts(),
                   );
@@ -1945,7 +1842,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           // (cap or no-progress) while still 'stuck' — no done/asks-user signal — force
           // one short closing line so the user always knows the state: done, blocked, or
           // a decision they must make. Deterministic fallback if the engine stays silent.
-          if (_detectTurnState(response, _loopStartToolCount) === 'stuck'
+          // BUT if the engine is erroring (overflow/rate-limit/dead session), the
+          // closure send will also fail — don't paper over it with a fake "paused
+          // mid-task" line; the in-loop error warning already named the real reason.
+          if (_engineErrored) {
+            const _errLine = `Engine ${cesarEngineId} stopped responding (${(_engineErrorMsg || 'no response').slice(0, 120)}). Nothing was lost — re-prompt, /compact to shrink context, or /engine to switch.`;
+            dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _errLine });
+            response = response + '\n\n' + _errLine;
+          } else if (_detectTurnState(response, _loopStartToolCount) === 'stuck'
             && session.alive && !abort.signal.aborted && !ctx.cesar!.pendingDelegation) {
             dispatch({ type: 'spinner-start', message: 'Cesar wrapping up…', color });
             let _closure = '';
@@ -1962,13 +1866,28 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               for await (const _chunk of _closureGen) {
                 if (abort.signal.aborted) break;
                 if (_chunk.type === 'text') _closure += _chunk.content;
+                if (_chunk.type === 'error' && !_closure.trim()) {
+                  _engineErrored = true;
+                  _engineErrorMsg = String(_chunk.content ?? '').slice(0, 300);
+                }
                 if (_chunk.type === 'done' || _chunk.type === 'error') break;
               }
-            } catch { /* best effort — fallback below still guarantees closure */ }
+            } catch (closureErr) {
+              _engineErrored = true;
+              _engineErrorMsg = closureErr instanceof Error ? closureErr.message : String(closureErr);
+            }
             dispatch({ type: 'spinner-stop' });
             const _cleanClosure = _closure.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+            // If even this one-line closure send came back empty, the engine is not
+            // responding — say THAT, not a fabricated "I paused mid-task" line. An
+            // empty reply to a direct "write one closing line" prompt means the
+            // engine is non-responsive (silent overflow / rate-limit / dead session)
+            // whether or not it emitted an explicit error chunk — so the honest
+            // message applies in BOTH cases. The old `: 'I paused mid-task…'` branch
+            // was the canned-closure spin: it fabricated a deliberate-pause story for
+            // what was actually a dead engine.
             const _finalClosure = _cleanClosure
-              || 'I paused mid-task without finishing, and I am not blocked on anything specific from you. Re-prompt me with the next step, or say "continue" to keep going.';
+              || `Engine ${cesarEngineId} stopped responding (${(_engineErrorMsg || 'no response').slice(0, 120)}). Nothing was lost — re-prompt, /compact to shrink context, or /engine to switch.`;
             dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _finalClosure });
             response = response + '\n\n' + _finalClosure;
           }

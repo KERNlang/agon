@@ -1,0 +1,391 @@
+// ── Native sequential thinking ─────────────────────────────────────
+//
+// AGON's own sequential-thinking capability — modeled on the MCP
+// `sequentialthinking` server (thought/thoughtNumber/totalThoughts/
+// nextThoughtNeeded/isRevision/revisesThought/branchFromThought/
+// branchId/needsMoreThoughts) but built native so we control budgets,
+// grounding, and the reasoning METHOD itself.
+//
+// Disciplined-B v1 (decided by `agon tribunal`, run tribunal-1779878652272):
+//   - Two strategies live in v1: `linear` (1:1 with the MCP original) and
+//     `reflexion` (every analysis thought is force-followed by a critique
+//     then a revision — the anti-laziness mechanism).
+//   - The thinking METHOD is a swappable KERN `machine` (ThinkChain): adding
+//     `tot` / `graph` / `hypothesis` later is a new transition pattern, not a
+//     rewrite. The original has ONE fixed method; AGON has a library.
+//   - Tool-grounding: thoughts that cite repo files which don't exist are
+//     flagged. A thinking step that hands `goal` plans citing phantom files
+//     would be BELOW AGON's existing safety baseline, so this is parity, not
+//     scope creep.
+//   - Prompt-scaffold path (single structured dispatch, parsed back) — works
+//     for engines with weak/absent adaptive thinking, which is the point.
+//
+// Deferred to v1.5+: tot/graph strategies, per-thought multi-engine
+// adversarial critique, branch pruning, calibrated stopping, engine rotation.
+
+import from="node:fs" names="existsSync"
+import from="@agon/core" names="EngineAdapter" types=true
+import from="@agon/core" names="EngineRegistry"
+
+// ── ThinkChain: the reasoning method as an explicit state machine ───
+// `machine` compiles to a state-union type + guard-checked pure transition
+// functions. The service folds parsed thoughts through these transitions to
+// PROVE the protocol held — e.g. a `reviseThinkChain` call throws unless the
+// chain is in `critiquing`, so reflexion can't silently skip its critique.
+
+machine name=ThinkChain
+  state name=idle initial=true
+  state name=thinking
+  state name=critiquing
+  state name=revising
+  state name=complete
+  state name=aborted
+  transition name=begin from=idle to=thinking
+  transition name=advance from=thinking to=thinking
+  transition name=critique from=thinking to=critiquing
+  transition name=revise from=critiquing to=revising
+  transition name=resume from=revising to=thinking
+  transition name=finalize from="thinking|revising" to=complete
+  transition name=abort from="thinking|critiquing|revising" to=aborted
+
+// ── Thought shape (MCP-compatible + AGON extensions) ────────────────
+
+interface name=ThoughtNode
+  field name=thoughtNumber type=number
+  field name=totalThoughts type=number
+  field name=thought type=string
+  field name=kind type="'analysis'|'critique'|'revision'|'decision'|'question'|'decompose'|'hypothesis'"
+  field name=nextThoughtNeeded type=boolean
+  field name=isRevision type=boolean optional=true
+  field name=revisesThought type=number optional=true
+  field name=branchFromThought type=number optional=true
+  field name=branchId type=string optional=true
+  field name=needsMoreThoughts type=boolean optional=true
+  field name=grounded type=boolean optional=true
+  field name=groundingNote type=string optional=true
+
+// ── Handoff artifact — consumable by `agon goal` (the think→ask→goal seam) ──
+
+interface name=ThinkResult
+  field name=problem type=string
+  field name=strategy type=string
+  field name=engineId type=string
+  field name=thoughts type="ThoughtNode[]"
+  field name=summary type=string
+  field name=openQuestions type="string[]"
+  field name=refinedSpec type=string
+  field name=protocolValid type=boolean
+  field name=groundingIssues type="string[]"
+  field name=ok type=boolean
+
+// ── Strategy validation ─────────────────────────────────────────────
+
+fn name=isThinkStrategy params="s:string" returns=boolean export=true expr={{ return s === 'linear' || s === 'reflexion'; }}
+  doc "v1 ships `linear` and `reflexion`. tot/graph/hypothesis are deferred — adding one is a new transition pattern over ThinkChain, not a rewrite."
+
+fn name=joinProblemInput params="named:string|undefined, positionals:string[]" returns=string export=true
+  doc "Combine citty's named positional with its `_` extras into one problem string. citty mirrors the named positional into `_`, so the first extra is dropped when it equals `named` — this prevents the doubled-prompt bug while still folding in trailing unquoted words."
+  handler <<<
+    const name = (named ?? '').trim();
+    const extras = (positionals.length > 0 && positionals[0] === name && name)
+      ? positionals.slice(1)
+      : positionals;
+    return [name, extras.join(' ')].filter(Boolean).join(' ').trim();
+  >>>
+
+// ── Prompt scaffold — inject the protocol, parse structured output back ──
+
+fn name=buildThinkPrompt params="problem:string, strategy:string, maxThoughts:number, branches:number" returns=string export=true
+  doc "Build the structured-thinking prompt. The scaffold IS the value for weak-adaptive-thinking engines: it forces numbered decomposition and (in reflexion) a mandatory self-critique + revision per step. When branches>1 it asks for alternative reasoning branches tagged with branchId (emission only — v1 does not auto-score/prune branches). Output is a single JSON object so one dispatch yields the whole chain."
+  handler <<<
+    const schema = [
+      'Respond with ONLY a single JSON object (no prose, no markdown fences) of shape:',
+      '{',
+      '  "thoughts": [',
+      '    { "thoughtNumber": 1, "totalThoughts": <est>, "thought": "<one reasoning step>",',
+      '      "kind": "analysis"|"critique"|"revision"|"decision"|"question"|"decompose"|"hypothesis",',
+      '      "nextThoughtNeeded": true|false, "branchId": "<optional A/B/C>", "branchFromThought": <optional number> }',
+      '  ],',
+      '  "summary": "<the conclusion in 1-3 sentences>",',
+      '  "openQuestions": ["<question the user must answer before implementation>"],',
+      '  "refinedSpec": "<a sharper, self-contained restatement of the task ready to hand to an implementer>"',
+      '}',
+      branches > 1
+        ? `Use at most ${maxThoughts} thoughts per branch. Cite real repo file paths where relevant.`
+        : `Use at most ${maxThoughts} thoughts. Cite real repo file paths where relevant.`,
+    ].join('\n');
+
+    const reflexion = [
+      'METHOD = reflexion. Do NOT take the laziest path. For each substantive',
+      'analysis thought, immediately follow it with a "critique" thought (what is',
+      'shallow, wrong, missing, or assumed?) and then a "revision" thought that',
+      'fixes what the critique found. Pattern per step: analysis -> critique -> revision.',
+    ].join('\n');
+
+    const linear = [
+      'METHOD = linear. Decompose the problem into sequential numbered thoughts,',
+      'each building on the last. Surface assumptions explicitly as their own thoughts.',
+    ].join('\n');
+
+    const branching = branches > 1
+      ? [
+          '',
+          `BRANCHING: explore up to ${branches} alternative reasoning branches from the single most`,
+          'pivotal decision point. Tag every thought belonging to a branch with a distinct "branchId"',
+          '("A","B","C",...) and set "branchFromThought" to the thought number it diverges from. The',
+          'shared lead-up thoughts carry no branchId. End by stating in "summary" which branch you',
+          'would pick and why.',
+        ].join('\n')
+      : '';
+
+    return [
+      'You are a structured sequential reasoner. Think step by step about the task below.',
+      strategy === 'reflexion' ? reflexion : linear,
+      branching,
+      '',
+      'TASK:',
+      problem,
+      '',
+      schema,
+    ].filter(Boolean).join('\n');
+  >>>
+
+// ── Robust JSON extraction (engines wrap output in fences / prose) ──
+
+fn name=extractThinkJson params="raw:string" returns="any|null" export=true
+  doc "Pull the first balanced top-level JSON object out of an engine response, tolerating code fences and surrounding prose. String-aware: braces inside JSON string values (these thoughts are about code, so they are full of { }) are ignored, and escaped quotes are handled, so a thought like '{ foo }' no longer corrupts the depth count. The scanner reads raw directly — no global fence-strip, which would otherwise mangle ``` fences embedded inside a thought's text."
+  handler <<<
+    let depth = 0;
+    let start = -1;
+    let inStr = false;
+    let esc = false;
+    let firstParsed: any = null;
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw[i];
+      if (inStr) {
+        if (esc) {
+          esc = false;
+        } else if (ch === '\\') {
+          esc = true;
+        } else if (ch === '"') {
+          inStr = false;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inStr = true;
+      } else if (ch === '{') {
+        if (depth === 0) start = i;
+        depth++;
+      } else if (ch === '}') {
+        if (depth === 0) continue; // stray closing brace in prose
+        depth--;
+        if (depth === 0 && start !== -1) {
+          try {
+            const obj = JSON.parse(raw.slice(start, i + 1));
+            // Prefer the object that actually carries our chain; a trivial
+            // `{}` in surrounding prose must not short-circuit the real one.
+            if (obj && typeof obj === 'object' && Array.isArray(obj.thoughts)) return obj;
+            if (firstParsed === null) firstParsed = obj;
+          } catch {
+            /* keep scanning for the next balanced object */
+          }
+          start = -1;
+        }
+      }
+    }
+    return firstParsed;
+  >>>
+
+// ── Parse + normalize the chain ─────────────────────────────────────
+
+fn name=parseThoughts params="raw:string, maxThoughts:number" returns="{thoughts:ThoughtNode[], summary:string, openQuestions:string[], refinedSpec:string}" export=true
+  doc "Parse the engine's JSON chain into normalized ThoughtNodes. Falls back to a single analysis thought wrapping the raw text when parsing fails, so a chain is always returned."
+  handler <<<
+    const ALLOWED = ['analysis','critique','revision','decision','question','decompose','hypothesis'];
+    const parsed = extractThinkJson(raw);
+    const text = raw.trim();
+
+    if (!parsed || !Array.isArray(parsed.thoughts) || parsed.thoughts.length === 0) {
+      const fallback: ThoughtNode = {
+        thoughtNumber: 1,
+        totalThoughts: 1,
+        thought: text.slice(0, 2000) || '(no output)',
+        kind: 'analysis',
+        nextThoughtNeeded: false,
+      };
+      return { thoughts: [fallback], summary: text.slice(0, 400), openQuestions: [], refinedSpec: text.slice(0, 800) };
+    }
+
+    const raws = parsed.thoughts.slice(0, Math.max(1, maxThoughts));
+    const thoughts: ThoughtNode[] = raws.map((t: any, i: number) => {
+      const kind = ALLOWED.includes(t?.kind) ? t.kind : 'analysis';
+      return {
+        thoughtNumber: Number.isFinite(t?.thoughtNumber) ? Number(t.thoughtNumber) : i + 1,
+        totalThoughts: Number.isFinite(t?.totalThoughts) ? Number(t.totalThoughts) : raws.length,
+        thought: String(t?.thought ?? '').slice(0, 4000),
+        kind,
+        nextThoughtNeeded: t?.nextThoughtNeeded === undefined ? i < raws.length - 1 : !!t.nextThoughtNeeded,
+        isRevision: kind === 'revision' ? true : (t?.isRevision === true ? true : undefined),
+        revisesThought: Number.isFinite(t?.revisesThought) ? Number(t.revisesThought) : undefined,
+        branchFromThought: Number.isFinite(t?.branchFromThought) ? Number(t.branchFromThought) : undefined,
+        branchId: typeof t?.branchId === 'string' ? t.branchId : undefined,
+        needsMoreThoughts: t?.needsMoreThoughts === true ? true : undefined,
+      };
+    });
+
+    const openQuestions = Array.isArray(parsed.openQuestions)
+      ? parsed.openQuestions.map((q: any) => String(q)).filter((q: string) => q.trim().length > 0)
+      : [];
+
+    return {
+      thoughts,
+      summary: String(parsed.summary ?? '').slice(0, 2000),
+      openQuestions,
+      refinedSpec: String(parsed.refinedSpec ?? parsed.summary ?? '').slice(0, 4000),
+    };
+  >>>
+
+// ── Tool-grounding: reject thoughts that cite phantom repo files ────
+
+fn name=groundThoughts params="thoughts:ThoughtNode[], cwd:string" returns="{thoughts:ThoughtNode[], issues:string[]}" export=true
+  doc "Scan each thought for file-path-like tokens and verify they exist relative to cwd. A thought citing a non-existent path is annotated grounded=false; the path is collected into issues. Keeps thinking output at or above AGON's existing witness-command safety baseline."
+  handler <<<
+    const PATH_RE = /\b[\w./-]+\.(?:ts|tsx|js|jsx|kern|json|md|mjs|cjs)\b/g;
+    const issues: string[] = [];
+    const grounded = thoughts.map((t) => {
+      // Strip URLs first so http(s)/www links aren't mistaken for local files.
+      const text = t.thought.replace(/https?:\/\/\S+/gi, ' ').replace(/\bwww\.\S+/gi, ' ');
+      const cited = Array.from(new Set((text.match(PATH_RE) ?? [])));
+      const missing = cited.filter((p) => {
+        // Only check repo-relative-looking paths, skip bare names like "index.js".
+        if (!p.includes('/')) return false;
+        // Skip domain-like tokens (e.g. github.com/x/y.md): a repo path's first
+        // segment is a dir name, never a dotted host.
+        if (p.split('/')[0].includes('.')) return false;
+        const abs = p.startsWith('/') ? p : `${cwd.replace(/\/$/, '')}/${p}`;
+        return !existsSync(abs);
+      });
+      if (missing.length === 0) return { ...t, grounded: cited.length > 0 ? true : t.grounded };
+      for (const m of missing) issues.push(`thought #${t.thoughtNumber} cites missing path: ${m}`);
+      return { ...t, grounded: false, groundingNote: `unverified paths: ${missing.join(', ')}` };
+    });
+    return { thoughts: grounded, issues };
+  >>>
+
+// ── Machine-enforced protocol validation ───────────────────────────
+
+fn name=validateChain params="thoughts:ThoughtNode[], strategy:string" returns=boolean export=true
+  doc "Fold the parsed thoughts through the ThinkChain machine. A reflexion chain whose revision doesn't follow a critique trips a ThinkChainStateError, so an engine can't claim to have reflected without actually doing it. Branch-aware: each branchId group is validated as its own chain. Returns false on any illegal transition."
+  handler <<<
+    const fold = (chain: ThoughtNode[]): boolean => {
+      try {
+        let entity: { state: ThinkChainState } = { state: 'idle' };
+        entity = beginThinkChain(entity);
+        for (const t of chain) {
+          if (t.kind === 'critique') {
+            entity = critiqueThinkChain(entity);
+          } else if (t.kind === 'revision') {
+            entity = reviseThinkChain(entity); // critiquing -> revising (throws if not critiquing)
+            entity = resumeThinkChain(entity);  // revising -> thinking
+          } else {
+            if (entity.state !== 'thinking') return false;
+            entity = advanceThinkChain(entity);
+          }
+        }
+        finalizeThinkChain(entity);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    // Validate each branch independently (shared lead-up has no branchId -> 'main').
+    const groups = new Map<string, ThoughtNode[]>();
+    for (const t of thoughts) {
+      const key = (t.branchId && t.branchId.trim()) ? t.branchId.trim() : 'main';
+      const arr = groups.get(key) ?? [];
+      arr.push(t);
+      groups.set(key, arr);
+    }
+    for (const chain of groups.values()) {
+      if (!fold(chain)) return false;
+    }
+
+    // reflexion must actually contain at least one critique+revision pair.
+    if (strategy === 'reflexion') {
+      const hasCritique = thoughts.some((t) => t.kind === 'critique');
+      const hasRevision = thoughts.some((t) => t.kind === 'revision');
+      if (!hasCritique || !hasRevision) return false;
+    }
+    return true;
+  >>>
+
+// ── Orchestrator ────────────────────────────────────────────────────
+
+fn name=runThinkChain async=true params="opts:{problem:string, strategy:string, engineId:string, registry:EngineRegistry, adapter:EngineAdapter, maxThoughts:number, branches?:number, timeout:number, outputDir:string, ground:boolean, signal?:AbortSignal}" returns="Promise<ThinkResult>" export=true
+  doc "Run one sequential-thinking chain via a single structured dispatch, then ground + machine-validate the result. Pure prompt-scaffold path (no engine tools) so it works for engines with weak/absent adaptive thinking. branches>1 asks for that many alternative reasoning branches (emission only — no auto-scoring). Returns a ThinkResult whose refinedSpec is the handoff to `agon goal`."
+  handler <<<
+    const strategy = isThinkStrategy(opts.strategy) ? opts.strategy : 'linear';
+    const branches = Math.max(1, Math.min(opts.branches ?? 1, 8));
+    const engine = opts.registry.get(opts.engineId);
+    const prompt = buildThinkPrompt(opts.problem, strategy, opts.maxThoughts, branches);
+
+    let raw = '';
+    let dispatchOk = false;
+    try {
+      const result = await opts.adapter.dispatch({
+        engine,
+        prompt,
+        systemPrompt: 'You are a structured sequential reasoner. Output ONLY the JSON object requested. Do NOT use tools, read files, or run commands.',
+        cwd: process.cwd(),
+        mode: 'exec',
+        timeout: opts.timeout,
+        outputDir: opts.outputDir,
+        signal: opts.signal,
+      });
+      raw = String(result.stdout ?? '');
+      dispatchOk = result.exitCode === 0 && !result.timedOut && raw.trim().length > 0;
+      if (!dispatchOk) {
+        const detail = result.timedOut ? 'timed out' : (result.stderr?.trim()?.slice(0, 200) || `exit ${result.exitCode}`);
+        console.warn(`[agon] think dispatch (${opts.engineId}) failed: ${detail}`);
+      }
+    } catch (err) {
+      console.warn(`[agon] think dispatch (${opts.engineId}) threw: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    if (!dispatchOk) {
+      return {
+        problem: opts.problem,
+        strategy,
+        engineId: opts.engineId,
+        thoughts: [],
+        summary: '',
+        openQuestions: [],
+        refinedSpec: opts.problem,
+        protocolValid: false,
+        groundingIssues: [],
+        ok: false,
+      };
+    }
+
+    const cap = Math.min(opts.maxThoughts * branches, 80);
+    const parsed = parseThoughts(raw, cap);
+    const grounded = opts.ground
+      ? groundThoughts(parsed.thoughts, process.cwd())
+      : { thoughts: parsed.thoughts, issues: [] as string[] };
+    const protocolValid = validateChain(grounded.thoughts, strategy);
+
+    return {
+      problem: opts.problem,
+      strategy,
+      engineId: opts.engineId,
+      thoughts: grounded.thoughts,
+      summary: parsed.summary,
+      openQuestions: parsed.openQuestions,
+      refinedSpec: parsed.refinedSpec || opts.problem,
+      protocolValid,
+      groundingIssues: grounded.issues,
+      ok: true,
+    };
+  >>>

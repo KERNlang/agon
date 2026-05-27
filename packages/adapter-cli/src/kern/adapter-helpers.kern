@@ -15,6 +15,13 @@ fn name=recordDispatchHealth params="engineId:string, result:{exitCode?:number,s
     if cond="status === 'auth-failed' || status === 'unreachable'"
       do value="engineHealth.mark(engineId, status, (result.stderr || '').split('\\n')[0])"
 
+fn name=stampDispatchDepth params="env?:Record<string,string>" returns="Record<string,string>" export=false
+  doc "Merge the recursion-guard depth marker onto a dispatch env. Applied at EVERY computeEngineIsolation return (inherit / clean-dir fallback / isolate) so a dispatched engine is always marked. The spawn merges the result over process.env, so inherit mode still inherits the full environment — just plus AGON_DISPATCH_DEPTH. A child that tries to run agon sees depth>0 and the entrypoint guard refuses (no process fan-out)."
+  handler <<<
+    const depth = (parseInt(process.env.AGON_DISPATCH_DEPTH ?? '0', 10) || 0) + 1;
+    return Object.assign({}, env ?? {}, { AGON_DISPATCH_DEPTH: String(depth) });
+  >>>
+
 fn name=computeEngineIsolation params="engine:EngineDefinition, opts:{isolation?:string, cwd?:string}" returns="{env?:Record<string,string>, argsExtra:string[], plan:EngineIsolationPlan}"
   doc "Resolve + materialise workspace-pure isolation for ONE dispatch. Mode = per-dispatch option > AGON_ENGINE_ISOLATION env > config.engineIsolation > default workspace-pure. For an engine with a configEnv hint, points it at a STABLE clean per-engine config dir (~/.agon/pure/<id>, bounded on disk) seeded with ONLY the engine's auth file(s) — so the user's ~/.claude personal layer (global CLAUDE.md, plugins, hooks, user MCP) is dropped while dispatch stays AUTHENTICATED. If the clean dir / auth copy can't be set up, FALL BACK to inherit (return no env) rather than risk a broken-auth dispatch. Returns env OVERRIDES (the spawn merges them onto process.env) + extra CLI args. API-only / inherit / hint-less engines return no env and [] (already pure / opted out)."
   handler <<<
@@ -26,14 +33,14 @@ fn name=computeEngineIsolation params="engine:EngineDefinition, opts:{isolation?
     });
     const hints = engine.isolationHints;
     const inherit: { env?: Record<string, string>; argsExtra: string[]; plan: EngineIsolationPlan } = {
-      env: undefined,
+      env: stampDispatchDepth(undefined),
       argsExtra: [],
       plan: { isolate: false, mode, engineId: engine.id, setEnv: {}, argsExtra: [], strippedPersonal: false },
     };
     if (mode === 'inherit' || !hints?.configEnv) {
       // inherit, or API/flag-only engine — let planEngineIsolation decide argsExtra (no config dir to seed).
       const plan = planEngineIsolation(engine, mode, { cleanConfigDir: '' });
-      return { env: plan.isolate && Object.keys(plan.setEnv).length > 0 ? plan.setEnv : undefined, argsExtra: plan.argsExtra, plan };
+      return { env: stampDispatchDepth(plan.isolate && Object.keys(plan.setEnv).length > 0 ? plan.setEnv : undefined), argsExtra: plan.argsExtra, plan };
     }
     const cleanConfigDir = agonPath('pure', engine.id);
     try {
@@ -78,8 +85,7 @@ fn name=computeEngineIsolation params="engine:EngineDefinition, opts:{isolation?
     const marker = hints.authMarker?.trim();
     const authenticated = marker ? existsSync(join(cleanConfigDir, basename(marker))) : true;
     const plan = planEngineIsolation(engine, mode, { cleanConfigDir, authenticated });
-    const env = plan.isolate && Object.keys(plan.setEnv).length > 0 ? plan.setEnv : undefined;
-    return { env, argsExtra: plan.argsExtra, plan };
+    return { env: stampDispatchDepth(plan.isolate && Object.keys(plan.setEnv).length > 0 ? plan.setEnv : undefined), argsExtra: plan.argsExtra, plan };
   >>>
 
 fn name=resolveArgs params="template:string[], vars:Record<string,string>" returns="string[]"
@@ -100,6 +106,30 @@ fn name=resolveModel params="engine:EngineDefinition,cwd?:string" returns="strin
     if (configured) return configured;
 
     return modelConfig.default ?? null;
+  >>>
+
+fn name=resolveEffort params="engine:EngineDefinition,cwd?:string" returns="string|null"
+  doc "Resolve the reasoning-effort level for an engine: configured engineEfforts[id] override, else the effort block's default, else null. Only meaningful for engines with an effort block (claude/codex); agy bakes effort into its model tiers."
+  handler <<<
+    const effortConfig = engine.effort;
+    if (!effortConfig) return null;
+    const configured = (loadConfig(cwd) as any).engineEfforts?.[engine.id];
+    if (configured && effortConfig.levels.includes(configured)) return configured;
+    return effortConfig.default ?? null;
+  >>>
+
+fn name=resolveClaudePtyExtraArgs params="engine:EngineDefinition, cwd?:string" returns="string[]" export=true
+  doc "Launch flags (model + reasoning effort) to forward to the claude pty exec so the interactive subscription path honors an agon /models pick, exactly like the --print fallback. Returns [] when nothing is explicitly configured → defers to claude's own config (resilient if a probe/flag changes)."
+  handler <<<
+    const out: string[] = [];
+    const model = resolveModel(engine, cwd);
+    if (model && engine.model?.flag) out.push(engine.model.flag, model);
+    const effort = resolveEffort(engine, cwd);
+    if (effort && engine.effort) {
+      if (engine.effort.flag) out.push(engine.effort.flag, effort);
+      else if (engine.effort.configKey) out.push('-c', `${engine.effort.configKey}=${effort}`);
+    }
+    return out;
   >>>
 
 fn name=formatFileSize params="bytes:number" returns="string" export=false
@@ -142,6 +172,21 @@ fn name=buildCommand params="engine:EngineDefinition, mode:EngineMode, prompt:st
       effectivePrompt = labels.join('\n') + '\n\nPlease read and analyze the image(s) above.\n\n' + prompt;
     }
 
+    // agy (Antigravity) print mode is agentic by default: left to itself it writes
+    // the answer to artifact FILES, asks clarifying questions, and runs many tool
+    // rounds — which blows past the timeout and returns prose the caller can't parse.
+    // For non-agent dispatch (exec/review → ask/brainstorm/tribunal/review) force a
+    // single-pass, inline, plain-text answer. Agent mode is left agentic on purpose.
+    if (engine.id === 'agy' && mode !== 'agent') {
+      effectivePrompt =
+        'OUTPUT RULES (important): Reply with your COMPLETE final answer as plain text in THIS response only. ' +
+        'Do NOT create, write, edit, or reference any files or artifacts. ' +
+        'Do NOT ask clarifying questions — make reasonable assumptions and proceed. ' +
+        'Do NOT use slash commands or start an interactive session. ' +
+        'Do all the work in a single pass and output the final result directly as text now.\n\n' +
+        effectivePrompt;
+    }
+
     const vars: Record<string, string> = {
       prompt: effectivePrompt,
       // Never let a {cwd} placeholder resolve to '' — engines that template it
@@ -162,6 +207,22 @@ fn name=buildCommand params="engine:EngineDefinition, mode:EngineMode, prompt:st
         args.splice(promptIdx, 0, engine.model.flag, model);
       } else {
         args.unshift(engine.model.flag, model);
+      }
+    }
+
+    // Reasoning effort: claude → [--effort, level]; codex → [-c, key=level].
+    // Inserted just before the prompt so it sits with the other leading flags.
+    const effort = resolveEffort(engine, cwd);
+    if (effort && engine.effort) {
+      const effortArgs = engine.effort.flag
+        ? [engine.effort.flag, effort]
+        : engine.effort.configKey
+          ? ['-c', `${engine.effort.configKey}=${effort}`]
+          : [];
+      if (effortArgs.length > 0) {
+        const pIdx = args.indexOf(effectivePrompt);
+        const at = pIdx >= 0 ? pIdx : args.length;
+        args.splice(at, 0, ...effortArgs);
       }
     }
 
@@ -186,9 +247,11 @@ fn name=resolveAgentArgs params="engine:EngineDefinition, permissionLevel:'full'
     if (permissionLevel === 'read-only') return null;
     if (!engine.agent) return null;
     if (permissionLevel === 'full') return engine.agent;
-    // plan mode: swap vendor-specific flags
+    // plan mode: swap vendor-specific flags. agy has no --permission-mode (it
+    // silently ignores unknown flags), so its only real restriction is --sandbox;
+    // mapping the bypass flag to a Claude-only flag would leave agy unrestricted.
     const planArgs = engine.agent.args.map((arg: string) => {
-      if (arg === '--dangerously-skip-permissions') return '--permission-mode=plan';
+      if (arg === '--dangerously-skip-permissions') return engine.id === 'agy' ? '--sandbox' : '--permission-mode=plan';
       if (arg === '--dangerously-bypass-approvals-and-sandbox') return '--sandbox=workspace-write';
       if (arg === 'yolo') return 'plan';
       return arg;
@@ -266,8 +329,8 @@ fn name=composeClaudePtyPrompt params="prompt:string, systemPrompt?:string" retu
     return `[System Instructions]\n${systemPrompt}\n\n[User Message]\n${prompt}`;
   >>>
 
-fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string, env?:Record<string,string>" returns="Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}>" async=true
-  doc "Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @agon/kern-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check."
+fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string, env?:Record<string,string>, extraArgv?:string[]" returns="Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}>" async=true
+  doc "Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @agon/kern-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt; extraArgv (model/effort launch flags) is forwarded to the engine exec. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check."
   handler <<<
     const start = Date.now();
     try {
@@ -291,6 +354,7 @@ fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:A
           mode: mode ?? 'exec',
           cwd: cwd,
           env: env,
+          extraArgv: extraArgv,
         });
       } catch (e) {
         return {
@@ -349,8 +413,8 @@ fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:A
     }
   >>>
 
-fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string, env?:Record<string,string>" returns="AsyncGenerator<string, {exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}, void>" async=true stream=true
-  doc "Streaming variant of runClaudePtyDispatch — yields response deltas as they arrive, returns the final DispatchResult. Never throws — any unforeseen error returns unavailable:true via the generator's return value, so kern callers can fall through to legacy paths."
+fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string, env?:Record<string,string>, extraArgv?:string[]" returns="AsyncGenerator<string, {exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}, void>" async=true stream=true
+  doc "Streaming variant of runClaudePtyDispatch — yields response deltas as they arrive, returns the final DispatchResult. extraArgv (model/effort launch flags) is forwarded to the engine exec. Never throws — any unforeseen error returns unavailable:true via the generator's return value, so kern callers can fall through to legacy paths."
   handler <<<
     const start = Date.now();
     let session: any;
@@ -374,6 +438,7 @@ fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, sig
           mode: mode ?? 'exec',
           cwd: cwd,
           env: env,
+          extraArgv: extraArgv,
         });
       } catch (e) {
         return {

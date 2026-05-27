@@ -5,6 +5,7 @@ dist-tsc/
 .DS_Store
 coverage/
 docs/
+.design-docs-local/
 .agon/
 .agon.local.json
 .kern-dev.local.json

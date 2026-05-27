@@ -122,15 +122,25 @@ Native sequential thinking. One engine decomposes a problem into structured, num
 
 ```bash
 agon think "Should the rate limiter use a token bucket or a sliding window?"
-agon think "Rework auth to JWT" --strategy reflexion        # force a self-critique + revision each step
-agon think "Design the cache layer" --steps 20 --branches 5 # explore 5 alternative reasoning branches
-agon think "..." --json                                     # emit the ThinkResult (handoff artifact), pipe-friendly
+agon think "Rework auth to JWT" --strategy reflexion             # force a self-critique + revision each step
+agon think "Design the cache layer" --strategy tot --branches 5  # score 5 branches, keep the winner, prune the rest
+agon think "Pick a storage engine" --strategy hypothesis         # competing hypotheses, eliminate the losers
+agon think "..." --critic codex                                  # a SECOND engine adversarially attacks the chain
+agon think "..." --json                                          # emit the ThinkResult (handoff artifact), pipe-friendly
+agon goal "Close the gaps" --think --queue .gaps/ --gate "npm test"  # decompose + surface unknowns before the run
 ```
 
-- **Strategies** — `linear` (classic sequential thinking) or `reflexion` (each step is force-followed by a critique then a revision). `tot`/`graph`/`hypothesis` are planned; the method is a swappable state machine so they drop in without a rewrite.
-- **Steps & branches** — `--steps N` (1–20) caps the chain; `--branches N` (1–8) explores alternative reasoning paths tagged with a branch id.
+- **Strategies** (the method is a swappable `ThinkChain` state machine):
+  - `linear` — classic sequential thinking.
+  - `reflexion` — each step is force-followed by a critique then a revision (anti-laziness).
+  - `tot` — tree-of-thoughts: branches self-score, the best is kept and the losers are pruned.
+  - `graph` — graph-of-thoughts: branch, then merge the strongest ideas into one decision.
+  - `hypothesis` — state competing hypotheses, seek discriminating evidence, eliminate the losers.
+- **Steps & branches** — `--steps N` (1–20) caps the chain; `--branches N` (1–8) explores alternative paths tagged with a branch id (with scores under `tot`).
+- **Adversarial critic** — `--critic <engine>` has a second engine attack the finished chain (the cross-engine check the single-model original can't do).
 - **Tool-grounding** — thoughts that cite repo files which don't exist are flagged (`--no-ground` to disable), so a plan never hands `goal` phantom paths.
-- **Machine-validated** — a `reflexion` chain that never actually critiques+revises is rejected by the underlying `ThinkChain` state machine.
+- **Machine-validated** — a `reflexion` chain that never actually critiques+revises is rejected by the `ThinkChain` machine.
+- **Composes into other modes** — `agon goal --think` runs a decompose pass on the intent first (surfacing sub-problems + open questions, feeding a refined spec) so a long autonomous run never starts half-understood. Cesar reasons step-by-step before acting when `cesarThinkFirst` is enabled (`agon config set cesarThinkFirst true`).
 
 ### Brainstorm
 Engines bid their confidence level on how they would tackle a complex problem. Engines with higher confidence bids are allocated more tokens and priority.

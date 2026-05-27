@@ -10,6 +10,7 @@ import {
   groundThoughts,
   validateChain,
   joinProblemInput,
+  selectBranch,
 } from '@agon/forge';
 import type { ThoughtNode } from '@agon/forge';
 
@@ -23,14 +24,14 @@ const node = (over: Partial<ThoughtNode>): ThoughtNode => ({
 });
 
 describe('isThinkStrategy', () => {
-  it('accepts the two v1 strategies', () => {
-    expect(isThinkStrategy('linear')).toBe(true);
-    expect(isThinkStrategy('reflexion')).toBe(true);
+  it('accepts all five strategies', () => {
+    for (const s of ['linear', 'reflexion', 'tot', 'graph', 'hypothesis']) {
+      expect(isThinkStrategy(s)).toBe(true);
+    }
   });
-  it('rejects deferred / unknown strategies', () => {
-    expect(isThinkStrategy('tot')).toBe(false);
-    expect(isThinkStrategy('graph')).toBe(false);
+  it('rejects unknown strategies', () => {
     expect(isThinkStrategy('nonsense')).toBe(false);
+    expect(isThinkStrategy('')).toBe(false);
   });
 });
 
@@ -67,6 +68,42 @@ describe('buildThinkPrompt', () => {
     expect(p).toContain('BRANCHING');
     expect(p).toContain('5 alternative reasoning branches');
     expect(p).toContain('per branch');
+  });
+  it('selects the tot method with branch scoring', () => {
+    const p = buildThinkPrompt('do x', 'tot', 8, 3);
+    expect(p).toContain('tree-of-thoughts');
+    expect(p).toContain('branchScore');
+  });
+  it('selects the graph method with merge', () => {
+    expect(buildThinkPrompt('do x', 'graph', 8, 3)).toContain('graph-of-thoughts');
+    expect(buildThinkPrompt('do x', 'graph', 8, 3)).toContain('MERGE');
+  });
+  it('selects the hypothesis-elimination method', () => {
+    const p = buildThinkPrompt('do x', 'hypothesis', 8, 1);
+    expect(p).toContain('hypothesis-elimination');
+    expect(p).toContain('competing');
+  });
+});
+
+describe('selectBranch', () => {
+  it('keeps the highest mean-scored branch and prunes the losers', () => {
+    const chain = [
+      node({ thoughtNumber: 1, kind: 'analysis' }), // shared lead-up, no branch
+      node({ thoughtNumber: 2, kind: 'analysis', branchId: 'A', branchScore: 80 }),
+      node({ thoughtNumber: 3, kind: 'analysis', branchId: 'A', branchScore: 90 }),
+      node({ thoughtNumber: 4, kind: 'analysis', branchId: 'B', branchScore: 30 }),
+    ];
+    const { thoughts, chosenBranch } = selectBranch(chain);
+    expect(chosenBranch).toBe('A');
+    expect(thoughts.find((t) => t.thoughtNumber === 1)?.pruned).toBeUndefined(); // shared never pruned
+    expect(thoughts.find((t) => t.thoughtNumber === 2)?.pruned).toBeUndefined(); // chosen branch kept
+    expect(thoughts.find((t) => t.thoughtNumber === 4)?.pruned).toBe(true);      // loser pruned
+  });
+  it('does nothing with fewer than two branches', () => {
+    const chain = [node({ kind: 'analysis' }), node({ kind: 'analysis', branchId: 'A', branchScore: 50 })];
+    const { chosenBranch, thoughts } = selectBranch(chain);
+    expect(chosenBranch).toBeUndefined();
+    expect(thoughts.every((t) => !t.pruned)).toBe(true);
   });
 });
 
@@ -217,5 +254,35 @@ describe('validateChain (machine-enforced protocol)', () => {
       node({ kind: 'analysis', branchId: 'B', branchFromThought: 1 }),
     ];
     expect(validateChain(chain, 'linear')).toBe(true);
+  });
+
+  it('accepts a tot chain of scored branches', () => {
+    const chain = [
+      node({ kind: 'analysis' }),
+      node({ kind: 'analysis', branchId: 'A', branchScore: 80 }),
+      node({ kind: 'decision', branchId: 'B', branchScore: 40 }),
+    ];
+    expect(validateChain(chain, 'tot')).toBe(true);
+  });
+
+  it('accepts a graph chain ending in a merge decision', () => {
+    const chain = [
+      node({ kind: 'analysis', branchId: 'A' }),
+      node({ kind: 'analysis', branchId: 'B' }),
+      node({ kind: 'decision' }), // merge
+    ];
+    expect(validateChain(chain, 'graph')).toBe(true);
+  });
+
+  it('requires >=2 hypotheses for the hypothesis strategy', () => {
+    const ok = [
+      node({ kind: 'hypothesis' }),
+      node({ kind: 'hypothesis' }),
+      node({ kind: 'analysis' }),
+      node({ kind: 'decision' }),
+    ];
+    expect(validateChain(ok, 'hypothesis')).toBe(true);
+    const tooFew = [node({ kind: 'hypothesis' }), node({ kind: 'decision' })];
+    expect(validateChain(tooFew, 'hypothesis')).toBe(false);
   });
 });

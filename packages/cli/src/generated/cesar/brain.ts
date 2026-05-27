@@ -478,6 +478,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           }
         } catch { /* session memory is best-effort */ }
 
+        // ── Sequential-thinking scaffold (opt-in: config.cesarThinkFirst) ──
+        // The in-loop, dispatch-free form of `agon think`: when enabled, scaffold
+        // structured decomposition into the prompt so Cesar reasons before acting
+        // instead of taking the laziest path. Off by default; `agon config set
+        // cesarThinkFirst true`. Skipped on review-followup turns (already focused).
+        if ((config as any).cesarThinkFirst && !reviewFollowup.matched) {
+          enrichedInput = `[SEQUENTIAL THINKING — before answering, reason step by step: (1) restate the real ask in one line, (2) surface your assumptions + the hard constraints, (3) weigh at least two approaches with their tradeoffs, (4) commit to one and say why. Do NOT take the laziest path; for a multi-faceted task, decompose it into the distinct sub-problems first. For heavy structured exploration you can also call \`agon call think "<problem>" --strategy reflexion\`.]\n\n${enrichedInput}`;
+        }
+
         // ── Heartbeat timer + turn timeout ──
         const cesarTimeout = (config as any).cesarTimeout ?? 300;
         const heartbeat = setInterval(() => {

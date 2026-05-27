@@ -326,6 +326,8 @@ RULE: End your turn by calling EITHER ProposePlan (if a plan helps) OR ExitPlanM
 
 const name=CESAR_SNAPSHOT_MSG_CHAR_CAP type=number value=4000 doc="Max chars per message folded into Cesar's continuity snapshot. Keeps a big review/brainstorm/tribunal reply (or a huge tool result) from flooding Cesar's context (the human transcript still shows it in full)."
 
+const name=CONFIDENCE_BLOCK_LIMIT type=number value=2 doc="Breaker for the ReportConfidence gate. After this many blocked tool attempts in a turn without a ReportConfidence call, auto-pass and let the tool through. The gate is a nudge (writes still hit the permission UI), so a non-compliant model must never be trapped looping on the block."
+
 fn name=capSnapshotMessageContent params="content:string" returns="string"
   doc "Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it."
   handler <<<
@@ -555,6 +557,7 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
           const reasoning = String((args as any).reasoning ?? (args as any).reason ?? (args as any).thought ?? '').replace(/\s+/g, ' ').trim();
           ctx.cesar!.reportedConfidenceReasoning = reasoning || undefined;
           ctx.cesar!.confidenceSatisfied = true;
+          ctx.cesar!.confidenceBlockCount = 0;
           const blocked = ctx.cesar!.blockedOnConfidence;
           ctx.cesar!.blockedOnConfidence = null;
           if (blocked) {
@@ -566,11 +569,23 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         }
       }
 
-      // R1 enforcement: block all non-read tools until confidence is reported
+      // R1 enforcement: block all non-read tools until confidence is reported.
+      // BREAKER: a model that never calls ReportConfidence would loop forever
+      // here. After CONFIDENCE_BLOCK_LIMIT blocked attempts this turn we auto-pass
+      // (confidence stays unreported) and let the tool through — the gate is a
+      // nudge, not a safety boundary (writes still hit the permission UI), so
+      // breaking the loop beats trapping the turn. Counter resets each turn.
       const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
       if (!ctx.cesar!.confidenceSatisfied && !READ_TOOLS.has(name)) {
-        ctx.cesar!.blockedOnConfidence = { name, args };
-        return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. After ReportConfidence succeeds, retry the SAME ${name} call immediately with the same arguments. Read/Grep/Glob are allowed for investigation.`;
+        const blocks = (ctx.cesar!.confidenceBlockCount ?? 0) + 1;
+        ctx.cesar!.confidenceBlockCount = blocks;
+        if (blocks <= CONFIDENCE_BLOCK_LIMIT) {
+          ctx.cesar!.blockedOnConfidence = { name, args };
+          return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. After ReportConfidence succeeds, retry the SAME ${name} call immediately with the same arguments. Read/Grep/Glob are allowed for investigation.`;
+        }
+        // Breaker tripped — stop blocking and let the tool run this turn.
+        ctx.cesar!.confidenceSatisfied = true;
+        ctx.cesar!.blockedOnConfidence = null;
       }
 
       // Dedup stable discovery tools. Do not cache Read here: the Read tool
@@ -710,8 +725,15 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
       if (!ctx.cesar!.confidenceSatisfied) {
         const WRITE_TOOLS = ['Edit', 'Write'];
         if (WRITE_TOOLS.includes(agonTool)) {
-          logApproval('blocked', 'policy.confidence', 'ReportConfidence required before writes');
-          return `BLOCKED: Report confidence first via ReportConfidence MCP tool before writing files. After ReportConfidence succeeds, retry the SAME ${agonTool} tool immediately. Do not narrate or explain the block.`;
+          const blocks = (ctx.cesar!.confidenceBlockCount ?? 0) + 1;
+          ctx.cesar!.confidenceBlockCount = blocks;
+          if (blocks <= CONFIDENCE_BLOCK_LIMIT) {
+            logApproval('blocked', 'policy.confidence', 'ReportConfidence required before writes');
+            return `BLOCKED: Report confidence first via ReportConfidence MCP tool before writing files. After ReportConfidence succeeds, retry the SAME ${agonTool} tool immediately. Do not narrate or explain the block.`;
+          }
+          // Breaker tripped — let the write proceed (still gated by the permission UI).
+          logApproval('blocked', 'policy.confidence', `confidence breaker tripped after ${blocks - 1} blocks — auto-pass`);
+          ctx.cesar!.confidenceSatisfied = true;
         }
       }
 
@@ -916,7 +938,7 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       ctx.cesar = {
         busy: false, busySince: null, queue: null,
         toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-        pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+        pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null, confidenceBlockCount: 0,
         autoNero: false, advisorPending: false, lastEscalation: null as string | null,
         mcpFingerprint: undefined, mcpSignalPath: undefined as string | undefined, planDispatch: null, proposedPlan: undefined,
         sessionMcpServers: [] as Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>,

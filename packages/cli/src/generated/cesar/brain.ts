@@ -176,7 +176,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         ctx.cesar = {
           busy: false, busySince: null, queue: null,
           toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-          pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+          pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null, confidenceBlockCount: 0,
           autoNero: false, advisorPending: false, lastEscalation: null as string | null,
           mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
           sessionMcpServers: [], autoModeQueued: false,
@@ -215,6 +215,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       ctx.cesar!.reportedConfidenceReasoning = undefined;
       ctx.cesar!.confidenceSatisfied = false;
       ctx.cesar!.blockedOnConfidence = null;
+      ctx.cesar!.confidenceBlockCount = 0;
       ctx.cesar!.turnId = _turnId;
       ctx.cesar!.planDispatch = dispatch;
       const _brainStartMs = Date.now();

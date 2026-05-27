@@ -33,7 +33,7 @@ interface name=CliProviderGroup
 // ── Engine binary → models.dev provider mapping ──
 // This is the only static config needed: which CLI binary maps to which API provider.
 
-const name=ENGINE_PROVIDER_MAP type="Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[]}>" value={{ ({ anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'] }, openai: { providerId: 'openai', engineId: 'codex', engineBinary: 'codex', versionCmd: ['--version'] }, google: { providerId: 'google', engineId: 'agy', engineBinary: 'agy', versionCmd: ['--version'] }, opencode: { providerId: 'opencode', engineId: 'opencode', engineBinary: 'opencode', versionCmd: ['--version'] }, mistral: { providerId: 'mistral', engineId: 'mistral', engineBinary: 'mistral', versionCmd: ['--version'] }, openrouter: { providerId: 'openrouter', engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] } }) }}
+const name=ENGINE_PROVIDER_MAP type="Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[], listCmd?:string[]}>" value={{ ({ anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'], listCmd: ['__pty:/model'] }, openai: { providerId: 'openai', engineId: 'codex', engineBinary: 'codex', versionCmd: ['--version'], listCmd: ['__pty:/model'] }, google: { providerId: 'google', engineId: 'agy', engineBinary: 'agy', versionCmd: ['--version'], listCmd: ['__pty:/model'] }, opencode: { providerId: 'opencode', engineId: 'opencode', engineBinary: 'opencode', versionCmd: ['--version'], listCmd: ['models'] }, mistral: { providerId: 'mistral', engineId: 'mistral', engineBinary: 'mistral', versionCmd: ['--version'] }, openrouter: { providerId: 'openrouter', engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] } }) }}
 
 // ── Minimal fallback when API is unreachable ──
 
@@ -117,6 +117,9 @@ fn name=parsePlainModelList params="stdout:string" returns="ProbedModel[]" expor
 fn name=refreshProbedCliModels async=true params="engineId:string, binary:string, listCmd?:string[], pythonBin?:string" returns="Promise<boolean>" export=true
   doc "Probe an engine's live model list and cache it. Two modes by the first listCmd token: '__pty:<slash>' drives the interactive TUI via the python pty probe (agy/codex/claude); anything else runs `binary <listCmd...>` as a plain non-interactive subcommand and parses stdout (opencode `models`). Best-effort: returns false (caller keeps static/models.dev) on any failure/timeout/empty. The pty path is slow (~5-8s, spawns the TUI) — call behind a loading state."
   handler <<<
+    // Fresh cache → skip the (slow) re-probe. Lets buildCliModelGroupsAsync call
+    // this for every engine on each /models open cheaply once the cache is warm.
+    if (readProbedCliModels(engineId)) return true;
     const cmd = (listCmd && listCmd.length > 0) ? listCmd : ['__pty:/model'];
     const first = cmd[0];
     try {
@@ -234,34 +237,33 @@ fn name=buildCliModelGroups returns="CliProviderGroup[]" export=true
     return value="groups"
 
 fn name=buildCliModelGroupsAsync async=true returns="Promise<CliProviderGroup[]>" export=true
-  doc "Build CLI provider groups with latest models from models.dev API. Falls back to static list on failure."
-  handler lang="kern"
-    let name=registry type="Record<string, any> | null" kind=let value="null"
-    try
-      assign target="registry" value="await fetchCliModelsRegistry()"
-      catch name=e
-        assign target="registry" value="null"
-    let name=groups type="CliProviderGroup[]" value="[]"
-    each pairKey=key pairValue=eng in="ENGINE_PROVIDER_MAP" entries=true
-      let name=binaryPath value="findBinary(eng.engineBinary)"
-      let name=installed value="binaryPath !== null"
-      let name=version value="installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null"
-      let name=models type="CliModelEntry[]" kind=let value="[]"
-      comment raw="// Try to get models from the API registry"
-      if cond="registry && registry[eng.providerId]"
-        let name=provider value="registry[eng.providerId]"
-        let name=providerName value="provider.name ?? (key.charAt(0).toUpperCase() + key.slice(1))"
-        let name=apiModels value="provider.models ?? {}"
-        assign target="models" value="Object.values(apiModels).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.limit?.context, toolCall: m.tool_call ?? false, reasoning: m.reasoning ?? false }))"
-      comment raw="// Fallback to static list"
-      if cond="models.length === 0"
-        let name=fallbackModels value="FALLBACK_MODELS[key] ?? []"
-        assign target="models" value="fallbackModels.map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }))"
-      comment raw="// Determine display name"
-      let name=displayName value="registry?.[eng.providerId]?.name ?? (key.charAt(0).toUpperCase() + key.slice(1))"
-      comment raw="// Prefer the engine's live /model probe (e.g. agy's real CLI tiers) over models.dev when a fresh probe is cached."
-      let name=probedAsync value="readProbedCliModels(eng.engineId)"
-      if cond="probedAsync && probedAsync.length > 0"
-        assign target="models" value="probedAsync.map((m: ProbedModel) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }))"
-      do value="groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, })"
-    return value="groups"
+  doc "Build CLI provider groups showing each engine's REAL models: its live /model probe (cached; refreshed here in parallel for installed probe-capable engines, cheap once warm) when available, else the small static FALLBACK. Deliberately does NOT use the models.dev catalog — that's the API view (buildModelEntries). Keeps the CLI picker to what the CLI actually offers, and stays correct if a probe breaks (falls back to FALLBACK, never a 150-model dump)."
+  handler <<<
+    // Phase 1: refresh probes for installed, probe-capable engines in parallel.
+    // refreshProbedCliModels short-circuits on a fresh cache, so this is cheap
+    // once warm; on a cold cache it spawns the probes concurrently (~one probe's
+    // latency, not the sum). Failures fall through to FALLBACK per engine.
+    await Promise.all(
+      Object.values(ENGINE_PROVIDER_MAP)
+        .filter((e) => Array.isArray(e.listCmd) && e.listCmd.length > 0)
+        .map((e) => {
+          const bin = findBinary(e.engineBinary);
+          return bin ? refreshProbedCliModels(e.engineId, bin, e.listCmd).catch(() => false) : Promise.resolve(false);
+        }),
+    );
+
+    // Phase 2: build groups from the probe cache → small FALLBACK (no models.dev).
+    const groups: CliProviderGroup[] = [];
+    for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
+      const binaryPath = findBinary(eng.engineBinary);
+      const installed = binaryPath !== null;
+      const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
+      const displayName = key.charAt(0).toUpperCase() + key.slice(1);
+      const probed = readProbedCliModels(eng.engineId);
+      const models: CliModelEntry[] = (probed && probed.length > 0)
+        ? probed.map((m) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }))
+        : (FALLBACK_MODELS[key] ?? []).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+      groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models });
+    }
+    return groups;
+  >>>

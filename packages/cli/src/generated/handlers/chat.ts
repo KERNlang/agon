@@ -12,7 +12,7 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
-import { yieldToInk } from '../cesar/brain.js';
+import { yieldToInk } from '../cesar/brain-helpers.js';
 
 // @kern-source: chat:10
 export const _cachedCwd: {value:string|null} = { value: null };

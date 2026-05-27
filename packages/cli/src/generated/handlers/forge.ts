@@ -675,6 +675,14 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       } catch { /* engine not resolvable — treat as non-agent */ }
     }
 
+    // Re-render guard: the tick fires at 250ms for a smooth scoreboard sync,
+    // but the live progress pane only needs a new dispatch when something the
+    // user can see actually changed (status/score, or the 1s elapsed counter).
+    // Dispatching a fresh array every 250ms when the content is identical churns
+    // the Ink live pane at 4Hz for no visible change — the forge shutter. Gate
+    // the dispatch on a cheap signature so it fires ~1Hz during steady building
+    // and immediately on any real state change.
+    let _lastProgressSig = '';
     const progressInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = engines.map((id: string) => {
@@ -689,7 +697,11 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
           isAgent: agentEngineIds.has(id),
         };
       });
-      dispatch({ type: 'progress-update', engines: progress });
+      const sig = progress.map((p: EngineProgress) => `${p.id}:${p.status}:${p.score ?? ''}`).join('|') + `@${elapsed}`;
+      if (sig !== _lastProgressSig) {
+        _lastProgressSig = sig;
+        dispatch({ type: 'progress-update', engines: progress });
+      }
       // Sync scoreboard with engineStatus for live display
       for (const id of engines) {
         const s = engineStatus[id] ?? 'waiting';

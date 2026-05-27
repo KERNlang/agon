@@ -348,7 +348,9 @@ describe('Dispatch routing helpers', () => {
     expect(prompt).toContain('Review target: main...dev');
     expect(prompt).toContain('Review engine: codex');
     expect(prompt).toContain('Finding: handleReview stores findings but Cesar never sees them.');
-    expect(prompt).toContain('concrete fix plan');
+    // New contract: distil findings into a tracked fix-list and either apply or offer to.
+    expect(prompt).toContain('prioritized fix-list');
+    expect(prompt).toContain('TodoWrite');
     expect(prompt).toContain('Do not say you lack the review output');
   });
 
@@ -363,10 +365,18 @@ describe('Dispatch routing helpers', () => {
     });
 
     expect(prompt).toContain('... [review output truncated]');
-    expect(prompt.length).toBeLessThan(12_700);
+    // Review OUTPUT is still capped at 12k (the variable swamp risk); the richer
+    // fix-list/TodoWrite instructions add ~1.1k of fixed overhead, so total stays
+    // bounded just above 13k.
+    expect(prompt.length).toBeLessThan(13_300);
   });
 
-  it('resumes only when the same user turn is still active', () => {
+  // The gate is keyed on inputEpoch (bumped ONLY on real user input) — NOT the user-turn
+  // count. In auto-mode the loop appends its own continuation turns during a long job, so
+  // checking the count would falsely suppress the post-job continuation (e.g. Cesar going
+  // idle after forge defined a winner). A changed turn count with the SAME epoch must still
+  // continue; only a genuine new user input (epoch change) suppresses.
+  it('resumes when the input epoch is unchanged (turn-count drift does NOT suppress)', () => {
     const ctx = {
       inputEpoch: 4,
       chatSession: {
@@ -377,12 +387,12 @@ describe('Dispatch routing helpers', () => {
       },
     } as any;
     expect(shouldAutoResumeAgentResult({ status: 'completed' }, 4, 1, ctx)).toBe(true);
-    expect(shouldAutoResumeAgentResult({ status: 'completed' }, 5, 1, ctx)).toBe(false);
-    expect(shouldAutoResumeAgentResult({ status: 'completed' }, 4, 2, ctx)).toBe(false);
+    expect(shouldAutoResumeAgentResult({ status: 'completed' }, 5, 1, ctx)).toBe(false); // user typed → new epoch
+    expect(shouldAutoResumeAgentResult({ status: 'completed' }, 4, 2, ctx)).toBe(true);  // turn drift, same epoch → still resume
     expect(shouldAutoResumeAgentResult({ status: 'cancelled' }, 4, 1, ctx)).toBe(false);
   });
 
-  it('continues delegated results only while the same user turn is active', () => {
+  it('continues delegated results while the input epoch is unchanged (turn-count drift does NOT suppress)', () => {
     const ctx = {
       inputEpoch: 7,
       chatSession: {
@@ -394,8 +404,8 @@ describe('Dispatch routing helpers', () => {
     } as any;
 
     expect(shouldAutoContinueDelegatedResult(7, 1, ctx)).toBe(true);
-    expect(shouldAutoContinueDelegatedResult(8, 1, ctx)).toBe(false);
-    expect(shouldAutoContinueDelegatedResult(7, 2, ctx)).toBe(false);
+    expect(shouldAutoContinueDelegatedResult(8, 1, ctx)).toBe(false); // user typed → new epoch
+    expect(shouldAutoContinueDelegatedResult(7, 2, ctx)).toBe(true);  // turn drift, same epoch → still continue
     expect(shouldAutoContinueDelegatedResult(undefined, undefined, ctx)).toBe(true);
   });
 

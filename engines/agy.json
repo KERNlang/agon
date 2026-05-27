@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 3,
+  "id": "agy",
+  "displayName": "Antigravity (Google)",
+  "binary": "agy",
+  "searchPaths": [
+    "${HOME}/.local/bin",
+    "${HOME}/.npm-global/bin",
+    "/usr/local/bin"
+  ],
+  "versionCmd": ["--version"],
+  "isLocal": false,
+  "tier": "builtin",
+  "installHint": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+  "timeout": 420,
+
+  "exec": {
+    "args": ["--print-timeout", "400s", "--print", "{prompt}", "--dangerously-skip-permissions"]
+  },
+  "review": {
+    "args": ["--print-timeout", "400s", "--print", "{prompt}", "--dangerously-skip-permissions"]
+  },
+  "agent": {
+    "args": ["--print-timeout", "580s", "--print", "{prompt}", "--dangerously-skip-permissions"]
+  },
+
+  "api": {
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "apiKeyEnv": "GOOGLE_API_KEY",
+    "model": "gemini-3.1-pro",
+    "maxTokens": 8192
+  },
+
+  "env": {
+    "GOOGLE_API_KEY": { "required": false }
+  },
+
+  "test": { "args": ["--version"] },
+
+  "cliModels": {
+    "dynamicListCmd": ["__pty:/model"]
+  }
+}

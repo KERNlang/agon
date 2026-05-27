@@ -87,7 +87,7 @@ export const AUTOCREDIT_OFF_KEYWORDS: RegExp = /\b(?:schalt(?:e|)?\s+(?:das|es|a
 export const AUTOCREDIT_ON_KEYWORDS: RegExp = /\b(?:schalt(?:e|)?\s+(?:das|es|autoCredit)\s+an|mach(?:e|)?\s+(?:das|es|autoCredit)\s+an|(?:autoCredit|co[\s-]?authored?|contributor)\s+an)\b/i;
 
 // @kern-source: intent:69
-export const KNOWN_COLLAB_ENGINE_IDS: Set<string> = new Set([ 'claude', 'codex', 'gemini', 'qwen', 'kimi', 'opencode', 'open-code', 'minimax', 'zai', 'aider', 'cursor', 'gpt', 'openai' ]);
+export const KNOWN_COLLAB_ENGINE_IDS: Set<string> = new Set([ 'claude', 'codex', 'agy', 'antigravity', 'qwen', 'kimi', 'opencode', 'open-code', 'minimax', 'zai', 'aider', 'cursor', 'gpt', 'openai' ]);
 
 // @kern-source: intent:71
 export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
@@ -134,18 +134,22 @@ function normalizeEngineToken(part: string): string|null {
   if (!cleaned) {
     return null;
   }
+  // 'antigravity' is an alias for the agy engine (binary: agy).
+  if (cleaned === 'antigravity') {
+    return 'agy';
+  }
   if (KNOWN_COLLAB_ENGINE_IDS.has(cleaned)) {
     return cleaned;
   }
   // Let model IDs like kimi-for-coding-k2p6 or zai-coding-plan-glm-5.1
   // through when they are explicitly introduced by "with"/"ask".
-  if (/^(?:claude|codex|gemini|qwen|kimi|opencode|open-code|minimax|zai|aider|cursor|gpt|openai)[\w.-]*$/i.test(cleaned)) {
+  if (/^(?:claude|codex|agy|antigravity|qwen|kimi|opencode|open-code|minimax|zai|aider|cursor|gpt|openai)[\w.-]*$/i.test(cleaned)) {
     return cleaned;
   }
   return null;
 }
 
-// @kern-source: intent:115
+// @kern-source: intent:118
 function parseExplicitEngineIds(input: string): string[] {
   const engineIds: string[] = [];
   const add = (value: string | null) => {
@@ -168,7 +172,7 @@ function parseExplicitEngineIds(input: string): string[] {
   return engineIds;
 }
 
-// @kern-source: intent:138
+// @kern-source: intent:141
 function parseSemanticReviewShortcut(input: string): Intent|null {
   const lower = input.toLowerCase();
   const reviewVerb = /\b(?:review|check|audit|inspect|look\s+over)\b/i.test(input);
@@ -198,17 +202,17 @@ function parseSemanticReviewShortcut(input: string): Intent|null {
   return { type: 'review', engineId: engineIds[0], engineIds: engineIds, target: target } as Intent;
 }
 
-// @kern-source: intent:162
+// @kern-source: intent:165
 function stripCollaborationLeadIn(input: string): string {
   return input.replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:to\s+)?/i, '').replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?what\s+do\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:think\s+about\s+|say\s+about\s+|recommend\s+for\s+)?/i, '').replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:talk|think)\s+(?:it|this)?\s*(?:through\s+)?with\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s*/i, '').trim();
 }
 
-// @kern-source: intent:166
+// @kern-source: intent:169
 function hasCollaborationAskShape(input: string): boolean {
   return /^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\b/i.test(input) || /^(?:can\s+you\s+|could\s+you\s+|please\s+)?what\s+do\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:think|say|recommend)\b/i.test(input) || /^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:brainstorm|compare|weigh\s+in)\s+(?:this|it)?\s*(?:with\s+)?(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\b/i.test(input);
 }
 
-// @kern-source: intent:170
+// @kern-source: intent:173
 function parseSemanticCollaborationShortcut(input: string): Intent|null {
   const question = stripCollaborationLeadIn(input);
   if (/\b(?:debate|argue|tribunal|red-team|red\s+team)\b/i.test(input)) {
@@ -224,7 +228,7 @@ function parseSemanticCollaborationShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:182
+// @kern-source: intent:185
 function parseSemanticForgeShortcut(input: string): Intent|null {
   const explicitForgeImperative = /^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\b/i.test(input) && !/^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\s+(?:is|was|seems?|looks?|does|did|can|should|would|will|not|still)\b/i.test(input);
   const hasForgeShape = explicitForgeImperative || /\b(?:forge\s+this|forge\s+it|have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|competitive\s+(?:build|implementation|fix))\b/i.test(input);
@@ -239,23 +243,23 @@ function parseSemanticForgeShortcut(input: string): Intent|null {
 /**
  * Plain text must not start orchestration. Brainstorm, tribunal, campfire, forge, and review are slash-only from chat input; mention words like 'tribunal' or 'forge' should reach Cesar as normal text unless the user uses /tribunal, /forge, etc.
  */
-// @kern-source: intent:192
+// @kern-source: intent:195
 function parseSemanticDelegationShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:197
+// @kern-source: intent:200
 function splitReviewArgs(input: string): string[] {
   return input.split(/\s+/).flatMap((part) => part.split(',')).map((part) => part.trim()).filter(Boolean);
 }
 
-// @kern-source: intent:201
+// @kern-source: intent:204
 function isReviewTargetArg(part: string): boolean {
   const lower = part.toLowerCase();
   return lower === 'uncommitted' || lower.startsWith('branch:') || lower.startsWith('commit:');
 }
 
-// @kern-source: intent:206
+// @kern-source: intent:209
 function isImplicitReviewSubjectArg(part: string): boolean {
   const lower = part.toLowerCase();
   return lower === 'it' || lower === 'this' || lower === 'that' || lower === 'them' || lower === 'changes' || lower === 'diff';
@@ -264,7 +268,7 @@ function isImplicitReviewSubjectArg(part: string): boolean {
 /**
  * Parse review args into target + engine list. When bareWordsAreEngines is true (the explicit /review slash path), any bare word that isn't a target (uncommitted/branch:/commit:) or a keyword is treated as an engine name — so `/review codex claude` reviews with BOTH, no `with` needed. The natural-language shortcut path leaves it false so prose like `review this code` doesn't mis-bind `code` as an engine.
  */
-// @kern-source: intent:211
+// @kern-source: intent:214
 function parseReviewInput(input: string, bareWordsAreEngines?: boolean): Intent {
   const reviewParts = splitReviewArgs(input);
   const engineIds: string[] = [];
@@ -299,7 +303,7 @@ function parseReviewInput(input: string, bareWordsAreEngines?: boolean): Intent 
   return { type: 'review', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target } as Intent;
 }
 
-// @kern-source: intent:247
+// @kern-source: intent:250
 function parseReviewShortcut(input: string): Intent|null {
   const match = input.match(/^(?:review|cr)(?:\s+([\s\S]+))?$/i);
   if (!match) {
@@ -327,7 +331,7 @@ function parseReviewShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:269
+// @kern-source: intent:272
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
@@ -547,7 +551,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
       return { type: 'agent-solo', input: rest } as unknown as Intent;
     case 'speculate': {
       // /speculate [with engine1,engine2] <task>
-      // Optional: /speculate with claude,gemini refactor auth module
+      // Optional: /speculate with claude,agy refactor auth module
       const withMatch = rest.match(/^with\s+([\w,-]+)\s+([\s\S]+)$/i);
       if (withMatch) {
         const engines = withMatch[1].split(',').map((e: string) => e.trim()).filter(Boolean);
@@ -628,7 +632,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   }
 }
 
-// @kern-source: intent:570
+// @kern-source: intent:573
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) {

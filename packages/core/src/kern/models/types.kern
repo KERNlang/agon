@@ -15,6 +15,13 @@ interface name=EngineModelConfig
   field name=flag type=string optional=true
   field name=default type="string|null" optional=true
 
+interface name=EngineEffortConfig
+  doc "Reasoning-effort selection for a CLI engine. Applied at dispatch as either a flag ([flag, level], e.g. claude --effort high) or a -c config override (['-c', `${configKey}=${level}`], e.g. codex -c model_reasoning_effort=high). agy bakes effort into its model tiers (Flash High/Medium/Low) so it needs no effort block."
+  field name=flag type=string optional=true
+  field name=configKey type=string optional=true
+  field name=levels type="string[]"
+  field name=default type=string optional=true
+
 interface name=EngineEnvVar
   field name=required type=boolean optional=true
   field name=default type=string optional=true
@@ -49,6 +56,7 @@ interface name=EngineDefinition
   field name=exec type=EngineModeConfig optional=true
   field name=review type=EngineModeConfig optional=true
   field name=model type=EngineModelConfig optional=true
+  field name=effort type=EngineEffortConfig optional=true
   field name=env type="Record<string,EngineEnvVar>" optional=true
   field name=test type="{args:string[]}" optional=true
   field name=modes type="EngineMode[]" optional=true
@@ -58,7 +66,7 @@ interface name=EngineDefinition
   field name=imageFlag type=string optional=true
   field name=systemPromptFlag type=string optional=true
   field name=agent type=EngineModeConfig optional=true
-  field name=api type="{baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number}" optional=true
+  field name=api type="{baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, contextWindow?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number}" optional=true
   field name=companion type=CompanionConfig optional=true
   field name=cliModels type=EngineCliModelConfig optional=true
   field name=isolationHints type="{configEnv?:string, strictMcpArgs?:string[], personalPaths?:string[], authFiles?:string[], authMarker?:string, setupHint?:string, loginArgs?:string[], supportsProjectMcp?:boolean}" optional=true
@@ -173,11 +181,11 @@ config name=AgonConfig
   field name=reviewDefaultEngine type=string default=""
     doc "Optional preferred engine for /review and Review(). Empty means auto-select from active review-capable engines; this is intentionally separate from forgeFixedStarter."
   field name=goalReviewEngines type="string[]" default="[]"
-    doc "Default review panel for `agon goal` when --reviewEngines is omitted. Empty = smart default (every active engine except local ones like ollama). Pin an explicit roster, e.g. ['claude','codex','gemini'], to control cost/noise of the per-task review gate."
+    doc "Default review panel for `agon goal` when --reviewEngines is omitted. Empty = smart default (every active engine except local ones like ollama). Pin an explicit roster, e.g. ['claude','codex','agy'], to control cost/noise of the per-task review gate."
   field name=forgeRequireBaselineCheck type=boolean default=true
   field name=engineActivationMode type="'auto'|'explicit'" default=auto
     doc "'auto' keeps every available engine active. 'explicit' only activates engines listed in forgeEnabledEngines; set by /use or the engine picker."
-  field name=forgeEnabledEngines type="string[]" default="['claude','codex','gemini']"
+  field name=forgeEnabledEngines type="string[]" default="['claude','codex','agy']"
   field name=forgeFitnessTimeout type=number default=120
   field name=forgeSynthesisTimeout type=number default=300
   field name=forgeEarlyFinalizeEnabled type=boolean default=true
@@ -256,6 +264,7 @@ config name=AgonConfig
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=hiddenEngines type="string[]" optional=true
   field name=engineModels type="Record<string,string>" optional=true
+  field name=engineEfforts type="Record<string,string>" optional=true doc="Per-engine reasoning-effort override (engineId → level), set when the user explicitly picks an effort in agon. Absent = defer to the CLI's own config (no --effort / -c forced)."
   field name=engineIsolation type="'workspace-pure'|'inherit'" default="'workspace-pure'"
     doc "How much of the user's personal tooling a dispatched engine inherits. 'workspace-pure' (default) strips the personal/global layer (global CLAUDE.md, Claude Code plugins/hooks, user MCP servers) via a clean per-engine config dir (auth preserved), but KEEPS the repo's project CLAUDE.md/.mcp.json so engines still see task-relevant rules. 'inherit' is the legacy behavior — inherit everything (your full ~/.claude). A competitive arena should be clean of private user augmentation, not ignorant of the repo it operates on. Override per dispatch with --pure/--impure/--isolation or AGON_ENGINE_ISOLATION."
   field name=isolationMigrationNotified type=boolean default=false

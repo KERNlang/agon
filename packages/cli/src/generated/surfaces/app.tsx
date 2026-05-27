@@ -335,6 +335,30 @@ export function App() {
       }
     };
   }, []);
+  const [cesarContext, _setCesarContextRaw] = useState<{pct:number,used:number,limit:number,compacted:number,cached:number}|null>(null);
+  const setCesarContext = useMemo(() => {
+    let _lastCall = 0;
+    let _pendingValue: React.SetStateAction<{pct:number,used:number,limit:number,compacted:number,cached:number}|null>;
+    let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
+    return (value: React.SetStateAction<{pct:number,used:number,limit:number,compacted:number,cached:number}|null>) => {
+      const now = Date.now();
+      const elapsed = now - _lastCall;
+      if (elapsed >= 200) {
+        _lastCall = now;
+        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
+        setTimeout(() => _setCesarContextRaw(value), 0);
+      } else {
+        _pendingValue = value;
+        if (!_pendingTimer) {
+          _pendingTimer = setTimeout(() => {
+            _lastCall = Date.now();
+            _pendingTimer = null;
+            _setCesarContextRaw(_pendingValue);
+          }, 200 - elapsed);
+        }
+      }
+    };
+  }, []);
   const [liveScoreboard, _setLiveScoreboardRaw] = useState<Scoreboard|null>(null);
   const setLiveScoreboard = useMemo(() => __inkSafe(_setLiveScoreboardRaw), [_setLiveScoreboardRaw]);
   const [liveRationale, _setLiveRationaleRaw] = useState<ModeRationale|null>(null);
@@ -566,7 +590,17 @@ export function App() {
           if (!activeStream || !activeStream.content) {
             return null;
           }
-          const cleaned = cleanEngineOutput(activeStream.content);
+          // Only the LAST line is needed, so clean the TAIL — not the whole buffer.
+          // cleanEngineOutput+split over the full accumulated stream every throttle tick
+          // is O(n) per tick and grows the longer a forge/brainstorm run streams → the
+          // progressive lag. Slicing the tail bounds the work to a constant per tick.
+          // Drop the (possibly partial) first line of the slice so we never start the
+          // window mid-line — which could split a multi-byte char or an ANSI escape.
+          const raw = activeStream.content;
+          const sliced = (raw.length > 4000) ? raw.slice(-4000) : raw;
+          const nlAt = (raw.length > 4000) ? sliced.indexOf('\n') : (-1);
+          const tail = (nlAt >= 0) ? sliced.slice(nlAt + 1) : sliced;
+          const cleaned = cleanEngineOutput(tail);
           const lines = cleaned.split('\n').filter((l: string) => l.trim());
           if (lines.length === 0) {
             return null;
@@ -723,6 +757,7 @@ export function App() {
             },
             getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
             setCesarConfidence,
+            setCesarContext,
             setLiveScoreboard: (val: Scoreboard | null) => setLiveScoreboard(val),
             setLiveRationale: (val: ModeRationale | null) => setLiveRationale(val),
             setAgentProgress: (updater: Record<string,AgentProgressSnapshot> | ((prev: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => {
@@ -1229,7 +1264,8 @@ export function App() {
     let providerFilter = '';
     if (engineId === 'claude' || env.includes('anthropic') || baseUrl.includes('anthropic') || display.includes('anthropic')) providerFilter = 'provider:anthropic';
     else if (engineId === 'codex' || env.includes('openai') || baseUrl.includes('openai') || display.includes('openai')) providerFilter = 'provider:openai';
-    else if (engineId === 'gemini' || env.includes('google') || baseUrl.includes('google') || display.includes('google')) providerFilter = 'provider:google';
+    else if (engineId === 'agy' || engineId === 'antigravity' || env.includes('google') || baseUrl.includes('google') || display.includes('google') || display.includes('antigravity')) providerFilter = 'provider:google';
+    else if (engineId === 'opencode' || display.includes('opencode')) providerFilter = 'provider:opencode';
     else if (engineId === 'openrouter' || env.includes('openrouter') || baseUrl.includes('openrouter')) providerFilter = 'provider:openrouter';
     else if (engineId === 'mistral' || display.includes('mistral')) providerFilter = 'provider:mistral';
     else if (engineId === 'qwen' || display.includes('qwen')) providerFilter = 'provider:qwen';
@@ -1247,6 +1283,9 @@ export function App() {
     setModelPickerCliGroups([]);
 
     import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroupsAsync }) => {
+      // buildCliModelGroupsAsync self-probes each engine's live /model list
+      // (cached, parallel) and shows the REAL CLI models — not the models.dev
+      // catalog (that's the API view below).
       buildCliModelGroupsAsync().then((cliGroups: any) => {
         setModelPickerCliGroups(cliGroups);
       });
@@ -1264,6 +1303,17 @@ export function App() {
       });
     });
   }, [registry,dispatch]);
+
+  const persistEffort = useCallback((engineId:string, effort?:string|null) => {
+    // undefined → engine has no effort dimension (e.g. agy), leave config untouched.
+    // null → user chose "Default (use CLI config)", so clear any agon override and defer
+    // to the CLI's own config. string → explicit override.
+    if (effort === undefined) return;
+    const next = { ...((loadConfig() as any).engineEfforts ?? {}) };
+    if (effort === null) delete next[engineId];
+    else next[engineId] = effort;
+    configSet('engineEfforts' as any, next as any);
+  }, []);
 
   const openResultsPager = useCallback(() => {
     let content = '';
@@ -2164,6 +2214,7 @@ export function App() {
     {modelPickerOpen && (
       <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle} cliGroups={modelPickerCliGroups}
         activeEngineIds={activeEngines()}
+        engineEfforts={(config as any).engineEfforts ?? {}}
         onToggleCliEngine={(engineId: string, active: boolean) => {
           const current = sessionEngines ?? registry.activeIds(config as any);
           const next = active
@@ -2189,8 +2240,9 @@ export function App() {
             const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
             nextModels[modelPickerTargetEngine] = entry.modelId;
             configSet('engineModels', nextModels as any);
+            persistEffort(modelPickerTargetEngine, entry.effort);
             setConfigVersion((v: number) => v + 1);
-            dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}` } as any);
+            dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}${entry.effort ? ` (effort: ${entry.effort})` : ''}` } as any);
             setModelPickerTargetEngine(null);
             setModelPickerInitialFilter('');
             setModelPickerTitle('Select model');
@@ -2204,9 +2256,10 @@ export function App() {
             const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
             nextModels[engineId] = entry.modelId;
             configSet('engineModels', nextModels as any);
+            persistEffort(engineId, entry.effort);
             setConfigVersion((v: number) => v + 1);
             setModelPickerOpen(false);
-            dispatch({ type: 'success', message: `CLI model set: ${engineId} → ${entry.modelId}` } as any);
+            dispatch({ type: 'success', message: `CLI model set: ${engineId} → ${entry.modelId}${entry.effort ? ` (effort: ${entry.effort})` : ''}` } as any);
             return;
           }
           setModelPickerOpen(false);
@@ -2289,7 +2342,7 @@ export function App() {
         {(() => {
           const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>
-            <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
+            <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
             {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} telemetryVitals={telemetryVitals} />}
           </>);
         })()}
@@ -2384,7 +2437,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:82
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2102
+// @kern-source: app:2133
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

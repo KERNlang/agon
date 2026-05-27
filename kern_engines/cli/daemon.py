@@ -67,6 +67,13 @@ def main(argv: list[str] | None = None) -> int:
         "--mode", choices=("exec", "agent"), default="exec",
         help="dispatch mode — agent enables tools + bypassed permissions",
     )
+    parser.add_argument(
+        "--extra-arg", action="append", default=[], dest="extra_arg",
+        metavar="ARG",
+        help="extra launch flag appended after the engine's config argv "
+             "(repeatable; e.g. --extra-arg --model --extra-arg opus). Used by "
+             "agon to forward a /models model/effort pick to the interactive path.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -84,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     try:
-        session = PtyTuiSession(cfg, mode=args.mode)
+        session = PtyTuiSession(cfg, mode=args.mode, extra_argv=tuple(args.extra_arg))
     except PtySessionError as e:
         _err(f"failed to spawn {args.engine}: {e}")
         return 3

@@ -25,7 +25,7 @@ module name=OutputFormatting
 
   const name=LOGO_COLORS type="number[]" value={{ [208, 214, 220, 226, 228, 230, 255] }}
 
-  const name=ENGINE_COLORS type="Record<string, number>" value={{ { claude: 208, codex: 34, gemini: 33, ollama: 255, aider: 141, openrouter: 197, qwen: 45, mistral: 75, opencode: 156, minimax: 124, zai: 124 } }}
+  const name=ENGINE_COLORS type="Record<string, number>" value={{ { claude: 208, codex: 34, agy: 33, ollama: 255, aider: 141, openrouter: 197, qwen: 45, mistral: 75, opencode: 156, minimax: 124, zai: 124 } }}
 
   fn name=fg256 params="code:number, text:string" returns=string expr={{ return `\x1b[38;5;${code}m${text}${RESET}`; }}
 

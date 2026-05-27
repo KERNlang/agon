@@ -1,0 +1,628 @@
+// @kern-source: doctor:1
+import { defineCommand } from 'citty';
+
+// @kern-source: doctor:2
+import { spawnSync } from 'node:child_process';
+
+// @kern-source: doctor:3
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+
+// @kern-source: doctor:4
+import { tmpdir, homedir } from 'node:os';
+
+// @kern-source: doctor:5
+import { join, dirname, basename } from 'node:path';
+
+// @kern-source: doctor:6
+import { fileURLToPath } from 'node:url';
+
+// @kern-source: doctor:7
+import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, resolveDedupSidecar, agonPath } from '@agon/core';
+
+// @kern-source: doctor:8
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
+
+// @kern-source: doctor:9
+import type { EngineDefinition } from '@agon/core';
+
+// @kern-source: doctor:10
+import { createCliAdapter } from '@agon/adapter-cli';
+
+// @kern-source: doctor:11
+import { runReviewCore, selectReviewEngine } from '../handlers/review.js';
+
+// @kern-source: doctor:12
+import { header, table, info, success, fail, warn, green, red, yellow, dim, bold } from '../blocks/output-format.js';
+
+// @kern-source: doctor:13
+import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork } from '../cesar/reliability.js';
+
+// @kern-source: doctor:15
+export interface EngineDoctorEntry {
+  id: string;
+  enabled: boolean;
+  status: 'ok'|'warn'|'fail';
+  backend: string;
+  modes: string;
+  detail: string;
+}
+
+// @kern-source: doctor:23
+export interface HarnessDoctorReport {
+  headers: string[];
+  rows: string[][];
+  summary: string;
+  ok: boolean;
+}
+
+// @kern-source: doctor:29
+export function shellQuoteForDoctor(value: string): string {
+  const s = String(value ?? '');
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s;
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+// @kern-source: doctor:36
+export function buildDoctorCleanupCommand(repo: string, path: string): string {
+  return `git -C ${shellQuoteForDoctor(repo)} worktree prune && rm -rf ${shellQuoteForDoctor(path)}`;
+}
+
+// @kern-source: doctor:38
+export function formatDoctorStatus(status: 'ok'|'warn'|'fail'): string {
+  if (status === 'ok') {
+    return green('ok');
+  }
+  if (status === 'warn') {
+    return yellow('warn');
+  }
+  return red('fail');
+}
+
+// @kern-source: doctor:46
+export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: EngineRegistry, enabledIds: string[]): EngineDoctorEntry {
+  const binaryPath = engine.binary ? registry.findBinary(engine) : null;
+  const hasApi = !!engine.api;
+  const apiKeyEnv = engine.api?.apiKeyEnv ?? '';
+  const apiKeySet = !!(hasApi && apiKeyEnv && process.env[apiKeyEnv]);
+  const hasCliBackend = !!binaryPath;
+  const hasApiBackend = hasApi && apiKeySet;
+  const enabled = enabledIds.includes(engine.id);
+  
+  const backendParts: string[] = [];
+  if (engine.binary) backendParts.push(hasCliBackend ? `cli:${binaryPath}` : `cli missing:${engine.binary}`);
+  if (hasApi) {
+    const format = engine.api?.format ?? 'anthropic';
+    // A missing API key is only a problem when the API is the engine's ONLY
+    // path. CLI-authed engines (codex/claude log in via their own CLI) keep
+    // the API as an optional fallback — don't frame the unset key as "missing".
+    backendParts.push(apiKeySet
+      ? `api:${format}:${engine.api?.model ?? 'model?'}`
+      : hasCliBackend
+        ? `api:${format} (key optional)`
+        : `api key missing:${apiKeyEnv}`);
+  }
+  const backend = backendParts.join(' + ') || 'none';
+  const modes = [
+    engine.exec ? 'exec' : '',
+    engine.review ? 'review' : '',
+    engine.agent ? 'agent' : '',
+    engine.companion ? 'companion' : '',
+  ].filter(Boolean).join(', ') || 'none';
+  
+  let status: 'ok'|'warn'|'fail' = 'ok';
+  const details: string[] = [];
+  if (!engine.binary && !hasApi) {
+    status = 'fail';
+    details.push('no CLI binary or API config');
+  } else if (!hasCliBackend && !hasApiBackend) {
+    status = enabled ? 'fail' : 'warn';
+    details.push(enabled
+      ? (hasApi ? `set ${apiKeyEnv} or install ${engine.binary ?? 'CLI'}` : `install ${engine.binary ?? 'CLI'}`)
+      : 'disabled; not installed/configured');
+  } else {
+    if (engine.binary && !hasCliBackend) {
+      status = 'warn';
+      details.push('CLI missing; API fallback available');
+    }
+    // Only warn about an unset API key when the CLI backend isn't carrying the
+    // engine. When CLI auth is active (codex/claude), the API key is an unused
+    // optional fallback — flagging it as a warn is noise that scares users off
+    // the engines that actually work most reliably.
+    if (hasApi && !apiKeySet && !hasCliBackend) {
+      status = 'warn';
+      details.push(`API key ${apiKeyEnv} not set`);
+    } else if (hasApi && !apiKeySet && hasCliBackend) {
+      details.push(`CLI auth active (${apiKeyEnv} optional)`);
+    }
+    if (enabled && !engine.agent && !engine.exec) {
+      status = 'warn';
+      details.push('enabled for forge but no agent/exec mode');
+    }
+  }
+  
+  if (enabled) details.push('forge-enabled');
+  if (engine.companion) details.push(`companion:${engine.companion.protocol}`);
+  if (!details.length) details.push('ready');
+  
+  return {
+    id: engine.id,
+    enabled,
+    status,
+    backend,
+    modes,
+    detail: details.join('; '),
+  };
+}
+
+// @kern-source: doctor:122
+export interface IsolationDoctorEntry {
+  id: string;
+  authed: boolean;
+  detail: string;
+}
+
+// @kern-source: doctor:127
+/**
+ * Report whether ONE engine's clean workspace-pure config dir is (or will be) authenticated — the consumer surface for isolationHints.setupHint. Returns null for engines with no configEnv (API-only: nothing to isolate). If the clean dir already carries the authMarker it's authenticated. Otherwise, for FILE-BASED engines (authFiles non-empty, e.g. codex) the clean dir is seeded from the real config home on each dispatch, so the engine is effectively authenticated when those source creds exist — even before the first dispatch materialises the dir. Keychain-based engines (claude, empty authFiles) have nothing to seed, so an absent marker means a one-time `agon login` is genuinely required; surface the setupHint.
+ */
+export function diagnoseEngineIsolation(engine: EngineDefinition, cleanConfigDir: string): IsolationDoctorEntry|null {
+  const hints = engine.isolationHints;
+  if (!hints?.configEnv) return null;
+  const marker = hints.authMarker?.trim();
+  if (marker && existsSync(join(cleanConfigDir, basename(marker)))) {
+    return { id: engine.id, authed: true, detail: `clean dispatch authenticated (${cleanConfigDir})` };
+  }
+  if (!marker) {
+    return { id: engine.id, authed: true, detail: `no auth marker required (${cleanConfigDir})` };
+  }
+  // Clean dir not seeded yet — for file-based engines, check the seed source:
+  // a dispatch copies authFiles from the real config home, so present source
+  // creds mean it WILL authenticate. Tie this to the ACTUAL marker the dispatch
+  // gate checks: the marker must itself be one of the seeded files and present
+  // at the source — otherwise the seed wouldn't satisfy the gate and reporting
+  // "authed" would be a false positive.
+  const authFiles = hints.authFiles ?? [];
+  const markerSource = authFiles.find((rel: string) => basename(rel) === basename(marker));
+  if (markerSource) {
+    const realHome = process.env[hints.configEnv] || (hints.personalPaths?.[0] ?? '').replace(/^~(?=$|\/)/, homedir());
+    if (!!realHome && existsSync(join(realHome, markerSource))) {
+      return { id: engine.id, authed: true, detail: `will seed credentials from ${realHome} on dispatch` };
+    }
+  }
+  return { id: engine.id, authed: false, detail: hints.setupHint ?? `run \`agon login ${engine.id}\`` };
+}
+
+// @kern-source: doctor:156
+export interface PythonDoctorResult {
+  status: 'ok'|'warn'|'fail';
+  detail: string;
+  installCommand?: string;
+}
+
+// @kern-source: doctor:161
+/**
+ * Every Python file the bridges actually spawn. Doctor confirms ALL of them are reachable through resolveDedupSidecar — a bad package that ships only some is still a problem.
+ */
+export const EXPECTED_SIDECARS: string[] = ['history-search.py','syntax-validator.py','classifier.py','sidecar.py'];
+
+// @kern-source: doctor:164
+/**
+ * Probe whether the Python interpreter exists, every expected sidecar file resolves, and the deps (fastembed, numpy, tree-sitter + grammars) are importable. Fail-soft: not having Python means semantic features fall back, not that agon is broken.
+ */
+export function diagnoseDedupPython(): PythonDoctorResult {
+  const python = process.env.AGON_PYTHON || 'python3';
+  // Tiny probe — imports every dep used across the 4 sidecars in one shot.
+  // Exit 0 = all importable; non-zero stderr names the first missing module.
+  const probe = 'import fastembed, numpy, tree_sitter, tree_sitter_python, tree_sitter_typescript, tree_sitter_javascript, tree_sitter_json';
+  
+  // Pick a real path for the install command. requirements.txt ships in
+  // @agon/dedup so we resolve it the same way as the .py files — works in
+  // both the monorepo and a published install. Falls back to the
+  // package-name form if resolution somehow fails.
+  const requirementsPath = resolveDedupSidecar('requirements.txt');
+  const pipInstall = requirementsPath
+    ? `python3 -m pip install --user -r ${requirementsPath}`
+    : 'python3 -m pip install --user fastembed numpy tree-sitter tree-sitter-python tree-sitter-typescript tree-sitter-javascript tree-sitter-json';
+  
+  let result;
+  try {
+    result = spawnSync(python, ['-c', probe], {
+      encoding: 'utf-8',
+      timeout: 15_000,
+    });
+  } catch (err) {
+    return {
+      status: 'fail',
+      detail: `${python} probe threw: ${err instanceof Error ? err.message : String(err)}`,
+      installCommand: 'Install Python 3.10+ from https://python.org or your package manager, then run the pip install above.',
+    };
+  }
+  if (result.error || result.status === null) {
+    const msg = result.error?.message || `${python} not in PATH`;
+    return {
+      status: 'fail',
+      detail: msg,
+      installCommand: 'Install Python 3.10+ (semantic history, syntax validator, task classifier, brainstorm dedup all degrade without it)',
+    };
+  }
+  if (result.status === 0) {
+    // Confirm EVERY expected sidecar resolves — a partial dedup package
+    // would otherwise pass the probe while still leaving 3 of 4 bridges
+    // broken at runtime.
+    const missing = EXPECTED_SIDECARS.filter((name: string) => !resolveDedupSidecar(name));
+    if (missing.length === EXPECTED_SIDECARS.length) {
+      return {
+        status: 'fail',
+        detail: '@agon/dedup not found in node_modules — Python sidecars unreachable',
+        installCommand: 'reinstall @agon/cli (or its workspace) — the dedup package should land automatically',
+      };
+    }
+    if (missing.length > 0) {
+      return {
+        status: 'fail',
+        detail: `@agon/dedup is partial — missing sidecar(s): ${missing.join(', ')}`,
+        installCommand: 'reinstall @agon/dedup — the published tarball should include all four .py files',
+      };
+    }
+    const sample = resolveDedupSidecar('history-search.py');
+    return { status: 'ok', detail: `all sidecar deps importable via ${python}; all ${EXPECTED_SIDECARS.length} sidecars reachable (e.g. ${sample})` };
+  }
+  // Search the WHOLE stderr — Python emits a Traceback header before the
+  // ModuleNotFoundError line, so first-line-only would miss it.
+  const stderr = String(result.stderr ?? '');
+  const moduleMatch = stderr.match(/No module named ['"]?([^'"\s]+)['"]?/);
+  const missingModule = moduleMatch ? moduleMatch[1] : 'one or more sidecar deps';
+  return {
+    status: 'warn',
+    detail: `${python} OK, but ${missingModule} not installed`,
+    installCommand: pipInstall,
+  };
+}
+
+// @kern-source: doctor:236
+export function checkDoctorWorktree(cwd: string): {ok:boolean; message:string; cleanupCommand:string} {
+  let root = '';
+  let tempDir = '';
+  let worktreePath = '';
+  try {
+    root = repoRoot(cwd);
+    const sha = headSha(cwd);
+    tempDir = mkdtempSync(join(tmpdir(), 'agon-doctor-'));
+    worktreePath = join(tempDir, 'worktree');
+    worktreeCreate(root, worktreePath, sha);
+    writeFileSync(join(worktreePath, '.agon-doctor-write-test'), 'ok\n');
+    return {
+      ok: true,
+      message: `git worktree create/write/remove ok at ${root}`,
+      cleanupCommand: buildDoctorCleanupCommand(root, tempDir),
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      message,
+      cleanupCommand: root && tempDir ? buildDoctorCleanupCommand(root, tempDir) : '',
+    };
+  } finally {
+    if (root && worktreePath) {
+      try { worktreeRemoveBestEffort(root, worktreePath); } catch { /* best effort */ }
+    }
+    if (tempDir) {
+      try { rmSync(tempDir, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
+  }
+}
+
+// @kern-source: doctor:270
+/**
+ * Diagnose the live Cesar harness: selected engine, backend capability, native/MCP session state, and observed tool reliability.
+ */
+export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, cesar?: any): HarnessDoctorReport {
+  const rows: string[][] = [];
+  const selected = String((config as any)?.cesarEngine ?? (config as any)?.forgeFixedStarter ?? 'claude');
+  const backendPref = String((config as any)?.cesarBackend ?? 'auto');
+  let engine: any = null;
+  let selectedStatus: 'ok'|'warn'|'fail' = 'ok';
+  let selectedDetail = 'configured';
+  try {
+    engine = registry.get(selected);
+  } catch {
+    selectedStatus = 'fail';
+    selectedDetail = 'selected Cesar engine is not registered';
+  }
+  rows.push(['Selected Cesar', selected, selectedStatus, selectedDetail]);
+  
+  const caps: string[] = [];
+  if (engine?.exec) caps.push('exec');
+  if (engine?.review) caps.push('review');
+  if (engine?.agent) caps.push('agent');
+  if (engine?.companion) caps.push(`companion:${engine.companion.protocol ?? 'mcp'}`);
+  if (engine?.binary) caps.push('cli');
+  if (engine?.api) caps.push(`api:${engine.api.format ?? 'anthropic'}`);
+  rows.push(['Capability profile', selected, caps.length ? 'ok' : 'fail', caps.join(', ') || 'no exec/review/agent/cli/api capability']);
+  
+  const binaryPath = engine?.binary ? registry.findBinary(engine) : null;
+  const apiKeyEnv = engine?.api?.apiKeyEnv ?? '';
+  const apiReady = !!(engine?.api && apiKeyEnv && process.env[apiKeyEnv]);
+  const cliReady = !!binaryPath;
+  let backend = 'unavailable';
+  let backendStatus: 'ok'|'warn'|'fail' = 'fail';
+  let backendDetail = 'no CLI binary or API key available';
+  if (backendPref === 'cli') {
+    backend = cliReady ? 'cli' : 'cli-unavailable';
+    backendStatus = cliReady ? 'ok' : (apiReady ? 'warn' : 'fail');
+    backendDetail = cliReady ? `CLI ${binaryPath}` : (apiReady ? 'CLI missing; API fallback exists but cesarBackend=cli' : `install ${engine?.binary ?? 'CLI'}`);
+  } else if (backendPref === 'api') {
+    backend = apiReady ? 'api' : 'api-unavailable';
+    backendStatus = apiReady ? 'ok' : (cliReady ? 'warn' : 'fail');
+    backendDetail = apiReady ? `${engine?.api?.model ?? 'model'} via ${apiKeyEnv}` : (cliReady ? `API key ${apiKeyEnv || 'missing'} not set; CLI fallback exists but cesarBackend=api` : `set ${apiKeyEnv || 'API key'}`);
+  } else {
+    backend = cliReady ? 'cli' : (apiReady ? 'api' : 'unavailable');
+    backendStatus = backend === 'unavailable' ? 'fail' : 'ok';
+    backendDetail = cliReady ? `auto -> CLI ${binaryPath}` : (apiReady ? `auto -> API ${engine?.api?.model ?? 'model'}` : `install ${engine?.binary ?? 'CLI'} or set ${apiKeyEnv || 'API key'}`);
+  }
+  rows.push(['Backend', `${backendPref} -> ${backend}`, backendStatus, backendDetail]);
+  
+  const hasNative = cesar?.hasNativeTools === true;
+  const hasMcpSignal = typeof cesar?.mcpSignalPath === 'string' && cesar.mcpSignalPath.length > 0;
+  rows.push(['Native tools', selected, hasNative ? 'ok' : 'warn', hasNative ? 'active in current Cesar session' : 'not active yet; send a Cesar turn to test native tool streaming']);
+  rows.push(['MCP side-channel', selected, hasMcpSignal ? 'ok' : 'warn', hasMcpSignal ? `signal file ${cesar.mcpSignalPath}` : 'not active for current session']);
+  
+  const reliability = readCesarToolReliability(selected, backend === 'unavailable' ? undefined : backend, 200);
+  const reliabilityStatus: 'ok'|'warn'|'fail' = reliability.label === 'tool-capable'
+    ? 'ok'
+    : reliability.label === 'advisory-only'
+      ? 'fail'
+      : 'warn';
+  rows.push(['Tool reliability', `${reliability.engineId}/${reliability.backend}`, reliabilityStatus, formatCesarReliabilityLine(reliability)]);
+  const downgrade = shouldDowngradeCesarToolWork(reliability, 'big-feature', 'plan-first');
+  rows.push(['Tool-heavy policy', selected, downgrade ? 'warn' : 'ok', downgrade ? 'bias broad/tool-heavy turns toward ProposePlan, Agent, Forge, or Review' : 'self-tooling is allowed when the task fits']);
+  
+  const failing = rows.filter((row) => row[2] === 'fail').length;
+  const warnings = rows.filter((row) => row[2] === 'warn').length;
+  return {
+    headers: ['Check', 'Subject', 'Status', 'Detail'],
+    rows,
+    ok: failing === 0,
+    summary: `${rows.length - failing - warnings} ok, ${warnings} warn, ${failing} fail`,
+  };
+}
+
+// @kern-source: doctor:343
+export interface ReviewDoctorReport {
+  rows: string[][];
+  ok: boolean;
+  summary: string;
+}
+
+// @kern-source: doctor:348
+export const REVIEW_DOCTOR_DIFF: string = [
+  'diff --git a/sample.ts b/sample.ts',
+  'new file mode 100644',
+  'index 0000000..1111111',
+  '--- /dev/null',
+  '+++ b/sample.ts',
+  '@@ -0,0 +1,3 @@',
+  '+export function divide(a: number, b: number): number {',
+  '+  return a / b;',
+  '+}',
+].join('\n');
+
+// @kern-source: doctor:360
+/**
+ * Review-specific reliability smoke test (#8). For each engine, runs a real review of a tiny synthetic buggy diff through the full runReviewCore pipeline (prompt → dispatch → sentinel parse → repair) under a short hard timeout, then classifies whether the engine produced machine-parseable output. This catches engines that pass `doctor engines` (binary/key reachable) but hang or emit unparseable output in actual review use — the kimi/zai failure mode the user hit.
+ */
+export async function runReviewDoctor(registry: EngineRegistry, config: any, adapter: any, engineIds: string[], timeoutSec: number): Promise<ReviewDoctorReport> {
+  // Align the inner dispatch timeout with the orchestrator wall clock (+grace)
+  // so a misbehaving dispatch path that defers abort still can't exceed the
+  // smoke-test budget — same belt-and-suspenders as the review command.
+  (config as any).reviewTimeout = timeoutSec + 5;
+  const ctx = {
+    config,
+    registry,
+    adapter,
+    activeEngines: () => registry.activeIds(config),
+  } as any;
+  const rows: string[][] = [];
+  let failing = 0;
+  let warned = 0;
+  for (const engineId of engineIds) {
+    const start = Date.now();
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutSec * 1000);
+    try {
+      const result = await runReviewCore(REVIEW_DOCTOR_DIFF, 'doctor smoke test', engineId, ctx, controller.signal);
+      const ms = Date.now() - start;
+      if (timedOut) {
+        failing += 1;
+        rows.push([engineId, 'fail', `timed out at ${timeoutSec}s — would hang a real review`]);
+      } else if (!result.parseFailed) {
+        // Parsed cleanly. blocking=true just means it caught the planted
+        // divide-by-zero bug AND emitted a structured block — the ideal result.
+        rows.push([engineId, 'ok', `parseable findings block in ${(ms / 1000).toFixed(1)}s${result.blocking ? ' (caught the planted bug)' : ''}`]);
+      } else if (result.unstructured) {
+        warned += 1;
+        rows.push([engineId, 'warn', `returned prose but no machine-parseable findings block (${(ms / 1000).toFixed(1)}s)`]);
+      } else {
+        failing += 1;
+        rows.push([engineId, 'fail', `empty or unusable response (${(ms / 1000).toFixed(1)}s)`]);
+      }
+    } catch (err) {
+      if (timedOut) {
+        failing += 1;
+        rows.push([engineId, 'fail', `timed out at ${timeoutSec}s — would hang a real review`]);
+      } else {
+        failing += 1;
+        rows.push([engineId, 'fail', err instanceof Error ? err.message : String(err)]);
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return {
+    rows,
+    ok: failing === 0,
+    summary: `${rows.length - failing - warned} ok, ${warned} warn, ${failing} fail`,
+  };
+}
+
+// @kern-source: doctor:417
+export const doctorCommand: any = defineCommand({
+  meta: {
+    name: 'doctor',
+    description: 'Diagnose Agon engine and worktree health',
+  },
+  args: {
+    scope: {
+      type: 'positional',
+      description: 'Scope: engines|harness|review',
+      required: false,
+    },
+    engines: {
+      type: 'string',
+      alias: 'e',
+      description: 'For `doctor review`: comma-separated engines to smoke-test (default: active review-capable engines).',
+    },
+    timeout: {
+      type: 'string',
+      description: 'For `doctor review`: per-engine hard timeout in seconds (default 30).',
+    },
+  },
+  async run({ args }) {
+    const scope = String(args.scope ?? 'engines').trim() || 'engines';
+    if (scope !== 'engines' && scope !== 'harness' && scope !== 'review') {
+      fail(`Unknown doctor scope: ${scope}`);
+      info('Available: engines, harness, review');
+      process.exit(1);
+    }
+
+    const registry = new EngineRegistry();
+    registry.load(resolveBuiltinEnginesDir());
+    const config = loadConfig(resolveWorkingDir());
+    if (scope === 'harness') {
+      const report = buildHarnessDoctorReport(registry, config);
+      header('Harness Doctor');
+      table(report.headers, report.rows);
+      if (report.ok) success(`Summary: ${report.summary}`);
+      else warn(`Summary: ${report.summary}`);
+      return;
+    }
+
+    const reviewAdapter = createCliAdapter(registry);
+    if (scope === 'review') {
+      const ctx = { config, registry, adapter: reviewAdapter, activeEngines: () => registry.activeIds(config) } as any;
+      // Resolve which engines to smoke-test: explicit --engines (alias-resolved),
+      // else every active review-capable engine.
+      let reviewEngineIds: string[];
+      if (typeof args.engines === 'string' && args.engines.trim()) {
+        reviewEngineIds = args.engines.split(',').map((s: string) => registry.resolveId(s.trim())).filter(Boolean);
+      } else {
+        reviewEngineIds = registry.activeIds(config).filter((id: string) => {
+          try { return !!registry.get(id).review; } catch { return false; }
+        });
+      }
+      if (reviewEngineIds.length === 0) {
+        // Last resort: whatever selectReviewEngine would pick.
+        try { reviewEngineIds = [selectReviewEngine(undefined, ctx)]; } catch { /* none */ }
+      }
+      if (reviewEngineIds.length === 0) {
+        fail('No review-capable engines available to smoke-test.');
+        process.exit(1);
+      }
+      const parsedTimeout = args.timeout != null ? Number(String(args.timeout).trim()) : NaN;
+      const timeoutSec = Number.isFinite(parsedTimeout) && parsedTimeout > 0 ? Math.floor(parsedTimeout) : 30;
+      header('Review Doctor');
+      info(`Smoke-testing ${reviewEngineIds.join(', ')} — synthetic diff, ${timeoutSec}s hard timeout each.`);
+      const report = await runReviewDoctor(registry, config, reviewAdapter, reviewEngineIds, timeoutSec);
+      table(['Engine', 'Status', 'Detail'], report.rows.map((r) => [
+        bold(r[0]),
+        r[1] === 'ok' ? green('ok') : r[1] === 'warn' ? yellow('warn') : red('fail'),
+        r[2],
+      ]));
+      if (report.ok) success(`Summary: ${report.summary}`);
+      else warn(`Summary: ${report.summary}`);
+      if (!report.ok) process.exitCode = 1;
+      return;
+    }
+
+    const adapter = reviewAdapter;
+    const enabledIds = config.forgeEnabledEngines ?? [];
+
+    header('Engine Doctor');
+    const entries = registry.list()
+      .map((engine: EngineDefinition) => diagnoseEngineDoctorEntry(engine, registry, enabledIds))
+      .sort((a: EngineDoctorEntry, b: EngineDoctorEntry) => {
+        if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+        return a.id.localeCompare(b.id);
+      });
+
+    const rows: string[][] = [];
+    for (const entry of entries) {
+      let version = '';
+      try {
+        const engine = registry.get(entry.id);
+        version = entry.status === 'fail' ? '' : (await adapter.getVersion(engine)) ?? '';
+        version = version.replace(/\s+/g, ' ').trim();
+        if (version.length > 80) version = version.slice(0, 77) + '...';
+      } catch {
+        version = '';
+      }
+      rows.push([
+        entry.enabled ? bold(entry.id) : dim(entry.id),
+        entry.enabled ? green('yes') : dim('no'),
+        formatDoctorStatus(entry.status),
+        entry.backend,
+        entry.modes,
+        version || dim('-'),
+        entry.detail,
+      ]);
+    }
+    table(['ID', 'Forge', 'Status', 'Backend', 'Modes', 'Version/Model', 'Detail'], rows);
+
+    const worktree = checkDoctorWorktree(resolveWorkingDir());
+    console.log('');
+    if (worktree.ok) {
+      success(worktree.message);
+    } else {
+      warn(`worktree check failed: ${worktree.message}`);
+      if (worktree.cleanupCommand) info(`Cleanup: ${worktree.cleanupCommand}`);
+    }
+
+    const python = diagnoseDedupPython();
+    console.log('');
+    if (python.status === 'ok') {
+      success(`Python sidecars: ${python.detail}`);
+    } else if (python.status === 'warn') {
+      warn(`Python sidecars: ${python.detail}`);
+      if (python.installCommand) info(`Install: ${python.installCommand}`);
+    } else {
+      warn(`Python sidecars unavailable: ${python.detail}`);
+      if (python.installCommand) info(`Fix: ${python.installCommand}`);
+      info('Agon still works — semantic history, syntax validator, dedup, and task classifier will use fallback paths.');
+    }
+
+    // Workspace-pure isolation: for each CLI engine with a clean config dir,
+    // report whether it's authenticated there. Surfaces isolationHints.setupHint
+    // so a silent fallback-to-personal-config is visible and actionable.
+    const isoEntries = registry.list()
+      .map((engine: EngineDefinition) => diagnoseEngineIsolation(engine, agonPath('pure', engine.id)))
+      .filter((e: IsolationDoctorEntry | null): e is IsolationDoctorEntry => e !== null);
+    if (isoEntries.length > 0) {
+      console.log('');
+      info('Workspace-pure isolation (clean per-engine config dirs):');
+      for (const e of isoEntries) {
+        if (e.authed) success(`  ${bold(e.id)}: ${e.detail}`);
+        else warn(`  ${bold(e.id)}: not logged in — ${e.detail}`);
+      }
+    }
+
+    const failing = entries.filter((entry: EngineDoctorEntry) => entry.status === 'fail');
+    const warnings = entries.filter((entry: EngineDoctorEntry) => entry.status === 'warn');
+    console.log('');
+    info(`Summary: ${entries.length - failing.length - warnings.length} ok, ${warnings.length} warn, ${failing.length} fail`);
+    const enabledFailing = failing.filter((entry: EngineDoctorEntry) => entry.enabled);
+    if (enabledFailing.length > 0 || !worktree.ok) process.exitCode = 1;
+  },
+});
+

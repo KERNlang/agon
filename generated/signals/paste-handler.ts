@@ -1,0 +1,96 @@
+// @kern-source: paste-handler:1
+import { pasteStore } from '@agon/core';
+
+// @kern-source: paste-handler:2
+import type { PasteStoreResult } from '@agon/core';
+
+// @kern-source: paste-handler:4
+export type PasteResult =
+  | { type: 'stored'; tag: string; fullHash: string; placeholder: string }
+  | { type: 'direct'; content: string }
+  | { type: 'empty' };
+
+// @kern-source: paste-handler:13
+export function recordPastePlaceholder(hashMap: Map<string,string>, placeholder: string, fullHash: string): void {
+  const existing = hashMap.get(placeholder);
+  if (!existing) {
+    hashMap.set(placeholder, fullHash);
+    return;
+  }
+  
+  let hashes = [existing];
+  try {
+    const parsed = JSON.parse(existing);
+    if (Array.isArray(parsed) && parsed.every((item: unknown) => typeof item === 'string')) {
+      hashes = parsed;
+    }
+  } catch {
+    // Existing value is a single hash.
+  }
+  hashes.push(fullHash);
+  hashMap.set(placeholder, JSON.stringify(hashes));
+}
+
+// @kern-source: paste-handler:34
+export function processPasteContent(raw: string): PasteResult {
+  const normalized = raw.replace(/\r\n/g, '\n');
+  const content = normalized.trimEnd();
+  if (!content) {
+    return { type: 'empty' };
+  }
+  const charCount = content.length;
+  const isLong = charCount > 500;
+  if (isLong) {
+    try {
+      const result = pasteStore.store(content);
+      const tag = result.hash.slice(0, 8);
+      const placeholder = `[Pasted Content ${charCount} chars]`;
+      return { type: 'stored', tag: tag, fullHash: result.hash, placeholder: placeholder };
+    } catch (e) {
+    }
+  }
+  return { type: 'direct', content: normalized };
+}
+
+// @kern-source: paste-handler:51
+export function expandPastePlaceholders(input: string, hashMap: Map<string,string>): string {
+  const takeHash = (key: string): string | null => {
+    const stored = hashMap.get(key);
+    if (!stored) return null;
+    try {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed) && parsed.every((item: unknown) => typeof item === 'string')) {
+        const [next, ...rest] = parsed;
+        if (rest.length > 0) hashMap.set(key, JSON.stringify(rest));
+        else hashMap.delete(key);
+        return next ?? null;
+      }
+    } catch {
+      // Stored value is a single hash.
+    }
+    hashMap.delete(key);
+    return stored;
+  };
+  
+  const contentRe = /\[Pasted Content \d+ chars\]/g;
+  let expanded = input.replace(contentRe, (match: string) => {
+    const fullHash = takeHash(match);
+    if (!fullHash) return match;
+    const content = pasteStore.retrieve(fullHash);
+    return content ?? match;
+  });
+  
+  const legacyPasteRe = /\[Pasted text #(\d+) \+\d+ lines\]/g;
+  expanded = expanded.replace(legacyPasteRe, (match: string, idx: string) => {
+    const fullHash = takeHash(idx);
+    if (!fullHash) return match;
+    const content = pasteStore.retrieve(fullHash);
+    return content ?? match;
+  });
+  // Clean up used entries
+  for (const key of [...hashMap.keys()]) {
+    if (!expanded.includes(key) && !expanded.includes(`[Pasted text #${key}`)) hashMap.delete(key);
+  }
+  return expanded;
+}
+

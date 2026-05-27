@@ -127,7 +127,7 @@ export const forgeCommand: any = defineCommand({
     const available = registry.activeIds(config as any);
     if (available.length === 0) {
       fail('No engines found. Install at least one AI CLI tool.');
-      info('Supported: claude, codex, gemini');
+      info('Supported: claude, codex, agy');
       process.exit(1);
     }
 

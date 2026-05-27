@@ -136,6 +136,12 @@ union name=OutputEvent discriminant=type
     field name=cost type=number optional=true
   variant name=confidence-update
     field name=value type="number|null"
+  variant name=context-usage
+    field name=pct type=number
+    field name=used type=number
+    field name=limit type=number
+    field name=compacted type=number optional=true
+    field name=cached type=number optional=true
   variant name=cesar-recap
     field name=engineId type=string
     field name=mode type=string

@@ -79,7 +79,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
   const msgs = chatMessageCount;
   const tokens = totalTokens;
   const contextWindows: Record<string, number> = {
-    claude: 1000000, codex: 200000, gemini: 1000000, opencode: 200000,
+    claude: 1000000, codex: 200000, agy: 1000000, opencode: 200000,
   };
   const contextBudget = contextWindows[cesarId] ?? 200000;
   return (
@@ -465,7 +465,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 export { BackgroundJobRail };
 
 // @kern-source: status:546
-const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, jobs, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
+const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
     return (value) => setTimeout(() => setter(value), 0);
@@ -485,10 +485,11 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   // Idle: single dimmed line (no colored nesting issues)
   if (!isActive) {
     const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
+    const ctxPart = (context && context.pct > 0) ? ` \u2502 ctx ${context.pct}%` : '';
     return (
       <Box paddingTop={0} flexDirection="column">
         <Text>
-          <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{' \u2502 idle'}</Text>
+          <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{ctxPart}{' \u2502 idle'}</Text>
         </Text>
       </Box>
     );
@@ -503,6 +504,16 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   if (confidence !== null && confidence !== undefined) {
     confStr = ` ${confidence}%`;
     confColor = confidence >= 96 ? '#4ade80' : confidence >= 88 ? '#fbbf24' : confidence >= 72 ? '#f97316' : '#ef4444';
+  }
+
+  // Context-window gauge: green < 60%, amber 60-80%, red > 80%. A compacted
+  // marker (⤵) shows when older turns have been summarized so the user knows
+  // the window was managed, not lost.
+  let ctxStr = '';
+  let ctxColor = '#6b7280';
+  if (context && context.pct > 0) {
+    ctxStr = ` ctx ${context.pct}%${context.compacted > 0 ? '⤵' : ''}`;
+    ctxColor = context.pct >= 80 ? '#ef4444' : context.pct >= 60 ? '#fbbf24' : '#4ade80';
   }
 
   // Activity segment
@@ -544,6 +555,7 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
         <Text>
           <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
           {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
+          {ctxStr ? <Text color={ctxColor}>{ctxStr}</Text> : null}
           <Text dimColor>{' \u2502 '}</Text>
           <Text color="#fbbf24">{activityStr}</Text>
           {elapsedStr ? <Text dimColor>{elapsedStr}</Text> : null}

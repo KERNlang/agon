@@ -1,0 +1,2032 @@
+// @kern-source: brain:1
+import { join } from 'node:path';
+
+// @kern-source: brain:2
+import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdirSync, writeFileSync } from 'node:fs';
+
+// @kern-source: brain:3
+import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@agon/core';
+
+// @kern-source: brain:4
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth } from '@agon/core';
+
+// @kern-source: brain:5
+import type { ToolContext, ToolCallResult } from '@agon/core';
+
+// @kern-source: brain:6
+import { ENGINE_COLORS } from '../blocks/output-format.js';
+
+// @kern-source: brain:7
+import type { Dispatch, HandlerContext, PendingDelegation, CesarTurnOutcome } from '../../handlers/types.js';
+
+// @kern-source: brain:8
+import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge } from './confidence.js';
+
+// @kern-source: brain:9
+import { parseSuggestion } from './suggestion.js';
+
+// @kern-source: brain:10
+import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend } from './session.js';
+
+// @kern-source: brain:11
+import { createCesarToolRegistry, createEagerToolContext, executeEagerTool } from './tools.js';
+
+// @kern-source: brain:12
+import { fireQuickNero, fireNero, fireAdvisor, handleSecondOpinion, activateNero, deactivateNero, promptDelegation, promptProtocolEnforcement } from './escalation.js';
+
+// @kern-source: brain:13
+import { buildRoutingContext, deriveRoutingHints, shouldSpeculate } from './routing.js';
+
+// @kern-source: brain:14
+import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork, buildWhatHappenedSummary } from './reliability.js';
+
+// @kern-source: brain:15
+import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
+
+// @kern-source: brain:16
+import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline } from './tool-observability.js';
+
+// @kern-source: brain:17
+import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, isUserDirectedQuestion, detectNarratedToolStall, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
+
+// @kern-source: brain:19
+export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
+  if (streaming) {
+    dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+  }
+  if (!streaming) {
+    dispatch({ type: 'spinner-stop' });
+  }
+  await yieldToInk();
+  appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+  appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+  tracker.record(cesarEngineId, { prompt: input, response: response });
+  const delResult = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team);
+  const happened = buildWhatHappenedSummary(telemetry ?? {});
+  if (happened) {
+    dispatch({ type: 'info', message: happened });
+  }
+  if (delResult.approved) {
+    const finalAction = delResult.action ?? pendingDel.action;
+    const action = pendingDel.team ? `team-${finalAction}` : finalAction;
+    const mode = (finalAction === 'forge' && pendingDel.scope === 'slice' && !(delResult.team ?? pendingDel.team)) ? 'forge-slice' : action;
+    const reasoning = delResult.userContext ? `${pendingDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : pendingDel.reasoning;
+    return { mode: mode as any, delegated: true, responded: true, action: action, task: pendingDel.task, reasoning: reasoning, decisionReason: 'tool-delegation', scope: pendingDel.scope, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns, queue: pendingDel.queue, gate: pendingDel.gate, push: pendingDel.push, pr: pendingDel.pr, maxHours: pendingDel.maxHours, budget: pendingDel.budget, ...telemetry ?? {} };
+  }
+  return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
+}
+
+// @kern-source: brain:41
+export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
+  if (streaming) {
+    dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+  }
+  if (!streaming) {
+    dispatch({ type: 'spinner-stop' });
+  }
+  await yieldToInk();
+  appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+  appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+  tracker.record(cesarEngineId, { prompt: input, response: response });
+  if (suggestion.rest) {
+    dispatch({ type: 'engine-block', engineId: cesarEngineId, color: color, content: suggestion.rest });
+  }
+  const delResult = await promptDelegation(suggestion.action, dispatch, suggestion.hardened, suggestion.tribunalMode, suggestion.team);
+  const happened = buildWhatHappenedSummary(telemetry ?? {});
+  if (happened) {
+    dispatch({ type: 'info', message: happened });
+  }
+  if (delResult.approved) {
+    const finalAction = delResult.action ?? suggestion.action;
+    const reasoning = delResult.userContext ? `${suggestion.rest ?? ''}\n\nUser context: ${delResult.userContext}` : suggestion.rest;
+    return { mode: finalAction as any, delegated: true, responded: true, action: finalAction, task: input, reasoning: reasoning, decisionReason: 'suggestion-marker', hardened: delResult.hardened ?? suggestion.hardened, tribunalMode: delResult.tribunalMode ?? suggestion.tribunalMode, team: delResult.team ?? suggestion.team, ...telemetry ?? {} };
+  }
+  return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
+}
+
+// @kern-source: brain:63
+export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
+  const abort = new AbortController();
+      const _turnStart = Date.now();
+      const _turnId = createCesarTurnId();
+      const _turnCwd = resolveWorkingDir();
+      const _toolsUsed: string[] = [];
+      const _toolUseKeys = new Set<string>();
+      let _toolEventCount = 0;
+      let _toolCallTurns = 0;
+      let _nativeToolCalls = 0;
+      let _mcpToolCalls = 0;
+      let _xmlToolCalls = 0;
+      let _narratedToolStalls = 0;
+      let _autoToolExecutions = 0;
+      let _confidenceToolUsed = false;
+      let _actualCesarEngineId = '';
+      let _actualCesarBackend = 'unknown';
+      let _actualHasNativeTools = false;
+      let _timelineEnabled = (ctx.config as any).cesarToolTimeline !== false;
+      let _turnTimelineClosed = false;
+      let restoreFastPathMode: (() => void) | null = null;
+      const recordTimeline = (record: any) => {
+        if (!_timelineEnabled) return;
+        recordCesarToolTimeline({ turnId: _turnId, ...record });
+      };
+      const recordToolUse = (name: string, source: 'native'|'mcp'|'xml'|'eager'|'auto'|'signal', input?: string, status?: string) => {
+        const toolName = String(name || 'tool');
+        const normalizedSource = source === 'eager' ? 'xml' : source === 'auto' ? 'native' : source;
+        const key = `${normalizedSource}:${toolName}:${String(input ?? '').slice(0, 500)}`;
+        _toolEventCount++;
+        if (!_toolUseKeys.has(key)) {
+          _toolUseKeys.add(key);
+          _toolsUsed.push(toolName);
+          if (normalizedSource === 'native') _nativeToolCalls++;
+          else if (normalizedSource === 'mcp') _mcpToolCalls++;
+          else if (normalizedSource === 'xml') _xmlToolCalls++;
+        }
+        if (toolName === 'ReportConfidence') _confidenceToolUsed = true;
+        if (status && /turn \d+\/\d+/.test(status)) _toolCallTurns++;
+        recordTimeline({
+          event: status && /^(done|ok|error|rejected|failed|completed)$/i.test(status) ? 'tool_result' : 'tool_call',
+          engineId: _actualCesarEngineId || undefined,
+          cwd: _turnCwd,
+          tool: toolName,
+          source: normalizedSource,
+          status: status ?? 'running',
+          input,
+        });
+      };
+      const normalizeConfidenceReasoning = (value: unknown): string => {
+        return String(value ?? '').replace(/\s+/g, ' ').trim();
+      };
+      const consumeStoredConfidenceReasoning = (): string => {
+        const reasoning = normalizeConfidenceReasoning(ctx.cesar?.reportedConfidenceReasoning);
+        if (ctx.cesar) ctx.cesar.reportedConfidenceReasoning = undefined;
+        return reasoning;
+      };
+      const dispatchConfidenceReasoning = (engineId: string, reasoning: string, suffix = '') => {
+        if (!reasoning) return;
+        const label = suffix ? `Confidence reasoning ${suffix}:` : 'Confidence reasoning:';
+        dispatch({ type: 'thinking-chunk', engineId, chunk: `${label} ${reasoning}` } as any);
+      };
+      const buildToolTelemetry = () => ({
+        cesarEngineId: _actualCesarEngineId || undefined,
+        cesarBackend: _actualCesarBackend,
+        hasNativeTools: _actualHasNativeTools,
+        toolCount: _toolsUsed.length,
+        toolEventCount: _toolEventCount,
+        toolCallTurns: _toolCallTurns,
+        toolsUsed: _toolsUsed.length > 0 ? _toolsUsed : undefined,
+        nativeToolCalls: _nativeToolCalls,
+        mcpToolCalls: _mcpToolCalls,
+        xmlToolCalls: _xmlToolCalls,
+        narratedToolStalls: _narratedToolStalls,
+        autoToolExecutions: _autoToolExecutions,
+        confidenceToolUsed: _confidenceToolUsed,
+      });
+  
+      // Short follow-ups bypass escalation/delegation — they're conversation continuations
+      const FOLLOWUP_RE = /^(still\??|and\??|go on|continue|yes|no|ok|why\??|how\??|what\??|really\??|more|details|explain|show me|huh\??|so\??|\?\??|y|n)$/i;
+      const _isFollowUp = FOLLOWUP_RE.test(input.trim());
+  
+      if (!ctx.cesar) {
+        ctx.cesar = {
+          busy: false, busySince: null, queue: null,
+          toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+          pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+          autoNero: false, advisorPending: false, lastEscalation: null as string | null,
+          mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
+          sessionMcpServers: [], autoModeQueued: false,
+        };
+      }
+  
+      // ── Concurrency guard with message queue ──
+      if (ctx.cesar!.busy) {
+        const busySince = ctx.cesar!.busySince ?? 0;
+        if (busySince && Date.now() - busySince > 180_000) {
+          console.warn('[cesar:brain] force-clearing stuck busy flag');
+          ctx.cesar!.busy = false;
+          ctx.cesar!.queue = null;
+        } else {
+          // Follow-ups while busy → show elapsed status, don't queue
+          if (_isFollowUp) {
+            const elapsed = Math.round((Date.now() - busySince) / 1000);
+            dispatch({ type: 'info', message: `Cesar still working… ${elapsed}s` });
+            return { delegated: false, responded: true };
+          }
+          const existing = ctx.cesar!.queue;
+          if (existing) {
+            existing.input = existing.input + '\n\n' + input;
+            if (images?.length) existing.images = [...(existing.images ?? []), ...images];
+          } else {
+            ctx.cesar!.queue = { input, dispatch, images };
+          }
+          dispatch({ type: 'info', message: 'Queued — will send when Cesar finishes.' });
+          return { delegated: false, responded: true };
+        }
+      }
+      ctx.cesar!.busy = true;
+      ctx.cesar!.busySince = Date.now();
+      ctx.cesar!.lastEscalation = null;
+      ctx.cesar!.reportedConfidence = undefined;
+      ctx.cesar!.reportedConfidenceReasoning = undefined;
+      ctx.cesar!.confidenceSatisfied = false;
+      ctx.cesar!.blockedOnConfidence = null;
+      ctx.cesar!.turnId = _turnId;
+      ctx.cesar!.planDispatch = dispatch;
+      const _brainStartMs = Date.now();
+      if (ctx.eventBus) await ctx.eventBus.emit('pre:cesar-brain', { input });
+  
+      try {
+        ensureAgonHome();
+        const config = ctx.config;
+        _timelineEnabled = (config as any).cesarToolTimeline !== false;
+  
+        if ((config as any).cesarEnabled === false) {
+          ctx.cesar!.busy = false;
+          return { delegated: false, responded: false };
+        }
+  
+        const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+        _actualCesarEngineId = cesarEngineId;
+        recordTimeline({
+          event: 'turn_start',
+          engineId: cesarEngineId,
+          cwd: _turnCwd,
+          status: 'running',
+          summary: { inputChars: input.length, images: images?.length ?? 0 },
+        });
+        try {
+          const resolvedForTelemetry = resolveCesarBackend(ctx, cesarEngineId);
+          _actualCesarBackend = resolvedForTelemetry.backend ?? 'unknown';
+        } catch { /* telemetry best-effort */ }
+        const allAvailable = ctx.activeEngines();
+        if (!allAvailable.includes(cesarEngineId)) {
+          return { delegated: false, responded: false };
+        }
+  
+        const color = ENGINE_COLORS[cesarEngineId] ?? 124;
+        ctx.setActiveAbort(abort);
+        ctx.cesar!.lastDispatch = dispatch;
+        dispatch({ type: 'confidence-update', value: null });
+        dispatch({ type: 'spinner-start', message: 'Cesar thinking…', color });
+        await yieldToInk();
+  
+        // ── Boot or reuse persistent session ──
+        let session: PersistentSession;
+        try {
+          session = await ensureCesarSession(ctx);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          // Gate the spinner error on the backend we're actually using.
+          // Engines on the API path (no CLI binary chosen) don't need a noisy
+          // "session error" — this is just their normal per-turn path.
+          const resolvedBackend = resolveCesarBackend(ctx, cesarEngineId);
+          let engine: any = resolvedBackend.engine;
+          const usingApiBackend = resolvedBackend.backend === 'api';
+          if (!usingApiBackend) {
+            dispatch({ type: 'spinner-update', message: `Cesar session error: ${errMsg.slice(0, 80)}` });
+          }
+          // Eagerly persist the user turn before any downstream dispatch.
+          // If the fallback adapter.dispatch throws, routeWithCesar's
+          // recovery ladder runs — but acting-Cesar may also fail, and we
+          // don't want to lose the user's input on that crash path. The
+          // idempotent helper means if brain's fallback *does* succeed, the
+          // success path below uses the same idempotent call — no double
+          // append, and the engine response still lands.
+          appendUserTurnIfAbsent(ctx.chatSession, input);
+          try {
+            if (!engine) engine = ctx.registry.get(cesarEngineId);
+            const outputDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
+            mkdirSync(outputDir, { recursive: true });
+            const primedPrompt = buildHistoryPrimedPrompt(ctx.chatSession, input);
+            const freshResult = await ctx.adapter.dispatch({
+              engine, prompt: primedPrompt, cwd: resolveWorkingDir(), mode: 'exec' as any,
+              timeout: config.timeout ?? 120, outputDir, signal: abort.signal, systemPrompt: buildCesarSystemPrompt(ctx),
+            });
+            dispatch({ type: 'spinner-stop' });
+            if (freshResult.stdout.trim()) {
+              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: freshResult.stdout.trim() });
+              appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
+              tracker.record(cesarEngineId, { prompt: input, response: freshResult.stdout.trim() });
+              return { delegated: false, responded: true };
+            }
+            // Empty stdout — persist the user turn idempotently so the next
+            // history-primed prompt still includes this message. Without this,
+            // every failed turn silently drops the user's input and Cesar
+            // wakes up blind. Return responded=false (not true) so the caller
+            // in routeWithCesar still runs its recovery ladder — acting-Cesar
+            // may be able to answer even when the primary engine returned
+            // empty. The idempotent helper prevents that ladder from saving a
+            // second copy of this message. Surface the first-attempt error
+            // once here so the user sees what went wrong with the primary
+            // engine before acting-Cesar takes over.
+            appendUserTurnIfAbsent(ctx.chatSession, input);
+            const brainHint = (freshResult.stderr || '').split('\n')[0].slice(0, 200).trim();
+            if (brainHint) dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) returned no response: ${brainHint}` });
+            // Surface a health hint when adapter has quarantined this engine — the user
+            // needs to see why retries won't help so they can /cesar to a working engine.
+            const health = engineHealth.get(cesarEngineId);
+            if (health && (health.status === 'auth-failed' || health.status === 'unreachable')) {
+              dispatch({ type: 'warning', message: `Engine ${cesarEngineId} marked ${health.status} — run /cesar to switch to a healthy engine, or /engines to fix credentials.` });
+            }
+            return { delegated: false, responded: false };
+          } catch { /* truly failed */ }
+          dispatch({ type: 'spinner-stop' });
+          return { delegated: false, responded: false };
+        }
+  
+        // Ensure tool registry is always available
+        if (!ctx.cesar!.toolRegistry) {
+          ctx.cesar!.toolRegistry = createCesarToolRegistry();
+        }
+        const toolRegistry = ctx.cesar!.toolRegistry as ToolRegistry;
+        _actualHasNativeTools = ctx.cesar!.hasNativeTools === true;
+  
+        const reviewFollowup = buildReviewFollowupPrompt(input, ctx);
+        let response = '';
+        let streaming = false;
+        let wasStreamed = false; // tracks if response was already shown via streaming chunks
+        let parsedConfidence: number | null = null;
+        let confidenceParsed = false;
+        let insideThinkBlock = false;
+        let suppressXmlToolDisplay = false;
+        let sawStreamingXmlToolCall = false;
+        let xmlDisplayHold = '';
+        let hadToolActivity = false; // tracks if native tool calls were shown to user
+      let secondOpinionPromise: Promise<any> | null = null;
+      let usedQuickNero = false;
+        const eagerPromises: Promise<ToolCallResult>[] = [];
+        let eagerToolCtx: ToolContext | null = null;
+        const shouldInterruptForXmlTool = () => {
+          if (ctx.cesar!.hasNativeTools) return false;
+          if ((config as any).cesarStreamingXmlTools === false) return false;
+          try { return parseToolCalls(response).hasToolCalls; } catch { return false; }
+        };
+        const noteXmlToolDetected = (streamingNow: boolean) => {
+          if (sawStreamingXmlToolCall || !shouldInterruptForXmlTool()) return;
+          sawStreamingXmlToolCall = true;
+          suppressXmlToolDisplay = true;
+          xmlDisplayHold = '';
+          recordTimeline({
+            event: 'xml_interrupt',
+            engineId: cesarEngineId,
+            cwd: _turnCwd,
+            source: 'xml',
+            status: 'parsed',
+            reason: 'complete XML tool call parsed during stream',
+            summary: { responseChars: response.length, streaming: streamingNow || undefined },
+          });
+        };
+        const takeXmlSafeDisplayChunk = (chunkText: string, force = false) => {
+          if (ctx.cesar!.hasNativeTools) return chunkText;
+          if (suppressXmlToolDisplay) {
+            xmlDisplayHold = '';
+            return '';
+          }
+          const combined = xmlDisplayHold + chunkText;
+          const split = splitBeforeToolMarkup(combined);
+          if (split.hasToolMarkup) {
+            suppressXmlToolDisplay = true;
+            xmlDisplayHold = '';
+            return split.visible;
+          }
+          if (force) {
+            xmlDisplayHold = '';
+            return combined;
+          }
+          const hold = Math.min(XML_TOOL_MARKUP_HOLD_CHARS, combined.length);
+          const visible = combined.slice(0, combined.length - hold);
+          xmlDisplayHold = combined.slice(combined.length - hold);
+          return visible;
+        };
+        let routingHints = deriveRoutingHints(input, ctx);
+        const answerFastPath = routingHints.intakeKind === 'chat'
+          && routingHints.recommendedFlow === 'answer'
+          && input.trim().length < 300
+          && !reviewFollowup.matched
+          && !(images && images.length > 0)
+          && !ctx.activePlan
+          && !ctx.neroMode
+          && !ctx.explorationMode;
+        const simpleEditFastPath = routingHints.recommendedFlow === 'quick-fix'
+          && input.trim().length < 500
+          && routingHints.recommendedBreadth !== 'team'
+          && !reviewFollowup.matched
+          && !(images && images.length > 0)
+          && !ctx.activePlan
+          && !ctx.neroMode
+          && !ctx.explorationMode;
+        const cesarFastPath = answerFastPath || simpleEditFastPath;
+        const fastPathMode = simpleEditFastPath ? 'edit' : (answerFastPath ? 'answer' : '');
+        const fastPathBaseBudget = simpleEditFastPath ? 5 : 3;
+        const fastPathMaxBudget = simpleEditFastPath ? 8 : 4;
+        const FAST_PATH_BLOCKED_TOOLS = ['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'Delegate', 'ProposePlan', 'QuickNero'];
+        if (cesarFastPath && !restoreFastPathMode) {
+          const hadPreviousFastPathMode = Object.prototype.hasOwnProperty.call(ctx.cesar as any, 'fastPathMode');
+          const previousFastPathMode = (ctx.cesar as any).fastPathMode;
+          (ctx.cesar as any).fastPathMode = fastPathMode;
+          restoreFastPathMode = () => {
+            if (hadPreviousFastPathMode) (ctx.cesar as any).fastPathMode = previousFastPathMode;
+            else delete (ctx.cesar as any).fastPathMode;
+          };
+        }
+        let routeReliability: any = null;
+        let routeDowngrade = false;
+        if (cesarFastPath) {
+          dispatch({
+            type: 'info',
+            message: `Cesar route: ${routingHints.intakeKind} -> ${routingHints.recommendedFlow} | ${cesarEngineId}/${_actualCesarBackend} | fast-${fastPathMode}`,
+          });
+        } else {
+          try {
+            routeReliability = readCesarToolReliability(cesarEngineId, _actualCesarBackend === 'unknown' ? undefined : _actualCesarBackend, 200);
+            routeDowngrade = shouldDowngradeCesarToolWork(routeReliability, routingHints.intakeKind, routingHints.recommendedFlow);
+            const policy = routeDowngrade
+              ? ' | policy: route tool-heavy work through plan/orchestration'
+              : '';
+            dispatch({
+              type: 'info',
+              message: `Cesar route: ${routingHints.intakeKind} -> ${routingHints.recommendedFlow} | ${cesarEngineId}/${_actualCesarBackend} | tools: ${routeReliability.label}${policy}`,
+            });
+          } catch { /* route card is advisory only */ }
+        }
+  
+        // ── Build routing context (cheap: ~500ms, ~200 tokens) ──
+        let enrichedInput = reviewFollowup.prompt;
+        if (simpleEditFastPath) {
+          enrichedInput = `[FAST PATH — bounded edit]
+  Stay live. Read only what you need, make the smallest direct change, and verify with the narrowest useful command.
+  Do not call ProposePlan, Forge, Brainstorm, Tribunal, Campfire, Review, Agent, Delegate, Pipeline, or QuickNero unless the user explicitly asks for that mode.
+  
+  ${reviewFollowup.prompt}`;
+        } else if (!cesarFastPath) {
+          try {
+            const routingCtx = buildRoutingContext(input, ctx);
+            if (routingCtx) {
+              enrichedInput = `[ROUTING CONTEXT — use this to decide mode + team]\n${routingCtx}\n\n${reviewFollowup.prompt}`;
+            }
+          } catch { /* routing context is best-effort */ }
+        }
+        // Auto mode: user has pre-approved multi-step execution
+        if (ctx.autoModeQueued) {
+          enrichedInput = `[AUTONOMOUS MODE ACTIVE]\nThe user has toggled autonomous mode. You may self-escalate to ProposePlan when the task benefits from structured multi-step execution. Use your judgment — stay live for simple tasks, propose a plan for complex or risky work. The auto-approve policy still gates individual tool permissions.\n\n${enrichedInput}`;
+        }
+        if (routeReliability && routeDowngrade) {
+          enrichedInput = `[CESAR TOOL RELIABILITY POLICY]\n${formatCesarReliabilityLine(routeReliability)}\nFor this tool-heavy task, do not pretend direct multi-step tooling happened. Prefer ProposePlan, Agent, Forge, Review, or another direct orchestration tool when execution is needed; if staying self, keep the answer advisory and explicit.\n\n${enrichedInput}`;
+        }
+  
+        // ── Session-memory digest (re-surfaced PER TURN) ──
+        // cesarMemory accumulates decisions/findings each turn, but it is only
+        // injected into the turn-1 system prompt — which is empty then — and reused
+        // sessions never rebuild that prompt, so the engine otherwise NEVER sees its
+        // own accumulated context. Re-inject the digest here on later turns so Cesar
+        // builds on what it already established instead of cold-starting (RULE 1).
+        try {
+          const sessionDigest = ctx.cesarMemory?.toPromptContext?.();
+          if (sessionDigest) {
+            enrichedInput = `[SESSION MEMORY — you already established this earlier this session; build on it, do NOT re-investigate what is already here]\n${sessionDigest}\n\n${enrichedInput}`;
+          }
+        } catch { /* session memory is best-effort */ }
+  
+        // ── Heartbeat timer + turn timeout ──
+        const cesarTimeout = (config as any).cesarTimeout ?? 300;
+        const heartbeat = setInterval(() => {
+          const elapsed = Math.round((Date.now() - _turnStart) / 1000);
+          if (elapsed >= cesarTimeout) {
+            abort.abort();
+            clearInterval(heartbeat);
+            dispatch({ type: 'spinner-update', message: `Cesar timed out after ${elapsed}s` });
+          } else {
+            dispatch({ type: 'spinner-update', message: `Cesar thinking… ${elapsed}s` });
+          }
+        }, 2_000);
+  
+        // ── MCP side-channel watcher for write tools ──
+        // Permission requests prompt the user; tool-completion files turn MCP
+        // writes into normal tool-call events so the transcript and file rail
+        // show what actually happened.
+        const signalDir = ctx.cesar!.mcpSignalPath ? join(ctx.cesar!.mcpSignalPath, '..') : null;
+        const processMcpSideChannel = () => {
+          try {
+            if (!signalDir || !existsSync(signalDir)) return;
+            const completions = readdirSync(signalDir).filter((f: string) => f.includes('-tool-') && f.endsWith('.json'));
+            for (const f of completions) {
+              const donePath = join(signalDir, f);
+              try {
+                const done = JSON.parse(readFileSync(donePath, 'utf-8'));
+                if (done.type !== 'tool-completion') continue;
+                try { unlinkSync(donePath); } catch { /* cleanup optional */ }
+                if (!done.timestamp || Date.now() - done.timestamp > 65000) continue;
+                const status = done.status === 'error' ? 'error' : 'done';
+                const toolInput = typeof done.args === 'string' ? done.args : JSON.stringify(done.args ?? {});
+                recordToolUse(String(done.tool ?? 'tool'), 'mcp', toolInput, status);
+                dispatch({
+                  type: 'tool-call',
+                  engineId: cesarEngineId,
+                  tool: String(done.tool ?? 'tool'),
+                  input: toolInput,
+                  status,
+                  output: typeof done.output === 'string' ? done.output : undefined,
+                } as any);
+              } catch { /* malformed/stale completion — ignore */ }
+            }
+  
+            const files = readdirSync(signalDir).filter((f: string) => f.includes('-perm-') && !f.includes('-response'));
+            for (const f of files) {
+              const reqPath = join(signalDir, f);
+              const req = JSON.parse(readFileSync(reqPath, 'utf-8'));
+              if (req.type !== 'permission-request') continue;
+              if (Date.now() - req.timestamp > 65000) {
+                try { unlinkSync(reqPath); } catch { /* cleanup optional */ }
+                continue;
+              }
+              // Check if already responded
+              const respPath = reqPath.replace('.json', '-response.json');
+              if (existsSync(respPath)) continue;
+              // Check auto-approved commands
+              const cfg = loadConfig();
+              const allowed: string[] = (cfg as any).allowedCommands ?? [];
+              const cmdBase = (req.args?.command ?? '').toString().trim().split(/\s+/)[0];
+              const reqTool = String(req.tool ?? 'tool');
+              const reqArgs = (req.args ?? {}) as Record<string, unknown>;
+              const logMcpApproval = (decision: 'approved'|'denied'|'prompted'|'blocked', source: string, reason?: string) => {
+                const reqPath = typeof reqArgs.file_path === 'string' ? String(reqArgs.file_path) : undefined;
+                if ((cfg as any).cesarApprovalLedger !== false) {
+                  recordCesarApprovalDecision({
+                    turnId: _turnId,
+                    engineId: cesarEngineId,
+                    cwd: _turnCwd,
+                    tool: reqTool,
+                    decision,
+                    source,
+                    reason,
+                    mode: String((cfg as any).permissionMode ?? 'ask'),
+                    path: reqPath,
+                    args: reqArgs,
+                  });
+                }
+                recordTimeline({
+                  event: 'approval_decision',
+                  engineId: cesarEngineId,
+                  cwd: _turnCwd,
+                  tool: reqTool,
+                  source,
+                  status: decision,
+                  reason,
+                  input: reqArgs,
+                });
+              };
+              if (cmdBase && allowed.some((a: string) => cmdBase.toLowerCase().startsWith(a.toLowerCase()))) {
+                logMcpApproval('approved', 'mcp.allowedCommands', 'command matched allowedCommands');
+                writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: true }));
+                continue;
+              }
+              if (reqTool === 'Edit' || reqTool === 'Write') {
+                const approvalCwd = resolveWorkingDir();
+                const approvalCache = getProjectFileStateCache(approvalCwd);
+                const activePlan = ctx.activePlan;
+                const approvalCtx: ToolContext = {
+                  cwd: approvalCwd,
+                  readFileState: (approvalCache as any).cache,
+                  permissionMode: ((cfg as any).permissionMode ?? 'ask') as any,
+                  explorationMode: ctx.explorationMode ?? false,
+                  allowedCommands: allowed,
+                  toolPermissions: (cfg as any).toolPermissions ?? {},
+                  readOnlyMode: !!(activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)),
+                  source: 'orchestrator' as const,
+                };
+                const selfTurn = applyCesarSelfTurnApproval(reqTool, reqArgs, approvalCtx, cfg);
+                if (selfTurn.approve) {
+                  logMcpApproval('approved', 'mcp.cesar-self-turn', selfTurn.reason);
+                  writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: true, reason: selfTurn.reason }));
+                  continue;
+                }
+              }
+              // Dispatch permission-ask to UI
+              logMcpApproval('prompted', 'mcp.user-prompt', 'Cesar wants to execute');
+              dispatch({ type: 'permission-ask', tool: req.tool, command: String(req.args?.command ?? req.args?.file_path ?? JSON.stringify(req.args)), reason: `Cesar wants to execute`, resolve: (approved: boolean | string) => {
+                const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : approved;
+                logMcpApproval(wasApproved ? 'approved' : 'denied', 'mcp.user-prompt', wasApproved ? 'user approved' : 'user denied');
+                // Handle "Always" — persist to config
+                if ((typeof approved === 'string' && approved === 'a') || approved === true) {
+                  if (cmdBase && typeof approved === 'string' && approved === 'a') {
+                    const curAllowed: string[] = (loadConfig() as any).allowedCommands ?? [];
+                    if (!curAllowed.includes(cmdBase)) {
+                      curAllowed.push(cmdBase);
+                      configSet('allowedCommands', curAllowed);
+                    }
+                  }
+                }
+                writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: wasApproved, reason: wasApproved ? undefined : 'User denied' }));
+              }} as any);
+            }
+          } catch { /* permission watcher error — not critical */ }
+        };
+        const mcpWatcherInterval = signalDir ? setInterval(processMcpSideChannel, 150) : null;
+        processMcpSideChannel();
+  
+        // ── Stream response ──
+        try {
+          const sendOptions: any = { message: enrichedInput, signal: abort.signal, images: images?.map(img => img.path) };
+          if (cesarFastPath) {
+            sendOptions.toolLoopBaseBudget = fastPathBaseBudget;
+            sendOptions.toolLoopMaxBudget = fastPathMaxBudget;
+          }
+          const gen = session.send(sendOptions);
+  
+          for await (const chunk of gen) {
+            if (abort.signal.aborted) break;
+  
+            if (chunk.type === 'status') {
+              const statusText = String(chunk.content ?? '');
+              if (/auto-executing\b/i.test(statusText)) {
+                _autoToolExecutions++;
+              }
+              if (/\b(?:nudging stalled model|forcing real approval gate|solo-coding gate: forcing investigation first)\b/i.test(statusText)) {
+                _narratedToolStalls++;
+              }
+              if (/tool loop turn \d+\/\d+/i.test(statusText)) {
+                _toolCallTurns++;
+              }
+              dispatch({ type: 'spinner-update', message: `Cesar ${chunk.content}` });
+              continue;
+            }
+  
+            if (chunk.type === 'tool_call') {
+              const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
+              const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
+              const toolName = chunk.content || 'tool';
+              const toolStatus = (meta.status as string) ?? 'running';
+              const STREAM_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal']);
+              hadToolActivity = true;
+              recordToolUse(toolName, ctx.cesar!.hasNativeTools ? 'native' : 'eager', toolInput, toolStatus);
+              dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
+  
+              if (meta.input && STREAM_ORCH.has(toolName)) {
+                if (cesarFastPath) {
+                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` } as any);
+                  continue;
+                }
+                if (!ctx.cesar!.pendingDelegation) {
+                  ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
+                  ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: `stream-${toolStatus}` }).catch(() => {});
+                }
+                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+                continue;
+              }
+  
+              if (toolStatus === 'done') {
+                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+              } else if (toolStatus === 'native') {
+                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
+              } else if (toolStatus === 'running' && meta.input && toolRegistry && !ctx.cesar!.hasNativeTools) {
+                // Codex review fix (P2): after orchestration delegation has been
+                // set, suppress ALL subsequent tool calls in the same stream — not
+                // just orchestration ones. Otherwise the model can emit a Read or
+                // Edit AFTER calling Agent and that tool runs in the current
+                // workspace before the delegated job starts, racing the agents'
+                // worktrees and triggering permission prompts.
+                if (ctx.cesar!.pendingDelegation) {
+                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
+                  continue;
+                }
+                // Intercept orchestration signal tools — don't execute as workspace tools.
+                // 'Agent' is in the set; without it the Agent tool falls through to executeEagerTool
+                // which calls the noop handler and silently no-ops (PFB-1, RT-1).
+                const EAGER_ORCH = STREAM_ORCH;
+                if (EAGER_ORCH.has(toolName)) {
+                  if (cesarFastPath) {
+                    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` } as any);
+                    continue;
+                  }
+                  ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
+                  ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: 'stream' }).catch(() => {});
+                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
+                  // RT-24: do NOT break the stream. Let it drain naturally so the model can
+                  // emit any post-tool-call narration (the "I'm delegating because..." hand-off
+                  // context). The dedup-and-suppress guard above gates ALL further tool calls
+                  // in this stream (orch and non-orch), preventing workspace edits that would
+                  // race the delegated job.
+                  continue;
+                }
+                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
+                if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
+                eagerPromises.push(executeEagerTool(toolName, meta, toolRegistry, eagerToolCtx, dispatch, cesarEngineId));
+              } else {
+                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+              }
+              continue;
+            }
+  
+            if (chunk.type === 'error') {
+              // If we already have content (text or tool calls happened), don't discard it.
+              // API engines often error AFTER producing useful output (timeout on follow-up, malformed final SSE).
+              if (response.length > 0 || streaming || hadToolActivity) {
+                dispatch({ type: 'warning', message: `Cesar stream error (partial response preserved): ${(chunk.content ?? '').slice(0, 80)}` });
+                break; // Exit stream loop, process whatever we have
+              }
+              dispatch({ type: 'spinner-stop' });
+              const errBody = (chunk.content ?? '').toString().slice(0, 200) || 'unknown stream error';
+              dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) stream error before any output: ${errBody}. Try again or switch engine with /engine.` });
+              clearInterval(heartbeat);
+              processMcpSideChannel();
+              if (mcpWatcherInterval) clearInterval(mcpWatcherInterval);
+              return { delegated: false, responded: false, decisionReason: 'pre-stream-error' };
+            }
+  
+            if (chunk.type === 'done') break;
+  
+            if (chunk.type === 'text') {
+              clearInterval(heartbeat);
+              if (!streaming) {
+                response += chunk.content;
+  
+                // Check for tool-reported confidence (ReportConfidence tool)
+                if (!confidenceParsed && ctx.cesar!.reportedConfidence !== undefined) {
+                  const toolConf = ctx.cesar!.reportedConfidence as number;
+                  const reasoning = consumeStoredConfidenceReasoning();
+                  ctx.cesar!.reportedConfidence = undefined;
+                  parsedConfidence = toolConf;
+                  confidenceParsed = true;
+                  dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
+                  dispatch({ type: 'confidence-update', value: toolConf });
+                  dispatchConfidenceReasoning(cesarEngineId, reasoning);
+                  if (toolConf >= CONFIDENCE_TIERS.direct && ctx.cesar!.autoNero) deactivateNero(ctx, dispatch);
+                }
+  
+                // Parse confidence from first chunk(s)
+                if (!confidenceParsed && response.length > 5) {
+                  const conf = parseConfidence(response);
+                  if (conf.value !== null) {
+                    parsedConfidence = conf.value;
+                    confidenceParsed = true;
+                    ctx.cesar!.confidenceSatisfied = true;
+                    dispatch({ type: 'info', message: confidenceBadge(conf.value) + ` Cesar` });
+                    dispatch({ type: 'confidence-update', value: conf.value });
+                    ctx.eventBus?.emit('cesar:confidence', { value: conf.value, source: 'stream' }).catch(() => {});
+                    response = conf.rest;
+                    if (conf.value >= CONFIDENCE_TIERS.direct && ctx.cesar!.autoNero) deactivateNero(ctx, dispatch);
+                  } else if (response.length > 200 && !ctx.cesar!.hasNativeTools) {
+                    // Only give up after 200 chars (not 30) — companion engines may report via MCP later.
+                    // The R1 tool gate blocks writes anyway until confidence is reported.
+                    confidenceParsed = true;
+                  }
+                }
+  
+                // Check for suggestion/delegation marker
+                if (!cesarFastPath) {
+                  const suggestion = parseSuggestion(response);
+                  if (suggestion.action) {
+                    return await commitTurnAndSuggest({ action: suggestion.action!, rest: suggestion.rest, hardened: suggestion.hardened, tribunalMode: suggestion.tribunalMode, team: suggestion.team }, input, response, cesarEngineId, color, streaming, dispatch, ctx, buildToolTelemetry());
+                  }
+                }
+  
+                noteXmlToolDetected(false);
+  
+                // Buffer before streaming to detect [SUGGEST:mode]
+                if (response.length < 40) continue;
+                if (!ctx.cesar!.hasNativeTools) {
+                  const split = splitBeforeToolMarkup(response);
+                  if (split.hasToolMarkup && !split.visible.trim()) {
+                    suppressXmlToolDisplay = true;
+                    continue;
+                  }
+                }
+  
+                // Initial confidence is just informational — don't escalate yet.
+                // The model needs to investigate first. Escalation happens post-stream
+                // when we know if the model actually worked or just narrated.
+  
+                // Switch to streaming mode
+                dispatch({ type: 'spinner-update', message: 'Cesar responding…' });
+                streaming = true;
+                wasStreamed = true;
+                let cleanFirst = response;
+                if (cleanFirst.includes('<think>')) {
+                  // Extract and dispatch thinking content
+                  const thinkMatch = response.match(/<think>([\s\S]*?)(<\/think>|$)/i);
+                  if (thinkMatch && thinkMatch[1].trim()) {
+                    dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkMatch[1].trim() } as any);
+                  }
+                  cleanFirst = cleanFirst.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+                  if (response.includes('<think>') && !response.includes('</think>')) {
+                    insideThinkBlock = true;
+                    cleanFirst = response.replace(/<think>[\s\S]*/gi, '');
+                  }
+                }
+                if (!ctx.cesar!.hasNativeTools) {
+                  const split = splitBeforeToolMarkup(cleanFirst);
+                  cleanFirst = split.visible;
+                  if (split.hasToolMarkup) suppressXmlToolDisplay = true;
+                }
+                if (cleanFirst.trim()) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanFirst });
+              } else {
+                response += chunk.content;
+                noteXmlToolDetected(true);
+                let displayChunk = chunk.content;
+                if (!ctx.cesar!.hasNativeTools) {
+                  displayChunk = takeXmlSafeDisplayChunk(displayChunk);
+                  if (!displayChunk) continue;
+                }
+                if (insideThinkBlock) {
+                  // Dispatch thinking content as it streams
+                  if (displayChunk.includes('</think>')) {
+                    insideThinkBlock = false;
+                    const parts = displayChunk.split('</think>');
+                    const thinkPart = parts[0]?.trim() ?? '';
+                    if (thinkPart) dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkPart } as any);
+                    const afterThink = parts.pop()?.trim() ?? '';
+                    if (afterThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: afterThink });
+                  } else {
+                    dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: displayChunk } as any);
+                  }
+                } else if (displayChunk.includes('<think>')) {
+                  const beforeThink = displayChunk.split('<think>')[0];
+                  if (beforeThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: beforeThink });
+                  if (!displayChunk.includes('</think>')) {
+                    insideThinkBlock = true;
+                    // Dispatch the thinking start
+                    const thinkStart = displayChunk.split('<think>')[1] ?? '';
+                    if (thinkStart.trim()) dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkStart.trim() } as any);
+                  } else {
+                    const thinkMatch = displayChunk.match(/<think>([\s\S]*?)<\/think>/i);
+                    if (thinkMatch && thinkMatch[1].trim()) {
+                      dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkMatch[1].trim() } as any);
+                    }
+                    const afterThink = displayChunk.split('</think>').pop()?.trim() ?? '';
+                    if (afterThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: afterThink });
+                  }
+                } else {
+                  dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: displayChunk });
+                }
+              }
+            }
+          }
+          const trailingXmlSafe = takeXmlSafeDisplayChunk('', true);
+          if (streaming && trailingXmlSafe.trim()) {
+            dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: trailingXmlSafe });
+          }
+        } catch (err) {
+          clearInterval(heartbeat);
+          processMcpSideChannel();
+          if (mcpWatcherInterval) clearInterval(mcpWatcherInterval);
+          dispatch({ type: 'spinner-stop' });
+          console.error(`[cesar:claude] send error: ${(err as Error).message ?? err}`);
+          // If we already have content or tool activity, preserve it instead of discarding
+          if (response.length > 0 || streaming || hadToolActivity) {
+            dispatch({ type: 'warning', message: `Cesar stream error (partial response preserved): ${((err as Error).message ?? '').slice(0, 80)}` });
+            // Fall through to process whatever response we have
+          } else {
+            dispatch({ type: 'warning', message: 'Cesar session error — will restart on next message' });
+            return { delegated: false, responded: false, decisionReason: 'stream-error' };
+          }
+        }
+  
+        clearInterval(heartbeat);
+        processMcpSideChannel();
+        if (mcpWatcherInterval) clearInterval(mcpWatcherInterval);
+  
+        if (abort.signal.aborted) {
+          dispatch({ type: 'spinner-stop' });
+          const elapsed = Math.round((Date.now() - _turnStart) / 1000);
+          if (elapsed >= cesarTimeout) {
+            dispatch({ type: 'warning', message: `Cesar timed out after ${elapsed}s. Try a simpler question, or use /forge for complex tasks.` });
+          return { mode: 'self', delegated: false, responded: true, decisionReason: 'timeout-preserved-partial' };
+        }
+        return { delegated: false, responded: false, decisionReason: 'aborted' };
+        }
+  
+        response = response.trim();
+  
+        // Strip <think> blocks and internal markers
+        response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+        if (ctx.cesar!.hasNativeTools) {
+          response = response.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
+        }
+  
+        // ── Await eager tool results ──
+        if (eagerPromises.length > 0 && !ctx.cesar!.hasNativeTools && session.alive && !abort.signal.aborted) {
+          dispatch({ type: 'spinner-start', message: `Cesar: awaiting ${eagerPromises.length} tool result${eagerPromises.length > 1 ? 's' : ''}…`, color });
+          const eagerResults = await Promise.all(eagerPromises);
+          const formatted = formatToolResults(
+            eagerResults.map((r: ToolCallResult) => ({ name: r.toolName, content: r.result.content, error: r.result.error }))
+          );
+          if (formatted && session.alive) {
+            dispatch({ type: 'spinner-start', message: 'Cesar processing tool results…', color });
+            let continuation = '';
+            const failedTools = eagerFailedToolNames(eagerResults);
+            const repairUsed: string[] = [];
+            const repairResults: ToolCallResult[] = [];
+            const contGen = session.send({ message: formatted, signal: abort.signal });
+            for await (const chunk of contGen) {
+              if (chunk.type === 'text') continuation += chunk.content;
+              if (chunk.type === 'tool_call') {
+                const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
+                const toolName = chunk.content || 'tool';
+                const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
+                const toolStatus = (meta.status as string) ?? 'running';
+                recordToolUse(toolName, 'eager', toolInput, toolStatus === 'running' ? 'repair' : toolStatus);
+                if (shouldRunEagerRepairTool(toolName, meta, failedTools, repairUsed)) {
+                  repairUsed.push(toolName);
+                  dispatch({ type: 'spinner-update', message: `Cesar: retrying ${toolName} with corrected input…` });
+                  if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
+                  repairResults.push(await executeEagerTool(toolName, meta, toolRegistry, eagerToolCtx, dispatch, cesarEngineId));
+                  continue;
+                }
+                if (toolStatus !== 'running' && toolStatus !== 'native') {
+                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+                } else if (failedTools.includes(toolName)) {
+                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Repair retry already used for this tool in this turn.' } as any);
+                }
+              }
+              if (chunk.type === 'done' || chunk.type === 'error') break;
+            }
+            if (repairResults.length > 0 && session.alive && !abort.signal.aborted) {
+              const repairFormatted = formatToolResults(
+                repairResults.map((r: ToolCallResult) => ({ name: r.toolName, content: r.result.content, error: r.result.error }))
+              );
+              if (repairFormatted) {
+                dispatch({ type: 'spinner-start', message: 'Cesar processing repaired tool result…', color });
+                let repairedContinuation = '';
+                const repairGen = session.send({ message: repairFormatted, signal: abort.signal });
+                for await (const chunk of repairGen) {
+                  if (chunk.type === 'text') repairedContinuation += chunk.content;
+                  if (chunk.type === 'tool_call') {
+                    const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
+                    const toolName = chunk.content || 'tool';
+                    const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
+                    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Tool repair loop is one retry per failed tool; further tool calls were not executed automatically.' } as any);
+                  }
+                  if (chunk.type === 'done' || chunk.type === 'error') break;
+                }
+                if (repairedContinuation.trim()) continuation = repairedContinuation.trim();
+              }
+            }
+            dispatch({ type: 'spinner-stop' });
+            if (continuation.trim()) response = continuation.trim();
+          }
+        }
+  
+        // Parse confidence from final response (non-streaming path)
+        if (!confidenceParsed && response) {
+          const conf = parseConfidence(response);
+          if (conf.value !== null) {
+            parsedConfidence = conf.value;
+            dispatch({ type: 'info', message: confidenceBadge(conf.value) + ` Cesar` });
+            dispatch({ type: 'confidence-update', value: conf.value });
+            response = conf.rest;
+          }
+          confidenceParsed = true;
+        }
+  
+        // Deferred challenge messages — appended after user/cesar pair to preserve history order
+        let _deferredChallenges: Array<{ engineId: string; content: string }> = [];
+  
+        // Plan mode flag — used below to block execution delegations while allowing thinking
+        const inPlanMode = ctx.activePlan && ['planning', 'awaiting_approval'].includes(ctx.activePlan.state);
+  
+        // ── Cost-aware speculation gate: override team→solo if speculation isn't worth it ──
+        const speculate = cesarFastPath ? false : shouldSpeculate(routingHints, config as any);
+        if (!speculate && routingHints.recommendedBreadth === 'team') {
+          routingHints = { ...routingHints, recommendedBreadth: 'solo' as any };
+          // Also downgrade forge scope if it was team-driven
+          if (routingHints.recommendedForgeScope === 'full') {
+            routingHints = { ...routingHints, recommendedForgeScope: 'slice' as any };
+          }
+        }
+  
+        // Escalation moved to after investigation phase — see below.
+  
+        // Post-stream: consume tool-reported confidence
+        if (!confidenceParsed && ctx.cesar!.reportedConfidence !== undefined) {
+          const toolConf = ctx.cesar!.reportedConfidence as number;
+          const reasoning = consumeStoredConfidenceReasoning();
+          ctx.cesar!.reportedConfidence = undefined;
+          parsedConfidence = toolConf;
+          confidenceParsed = true;
+          dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
+          dispatch({ type: 'confidence-update', value: toolConf });
+          dispatchConfidenceReasoning(cesarEngineId, reasoning);
+          if (toolConf >= CONFIDENCE_TIERS.direct && ctx.cesar!.autoNero) deactivateNero(ctx, dispatch);
+        }
+  
+        // ── Check MCP signal file for delegations from companion engines ──
+        // Signal file is an array — engine may call ReportConfidence + Tribunal in same turn.
+        if (!ctx.cesar!.pendingDelegation && ctx.cesar!.mcpSignalPath) {
+          try {
+            const signalPath = ctx.cesar!.mcpSignalPath as string;
+            if (existsSync(signalPath)) {
+              const signals: Array<{tool: string; args?: Record<string, unknown>; timestamp: number}> = JSON.parse(readFileSync(signalPath, 'utf-8'));
+              unlinkSync(signalPath);
+              for (const signal of (Array.isArray(signals) ? signals : [signals])) {
+                if (!signal.timestamp || Date.now() - signal.timestamp >= 60000) continue;
+                if (cesarFastPath && FAST_PATH_BLOCKED_TOOLS.includes(signal.tool)) {
+                  const toolInput = JSON.stringify(signal.args ?? {});
+                  recordToolUse(signal.tool, 'mcp', toolInput, 'error');
+                  dispatch({
+                    type: 'tool-call',
+                    engineId: cesarEngineId,
+                    tool: signal.tool,
+                    input: toolInput,
+                    status: 'error',
+                    output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.`,
+                  } as any);
+                  continue;
+                }
+                if (signal.tool === 'ReportConfidence') {
+                  recordToolUse('ReportConfidence', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
+                  const value = typeof signal.args?.value === 'number' ? signal.args.value : null;
+                  if (value !== null && value >= 0 && value <= 100) {
+                    const reasoning = normalizeConfidenceReasoning(signal.args?.reasoning ?? signal.args?.reason ?? signal.args?.thought);
+                    ctx.cesar!.reportedConfidence = value;
+                    ctx.cesar!.reportedConfidenceReasoning = reasoning || undefined;
+                    ctx.cesar!.confidenceSatisfied = true;
+                    parsedConfidence = value;
+                    dispatch({ type: 'info', message: confidenceBadge(value) + ` Cesar (via MCP)` });
+                    dispatch({ type: 'confidence-update', value });
+                    dispatchConfidenceReasoning(cesarEngineId, reasoning, '(via MCP)');
+                  }
+                } else if (signal.tool === 'QuickNero') {
+                  recordToolUse('QuickNero', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
+                  // Non-breaking signal: companion-engine Cesar scheduled a self-check
+                  ctx.cesar!.quickNeroRequested = true;
+                } else if (signal.tool === 'ProposePlan') {
+                  recordToolUse('ProposePlan', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
+                  const activePlan = ctx.activePlan;
+                  if (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state)) {
+                    dispatch({
+                      type: 'tool-call',
+                      engineId: cesarEngineId,
+                      tool: 'ProposePlan',
+                      input: JSON.stringify(signal.args ?? {}),
+                      status: 'error',
+                      output: 'A Cesar plan is already active; nested plans are blocked. Resume or cancel the current plan before proposing another.',
+                    } as any);
+                    continue;
+                  }
+                  const { handleProposePlan } = await import('../handlers/plan-mode.js');
+                  const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
+                  if (planDispatch) {
+                    try {
+                      const plan = await handleProposePlan(signal.args ?? {}, planDispatch, ctx);
+                      if (ctx.setActivePlan) ctx.setActivePlan(plan);
+                      ctx.cesar!.proposedPlan = plan;
+                    } catch (err) {
+                      console.warn(`[agon] ProposePlan via MCP signal failed: ${err instanceof Error ? err.message : String(err)}`);
+                    }
+                  }
+                } else {
+                  recordToolUse(signal.tool, 'mcp', JSON.stringify(signal.args ?? {}), 'done');
+                  // First non-confidence, non-quicknero signal becomes the delegation
+                  ctx.cesar!.pendingDelegation = extractDelegation(signal.tool, signal.args ?? {});
+                  break; // Only one delegation per turn
+                }
+              }
+            }
+          } catch { /* signal file read failed — not critical */ }
+        }
+  
+        // ── Check pending delegation from orchestration signal tools ──
+        const pendingDel = ctx.cesar!.pendingDelegation;
+        if (pendingDel) {
+          ctx.cesar!.pendingDelegation = null;
+          return await commitTurnAndDelegate(pendingDel, input, response, cesarEngineId, streaming, dispatch, ctx, buildToolTelemetry());
+        }
+  
+        // ── Plan proposed via ProposePlan tool — let dispatch.kern handle the approval loop ──
+        if (ctx.cesar!.proposedPlan) {
+          if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); }
+          dispatch({ type: 'spinner-stop' });
+          if (response) {
+            appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+            appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+          }
+          return { delegated: false, responded: true };
+        }
+  
+        // Check final response for suggestion/delegation
+        const finalSuggestion = parseSuggestion(response);
+        if (!cesarFastPath && finalSuggestion.action) {
+          return await commitTurnAndSuggest({ action: finalSuggestion.action!, rest: finalSuggestion.rest, hardened: finalSuggestion.hardened, tribunalMode: finalSuggestion.tribunalMode, team: finalSuggestion.team }, input, response, cesarEngineId, color, streaming, dispatch, ctx, buildToolTelemetry());
+        }
+  
+        // ── XML tool loop — CLI engines always, API engines if they emitted text-based tool calls (e.g. GLM-5.1) ──
+        let ranToolLoop = false;
+        let mutationDeferred = false;
+        const cwd = resolveWorkingDir();
+        const fileStateCache = getProjectFileStateCache(cwd);
+        const explorationMode = ctx.explorationMode ?? false;
+        const toolCtx: ToolContext = {
+              cwd, readFileState: (fileStateCache as any).cache, abortSignal: abort.signal,
+              permissionMode: (config as any).permissionMode ?? 'ask', explorationMode,
+              allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {},
+              onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
+              readOnlyMode: true, // Phase 1: investigate only — mutating tools blocked until after escalation check
+              blockedTools: cesarFastPath ? FAST_PATH_BLOCKED_TOOLS : undefined,
+              blockedToolMessage: cesarFastPath ? `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` : undefined,
+              source: 'orchestrator' as const,
+        };
+        const _lastToolInputs: Record<string, string> = {};
+        const xmlToolBridge = createStreamBridge(dispatch as (event: Record<string,unknown>) => void, { initialEngineId: cesarEngineId });
+        const emitXmlToolEvent = (name: string, input: Record<string, unknown> | string, status: 'running' | 'ok' | 'error' | 'rejected', output?: string) => {
+          const normalizedInput = typeof input === 'string'
+            ? (() => { try { return JSON.parse(input); } catch { return { raw: input }; } })()
+            : input;
+          if (status !== 'running') {
+            recordTimeline({
+              event: 'tool_result',
+              engineId: cesarEngineId,
+              cwd: _turnCwd,
+              tool: name,
+              source: 'xml',
+              status,
+              input: normalizedInput,
+              output,
+            });
+          }
+          xmlToolBridge.bridge({
+            kind: 'tool_call',
+            engineId: cesarEngineId,
+            toolName: name,
+            status,
+            input: normalizedInput,
+            output,
+            error: status === 'error' ? output : undefined,
+          } as any);
+        };
+        const hasTextToolCalls = sawStreamingXmlToolCall || response.includes('<tool_call_tool>') || response.includes('<tool name=');
+        if (toolRegistry && response && (!ctx.cesar!.hasNativeTools || hasTextToolCalls)) {
+          const toolParsed = parseToolCalls(response);
+          if (toolParsed.hasToolCalls) {
+            if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+            const loopResult = await runToolLoop(
+              async (message: string) => {
+                if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
+                if (!session.alive || abort.signal.aborted) return '';
+                dispatch({ type: 'spinner-start', message: 'Cesar processing results…', color });
+                let nextResponse = '';
+                const gen = session.send({
+                  message,
+                  signal: abort.signal,
+                  toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
+                  toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
+                });
+                for await (const chunk of gen) {
+                  if (chunk.type === 'text') nextResponse += chunk.content;
+                  if (chunk.type === 'tool_call') {
+                    const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
+                    const rawStatus = String((meta.status as any) ?? 'running');
+                    emitXmlToolEvent(
+                      chunk.content || 'tool',
+                      typeof meta.input === 'string' ? meta.input : meta.input ? meta.input as Record<string, unknown> : {},
+                      rawStatus === 'done' || rawStatus === 'completed' ? 'ok' : rawStatus === 'error' || rawStatus === 'failed' ? 'error' : 'running',
+                      typeof meta.output === 'string' ? meta.output : undefined,
+                    );
+                  }
+                  if (chunk.type === 'done' || chunk.type === 'error') break;
+                }
+                dispatch({ type: 'spinner-stop' });
+                if (!nextResponse.trim()) return '[No response from engine]';
+                return nextResponse.trim();
+              },
+              response, toolCtx, toolRegistry,
+              {
+                onToolCall: (name: string, inp: Record<string, unknown>) => {
+                  _lastToolInputs[name] = JSON.stringify(inp);
+                  recordToolUse(name, 'xml', _lastToolInputs[name], 'running');
+                  emitXmlToolEvent(name, inp, 'running');
+                  // Intercept orchestration signal tools — set _pendingDelegation.
+                  // 'Agent' is in the set so Cesar can spawn autonomous parallel agents
+                  // from a chat turn without requiring the user to type /agent (PFB-1, RT-1).
+                  const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal']);
+                  if (LOOP_ORCH.has(name)) {
+                    if (cesarFastPath) {
+                      return;
+                    }
+                    // Per-turn dedup guard (RT-13): first delegation wins.
+                    if (!ctx.cesar!.pendingDelegation) {
+                      ctx.cesar!.pendingDelegation = extractDelegation(name, (inp as Record<string, unknown>) ?? {});
+                    }
+                  }
+                  // Stash ProposePlan args for onToolResult to wire up
+                  if (name === 'ProposePlan') {
+                    if (cesarFastPath) {
+                      return;
+                    }
+                    (ctx.cesar as any)._proposePlanArgs = inp;
+                    emitXmlToolEvent(name, inp, 'ok', 'Plan submitted for user approval.');
+                    delete _lastToolInputs[name];
+                  }
+                },
+                shouldStopAfterToolCall: shouldStopAfterXmlToolCall,
+                onToolResult: (name: string, result: any) => {
+                  const out = result.result.ok ? result.result.content : result.result.error;
+                  // Track if a mutation was deferred during investigation
+                  if (!result.result.ok && typeof result.result.error === 'string' && result.result.error.includes('[Investigation phase]')) {
+                    mutationDeferred = true;
+                  }
+                  emitXmlToolEvent(name, _lastToolInputs[name] ?? '{}', result.result.ok ? 'ok' : 'error', out);
+                  delete _lastToolInputs[name];
+                },
+                onPermissionAsk: async (tool: string, message: string) => {
+                  return new Promise<boolean>((resolve) => {
+                    const lastInput = _lastToolInputs[tool] ?? '{}';
+                    let command = '';
+                    try { command = JSON.parse(lastInput).command ?? JSON.parse(lastInput).file_path ?? lastInput; } catch { command = lastInput; }
+                    dispatch({ type: 'permission-ask', tool, command, reason: message, resolve } as any);
+                  });
+                },
+                onText: (text: string) => { if (text.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: text }); },
+                onTurnComplete: (turn: number) => { dispatch({ type: 'spinner-update', message: `Cesar tool loop turn ${turn}…` }); },
+                maxTurns: cesarFastPath ? fastPathMaxBudget : undefined,
+              },
+            );
+            response = loopResult.finalText.trim();
+            _toolCallTurns += loopResult.turns ?? 0;
+            ranToolLoop = true;
+          }
+        }
+  
+        // ── Post-tool-loop: wire up ProposePlan if called during XML tool loop ──
+        if ((ctx.cesar as any)?._proposePlanArgs && !ctx.cesar!.proposedPlan) {
+          const ppArgs = (ctx.cesar as any)._proposePlanArgs;
+          delete (ctx.cesar as any)._proposePlanArgs;
+          try {
+            const activePlan = ctx.activePlan;
+            if (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state)) {
+              dispatch({
+                type: 'tool-call',
+                engineId: cesarEngineId,
+                tool: 'ProposePlan',
+                input: JSON.stringify(ppArgs ?? {}),
+                status: 'error',
+                output: 'A Cesar plan is already active; nested plans are blocked. Resume or cancel the current plan before proposing another.',
+              } as any);
+            } else {
+              const { handleProposePlan } = await import('../handlers/plan-mode.js');
+              const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
+              const plan = await handleProposePlan(ppArgs, planDispatch, ctx);
+              if (ctx.setActivePlan) ctx.setActivePlan(plan);
+              ctx.cesar!.proposedPlan = plan;
+              if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+              dispatch({ type: 'spinner-stop' });
+              if (response) {
+                appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+                appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+              }
+              return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
+            }
+          } catch (err) {
+            console.warn(`[agon] ProposePlan via tool loop failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+  
+        // ── Post-tool-loop: check delegation set during XML tool loop ──
+        const postLoopDel = ctx.cesar!.pendingDelegation;
+        if (postLoopDel) {
+          ctx.cesar!.pendingDelegation = null;
+          return await commitTurnAndDelegate(postLoopDel, input, response, cesarEngineId, streaming, dispatch, ctx, buildToolTelemetry());
+        }
+  
+        // ── Post-tool-loop: re-parse suggestion on updated response ──
+        if (ranToolLoop && !finalSuggestion.action) {
+          const postLoopSuggestion = parseSuggestion(response);
+          if (postLoopSuggestion.action) {
+            return await commitTurnAndSuggest({ action: postLoopSuggestion.action!, rest: postLoopSuggestion.rest, hardened: postLoopSuggestion.hardened, tribunalMode: postLoopSuggestion.tribunalMode, team: postLoopSuggestion.team }, input, response, cesarEngineId, color, streaming, dispatch, ctx, buildToolTelemetry());
+          }
+        }
+  
+        // ── Post-investigation: re-parse confidence on the INFORMED response ──
+        if (ranToolLoop && !confidenceParsed) {
+          const postConf = parseConfidence(response);
+          if (postConf.value !== null) {
+            parsedConfidence = postConf.value;
+            dispatch({ type: 'info', message: confidenceBadge(postConf.value) + ` Cesar (after investigation)` });
+            dispatch({ type: 'confidence-update', value: postConf.value });
+            response = postConf.rest;
+            confidenceParsed = true;
+          }
+        }
+  
+        // ── Quick Nero: structured self-check before Cesar commits to staying local ──
+        // Auto-gate fires on uncertainty-family signals OR when Cesar calls QuickNero() himself.
+        const shouldQuickNero = parsedConfidence !== null
+          && !cesarFastPath
+          && !secondOpinionPromise
+          && !ctx.cesar!.advisorPending
+          && !_isFollowUp
+          && !abort.signal.aborted
+          && !ctx.cesar!.pendingDelegation
+          && (
+            ctx.cesar!.quickNeroRequested === true
+            || routingHints.uncertaintyFamily === 'challenge'
+            || routingHints.uncertaintyFamily === 'tradeoff'
+            || (routingHints.uncertaintyFamily === 'implementation' && parsedConfidence < 86)
+            || (mutationDeferred && parsedConfidence < 90)
+          );
+        // Consume the flag whether or not we fire — follow-up/aborted cases clear it too
+        if (ctx.cesar!.quickNeroRequested) ctx.cesar!.quickNeroRequested = false;
+        if (shouldQuickNero) {
+          const quickNeroConfidence = parsedConfidence as number;
+          if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+          dispatch({ type: 'spinner-start', message: confidenceBadge(quickNeroConfidence) + ' Quick Nero — self-challenge…', color });
+          await yieldToInk();
+          const qnResult = await fireQuickNero(session, response, input, quickNeroConfidence, dispatch, abort.signal, ctx);
+          dispatch({ type: 'spinner-stop' });
+          if (qnResult.challenged && qnResult.challengeText) {
+            dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: `**Self-challenge:**\n${qnResult.challengeText}` });
+            _deferredChallenges.push({ engineId: cesarEngineId, content: `[quick-nero] ${qnResult.challengeText}` });
+          }
+          usedQuickNero = true;
+          const previousConfidence = quickNeroConfidence;
+          if (qnResult.newConfidence !== null && qnResult.newConfidence !== quickNeroConfidence) {
+            parsedConfidence = qnResult.newConfidence;
+            dispatch({ type: 'info', message: confidenceBadge(parsedConfidence) + (qnResult.newConfidence < previousConfidence ? ' Confidence adjusted' : ' Confidence confirmed') });
+            dispatch({ type: 'confidence-update', value: parsedConfidence });
+          }
+          // If Quick Nero explicitly votes to escalate, honor it. The previous
+          // family/confidence filter silently dropped verdicts (e.g. DECISION:tribunal
+          // on an 'implementation' turn with only a small confidence move), which
+          // defeated the self-check's purpose. Trust the decision the self-check emitted.
+          const quickNeroWantsEscalation = qnResult.decision !== 'self';
+          if (quickNeroWantsEscalation) {
+            const escalationAction = qnResult.team ? `team-${qnResult.decision}` : qnResult.decision;
+            const escalationContext = [
+              `Quick Nero escalation from ${previousConfidence}% confidence.`,
+              qnResult.rationale ? `Why: ${qnResult.rationale}` : '',
+              qnResult.challengeText ? `Self-check notes:\n${qnResult.challengeText}` : '',
+            ].filter(Boolean).join('\n\n');
+            appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+            appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+            if (_deferredChallenges && _deferredChallenges.length > 0) {
+              for (const ch of _deferredChallenges) {
+                appendMessage(ctx.chatSession, { role: 'engine', engineId: ch.engineId, content: ch.content, timestamp: new Date().toISOString() });
+              }
+            }
+            tracker.record(cesarEngineId, { prompt: input, response });
+            return {
+              mode: escalationAction as any,
+              delegated: true,
+              responded: true,
+              action: escalationAction,
+              task: input,
+              scope: qnResult.decision === 'forge' && qnResult.scope !== 'none' ? qnResult.scope : undefined,
+              team: qnResult.team,
+              reasoning: `User context: ${escalationContext}`,
+              decisionReason: 'quick-nero-escalation',
+            };
+          }
+        }
+  
+        // ── No forced escalation — Cesar decides via tool calls ──
+        // Confidence is displayed. Cesar has Brainstorm/Tribunal/Campfire/Forge/Delegate
+        // available as tools. If Cesar wants to escalate, it calls them during the tool loop.
+        // The orchestrator handles the delegation via pendingDelegation intercept.
+  
+        // ── Execution phase: unlock mutating tools (only if a mutation was actually deferred) ──
+        const investigationResponse = response; // Preserve for chat history
+        if (mutationDeferred && toolRegistry && session.alive && !abort.signal.aborted) {
+          toolCtx.readOnlyMode = false;
+          // Ask engine to continue with execution now that tools are unlocked
+          dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
+          let execResponse = '';
+          const execGen = session.send({ message: 'Investigation complete. You may now use write, edit, and bash tools to execute your plan. Proceed.', signal: abort.signal });
+          for await (const chunk of execGen) {
+            if (chunk.type === 'text') execResponse += chunk.content;
+            if (chunk.type === 'done' || chunk.type === 'error') break;
+          }
+          dispatch({ type: 'spinner-stop' });
+          if (execResponse.trim()) {
+            const execParsed = parseToolCalls(execResponse.trim());
+            if (execParsed.hasToolCalls) {
+              const execResult = await runToolLoop(
+                async (message: string) => {
+                  if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
+                  if (!session.alive || abort.signal.aborted) return '';
+                  dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
+                  let nextResponse = '';
+                  const gen = session.send({
+                    message,
+                    signal: abort.signal,
+                    toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
+                    toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
+                  });
+                  for await (const chunk of gen) {
+                    if (chunk.type === 'text') nextResponse += chunk.content;
+                    if (chunk.type === 'done' || chunk.type === 'error') break;
+                  }
+                  dispatch({ type: 'spinner-stop' });
+                  return nextResponse.trim() || '[No response from engine]';
+                },
+                execResponse.trim(), toolCtx, toolRegistry,
+                {
+                  onToolCall: (name: string, inp: Record<string, unknown>) => {
+                    recordToolUse(name, 'xml', JSON.stringify(inp), 'running');
+                    _lastToolInputs[name] = JSON.stringify(inp);
+                    emitXmlToolEvent(name, inp, 'running');
+                  },
+                  onToolResult: (name: string, result: any) => {
+                    const out = result.result.ok ? result.result.content : result.result.error;
+                    emitXmlToolEvent(name, _lastToolInputs[name] ?? '{}', result.result.ok ? 'ok' : 'error', out);
+                    delete _lastToolInputs[name];
+                  },
+                  onPermissionAsk: async (tool: string, message: string) => {
+                    return new Promise<boolean>((resolve) => {
+                      dispatch({ type: 'permission-ask', tool, command: tool, reason: message, resolve } as any);
+                    });
+                  },
+                  onText: (text: string) => { if (text.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: text }); },
+                  onTurnComplete: (turn: number) => { dispatch({ type: 'spinner-update', message: `Cesar executing turn ${turn}…` }); },
+                  maxTurns: cesarFastPath ? fastPathMaxBudget : undefined,
+                },
+              );
+              response = investigationResponse + '\n\n' + execResult.finalText.trim();
+              _toolCallTurns += execResult.turns ?? 0;
+            } else {
+              // Engine responded with text only (e.g. "Done" or summary) — display it
+              if (execResponse.trim()) {
+                dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: execResponse.trim() });
+              }
+              response = investigationResponse + '\n\n' + execResponse.trim();
+            }
+          }
+        }
+  
+        // ── Auto-review: disabled — user must explicitly request /review <engine> ──
+  
+        // ── Plan mode gate: Cesar must end with ProposePlan — nudge hard but don't force ──
+        if (inPlanMode && !ctx.cesar!.proposedPlan && !ctx.cesar!.pendingDelegation && session.alive && !abort.signal.aborted) {
+          dispatch({ type: 'warning', message: 'Plan mode: Cesar didn\'t call ProposePlan yet — nudging...' });
+          dispatch({ type: 'spinner-start', message: 'Cesar building plan…', color });
+          try {
+            let planResponse = '';
+            const planGen = session.send({
+              message: '[SYSTEM] You are in PLAN MODE. You investigated enough. Now call ProposePlan with your structured plan.',
+              signal: abort.signal,
+            });
+            for await (const chunk of planGen) {
+              if (chunk.type === 'text') planResponse += chunk.content;
+              if (chunk.type === 'done' || chunk.type === 'error') break;
+            }
+            dispatch({ type: 'spinner-stop' });
+            if (ctx.cesar!.proposedPlan) {
+              appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+              appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+            return { mode: 'plan', delegated: false, responded: true, decisionReason: 'plan-proposed' };
+          }
+            if (planResponse.trim()) {
+              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: planResponse.trim() });
+            }
+          } catch {
+            dispatch({ type: 'spinner-stop' });
+          }
+        }
+  
+        // ── Protocol enforcement: DISABLED ──
+        // Cesar decides all delegations. The system never forces brainstorm/tribunal on the user.
+        // If Cesar wants to delegate, he calls the tool. If he doesn't, that's his call.
+        // Quick Nero (self-challenge) handles low-confidence nudging without user interaction.
+  
+        // ── Final-answer guard: tool-heavy turns must close with an actual answer ──
+        // Some engines stop after investigation chatter ("let me check", "I've read the file")
+        // and the runtime previously treated that as a completed self turn.
+        const _trimmedResponse = response.trim();
+        if (!hadToolActivity && !ranToolLoop && detectNarratedToolStall(_trimmedResponse)) {
+          _narratedToolStalls++;
+        }
+        const TOOL_PROGRESS_RE = /\b(?:let me|i(?:'| a)m going to|i'll|now let me|checking|looking|read the|scanning|investigating|next i'?ll|i've read|good[,—-])\b/i;
+        const ANSWERISH_RE = /\b(?:here'?s|here is|the issue|the fix|you should|we should|i found|recommend|conclusion|summary|in short|answer)\b/i;
+        // Don't fire if the response signals intent to continue working
+        const CONTINUE_RE = /\b(?:edit|fix|write|apply|making|doing|now|replace|insert|update|patch|refactor)\b/i;
+        const likelyIncompleteAfterTools = !inPlanMode
+          && !ctx.cesar!.pendingDelegation
+          && session.alive
+          && !abort.signal.aborted
+          && (hadToolActivity || ranToolLoop)
+          && (_trimmedResponse.length < 180 || TOOL_PROGRESS_RE.test(_trimmedResponse))
+          && !ANSWERISH_RE.test(_trimmedResponse)
+          && !CONTINUE_RE.test(_trimmedResponse);
+        if (likelyIncompleteAfterTools) {
+          dispatch({ type: 'spinner-start', message: 'Cesar finishing the answer…', color });
+          try {
+            let finalAnswer = '';
+            const finishGen = session.send({
+              message: 'You finished investigating. Now answer the user directly in 2-6 sentences. Do not narrate your process, do not say "let me check", and do not continue exploring. Give the actual answer or recommendation now.',
+              signal: abort.signal,
+            });
+            for await (const chunk of finishGen) {
+              if (chunk.type === 'text') finalAnswer += chunk.content;
+              if (chunk.type === 'done' || chunk.type === 'error') break;
+            }
+            dispatch({ type: 'spinner-stop' });
+            const cleanFinalAnswer = finalAnswer.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+            if (cleanFinalAnswer) {
+              // Gemini review (2026-05-13): if the recovery response contains
+              // a handoff tool call (Forge/Brainstorm/Tribunal/Campfire/etc.),
+              // route to commitTurnAndDelegate instead of displaying the raw
+              // XML as text — otherwise the user sees "<tool name=Forge>..."
+              // and the delegation never fires.
+              try {
+                const parsedHandoff = parseToolCalls(cleanFinalAnswer);
+                if (parsedHandoff.hasToolCalls) {
+                  for (const call of parsedHandoff.toolCalls) {
+                    if (shouldStopAfterXmlToolCall(call.name)) {
+                      const del = extractDelegation(call.name, call.input);
+                      return await commitTurnAndDelegate(del, input, response, cesarEngineId, false, dispatch, ctx, buildToolTelemetry());
+                    }
+                  }
+                }
+              } catch { /* if parse fails, fall through to text display */ }
+              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: cleanFinalAnswer });
+              response = _trimmedResponse ? `${_trimmedResponse}\n\n${cleanFinalAnswer}` : cleanFinalAnswer;
+              wasStreamed = false;
+              streaming = false;
+            }
+          } catch {
+            dispatch({ type: 'spinner-stop' });
+          }
+        }
+  
+        const toolOnlyNoAnswer = !inPlanMode
+          && !ctx.cesar!.pendingDelegation
+          && session.alive
+          && !abort.signal.aborted
+          && (hadToolActivity || ranToolLoop)
+          && !response.trim();
+        if (toolOnlyNoAnswer) {
+          dispatch({ type: 'spinner-start', message: 'Cesar deciding next step…', color });
+          try {
+            let finalAction = '';
+            const finalActionGen = session.send({
+              message: [
+                '[SYSTEM] You used tools but produced no user-facing answer.',
+                'Do exactly one thing now:',
+                '1. answer the user with the concrete conclusion/action from what you found,',
+                '2. call Brainstorm/Tribunal/Campfire/Review/Forge/Agent if that is the right next step, or',
+                '3. call ProposePlan if staged work is needed.',
+                'Do not call ReportConfidence again. Do not keep reading unless one missing file is absolutely blocking. Do not stop with only a recap.',
+              ].join('\n'),
+              signal: abort.signal,
+            });
+            for await (const chunk of finalActionGen) {
+              if (chunk.type === 'text') finalAction += chunk.content;
+              if (chunk.type === 'done' || chunk.type === 'error') break;
+            }
+            dispatch({ type: 'spinner-stop' });
+            const cleanFinalAction = finalAction.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+            if (cleanFinalAction) {
+              // Gemini review (2026-05-13): the recovery prompt above explicitly
+              // invites a handoff ("call Brainstorm/Tribunal/Forge/Agent if
+              // that's the right next step"), so handle it. Without this, the
+              // user sees raw XML and the delegation never starts.
+              try {
+                const parsedHandoff = parseToolCalls(cleanFinalAction);
+                if (parsedHandoff.hasToolCalls) {
+                  for (const call of parsedHandoff.toolCalls) {
+                    if (shouldStopAfterXmlToolCall(call.name)) {
+                      const del = extractDelegation(call.name, call.input);
+                      return await commitTurnAndDelegate(del, input, response, cesarEngineId, false, dispatch, ctx, buildToolTelemetry());
+                    }
+                  }
+                }
+              } catch { /* if parse fails, fall through to text display */ }
+              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: cleanFinalAction });
+              response = cleanFinalAction;
+              wasStreamed = false;
+              streaming = false;
+            }
+          } catch {
+            dispatch({ type: 'spinner-stop' });
+          }
+        }
+  
+        // ── Auto-continuation: Cesar stops only on asks-user or done ──
+        // Rule: if Cesar used tools this turn and didn't end on a user-directed question
+        // or a completion signal, nudge the engine to keep going. Re-enter the tool
+        // pipeline so XML-tool engines (Kimi/Z.AI) actually execute, not just plan.
+        // Source: campfire 2026-05-19 + multi-engine review (codex/gemini/...).
+        const _AUTO_CONT_WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+        const _AUTO_CONT_LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal']);
+        // Continue-intent words signal multi-step work in progress; if present alongside
+        // a write tool, treat as still-going rather than done. Catches gemini-review #4.
+        const _AUTO_CONT_CONTINUE_RE = /\b(?:now i'?ll|next i'?ll|still need|let me also|i'?ll also|then i'?ll|next step|next up)\b/i;
+        // Read-only completion phrases — Cesar finished a Read/Grep/Bash investigation
+        // and gave a complete answer. Don't nudge. Catches codex-review P2-1.
+        const _AUTO_CONT_READONLY_DONE_RE = /\b(?:tests? passed|all (?:tests|checks) pass|no matches found|no issues found|no errors|all clean|nothing to (?:do|fix|change)|already (?:correct|fixed|in place|done))\b/i;
+        // Detect turn state. wroteSinceBaseline counts only writes that happened in
+        // continuations after `baselineToolCount` — NOT writes from the initial turn.
+        // Initial-turn writes alone are too weak a "done" signal: engine could have
+        // edited 1 of 3 needed files and stopped (minimax/zai review consensus).
+        const _detectTurnState = (resp: string, baselineToolCount: number): 'asks-user' | 'done' | 'stuck' => {
+          const wroteSinceBaseline = _toolsUsed.slice(baselineToolCount).some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
+          const lines = resp.split('\n').map((l: string) => l.trim()).filter(Boolean);
+          const last = lines[lines.length - 1] ?? '';
+          // A question directed at the user (keyword-addressed OR an either/or fork)
+          // means it's THEIR turn — stop, don't auto-continue. Extracted to the
+          // exported isUserDirectedQuestion so the classification is unit-tested.
+          if (isUserDirectedQuestion(last)) return 'asks-user';
+          // New writes in continuation AND no "still in progress" signal → done
+          if (wroteSinceBaseline && !_AUTO_CONT_CONTINUE_RE.test(resp)) return 'done';
+          const effectSummary = /(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b[^.]{0,80}(?:\b(?:and|,)\b[^.]{0,80}\b(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b)/i.test(resp);
+          if (effectSummary) return 'done';
+          if (/(?:^|\n)\s*(?:DONE|Done\.|Complete\.|All done\.|Task complete\.)\s*$/m.test(resp) && !/\bnot done\b/i.test(resp)) return 'done';
+          // Read-only investigation that produced a real answer (codex-review P2-1)
+          if (_AUTO_CONT_READONLY_DONE_RE.test(resp)) return 'done';
+          return 'stuck';
+        };
+        // Build a runToolLoop options object that mirrors the main tool loop —
+        // critical: handoff intercept, shouldStopAfterToolCall, and rich permission UI.
+        // (gemini-review A, codex-review P2-2, old-gemini-review #1: all converged on this).
+        const _buildContToolLoopOpts = () => ({
+          onToolCall: (name: string, inp: Record<string, unknown>) => {
+            _lastToolInputs[name] = JSON.stringify(inp);
+            recordToolUse(name, 'xml', _lastToolInputs[name], 'running');
+            emitXmlToolEvent(name, inp, 'running');
+            if (_AUTO_CONT_LOOP_ORCH.has(name)) {
+              if (cesarFastPath) return;
+              if (!ctx.cesar!.pendingDelegation) {
+                ctx.cesar!.pendingDelegation = extractDelegation(name, (inp as Record<string, unknown>) ?? {});
+              }
+            }
+            if (name === 'ProposePlan') {
+              if (cesarFastPath) return;
+              (ctx.cesar as any)._proposePlanArgs = inp;
+              emitXmlToolEvent(name, inp, 'ok', 'Plan submitted for user approval.');
+              delete _lastToolInputs[name];
+            }
+          },
+          shouldStopAfterToolCall: shouldStopAfterXmlToolCall,
+          onToolResult: (name: string, result: any) => {
+            const out = result.result.ok ? result.result.content : result.result.error;
+            emitXmlToolEvent(name, _lastToolInputs[name] ?? '{}', result.result.ok ? 'ok' : 'error', out);
+            delete _lastToolInputs[name];
+          },
+          onPermissionAsk: async (tool: string, message: string) => {
+            return new Promise<boolean>((resolve) => {
+              const lastInput = _lastToolInputs[tool] ?? '{}';
+              let command = '';
+              try { command = JSON.parse(lastInput).command ?? JSON.parse(lastInput).file_path ?? lastInput; } catch { command = lastInput; }
+              dispatch({ type: 'permission-ask', tool, command, reason: message, resolve } as any);
+            });
+          },
+          onText: (text: string) => { if (text.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: text }); },
+          onTurnComplete: (turn: number) => { dispatch({ type: 'spinner-update', message: `Cesar continuing turn ${turn}…` }); },
+          maxTurns: cesarFastPath ? fastPathMaxBudget : undefined,
+        });
+        const _shouldAutoContinue = (hadToolActivity || ranToolLoop)
+          && !inPlanMode
+          && !ctx.cesar!.pendingDelegation
+          && session.alive
+          && !abort.signal.aborted
+          && response.trim().length > 0;
+        if (_shouldAutoContinue) {
+          const MAX_CONTINUATIONS = 5;
+          let _continuations = 0;
+          // Baseline: tool count BEFORE the auto-continuation loop fires. Used by
+          // _detectTurnState to distinguish "wrote during continuation" (a 'done'
+          // signal) from "wrote in the initial turn" (insufficient evidence).
+          const _loopStartToolCount = _toolsUsed.length;
+          let _prevToolCount = _toolsUsed.length;
+          let _consecutiveNoProgress = 0;
+          while (
+            _continuations < MAX_CONTINUATIONS
+            && session.alive
+            && !abort.signal.aborted
+            && !ctx.cesar!.pendingDelegation
+          ) {
+            const state = _detectTurnState(response, _loopStartToolCount);
+            if (state === 'asks-user' || state === 'done') break;
+            // State-rich nudge — name the files Cesar mentioned but didn't touch.
+            // File path regex requires a path prefix (./ ../ / ~/ or src/test/etc dir)
+            // to reduce false positives like "version 1.0.ts" (minimax review #6).
+            const wroteFiles = _toolsUsed.some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
+            const filePathRe = /(?:^|\s|`)((?:\.{1,2}\/|~\/|\/|(?:packages|src|tests|scripts|kern)\/)[\w./-]+\.(?:ts|tsx|kern|js|jsx|py|md|json|yaml|yml|toml|sh|css|scss|html))\b/g;
+            const filesMentioned = Array.from(new Set(Array.from(response.matchAll(filePathRe), (m: RegExpMatchArray) => m[1]))).slice(0, 3);
+            let nudge: string;
+            if (filesMentioned.length > 0 && !wroteFiles) {
+              nudge = `[SYSTEM] You described changes to ${filesMentioned.join(', ')} but did not edit any files. Make the edits now using the Edit or Write tool. If you need information from me first, ask a direct question ending with "?". Otherwise, finish the task.`;
+            } else {
+              nudge = '[SYSTEM] You paused without finishing or asking me a question. Either complete the task using Edit/Write/Bash tools, or ask me a direct question ending with "?" if you need information.';
+            }
+            _continuations++;
+            dispatch({ type: 'warning', message: `Cesar paused mid-task — auto-continuing (${_continuations}/${MAX_CONTINUATIONS}).` });
+            dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
+            let contResponse = '';
+            try {
+              const contGen = session.send({
+                message: nudge,
+                signal: abort.signal,
+                toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
+                toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
+              });
+              for await (const chunk of contGen) {
+                if (abort.signal.aborted) break;
+                if (chunk.type === 'text') contResponse += chunk.content;
+                if (chunk.type === 'done' || chunk.type === 'error') break;
+              }
+            } catch {
+              dispatch({ type: 'spinner-stop' });
+              break;
+            }
+            dispatch({ type: 'spinner-stop' });
+            const cleanCont = contResponse.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+            if (!cleanCont) break;
+            // Handoff check — let delegation tool calls short-circuit out of the loop
+            try {
+              const parsedHandoff = parseToolCalls(cleanCont);
+              if (parsedHandoff.hasToolCalls) {
+                for (const call of parsedHandoff.toolCalls) {
+                  if (shouldStopAfterXmlToolCall(call.name)) {
+                    const del = extractDelegation(call.name, call.input);
+                    return await commitTurnAndDelegate(del, input, response + '\n\n' + cleanCont, cesarEngineId, false, dispatch, ctx, buildToolTelemetry());
+                  }
+                }
+                // Non-handoff tool calls: re-enter the tool loop so they actually execute
+                if (toolRegistry) {
+                  const contResult = await runToolLoop(
+                    async (message: string) => {
+                      if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
+                      if (!session.alive || abort.signal.aborted) return '';
+                      dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
+                      let nextResp = '';
+                      const gen = session.send({
+                        message,
+                        signal: abort.signal,
+                        toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
+                        toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
+                      });
+                      for await (const chunk of gen) {
+                        if (chunk.type === 'text') nextResp += chunk.content;
+                        if (chunk.type === 'done' || chunk.type === 'error') break;
+                      }
+                      dispatch({ type: 'spinner-stop' });
+                      return nextResp.trim() || '[No response from engine]';
+                    },
+                    cleanCont, toolCtx, toolRegistry, _buildContToolLoopOpts(),
+                  );
+                  response = response + '\n\n' + (contResult.finalText?.trim() ?? '');
+                  _toolCallTurns += contResult.turns ?? 0;
+                  // If the tool loop set a pendingDelegation, fire it now so the
+                  // user-visible delegation actually starts (gemini-review A).
+                  if (ctx.cesar!.pendingDelegation) {
+                    const pending = ctx.cesar!.pendingDelegation;
+                    return await commitTurnAndDelegate(pending, input, response, cesarEngineId, false, dispatch, ctx, buildToolTelemetry());
+                  }
+                }
+              } else {
+                // Pure text continuation
+                dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: cleanCont });
+                response = response + '\n\n' + cleanCont;
+              }
+            } catch {
+              // If parse fails, treat as text
+              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: cleanCont });
+              response = response + '\n\n' + cleanCont;
+            }
+            // Stuck-detector: no new tool calls AND no substantive new text → bail
+            const newTools = _toolsUsed.length - _prevToolCount;
+            const newSubstantive = cleanCont.length > 80;
+            if (newTools === 0 && !newSubstantive) {
+              _consecutiveNoProgress++;
+              if (_consecutiveNoProgress >= 2) {
+                dispatch({ type: 'warning', message: 'Cesar: no progress across 2 continuations — stopping.' });
+                break;
+              }
+            } else {
+              _consecutiveNoProgress = 0;
+            }
+            _prevToolCount = _toolsUsed.length;
+          }
+          if (_continuations >= MAX_CONTINUATIONS) {
+            dispatch({ type: 'warning', message: `Cesar reached the auto-continuation cap (${MAX_CONTINUATIONS}). Stopping — re-prompt if the task is incomplete.` });
+          }
+          // Closure guarantee: a turn must NEVER end ambiguously. If the loop gave up
+          // (cap or no-progress) while still 'stuck' — no done/asks-user signal — force
+          // one short closing line so the user always knows the state: done, blocked, or
+          // a decision they must make. Deterministic fallback if the engine stays silent.
+          if (_detectTurnState(response, _loopStartToolCount) === 'stuck'
+            && session.alive && !abort.signal.aborted && !ctx.cesar!.pendingDelegation) {
+            dispatch({ type: 'spinner-start', message: 'Cesar wrapping up…', color });
+            let _closure = '';
+            try {
+              const _closureGen = session.send({
+                message: [
+                  '[SYSTEM] Your turn is ending but you neither finished the task nor asked me anything. Write ONE short closing line (no tools, no recap) so I know exactly where things stand. Pick one:',
+                  '- DONE: one past-tense sentence naming what you completed, or',
+                  '- NEED A DECISION/INFO: one sentence on the current situation, then a direct question ending with "?". If there are two-plus materially different ways forward, name them as concrete options ("A) … B) …") inside that question.',
+                  'Do not call any tools.',
+                ].join('\n'),
+                signal: abort.signal,
+              });
+              for await (const _chunk of _closureGen) {
+                if (abort.signal.aborted) break;
+                if (_chunk.type === 'text') _closure += _chunk.content;
+                if (_chunk.type === 'done' || _chunk.type === 'error') break;
+              }
+            } catch { /* best effort — fallback below still guarantees closure */ }
+            dispatch({ type: 'spinner-stop' });
+            const _cleanClosure = _closure.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+            const _finalClosure = _cleanClosure
+              || 'I paused mid-task without finishing, and I am not blocked on anything specific from you. Re-prompt me with the next step, or say "continue" to keep going.';
+            dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _finalClosure });
+            response = response + '\n\n' + _finalClosure;
+          }
+        }
+  
+        // ── Display final response (skip if already displayed via streaming or tool loop) ──
+        if (!streaming && response && !ranToolLoop && !wasStreamed) {
+          dispatch({ type: 'spinner-stop' });
+          dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: response });
+          await yieldToInk();
+        }
+        if (streaming) {
+          dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+          dispatch({ type: 'spinner-stop' });
+          await yieldToInk();
+        }
+  
+        if (response) {
+          appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+          appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+          // Append deferred challenge messages after user/cesar pair to preserve history order
+          if (_deferredChallenges && _deferredChallenges.length > 0) {
+            for (const ch of _deferredChallenges) {
+              appendMessage(ctx.chatSession, { role: 'engine', engineId: ch.engineId, content: ch.content, timestamp: new Date().toISOString() });
+            }
+          }
+          const tokenUsage = tracker.record(cesarEngineId, { prompt: input, response });
+  
+          // Trace
+          try {
+            const tracePath = join(RUNS_DIR, 'cesar-trace.jsonl');
+            const taskClass = classifyTask(input);
+            const toolTelemetry = buildToolTelemetry();
+          appendFileSync(tracePath, JSON.stringify({
+            ts: new Date().toISOString(), engineId: cesarEngineId, backend: toolTelemetry.cesarBackend ?? ((config as any).cesarBackend ?? 'auto'),
+            durationMs: Date.now() - _turnStart, inputLen: input.length, responseLen: response.length, taskClass,
+            mode: usedQuickNero ? 'self-nero' : 'self', decisionReason: usedQuickNero ? 'self-challenge' : 'self-executed',
+            intakeKind: routingHints.intakeKind, recommendedFlow: routingHints.recommendedFlow,
+            uncertaintyFamily: routingHints.uncertaintyFamily, escalationHint: routingHints.escalationHint,
+            breadthHint: routingHints.recommendedBreadth, forgeScopeHint: routingHints.recommendedForgeScope,
+            toolsUsed: toolTelemetry.toolsUsed, toolCount: toolTelemetry.toolCount, toolEventCount: toolTelemetry.toolEventCount,
+            nativeToolCalls: toolTelemetry.nativeToolCalls, mcpToolCalls: toolTelemetry.mcpToolCalls, xmlToolCalls: toolTelemetry.xmlToolCalls,
+            narratedToolStalls: toolTelemetry.narratedToolStalls, autoToolExecutions: toolTelemetry.autoToolExecutions,
+            confidenceToolUsed: toolTelemetry.confidenceToolUsed, hasNativeTools: toolTelemetry.hasNativeTools,
+            delegated: false,
+            confidence: parsedConfidence,
+            tokens: tokenUsage ? { prompt: tokenUsage.promptTokens, response: tokenUsage.responseTokens, cost: tokenUsage.costUsd } : undefined,
+          }) + '\n');
+          } catch { /* tracing is best-effort */ }
+  
+          // Auto-remember
+          if (ctx.cesarMemory) {
+            const mem = ctx.cesarMemory;
+            const topic = input.slice(0, 80).replace(/\n/g, ' ');
+            mem.remember(`turn:${Date.now()}`, topic, 'decision');
+            if (ranToolLoop) mem.remember(`tools:${Date.now()}`, `Cesar used tools for: ${topic}`, 'file');
+          }
+  
+          const happened = buildWhatHappenedSummary(buildToolTelemetry());
+          if (happened) dispatch({ type: 'info', message: happened });
+  
+          // Detect an end-of-turn decision and surface it as pickable options so
+          // the user answers with one keystroke (smooth) and always knows it is
+          // their turn. Two shapes: a numbered/lettered fork (RULE 10 shape d) or
+          // a yes/no recommendation (shape b). keyboard.kern resolves a choice by
+          // its literal key OR its 1-based position, so digits and letters both work;
+          // Escape resolves to 'n' (decide later) — never hangs the await.
+          const lastLine = response.split('\n').filter((l: string) => l.trim()).pop()?.trim() ?? '';
+          // Fork: 2-6 option lines like "A) … — …" / "1. …" in the response tail,
+          // closed by a question line. Each option becomes a numbered choice.
+          const _forkLineRe = /^\s*(?:([A-Fa-f])|([1-9]))[)\].:]\s+(.+\S)\s*$/;
+          const _forkOptions: { key: string; label: string; full: string }[] = [];
+          const _seenForkKeys = new Set<string>();
+          for (const _raw of response.split('\n').slice(-14)) {
+            const m = _raw.match(_forkLineRe);
+            if (!m) continue;
+            const key = (m[1] ?? m[2]).toLowerCase();
+            if (_seenForkKeys.has(key)) continue;
+            _seenForkKeys.add(key);
+            const full = m[3].trim();
+            _forkOptions.push({ key, label: full.length > 60 ? full.slice(0, 59) + '…' : full, full });
+          }
+          const isForkQuestion = /\?\s*$/.test(lastLine) && _forkOptions.length >= 2 && _forkOptions.length <= 6;
+          const asksConfirmation = !ranToolLoop && /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
+          if (isForkQuestion) {
+            const _forkColors = ['#4ade80', '#22d3ee', '#fbbf24', '#a78bfa', '#f97316', '#ef4444'];
+            // Auto-append an "own idea" choice so the user is never boxed into the
+            // listed options. Picking it just ends the turn — choice mode swallows
+            // typing, so we exit it first; the composer is then free for free text,
+            // and Cesar still has the fork in chat history for the next turn.
+            const _allNumeric = _forkOptions.every((o) => /^[0-9]$/.test(o.key));
+            let _ownKey = _allNumeric ? String(_forkOptions.length + 1) : String.fromCharCode(97 + _forkOptions.length);
+            if (_seenForkKeys.has(_ownKey)) _ownKey = 'o';
+            const _choices = [
+              ..._forkOptions.map((o, i) => ({ key: o.key, label: o.label, color: _forkColors[i % _forkColors.length] })),
+              { key: _ownKey, label: '✎ my own idea (type it)', color: '#9ca3af' },
+            ];
+            const picked = String(await new Promise<string>((resolve) => {
+              dispatch({ type: 'question', prompt: `${cesarEngineId} — pick one, or ${_ownKey.toUpperCase()} to type your own (Esc to decide later):`, choices: _choices, resolve } as any);
+            })).toLowerCase();
+            const chosen = _forkOptions.find((o) => o.key === picked);
+            if (picked === _ownKey) {
+              dispatch({ type: 'info', message: 'Type your idea below and press Enter — Cesar has the options in context.' });
+            } else if (chosen && session.alive && !abort.signal.aborted) {
+              dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
+              let followUp = '';
+              const gen = session.send({ message: `Go with option ${chosen.key.toUpperCase()}: ${chosen.full}. Proceed and finish it.`, signal: abort.signal });
+              for await (const chunk of gen) {
+                if (abort.signal.aborted) break;
+                if (chunk.type === 'text') followUp += chunk.content;
+                if (chunk.type === 'done' || chunk.type === 'error') break;
+              }
+              dispatch({ type: 'spinner-stop' });
+              if (followUp.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: followUp.trim() });
+            }
+          } else if (asksConfirmation) {
+            // Yes/No is not enough — always offer a third "type your own answer"
+            // option so the user can redirect Cesar with a free-text instruction
+            // ("do X instead") instead of being boxed into y/n. Mirrors the fork
+            // path's "my own idea" choice. Picking it ends the turn and frees the
+            // composer; what the user types next goes to Cesar with the question
+            // still in chat history for context.
+            const answer = await new Promise<string>((resolve) => {
+              dispatch({ type: 'question', prompt: `${cesarEngineId}: ${lastLine.length > 80 ? lastLine.slice(0, 80) + '…' : lastLine}`, choices: [
+                { key: 'y', label: 'Yes', color: '#4ade80' },
+                { key: 'n', label: 'No', color: '#ef4444' },
+                { key: '3', label: '✎ tell Cesar what to do (type it)', color: '#9ca3af' },
+              ], resolve } as any);
+            });
+            if (answer === '3') {
+              dispatch({ type: 'info', message: 'Type your instruction below and press Enter — Cesar has the question in context.' });
+            } else if (answer === 'y' && session.alive && !abort.signal.aborted) {
+              dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
+              let followUp = '';
+              const gen = session.send({ message: 'yes', signal: abort.signal });
+              for await (const chunk of gen) {
+                if (abort.signal.aborted) break;
+                if (chunk.type === 'text') followUp += chunk.content;
+                if (chunk.type === 'done' || chunk.type === 'error') break;
+              }
+              dispatch({ type: 'spinner-stop' });
+              if (followUp.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: followUp.trim() });
+            }
+          }
+  
+        return { mode: usedQuickNero ? 'self-nero' : 'self', delegated: false, responded: true, decisionReason: usedQuickNero ? 'self-challenge' : 'self-executed', ...buildToolTelemetry() };
+      } else {
+        dispatch({ type: 'spinner-stop' });
+      }
+  
+      const happened = buildWhatHappenedSummary(buildToolTelemetry());
+      if (happened) dispatch({ type: 'info', message: happened });
+      if (hadToolActivity || ranToolLoop) {
+        dispatch({ type: 'warning', message: 'Cesar used tools but produced no final answer; treating this turn as incomplete and recovering.' });
+        return { mode: usedQuickNero ? 'self-nero' : 'self', delegated: false, responded: false, decisionReason: usedQuickNero ? 'tool-loop-self-challenge-no-answer' : 'tool-loop-no-answer', ...buildToolTelemetry() };
+      }
+      dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) produced no output this turn. The engine may have timed out, hit a rate limit, or returned a malformed response. Try again, or run /engine to switch.` });
+      return { mode: usedQuickNero ? 'self-nero' : 'self', delegated: false, responded: false, decisionReason: 'empty-turn', ...buildToolTelemetry() };
+    } finally {
+        if (restoreFastPathMode) {
+          restoreFastPathMode();
+          restoreFastPathMode = null;
+        }
+        ctx.eventBus?.emit('post:cesar-brain', { durationMs: Date.now() - _brainStartMs }).catch(() => {});
+        if (!_turnTimelineClosed) {
+          _turnTimelineClosed = true;
+          const telemetry = buildToolTelemetry();
+          recordTimeline({
+            event: 'turn_summary',
+            engineId: _actualCesarEngineId || undefined,
+            cwd: _turnCwd,
+            status: 'completed',
+            summary: {
+              durationMs: Date.now() - _turnStart,
+              toolCount: telemetry.toolCount,
+              toolEventCount: telemetry.toolEventCount,
+              nativeToolCalls: telemetry.nativeToolCalls,
+              mcpToolCalls: telemetry.mcpToolCalls,
+              xmlToolCalls: telemetry.xmlToolCalls,
+              confidenceToolUsed: telemetry.confidenceToolUsed,
+            },
+          });
+        }
+        ctx.cesar!.busy = false;
+        ctx.cesar!.busySince = null;
+        if (ctx.cesar!.turnId === _turnId) ctx.cesar!.turnId = undefined;
+        dispatch({ type: 'spinner-stop' });
+        ctx.setActiveAbort(null);
+  
+        // Auto-drain queue
+        const queued = ctx.cesar!.queue;
+        if (queued) {
+          ctx.cesar!.queue = null;
+          setTimeout(() => {
+            handleCesarBrain(queued.input, queued.dispatch, ctx, queued.images).catch((err: any) => {
+              console.error(`[cesar:queue] drain failed: ${err.message ?? err}`);
+              ctx.cesar!.busy = false;
+            });
+          }, 100);
+        }
+      }
+}
+

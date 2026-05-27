@@ -1,0 +1,693 @@
+// @kern-source: controls:3
+import { useState, useMemo, useEffect } from 'react';
+
+// @kern-source: controls:4
+import { Box, Text, useInput } from 'ink';
+
+// @kern-source: controls:5
+import { SLASH_COMMANDS } from '../signals/intent.js';
+
+// @kern-source: controls:6
+import { getSlashMatches, movePickerCursor } from '../signals/app-input.js';
+
+// @kern-source: controls:7
+import { contentWidth, engineColor, color256toHex, DiffLine, CODE_RAIL, CODE_RAIL_COLOR } from './rendering.js';
+
+// @kern-source: controls:8
+import { ENGINE_COLORS } from './output-format.js';
+
+// @kern-source: controls:9
+import { icons } from '../signals/icons.js';
+
+// @kern-source: controls:10
+import { setAuthKey, getAuthKey, loadConfig, configSet } from '@agon/core';
+
+// @kern-source: controls:11
+import type { CliModelEntry, CliProviderGroup } from '@agon/core';
+
+// @kern-source: controls:12
+import { buildCliModelGroups } from '@agon/core';
+
+// @kern-source: controls:16
+export interface ReviewEvent {
+  winnerId: string;
+  patchPath: string;
+  patchContent: string;
+}
+
+// @kern-source: controls:23
+
+export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof SLASH_COMMANDS; onSelect: (cmd: string) => void; onCancel: () => void }) {
+  const [selectedIndex, setSelectedIndex] = useState<number>(0);
+  const [filter, setFilter] = useState<string>('');
+
+        const filtered = useMemo(() => getSlashMatches(filter, commands), [filter, commands]);
+        const currentIndex = filtered.length === 0 ? 0 : Math.min(selectedIndex, filtered.length - 1);
+  
+        useInput((input: string, key: any) => {
+          const isForwardDelete = input === '\x1b[3~';
+          const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
+          if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
+          if (key.return) {
+            if (filtered[currentIndex]) onSelect(filtered[currentIndex].cmd);
+            return;
+          }
+          if (key.upArrow) { setSelectedIndex(movePickerCursor('up', currentIndex, filtered.length)); return; }
+          if (key.downArrow) { setSelectedIndex(movePickerCursor('down', currentIndex, filtered.length)); return; }
+          if (isBackspace || isForwardDelete) {
+            if (!filter) { onCancel(); return; }
+            setFilter((f: string) => f.slice(0, -1));
+            setSelectedIndex(0);
+            return;
+          }
+          if (key.tab) {
+            if (filtered[currentIndex]) {
+              setFilter(filtered[currentIndex].cmd.replace(/^\//, ''));
+              setSelectedIndex(0);
+            }
+            return;
+          }
+          if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
+            setFilter((f: string) => f + input);
+            setSelectedIndex(0);
+          }
+        });
+  
+        return (
+          <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
+            <Box>
+              <Text color="yellow">{'/ '}</Text>
+              <Text>{filter}</Text>
+              <Text dimColor>{'\u2588'}</Text>
+              <Text dimColor>{'  \u2191\u2193 navigate  Tab fill  Enter select  Esc cancel'}</Text>
+            </Box>
+            <Text dimColor>{'\u2500'.repeat(48)}</Text>
+            {filtered.length === 0 ? (
+              <Text dimColor>{'  No matching commands'}</Text>
+            ) : (
+              (() => {
+                const maxVisible = 12;
+                const start = Math.max(0, Math.min(selectedIndex - Math.floor(maxVisible / 2), filtered.length - maxVisible));
+                const visible = filtered.slice(start, start + maxVisible);
+                return visible.map((cmd: any, vi: number) => {
+                  const i = start + vi;
+                  return (
+                    <Box key={cmd.cmd}>
+                      <Text color={i === currentIndex ? 'yellow' : undefined} bold={i === currentIndex}>
+                        {i === currentIndex ? ' \u276f ' : '   '}{cmd.cmd.padEnd(16)}
+                      </Text>
+                      <Text dimColor>{cmd.desc}</Text>
+                    </Box>
+                  );
+                });
+              })()
+            )}
+          </Box>
+        );
+}
+
+
+// @kern-source: controls:98
+
+export function EnginePicker({ available, initialSelected, userEngines, modelOverrides, onConfirm, onCancel, onRemove, onSetModel, onBrowseModel }: { available: string[]; initialSelected: string[]; userEngines: Set<string>; modelOverrides: Record<string,string>; onConfirm: (selected: string[]) => void; onCancel: () => void; onRemove: (engineId: string) => void; onSetModel: (engineId: string, model: string | null) => void; onBrowseModel: (engineId: string) => void }) {
+  const [cursor, setCursor] = useState<number>(0);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected));
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set((loadConfig() as any).hiddenEngines ?? []));
+  const [phase, setPhase] = useState<'select'|'type-model'>('select');
+  const [modelInput, setModelInput] = useState<string>('');
+
+        // Only show: selected engines + user engines + non-hidden available engines
+        const visible = useMemo(() => available.filter((id: string) =>
+          selected.has(id) || userEngines.has(id) || !hidden.has(id)
+        ), [available, selected, userEngines, hidden]);
+  
+        useInput((input: string, key: any) => {
+          const isForwardDelete = input === '\x1b[3~';
+          const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
+          if (phase === 'type-model') {
+            const id = visible[cursor];
+            if (!id) { setPhase('select'); setModelInput(''); return; }
+            if (key.escape) { setPhase('select'); setModelInput(''); return; }
+            if (key.return) {
+              onSetModel(id, modelInput.trim() || null);
+              setPhase('select');
+              setModelInput('');
+              return;
+            }
+            if (isBackspace || isForwardDelete) { setModelInput((v: string) => v.slice(0, -1)); return; }
+            if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
+              setModelInput((v: string) => v + input);
+            }
+            return;
+          }
+  
+          if (key.escape) { onCancel(); return; }
+          if (key.return) {
+            const result = visible.filter((id: string) => selected.has(id));
+            if (result.length === 0) return;
+            onConfirm(result);
+            return;
+          }
+          if (key.upArrow) setCursor((i: number) => Math.max(0, i - 1));
+          if (key.downArrow) setCursor((i: number) => Math.min(visible.length - 1, i + 1));
+          if (input === ' ') {
+            const id = visible[cursor];
+            if (!id) return;
+            setSelected((prev: Set<string>) => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            });
+          }
+          if (input === 'a') setSelected(new Set(visible));
+          if (input === 'n') setSelected(new Set());
+          if (input === 'd' || input === 'x') {
+            const id = visible[cursor];
+            if (!id) return;
+            if (userEngines.has(id)) {
+              // User engine: fully remove
+              onRemove(id);
+            } else {
+              // Builtin engine: hide from picker + deselect
+              const nextHidden = new Set([...hidden, id]);
+              setHidden(nextHidden);
+              setSelected((prev: Set<string>) => { const next = new Set(prev); next.delete(id); return next; });
+              configSet('hiddenEngines', [...nextHidden]);
+              setCursor((i: number) => Math.min(i, visible.length - 2));
+            }
+          }
+          if (input === 'u') {
+            // Unhide all — bring back hidden builtins
+            setHidden(new Set());
+            configSet('hiddenEngines', []);
+          }
+          if (input === 'm') {
+            const id = visible[cursor];
+            if (!id) return;
+            onBrowseModel(id);
+          }
+          if (input === 't') {
+            const id = visible[cursor];
+            if (!id) return;
+            setModelInput(modelOverrides[id] ?? '');
+            setPhase('type-model');
+          }
+        });
+  
+        return (
+          <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} marginY={1}>
+            <Box justifyContent="space-between">
+              <Text bold color="cyan">{'Select active engines'}</Text>
+              <Text dimColor>{'esc'}</Text>
+            </Box>
+            <Text dimColor>{phase === 'type-model'
+              ? 'Type model id  Enter save  Esc cancel  blank + Enter clears'
+              : 'Space toggle  \u2191\u2193 navigate  a all  n none  d hide/remove  u unhide  m browse models  t type model  Enter confirm'}</Text>
+            {phase === 'type-model' && visible[cursor] && (
+              <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1} marginY={1}>
+                <Text bold color="magenta">{'Type Model Override: '}{visible[cursor]}</Text>
+                <Text dimColor>{'Leave empty to use the engine default.'}</Text>
+                <Box>
+                  <Text color="magenta">{'> '}</Text>
+                  <Text>{modelInput}</Text>
+                  <Text dimColor>{'\u2588'}</Text>
+                </Box>
+              </Box>
+            )}
+            <Text dimColor>{'\u2500'.repeat(48)}</Text>
+            {visible.map((id: string, i: number) => (
+              <Box key={id}>
+                <Text color={i === cursor ? 'yellow' : undefined}>
+                  {i === cursor ? ' \u276f ' : '   '}
+                </Text>
+                <Text color={selected.has(id) ? 'green' : 'red'}>
+                  {selected.has(id) ? icons().dotOn : icons().dotOff}
+                </Text>
+                <Text>{' '}</Text>
+                <Text bold color={engineColor(id)}>{id}</Text>
+                {userEngines.has(id) && <Text dimColor>{' (user)'}</Text>}
+                {modelOverrides[id] && <Text dimColor>{' ['}{modelOverrides[id]}{']'}</Text>}
+                {!selected.has(id) && !userEngines.has(id) && <Text dimColor>{' (disabled)'}</Text>}
+              </Box>
+            ))}
+            <Text dimColor>{'\u2500'.repeat(48)}</Text>
+            <Text dimColor>{selected.size}{' of '}{visible.length}{' selected'}{hidden.size > 0 ? `  (${hidden.size} hidden \u2014 u to unhide)` : ''}</Text>
+          </Box>
+        );
+}
+
+
+// @kern-source: controls:238
+export interface ModelPickerEntry {
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  modelName: string;
+  baseUrl: string;
+  apiKeyEnv: string;
+  format: 'openai'|'anthropic';
+  contextWindow?: number;
+  costInput?: number;
+  costOutput?: number;
+}
+
+// @kern-source: controls:250
+
+export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilter, title, cliGroups, activeEngineIds, onToggleCliEngine }: { entries: ModelPickerEntry[]; onSelect: (entry: ModelPickerEntry) => void; onCancel: () => void; loading?: boolean; initialFilter?: string; title?: string; cliGroups?: CliProviderGroup[]; activeEngineIds?: string[]; onToggleCliEngine?: (engineId:string, active:boolean) => void }) {
+  const [cursor, setCursor] = useState<number>(0);
+  const [filter, setFilter] = useState<string>('');
+  const [phase, setPhase] = useState<'search'|'apikey'|'cli'>('search');
+  const [selectedEntry, setSelectedEntry] = useState<ModelPickerEntry|null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'api'|'cli'>('api');
+
+        const panelTitle = title ?? 'Select model';
+        const groups = cliGroups ?? [];
+        const activeCliEngines = new Set(activeEngineIds ?? []);
+  
+        useEffect(() => {
+          setFilter(initialFilter ?? '');
+          setCursor(0);
+        }, [initialFilter]);
+  
+        // Tab switch resets cursor + filter
+        useEffect(() => { setCursor(0); setFilter(''); }, [activeTab]);
+  
+        // ── CLI tab: scanned CLI engines. Only installed engines are shown;
+        // missing CLIs belong in doctor/discover output, not the add/remove picker.
+        const cliFlat = useMemo(() => {
+          const items: { group: CliProviderGroup; model: CliModelEntry; missing?: boolean }[] = [];
+          for (const g of groups) {
+            if (!g.installed) continue;
+            for (const m of g.models) {
+              items.push({ group: g, model: m });
+            }
+          }
+          return items;
+        }, [groups]);
+  
+        const cliFiltered = useMemo(() => {
+          if (!filter.trim()) return cliFlat;
+          const q = filter.toLowerCase();
+          return cliFlat.filter(({ group, model }) =>
+            `${group.providerName} ${model.name} ${model.id}`.toLowerCase().includes(q)
+          );
+        }, [cliFlat, filter]);
+  
+        const filtered = useMemo(() => {
+          if (!filter.trim()) return entries.slice(0, 50);
+          const terms = filter.toLowerCase().trim().split(/\s+/).filter(Boolean);
+          const providerAliasByTerm: Record<string, string> = {
+            claude: 'anthropic',
+            codex: 'openai',
+            agy: 'google',
+            antigravity: 'google',
+            anthropic: 'anthropic',
+            openai: 'openai',
+            google: 'google',
+            openrouter: 'openrouter',
+            mistral: 'mistral',
+            qwen: 'qwen',
+            minimax: 'minimax',
+          };
+          const explicitProviderTerms = terms
+            .filter((t: string) => t.startsWith('provider:'))
+            .map((t: string) => t.slice('provider:'.length))
+            .filter(Boolean);
+          const hasExplicitProviderFilter = explicitProviderTerms.length > 0;
+          const inferredProviderTerms = hasExplicitProviderFilter
+            ? []
+            : Array.from(new Set(
+                terms
+                  .map((t: string) => providerAliasByTerm[t])
+                  .filter((v: string|undefined): v is string => Boolean(v))
+              ));
+          const providerTerms = [...explicitProviderTerms, ...inferredProviderTerms];
+          const genericTerms = terms.filter((t: string) => {
+            if (t.startsWith('provider:')) return false;
+            if (hasExplicitProviderFilter) return true;
+            return !providerAliasByTerm[t];
+          });
+  
+          return entries.filter((e: ModelPickerEntry) => {
+            if (providerTerms.length > 0) {
+              const providerHay = `${e.providerName} ${e.providerId}`.toLowerCase();
+              if (!providerTerms.every((t: string) => providerHay.includes(t))) return false;
+            }
+  
+            if (genericTerms.length === 0) return true;
+            const hay = `${e.providerName} ${e.modelName} ${e.modelId}`.toLowerCase();
+            return genericTerms.every((t: string) => hay.includes(t));
+          }).slice(0, 50);
+        }, [entries, filter]);
+  
+        useInput((input: string, key: any) => {
+          const isForwardDelete = input === '\x1b[3~';
+          const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
+  
+          // Tab switching (any phase)
+          if (key.leftArrow) {
+            setActiveTab('api');
+            return;
+          }
+          if (key.rightArrow) {
+            setActiveTab('cli');
+            return;
+          }
+  
+          if (phase === 'apikey') {
+            if (key.escape) { setPhase('search'); setSelectedEntry(null); setApiKeyInput(''); return; }
+            if (key.return && apiKeyInput.trim()) {
+              const entry = selectedEntry!;
+              setAuthKey(entry.apiKeyEnv, apiKeyInput.trim(), entry.providerName);
+              onSelect(entry);
+              return;
+            }
+            if (key.return && !apiKeyInput.trim()) {
+              onSelect(selectedEntry!);
+              return;
+            }
+            if (isBackspace || isForwardDelete) { setApiKeyInput((v: string) => v.slice(0, -1)); return; }
+            if (input && !key.ctrl && !key.meta) {
+              const clean = input.replace(/\x1b\[200~/g, '').replace(/\x1b\[201~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '');
+              if (clean) setApiKeyInput((v: string) => v + clean);
+            }
+            return;
+          }
+  
+          // ── CLI tab input ──
+          if (activeTab === 'cli') {
+            if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
+            if (input === ' ') {
+              const item = cliFiltered[cursor];
+              if (item && item.group.installed && onToggleCliEngine) {
+                onToggleCliEngine(item.group.engineId, !activeCliEngines.has(item.group.engineId));
+              }
+              return;
+            }
+            if (key.return) {
+              const item = cliFiltered[cursor];
+              if (item && item.group.installed && !item.missing) {
+                onSelect({
+                  providerId: item.group.engineId,
+                  providerName: item.group.providerName,
+                  modelId: item.model.id,
+                  modelName: item.model.name,
+                  baseUrl: '',
+                  apiKeyEnv: '',
+                  format: 'openai',
+                });
+              }
+              return;
+            }
+            if (key.upArrow) { setCursor((i: number) => Math.max(0, i - 1)); return; }
+            if (key.downArrow) { setCursor((i: number) => Math.min(cliFiltered.length - 1, i + 1)); return; }
+            if (isBackspace || isForwardDelete) { setFilter((f: string) => f.slice(0, -1)); setCursor(0); return; }
+            if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
+              setFilter((f: string) => f + input);
+              setCursor(0);
+            }
+            return;
+          }
+  
+          // ── API tab input (original) ──
+          if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
+          if (key.return) {
+            if (filtered[cursor]) {
+              const entry = filtered[cursor];
+              if (getAuthKey(entry.apiKeyEnv)) {
+                onSelect(entry);
+              } else {
+                setSelectedEntry(entry);
+                setPhase('apikey');
+                setApiKeyInput('');
+              }
+            }
+            return;
+          }
+          if (key.upArrow) { setCursor((i: number) => Math.max(0, i - 1)); return; }
+          if (key.downArrow) { setCursor((i: number) => Math.min(filtered.length - 1, i + 1)); return; }
+          if (isBackspace || isForwardDelete) {
+            setFilter((f: string) => f.slice(0, -1));
+            setCursor(0);
+            return;
+          }
+          if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
+            setFilter((f: string) => f + input);
+            setCursor(0);
+          }
+        });
+  
+        if (loading) {
+          return (
+            <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
+              <Text bold color="magenta">{panelTitle}</Text>
+              <Text dimColor>{'Fetching models.dev registry\u2026'}</Text>
+              <Box flexDirection="column" marginTop={1}>
+                <Text dimColor>{'\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 '}<Text color="#555">{'provider/model-name'}</Text></Text>
+                <Text dimColor>{'\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 '}<Text color="#444">{'provider/another-model'}</Text></Text>
+                <Text dimColor>{'\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 '}<Text color="#444">{'provider/third-model'}</Text></Text>
+              </Box>
+            </Box>
+          );
+        }
+  
+        if (phase === 'apikey' && selectedEntry) {
+          return (
+            <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
+              <Text bold color="magenta">{'Connect: '}{selectedEntry.providerName}</Text>
+              <Text dimColor>{'\u2500'.repeat(48)}</Text>
+              <Text>{'  Model:    '}<Text bold>{selectedEntry.modelName}</Text></Text>
+              <Text>{'  API:      '}<Text dimColor>{selectedEntry.baseUrl}</Text></Text>
+              <Text>{''}</Text>
+              <Box>
+                <Text color="yellow">{'  '}{selectedEntry.apiKeyEnv}{': '}</Text>
+                <Text>{apiKeyInput ? '*'.repeat(apiKeyInput.length) : ''}</Text>
+                <Text dimColor>{'\u2588'}</Text>
+              </Box>
+              <Text dimColor>{'  Enter key \u2022 Enter to skip \u2022 Esc back'}</Text>
+            </Box>
+          );
+        }
+  
+        // Search phase — grouped model list
+        const maxVisible = 16;
+        const start = Math.max(0, Math.min(cursor - Math.floor(maxVisible / 2), filtered.length - maxVisible));
+        const visible = filtered.slice(start, start + maxVisible);
+        let lastProvider = '';
+  
+        return (
+          <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
+            <Box justifyContent="space-between">
+              <Box>
+                <Text bold color="magenta">{panelTitle}</Text>
+                <Text>{'  '}</Text>
+                <Text color={activeTab === 'api' ? 'magenta' : 'gray'} bold={activeTab === 'api'}>{'API'}</Text>
+                <Text dimColor>{'/'}</Text>
+                <Text color={activeTab === 'cli' ? 'cyan' : 'gray'} bold={activeTab === 'cli'}>{'CLI'}</Text>
+                <Text dimColor>{'  < > switch'}</Text>
+              </Box>
+              <Text dimColor>{'esc'}</Text>
+            </Box>
+            <Box>
+              <Text dimColor>{'\u2588'}</Text>
+              <Text color={activeTab === 'api' ? 'magenta' : 'cyan'}>{'search '}</Text>
+              <Text>{filter}</Text>
+              <Text dimColor>{filter ? '' : 'type to filter'}</Text>
+            </Box>
+            <Text dimColor>{'\u2500'.repeat(48)}</Text>
+            {activeTab === 'cli' ? (
+              cliFiltered.length === 0 ? (
+                <Box flexDirection="column">
+                  <Text dimColor>{'  No CLI engine definitions found'}</Text>
+                  <Text dimColor>{'  Install: claude, codex, gemini, etc.'}</Text>
+                </Box>
+              ) : (
+                (() => {
+                  const maxVis = 16;
+                  const start = Math.max(0, Math.min(cursor - Math.floor(maxVis / 2), cliFiltered.length - maxVis));
+                  const vis = cliFiltered.slice(start, start + maxVis);
+                  let lastProv = '';
+                  return (
+                    <Box flexDirection="column">
+                      {vis.map(({ group, model, missing }: any, vi: number) => {
+                        const i = start + vi;
+                        const showHeader = group.providerName !== lastProv;
+                        lastProv = group.providerName;
+                        const ctx = model.contextWindow ? `${Math.round(model.contextWindow / 1024)}k` : '';
+                        const isActive = activeCliEngines.has(group.engineId);
+                        return (
+                          <Box key={`${group.providerId}-${model.id}`} flexDirection="column">
+                            {showHeader && (
+                              <Box>
+                                <Text bold color="white">{'\n  '}{group.providerName}</Text>
+                                <Text dimColor>{' via '}{group.engineBinary}{group.version ? ` v${group.version.split('\n')[0]}` : ''}{' '}</Text>
+                                <Text color={group.installed ? (isActive ? 'green' : 'red') : 'gray'}>
+                                  {group.installed ? (isActive ? 'active' : 'inactive') : 'missing'}
+                                </Text>
+                              </Box>
+                            )}
+                            <Box>
+                              <Text color={i === cursor ? 'cyan' : undefined} bold={i === cursor}>
+                                {i === cursor ? ' \u276f ' : '   '}
+                              </Text>
+                              <Text color={missing ? 'gray' : (i === cursor ? 'cyan' : undefined)} bold={i === cursor && !missing}>
+                                {model.name}
+                              </Text>
+                              {ctx ? <Text dimColor>{'  '}{ctx}</Text> : null}
+                              {model.reasoning ? <Text dimColor>{' \u2728'}</Text> : null}
+                            </Box>
+                          </Box>
+                        );
+                      })}
+                      {cliFiltered.length > maxVis && (
+                        <Text dimColor>{'  ... '}{cliFiltered.length - maxVis}{' more'}</Text>
+                      )}
+                    </Box>
+                  );
+                })()
+              )
+            ) : (
+              filtered.length === 0 ? (
+                <Text dimColor>{'  No matching models'}</Text>
+              ) : (
+                visible.map((entry: ModelPickerEntry, vi: number) => {
+                  const i = start + vi;
+                  const showHeader = entry.providerName !== lastProvider;
+                  lastProvider = entry.providerName;
+                  const ctx = entry.contextWindow ? `${Math.round(entry.contextWindow / 1024)}k` : '';
+                  const cost = entry.costInput != null ? `${entry.costInput}/${entry.costOutput}` : '';
+                  return (
+                    <Box key={`${entry.providerId}-${entry.modelId}`} flexDirection="column">
+                      {showHeader && <Text bold color="white">{'\n  '}{entry.providerName}</Text>}
+                      <Box>
+                        <Text color={i === cursor ? 'magenta' : undefined} bold={i === cursor}>
+                          {i === cursor ? ' \u276f ' : '   '}
+                        </Text>
+                        <Text color={i === cursor ? 'magenta' : undefined} bold={i === cursor}>
+                          {entry.modelName}
+                        </Text>
+                        {ctx ? <Text dimColor>{'  '}{ctx}</Text> : null}
+                        {cost ? <Text dimColor>{'  '}{cost}</Text> : null}
+                      </Box>
+                    </Box>
+                  );
+                })
+              )
+            )}
+            <Text dimColor>{'\u2500'.repeat(48)}</Text>
+            <Text dimColor>{activeTab === 'cli' ? `${cliFiltered.length} CLI rows  Space activate/deactivate  Enter model` : `${filtered.length} API models`}{'  \u2191\u2193 navigate  \u2190\u2192 tab  Esc cancel'}</Text>
+          </Box>
+        );
+}
+
+
+// @kern-source: controls:590
+
+export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
+        const eColor = engineColor(event.winnerId);
+        const codeWidth = contentWidth(10);
+        const lines = event.patchContent.split('\n').slice(0, 30);
+        const overflow = event.patchContent.split('\n').length - 30;
+  
+        useInput((input: string) => {
+          const k = input.toLowerCase();
+          if (k === 'a') onAction('apply');
+          else if (k === 'e') onAction('edit');
+          else if (k === 'r') onAction('reject');
+          else if (k === 'c') onAction('copy');
+        });
+  
+        return (
+          <Box flexDirection="column" paddingLeft={2} marginY={1}>
+            <Text color={eColor}>{'\u250c\u2500\u2500 Winner: '}<Text bold>{event.winnerId}</Text></Text>
+            {lines.map((line: string, i: number) => (
+              <Text key={`rv-${i}`}>
+                <Text color={eColor}>{'\u2502 '}</Text>
+                <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
+                <Text> </Text>
+                <DiffLine line={line} maxWidth={codeWidth} />
+              </Text>
+            ))}
+            {overflow > 0 && (
+              <Text>
+                <Text color={eColor}>{'\u2502 '}</Text>
+                <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
+                <Text> </Text>
+                <Text dimColor>{'\u2026 '}{overflow}{' more lines'}</Text>
+              </Text>
+            )}
+            <Text color={eColor}>{'\u2514\u2500\u2500 '}<Text bold color="green">{'[A]'}</Text>{'pply  '}<Text bold color="cyan">{'[E]'}</Text>{'dit  '}<Text bold color="red">{'[R]'}</Text>{'eject  '}<Text bold color="yellow">{'[C]'}</Text>{'opy'}</Text>
+          </Box>
+        );
+}
+
+
+// @kern-source: controls:632
+
+export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines: string[]; currentCesar: string; onSelect: (engineId: string) => void; onCancel: () => void }) {
+  const [cursor, setCursor] = useState<number>(0);
+  const [filter, setFilter] = useState<string>('');
+
+        const filtered = useMemo(() => {
+          if (!filter.trim()) return engines;
+          const q = filter.toLowerCase();
+          return engines.filter((id: string) => id.toLowerCase().includes(q));
+        }, [engines, filter]);
+  
+        useInput((input: string, key: any) => {
+          const isForwardDelete = input === '\x1b[3~';
+          const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
+          if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
+          if (key.return) {
+            if (filtered[cursor]) onSelect(filtered[cursor]);
+            return;
+          }
+          if (key.upArrow) { setCursor((i: number) => Math.max(0, i - 1)); return; }
+          if (key.downArrow) { setCursor((i: number) => Math.min(filtered.length - 1, i + 1)); return; }
+          if (isBackspace || isForwardDelete) {
+            setFilter((f: string) => f.slice(0, -1));
+            setCursor(0);
+            return;
+          }
+          if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
+            setFilter((f: string) => f + input);
+            setCursor(0);
+          }
+        });
+  
+        return (
+          <Box flexDirection="column" borderStyle="round" borderColor="#a78bfa" paddingX={1}>
+            <Box justifyContent="space-between">
+              <Text bold color="#a78bfa">{'Select Cesar brain'}</Text>
+              <Text dimColor>{'esc'}</Text>
+            </Box>
+            <Box>
+              <Text color="#a78bfa">{'\u2588 search '}</Text>
+              <Text>{filter}</Text>
+              <Text dimColor>{filter ? '' : 'type to filter'}</Text>
+            </Box>
+            <Text dimColor>{'\u2500'.repeat(48)}</Text>
+            {filtered.length === 0 ? (
+              <Text dimColor>{'  No matching engines'}</Text>
+            ) : (
+              filtered.map((id: string, i: number) => (
+                <Box key={id}>
+                  <Text color={i === cursor ? '#a78bfa' : undefined} bold={i === cursor}>
+                    {i === cursor ? ' \u276f ' : '   '}
+                  </Text>
+                  <Text color={i === cursor ? '#a78bfa' : undefined} bold={i === cursor}>
+                    {id}
+                  </Text>
+                  {id === currentCesar && <Text color="green">{' ' + icons().success + ' current'}</Text>}
+                </Box>
+              ))
+            )}
+            <Text dimColor>{'\u2500'.repeat(48)}</Text>
+            <Text dimColor>{filtered.length}{' engines  \u2191\u2193 navigate  Enter select  Esc cancel'}</Text>
+          </Box>
+        );
+}
+
+

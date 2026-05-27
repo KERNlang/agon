@@ -355,9 +355,19 @@ screen name=StreamingView target=ink memo=true
         <>
           {streamingText && (() => {
             const c = engineColor(streamingText.engineId);
-            const cleaned = cleanEngineOutput(streamingText.content);
+            // The live preview only ever shows the tail (chat: last line; box: last
+            // few lines), so clean/parse the TAIL \u2014 not the whole accumulated stream.
+            // Re-cleaning + parseMarkdownBlocks over the full buffer on every chunk is
+            // O(n) and grows over a long forge/brainstorm run \u2192 flicker + progressive
+            // lag, and an ever-taller box that makes the text "jump".
+            const rawStream = streamingText.content;
+            // Slice the tail, then drop the (possibly partial) first line so the window
+            // never starts mid-line — avoids splitting a multi-byte char / ANSI escape.
+            const slicedStream = rawStream.length > 6000 ? rawStream.slice(-6000) : rawStream;
+            const firstNl = rawStream.length > 6000 ? slicedStream.indexOf('\n') : -1;
+            const windowed = firstNl >= 0 ? slicedStream.slice(firstNl + 1) : slicedStream;
+            const cleaned = cleanEngineOutput(windowed);
             const wrapWidth = contentWidth(mode === 'chat' ? 6 : 8);
-            const segments = parseMarkdownBlocks(cleaned);
             if (mode === 'chat') {
               const lines = cleaned.split('\n').filter((line: string) => line.trim());
               const lastLine = lines.length > 0 ? lines[lines.length - 1].trim() : '';
@@ -370,6 +380,11 @@ screen name=StreamingView target=ink memo=true
                 </Box>
               );
             }
+            // Box preview: cap to the last ~24 lines so the pinned live pane keeps a
+            // stable height instead of growing (and repainting) with every chunk.
+            const allLines = cleaned.split('\n');
+            const tailLines = allLines.length > 24 ? allLines.slice(-24).join('\n') : cleaned;
+            const segments = parseMarkdownBlocks(tailLines);
             return (
               <Box flexDirection="column" marginY={1} paddingLeft={2}>
                 <Text color={c} bold>{'\u250c\u2500\u2500 '}{streamingText.engineId}</Text>

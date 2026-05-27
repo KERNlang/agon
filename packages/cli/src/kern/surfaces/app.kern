@@ -127,6 +127,7 @@ screen name=App target=ink
   state name=toolOutputExpanded type=boolean initial=false
   state name=thinkingExpanded type=boolean initial=true
   state name=cesarConfidence type="number|null" initial="null" throttle=200
+  state name=cesarContext type="{pct:number,used:number,limit:number,compacted:number,cached:number}|null" initial="null" throttle=200
   state name=liveScoreboard type="Scoreboard|null" initial="null"
   state name=liveRationale type="ModeRationale|null" initial="null"
   state name=agentProgress type="Record<string,AgentProgressSnapshot>" initial="{}"
@@ -281,7 +282,17 @@ screen name=App target=ink
     handler lang="kern"
       if cond="!activeStream || !activeStream.content"
         return value="null"
-      let name=cleaned value="cleanEngineOutput(activeStream.content)"
+      comment raw="// Only the LAST line is needed, so clean the TAIL — not the whole buffer."
+      comment raw="// cleanEngineOutput+split over the full accumulated stream every throttle tick"
+      comment raw="// is O(n) per tick and grows the longer a forge/brainstorm run streams → the"
+      comment raw="// progressive lag. Slicing the tail bounds the work to a constant per tick."
+      comment raw="// Drop the (possibly partial) first line of the slice so we never start the"
+      comment raw="// window mid-line — which could split a multi-byte char or an ANSI escape."
+      let name=raw value="activeStream.content"
+      let name=sliced value="raw.length > 4000 ? raw.slice(-4000) : raw"
+      let name=nlAt value="raw.length > 4000 ? sliced.indexOf('\\n') : -1"
+      let name=tail value="nlAt >= 0 ? sliced.slice(nlAt + 1) : sliced"
+      let name=cleaned value="cleanEngineOutput(tail)"
       let name=lines value="cleaned.split('\\n').filter((l: string) => l.trim())"
       if cond="lines.length === 0"
         return value="null"
@@ -699,6 +710,7 @@ screen name=App target=ink
         },
         getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
         setCesarConfidence,
+        setCesarContext,
         setLiveScoreboard: (val: Scoreboard | null) => setLiveScoreboard(val),
         setLiveRationale: (val: ModeRationale | null) => setLiveRationale(val),
         setAgentProgress: (updater: Record<string,AgentProgressSnapshot> | ((prev: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => {
@@ -1299,7 +1311,8 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       let providerFilter = '';
       if (engineId === 'claude' || env.includes('anthropic') || baseUrl.includes('anthropic') || display.includes('anthropic')) providerFilter = 'provider:anthropic';
       else if (engineId === 'codex' || env.includes('openai') || baseUrl.includes('openai') || display.includes('openai')) providerFilter = 'provider:openai';
-      else if (engineId === 'gemini' || env.includes('google') || baseUrl.includes('google') || display.includes('google')) providerFilter = 'provider:google';
+      else if (engineId === 'agy' || engineId === 'antigravity' || env.includes('google') || baseUrl.includes('google') || display.includes('google') || display.includes('antigravity')) providerFilter = 'provider:google';
+      else if (engineId === 'opencode' || display.includes('opencode')) providerFilter = 'provider:opencode';
       else if (engineId === 'openrouter' || env.includes('openrouter') || baseUrl.includes('openrouter')) providerFilter = 'provider:openrouter';
       else if (engineId === 'mistral' || display.includes('mistral')) providerFilter = 'provider:mistral';
       else if (engineId === 'qwen' || display.includes('qwen')) providerFilter = 'provider:qwen';
@@ -1317,6 +1330,9 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       setModelPickerCliGroups([]);
 
       import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroupsAsync }) => {
+        // buildCliModelGroupsAsync self-probes each engine's live /model list
+        // (cached, parallel) and shows the REAL CLI models — not the models.dev
+        // catalog (that's the API view below).
         buildCliModelGroupsAsync().then((cliGroups: any) => {
           setModelPickerCliGroups(cliGroups);
         });
@@ -1333,6 +1349,18 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
           dispatch({ type: 'error', message: `Failed to fetch models: ${err.message}` } as any);
         });
       });
+    >>>
+
+  callback name=persistEffort params="engineId:string, effort?:string|null" deps=""
+    handler <<<
+      // undefined → engine has no effort dimension (e.g. agy), leave config untouched.
+      // null → user chose "Default (use CLI config)", so clear any agon override and defer
+      // to the CLI's own config. string → explicit override.
+      if (effort === undefined) return;
+      const next = { ...((loadConfig() as any).engineEfforts ?? {}) };
+      if (effort === null) delete next[engineId];
+      else next[engineId] = effort;
+      configSet('engineEfforts' as any, next as any);
     >>>
 
   callback name=openResultsPager params="" deps="dispatch,mode,chatSession"
@@ -1893,6 +1921,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         {modelPickerOpen && (
           <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle} cliGroups={modelPickerCliGroups}
             activeEngineIds={activeEngines()}
+            engineEfforts={(config as any).engineEfforts ?? {}}
             onToggleCliEngine={(engineId: string, active: boolean) => {
               const current = sessionEngines ?? registry.activeIds(config as any);
               const next = active
@@ -1918,8 +1947,9 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
                 const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
                 nextModels[modelPickerTargetEngine] = entry.modelId;
                 configSet('engineModels', nextModels as any);
+                persistEffort(modelPickerTargetEngine, entry.effort);
                 setConfigVersion((v: number) => v + 1);
-                dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}` } as any);
+                dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}${entry.effort ? ` (effort: ${entry.effort})` : ''}` } as any);
                 setModelPickerTargetEngine(null);
                 setModelPickerInitialFilter('');
                 setModelPickerTitle('Select model');
@@ -1933,9 +1963,10 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
                 const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
                 nextModels[engineId] = entry.modelId;
                 configSet('engineModels', nextModels as any);
+                persistEffort(engineId, entry.effort);
                 setConfigVersion((v: number) => v + 1);
                 setModelPickerOpen(false);
-                dispatch({ type: 'success', message: `CLI model set: ${engineId} → ${entry.modelId}` } as any);
+                dispatch({ type: 'success', message: `CLI model set: ${engineId} → ${entry.modelId}${entry.effort ? ` (effort: ${entry.effort})` : ''}` } as any);
                 return;
               }
               setModelPickerOpen(false);
@@ -2018,7 +2049,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
             {(() => {
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
-                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
+                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
                 {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} telemetryVitals={telemetryVitals} />}
               </>);
             })()}

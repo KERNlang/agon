@@ -29,6 +29,11 @@
     "flag": "--model"
   },
 
+  "effort": {
+    "flag": "--effort",
+    "levels": ["low", "medium", "high", "xhigh", "max"]
+  },
+
   "api": {
     "baseUrl": "https://api.anthropic.com",
     "apiKeyEnv": "ANTHROPIC_API_KEY",
@@ -54,12 +59,7 @@
   "test": { "args": ["--version"] },
 
   "cliModels": {
-    "default": "claude-sonnet-4-6",
-    "list": [
-      { "id": "claude-opus-4-6", "name": "Opus 4.6" },
-      { "id": "claude-sonnet-4-6", "name": "Sonnet 4.6" },
-      { "id": "claude-haiku-4-5", "name": "Haiku 4.5" }
-    ]
+    "dynamicListCmd": ["__pty:/model"]
   },
 
   "capabilities": ["vision"],

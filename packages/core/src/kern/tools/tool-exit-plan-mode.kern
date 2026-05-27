@@ -1,0 +1,38 @@
+import from="../models/tool-types.js" names="ToolHandler,ToolDefinition,ToolResult,PermissionDecision" types=true
+import from="../models/tool-types.js" names="ToolContext" types=true
+
+fn name=createExitPlanModeTool returns=ToolHandler export=true
+  doc "Cesar's escape hatch from plan mode. Calling this archives the pending/paused plan and returns to live mode, so Cesar is never trapped: it decides when planning is not the right approach. The actual state cleanup happens in the session/brain tool interception (mirrors ProposePlan)."
+  handler <<<
+    const definition: ToolDefinition = {
+      name: 'ExitPlanMode',
+      description: 'Leave plan mode and return to live work. Call this when a plan is NOT the right approach: the task is simple enough to do live, the pending plan is wrong/too-broad and you do not want to propose a replacement, or planning is blocking progress. Archives the pending plan (it is cancelled with your reason, not erased). Allowed when a plan is in planning/awaiting_approval/paused; NOT allowed while a plan is running — use the cancel flow for that. If the USER explicitly asked for a plan, prefer ProposePlan; only ExitPlanMode with a clear reason if you genuinely think a plan is unnecessary. After calling: STOP responding, then continue live on the next turn.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string', description: 'REQUIRED. One concrete sentence on why a plan is not the right approach here (e.g. "single-file rename, faster to just edit it live" or "the pending plan is too broad and the user only wants the dispatch.kern split"). Surfaced to the user.' },
+        },
+        required: ['reason'],
+      },
+      maxResultSizeChars: 1000,
+      isReadOnly: true,
+      isConcurrencySafe: true,
+    };
+
+    const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+      if (!input.reason || typeof input.reason !== 'string' || !input.reason.trim()) {
+        return 'Missing required: reason (one sentence on why a plan is not the right approach)';
+      }
+      return null;
+    };
+
+    const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
+      return { behavior: 'allow' };
+    };
+
+    const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
+      return { ok: true, content: '[PLAN_EXITED] Left plan mode — continuing live.' };
+    };
+
+    return { definition, validate, checkPermission, execute };
+  >>>

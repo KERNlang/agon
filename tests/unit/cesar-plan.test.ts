@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, cesarPlanJsonPath, cesarPlanMarkdownPath } from '../../packages/core/src/generated/cesar/plan.js';
+import { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, cesarPlanJsonPath, cesarPlanMarkdownPath } from '../../packages/core/src/generated/cesar/plan.js';
 import type { CesarPlan, CesarPlanStep } from '../../packages/core/src/generated/cesar/plan.js';
 import { executePlan } from '../../packages/core/src/generated/cesar/plan-executor.js';
 
@@ -16,6 +16,22 @@ const makeStep = (id: string, overrides?: Partial<CesarPlanStep>): CesarPlanStep
 });
 
 describe('CesarPlan state machine', () => {
+  it('exitCesarPlan cancels the plan and records the exit reason + timestamp', () => {
+    const plan = createCesarPlan('refactor everything', [makeStep('s1'), makeStep('s2')]);
+    const exited = exitCesarPlan(plan, '  single-file rename, faster live  ');
+    expect(exited.state).toBe('cancelled');
+    expect(exited.steps.every(s => s.state === 'cancelled')).toBe(true);
+    expect(exited.exitReason).toBe('single-file rename, faster live'); // trimmed
+    expect(exited.exitedAt).toBeDefined();
+    expect(exited.id).toBe(plan.id); // same plan id — archived, not a new plan
+  });
+
+  it('exitCesarPlan falls back to a placeholder reason when none given', () => {
+    const exited = exitCesarPlan(createCesarPlan('task', [makeStep('s1')]), '   ');
+    expect(exited.exitReason).toBe('no reason given');
+    expect(exited.state).toBe('cancelled');
+  });
+
   it('creates a plan in planning state', () => {
     const plan = createCesarPlan('add rate limiting', [makeStep('scan')]);
     expect(plan.state).toBe('planning');

@@ -1091,6 +1091,18 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                       console.warn(`[agon] ProposePlan via MCP signal failed: ${err instanceof Error ? err.message : String(err)}`);
                     }
                   }
+                } else if (signal.tool === 'ExitPlanMode') {
+                  // Companion-engine Cesar (e.g. kimi via MCP) leaving plan mode.
+                  // Must be handled here, not in the delegation fallback below.
+                  recordToolUse('ExitPlanMode', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
+                  const { handleExitPlanMode } = await import('../handlers/plan-mode.js');
+                  const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
+                  try {
+                    const exitResult = handleExitPlanMode(String((signal.args as any)?.reason ?? ''), planDispatch, ctx);
+                    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: 'ExitPlanMode', input: JSON.stringify(signal.args ?? {}), status: 'done', output: exitResult } as any);
+                  } catch (err) {
+                    console.warn(`[agon] ExitPlanMode via MCP signal failed: ${err instanceof Error ? err.message : String(err)}`);
+                  }
                 } else {
                   recordToolUse(signal.tool, 'mcp', JSON.stringify(signal.args ?? {}), 'done');
                   // First non-confidence, non-quicknero signal becomes the delegation
@@ -1244,6 +1256,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     emitXmlToolEvent(name, inp, 'ok', 'Plan submitted for user approval.');
                     delete _lastToolInputs[name];
                   }
+                  // Stash ExitPlanMode args for the post-loop handler (mirrors
+                  // ProposePlan) — the core tool is a no-op signal, so without
+                  // this an XML-tool engine would never actually leave plan mode.
+                  if (name === 'ExitPlanMode') {
+                    (ctx.cesar as any)._exitPlanModeArgs = inp;
+                    emitXmlToolEvent(name, inp, 'ok', 'Left plan mode — continuing live.');
+                    delete _lastToolInputs[name];
+                  }
                 },
                 shouldStopAfterToolCall: shouldStopAfterXmlToolCall,
                 onToolResult: (name: string, result: any) => {
@@ -1308,6 +1328,22 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             }
           } catch (err) {
             console.warn(`[agon] ProposePlan via tool loop failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+
+        // ── Post-tool-loop: wire up ExitPlanMode if called during XML tool loop ──
+        // The core ExitPlanMode tool is a no-op signal, so XML-tool engines need
+        // the real archive+clear applied here (mirrors ProposePlan above).
+        if ((ctx.cesar as any)?._exitPlanModeArgs) {
+          const epArgs = (ctx.cesar as any)._exitPlanModeArgs;
+          delete (ctx.cesar as any)._exitPlanModeArgs;
+          try {
+            const { handleExitPlanMode } = await import('../handlers/plan-mode.js');
+            const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
+            const exitResult = handleExitPlanMode(String((epArgs as any)?.reason ?? ''), planDispatch, ctx);
+            dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: 'ExitPlanMode', input: JSON.stringify(epArgs ?? {}), status: 'done', output: exitResult } as any);
+          } catch (err) {
+            console.warn(`[agon] ExitPlanMode via tool loop failed: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
 
@@ -1484,8 +1520,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
 
         // ── Auto-review: disabled — user must explicitly request /review <engine> ──
 
-        // ── Plan mode gate: Cesar must end with ProposePlan — nudge hard but don't force ──
-        if (inPlanMode && !ctx.cesar!.proposedPlan && !ctx.cesar!.pendingDelegation && session.alive && !abort.signal.aborted) {
+        // ── Plan mode gate: Cesar should end with ProposePlan OR ExitPlanMode — nudge, don't force ──
+        // Skip entirely if Cesar just left plan mode this turn (ExitPlanMode):
+        // inPlanMode was captured before the tool loop and is now stale, so
+        // without this guard the nudge would tell Cesar to ProposePlan right
+        // after it deliberately exited.
+        if (inPlanMode && !(ctx.cesar as any)?.justExitedPlanMode && !ctx.cesar!.proposedPlan && !ctx.cesar!.pendingDelegation && session.alive && !abort.signal.aborted) {
           dispatch({ type: 'warning', message: 'Plan mode: Cesar didn\'t call ProposePlan yet — nudging...' });
           dispatch({ type: 'spinner-start', message: 'Cesar building plan…', color });
           try {
@@ -1682,6 +1722,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               if (cesarFastPath) return;
               (ctx.cesar as any)._proposePlanArgs = inp;
               emitXmlToolEvent(name, inp, 'ok', 'Plan submitted for user approval.');
+              delete _lastToolInputs[name];
+            }
+            if (name === 'ExitPlanMode') {
+              (ctx.cesar as any)._exitPlanModeArgs = inp;
+              emitXmlToolEvent(name, inp, 'ok', 'Left plan mode — continuing live.');
               delete _lastToolInputs[name];
             }
           },

@@ -4,7 +4,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 
 import { join, dirname } from 'node:path';
 
-import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan, cancelCesarPlan } from '@agon/core';
+import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan, cancelCesarPlan, exitCesarPlan } from '@agon/core';
 
 import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@agon/core';
 
@@ -89,7 +89,36 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
   return plan;
 }
 
+/**
+ * Cesar's escape hatch from plan mode (shared by the native onToolCall path and the MCP/XML signal paths in brain.kern). Archives any pending/paused plan as cancelled-with-reason, clears all plan state so mutation guards lift and go/yes stop routing to /approve, and sets a one-turn ping-pong guard. Refuses to abandon a RUNNING plan (it may have in-flight jobs/worktrees) — the user must cancel that. The dispatch is only for UI events; the state cleanup above does not depend on it, so a null dispatch is non-fatal (both call paths then behave identically). Returns the tool-result string.
+ */
 // @kern-source: plan-mode:82
+export function handleExitPlanMode(reason: string, dispatch: Dispatch|null, ctx: HandlerContext): string {
+  const r = (reason && reason.trim()) ? reason.trim() : 'no reason given';
+  const current = ctx.activePlan as CesarPlan | undefined;
+  // Running plans have side effects; don't allow a silent abandon.
+  if (current && current.state === 'running') {
+    return '[BLOCKED] A plan is currently RUNNING. ExitPlanMode cannot abandon a running plan (it may have in-flight jobs/worktrees). Tell the user to cancel it (type /cancel) or wait for the active step to finish.';
+  }
+  // Only run exit cleanup (and arm the ping-pong guard) when there was
+  // actually a pending/paused plan to leave — otherwise ExitPlanMode is a
+  // no-op and must not suppress legitimate planning on the next turn.
+  if (current && ['planning', 'awaiting_approval', 'paused'].includes(current.state)) {
+    try { saveCesarPlan(exitCesarPlan(current, r)); } catch { /* best-effort archive */ }
+    if (ctx.cesar) {
+      (ctx.cesar as any).proposedPlan = undefined;
+      (ctx.cesar as any).justExitedPlanMode = true;
+    }
+    if (ctx.setActivePlan) ctx.setActivePlan(null);
+    // plan-cancelled clears the pinned live-pane proposal. Guarded: state
+    // cleanup already happened, so a missing dispatch is non-fatal.
+    if (dispatch) dispatch({ type: 'plan-cancelled', plan: current } as any);
+  }
+  if (dispatch) dispatch({ type: 'info', message: `Left plan mode — ${r}` } as any);
+  return `[PLAN_EXITED] Left plan mode (${r}). You are now live: investigate and act directly with tools, or answer the user. Do NOT propose a plan again this turn.`;
+}
+
+// @kern-source: plan-mode:109
 export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch): Record<string,StepExecutor> {
   const cwd = resolveWorkingDir();
   const outputDir = join(RUNS_DIR, `plan-exec-${Date.now()}`);

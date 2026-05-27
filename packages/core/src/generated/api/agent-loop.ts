@@ -120,7 +120,7 @@ export function repairToolName(name: string, registry: any): string {
   const capitalized = lower.charAt(0).toUpperCase() + lower.slice(1);
 
   // Known tool names in Agon
-  const knownTools = ['Read', 'Edit', 'Write', 'Bash', 'Grep', 'Glob', 'Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Review', 'Delegate', 'Pipeline', 'ReportConfidence', 'ProposePlan'];
+  const knownTools = ['Read', 'Edit', 'Write', 'Bash', 'Grep', 'Glob', 'Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Review', 'Delegate', 'Pipeline', 'ReportConfidence', 'ProposePlan', 'ExitPlanMode'];
   const match = knownTools.find((t: string) => t.toLowerCase() === lower);
   if (match) return match;
 

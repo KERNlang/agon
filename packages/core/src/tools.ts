@@ -7,6 +7,7 @@ export { createGrepTool } from './generated/tools/tool-grep.js';
 export { createGlobTool } from './generated/tools/tool-glob.js';
 export { createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createGoalTool, createReviewTool, createAgentTool, createQuickNeroTool } from './generated/blocks/tool-orchestration.js';
 export { createProposePlanTool } from './generated/tools/tool-propose-plan.js';
+export { createExitPlanModeTool } from './generated/tools/tool-exit-plan-mode.js';
 export { createListPlansTool } from './generated/tools/tool-list-plans.js';
 export { createRetrieveResultTool } from './generated/tools/tool-retrieve.js';
 export { createWebFetchTool, parseAndValidateUrl, htmlToText } from './generated/tools/tool-web-fetch.js';

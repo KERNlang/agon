@@ -219,17 +219,17 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export
       const stats = tracker.getStats();
       let budgetWarning = '';
       if (stats.totalCostUsd > 0.50) {
-        budgetWarning = `\n\nURGENT: Planning has spent $${stats.totalCostUsd.toFixed(2)}. You MUST call ProposePlan NOW. No more investigation.`;
+        budgetWarning = `\n\nURGENT: Planning has spent $${stats.totalCostUsd.toFixed(2)}. Stop investigating and decide NOW — call ProposePlan or ExitPlanMode.`;
       } else if (stats.totalCostUsd > 0.25) {
-        budgetWarning = `\n\nWARNING: Planning has spent $${stats.totalCostUsd.toFixed(2)}. Wrap up and call ProposePlan.`;
+        budgetWarning = `\n\nWARNING: Planning has spent $${stats.totalCostUsd.toFixed(2)}. Wrap up and decide — call ProposePlan or ExitPlanMode.`;
       }
-      systemParts.push(`RULE 9 — PLAN MODE: You are in PLAN MODE. You MUST call ProposePlan before your turn ends. This is not optional.
+      systemParts.push(`RULE 9 — PLAN MODE: You are in PLAN MODE because the user asked for planning, so proposing a plan is usually the right call here. But you are NEVER trapped and never forced: if you decide a plan is not the right approach — the task is simple enough to do live, or planning is blocking progress — call ExitPlanMode with a one-line reason and work live instead. You decide.
 
 PROTOCOL:
 
 1. INVESTIGATE — Go as deep as needed. Read files, Grep for patterns, trace call chains, understand the full scope. Use Brainstorm/Tribunal/Campfire/Delegate freely if the task is complex and you need other engines' input. Take your time here — thorough investigation makes better plans.
 
-2. PROPOSE — When you understand the task, call ProposePlan with a structured plan. This is MANDATORY. Your turn MUST end with a ProposePlan call. Do NOT respond with text instead of calling ProposePlan. Do NOT skip this step.
+2. PROPOSE or EXIT — End your turn with a decision. If staged multi-step execution genuinely helps, call ProposePlan with a structured plan. If you've concluded a plan is unnecessary or wrong for this task, call ExitPlanMode (give a reason) and proceed live next turn. Do NOT stall — narrating without calling either one is the one thing that fails plan mode.
 
 PLAN QUALITY CHECKLIST — every ProposePlan call must:
   1. Write a real intent (1-3 sentences: what the user asked + your overall approach), not a one-word title.
@@ -304,7 +304,7 @@ not to.
 BLOCKED: Forge, Pipeline, Agent, Edit, Write. No code execution until the plan is approved.
 ALLOWED: Read, Grep, Glob, Bash (read-only), Delegate, Brainstorm, Tribunal, Campfire, ReportConfidence, ProposePlan.
 
-HARD RULE: Your turn MUST end with a ProposePlan call. If you respond with text only, the plan mode fails. Call ProposePlan.${budgetWarning}`);
+RULE: End your turn by calling EITHER ProposePlan (if a plan helps) OR ExitPlanMode (if it doesn't) — not with plain narration. Both are valid; you choose.${budgetWarning}`);
       }
     }
 
@@ -483,6 +483,16 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
           const msg = err instanceof Error ? err.message : String(err);
           return `[Delegate → ${targetId}] Error: ${msg}`;
         }
+      }
+
+      if (name === 'ExitPlanMode') {
+        // Cesar's escape hatch — delegate to the shared handler so the native
+        // onToolCall path and the MCP/XML signal paths in brain.kern all
+        // archive + clear plan state identically. The dispatch is only for UI
+        // events; pass null when planDispatch is unavailable rather than
+        // blocking the exit (state cleanup does not depend on it).
+        const { handleExitPlanMode } = await import('../handlers/plan-mode.js');
+        return handleExitPlanMode(String((args as any).reason ?? ''), ctx.cesar?.planDispatch ?? null, ctx);
       }
 
       if (name === 'ProposePlan') {

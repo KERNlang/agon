@@ -35,6 +35,11 @@ export interface SpawnOptions {
   cwd?: string;
   /** Extra env vars merged into the daemon's environment. */
   env?: Record<string, string>;
+  /** Extra launch flags appended after the engine's config argv — agon uses
+   * this to forward a /models model/effort pick (e.g. ['--model','opus',
+   * '--effort','high']) to the interactive path, matching the --print fallback.
+   * Empty → the engine uses its own config. */
+  extraArgv?: string[];
 }
 
 interface PendingReply {
@@ -105,6 +110,10 @@ export class PtyCliSession {
     if (opts.cols) args.push('--cols', String(opts.cols));
     if (opts.rows) args.push('--rows', String(opts.rows));
     if (opts.mode) args.push('--mode', opts.mode);
+    // `--extra-arg=VALUE` (not space-separated) so argparse accepts values that
+    // themselves start with '-' (e.g. '--model'), which it would otherwise treat
+    // as an option and reject with exit code 2.
+    for (const a of opts.extraArgv ?? []) args.push(`--extra-arg=${a}`);
 
     let child: ChildProcessWithoutNullStreams;
     try {

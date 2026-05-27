@@ -12,7 +12,7 @@ import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createR
 import from="@agon/core" names="RunStatus,RunStatusEngine" types=true
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@agon/adapter-cli" names="createCliAdapter"
-import from="@agon/forge" names="runThinkChain,isThinkStrategy"
+import from="@agon/forge" names="runThinkChain,isThinkStrategy,joinProblemInput"
 import from="../blocks/output-format.js" names="header,info,bold,dim"
 import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
 
@@ -86,8 +86,8 @@ const name=thinkCommand type=any
         registry.load(resolveBuiltinEnginesDir());
         const adapter = createCliAdapter(registry);
 
-        const extras = Array.isArray((args as any)._) ? (args as any)._.map(String) : [];
-        const problem = [args.problem ?? '', extras.join(' ')].filter(Boolean).join(' ').trim();
+        const positionals = Array.isArray((args as any)._) ? (args as any)._.map(String) : [];
+        const problem = joinProblemInput(args.problem as string | undefined, positionals);
         if (!problem) {
           console.error('Provide a problem. Usage: agon think "your task" [--strategy reflexion] [--steps 8]');
           process.exitCode = 1;

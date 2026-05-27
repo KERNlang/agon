@@ -10,7 +10,7 @@ import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@agon/adapter-cli';
 
-import { runThinkChain, isThinkStrategy } from '@agon/forge';
+import { runThinkChain, isThinkStrategy, joinProblemInput } from '@agon/forge';
 
 import { header, info, bold, dim } from '../blocks/output-format.js';
 
@@ -90,8 +90,8 @@ export const thinkCommand: any = defineCommand({
     registry.load(resolveBuiltinEnginesDir());
     const adapter = createCliAdapter(registry);
 
-    const extras = Array.isArray((args as any)._) ? (args as any)._.map(String) : [];
-    const problem = [args.problem ?? '', extras.join(' ')].filter(Boolean).join(' ').trim();
+    const positionals = Array.isArray((args as any)._) ? (args as any)._.map(String) : [];
+    const problem = joinProblemInput(args.problem as string | undefined, positionals);
     if (!problem) {
       console.error('Provide a problem. Usage: agon think "your task" [--strategy reflexion] [--steps 8]');
       process.exitCode = 1;

@@ -1255,6 +1255,7 @@ export function App() {
     if (engineId === 'claude' || env.includes('anthropic') || baseUrl.includes('anthropic') || display.includes('anthropic')) providerFilter = 'provider:anthropic';
     else if (engineId === 'codex' || env.includes('openai') || baseUrl.includes('openai') || display.includes('openai')) providerFilter = 'provider:openai';
     else if (engineId === 'agy' || engineId === 'antigravity' || env.includes('google') || baseUrl.includes('google') || display.includes('google') || display.includes('antigravity')) providerFilter = 'provider:google';
+    else if (engineId === 'opencode' || display.includes('opencode')) providerFilter = 'provider:opencode';
     else if (engineId === 'openrouter' || env.includes('openrouter') || baseUrl.includes('openrouter')) providerFilter = 'provider:openrouter';
     else if (engineId === 'mistral' || display.includes('mistral')) providerFilter = 'provider:mistral';
     else if (engineId === 'qwen' || display.includes('qwen')) providerFilter = 'provider:qwen';
@@ -1278,7 +1279,7 @@ export function App() {
       // on failure the builder falls back to the static/models.dev list.
       const dyn = engine?.cliModels?.dynamicListCmd;
       const probeFirst = (Array.isArray(dyn) && dyn.length > 0 && engine?.binary)
-        ? refreshProbedCliModels(engineId, engine.binary).catch(() => false)
+        ? refreshProbedCliModels(engineId, engine.binary, dyn).catch(() => false)
         : Promise.resolve(false);
       probeFirst.then(() => buildCliModelGroupsAsync()).then((cliGroups: any) => {
         setModelPickerCliGroups(cliGroups);
@@ -2417,7 +2418,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:82
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2112
+// @kern-source: app:2113
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

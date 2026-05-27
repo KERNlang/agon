@@ -112,6 +112,20 @@ fn name=resolveEffort params="engine:EngineDefinition,cwd?:string" returns="stri
     return effortConfig.default ?? null;
   >>>
 
+fn name=resolveClaudePtyExtraArgs params="engine:EngineDefinition, cwd?:string" returns="string[]" export=true
+  doc "Launch flags (model + reasoning effort) to forward to the claude pty exec so the interactive subscription path honors an agon /models pick, exactly like the --print fallback. Returns [] when nothing is explicitly configured → defers to claude's own config (resilient if a probe/flag changes)."
+  handler <<<
+    const out: string[] = [];
+    const model = resolveModel(engine, cwd);
+    if (model && engine.model?.flag) out.push(engine.model.flag, model);
+    const effort = resolveEffort(engine, cwd);
+    if (effort && engine.effort) {
+      if (engine.effort.flag) out.push(engine.effort.flag, effort);
+      else if (engine.effort.configKey) out.push('-c', `${engine.effort.configKey}=${effort}`);
+    }
+    return out;
+  >>>
+
 fn name=formatFileSize params="bytes:number" returns="string" export=false
   handler lang="kern"
     if cond="bytes < 1024"
@@ -309,8 +323,8 @@ fn name=composeClaudePtyPrompt params="prompt:string, systemPrompt?:string" retu
     return `[System Instructions]\n${systemPrompt}\n\n[User Message]\n${prompt}`;
   >>>
 
-fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string, env?:Record<string,string>" returns="Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}>" async=true
-  doc "Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @agon/kern-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check."
+fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string, env?:Record<string,string>, extraArgv?:string[]" returns="Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}>" async=true
+  doc "Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @agon/kern-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt; extraArgv (model/effort launch flags) is forwarded to the engine exec. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check."
   handler <<<
     const start = Date.now();
     try {
@@ -334,6 +348,7 @@ fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:A
           mode: mode ?? 'exec',
           cwd: cwd,
           env: env,
+          extraArgv: extraArgv,
         });
       } catch (e) {
         return {
@@ -392,8 +407,8 @@ fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:A
     }
   >>>
 
-fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string, env?:Record<string,string>" returns="AsyncGenerator<string, {exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}, void>" async=true stream=true
-  doc "Streaming variant of runClaudePtyDispatch — yields response deltas as they arrive, returns the final DispatchResult. Never throws — any unforeseen error returns unavailable:true via the generator's return value, so kern callers can fall through to legacy paths."
+fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string, env?:Record<string,string>, extraArgv?:string[]" returns="AsyncGenerator<string, {exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}, void>" async=true stream=true
+  doc "Streaming variant of runClaudePtyDispatch — yields response deltas as they arrive, returns the final DispatchResult. extraArgv (model/effort launch flags) is forwarded to the engine exec. Never throws — any unforeseen error returns unavailable:true via the generator's return value, so kern callers can fall through to legacy paths."
   handler <<<
     const start = Date.now();
     let session: any;
@@ -417,6 +432,7 @@ fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, sig
           mode: mode ?? 'exec',
           cwd: cwd,
           env: env,
+          extraArgv: extraArgv,
         });
       } catch (e) {
         return {

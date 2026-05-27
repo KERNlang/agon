@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { shouldUseCompanionForAgent, buildCommand, resolveArgs, computeEngineIsolation } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
+import { shouldUseCompanionForAgent, buildCommand, resolveArgs, computeEngineIsolation, resolveClaudePtyExtraArgs } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
 
 describe('adapter helper routing', () => {
   it('uses one-shot agent companion only for JSON-RPC engines', () => {
@@ -178,5 +178,26 @@ describe('reasoning effort + respect-CLI-own-config', () => {
     const { args } = buildCommand(eng, 'exec', 'hi', '/wt', 180, 'codex');
     expect(args).not.toContain('--model');
     expect(args).toEqual(['exec', 'hi']);
+  });
+
+  // The interactive (pty) claude path must honor a /models pick too — not just
+  // the --print fallback. resolveClaudePtyExtraArgs builds the launch flags it
+  // forwards to the pty exec.
+  it('claude pty path forwards [--model, X, --effort, Y] when explicitly set', () => {
+    const eng = {
+      id: 'claude-ptytest',
+      model: { configKey: 'agon_pty_test_model', flag: '--model', default: 'opus' },
+      effort: { flag: '--effort', levels: ['low', 'high'], default: 'high' },
+    } as any;
+    expect(resolveClaudePtyExtraArgs(eng, '/wt')).toEqual(['--model', 'opus', '--effort', 'high']);
+  });
+
+  it('claude pty path forwards nothing when nothing is picked (defers to claude own config)', () => {
+    const eng = {
+      id: 'claude-ptynone',
+      model: { configKey: 'agon_pty_test_model_unset', flag: '--model' },
+      effort: { flag: '--effort', levels: ['low', 'high'] },
+    } as any;
+    expect(resolveClaudePtyExtraArgs(eng, '/wt')).toEqual([]);
   });
 });

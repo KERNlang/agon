@@ -21,6 +21,7 @@ export interface CallCommandOptions {
   queue?: string;
   steps?: string;
   branches?: string;
+  critic?: string;
 }
 
 export interface BuiltCallCommands {
@@ -125,6 +126,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...textFlag('--strategy', opts.strategy),
       ...textFlag('--steps', opts.steps),
       ...textFlag('--branches', opts.branches),
+      ...textFlag('--critic', opts.critic),
       ...timeout,
       ...engines,
     ]);
@@ -283,6 +285,10 @@ export const callCommand = defineCommand({
       type: 'string',
       description: 'For think: alternative reasoning branches to explore, 1..8',
     },
+    critic: {
+      type: 'string',
+      description: 'For think: a second engine that adversarially critiques the chain',
+    },
     lead: {
       type: 'string',
       description: 'Lead engine for campfire lead-first strategy',
@@ -327,6 +333,7 @@ export const callCommand = defineCommand({
         queue: args.queue,
         steps: args.steps,
         branches: args.branches,
+        critic: args.critic,
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

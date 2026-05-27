@@ -38,8 +38,12 @@ export const thinkCommand: any = defineCommand({
     },
     strategy: {
       type: 'string',
-      description: 'Thinking method: linear (1:1 with classic sequential thinking) or reflexion (force a critique+revision per step). tot/graph/hypothesis are deferred.',
+      description: 'Thinking method: linear | reflexion (forced critique+revision) | tot (self-scored branches, prune to winner) | graph (branch then merge) | hypothesis (competing hypotheses, eliminate losers).',
       default: 'linear',
+    },
+    critic: {
+      type: 'string',
+      description: 'A SECOND engine that adversarially attacks the chain after it is produced (cross-engine critique). e.g. --critic codex.',
     },
     engine: {
       type: 'string',
@@ -134,6 +138,7 @@ export const thinkCommand: any = defineCommand({
       adapter,
       maxThoughts: steps,
       branches,
+      critic: typeof args.critic === 'string' ? args.critic.trim() : undefined,
       timeout: timeoutSec,
       outputDir,
       ground: args.ground !== false,
@@ -172,10 +177,17 @@ export const thinkCommand: any = defineCommand({
     if (!quiet) {
       for (const t of result.thoughts) {
         const flag = t.grounded === false ? dim('  ⚠ ungrounded') : '';
-        const branchTag = t.branchId ? dim(` ⟜${t.branchId}`) : '';
-        console.log(`${thoughtGlyph(t.kind)} ${bold(`${t.thoughtNumber}/${t.totalThoughts}`)} ${dim(`[${t.kind}]`)}${branchTag} ${t.thought}${flag}`);
+        const score = typeof t.branchScore === 'number' ? `:${t.branchScore}` : '';
+        const branchTag = t.branchId ? dim(` ⟜${t.branchId}${score}`) : '';
+        const prunedTag = t.pruned ? dim(' ✂ pruned') : '';
+        const line = `${thoughtGlyph(t.kind)} ${bold(`${t.thoughtNumber}/${t.totalThoughts}`)} ${dim(`[${t.kind}]`)}${branchTag} ${t.thought}${flag}${prunedTag}`;
+        console.log(t.pruned ? dim(line) : line);
       }
       console.log('');
+      if (result.chosenBranch) {
+        console.log(`${bold('Chosen branch')}: ${result.chosenBranch}`);
+        console.log('');
+      }
     }
 
     if (result.summary) {
@@ -198,6 +210,12 @@ export const thinkCommand: any = defineCommand({
 
     if (!quiet && !result.protocolValid) {
       console.log(dim(`⚠ ${strategy} protocol not fully satisfied (machine validation failed).`));
+      console.log('');
+    }
+
+    if (result.adversarialCritique) {
+      console.log(bold(`Adversarial critique${result.criticEngineId ? ` (${result.criticEngineId})` : ''}`));
+      console.log(result.adversarialCritique);
       console.log('');
     }
 

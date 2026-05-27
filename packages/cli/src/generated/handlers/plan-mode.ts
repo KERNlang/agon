@@ -4,7 +4,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 
 import { join, dirname } from 'node:path';
 
-import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan } from '@agon/core';
+import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan, cancelCesarPlan } from '@agon/core';
 
 import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@agon/core';
 
@@ -68,11 +68,28 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
   writeFileSync(filePath, markdown);
   saveCesarPlan(plan);
 
+  // Supersede AFTER the replacement is safely built + persisted, so a
+  // malformed/failed proposal above can never destroy the user's existing
+  // approvable plan (codex review). Retire any prior pending proposal on
+  // disk — id-guarded so we never cancel the plan we just saved — and clear
+  // the stale in-memory proposedPlan ref so no error path observes a ghost
+  // awaiting_approval plan (zai review). activePlan is owned by the caller's
+  // setActivePlan, which assigns this new plan immediately after we return.
+  for (const prior of [ctx.cesar?.proposedPlan, ctx.activePlan]) {
+    const p = prior as CesarPlan | undefined;
+    if (p && p.state === 'awaiting_approval' && p.id !== plan.id) {
+      try { saveCesarPlan(cancelCesarPlan(p)); } catch { /* best-effort supersede cleanup */ }
+    }
+  }
+  if (ctx.cesar?.proposedPlan && (ctx.cesar.proposedPlan as CesarPlan).state === 'awaiting_approval' && (ctx.cesar.proposedPlan as CesarPlan).id !== plan.id) {
+    ctx.cesar.proposedPlan = undefined;
+  }
+
   dispatch({ type: 'plan-proposal' as any, plan, markdown, planFilePath: filePath });
   return plan;
 }
 
-// @kern-source: plan-mode:65
+// @kern-source: plan-mode:82
 export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch): Record<string,StepExecutor> {
   const cwd = resolveWorkingDir();
   const outputDir = join(RUNS_DIR, `plan-exec-${Date.now()}`);

@@ -188,18 +188,17 @@ export function buildThinkPrompt(problem: string, strategy: string, maxThoughts:
 }
 
 /**
- * Pull the first balanced top-level JSON object out of an engine response, tolerating code fences and surrounding prose. String-aware: braces inside JSON string values (these thoughts are about code, so they are full of { }) are ignored, and escaped quotes are handled, so a thought like '{ foo }' no longer corrupts the depth count.
+ * Pull the first balanced top-level JSON object out of an engine response, tolerating code fences and surrounding prose. String-aware: braces inside JSON string values (these thoughts are about code, so they are full of { }) are ignored, and escaped quotes are handled, so a thought like '{ foo }' no longer corrupts the depth count. The scanner reads raw directly — no global fence-strip, which would otherwise mangle ``` fences embedded inside a thought's text.
  */
 // @kern-source: thinking:155
 export function extractThinkJson(raw: string): any|null {
-  const stripped = raw.replace(/```(?:json)?/gi, '');
   let depth = 0;
   let start = -1;
   let inStr = false;
   let esc = false;
   let firstParsed: any = null;
-  for (let i = 0; i < stripped.length; i++) {
-    const ch = stripped[i];
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
     if (inStr) {
       if (esc) {
         esc = false;
@@ -220,7 +219,7 @@ export function extractThinkJson(raw: string): any|null {
       depth--;
       if (depth === 0 && start !== -1) {
         try {
-          const obj = JSON.parse(stripped.slice(start, i + 1));
+          const obj = JSON.parse(raw.slice(start, i + 1));
           // Prefer the object that actually carries our chain; a trivial
           // `{}` in surrounding prose must not short-circuit the real one.
           if (obj && typeof obj === 'object' && Array.isArray(obj.thoughts)) return obj;
@@ -238,7 +237,7 @@ export function extractThinkJson(raw: string): any|null {
 /**
  * Parse the engine's JSON chain into normalized ThoughtNodes. Falls back to a single analysis thought wrapping the raw text when parsing fails, so a chain is always returned.
  */
-// @kern-source: thinking:203
+// @kern-source: thinking:202
 export function parseThoughts(raw: string, maxThoughts: number): {thoughts:ThoughtNode[], summary:string, openQuestions:string[], refinedSpec:string} {
   const ALLOWED = ['analysis','critique','revision','decision','question','decompose','hypothesis'];
   const parsed = extractThinkJson(raw);
@@ -287,15 +286,20 @@ export function parseThoughts(raw: string, maxThoughts: number): {thoughts:Thoug
 /**
  * Scan each thought for file-path-like tokens and verify they exist relative to cwd. A thought citing a non-existent path is annotated grounded=false; the path is collected into issues. Keeps thinking output at or above AGON's existing witness-command safety baseline.
  */
-// @kern-source: thinking:252
+// @kern-source: thinking:251
 export function groundThoughts(thoughts: ThoughtNode[], cwd: string): {thoughts:ThoughtNode[], issues:string[]} {
   const PATH_RE = /\b[\w./-]+\.(?:ts|tsx|js|jsx|kern|json|md|mjs|cjs)\b/g;
   const issues: string[] = [];
   const grounded = thoughts.map((t) => {
-    const cited = Array.from(new Set((t.thought.match(PATH_RE) ?? [])));
+    // Strip URLs first so http(s)/www links aren't mistaken for local files.
+    const text = t.thought.replace(/https?:\/\/\S+/gi, ' ').replace(/\bwww\.\S+/gi, ' ');
+    const cited = Array.from(new Set((text.match(PATH_RE) ?? [])));
     const missing = cited.filter((p) => {
       // Only check repo-relative-looking paths, skip bare names like "index.js".
       if (!p.includes('/')) return false;
+      // Skip domain-like tokens (e.g. github.com/x/y.md): a repo path's first
+      // segment is a dir name, never a dotted host.
+      if (p.split('/')[0].includes('.')) return false;
       const abs = p.startsWith('/') ? p : `${cwd.replace(/\/$/, '')}/${p}`;
       return !existsSync(abs);
     });
@@ -309,7 +313,7 @@ export function groundThoughts(thoughts: ThoughtNode[], cwd: string): {thoughts:
 /**
  * Fold the parsed thoughts through the ThinkChain machine. A reflexion chain whose revision doesn't follow a critique trips a ThinkChainStateError, so an engine can't claim to have reflected without actually doing it. Branch-aware: each branchId group is validated as its own chain. Returns false on any illegal transition.
  */
-// @kern-source: thinking:274
+// @kern-source: thinking:278
 export function validateChain(thoughts: ThoughtNode[], strategy: string): boolean {
   const fold = (chain: ThoughtNode[]): boolean => {
     try {
@@ -357,7 +361,7 @@ export function validateChain(thoughts: ThoughtNode[], strategy: string): boolea
 /**
  * Run one sequential-thinking chain via a single structured dispatch, then ground + machine-validate the result. Pure prompt-scaffold path (no engine tools) so it works for engines with weak/absent adaptive thinking. branches>1 asks for that many alternative reasoning branches (emission only — no auto-scoring). Returns a ThinkResult whose refinedSpec is the handoff to `agon goal`.
  */
-// @kern-source: thinking:322
+// @kern-source: thinking:326
 export async function runThinkChain(opts: {problem:string, strategy:string, engineId:string, registry:EngineRegistry, adapter:EngineAdapter, maxThoughts:number, branches?:number, timeout:number, outputDir:string, ground:boolean, signal?:AbortSignal}): Promise<ThinkResult> {
   const strategy = isThinkStrategy(opts.strategy) ? opts.strategy : 'linear';
   const branches = Math.max(1, Math.min(opts.branches ?? 1, 8));

@@ -109,6 +109,31 @@ describe('parseThoughts', () => {
     expect(out.thoughts[0].thought).toContain('prose');
   });
 
+  it('parses thoughts whose text contains braces (code snippets)', () => {
+    // Regression: brace-counting must skip braces inside JSON string values,
+    // or a thought about code dumps the whole chain into one raw fallback.
+    const raw = JSON.stringify({
+      thoughts: [
+        { thought: 'use a KERN fn: fn foo() { return { a: 1 }; }', kind: 'analysis' },
+        { thought: 'then guard with if (x) { bail(); }', kind: 'decision' },
+      ],
+      summary: 'wrap it in { braces }',
+      refinedSpec: 'emit { "ok": true }',
+    });
+    const out = parseThoughts(raw, 6);
+    expect(out.thoughts).toHaveLength(2);
+    expect(out.thoughts[0].thought).toContain('return { a: 1 }');
+    expect(out.summary).toContain('{ braces }');
+  });
+
+  it('extracts JSON even with prose and a stray brace before it', () => {
+    const raw = 'Here is my answer (note: use {} carefully):\n{"thoughts":[{"thought":"x","kind":"analysis"}],"summary":"s"}';
+    const out = parseThoughts(raw, 6);
+    expect(out.thoughts).toHaveLength(1);
+    expect(out.thoughts[0].thought).toBe('x');
+    expect(out.summary).toBe('s');
+  });
+
   it('coerces unknown kinds to analysis', () => {
     const out = parseThoughts(JSON.stringify({ thoughts: [{ thought: 'x', kind: 'wat' }] }), 6);
     expect(out.thoughts[0].kind).toBe('analysis');

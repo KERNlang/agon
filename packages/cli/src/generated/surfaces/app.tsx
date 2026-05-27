@@ -52,7 +52,7 @@ import type { ModeRationale } from '../cesar/mode-rationale.js';
 
 import { processPasteContent, expandPastePlaceholders, recordPastePlaceholder } from '../signals/paste-handler.js';
 
-import { dispatchIntent, handleModeSwitch, isCesarPlanApprovalInput } from '../signals/dispatch.js';
+import { dispatchIntent, handleModeSwitch, isCesarPlanApprovalInput, isCesarPlanStatusInput } from '../signals/dispatch.js';
 
 import type { DispatchCallbacks } from '../signals/dispatch.js';
 
@@ -1065,6 +1065,26 @@ export function App() {
 
           if (!input.startsWith('/') && activePlanRef.current?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
             input = '/approve';
+          }
+
+          // When the user moves forward from a pinned plan proposal, demote it
+          // from the live pane into scrollback history (Claude-style) so this
+          // turn's output is the bottom-most content instead of being buried
+          // under the plan. The chat-route approval ("go sounds legit") never
+          // emits plan-execution, so this turn boundary is the reliable hook.
+          // Exclusions, so an input that is NOT a response to the plan can't
+          // falsely retire it:
+          //   - side-channel slash commands (/btw, /status, /clear, …) — and
+          //     /cancel, which keeps its own plan-cancelled path (no history block)
+          //   - status/progress queries are questions about the plan, not responses
+          const dismissLower = input.trim().toLowerCase();
+          const isSlashNonApprove = dismissLower.startsWith('/') && dismissLower !== '/approve';
+          if (
+            activePlanRef.current?.state === 'awaiting_approval' &&
+            !isSlashNonApprove &&
+            !isCesarPlanStatusInput(input)
+          ) {
+            dispatch({ type: 'plan-dismiss' } as any);
           }
 
           // /btw <question> — side-channel question during active dispatch
@@ -2437,7 +2457,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:82
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2133
+// @kern-source: app:2153
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -54,11 +54,15 @@ union name=OutputEvent discriminant=type
     field name=plan type=any
     field name=markdown type=string
     field name=planFilePath type=string optional=true
+    doc "When committed=true the proposal is a historical scrollback record (demoted from the live pane after the user responded), so the approval prompt is suppressed."
+    field name=committed type=boolean optional=true
   variant name=plan-execution
     field name=plan type=any
   variant name=plan-cancelled
     doc "Fired when the user rejects a plan-proposal at the approval prompt. Clears the live-pane proposal slot; does not add a scrollback block."
     field name=plan type=any
+  variant name=plan-dismiss
+    doc "Fired from handleSubmit when the user responds to a pinned plan proposal. Demotes the pinned proposal from the live pane into scrollback history (Claude-style) so the next turn's output is the bottom-most content. No-op when nothing is pinned."
   variant name=todos-set
     doc "Replace the rolling todo list shown above the composer. Pass an empty array to hide it; pass a non-empty array to declare 'here's what I'm about to do'."
     field name=todos type="any[]"

@@ -171,9 +171,20 @@ function appendSummaryRecord(session: ChatSession): void {
 }
 
 /**
- * Incrementally compact older current-session chat into a bounded summary. The newest tail remains available as raw capped turns; older turns become a compact digest for Cesar/API respawns without replaying the full transcript.
+ * Null out the in-memory content of messages[from..to). Those turns are already folded into the rolling summary AND persisted to disk (appendMessage writes the ndjson), so dropping their bodies bounds session RAM without losing anything callers need. Objects are kept so indices/summarizedMessageCount/resume accounting stay valid.
  */
 // @kern-source: chat-store:135
+function freeSummarizedMessageBodies(messages: ChatMessage[], from: number, to: number): void {
+  for (let i = from; i < to; i++) {
+    const m = messages[i];
+    if (m && typeof m.content === 'string') m.content = '';
+  }
+}
+
+/**
+ * Incrementally compact older current-session chat into a bounded summary. The newest tail remains available as raw capped turns; older turns become a compact digest for Cesar/API respawns without replaying the full transcript.
+ */
+// @kern-source: chat-store:144
 export function updateChatSummary(session: ChatSession): boolean {
   if (!session || !Array.isArray(session.messages)) {
     return false;
@@ -184,6 +195,13 @@ export function updateChatSummary(session: ChatSession): boolean {
     return false;
   }
   const additions = session.messages.slice(already, targetCount).filter((msg: any) => msg && typeof msg.content === 'string' && msg.content.trim()).map((msg: ChatMessage) => compactChatMessage(msg));
+  // Free the heavy content of the turns now folded into the rolling summary. The
+  // full message is already on disk (appendMessage writes the ndjson before this),
+  // and the summary + the un-summarized tail carry forward all the context callers
+  // use — so keeping the raw bodies in memory only grows RAM unbounded for the whole
+  // session (the long-run / post-forge lag → crash). Blank the content but KEEP the
+  // objects so indices, summarizedMessageCount, and resume accounting stay valid.
+  freeSummarizedMessageBodies(session.messages, already, targetCount);
   if (additions.length === 0) {
     session.summarizedMessageCount = targetCount;
     return true;
@@ -198,7 +216,7 @@ export function updateChatSummary(session: ChatSession): boolean {
 /**
  * Format recent chat history for prompts with hard token-waste bounds. Keeps newest messages first and truncates oversized turns so fallback/chat prompts cannot replay a huge transcript forever.
  */
-// @kern-source: chat-store:154
+// @kern-source: chat-store:170
 export function formatChatHistoryForPrompt(messages: ChatMessage[], opts?: {maxMessages?:number,maxChars?:number,maxMessageChars?:number}): string {
   const source = Array.isArray(messages) ? messages : [];
   const maxMessages = Math.max(0, opts?.maxMessages ?? 20);
@@ -239,7 +257,7 @@ export function formatChatHistoryForPrompt(messages: ChatMessage[], opts?: {maxM
 /**
  * Format compact session context for prompts: rolling summary of older turns plus capped recent turns.
  */
-// @kern-source: chat-store:193
+// @kern-source: chat-store:209
 export function formatChatContextForPrompt(session: ChatSession|null|undefined, opts?: {maxMessages?:number,maxChars?:number,maxMessageChars?:number,maxSummaryChars?:number}): string {
   if (!session) {
     return '';
@@ -261,7 +279,7 @@ export function formatChatContextForPrompt(session: ChatSession|null|undefined, 
 /**
  * Hydrate an empty ChatSession from a durable ContextThread so a fresh process can continue a prior conversation (the `--continue` path). Seeded turns go through appendMessage, so they are persisted to this session's ndjson too — keeping `/chats resume` and loadChatSession consistent with what is in memory. Maps thread roles to chat roles (user->user, assistant->engine) and skips system/tool turns, which chat sessions do not render. No-op when the session already has messages, so it never clobbers an active conversation. The default limit (last 40 turns) bounds rehydration cost; the prompt formatter caps it further at render time.
  */
-// @kern-source: chat-store:209
+// @kern-source: chat-store:225
 export function seedChatSessionFromThread(session: ChatSession, thread: ContextThread, opts?: {limit?:number}): void {
   if (session.messages.length > 0) return;
   const recent = thread.recentMessages(opts?.limit ?? 40);
@@ -279,7 +297,7 @@ export function seedChatSessionFromThread(session: ChatSession, thread: ContextT
 /**
  * Concatenate recent conversation history with the current input so one-shot dispatches keep continuity. Used by fallback paths that bypass PersistentSession — API-only engines (no CLI binary) still get multi-turn context this way. Default: last 10 turns (20 messages).
  */
-// @kern-source: chat-store:225
+// @kern-source: chat-store:241
 export function buildHistoryPrimedPrompt(session: ChatSession, input: string, maxTurns?: number): string {
   const limit = (maxTurns ?? 10) * 2;
   const context = formatChatContextForPrompt(session, { maxMessages: limit, maxChars: 12000, maxMessageChars: 1200, maxSummaryChars: 5000 });
@@ -294,7 +312,7 @@ export function buildHistoryPrimedPrompt(session: ChatSession, input: string, ma
   return lines.join('\n');
 }
 
-// @kern-source: chat-store:239
+// @kern-source: chat-store:255
 export function loadChatSession(id: string): ChatSession|null {
   try {
     const filePath = join(chatsDir(), `${id}.ndjson`);
@@ -335,12 +353,12 @@ export function loadChatSession(id: string): ChatSession|null {
 /**
  * Load an existing session for continued use. Returns null if not found.
  */
-// @kern-source: chat-store:277
+// @kern-source: chat-store:293
 export function resumeChatSession(id: string): ChatSession|null {
   return loadChatSession(id);
 }
 
-// @kern-source: chat-store:280
+// @kern-source: chat-store:296
 export function listChatSessions(limit: number): ChatSession[] {
   ensureChatsDir();
   try {
@@ -364,7 +382,7 @@ export function listChatSessions(limit: number): ChatSession[] {
   }
 }
 
-// @kern-source: chat-store:304
+// @kern-source: chat-store:320
 export function latestChatSession(): ChatSession|null {
   const sessions = listChatSessions(1);
   return (sessions.length > 0) ? sessions[0] : null;

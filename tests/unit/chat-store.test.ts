@@ -140,6 +140,26 @@ describe('chat-store', () => {
     expect(context).toContain('message-19');
   });
 
+  it('frees in-memory bodies of summarized messages so a long session stays bounded', () => {
+    const session = startChatSession();
+    for (let i = 0; i < 40; i++) {
+      appendMessage(session, { role: 'engine', engineId: 'codex', content: `BODY-${i}-` + 'x'.repeat(2000), timestamp: new Date().toISOString() });
+    }
+    const tail = 12; // CHAT_SUMMARY_TAIL_MESSAGES
+    const older = session.messages.slice(0, session.messages.length - tail);
+    const recent = session.messages.slice(-tail);
+    // Older turns are folded into the summary and their heavy bodies freed…
+    expect(older.length).toBeGreaterThan(0);
+    expect(older.every((m: any) => m.content === '')).toBe(true);
+    // …while the recent tail keeps full content for live context.
+    expect(recent.some((m: any) => (m.content?.length ?? 0) > 1000)).toBe(true);
+    // Total in-memory content is bounded by the tail, not the whole session.
+    const totalChars = session.messages.reduce((n: number, m: any) => n + (m.content?.length ?? 0), 0);
+    expect(totalChars).toBeLessThan(tail * 2100 + 200);
+    // Nothing is lost: the freed turns are captured in the summary (and on disk).
+    expect(session.summary).toContain('BODY-0');
+  });
+
   it('persists rolling summary records for resumed chats', () => {
     const session = startChatSession();
     for (let i = 0; i < 18; i++) {

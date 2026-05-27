@@ -734,6 +734,7 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
           // Breaker tripped — let the write proceed (still gated by the permission UI).
           logApproval('blocked', 'policy.confidence', `confidence breaker tripped after ${blocks - 1} blocks — auto-pass`);
           ctx.cesar!.confidenceSatisfied = true;
+          ctx.cesar!.blockedOnConfidence = null;
         }
       }
 

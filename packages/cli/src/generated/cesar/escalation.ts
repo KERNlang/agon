@@ -152,9 +152,8 @@ export async function fireNero(input: string, response: string, confidence: numb
       const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
       const activeIds = (ctx.activeEngines?.() ?? []).filter(Boolean);
       const neroPool = activeIds.length > 0 ? activeIds : [cesarEngineId];
-      const picked = pickTopRatedEngine(neroPool, getRatings(), { mode: 'tribunal', exclude: [cesarEngineId] });
+      const picked = pickTopRatedEngine(neroPool, getRatings(), { modes: ['critique', 'tribunal'], exclude: [cesarEngineId] });
       const neroEngineId = picked.engineId || cesarEngineId;
-      const cesarEngine = ctx.registry.get(neroEngineId);
       const outDir = join(RUNS_DIR, `nero-${Date.now()}`);
       mkdirSync(outDir, { recursive: true });
 
@@ -170,8 +169,11 @@ export async function fireNero(input: string, response: string, confidence: numb
   3. Start with ~X% for how confident YOU are that the original is correct.`;
 
       try {
+        // registry.get THROWS on an unknown id — keep it inside the try so a stale
+        // cesarEngineId fallback degrades to null (skip Nero) instead of crashing.
+        const neroEngine = ctx.registry.get(neroEngineId);
         const result = await ctx.adapter.dispatch({
-          engine: cesarEngine,
+          engine: neroEngine,
           prompt: neroPrompt,
           cwd: resolveWorkingDir(),
           mode: 'exec' as any,
@@ -191,7 +193,7 @@ export async function fireNero(input: string, response: string, confidence: numb
 /**
  * Display advisor opinion and present escalation menu. At <70%, advisor replaces STOP.
  */
-// @kern-source: escalation:167
+// @kern-source: escalation:169
 export async function handleSecondOpinion(secondResult: {stdout:string, engineId:string, color:number}|null, input: string, response: string, parsedConfidence: number|null, cesarEngineId: string, dispatch: Dispatch, ctx: HandlerContext, abortSignal?: AbortSignal): Promise<{delegated:boolean, responded:boolean, action?:string, task?:string, reasoning?:string}|null> {
   if (!secondResult || !secondResult.stdout.trim()) return null;
 
@@ -270,7 +272,7 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
 /**
  * Auto-activate Nero mode — kill session so next turn reboots with Nero system prompt.
  */
-// @kern-source: escalation:244
+// @kern-source: escalation:246
 export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   if (!ctx.neroMode && ctx.setNeroMode) {
     ctx.setNeroMode(true);
@@ -286,7 +288,7 @@ export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
 /**
  * Auto-deactivate Nero when confidence recovers.
  */
-// @kern-source: escalation:256
+// @kern-source: escalation:258
 export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   ctx.setNeroMode(false);
   ctx.neroMode = false;
@@ -298,7 +300,7 @@ export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
 /**
  * Ask user to confirm a suggested delegation with a simple yes/no prompt.
  */
-// @kern-source: escalation:266
+// @kern-source: escalation:268
 export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
   const confirmLabel = hardened ? `${action} (hardened)` : action;
   const answer = await new Promise<string>((resolve) => {
@@ -314,7 +316,7 @@ export async function promptDelegation(action: string, dispatch: Dispatch, harde
 /**
  * Last-resort fallback: if Cesar had routing context but still didn't delegate at low confidence, offer brainstorm. Cesar should have decided — this is a safety net.
  */
-// @kern-source: escalation:280
+// @kern-source: escalation:282
 export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean, tribunalMode?:string}|null> {
   if (parsedConfidence === null
       || parsedConfidence >= CONFIDENCE_TIERS.nero

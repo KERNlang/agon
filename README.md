@@ -155,9 +155,11 @@ agon nero "..." --engine codex                                  # force a specif
 agon nero "..." --json                                          # emit the NeroResult, pipe-friendly
 ```
 
-- **The critic is the top-rated *adversary*, not the top-rated builder.** Selection uses the per-discipline **tribunal** Glicko rating (the closest proxy for "good at attacking"), falling back to the global rating, then to a random active engine when nothing has competed yet.
+- **The critic is the top-rated *adversary*, not the top-rated builder.** Selection cascades **critique → tribunal → global → random**: it prefers the dedicated `critique` discipline (a Glicko rating fed by adversarial/red-team tribunals — those *are* attack-and-refute competitions), falls back to the `tribunal` rating, then global, then a random active engine when nothing has competed yet. `agon leaderboard --mode critique` shows the standings.
 - **Never grades its own homework** — the author being challenged is excluded from the candidate pool, so in-session Cesar challenges are answered by a *different* engine whenever one is available.
 - **For external CLIs too** — `agon nero` (and `agon call nero "<decision>" --jsonl`) is the mode Codex / Antigravity / Claude should reach for instead of an internal self-critique; it gives them a genuinely different model as the adversary.
+
+> **New-model cold-start (applies to all ratings).** When a new model version drops, declare its lineage in the engine JSON (`"derivedFrom": "opus-4.7"`). On its first competition it inherits the predecessor's Glicko rating instead of starting at 1500 — with **inflated uncertainty** so a genuinely better model converges fast, a **low-side clamp** (a below-average predecessor is inherited at full strength, no uncertainty bonus — you can't shed a bad rating by version-bumping), and a **min-games gate** (a near-empty predecessor rating is too noisy to inherit, so the successor starts fresh).
 
 ### Brainstorm
 Engines bid their confidence level on how they would tackle a complex problem. Engines with higher confidence bids are allocated more tokens and priority.

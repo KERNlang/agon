@@ -31,6 +31,25 @@ describe.skipIf(!agyInstalled)('agy live /model probe — full TS→python→cac
 });
 
 const codexInstalled = existsSync('/opt/homebrew/bin/codex') || existsSync(join(homedir(), '.local', 'bin', 'codex'));
+const opencodeInstalled = existsSync(join(homedir(), '.opencode', 'bin', 'opencode'));
+
+describe.skipIf(!opencodeInstalled)('opencode live model list — plain `opencode models` (no TUI scrape)', () => {
+  it('refresh runs `opencode models`, caches, and the opencode group shows provider/model ids', async () => {
+    const home = setupTestAgonHome('opencode-e2e');
+    try {
+      const binary = join(homedir(), '.opencode', 'bin', 'opencode');
+      const ok = await refreshProbedCliModels('opencode', binary, ['models']);
+      if (!ok) return; // no providers configured → empty list is a valid no-op
+      const models = readProbedCliModels('opencode');
+      expect(models).not.toBeNull();
+      expect(models!.some((m) => m.id.includes('/'))).toBe(true); // provider/model form
+      const grp = buildCliModelGroups().find((g) => g.engineId === 'opencode');
+      expect(grp!.models.length).toBeGreaterThan(0);
+    } finally {
+      cleanupTestAgonHome(home);
+    }
+  }, 30_000);
+});
 
 describe.skipIf(!codexInstalled)('codex live /model probe — per-engine parser + chain', () => {
   it('probes codex /model when available (tolerates the brew auto-update intercept)', async () => {

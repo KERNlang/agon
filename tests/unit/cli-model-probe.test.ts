@@ -63,6 +63,19 @@ describe('CLI live-model probe cache', () => {
     expect(names).toContain('GPT-OSS 120B (Medium)');
   });
 
+  it('opencode group prefers the probed provider/model list (plain `opencode models`)', () => {
+    home = setupTestAgonHome('probe-opencode');
+    writeProbeCache(home, 'opencode', [
+      { id: 'github-copilot/gpt-5.5', name: 'github-copilot/gpt-5.5', current: false },
+      { id: 'kimi-for-coding/k2p6', name: 'kimi-for-coding/k2p6', current: false },
+    ]);
+    const grp = buildCliModelGroups().find((g) => g.engineId === 'opencode');
+    expect(grp).toBeTruthy();
+    const ids = grp!.models.map((m) => m.id);
+    expect(ids).toContain('github-copilot/gpt-5.5');
+    expect(ids).toContain('kimi-for-coding/k2p6');
+  });
+
   it('falls back to the static google list when no probe is cached', () => {
     home = setupTestAgonHome('probe-fallback');
     const groups = buildCliModelGroups();

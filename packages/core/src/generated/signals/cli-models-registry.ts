@@ -39,10 +39,10 @@ export interface CliProviderGroup {
 }
 
 // @kern-source: cli-models-registry:36
-export const ENGINE_PROVIDER_MAP: Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[]}> = ({ anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'] }, openai: { providerId: 'openai', engineId: 'codex', engineBinary: 'codex', versionCmd: ['--version'] }, google: { providerId: 'google', engineId: 'agy', engineBinary: 'agy', versionCmd: ['--version'] }, mistral: { providerId: 'mistral', engineId: 'mistral', engineBinary: 'mistral', versionCmd: ['--version'] }, openrouter: { providerId: 'openrouter', engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] } });
+export const ENGINE_PROVIDER_MAP: Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[]}> = ({ anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'] }, openai: { providerId: 'openai', engineId: 'codex', engineBinary: 'codex', versionCmd: ['--version'] }, google: { providerId: 'google', engineId: 'agy', engineBinary: 'agy', versionCmd: ['--version'] }, opencode: { providerId: 'opencode', engineId: 'opencode', engineBinary: 'opencode', versionCmd: ['--version'] }, mistral: { providerId: 'mistral', engineId: 'mistral', engineBinary: 'mistral', versionCmd: ['--version'] }, openrouter: { providerId: 'openrouter', engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] } });
 
 // @kern-source: cli-models-registry:40
-export const FALLBACK_MODELS: Record<string, {id:string, name:string, contextWindow?:number, toolCall?:boolean, reasoning?:boolean}[]> = ({ anthropic: [ { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextWindow: 200000, toolCall: true, reasoning: true }, { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', contextWindow: 200000, toolCall: true, reasoning: true } ], openai: [ { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'o4-mini', name: 'o4-mini', contextWindow: 200000, toolCall: true, reasoning: true } ], google: [ { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', contextWindow: 1048576, toolCall: true, reasoning: true } ], mistral: [ { id: 'mistral-large-latest', name: 'Mistral Large', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'codestral-latest', name: 'Codestral', contextWindow: 256000, toolCall: true, reasoning: false } ], openrouter: [ { id: 'auto', name: 'Auto (best for task)', toolCall: true, reasoning: false } ] });
+export const FALLBACK_MODELS: Record<string, {id:string, name:string, contextWindow?:number, toolCall?:boolean, reasoning?:boolean}[]> = ({ anthropic: [ { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextWindow: 200000, toolCall: true, reasoning: true }, { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', contextWindow: 200000, toolCall: true, reasoning: true } ], openai: [ { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'o4-mini', name: 'o4-mini', contextWindow: 200000, toolCall: true, reasoning: true } ], google: [ { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', contextWindow: 1048576, toolCall: true, reasoning: true } ], mistral: [ { id: 'mistral-large-latest', name: 'Mistral Large', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'codestral-latest', name: 'Codestral', contextWindow: 256000, toolCall: true, reasoning: false } ], openrouter: [ { id: 'auto', name: 'Auto (best for task)', toolCall: true, reasoning: false } ], opencode: [ { id: 'anthropic/claude-sonnet-4', name: 'anthropic/claude-sonnet-4', toolCall: true, reasoning: false }, { id: 'openai/gpt-5.3-codex', name: 'openai/gpt-5.3-codex', toolCall: true, reasoning: false } ] });
 
 // @kern-source: cli-models-registry:42
 export const CACHE_TTL_MS: number = 3600000;
@@ -110,22 +110,54 @@ export function resolveModelProbeScript(): string|null {
 }
 
 /**
- * Probe an engine's live /model list via the python pty probe and cache it. Best-effort: returns false (caller keeps the static / models.dev list) on any failure, timeout, or empty result. Slow (~5-8s, spawns the engine TUI) — call it behind a loading state, not in a hot path.
+ * Parse a plain newline-delimited model list (e.g. `opencode models` → one provider/model id per line). Model ids never contain whitespace, so space-bearing lines (headers/prose) are dropped. id == name (the provider/model is what -m takes and is informative to show).
  */
 // @kern-source: cli-models-registry:102
-export async function refreshProbedCliModels(engineId: string, binary: string, slashCmd?: string, pythonBin?: string): Promise<boolean> {
-  const script = resolveModelProbeScript();
-  if (!script) return false;
+function parsePlainModelList(stdout: string): ProbedModel[] {
+  const out: ProbedModel[] = [];
+  const seen = new Set<string>();
+  for (const raw of stdout.split('\n')) {
+    const id = raw.trim();
+    if (!id || /\s/.test(id) || id.length > 200) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, name: id, current: false });
+  }
+  return out;
+}
+
+/**
+ * Probe an engine's live model list and cache it. Two modes by the first listCmd token: '__pty:<slash>' drives the interactive TUI via the python pty probe (agy/codex/claude); anything else runs `binary <listCmd...>` as a plain non-interactive subcommand and parses stdout (opencode `models`). Best-effort: returns false (caller keeps static/models.dev) on any failure/timeout/empty. The pty path is slow (~5-8s, spawns the TUI) — call behind a loading state.
+ */
+// @kern-source: cli-models-registry:117
+export async function refreshProbedCliModels(engineId: string, binary: string, listCmd?: string[], pythonBin?: string): Promise<boolean> {
+  const cmd = (listCmd && listCmd.length > 0) ? listCmd : ['__pty:/model'];
+  const first = cmd[0];
   try {
-    const result = await spawnWithTimeout({
-      command: pythonBin ?? 'python3',
-      args: [script, binary, slashCmd ?? '/model'],
-      cwd: process.cwd(),
-      timeout: 45000,
-    });
-    if (result.timedOut || !result.stdout.trim()) return false;
-    const parsed = JSON.parse(result.stdout.trim());
-    const models = Array.isArray(parsed?.models) ? parsed.models : [];
+    let models: ProbedModel[] = [];
+    if (first.startsWith('__pty:')) {
+      const script = resolveModelProbeScript();
+      if (!script) return false;
+      const slash = first.slice('__pty:'.length) || '/model';
+      const result = await spawnWithTimeout({
+        command: pythonBin ?? 'python3',
+        args: [script, binary, slash],
+        cwd: process.cwd(),
+        timeout: 45000,
+      });
+      if (result.timedOut || !result.stdout.trim()) return false;
+      const parsed = JSON.parse(result.stdout.trim());
+      models = Array.isArray(parsed?.models) ? parsed.models : [];
+    } else {
+      const result = await spawnWithTimeout({
+        command: binary,
+        args: cmd,
+        cwd: process.cwd(),
+        timeout: 20000,
+      });
+      if (result.timedOut || !result.stdout.trim()) return false;
+      models = parsePlainModelList(result.stdout);
+    }
     if (models.length === 0) return false;
     const dir = getCacheDir();
     mkdirSync(dir, { recursive: true });
@@ -136,7 +168,7 @@ export async function refreshProbedCliModels(engineId: string, binary: string, s
   }
 }
 
-// @kern-source: cli-models-registry:129
+// @kern-source: cli-models-registry:159
 export async function fetchCliModelsRegistry(): Promise<Record<string, any> | null> {
   const cacheDir = getCacheDir();
   const cacheFile = join(cacheDir, 'models-dev.json');
@@ -174,7 +206,7 @@ export async function fetchCliModelsRegistry(): Promise<Record<string, any> | nu
   }
 }
 
-// @kern-source: cli-models-registry:167
+// @kern-source: cli-models-registry:197
 export function findBinary(binary: string): string|null {
   try {
     const result = execSync(`which ${binary}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -194,7 +226,7 @@ export function findBinary(binary: string): string|null {
   return null;
 }
 
-// @kern-source: cli-models-registry:182
+// @kern-source: cli-models-registry:212
 export function getBinaryVersion(binary: string, versionCmd: string[]): string|null {
   if (!versionCmd.length) {
     return null;
@@ -210,7 +242,7 @@ export function getBinaryVersion(binary: string, versionCmd: string[]): string|n
 /**
  * Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync.
  */
-// @kern-source: cli-models-registry:192
+// @kern-source: cli-models-registry:222
 export function buildCliModelGroups(): CliProviderGroup[] {
   const groups: CliProviderGroup[] = [];
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
@@ -228,7 +260,7 @@ export function buildCliModelGroups(): CliProviderGroup[] {
 /**
  * Build CLI provider groups with latest models from models.dev API. Falls back to static list on failure.
  */
-// @kern-source: cli-models-registry:206
+// @kern-source: cli-models-registry:236
 export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
   let registry: Record<string, any> | null = null;
   try {

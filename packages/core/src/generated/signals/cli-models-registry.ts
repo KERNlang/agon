@@ -90,9 +90,20 @@ export function readProbedCliModels(engineId: string, ttlMs?: number): ProbedMod
 export function resolveModelProbeScript(): string|null {
   try {
     const req = createRequire(import.meta.url);
-    const pkgJson = req.resolve('@agon/kern-engines/package.json');
-    const script = join(pkgJson, '..', 'cli', 'model_probe.py');
-    return existsSync(script) ? script : null;
+    // The "." and "package.json" exports aren't reachable via the CommonJS
+    // `require` condition, but "./cli/claude.js" is a plain-string export
+    // (condition-agnostic). Anchor on it, then walk to the package root and
+    // into the (source) cli/ dir where model_probe.py lives.
+    const anchor = req.resolve('@agon/kern-engines/cli/claude.js'); // …/kern_engines/dist/cli/claude.js
+    const candidates = [
+      join(anchor, '..', '..', '..', 'cli', 'model_probe.py'), // dist/cli → root/cli
+      join(anchor, '..', '..', 'cli', 'model_probe.py'),
+      join(anchor, '..', 'model_probe.py'),
+    ];
+    for (const c of candidates) {
+      if (existsSync(c)) return c;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -101,7 +112,7 @@ export function resolveModelProbeScript(): string|null {
 /**
  * Probe an engine's live /model list via the python pty probe and cache it. Best-effort: returns false (caller keeps the static / models.dev list) on any failure, timeout, or empty result. Slow (~5-8s, spawns the engine TUI) — call it behind a loading state, not in a hot path.
  */
-// @kern-source: cli-models-registry:91
+// @kern-source: cli-models-registry:102
 export async function refreshProbedCliModels(engineId: string, binary: string, slashCmd?: string, pythonBin?: string): Promise<boolean> {
   const script = resolveModelProbeScript();
   if (!script) return false;
@@ -125,7 +136,7 @@ export async function refreshProbedCliModels(engineId: string, binary: string, s
   }
 }
 
-// @kern-source: cli-models-registry:118
+// @kern-source: cli-models-registry:129
 export async function fetchCliModelsRegistry(): Promise<Record<string, any> | null> {
   const cacheDir = getCacheDir();
   const cacheFile = join(cacheDir, 'models-dev.json');
@@ -163,7 +174,7 @@ export async function fetchCliModelsRegistry(): Promise<Record<string, any> | nu
   }
 }
 
-// @kern-source: cli-models-registry:156
+// @kern-source: cli-models-registry:167
 export function findBinary(binary: string): string|null {
   try {
     const result = execSync(`which ${binary}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -183,7 +194,7 @@ export function findBinary(binary: string): string|null {
   return null;
 }
 
-// @kern-source: cli-models-registry:171
+// @kern-source: cli-models-registry:182
 export function getBinaryVersion(binary: string, versionCmd: string[]): string|null {
   if (!versionCmd.length) {
     return null;
@@ -199,7 +210,7 @@ export function getBinaryVersion(binary: string, versionCmd: string[]): string|n
 /**
  * Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync.
  */
-// @kern-source: cli-models-registry:181
+// @kern-source: cli-models-registry:192
 export function buildCliModelGroups(): CliProviderGroup[] {
   const groups: CliProviderGroup[] = [];
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
@@ -217,7 +228,7 @@ export function buildCliModelGroups(): CliProviderGroup[] {
 /**
  * Build CLI provider groups with latest models from models.dev API. Falls back to static list on failure.
  */
-// @kern-source: cli-models-registry:195
+// @kern-source: cli-models-registry:206
 export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
   let registry: Record<string, any> | null = null;
   try {

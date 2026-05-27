@@ -80,9 +80,20 @@ fn name=resolveModelProbeScript returns="string|null"
   handler <<<
     try {
       const req = createRequire(import.meta.url);
-      const pkgJson = req.resolve('@agon/kern-engines/package.json');
-      const script = join(pkgJson, '..', 'cli', 'model_probe.py');
-      return existsSync(script) ? script : null;
+      // The "." and "package.json" exports aren't reachable via the CommonJS
+      // `require` condition, but "./cli/claude.js" is a plain-string export
+      // (condition-agnostic). Anchor on it, then walk to the package root and
+      // into the (source) cli/ dir where model_probe.py lives.
+      const anchor = req.resolve('@agon/kern-engines/cli/claude.js'); // …/kern_engines/dist/cli/claude.js
+      const candidates = [
+        join(anchor, '..', '..', '..', 'cli', 'model_probe.py'), // dist/cli → root/cli
+        join(anchor, '..', '..', 'cli', 'model_probe.py'),
+        join(anchor, '..', 'model_probe.py'),
+      ];
+      for (const c of candidates) {
+        if (existsSync(c)) return c;
+      }
+      return null;
     } catch {
       return null;
     }

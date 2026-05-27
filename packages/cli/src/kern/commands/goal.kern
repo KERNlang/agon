@@ -248,10 +248,15 @@ const name=goalCommand type=any
         // (so a typo fails before we spend a think dispatch); skipped on --dry-run
         // and on --resume (the journal already carries the spec, and supervised
         // restarts add --resume — we must not re-run an unmetered pass each restart).
+        // Skip only on a GENUINE resume (a journal already exists). --supervised
+        // forces --resume onto the first child too, so gating on the journal — not
+        // the flag — means the first supervised launch still thinks, restarts don't.
+        const goalJournalExists = (() => { try { return !!loadJournal(goalId); } catch { return false; } })();
         let thinkRefinedIntent: string | undefined;
-        if (args.think && !args.dryRun && !args.resume && (args.intent ?? '').toString().trim()) {
+        if (args.think && !args.dryRun && !goalJournalExists && (args.intent ?? '').toString().trim()) {
           const thinkEngine = requestedEngines?.[0] ?? available[0];
           const thinkSteps = Math.max(1, Math.min(parseInt(String(args.thinkSteps ?? '8'), 10) || 8, 20));
+          const thinkCwd = (args.cwd && existsSync(args.cwd)) ? args.cwd : undefined;
           const { path: thinkDir } = createRunDir({ mode: 'think', label: goalId, announce: false });
           info(cyan(`Thinking through the goal first (${args.thinkStrategy}, ${thinkEngine})...`));
           const tr = await runThinkChain({
@@ -263,7 +268,7 @@ const name=goalCommand type=any
             maxThoughts: thinkSteps,
             timeout: parseInt(String(args.timeout ?? '120'), 10) || 120,
             outputDir: thinkDir,
-            cwd: args.cwd,
+            cwd: thinkCwd,
             ground: true,
           });
           // Persist the decomposition so a crash/forensics keeps it.
@@ -280,11 +285,13 @@ const name=goalCommand type=any
             }
             // Only adopt the refined spec when the chain actually held its protocol;
             // a malformed decomposition shouldn't silently rewrite the goal intent.
-            if (tr.protocolValid && tr.refinedSpec && tr.refinedSpec.trim()) {
+            if (!tr.protocolValid) {
+              warn('Think pass did not satisfy its strategy protocol — keeping the original intent.');
+            } else if (tr.refinedSpec && tr.refinedSpec.trim()) {
               thinkRefinedIntent = tr.refinedSpec.trim();
               info(green(`Refined intent: ${thinkRefinedIntent.slice(0, 200)}`));
-            } else if (!tr.protocolValid) {
-              warn('Think pass did not satisfy its strategy protocol — keeping the original intent.');
+            } else {
+              info('Think pass produced no refined spec — keeping the original intent.');
             }
           } else {
             warn('Think pass produced no usable chain — proceeding with the original intent.');

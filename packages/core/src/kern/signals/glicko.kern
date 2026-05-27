@@ -5,7 +5,8 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync"
 import from="node:path" names="dirname,join,resolve"
 import from="node:os" names="homedir"
-import from="../models/types.js" names="GlickoRating,RatingRecord,EngineMeta,TaskClass" types=true
+import from="../models/types.js" names="GlickoRating,RatingRecord,EngineMeta,TaskClass,EngineDefinition" types=true
+import from="./engine-registry.js" names="EngineRegistry" types=true
 
 fn name=ratingsPath returns=string export=false
   handler <<<
@@ -39,14 +40,27 @@ fn name=defaultEngineMeta returns=EngineMeta
 fn name=loadRatings returns=RatingRecord
   handler <<<
     try {
-      return JSON.parse(readFileSync(ratingsPath(), 'utf-8')) as RatingRecord;
+      const parsed = JSON.parse(readFileSync(ratingsPath(), 'utf-8')) as RatingRecord;
+      // Normalize legacy files: guarantee every scope exists so callers that
+      // enumerate byMode (leaderboard/info) or select by a newer discipline
+      // (e.g. 'critique', added after some ratings files were written) never hit
+      // undefined — Object.keys(undefined) would throw.
+      parsed.global ??= {};
+      parsed.byMode ??= { forge: {}, brainstorm: {}, tribunal: {}, critique: {} };
+      parsed.byMode.forge ??= {};
+      parsed.byMode.brainstorm ??= {};
+      parsed.byMode.tribunal ??= {};
+      parsed.byMode.critique ??= {};
+      parsed.byTaskClass ??= {};
+      parsed.engineMeta ??= {};
+      return parsed;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
         console.warn(`[agon] failed to load ratings: ${err instanceof Error ? err.message : String(err)}`);
       }
       return {
         global: {},
-        byMode: { forge: {}, brainstorm: {}, tribunal: {} },
+        byMode: { forge: {}, brainstorm: {}, tribunal: {}, critique: {} },
         byTaskClass: {},
         engineMeta: {},
         lastUpdated: new Date().toISOString(),
@@ -80,7 +94,7 @@ fn name=glickoG params="phi:number" returns=number expr={{ return 1 / Math.sqrt(
 fn name=glickoE params="mu:number, muJ:number, phiJ:number" returns=number expr={{ return 1 / (1 + Math.exp(-glickoG(phiJ) * (mu - muJ))); }}
   doc "Glicko-2 expected score."
 
-fn name=updateGlicko params="winnerId:string, loserId:string, taskClass:TaskClass, mode:'forge'|'brainstorm'|'tribunal'" returns="{winnerMu:number, loserMu:number}"
+fn name=updateGlicko params="winnerId:string, loserId:string, taskClass:TaskClass, mode:'forge'|'brainstorm'|'tribunal'|'critique'" returns="{winnerMu:number, loserMu:number}"
   doc "Single pairwise Glicko-2 update."
   handler <<<
     const record = loadRatings();
@@ -198,7 +212,7 @@ fn name=computeNewSigma params="sigma:number, phi:number, v:number, delta:number
     return Math.exp(A / 2);
   >>>
 
-fn name=updateGlickoRanked params="ranked:Array<{engineId:string,score:number}>, taskClass:TaskClass, mode:'forge'|'brainstorm'|'tribunal'" returns=void
+fn name=updateGlickoRanked params="ranked:Array<{engineId:string,score:number}>, taskClass:TaskClass, mode:'forge'|'brainstorm'|'tribunal'|'critique'" returns=void
   doc "Pairwise Glicko-2 updates for all ranked positions. Higher score beats lower score."
   handler <<<
     if (ranked.length < 2) return;
@@ -210,7 +224,7 @@ fn name=updateGlickoRanked params="ranked:Array<{engineId:string,score:number}>,
     }
   >>>
 
-fn name=advisorScore params="engineId:string, mode:'forge'|'brainstorm'|'tribunal'" returns=number
+fn name=advisorScore params="engineId:string, mode:'forge'|'brainstorm'|'tribunal'|'critique'" returns=number
   doc "Conservative rating estimate for advisor/starter selection. Returns mu - 2*phi (lower bound of 95% CI)."
   handler lang="kern"
     let name=rating value="getEngineGlickoRating(engineId, mode)"
@@ -221,3 +235,114 @@ fn name=advisorScore params="engineId:string, mode:'forge'|'brainstorm'|'tribuna
       comment raw="// Glicko-2 standard: phi grows with inactivity, capped at initial value"
       assign target="phi" value="Math.min(Math.sqrt(phi * phi + rating.sigma * rating.sigma * daysSinceActive), DEFAULT_PHI)"
     return value="Math.round(rating.mu - 2 * phi)"
+
+fn name=rankEnginesByRating params="engineIds:string[], ratings:RatingRecord, mode?:'forge'|'brainstorm'|'tribunal'|'critique'" returns="string[]" export=true
+  doc "Rank engines by Glicko-2 confidence floor (mu - 2*phi), highest first, WITHIN a scope. When `mode` is given, ranking uses that discipline's byMode ratings (e.g. mode='tribunal' = adversarial/critique skill — the right proxy for a Nero-style critic, since the best BUILDER is not the best CRITIC); otherwise the global pool. Only engines that already hold a rating record IN THAT SCOPE are returned; the rest are omitted so callers can fall back. Ties break on mu, then engine id for determinism."
+  handler <<<
+    const scope = mode ? (ratings.byMode[mode] ?? {}) : ratings.global;
+    const rated = engineIds.filter((id) => scope[id] !== undefined);
+    return rated.sort((a, b) => {
+      const ra = scope[a];
+      const rb = scope[b];
+      const floorA = ra.mu - 2 * ra.phi;
+      const floorB = rb.mu - 2 * rb.phi;
+      if (floorB !== floorA) return floorB - floorA;
+      if (rb.mu !== ra.mu) return rb.mu - ra.mu;
+      return a.localeCompare(b);
+    });
+  >>>
+
+fn name=pickTopRatedEngine params="engineIds:string[], ratings:RatingRecord, opts?:{ mode?:'forge'|'brainstorm'|'tribunal'|'critique'; modes?:Array<'forge'|'brainstorm'|'tribunal'|'critique'>; exclude?:string[]; rng?:() => number }" returns="{ engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }" export=true
+  doc "Pick the single best engine for a role. Tries each discipline in opts.modes IN ORDER (e.g. ['critique','tribunal'] for Nero — prefer a proven critic, fall back to adversarial-debate skill), then the GLOBAL ranking, then a random engine when NO engine has any rating yet. opts.mode is shorthand for a single-element modes list. opts.exclude drops engines from the pool (e.g. the author being challenged, to avoid grading-own-homework) but is ignored if it would empty the pool. rng is injectable for deterministic tests. scope reports WHICH rating decided the pick."
+  handler <<<
+    const exclude = new Set(opts?.exclude ?? []);
+    let pool = engineIds.filter((id) => !exclude.has(id));
+    if (pool.length === 0) pool = engineIds.slice();
+    if (pool.length === 0) return { engineId: '', reason: 'none' as const, scope: null };
+
+    const tiers = opts?.modes ?? (opts?.mode ? [opts.mode] : []);
+    for (const m of tiers) {
+      const ranked = rankEnginesByRating(pool, ratings, m);
+      if (ranked.length > 0) return { engineId: ranked[0], reason: 'top-rated' as const, scope: m };
+    }
+    const global = rankEnginesByRating(pool, ratings);
+    if (global.length > 0) return { engineId: global[0], reason: 'top-rated' as const, scope: 'global' as const };
+
+    const r = opts?.rng ? opts.rng() : Math.random();
+    const idx = Math.min(pool.length - 1, Math.max(0, Math.floor(r * pool.length)));
+    return { engineId: pool[idx], reason: 'random' as const, scope: null };
+  >>>
+
+const name=PHI_INHERIT_MULT type=number value=1.5 doc="When a strong predecessor's rating is inherited by a successor model, multiply its phi (uncertainty) by this so a genuinely-better new version can climb fast — capped at DEFAULT_PHI."
+
+const name=MIN_INHERIT_GAMES type=number value=5 doc="A predecessor must have played at least this many games before its rating is worth inheriting. Below it the rating is mostly noise, so the successor starts fresh — and you can't launder a near-empty bad rating by spinning a new version."
+
+fn name=seedSuccessorRating params="predecessor:GlickoRating" returns="GlickoRating | null" export=true
+  doc "Compute the cold-start rating a NEW model version should inherit from its predecessor (engineMeta.derivedFrom). Pure — exported for testing. Returns null when the predecessor is too green to inherit from (caller uses fresh defaults). ANTI-GAMING: a below-average predecessor (mu < 1500) is inherited FULLY with no phi inflation — you can't shed a bad rating by version-bumping; a strong predecessor (mu >= 1500) inherits its mu with inflated (capped) phi so a better model converges quickly. W/L always reset."
+  handler <<<
+    const totalGames = predecessor.wins + predecessor.losses;
+    if (totalGames < MIN_INHERIT_GAMES) return null;
+    const now = new Date().toISOString();
+    if (predecessor.mu < DEFAULT_MU) {
+      // Low-side clamp: keep the low mu AND the converged (low) phi — no fast-climb
+      // benefit. A successor of a weak model must earn its way up.
+      return { mu: predecessor.mu, phi: predecessor.phi, sigma: DEFAULT_SIGMA, wins: 0, losses: 0, lastActive: now };
+    }
+    return {
+      mu: predecessor.mu,
+      phi: Math.min(predecessor.phi * PHI_INHERIT_MULT, DEFAULT_PHI),
+      sigma: DEFAULT_SIGMA,
+      wins: 0,
+      losses: 0,
+      lastActive: now,
+    };
+  >>>
+
+fn name=seedEnginesFromLineage params="ratings:RatingRecord, lineage:Record<string,string>" returns="string[]" export=true
+  doc "Seed cold-start GLOBAL ratings for new engines that declare a predecessor (lineage: engineId -> derivedFrom id). Mutates `ratings` in place and returns the ids it seeded. Pure (no IO) — exported for testing. Skips an engine that already has a global rating, whose predecessor has no rating yet, or whose predecessor is too green (seedSuccessorRating -> null). Records provenance via the existing engineMeta.derivedFrom + predecessor.versions scaffolding."
+  handler <<<
+    const seeded: string[] = [];
+    const disciplines = ['forge', 'brainstorm', 'tribunal', 'critique'] as const;
+    for (const [engineId, predId] of Object.entries(lineage)) {
+      if (!predId || predId === engineId) continue;
+      if (ratings.global[engineId] !== undefined) continue;
+      const pred = ratings.global[predId];
+      if (!pred) continue;
+      const seed = seedSuccessorRating(pred);
+      if (!seed) continue;
+      ratings.global[engineId] = seed;
+      // Inherit per-discipline too, so "applies to all ratings" holds: seed each
+      // discipline where the predecessor has actually competed (gated the same way).
+      for (const disc of disciplines) {
+        const predDisc = ratings.byMode[disc]?.[predId];
+        if (!predDisc) continue;
+        const discSeed = seedSuccessorRating(predDisc);
+        if (discSeed) (ratings.byMode[disc] ??= {})[engineId] = discSeed;
+      }
+      ratings.engineMeta[engineId] ??= defaultEngineMeta();
+      ratings.engineMeta[engineId].derivedFrom = predId;
+      ratings.engineMeta[predId] ??= defaultEngineMeta();
+      if (!ratings.engineMeta[predId].versions.includes(engineId)) ratings.engineMeta[predId].versions.push(engineId);
+      seeded.push(engineId);
+    }
+    return seeded;
+  >>>
+
+fn name=lineageFromRegistry params="registry:EngineRegistry" returns="Record<string,string>" export=true
+  doc "Build an engineId -> derivedFrom map from the registered engine definitions (EngineDefinition.derivedFrom). Engines with no declared predecessor are omitted."
+  handler <<<
+    const map: Record<string, string> = {};
+    for (const def of registry.list() as EngineDefinition[]) {
+      if (def.derivedFrom && def.derivedFrom !== def.id) map[def.id] = def.derivedFrom;
+    }
+    return map;
+  >>>
+
+fn name=seedNewEnginesFromRegistry params="registry:EngineRegistry" returns="string[]" export=true
+  doc "One-shot cold-start seeding: read engine lineage from the registry, seed any new engine's global rating from its predecessor, and persist if anything changed. Safe to call repeatedly (idempotent — only seeds engines with no rating yet). Call before a competition so a freshly-dropped model version enters ranked play near its family's strength instead of from 1500."
+  handler <<<
+    const ratings = loadRatings();
+    const seeded = seedEnginesFromLineage(ratings, lineageFromRegistry(registry));
+    if (seeded.length > 0) saveRatings(ratings);
+    return seeded;
+  >>>

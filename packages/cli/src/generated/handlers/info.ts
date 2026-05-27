@@ -46,7 +46,7 @@ export function handleLeaderboard(dispatch: Dispatch): void {
   }
   dispatch({ type: 'table', headers: ['#', 'Engine', 'Rating', '+/-', 'W', 'L', 'Win%'], rows });
 
-  const modes = ['forge', 'brainstorm', 'tribunal'] as const;
+  const modes = ['forge', 'brainstorm', 'tribunal', 'critique'] as const;
   const modeInfo = modes
     .filter(m => Object.keys(ratings.byMode[m]).length > 0)
     .map(m => `${m}: ${Object.values(ratings.byMode[m]).reduce((s: number, r: any) => s + r.wins + r.losses, 0)} matches`);
@@ -250,7 +250,7 @@ export function handleCesarHints(input: string, dispatch: Dispatch, ctx: Handler
   dispatch({ type: 'table', headers: ['Task Class', 'Intake', 'Flow', 'Uncertainty', 'Escalation', 'Breadth'], rows: [[String(hints.taskClass), String(hints.intakeKind), String(hints.recommendedFlow), String(hints.uncertaintyFamily), String(hints.escalationHint), String(hints.recommendedBreadth)]] });
   dispatch({ type: 'text', content: `Flow reason: ${hints.flowReason}` });
   dispatch({ type: 'table', headers: ['Input Tokens', 'Changed Files', 'Dir Spread', 'Forge Scope', 'Fanout', 'Review', 'Engine Mention'], rows: [[String(hints.inputTokens), String(hints.scopeFileCount), String(hints.scopeDirSpread), String(hints.recommendedForgeScope), hints.fanoutLikely ? 'yes' : 'no', hints.reviewLikely ? 'yes' : 'no', hints.explicitEngineMention ? 'yes' : 'no']] });
-  const routingCtx = buildRoutingContext(trimmed, ctx);
+  const routingCtx = buildRoutingContext(trimmed, ctx, false);
   dispatch({ type: 'separator' });
   dispatch({ type: 'text', content: routingCtx });
 }

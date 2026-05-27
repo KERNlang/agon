@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { EngineAdapter, BrainstormBid, BrainstormResult, BrainstormGroup, ScoutBid } from '@agon/core';
 
-import { EngineRegistry, buildBrainstormPrompt, getRatings, loadConfig, createSidechainLogger, updateGlickoRanked, classifyTask } from '@agon/core';
+import { EngineRegistry, buildBrainstormPrompt, getRatings, loadConfig, createSidechainLogger, updateGlickoRanked, classifyTask, seedNewEnginesFromRegistry } from '@agon/core';
 
 import { buildKernDraftPrompt, parseKernDraft, buildKernRankPrompt } from '@kernlang/protocol';
 
@@ -195,6 +195,9 @@ export function fallbackParse(output: string): KernDraft {
 // @kern-source: brainstorm:180
 export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<BrainstormResult> {
   const brainstormId = randomUUID().slice(0, 8);
+  // Cold-start: seed newly-dropped model versions from their predecessor before
+  // bidding, so a new engine competes at its family's strength, not 1500.
+  seedNewEnginesFromRegistry(opts.registry);
   const sidechain = createSidechainLogger({
     sessionId: brainstormId,
     sessionType: 'brainstorm',

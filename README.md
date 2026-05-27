@@ -76,6 +76,7 @@ Pick by the **shape** of the problem, not the topic:
 | A decision with real tradeoffs settled | **tribunal** | Structured debate (adversarial / steelman / socratic / red-team / synthesis / postmortem) that argues the sides. |
 | Open exploration, no decision yet | **campfire** | Relaxed multi-engine discussion — no scoring, no winner. |
 | A problem decomposed before you act | **think** | Sequential thinking — linear or reflexion (forced self-critique), optional branches; surfaces open questions + a `goal` handoff. |
+| Your own decision pressure-tested | **nero** | Adversarial self-challenge — the top-rated *critic* (by tribunal rating, not the best builder) attacks it and returns a verdict. |
 | Code built competitively against a test | **forge** | Engines race on the same task in isolated worktrees; the best test-passing patch is applied. |
 | The **first** passing solution, fast | **speculate** | N engines race; the first to pass the test wins and is applied immediately. |
 | A routine build with one engine | **pipeline** | Single-engine build → review → fix loop; no competition overhead. |
@@ -94,6 +95,7 @@ Pick by the **shape** of the problem, not the topic:
 - Need the first green solution fast → `speculate`
 - Need a task queue executed → `goal`
 - Need to think a problem through before acting → `think`
+- Need your own decision attacked before you commit → `nero`
 
 **forge vs. speculate vs. synthesis** — all three run multiple engines, but they pick the winner differently:
 - **forge** *scores* every candidate against the test and applies the best.
@@ -141,6 +143,23 @@ agon goal "Close the gaps" --think --queue .gaps/ --gate "npm test"  # decompose
 - **Tool-grounding** — thoughts that cite repo files which don't exist are flagged (`--no-ground` to disable), so a plan never hands `goal` phantom paths.
 - **Machine-validated** — a `reflexion` chain that never actually critiques+revises is rejected by the `ThinkChain` machine.
 - **Composes into other modes** — `agon goal --think` runs a decompose pass on the intent first (surfacing sub-problems + open questions, feeding a refined spec) so a long autonomous run never starts half-understood. Cesar reasons step-by-step before acting when `cesarThinkFirst` is enabled (`agon config set cesarThinkFirst true`).
+
+### Nero
+Adversarial self-challenge — Agon's answer to a devil's-advocate / evil-twin pass, but with a *real* second model instead of your own reasoning mirrored. Feed it a decision and its reasoning; a structurally adversarial critic attacks it with concrete failure scenarios (INVERSION / PRE-MORTEM / SECOND-ORDER), reports its own confidence the original is correct, and ends with a verdict: **FLAWED / PROCEED WITH CAUTION / SOUND**.
+
+```bash
+agon nero "Cache auth tokens in Redis with a 5-min TTL" --reasoning "Redis is shared across workers and fast"
+agon nero "Ship the migration tonight" --confidence 80          # Nero reports its own % so you can compare
+agon nero "Switch to event sourcing" --focus "replay + schema evolution"   # steer the critique
+agon nero "..." --engine codex                                  # force a specific critic (skips rating selection)
+agon nero "..." --json                                          # emit the NeroResult, pipe-friendly
+```
+
+- **The critic is the top-rated *adversary*, not the top-rated builder.** Selection cascades **critique → tribunal → global → random**: it prefers the dedicated `critique` discipline (a Glicko rating fed by adversarial/red-team tribunals — those *are* attack-and-refute competitions), falls back to the `tribunal` rating, then global, then a random active engine when nothing has competed yet. `agon leaderboard --mode critique` shows the standings.
+- **Never grades its own homework** — the author being challenged is excluded from the candidate pool, so in-session Cesar challenges are answered by a *different* engine whenever one is available.
+- **For external CLIs too** — `agon nero` (and `agon call nero "<decision>" --jsonl`) is the mode Codex / Antigravity / Claude should reach for instead of an internal self-critique; it gives them a genuinely different model as the adversary.
+
+> **New-model cold-start (applies to all ratings).** When a new model version drops, declare its lineage in the engine JSON (`"derivedFrom": "opus-4.7"`). On its first competition it inherits the predecessor's Glicko rating instead of starting at 1500 — with **inflated uncertainty** so a genuinely better model converges fast, a **low-side clamp** (a below-average predecessor is inherited at full strength, no uncertainty bonus — you can't shed a bad rating by version-bumping), and a **min-games gate** (a near-empty predecessor rating is too noisy to inherit, so the successor starts fresh).
 
 ### Brainstorm
 Engines bid their confidence level on how they would tackle a complex problem. Engines with higher confidence bids are allocated more tokens and priority.

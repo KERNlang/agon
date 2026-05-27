@@ -1,5 +1,7 @@
 export { runForge } from './forge.js';
 export { runBrainstorm, runScout } from './brainstorm.js';
+export { runNero, buildNeroPrompt, parseNeroVerdict, parseNeroConfidence } from './nero.js';
+export type { NeroOptions, NeroResult } from './nero.js';
 export { runTribunal } from './tribunal.js';
 export { runSynthesis } from './synthesis.js';
 export { runSynthesisModus, synthesisRoutingAdvice } from './synthesis-modus.js';

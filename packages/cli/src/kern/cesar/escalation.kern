@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="RUNS_DIR,resolveWorkingDir,tracker,appendMessage,classifyTask,rankByTaskClass"
+import from="@agon/core" names="RUNS_DIR,resolveWorkingDir,tracker,appendMessage,classifyTask,rankByTaskClass,getRatings,pickTopRatedEngine"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../signals/icons.js" names="icons"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
@@ -121,8 +121,16 @@ CHECK: the main flaw, risk, or confirmation`;
 fn name=fireNero async=true params="input:string, response:string, confidence:number, ctx:HandlerContext, abort:AbortController" returns="Promise<{ challengeText: string; challengeConfidence: number|null } | null>"
   doc "Same-turn adversarial subagent: spawn a second Cesar instance with a contrarian prompt to attack the original response."
   handler <<<
+    // Nero is the TOP-RATED adversarial engine (tribunal-discipline Glicko —
+    // best builder != best critic), NOT necessarily the Cesar engine. Exclude
+    // the Cesar author so Nero never grades its own homework; fall back to
+    // global rating, then a random active engine when no Elo exists yet.
     const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
-    const cesarEngine = ctx.registry.get(cesarEngineId);
+    const activeIds = (ctx.activeEngines?.() ?? []).filter(Boolean);
+    const neroPool = activeIds.length > 0 ? activeIds : [cesarEngineId];
+    const picked = pickTopRatedEngine(neroPool, getRatings(), { mode: 'tribunal', exclude: [cesarEngineId] });
+    const neroEngineId = picked.engineId || cesarEngineId;
+    const cesarEngine = ctx.registry.get(neroEngineId);
     const outDir = join(RUNS_DIR, `nero-${Date.now()}`);
     mkdirSync(outDir, { recursive: true });
 

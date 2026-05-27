@@ -1,0 +1,205 @@
+// `agon nero` — adversarial self-challenge as a standalone, external-callable mode.
+//
+// Agon's answer to /evil-twin for external CLIs (Codex, Antigravity, …): feed a
+// decision + reasoning and the TOP-RATED adversarial engine attacks it, returning
+// concrete failure scenarios, its own confidence the original is correct, and a
+// verdict (FLAWED / PROCEED WITH CAUTION / SOUND). The critic is chosen by the
+// tribunal-discipline Glicko rating (best builder != best critic), with global and
+// then random fallbacks when no engine has competed yet.
+
+import from="citty" names="defineCommand"
+import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,writeRunStatus,printRunSummary"
+import from="@agon/core" names="RunStatus,RunStatusEngine" types=true
+import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
+import from="@agon/adapter-cli" names="createCliAdapter"
+import from="@agon/forge" names="runNero"
+import from="../blocks/output-format.js" names="header,info,bold,dim"
+import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
+
+fn name=verdictGlyph params="verdict:string" returns=string export=true expr={{ return verdict === 'flawed' ? '🔴' : verdict === 'proceed-with-caution' ? '🟡' : verdict === 'sound' ? '🟢' : '⚪'; }}
+  doc "Map a Nero verdict to a render glyph."
+
+const name=neroCommand type=any
+  handler <<<
+    defineCommand({
+      meta: {
+        name: 'nero',
+        description: 'Adversarial self-challenge — the top-rated critic attacks a decision and returns concrete failure scenarios + a verdict. `agon nero "<decision>" --reasoning "..."`. Agon\'s /evil-twin for external CLIs.',
+      },
+      args: {
+        decision: {
+          type: 'positional',
+          description: 'The decision / plan / answer to challenge.',
+          required: false,
+        },
+        reasoning: {
+          type: 'string',
+          description: 'The reasoning behind the decision (the more Nero has to attack, the sharper the critique).',
+        },
+        focus: {
+          type: 'string',
+          description: 'Steer Nero toward a specific concern (e.g. --focus "race conditions on retry").',
+        },
+        confidence: {
+          type: 'string',
+          description: "The author's confidence (0-100). Nero reports its own confidence the original is correct so you can compare.",
+        },
+        engine: {
+          type: 'string',
+          description: 'Force a specific engine to play Nero (skips rating-based selection).',
+        },
+        engines: {
+          type: 'string',
+          alias: 'e',
+          description: 'Constrain the candidate pool (comma-separated). Default: all active orchestration engines.',
+        },
+        timeout: {
+          type: 'string',
+          description: 'Timeout in seconds.',
+          default: '120',
+        },
+        json: {
+          type: 'boolean',
+          description: 'Emit the full NeroResult as JSON on stdout (pipe-friendly).',
+        },
+        quiet: {
+          type: 'boolean',
+          description: 'Print only the verdict line.',
+        },
+        label: {
+          type: 'string',
+          description: 'Human-readable suffix baked into the run dir name.',
+        },
+      },
+      async run({ args }) {
+        ensureAgonHome();
+        const config = loadConfig(process.cwd());
+
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        const adapter = createCliAdapter(registry);
+
+        const positionals = Array.isArray((args as any)._) ? (args as any)._.map(String) : [];
+        const decision = [args.decision, ...positionals].filter((p) => typeof p === 'string' && p.trim()).map((p) => String(p).trim()).join(' ').trim();
+        if (!decision) {
+          console.error('Provide a decision to challenge. Usage: agon nero "your decision" [--reasoning "..."] [--focus "..."]');
+          process.exitCode = 1;
+          return;
+        }
+
+        // Only real, installed engines may enter the pool — registry.get() THROWS
+        // on unknown ids, and resolveId() echoes an unknown id back unchanged, so a
+        // typo would otherwise crash deep in runNero. Validate up front instead.
+        const known = new Set(registry.listIds());
+        const active = filterDefaultOrchestrationEngines(registry.activeIds(config as any));
+        let pool = active;
+        if (typeof args.engines === 'string' && args.engines.trim()) {
+          const requested = args.engines.split(',').map((s) => s.trim()).filter(Boolean);
+          const wanted = requested.map((s) => registry.resolveId(s)).filter((id) => known.has(id));
+          const unknown = requested.filter((s) => !known.has(registry.resolveId(s)));
+          if (unknown.length > 0) {
+            console.error(`Unknown engine${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}. Run \`agon engine list\` to see available engines.`);
+            process.exitCode = 1;
+            return;
+          }
+          if (wanted.length > 0) pool = wanted;
+        }
+
+        let forced: string | undefined;
+        if (typeof args.engine === 'string' && args.engine.trim()) {
+          const resolved = registry.resolveId(args.engine.trim());
+          if (!known.has(resolved)) {
+            console.error(`Unknown engine '${args.engine.trim()}'. Run \`agon engine list\` to see available engines.`);
+            process.exitCode = 1;
+            return;
+          }
+          forced = resolved;
+          if (!pool.includes(forced)) pool = [forced, ...pool];
+        }
+
+        if (pool.length === 0) {
+          console.error('No active engines. Run `agon engine list` or `agon engine add <id>`.');
+          process.exitCode = 1;
+          return;
+        }
+
+        const quiet = !!args.quiet;
+        const json = !!args.json;
+        const timeoutSec = parseInt(String(args.timeout ?? '120'), 10) || 120;
+        const confRaw = typeof args.confidence === 'string' ? parseInt(args.confidence, 10) : NaN;
+        const confidence = Number.isNaN(confRaw) ? undefined : Math.max(0, Math.min(100, confRaw));
+
+        const startedAt = new Date().toISOString();
+        const { path: outputDir } = createRunDir({ mode: 'nero', label: args.label, announce: false });
+
+        if (!quiet && !json) {
+          header(`Nero · adversarial challenge`);
+          info(decision.length > 120 ? decision.slice(0, 120) + '...' : decision);
+          console.log('');
+        }
+
+        const result = await runNero({
+          decision,
+          reasoning: typeof args.reasoning === 'string' ? args.reasoning : undefined,
+          focus: typeof args.focus === 'string' ? args.focus : undefined,
+          confidence,
+          engines: pool,
+          engine: forced,
+          registry,
+          adapter,
+          timeout: timeoutSec,
+          outputDir,
+          cwd: process.cwd(),
+        });
+
+        const engineStatus: RunStatusEngine = {
+          id: result.engineId || '(none)',
+          status: result.ok ? 'ok' : 'error',
+          detail: result.ok ? `${result.verdict} (${result.reason}${result.scope ? `/${result.scope}` : ''})` : 'no usable challenge',
+        };
+        const status: RunStatus = {
+          mode: 'nero',
+          label: args.label,
+          startedAt,
+          endedAt: new Date().toISOString(),
+          engines: [engineStatus],
+          summary: result.ok ? `${result.engineId}: ${result.verdict}` : `${result.engineId || 'nero'} produced no usable challenge`,
+          ok: result.ok,
+          requested: result.engineId ? [result.engineId] : [],
+          timeoutSec,
+        };
+        writeRunStatus(outputDir, status);
+
+        if (json) {
+          console.log(JSON.stringify(result, null, 2));
+          if (!result.ok) process.exitCode = 1;
+          return;
+        }
+
+        if (!result.ok) {
+          console.error(`Nero produced no usable challenge${result.challengeText ? `: ${result.challengeText}` : '.'}`);
+          process.exitCode = 1;
+          return;
+        }
+
+        const pick = result.reason === 'forced'
+          ? `forced`
+          : result.reason === 'random'
+            ? `random — no Elo yet`
+            : `top-rated via ${result.scope}`;
+
+        if (quiet) {
+          console.log(`${verdictGlyph(result.verdict)} ${result.verdict.toUpperCase()} — ${result.engineId} (${pick})${result.challengeConfidence != null ? ` · Nero ${result.challengeConfidence}%` : ''}`);
+        } else {
+          info(dim(`Critic: ${result.engineId} (${pick})`));
+          console.log('');
+          console.log(result.challengeText);
+          console.log('');
+          console.log(`${verdictGlyph(result.verdict)} ${bold(`VERDICT: ${result.verdict.toUpperCase()}`)}${result.challengeConfidence != null ? `  ·  Nero is ${result.challengeConfidence}% sure the original is correct` : ''}`);
+          console.log('');
+          info(dim(`Saved: ${outputDir}`));
+          printRunSummary(status);
+        }
+      },
+    })
+  >>>

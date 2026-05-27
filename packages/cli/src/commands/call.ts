@@ -22,6 +22,9 @@ export interface CallCommandOptions {
   steps?: string;
   branches?: string;
   critic?: string;
+  reasoning?: string;
+  focus?: string;
+  confidence?: string;
 }
 
 export interface BuiltCallCommands {
@@ -130,6 +133,22 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...timeout,
       ...engines,
     ]);
+  } else if (workflow === 'nero') {
+    // Adversarial self-challenge — Agon's /evil-twin for external CLIs. The
+    // top-rated adversarial engine (tribunal-discipline Glicko, with global then
+    // random fallback) attacks the decision. --engines constrains the candidate
+    // pool; selection inside that pool is by rating, so external AIs normally
+    // pass just the decision and let Agon pick the best critic.
+    const decision = requireInput(workflow, opts.input);
+    commands.push([
+      'nero',
+      decision,
+      ...textFlag('--reasoning', opts.reasoning),
+      ...textFlag('--focus', opts.focus),
+      ...textFlag('--confidence', opts.confidence),
+      ...timeout,
+      ...engines,
+    ]);
   } else if (workflow === 'review') {
     commands.push(['review', opts.input?.trim() || 'uncommitted', ...timeout, ...engines]);
   } else if (workflow === 'goal') {
@@ -162,7 +181,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
     commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
   } else {
-    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, campfire, think, pipeline, review, goal, doctor, or a team-* workflow.`);
+    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, campfire, think, nero, pipeline, review, goal, doctor, or a team-* workflow.`);
   }
 
   return { cwd, commands };
@@ -223,12 +242,12 @@ export const callCommand = defineCommand({
   args: {
     workflow: {
       type: 'positional',
-      description: 'Workflow: forge, brainstorm, synthesis, tribunal, campfire, think, pipeline, review, goal, doctor, or team-*',
+      description: 'Workflow: forge, brainstorm, synthesis, tribunal, campfire, think, nero, pipeline, review, goal, doctor, or team-*',
       required: true,
     },
     input: {
       type: 'positional',
-      description: 'Prompt, task, topic, or review target',
+      description: 'Prompt, task, topic, decision, or review target',
       required: false,
     },
     team: {
@@ -310,6 +329,18 @@ export const callCommand = defineCommand({
       type: 'string',
       description: 'For goal: the task queue (a directory of tasks or a .jsonl)',
     },
+    reasoning: {
+      type: 'string',
+      description: 'For nero: the reasoning behind the decision being challenged',
+    },
+    focus: {
+      type: 'string',
+      description: 'For nero: steer the critique toward a specific concern',
+    },
+    confidence: {
+      type: 'string',
+      description: "For nero: the author's confidence (0-100) so Nero can compare",
+    },
   },
   async run({ args }) {
     let built: BuiltCallCommands;
@@ -334,6 +365,9 @@ export const callCommand = defineCommand({
         steps: args.steps,
         branches: args.branches,
         critic: args.critic,
+        reasoning: args.reasoning,
+        focus: args.focus,
+        confidence: args.confidence,
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

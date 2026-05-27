@@ -68,7 +68,7 @@ npm run typecheck      # tsc -b (type check only)
 
 ## Adding a New Mode — ALWAYS update these
 
-When you add an agon mode/command (e.g. the `think` mode = sequential thinking, in `packages/forge/src/kern/thinking.kern` + `packages/cli/src/kern/commands/think.kern`), it is NOT done until every surface below is updated in the SAME change. Don't ship a mode that only `agon <mode>` knows about.
+When you add an agon mode/command (e.g. the `think` mode = sequential thinking, in `packages/forge/src/kern/thinking.kern` + `packages/cli/src/kern/commands/think.kern`; or the `nero` mode = adversarial self-challenge, in `packages/forge/src/kern/nero.kern` + `packages/cli/src/kern/commands/nero.kern`, where the critic is picked by the tribunal-discipline Glicko rating via `pickTopRatedEngine`), it is NOT done until every surface below is updated in the SAME change. Don't ship a mode that only `agon <mode>` knows about.
 
 1. **Core/orchestration** — `packages/forge/src/kern/<mode>.kern` (the `run*` fn, takes `registry`+`adapter`), exported from `packages/forge/src/index.ts`.
 2. **CLI command** — `packages/cli/src/kern/commands/<mode>.kern`, facade `packages/cli/src/commands/<mode>.ts`, registered in `packages/cli/src/index.ts` `subCommands`.

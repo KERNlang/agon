@@ -1066,7 +1066,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 } else if (signal.tool === 'ProposePlan') {
                   recordToolUse('ProposePlan', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
                   const activePlan = ctx.activePlan;
-                  if (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state)) {
+                  // awaiting_approval is a not-yet-accepted proposal — allow a
+                  // fresh ProposePlan to supersede it. Only running/paused/planning
+                  // (a genuinely active plan) blocks a nested proposal.
+                  if (activePlan && ['planning', 'running', 'paused'].includes(activePlan.state)) {
                     dispatch({
                       type: 'tool-call',
                       engineId: cesarEngineId,
@@ -1277,7 +1280,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           delete (ctx.cesar as any)._proposePlanArgs;
           try {
             const activePlan = ctx.activePlan;
-            if (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state)) {
+            // awaiting_approval is a not-yet-accepted proposal — allow a fresh
+            // ProposePlan to supersede it. Only running/paused/planning (a
+            // genuinely active plan) blocks a nested proposal.
+            if (activePlan && ['planning', 'running', 'paused'].includes(activePlan.state)) {
               dispatch({
                 type: 'tool-call',
                 engineId: cesarEngineId,

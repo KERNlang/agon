@@ -25,6 +25,7 @@ screen name=PlanProposalView target=ink memo=true
   prop name=plan type=any
   prop name=markdown type=string optional=true
   prop name=costEstimate type="{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null" optional=true
+  prop name=committed type=boolean optional=true
   render
     handler <<<
       const steps = plan.steps ?? [];
@@ -71,20 +72,24 @@ screen name=PlanProposalView target=ink memo=true
             <Text dimColor>{thinBar}</Text>
             <RenderedSegments segments={segments} borderColor="" wrapWidth={wrapWidth} />
             <Text dimColor>{thinBar}</Text>
-            <Box>
-              <Text color="#fbbf24" bold>{'Awaiting approval: '}</Text>
-              <Text dimColor>{'press '}</Text>
-              <Text color="#4ade80" bold>{'Y'}</Text>
-              <Text dimColor>{' to approve, '}</Text>
-              <Text color="#ef4444" bold>{'N'}</Text>
-              <Text dimColor>{' to reject (or type '}</Text>
-              <Text color="#4ade80" bold>{'go'}</Text>
-              <Text dimColor>{' / '}</Text>
-              <Text color="#4ade80" bold>{'/approve'}</Text>
-              <Text dimColor>{' / '}</Text>
-              <Text color="#ef4444" bold>{'/cancel'}</Text>
-              <Text dimColor>{').'}</Text>
-            </Box>
+            {committed ? (
+              <Text dimColor>{'Plan moved to history.'}</Text>
+            ) : (
+              <Box>
+                <Text color="#fbbf24" bold>{'Awaiting approval: '}</Text>
+                <Text dimColor>{'press '}</Text>
+                <Text color="#4ade80" bold>{'Y'}</Text>
+                <Text dimColor>{' to approve, '}</Text>
+                <Text color="#ef4444" bold>{'N'}</Text>
+                <Text dimColor>{' to reject (or type '}</Text>
+                <Text color="#4ade80" bold>{'go'}</Text>
+                <Text dimColor>{' / '}</Text>
+                <Text color="#4ade80" bold>{'/approve'}</Text>
+                <Text dimColor>{' / '}</Text>
+                <Text color="#ef4444" bold>{'/cancel'}</Text>
+                <Text dimColor>{').'}</Text>
+              </Box>
+            )}
           </Box>
         );
       }
@@ -203,18 +208,22 @@ screen name=PlanProposalView target=ink memo=true
           })}
 
           <Text dimColor>{thinBar}</Text>
-          <Box>
-            <Text color="#fbbf24" bold>{'Awaiting approval: '}</Text>
-            <Text dimColor>{'type '}</Text>
-            <Text color="#4ade80" bold>{'go'}</Text>
-            <Text dimColor>{', '}</Text>
-            <Text color="#4ade80" bold>{'yes'}</Text>
-            <Text dimColor>{', or '}</Text>
-            <Text color="#4ade80" bold>{'/approve'}</Text>
-            <Text dimColor>{' to execute. Type '}</Text>
-            <Text color="#ef4444" bold>{'/cancel'}</Text>
-            <Text dimColor>{' to reject.'}</Text>
-          </Box>
+          {committed ? (
+            <Text dimColor>{'Plan moved to history.'}</Text>
+          ) : (
+            <Box>
+              <Text color="#fbbf24" bold>{'Awaiting approval: '}</Text>
+              <Text dimColor>{'type '}</Text>
+              <Text color="#4ade80" bold>{'go'}</Text>
+              <Text dimColor>{', '}</Text>
+              <Text color="#4ade80" bold>{'yes'}</Text>
+              <Text dimColor>{', or '}</Text>
+              <Text color="#4ade80" bold>{'/approve'}</Text>
+              <Text dimColor>{' to execute. Type '}</Text>
+              <Text color="#ef4444" bold>{'/cancel'}</Text>
+              <Text dimColor>{' to reject.'}</Text>
+            </Box>
+          )}
         </Box>
       );
     >>>

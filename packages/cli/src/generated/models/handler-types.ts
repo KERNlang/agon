@@ -35,9 +35,10 @@ export type OutputEvent =
   | { type: 'info'; message: string }
   | { type: 'plan'; plan: Plan }
   | { type: 'plan-list'; plans: Plan[] }
-  | { type: 'plan-proposal'; plan: any; markdown: string; planFilePath?: string }
+  | { type: 'plan-proposal'; plan: any; markdown: string; planFilePath?: string; committed?: boolean }
   | { type: 'plan-execution'; plan: any }
   | { type: 'plan-cancelled'; plan: any }
+  | { type: 'plan-dismiss' }
   | { type: 'todos-set'; todos: any[] }
   | { type: 'todos-update'; id: string; state: string; note?: string }
   | { type: 'todos-clear' }
@@ -72,7 +73,7 @@ export type OutputEvent =
   | { type: 'agent-routing'; mode: 'solo'|'team'; engines: string[]; reason: string }
   | { type: 'agent-team-complete'; teamId: string; winner: string|null; synthesizedPatch?: string|null; synthesizedAnalysis?: string|null; memberOutcomes: Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>; teamCostUsd: number; teamDurationMs: number; synthesisRan?: boolean; synthesisChanged?: boolean; synthesisCostUsd?: number; synthesisFitnessRegressed?: boolean };
 
-// @kern-source: handler-types:231
+// @kern-source: handler-types:235
 export interface PendingDelegation {
   action: string;
   task?: string;
@@ -109,10 +110,10 @@ export interface PendingDelegation {
   createdAt: number;
 }
 
-// @kern-source: handler-types:266
+// @kern-source: handler-types:270
 export type CesarLiveMode = 'self' | 'self-nero' | 'delegate' | 'forge' | 'forge-slice' | 'team-forge' | 'brainstorm' | 'team-brainstorm' | 'campfire' | 'tribunal' | 'team-tribunal' | 'pipeline' | 'goal' | 'review' | 'agent' | 'team-agent' | 'plan';
 
-// @kern-source: handler-types:268
+// @kern-source: handler-types:272
 export interface CesarTurnOutcome {
   mode?: CesarLiveMode;
   delegated: boolean;
@@ -139,7 +140,7 @@ export interface CesarTurnOutcome {
   budget?: number;
 }
 
-// @kern-source: handler-types:293
+// @kern-source: handler-types:297
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -165,7 +166,7 @@ export interface CesarState {
   autoModeQueued?: boolean;
 }
 
-// @kern-source: handler-types:317
+// @kern-source: handler-types:321
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

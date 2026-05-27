@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, utimesSync } from 'node:fs';
+import { mkdirSync, writeFileSync, utimesSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js';
 import {
@@ -89,6 +89,17 @@ describe('CLI live-model probe cache', () => {
     expect(claude!.effortLevels).toContain('high');
     expect(codex!.effortLevels).toContain('xhigh');
     expect(agy!.effortLevels ?? []).toHaveLength(0);
+  });
+
+  it('CLI group effortLevels mirror engines/*.json (guards the hardcoded copy against drift)', () => {
+    home = setupTestAgonHome('probe-effort-sync');
+    const claudeJson = JSON.parse(readFileSync(new URL('../../engines/claude.json', import.meta.url), 'utf-8'));
+    const codexJson = JSON.parse(readFileSync(new URL('../../engines/codex.json', import.meta.url), 'utf-8'));
+    const groups = buildCliModelGroups();
+    // ENGINE_PROVIDER_MAP hardcodes effortLevels for the picker; if an engine
+    // def's effort.levels change, this fails so the copy gets updated.
+    expect(groups.find((g) => g.engineId === 'claude')!.effortLevels).toEqual(claudeJson.effort.levels);
+    expect(groups.find((g) => g.engineId === 'codex')!.effortLevels).toEqual(codexJson.effort.levels);
   });
 
   it('falls back to the static google list when no probe is cached', () => {

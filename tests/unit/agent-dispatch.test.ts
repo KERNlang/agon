@@ -113,12 +113,15 @@ describe('Agent Dispatch', () => {
       expect(result!.args).not.toContain('--dangerously-skip-permissions');
     });
 
-    it('drops the bypass-permissions flag for plan permission (agy)', () => {
+    it('swaps agy auto-approve for --sandbox in plan permission (not the Claude flag)', () => {
       const reg = loadRegistry();
       const result = resolveAgentArgs(reg.get('agy'), 'plan');
       expect(result).not.toBeNull();
-      // Plan mode must never keep agy's auto-approve-everything flag.
+      // Plan mode must never keep agy's auto-approve-everything flag, and must use
+      // agy's real restriction flag (--sandbox), not Claude's --permission-mode.
       expect(result!.args).not.toContain('--dangerously-skip-permissions');
+      expect(result!.args).toContain('--sandbox');
+      expect(result!.args).not.toContain('--permission-mode=plan');
     });
   });
 

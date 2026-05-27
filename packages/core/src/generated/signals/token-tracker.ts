@@ -29,7 +29,7 @@ export function estimateTokens(text: string): number {
 
 // @kern-source: token-tracker:21
 export function estimateCost(engineId: string, tokens: number, model?: string): number {
-  const MODEL_COST: Record<string, number> = { "claude-opus-4-6": 45.00, "claude-sonnet-4-6": 9.00, "claude-haiku-4-5": 2.00, "gpt-4.1": 6.00, "gpt-4.1-mini": 1.20, "gpt-4.1-nano": 0.30, "gemini-2.5-pro": 5.00, "gemini-2.5-flash": 0.60, o3: 30.00, "o4-mini": 2.80 };
+  const MODEL_COST: Record<string, number> = { "claude-opus-4-6": 45.00, "claude-sonnet-4-6": 9.00, "claude-haiku-4-5": 2.00, "gpt-4.1": 6.00, "gpt-4.1-mini": 1.20, "gpt-4.1-nano": 0.30, "gemini-3.1-pro": 5.00, "gemini-3.5-flash": 0.60, o3: 30.00, "o4-mini": 2.80 };
   if (model && MODEL_COST[model]) {
     return tokens / 1000000 * MODEL_COST[model];
   }

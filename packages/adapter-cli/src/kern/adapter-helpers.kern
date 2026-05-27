@@ -201,9 +201,11 @@ fn name=resolveAgentArgs params="engine:EngineDefinition, permissionLevel:'full'
     if (permissionLevel === 'read-only') return null;
     if (!engine.agent) return null;
     if (permissionLevel === 'full') return engine.agent;
-    // plan mode: swap vendor-specific flags
+    // plan mode: swap vendor-specific flags. agy has no --permission-mode (it
+    // silently ignores unknown flags), so its only real restriction is --sandbox;
+    // mapping the bypass flag to a Claude-only flag would leave agy unrestricted.
     const planArgs = engine.agent.args.map((arg: string) => {
-      if (arg === '--dangerously-skip-permissions') return '--permission-mode=plan';
+      if (arg === '--dangerously-skip-permissions') return engine.id === 'agy' ? '--sandbox' : '--permission-mode=plan';
       if (arg === '--dangerously-bypass-approvals-and-sandbox') return '--sandbox=workspace-write';
       if (arg === 'yolo') return 'plan';
       return arg;

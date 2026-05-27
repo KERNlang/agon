@@ -240,39 +240,3 @@ export function normalizeBaseUrl(url: string): string {
 export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
   return { schemaVersion: 3, id: `${entry.providerId}-${entry.modelId}`.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase(), displayName: `${entry.providerName} — ${entry.modelName}`, isLocal: false, tier: 'user', timeout: 180, exec: { args: [] }, review: { args: [] }, api: { baseUrl: normalizeBaseUrl(entry.baseUrl), apiKeyEnv: entry.apiKeyEnv, model: entry.modelId, maxTokens: Math.min(entry.contextWindow ? Math.floor(entry.contextWindow / 4) : 4096, 16384), format: entry.format ?? 'openai' } };
 }
-
-/**
- * Build model entries from installed CLI engines. Only includes engines whose binary is found on PATH.
- */
-// @kern-source: models-registry:224
-export function buildCliModelEntries(engines: EngineDefinition[], findBinary: (engine:EngineDefinition) => string|null): ModelEntry[] {
-  const entries: ModelEntry[] = [];
-
-  for (const engine of engines) {
-    if (!engine.cliModels) continue;
-    if (!findBinary(engine)) continue;
-
-    const models = engine.cliModels.list ?? [];
-    for (const m of models) {
-      entries.push({
-        providerId: engine.id,
-        providerName: engine.displayName,
-        modelId: m.id,
-        modelName: m.name ?? m.id,
-        baseUrl: engine.api?.baseUrl ?? '',
-        apiKeyEnv: engine.api?.apiKeyEnv ?? '',
-        format: (engine.api?.format as 'openai'|'anthropic') ?? 'openai',
-        source: 'cli',
-      });
-    }
-  }
-
-  // Sort by provider display name, then model name
-  entries.sort((a, b) => {
-    const provCmp = a.providerName.localeCompare(b.providerName);
-    if (provCmp !== 0) return provCmp;
-    return a.modelName.localeCompare(b.modelName);
-  });
-
-  return entries;
-}

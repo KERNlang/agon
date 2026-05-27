@@ -263,15 +263,13 @@ fn name=clearPersistedSessionContext params="ctx:HandlerContext" returns="string
   >>>
 
 fn name=shouldAutoContinueDelegatedResult params="launchInputEpoch?:number, launchUserTurns?:number, ctx?:HandlerContext" returns=boolean export=true
-  doc "Guard post-delegation Cesar continuation so long-running jobs do not answer an old turn after the user has moved on."
+  doc "Guard post-delegation Cesar continuation so long-running jobs do not answer an old turn after the user has moved on. The authoritative 'user moved on' signal is inputEpoch (bumped ONLY in handleSubmit, i.e. real user input). The user-turn COUNT is intentionally NOT checked: in auto-mode the continuous loop appends its own user-role continuation turns during a long job (e.g. a multi-minute forge), which would drift the count and falsely suppress the post-forge continuation — leaving Cesar idle after a winner was defined. launchUserTurns is kept for signature stability."
   handler lang="kern"
     if cond="!ctx"
       return value="true"
-    if cond="typeof launchInputEpoch !== 'number' || typeof launchUserTurns !== 'number'"
+    if cond="typeof launchInputEpoch !== 'number'"
       return value="true"
     if cond="(ctx.inputEpoch ?? 0) !== launchInputEpoch"
-      return value="false"
-    if cond="countTrackedUserTurns(ctx) !== launchUserTurns"
       return value="false"
     return value="true"
 
@@ -425,8 +423,9 @@ fn name=shouldAutoResumeAgentResult params="result:any, launchInputEpoch:number,
       return value="false"
     if cond="(ctx.inputEpoch ?? 0) !== launchInputEpoch"
       return value="false"
-    if cond="countTrackedUserTurns(ctx) !== launchUserTurns"
-      return value="false"
+    comment raw="// User-turn count intentionally not checked (see shouldAutoContinueDelegatedResult):"
+    comment raw="// auto-mode appends its own continuation turns during a long agent run, which would"
+    comment raw="// drift the count and falsely suppress the post-run resume."
     return value="true"
 
 fn name=buildAgentAutoResumePrompt params="originalTask:string, result:any" returns=string export=true

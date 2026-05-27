@@ -1,6 +1,6 @@
 import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
-import from="@agon/core" names="createCesarPlan,formatCesarPlanMarkdown,planCostEstimator,resolveWorkingDir,RUNS_DIR,tracker,readPatchFromPath,applyPatchToTree,cesarPlanMarkdownPath,saveCesarPlan"
+import from="@agon/core" names="createCesarPlan,formatCesarPlanMarkdown,planCostEstimator,resolveWorkingDir,RUNS_DIR,tracker,readPatchFromPath,applyPatchToTree,cesarPlanMarkdownPath,saveCesarPlan,cancelCesarPlan"
 import from="@agon/core" names="CesarPlan,CesarPlanStep,CesarStepResult,StepExecutor" types=true
 import from="@agon/forge" names="runForge,runBrainstorm,runTribunal,runCampfire,runDelegate"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
@@ -57,6 +57,23 @@ fn name=handleProposePlan params="args:any, dispatch:Dispatch, ctx:HandlerContex
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, markdown);
     saveCesarPlan(plan);
+
+    // Supersede AFTER the replacement is safely built + persisted, so a
+    // malformed/failed proposal above can never destroy the user's existing
+    // approvable plan (codex review). Retire any prior pending proposal on
+    // disk — id-guarded so we never cancel the plan we just saved — and clear
+    // the stale in-memory proposedPlan ref so no error path observes a ghost
+    // awaiting_approval plan (zai review). activePlan is owned by the caller's
+    // setActivePlan, which assigns this new plan immediately after we return.
+    for (const prior of [ctx.cesar?.proposedPlan, ctx.activePlan]) {
+      const p = prior as CesarPlan | undefined;
+      if (p && p.state === 'awaiting_approval' && p.id !== plan.id) {
+        try { saveCesarPlan(cancelCesarPlan(p)); } catch { /* best-effort supersede cleanup */ }
+      }
+    }
+    if (ctx.cesar?.proposedPlan && (ctx.cesar.proposedPlan as CesarPlan).state === 'awaiting_approval' && (ctx.cesar.proposedPlan as CesarPlan).id !== plan.id) {
+      ctx.cesar.proposedPlan = undefined;
+    }
 
     dispatch({ type: 'plan-proposal' as any, plan, markdown, planFilePath: filePath });
     return plan;

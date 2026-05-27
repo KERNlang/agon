@@ -226,6 +226,12 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       systemParts.push(`RULE 8 — LIVE VS PLAN: Plan mode is available, but it is not a gateway. Stay live by default. Switch into planning yourself only when staged execution is genuinely useful: multiple dependent steps, expensive orchestration, resumability, explicit approvals, or cost visibility. If the task can stay coherent live, keep it live. Do NOT ask the user to type /plan first unless they explicitly want manual planning control.`);
 
       if (ctx.activePlan && ['planning', 'awaiting_approval'].includes(ctx.activePlan.state)) {
+        if (ctx.activePlan.state === 'awaiting_approval') {
+          // Already proposed — pending the user's approval. Do NOT force another
+          // ProposePlan (that would replace a good plan on a benign follow-up).
+          // Answer questions; re-propose only to REPLACE a wrong/outdated plan.
+          systemParts.push(`RULE 9 — PENDING PLAN: You have already proposed a plan; it is awaiting the user's approval. Do NOT mutate anything. Do NOT re-propose unless the pending plan is wrong, too broad, or the user asked for something different — in that case call ProposePlan again and it REPLACES the pending one (no need to cancel first). For a normal follow-up question (e.g. "why step 2?"), answer it in text and let the user approve (go/yes) or cancel.`);
+        } else {
         const stats = tracker.getStats();
         let budgetWarning = '';
         if (stats.totalCostUsd > 0.50) {
@@ -315,6 +321,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   ALLOWED: Read, Grep, Glob, Bash (read-only), Delegate, Brainstorm, Tribunal, Campfire, ReportConfidence, ProposePlan.
 
   HARD RULE: Your turn MUST end with a ProposePlan call. If you respond with text only, the plan mode fails. Call ProposePlan.${budgetWarning}`);
+        }
       }
 
       // History replay — only needed when the Cesar subprocess reboots. Keep as much
@@ -333,13 +340,13 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:320
+// @kern-source: session:327
 export const CESAR_SNAPSHOT_MSG_CHAR_CAP: number = 4000;
 
 /**
  * Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it.
  */
-// @kern-source: session:322
+// @kern-source: session:329
 export function capSnapshotMessageContent(content: string): string {
   if (content.length <= CESAR_SNAPSHOT_MSG_CHAR_CAP) return content;
   return `${content.slice(0, CESAR_SNAPSHOT_MSG_CHAR_CAP)}\n… [${content.length - CESAR_SNAPSHOT_MSG_CHAR_CAP} chars truncated for Cesar context]`;
@@ -348,7 +355,7 @@ export function capSnapshotMessageContent(content: string): string {
 /**
  * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched.
  */
-// @kern-source: session:329
+// @kern-source: session:336
 export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const directHistory = session?.getMessageHistory?.() ?? [];
   if (directHistory.length > 0) {
@@ -381,7 +388,7 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
 /**
  * Persist the active Cesar conversation before the session is discarded.
  */
-// @kern-source: session:354
+// @kern-source: session:361
 export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
   if (!session) return;
   const snapshot = buildCesarConversationSnapshot(session, chatSession);
@@ -396,7 +403,7 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
-// @kern-source: session:367
+// @kern-source: session:374
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -511,8 +518,12 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 
     if (name === 'ProposePlan') {
       const activePlan = ctx.activePlan;
-      if (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state)) {
-        return '[PLAN_ERROR] A Cesar plan is already active. Do not create a nested plan from inside an approved/paused/awaiting plan. Resume/cancel the current plan, or finish the current step with direct tools and a concise recap.';
+      // An awaiting_approval plan is only a proposal the user hasn't accepted —
+      // a fresh ProposePlan is allowed and supersedes it (handleProposePlan
+      // cancels the prior pending plan). Only a genuinely active plan
+      // (planning/running/paused) blocks a nested proposal.
+      if (activePlan && ['planning', 'running', 'paused'].includes(activePlan.state)) {
+        return '[PLAN_ERROR] A Cesar plan is already active. Do not create a nested plan from inside a running/paused plan. Resume/cancel the current plan, or finish the current step with direct tools and a concise recap.';
       }
       // Validate engines exist before creating the plan
       const proposedSteps = (args as any).steps ?? [];
@@ -633,7 +644,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:602
+// @kern-source: session:613
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -808,7 +819,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:778
+// @kern-source: session:789
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -842,7 +853,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:812
+// @kern-source: session:823
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -866,7 +877,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:836
+// @kern-source: session:847
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -878,7 +889,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:843
+// @kern-source: session:854
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -898,7 +909,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:861
+// @kern-source: session:872
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -923,7 +934,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:887
+// @kern-source: session:898
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

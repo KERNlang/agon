@@ -210,6 +210,12 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export
     systemParts.push(`RULE 8 — LIVE VS PLAN: Plan mode is available, but it is not a gateway. Stay live by default. Switch into planning yourself only when staged execution is genuinely useful: multiple dependent steps, expensive orchestration, resumability, explicit approvals, or cost visibility. If the task can stay coherent live, keep it live. Do NOT ask the user to type /plan first unless they explicitly want manual planning control.`);
 
     if (ctx.activePlan && ['planning', 'awaiting_approval'].includes(ctx.activePlan.state)) {
+      if (ctx.activePlan.state === 'awaiting_approval') {
+        // Already proposed — pending the user's approval. Do NOT force another
+        // ProposePlan (that would replace a good plan on a benign follow-up).
+        // Answer questions; re-propose only to REPLACE a wrong/outdated plan.
+        systemParts.push(`RULE 9 — PENDING PLAN: You have already proposed a plan; it is awaiting the user's approval. Do NOT mutate anything. Do NOT re-propose unless the pending plan is wrong, too broad, or the user asked for something different — in that case call ProposePlan again and it REPLACES the pending one (no need to cancel first). For a normal follow-up question (e.g. "why step 2?"), answer it in text and let the user approve (go/yes) or cancel.`);
+      } else {
       const stats = tracker.getStats();
       let budgetWarning = '';
       if (stats.totalCostUsd > 0.50) {
@@ -299,6 +305,7 @@ BLOCKED: Forge, Pipeline, Agent, Edit, Write. No code execution until the plan i
 ALLOWED: Read, Grep, Glob, Bash (read-only), Delegate, Brainstorm, Tribunal, Campfire, ReportConfidence, ProposePlan.
 
 HARD RULE: Your turn MUST end with a ProposePlan call. If you respond with text only, the plan mode fails. Call ProposePlan.${budgetWarning}`);
+      }
     }
 
     // History replay — only needed when the Cesar subprocess reboots. Keep as much
@@ -480,8 +487,12 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
 
       if (name === 'ProposePlan') {
         const activePlan = ctx.activePlan;
-        if (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state)) {
-          return '[PLAN_ERROR] A Cesar plan is already active. Do not create a nested plan from inside an approved/paused/awaiting plan. Resume/cancel the current plan, or finish the current step with direct tools and a concise recap.';
+        // An awaiting_approval plan is only a proposal the user hasn't accepted —
+        // a fresh ProposePlan is allowed and supersedes it (handleProposePlan
+        // cancels the prior pending plan). Only a genuinely active plan
+        // (planning/running/paused) blocks a nested proposal.
+        if (activePlan && ['planning', 'running', 'paused'].includes(activePlan.state)) {
+          return '[PLAN_ERROR] A Cesar plan is already active. Do not create a nested plan from inside a running/paused plan. Resume/cancel the current plan, or finish the current step with direct tools and a concise recap.';
         }
         // Validate engines exist before creating the plan
         const proposedSteps = (args as any).steps ?? [];

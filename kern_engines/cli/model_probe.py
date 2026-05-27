@@ -176,12 +176,57 @@ def parse_codex_picker(stripped: str) -> dict:
     return {"models": models, "current": current_name}
 
 
+# claude /model: numbered "Select model" selector, also single-line. Each row is
+# "N. <label> [✔] <Brand> <ver> [with 1M context] · <desc> · …". The label
+# (Default/Sonnet/Haiku) is claude-UI; the real model is the Brand+ver after it.
+# `✔` marks the active model. Typing /model first shows claude's slash-command
+# AUTOCOMPLETE menu, so anchor on the LAST "Select model". --model takes brand
+# aliases (opus/sonnet/haiku) + a [1m] suffix for the distinct 1M-context Sonnet.
+_CLAUDE_BRAND_RE = re.compile(r"\b(Opus|Sonnet|Haiku)\s+(\d+(?:\.\d+)?)")
+
+
+def parse_claude_picker(stripped: str) -> dict:
+    """Parse claude's /model selector into {id(alias),name,current} rows."""
+    text = re.sub(r"\s+", " ", stripped)
+    head = text.rfind("Select model")
+    if head >= 0:
+        text = text[head:]
+    foot = re.search(r"(● High effort|Use /fast|Enter to confirm)", text)
+    if foot:
+        text = text[:foot.start()]
+    models: list[dict] = []
+    seen: set[str] = set()
+    current_name: str | None = None
+    for part in re.split(r"(?=\b\d+\.\s)", text):
+        em = re.match(r"\s*\d+\.\s+(.*)", part)
+        if not em:
+            continue
+        body = em.group(1)
+        bm = _CLAUDE_BRAND_RE.search(body)  # skips "Sonnet (1M context)" (no digit) → "Sonnet 4.6"
+        if not bm:
+            continue
+        brand, ver = bm.group(1), bm.group(2)
+        is_current = "✔" in body
+        is_1m = bool(re.search(r"1M", body))
+        sonnet_1m = is_1m and brand.lower() == "sonnet"
+        name = f"{brand} {ver}" + (" (1M context)" if sonnet_1m else "")
+        mid = brand.lower() + ("[1m]" if sonnet_1m else "")
+        if mid in seen:
+            continue
+        seen.add(mid)
+        if is_current:
+            current_name = name
+        models.append({"id": mid, "name": name, "current": is_current})
+    return {"models": models, "current": current_name}
+
+
 # Per-engine parser registry (keyed by binary basename). New engines slot in
 # here with their own parser; default is the agy "Switch Model" style.
 PARSERS = {
     "agy": parse_model_picker,
     "antigravity": parse_model_picker,
     "codex": parse_codex_picker,
+    "claude": parse_claude_picker,
 }
 
 

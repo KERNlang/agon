@@ -920,7 +920,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       );
     }
     case 'dashboard': return <DashboardView event={event as OutputEvent & { type: 'dashboard' }} />;
-    case 'plan-proposal': return <PlanProposalView plan={event.plan} markdown={(event as any).markdown} />;
+    case 'plan-proposal': return <PlanProposalView plan={event.plan} markdown={(event as any).markdown} committed={(event as any).committed} />;
     case 'plan-execution': return <PlanExecutionView plan={(event as any).plan} />;
     case 'tool-call-group': return <ToolCallGroup blocks={(event as any).blocks} />;
     default: return null;

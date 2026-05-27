@@ -126,7 +126,10 @@ export const _pendingFlushTimer: { timer: any, actions: any } = ({ timer: null, 
 // @kern-source: output:104
 export const _liveToolStreams: Record<string,any> = {} as Record<string, any>;
 
-// @kern-source: output:106
+// @kern-source: output:109
+export const _pinnedPlan: { event: any } = ({ event: null }) as { event: any };
+
+// @kern-source: output:111
 function toolCallKey(event: any): string {
   return [String(event?.engineId ?? ''), String(event?.tool ?? ''), String(event?.input ?? '')].join('\x00');
 }
@@ -134,7 +137,7 @@ function toolCallKey(event: any): string {
 /**
  * Emit any buffered tool-call events as a single tool-call-group block.
  */
-// @kern-source: output:110
+// @kern-source: output:115
 export function flushPendingToolCalls(actions: OutputActions): void {
   if (_pendingFlushTimer.timer) {
     clearTimeout(_pendingFlushTimer.timer);
@@ -149,7 +152,7 @@ export function flushPendingToolCalls(actions: OutputActions): void {
 /**
  * Debounce-flush pending tool-calls after a quiet period — covers turns that end on a tool-call without any trailing event.
  */
-// @kern-source: output:123
+// @kern-source: output:128
 export function schedulePendingFlush(actions: OutputActions): void {
   _pendingFlushTimer.actions = actions;
   if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
@@ -162,7 +165,7 @@ export function schedulePendingFlush(actions: OutputActions): void {
 /**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
-// @kern-source: output:134
+// @kern-source: output:139
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
@@ -182,7 +185,7 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
-// @kern-source: output:151
+// @kern-source: output:156
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -242,7 +245,7 @@ function _showNextPermission(actions: OutputActions): void {
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
-// @kern-source: output:208
+// @kern-source: output:213
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
@@ -379,6 +382,9 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       actions.setTodos(clearTodos());
       actions.setQuestionState(null);
       actions.setPendingPlanProposal(null);
+      // Drop the pinned-plan stash too, so a stale proposal can't be
+      // demoted into the freshly-cleared scrollback by a later turn.
+      _pinnedPlan.event = null;
       _pendingToolCalls.length = 0;
       actions.setReviewEvent(null);
       codeBlockBuffer.clear();
@@ -436,12 +442,16 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // transcript content. Keep them pinned in the live pane so the
       // composer stays actionable; committing the whole markdown plan to
       // Static makes the UI look stuck at the bottom of a giant document.
+      // Stash the event so a later 'plan-dismiss' can demote this exact
+      // proposal into scrollback once the user responds.
+      _pinnedPlan.event = event;
       actions.setPendingPlanProposal(event);
       return;
     }
     case 'plan-execution': {
       // Plan approved — clear the live-pane proposal and commit the
       // execution event as the permanent record.
+      _pinnedPlan.event = null;
       actions.setPendingPlanProposal(null);
       actions.addBlock(event);
       return;
@@ -450,7 +460,29 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // Plan rejected at approval prompt — just clear the live slot.
       // The subsequent 'info: Plan rejected.' dispatch provides the
       // scrollback record; no plan block needed.
+      _pinnedPlan.event = null;
       actions.setPendingPlanProposal(null);
+      return;
+    }
+    case 'plan-dismiss': {
+      // The user responded to a pinned plan (approval via chat route,
+      // or any next turn). Demote the proposal from the live pane into
+      // scrollback history (Claude-style) so the next turn's output is
+      // the bottom-most content instead of being buried under the plan.
+      // committed=true tells PlanProposalView to drop the approval prompt.
+      // The markdown status line is freshened from awaiting_approval to a
+      // neutral 'archived' — we cannot assert approval here (a chat-route
+      // response is not necessarily an approval), so the historical record
+      // stays honest rather than claiming the plan was approved.
+      const pinned = _pinnedPlan.event;
+      if (pinned) {
+        const freshMarkdown = typeof pinned.markdown === 'string'
+          ? pinned.markdown.replace(/Status:\s*awaiting_approval/gi, 'Status: archived')
+          : pinned.markdown;
+        actions.addBlock({ ...pinned, markdown: freshMarkdown, committed: true });
+        _pinnedPlan.event = null;
+        actions.setPendingPlanProposal(null);
+      }
       return;
     }
     case 'confidence-update': {

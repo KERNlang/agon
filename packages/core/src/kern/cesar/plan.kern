@@ -164,7 +164,7 @@ fn name=advanceCesarStep params="plan:CesarPlan,stepId:string,result:CesarStepRe
     };
   >>>
 
-fn name=cancelCesarPlan params="plan:CesarPlan" returns=CesarPlan
+fn name=cancelCesarPlan params="plan:CesarPlan" returns=CesarPlan export=true
   doc "Cancel the plan: mark all non-complete steps as cancelled."
   handler <<<
     const newSteps = plan.steps.map(s => {

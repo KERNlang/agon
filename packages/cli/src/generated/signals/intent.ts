@@ -551,7 +551,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
       return { type: 'agent-solo', input: rest } as unknown as Intent;
     case 'speculate': {
       // /speculate [with engine1,engine2] <task>
-      // Optional: /speculate with claude,gemini refactor auth module
+      // Optional: /speculate with claude,agy refactor auth module
       const withMatch = rest.match(/^with\s+([\w,-]+)\s+([\s\S]+)$/i);
       if (withMatch) {
         const engines = withMatch[1].split(',').map((e: string) => e.trim()).filter(Boolean);

@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 
 import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric, EngineResult } from '@agon/core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, extractPatchFilePatterns, tracker, engineHealth } from '@agon/core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, extractPatchFilePatterns, tracker, engineHealth, seedNewEnginesFromRegistry } from '@agon/core';
 
 import { healthCheckEngines, HEALTH_CHECK_DEFAULT_PROMPT } from './health-check.js';
 
@@ -219,6 +219,10 @@ export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: Workt
 // @kern-source: forge:190
 export async function runForge(options: ForgeOptions & { onResult?: (engineId:string,result:EngineResult,metric:DispatchMetric)=>'continue'|'finalize'|void }, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const loadedConfig = loadConfig(options.cwd);
+  // Cold-start: seed newly-dropped model versions from their predecessor before
+  // starter selection / competition, so a new engine is rated at its family's
+  // strength (advisorScore) instead of the 1500 default on its first forge.
+  seedNewEnginesFromRegistry(registry);
   const taskClass = classifyTask(options.task);
   const config = {
     ...loadedConfig,

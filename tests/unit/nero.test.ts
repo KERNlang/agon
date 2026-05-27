@@ -3,7 +3,7 @@
 // author exclusion) and the pure prompt/verdict/confidence helpers. No paid
 // engine dispatch needed.
 import { describe, it, expect } from 'vitest';
-import { rankEnginesByRating, pickTopRatedEngine } from '@agon/core';
+import { rankEnginesByRating, pickTopRatedEngine, seedSuccessorRating, seedEnginesFromLineage } from '@agon/core';
 import type { GlickoRating, RatingRecord } from '@agon/core';
 import { buildNeroPrompt, parseNeroVerdict, parseNeroConfidence, runNero } from '@agon/forge';
 
@@ -157,7 +157,7 @@ describe('parseNeroConfidence', () => {
 });
 
 describe('runNero — verdict-gate contract', () => {
-  const registry = { get: (id: string) => ({ id }) } as any;
+  const registry = { get: (id: string) => ({ id }), list: () => [] } as any;
   const adapterReturning = (over: Record<string, unknown>) =>
     ({ dispatch: async () => ({ exitCode: 0, stdout: '', stderr: '', durationMs: 1, timedOut: false, ...over }) }) as any;
   const base = { decision: 'x', engines: ['fake'], engine: 'fake', timeout: 30, outputDir: '/tmp/nero-test', cwd: '/tmp' };
@@ -188,9 +188,84 @@ describe('runNero — verdict-gate contract', () => {
   });
 
   it('ok:false (no crash) when the engine id is not in the registry', async () => {
-    const throwingRegistry = { get: (id: string) => { throw new Error(`EngineNotFound: ${id}`); } } as any;
+    const throwingRegistry = { get: (id: string) => { throw new Error(`EngineNotFound: ${id}`); }, list: () => [] } as any;
     const res = await runNero({ ...base, registry: throwingRegistry, adapter: adapterReturning({ stdout: 'VERDICT: SOUND' }) } as any);
     expect(res.ok).toBe(false);
     expect(res.challengeText).toContain('EngineNotFound');
+  });
+});
+
+describe('pickTopRatedEngine — critique→tribunal→global cascade (Nero selection)', () => {
+  it('prefers the critique discipline when it has data', () => {
+    const r = ratings({
+      global: { a: rating(1900), b: rating(1500) },
+      byMode: { forge: {}, brainstorm: {}, tribunal: { a: rating(1800), b: rating(1500) }, critique: { a: rating(1500), b: rating(1700) } },
+    });
+    // a leads global AND tribunal, but b is the proven critic → b wins via critique
+    expect(pickTopRatedEngine(['a', 'b'], r, { modes: ['critique', 'tribunal'] })).toEqual({ engineId: 'b', reason: 'top-rated', scope: 'critique' });
+  });
+
+  it('falls back to tribunal when critique is empty', () => {
+    const r = ratings({
+      global: { a: rating(1900), b: rating(1500) },
+      byMode: { forge: {}, brainstorm: {}, tribunal: { a: rating(1500), b: rating(1800) }, critique: {} },
+    });
+    expect(pickTopRatedEngine(['a', 'b'], r, { modes: ['critique', 'tribunal'] })).toEqual({ engineId: 'b', reason: 'top-rated', scope: 'tribunal' });
+  });
+
+  it('falls back to global when neither critique nor tribunal has data', () => {
+    const r = ratings({ global: { a: rating(1500), b: rating(1700) } });
+    expect(pickTopRatedEngine(['a', 'b'], r, { modes: ['critique', 'tribunal'] })).toEqual({ engineId: 'b', reason: 'top-rated', scope: 'global' });
+  });
+
+  it('still excludes the author across the cascade', () => {
+    const r = ratings({ byMode: { forge: {}, brainstorm: {}, tribunal: {}, critique: { author: rating(1900), critic: rating(1600) } } });
+    expect(pickTopRatedEngine(['author', 'critic'], r, { modes: ['critique', 'tribunal'], exclude: ['author'] })).toEqual({ engineId: 'critic', reason: 'top-rated', scope: 'critique' });
+  });
+});
+
+describe('seedSuccessorRating — new-model cold-start', () => {
+  const withGames = (over: Partial<GlickoRating>): GlickoRating => ({ ...rating(1500), wins: 10, losses: 5, ...over });
+
+  it('inherits a strong predecessor mu and inflates phi (capped at 350)', () => {
+    const seed = seedSuccessorRating(withGames({ mu: 1700, phi: 60 }));
+    expect(seed).not.toBeNull();
+    expect(seed!.mu).toBe(1700);
+    expect(seed!.phi).toBe(90); // 60 * 1.5
+    expect(seed!.wins).toBe(0);
+    expect(seed!.losses).toBe(0);
+  });
+
+  it('caps inflated phi at DEFAULT_PHI (350)', () => {
+    const seed = seedSuccessorRating(withGames({ mu: 1700, phi: 300 }));
+    expect(seed!.phi).toBe(350); // min(300*1.5=450, 350)
+  });
+
+  it('low-side clamp: a below-average predecessor (mu<1500) is inherited fully, NO phi inflation', () => {
+    const seed = seedSuccessorRating(withGames({ mu: 1300, phi: 80 }));
+    expect(seed!.mu).toBe(1300);
+    expect(seed!.phi).toBe(80); // unchanged — can't escape a bad rating by version-bumping
+  });
+
+  it('returns null when the predecessor is too green to inherit from', () => {
+    expect(seedSuccessorRating({ ...rating(1800), wins: 1, losses: 1 })).toBeNull(); // 2 games < MIN_INHERIT_GAMES
+  });
+});
+
+describe('seedEnginesFromLineage', () => {
+  const withGames = (mu: number): GlickoRating => ({ ...rating(mu), wins: 10, losses: 3 });
+
+  it('seeds a new engine from its rated predecessor and records provenance', () => {
+    const r = ratings({ global: { 'opus-4.7': withGames(1750) } });
+    const seeded = seedEnginesFromLineage(r, { 'opus-4.8': 'opus-4.7' });
+    expect(seeded).toEqual(['opus-4.8']);
+    expect(r.global['opus-4.8'].mu).toBe(1750);
+    expect(r.engineMeta['opus-4.8'].derivedFrom).toBe('opus-4.7');
+    expect(r.engineMeta['opus-4.7'].versions).toContain('opus-4.8');
+  });
+
+  it('skips engines that already have a rating, or whose predecessor is unrated', () => {
+    const r = ratings({ global: { 'opus-4.7': withGames(1750), 'opus-4.8': rating(1500) } });
+    expect(seedEnginesFromLineage(r, { 'opus-4.8': 'opus-4.7', 'kimi-3': 'kimi-2-missing' })).toEqual([]);
   });
 });

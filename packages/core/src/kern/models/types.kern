@@ -62,6 +62,10 @@ interface name=EngineDefinition
   field name=modes type="EngineMode[]" optional=true
   field name=modelConfigKey type=string optional=true
   field name=adapterType type=string optional=true
+  field name=family type=string optional=true
+    doc "Model family for rating lineage (e.g. 'opus', 'kimi'). Lets a new version inherit a sibling's Glicko rating at cold-start."
+  field name=derivedFrom type=string optional=true
+    doc "Engine id this version supersedes (e.g. opus-4.8 derivedFrom opus-4.7). At cold-start the new engine inherits the predecessor's Glicko mu with inflated uncertainty. See seedSuccessorRating."
   field name=capabilities type="string[]" optional=true
   field name=imageFlag type=string optional=true
   field name=systemPromptFlag type=string optional=true
@@ -161,7 +165,7 @@ interface name=EngineMeta
 
 interface name=RatingRecord
   field name=global type="Record<string,GlickoRating>"
-  field name=byMode type="{forge:Record<string,GlickoRating>,brainstorm:Record<string,GlickoRating>,tribunal:Record<string,GlickoRating>}"
+  field name=byMode type="{forge:Record<string,GlickoRating>,brainstorm:Record<string,GlickoRating>,tribunal:Record<string,GlickoRating>,critique:Record<string,GlickoRating>}"
   field name=byTaskClass type="Record<string,Record<string,GlickoRating>>"
   field name=engineMeta type="Record<string,EngineMeta>"
   field name=lastUpdated type=string

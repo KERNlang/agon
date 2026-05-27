@@ -46,7 +46,7 @@ export function handleLeaderboard(dispatch: Dispatch): void {
   }
   dispatch({ type: 'table', headers: ['#', 'Engine', 'Rating', '+/-', 'W', 'L', 'Win%'], rows });
 
-  const modes = ['forge', 'brainstorm', 'tribunal'] as const;
+  const modes = ['forge', 'brainstorm', 'tribunal', 'critique'] as const;
   const modeInfo = modes
     .filter(m => Object.keys(ratings.byMode[m]).length > 0)
     .map(m => `${m}: ${Object.values(ratings.byMode[m]).reduce((s: number, r: any) => s + r.wins + r.losses, 0)} matches`);

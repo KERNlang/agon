@@ -12,7 +12,7 @@
 // pool so Nero never grades its own homework.
 
 import from="@agon/core" names="EngineAdapter" types=true
-import from="@agon/core" names="EngineRegistry,getRatings,pickTopRatedEngine,resolveWorkingDir"
+import from="@agon/core" names="EngineRegistry,getRatings,pickTopRatedEngine,resolveWorkingDir,seedNewEnginesFromRegistry"
 
 interface name=NeroOptions
   field name=decision type=string
@@ -33,7 +33,7 @@ interface name=NeroResult
   field name=ok type=boolean
   field name=engineId type=string
   field name=reason type="'top-rated' | 'random' | 'forced' | 'none'"
-  field name=scope type="'forge' | 'brainstorm' | 'tribunal' | 'global' | null"
+  field name=scope type="'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null"
   field name=verdict type="'flawed' | 'proceed-with-caution' | 'sound' | 'unknown'"
   field name=challengeConfidence type="number | null"
   field name=challengeText type=string
@@ -104,19 +104,24 @@ fn name=parseNeroConfidence params="text:string" returns="number | null" export=
   >>>
 
 fn name=runNero async=true params="opts:NeroOptions" returns="Promise<NeroResult>" export=true
-  doc "Run a one-shot adversarial challenge. Picks the top-rated adversarial engine (tribunal discipline -> global -> random), excluding any author in opts.exclude, then dispatches the Nero prompt and parses the verdict + confidence."
+  doc "Run a one-shot adversarial challenge. Picks the top-rated adversarial engine (critique -> tribunal -> global -> random), excluding any author in opts.exclude, then dispatches the Nero prompt and parses the verdict + confidence."
   handler <<<
+    // Seed newly-dropped model versions so a fresh critic (with declared lineage) is
+    // eligible in the cascade instead of being skipped until another competition rates it.
+    seedNewEnginesFromRegistry(opts.registry);
     const ratings = getRatings();
     let engineId = '';
     let reason: 'top-rated' | 'random' | 'forced' | 'none' = 'none';
-    let scope: 'forge' | 'brainstorm' | 'tribunal' | 'global' | null = null;
+    let scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null = null;
 
     const forced = opts.engine?.trim();
     if (forced && opts.engines.includes(forced)) {
       engineId = forced;
       reason = 'forced';
     } else {
-      const picked = pickTopRatedEngine(opts.engines, ratings, { mode: 'tribunal', exclude: opts.exclude });
+      // Prefer a proven critic (critique discipline, fed by adversarial tribunals),
+      // fall back to adversarial-debate skill (tribunal), then global, then random.
+      const picked = pickTopRatedEngine(opts.engines, ratings, { modes: ['critique', 'tribunal'], exclude: opts.exclude });
       engineId = picked.engineId;
       reason = picked.reason;
       scope = picked.scope;

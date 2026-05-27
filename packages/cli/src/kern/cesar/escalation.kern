@@ -128,9 +128,8 @@ fn name=fireNero async=true params="input:string, response:string, confidence:nu
     const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
     const activeIds = (ctx.activeEngines?.() ?? []).filter(Boolean);
     const neroPool = activeIds.length > 0 ? activeIds : [cesarEngineId];
-    const picked = pickTopRatedEngine(neroPool, getRatings(), { mode: 'tribunal', exclude: [cesarEngineId] });
+    const picked = pickTopRatedEngine(neroPool, getRatings(), { modes: ['critique', 'tribunal'], exclude: [cesarEngineId] });
     const neroEngineId = picked.engineId || cesarEngineId;
-    const cesarEngine = ctx.registry.get(neroEngineId);
     const outDir = join(RUNS_DIR, `nero-${Date.now()}`);
     mkdirSync(outDir, { recursive: true });
 
@@ -146,8 +145,11 @@ Be specific and direct:
 3. Start with ~X% for how confident YOU are that the original is correct.`;
 
     try {
+      // registry.get THROWS on an unknown id — keep it inside the try so a stale
+      // cesarEngineId fallback degrades to null (skip Nero) instead of crashing.
+      const neroEngine = ctx.registry.get(neroEngineId);
       const result = await ctx.adapter.dispatch({
-        engine: cesarEngine,
+        engine: neroEngine,
         prompt: neroPrompt,
         cwd: resolveWorkingDir(),
         mode: 'exec' as any,

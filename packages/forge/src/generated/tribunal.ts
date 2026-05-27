@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { EngineAdapter, EngineDefinition, ForgeEvent, DispatchResult } from '@agon/core';
 
-import { EngineRegistry, buildTribunalPrompt, createSidechainLogger, updateGlickoRanked, classifyTask, loadConfig } from '@agon/core';
+import { EngineRegistry, buildTribunalPrompt, createSidechainLogger, updateGlickoRanked, classifyTask, loadConfig, seedNewEnginesFromRegistry } from '@agon/core';
 
 import type { TribunalMode, TribunalModeConfig } from './tribunal-modes.js';
 
@@ -77,6 +77,10 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
   const { question, engines, rounds, registry, adapter, timeout, outputDir } = opts;
   const signal = opts.signal;
   const mode = opts.mode ?? 'adversarial';
+  // Cold-start: seed any newly-dropped model version (EngineDefinition.derivedFrom)
+  // from its predecessor BEFORE competing, so it enters ranked play at its family's
+  // strength rather than the 1500 default.
+  seedNewEnginesFromRegistry(registry);
   const modeConfig = getModeConfig(mode, engines.length);
 
   // Assign roles from mode config
@@ -252,6 +256,11 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
       })
       .sort((a: any, b: any) => b.score - a.score);
     updateGlickoRanked(tribunalRanked, taskClass, 'tribunal');
+    // Adversarial / red-team tribunals ARE critique competitions (attack + refute),
+    // so feed the same ranking into the 'critique' discipline that Nero selects on.
+    if (mode === 'adversarial' || mode === 'red-team') {
+      updateGlickoRanked(tribunalRanked, taskClass, 'critique');
+    }
   }
 
   return { question, rounds: allRounds, positions, summary, mode };

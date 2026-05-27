@@ -23,6 +23,7 @@ import { goalCommand } from './commands/goal.js';
 import { synthesisCommand } from './commands/synthesis.js';
 import { askCommand } from './commands/ask.js';
 import { thinkCommand } from './commands/think.js';
+import { neroCommand } from './commands/nero.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { loginCommand } from './commands/login.js';
 import { startRepl } from './repl.js';
@@ -181,6 +182,7 @@ const main = defineCommand({
     synthesis: synthesisCommand,
     ask: askCommand,
     think: thinkCommand,
+    nero: neroCommand,
     worktree: worktreeCommand,
     wt: worktreeCommand,
     login: loginCommand,

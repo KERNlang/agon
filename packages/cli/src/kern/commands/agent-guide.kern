@@ -30,6 +30,7 @@ const name=agentGuideCommand type=any
               { name: 'tribunal', cmd: 'agon tribunal "<question>" --mode adversarial', use: 'decisions with real tradeoffs' },
               { name: 'campfire', cmd: 'agon campfire "<topic>"', use: 'open exploration, no winner' },
               { name: 'think', cmd: 'agon think "<problem>" --strategy reflexion [--steps N --branches N]', use: 'sequential thinking — decompose a problem (optionally branch) and surface open questions before acting' },
+              { name: 'nero', cmd: 'agon nero "<decision>" --reasoning "<why>"', use: 'adversarial self-challenge — the top-rated critic attacks YOUR decision and returns a verdict. Use this instead of an internal evil-twin/devils-advocate pass' },
               { name: 'review', cmd: 'agon review uncommitted', use: 'multi-engine code review' },
               { name: 'goal', cmd: 'agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"', use: 'autonomously drive a task queue to completion (build->review->fix->commit per task); long-running' },
             ],

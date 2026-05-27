@@ -6,58 +6,73 @@ import { dirname, join, resolve } from 'node:path';
 
 import { homedir } from 'node:os';
 
-import type { GlickoRating, RatingRecord, EngineMeta, TaskClass } from '../models/types.js';
+import type { GlickoRating, RatingRecord, EngineMeta, TaskClass, EngineDefinition } from '../models/types.js';
 
-// @kern-source: glicko:10
+import type { EngineRegistry } from './engine-registry.js';
+
+// @kern-source: glicko:11
 function ratingsPath(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'ratings.json');
 }
 
-// @kern-source: glicko:17
+// @kern-source: glicko:18
 export const GLICKO_SCALE: number = 173.7178;
 
-// @kern-source: glicko:19
+// @kern-source: glicko:20
 export const DEFAULT_MU: number = 1500;
 
-// @kern-source: glicko:21
+// @kern-source: glicko:22
 export const DEFAULT_PHI: number = 350;
 
-// @kern-source: glicko:23
+// @kern-source: glicko:24
 export const DEFAULT_SIGMA: number = 0.06;
 
 /**
  * System constant — constrains volatility change. Lower = more conservative.
  */
-// @kern-source: glicko:25
+// @kern-source: glicko:26
 export const TAU: number = 0.5;
 
-// @kern-source: glicko:28
+// @kern-source: glicko:29
 export const CONVERGENCE_TOLERANCE: number = 0.000001;
 
-// @kern-source: glicko:30
+// @kern-source: glicko:31
 export function defaultGlickoRating(): GlickoRating {
   return { mu: DEFAULT_MU, phi: DEFAULT_PHI, sigma: DEFAULT_SIGMA, wins: 0, losses: 0, lastActive: new Date().toISOString() };
 }
 
-// @kern-source: glicko:34
+// @kern-source: glicko:35
 export function defaultEngineMeta(): EngineMeta {
   const now = new Date().toISOString();
   return { firstSeen: now, lastActive: now, matchCount: 0, derivedFrom: null, versions: [] };
 }
 
-// @kern-source: glicko:39
+// @kern-source: glicko:40
 export function loadRatings(): RatingRecord {
   try {
-    return JSON.parse(readFileSync(ratingsPath(), 'utf-8')) as RatingRecord;
+    const parsed = JSON.parse(readFileSync(ratingsPath(), 'utf-8')) as RatingRecord;
+    // Normalize legacy files: guarantee every scope exists so callers that
+    // enumerate byMode (leaderboard/info) or select by a newer discipline
+    // (e.g. 'critique', added after some ratings files were written) never hit
+    // undefined — Object.keys(undefined) would throw.
+    parsed.global ??= {};
+    parsed.byMode ??= { forge: {}, brainstorm: {}, tribunal: {}, critique: {} };
+    parsed.byMode.forge ??= {};
+    parsed.byMode.brainstorm ??= {};
+    parsed.byMode.tribunal ??= {};
+    parsed.byMode.critique ??= {};
+    parsed.byTaskClass ??= {};
+    parsed.engineMeta ??= {};
+    return parsed;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       console.warn(`[agon] failed to load ratings: ${err instanceof Error ? err.message : String(err)}`);
     }
     return {
       global: {},
-      byMode: { forge: {}, brainstorm: {}, tribunal: {} },
+      byMode: { forge: {}, brainstorm: {}, tribunal: {}, critique: {} },
       byTaskClass: {},
       engineMeta: {},
       lastUpdated: new Date().toISOString(),
@@ -65,7 +80,7 @@ export function loadRatings(): RatingRecord {
   }
 }
 
-// @kern-source: glicko:57
+// @kern-source: glicko:71
 export function saveRatings(record: RatingRecord): void {
   const path = ratingsPath();
   mkdirSync(dirname(path), { recursive: true });
@@ -78,7 +93,7 @@ export function saveRatings(record: RatingRecord): void {
 /**
  * Load current Glicko-2 ratings.
  */
-// @kern-source: glicko:66
+// @kern-source: glicko:80
 export function getRatings(): RatingRecord {
   return loadRatings();
 }
@@ -86,7 +101,7 @@ export function getRatings(): RatingRecord {
 /**
  * Get a single engine's Glicko-2 rating, optionally for a specific mode.
  */
-// @kern-source: glicko:69
+// @kern-source: glicko:83
 export function getEngineGlickoRating(engineId: string, mode?: string): GlickoRating {
   const record = loadRatings();
   if (mode && record.byMode[mode as keyof typeof record.byMode]) {
@@ -98,7 +113,7 @@ export function getEngineGlickoRating(engineId: string, mode?: string): GlickoRa
 /**
  * Glicko-2 g(phi) function — reduces impact of uncertain opponents.
  */
-// @kern-source: glicko:77
+// @kern-source: glicko:91
 export function glickoG(phi: number): number {
   return 1 / Math.sqrt(1 + 3 * phi * phi / (Math.PI * Math.PI));
 }
@@ -106,7 +121,7 @@ export function glickoG(phi: number): number {
 /**
  * Glicko-2 expected score.
  */
-// @kern-source: glicko:80
+// @kern-source: glicko:94
 export function glickoE(mu: number, muJ: number, phiJ: number): number {
   return 1 / (1 + Math.exp(-glickoG(phiJ) * (mu - muJ)));
 }
@@ -114,8 +129,8 @@ export function glickoE(mu: number, muJ: number, phiJ: number): number {
 /**
  * Single pairwise Glicko-2 update.
  */
-// @kern-source: glicko:83
-export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'): {winnerMu:number, loserMu:number} {
+// @kern-source: glicko:97
+export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'|'critique'): {winnerMu:number, loserMu:number} {
   const record = loadRatings();
   const now = new Date().toISOString();
 
@@ -191,7 +206,7 @@ export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskC
 /**
  * Glicko-2 volatility update via Illinois algorithm (Step 5).
  */
-// @kern-source: glicko:158
+// @kern-source: glicko:172
 export function computeNewSigma(sigma: number, phi: number, v: number, delta: number): number {
   const a = Math.log(sigma * sigma);
   const tau2 = TAU * TAU;
@@ -236,8 +251,8 @@ export function computeNewSigma(sigma: number, phi: number, v: number, delta: nu
 /**
  * Pairwise Glicko-2 updates for all ranked positions. Higher score beats lower score.
  */
-// @kern-source: glicko:201
-export function updateGlickoRanked(ranked: Array<{engineId:string,score:number}>, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'): void {
+// @kern-source: glicko:215
+export function updateGlickoRanked(ranked: Array<{engineId:string,score:number}>, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'|'critique'): void {
   if (ranked.length < 2) return;
   for (let i = 0; i < ranked.length; i++) {
     for (let j = i + 1; j < ranked.length; j++) {
@@ -250,8 +265,8 @@ export function updateGlickoRanked(ranked: Array<{engineId:string,score:number}>
 /**
  * Conservative rating estimate for advisor/starter selection. Returns mu - 2*phi (lower bound of 95% CI).
  */
-// @kern-source: glicko:213
-export function advisorScore(engineId: string, mode: 'forge'|'brainstorm'|'tribunal'): number {
+// @kern-source: glicko:227
+export function advisorScore(engineId: string, mode: 'forge'|'brainstorm'|'tribunal'|'critique'): number {
   const rating = getEngineGlickoRating(engineId, mode);
   // Apply inactivity: increase phi if engine hasn't competed recently
   const daysSinceActive = (Date.now() - new Date(rating.lastActive).getTime()) / 86400000;
@@ -261,4 +276,129 @@ export function advisorScore(engineId: string, mode: 'forge'|'brainstorm'|'tribu
     phi = Math.min(Math.sqrt(phi * phi + rating.sigma * rating.sigma * daysSinceActive), DEFAULT_PHI);
   }
   return Math.round(rating.mu - 2 * phi);
+}
+
+/**
+ * Rank engines by Glicko-2 confidence floor (mu - 2*phi), highest first, WITHIN a scope. When `mode` is given, ranking uses that discipline's byMode ratings (e.g. mode='tribunal' = adversarial/critique skill — the right proxy for a Nero-style critic, since the best BUILDER is not the best CRITIC); otherwise the global pool. Only engines that already hold a rating record IN THAT SCOPE are returned; the rest are omitted so callers can fall back. Ties break on mu, then engine id for determinism.
+ */
+// @kern-source: glicko:239
+export function rankEnginesByRating(engineIds: string[], ratings: RatingRecord, mode?: 'forge'|'brainstorm'|'tribunal'|'critique'): string[] {
+  const scope = mode ? (ratings.byMode[mode] ?? {}) : ratings.global;
+  const rated = engineIds.filter((id) => scope[id] !== undefined);
+  return rated.sort((a, b) => {
+    const ra = scope[a];
+    const rb = scope[b];
+    const floorA = ra.mu - 2 * ra.phi;
+    const floorB = rb.mu - 2 * rb.phi;
+    if (floorB !== floorA) return floorB - floorA;
+    if (rb.mu !== ra.mu) return rb.mu - ra.mu;
+    return a.localeCompare(b);
+  });
+}
+
+/**
+ * Pick the single best engine for a role. Tries each discipline in opts.modes IN ORDER (e.g. ['critique','tribunal'] for Nero — prefer a proven critic, fall back to adversarial-debate skill), then the GLOBAL ranking, then a random engine when NO engine has any rating yet. opts.mode is shorthand for a single-element modes list. opts.exclude drops engines from the pool (e.g. the author being challenged, to avoid grading-own-homework) but is ignored if it would empty the pool. rng is injectable for deterministic tests. scope reports WHICH rating decided the pick.
+ */
+// @kern-source: glicko:255
+export function pickTopRatedEngine(engineIds: string[], ratings: RatingRecord, opts?: { mode?:'forge'|'brainstorm'|'tribunal'|'critique'; modes?:Array<'forge'|'brainstorm'|'tribunal'|'critique'>; exclude?:string[]; rng?:() => number }): { engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null } {
+  const exclude = new Set(opts?.exclude ?? []);
+  let pool = engineIds.filter((id) => !exclude.has(id));
+  if (pool.length === 0) pool = engineIds.slice();
+  if (pool.length === 0) return { engineId: '', reason: 'none' as const, scope: null };
+
+  const tiers = opts?.modes ?? (opts?.mode ? [opts.mode] : []);
+  for (const m of tiers) {
+    const ranked = rankEnginesByRating(pool, ratings, m);
+    if (ranked.length > 0) return { engineId: ranked[0], reason: 'top-rated' as const, scope: m };
+  }
+  const global = rankEnginesByRating(pool, ratings);
+  if (global.length > 0) return { engineId: global[0], reason: 'top-rated' as const, scope: 'global' as const };
+
+  const r = opts?.rng ? opts.rng() : Math.random();
+  const idx = Math.min(pool.length - 1, Math.max(0, Math.floor(r * pool.length)));
+  return { engineId: pool[idx], reason: 'random' as const, scope: null };
+}
+
+// @kern-source: glicko:276
+export const PHI_INHERIT_MULT: number = 1.5;
+
+// @kern-source: glicko:278
+export const MIN_INHERIT_GAMES: number = 5;
+
+/**
+ * Compute the cold-start rating a NEW model version should inherit from its predecessor (engineMeta.derivedFrom). Pure — exported for testing. Returns null when the predecessor is too green to inherit from (caller uses fresh defaults). ANTI-GAMING: a below-average predecessor (mu < 1500) is inherited FULLY with no phi inflation — you can't shed a bad rating by version-bumping; a strong predecessor (mu >= 1500) inherits its mu with inflated (capped) phi so a better model converges quickly. W/L always reset.
+ */
+// @kern-source: glicko:280
+export function seedSuccessorRating(predecessor: GlickoRating): GlickoRating | null {
+  const totalGames = predecessor.wins + predecessor.losses;
+  if (totalGames < MIN_INHERIT_GAMES) return null;
+  const now = new Date().toISOString();
+  if (predecessor.mu < DEFAULT_MU) {
+    // Low-side clamp: keep the low mu AND the converged (low) phi — no fast-climb
+    // benefit. A successor of a weak model must earn its way up.
+    return { mu: predecessor.mu, phi: predecessor.phi, sigma: DEFAULT_SIGMA, wins: 0, losses: 0, lastActive: now };
+  }
+  return {
+    mu: predecessor.mu,
+    phi: Math.min(predecessor.phi * PHI_INHERIT_MULT, DEFAULT_PHI),
+    sigma: DEFAULT_SIGMA,
+    wins: 0,
+    losses: 0,
+    lastActive: now,
+  };
+}
+
+/**
+ * Seed cold-start GLOBAL ratings for new engines that declare a predecessor (lineage: engineId -> derivedFrom id). Mutates `ratings` in place and returns the ids it seeded. Pure (no IO) — exported for testing. Skips an engine that already has a global rating, whose predecessor has no rating yet, or whose predecessor is too green (seedSuccessorRating -> null). Records provenance via the existing engineMeta.derivedFrom + predecessor.versions scaffolding.
+ */
+// @kern-source: glicko:301
+export function seedEnginesFromLineage(ratings: RatingRecord, lineage: Record<string,string>): string[] {
+  const seeded: string[] = [];
+  const disciplines = ['forge', 'brainstorm', 'tribunal', 'critique'] as const;
+  for (const [engineId, predId] of Object.entries(lineage)) {
+    if (!predId || predId === engineId) continue;
+    if (ratings.global[engineId] !== undefined) continue;
+    const pred = ratings.global[predId];
+    if (!pred) continue;
+    const seed = seedSuccessorRating(pred);
+    if (!seed) continue;
+    ratings.global[engineId] = seed;
+    // Inherit per-discipline too, so "applies to all ratings" holds: seed each
+    // discipline where the predecessor has actually competed (gated the same way).
+    for (const disc of disciplines) {
+      const predDisc = ratings.byMode[disc]?.[predId];
+      if (!predDisc) continue;
+      const discSeed = seedSuccessorRating(predDisc);
+      if (discSeed) (ratings.byMode[disc] ??= {})[engineId] = discSeed;
+    }
+    ratings.engineMeta[engineId] ??= defaultEngineMeta();
+    ratings.engineMeta[engineId].derivedFrom = predId;
+    ratings.engineMeta[predId] ??= defaultEngineMeta();
+    if (!ratings.engineMeta[predId].versions.includes(engineId)) ratings.engineMeta[predId].versions.push(engineId);
+    seeded.push(engineId);
+  }
+  return seeded;
+}
+
+/**
+ * Build an engineId -> derivedFrom map from the registered engine definitions (EngineDefinition.derivedFrom). Engines with no declared predecessor are omitted.
+ */
+// @kern-source: glicko:331
+export function lineageFromRegistry(registry: EngineRegistry): Record<string,string> {
+  const map: Record<string, string> = {};
+  for (const def of registry.list() as EngineDefinition[]) {
+    if (def.derivedFrom && def.derivedFrom !== def.id) map[def.id] = def.derivedFrom;
+  }
+  return map;
+}
+
+/**
+ * One-shot cold-start seeding: read engine lineage from the registry, seed any new engine's global rating from its predecessor, and persist if anything changed. Safe to call repeatedly (idempotent — only seeds engines with no rating yet). Call before a competition so a freshly-dropped model version enters ranked play near its family's strength instead of from 1500.
+ */
+// @kern-source: glicko:341
+export function seedNewEnginesFromRegistry(registry: EngineRegistry): string[] {
+  const ratings = loadRatings();
+  const seeded = seedEnginesFromLineage(ratings, lineageFromRegistry(registry));
+  if (seeded.length > 0) saveRatings(ratings);
+  return seeded;
 }

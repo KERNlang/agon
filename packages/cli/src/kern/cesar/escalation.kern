@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="RUNS_DIR,resolveWorkingDir,tracker,appendMessage,classifyTask,rankByTaskClass"
+import from="@agon/core" names="RUNS_DIR,resolveWorkingDir,tracker,appendMessage,classifyTask,rankByTaskClass,getRatings,pickTopRatedEngine"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../signals/icons.js" names="icons"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
@@ -121,8 +121,19 @@ CHECK: the main flaw, risk, or confirmation`;
 fn name=fireNero async=true params="input:string, response:string, confidence:number, ctx:HandlerContext, abort:AbortController" returns="Promise<{ challengeText: string; challengeConfidence: number|null } | null>"
   doc "Same-turn adversarial subagent: spawn a second Cesar instance with a contrarian prompt to attack the original response."
   handler <<<
+    // Nero is the TOP-RATED adversarial engine (critique -> tribunal -> global
+    // Glicko cascade — best builder != best critic), NOT the Cesar engine. The
+    // Cesar author is excluded so Nero never grades its own homework.
     const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
-    const cesarEngine = ctx.registry.get(cesarEngineId);
+    const activeIds = (ctx.activeEngines?.() ?? []).filter(Boolean);
+    const neroPool = activeIds.length > 0 ? activeIds : [cesarEngineId];
+    const picked = pickTopRatedEngine(neroPool, getRatings(), { modes: ['critique', 'tribunal'], exclude: [cesarEngineId] });
+    // Skip rather than self-grade: pickTopRatedEngine restores the excluded author
+    // when it's the ONLY candidate, so a same-engine pick means no genuinely
+    // different critic is available — and self-challenge is exactly the /evil-twin
+    // mirroring we retired. Fire Nero only with a different engine.
+    const neroEngineId = picked.engineId;
+    if (!neroEngineId || neroEngineId === cesarEngineId) return null;
     const outDir = join(RUNS_DIR, `nero-${Date.now()}`);
     mkdirSync(outDir, { recursive: true });
 
@@ -138,8 +149,11 @@ Be specific and direct:
 3. Start with ~X% for how confident YOU are that the original is correct.`;
 
     try {
+      // registry.get THROWS on an unknown id — keep it inside the try so a stale
+      // cesarEngineId fallback degrades to null (skip Nero) instead of crashing.
+      const neroEngine = ctx.registry.get(neroEngineId);
       const result = await ctx.adapter.dispatch({
-        engine: cesarEngine,
+        engine: neroEngine,
         prompt: neroPrompt,
         cwd: resolveWorkingDir(),
         mode: 'exec' as any,

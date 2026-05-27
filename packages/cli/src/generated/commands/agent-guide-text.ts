@@ -18,6 +18,7 @@ export function agentGuideMarkdown(): string {
     '- `agon tribunal "<question>" [--mode adversarial|steelman|socratic|red-team|synthesis|postmortem]` — structured multi-engine debate. Use for decisions with real tradeoffs.',
     '- `agon campfire "<topic>"` — open multi-engine discussion, no winner. For exploration.',
     '- `agon think "<problem>" [--strategy linear|reflexion] [--steps N] [--branches N]` — sequential thinking: decompose a problem into structured thoughts (reflexion forces a self-critique+revision per step; --branches explores alternatives), surface open questions, and emit a refined spec to hand to `agon goal`. Use to think before acting, or for engines with weak built-in reasoning.',
+    '- `agon nero "<decision>" [--reasoning "<why>"] [--focus "<concern>"] [--confidence N]` — adversarial self-challenge. The top-rated CRITIC (picked by tribunal-discipline rating, not the best builder) attacks your decision with concrete failure scenarios and returns a verdict (FLAWED | PROCEED WITH CAUTION | SOUND) plus its own confidence the original is correct. Use this INSTEAD of an internal evil-twin / devil\'s-advocate pass — it gives you a real second model, not your own reasoning mirrored.',
     '- `agon review <uncommitted|branch:NAME|commit:SHA>` — non-interactive multi-engine code review.',
     '- `agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"` — autonomous controller: drives a task queue to completion unattended, looping build -> witness -> gate -> review (panel + judge) -> fix -> commit per task on a goal/ branch. Bound it with `--max-hours`/`--budget`; `--push` pushes each task. Long-running (designed for 8-24h).',
     '',
@@ -40,6 +41,7 @@ export function agentGuideMarkdown(): string {
     '- need ideas / unsure                 -> brainstorm',
     '- explore, no decision needed         -> campfire',
     '- think before acting / decompose     -> think',
+    '- pressure-test your own decision     -> nero',
     '- judge existing code                 -> review',
     '- drive a whole task queue to done    -> goal',
     '',
@@ -50,7 +52,7 @@ export function agentGuideMarkdown(): string {
 /**
  * Per-CLI /agon slash-command shim. format is one of agy | claude | markdown.
  */
-// @kern-source: agent-guide-text:52
+// @kern-source: agent-guide-text:54
 export function agonShim(format: string): string {
   const body = [
     'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, campfire, review, goal).',
@@ -98,7 +100,7 @@ export function agonShim(format: string): string {
 /**
  * Native Codex skill that exposes Agon as $agon.
  */
-// @kern-source: agent-guide-text:98
+// @kern-source: agent-guide-text:100
 export function codexSkillMarkdown(): string {
   return [
     '---',
@@ -133,7 +135,7 @@ export function codexSkillMarkdown(): string {
 /**
  * Codex UI metadata for the Agon skill.
  */
-// @kern-source: agent-guide-text:131
+// @kern-source: agent-guide-text:133
 export function codexSkillOpenAiYaml(): string {
   return [
     'interface:',

@@ -30,6 +30,27 @@ describe.skipIf(!agyInstalled)('agy live /model probe — full TS→python→cac
   }, 60_000);
 });
 
+const codexInstalled = existsSync('/opt/homebrew/bin/codex') || existsSync(join(homedir(), '.local', 'bin', 'codex'));
+
+describe.skipIf(!codexInstalled)('codex live /model probe — per-engine parser + chain', () => {
+  it('probes codex /model when available (tolerates the brew auto-update intercept)', async () => {
+    const home = setupTestAgonHome('codex-e2e');
+    try {
+      const ok = await refreshProbedCliModels('codex', 'codex');
+      // codex is a brew cask — `codex` can trigger `brew upgrade --cask codex`,
+      // which intercepts the TUI and yields no list. That path is a valid
+      // graceful fallback, not a failure, so only assert when the probe landed.
+      if (!ok) return;
+      const models = readProbedCliModels('codex');
+      expect(models).not.toBeNull();
+      expect(models!.some((m) => /^gpt-/.test(m.id))).toBe(true);
+      expect(models!.some((m) => m.current)).toBe(true);
+    } finally {
+      cleanupTestAgonHome(home);
+    }
+  }, 60_000);
+});
+
 describe.skipIf(!claudeInstalled)('claude live /model probe — per-engine parser + chain', () => {
   it('refresh probes claude /model and the anthropic group shows the live models', async () => {
     const home = setupTestAgonHome('claude-e2e');

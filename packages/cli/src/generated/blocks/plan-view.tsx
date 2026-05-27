@@ -9,7 +9,7 @@ import { contentWidth, engineColor, RenderedSegments } from './rendering.js';
 import { parseMarkdownBlocks } from './markdown.js';
 
 // @kern-source: plan-view:24
-const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, costEstimate }: { plan:any; markdown?:string; costEstimate?:{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null }) {
+const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, costEstimate, committed }: { plan:any; markdown?:string; costEstimate?:{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null; committed?:boolean }) {
   const steps = plan.steps ?? [];
   const est = costEstimate;
   const totalTokens = est?.totalTokens ?? plan.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
@@ -54,20 +54,24 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
         <Text dimColor>{thinBar}</Text>
         <RenderedSegments segments={segments} borderColor="" wrapWidth={wrapWidth} />
         <Text dimColor>{thinBar}</Text>
-        <Box>
-          <Text color="#fbbf24" bold>{'Awaiting approval: '}</Text>
-          <Text dimColor>{'press '}</Text>
-          <Text color="#4ade80" bold>{'Y'}</Text>
-          <Text dimColor>{' to approve, '}</Text>
-          <Text color="#ef4444" bold>{'N'}</Text>
-          <Text dimColor>{' to reject (or type '}</Text>
-          <Text color="#4ade80" bold>{'go'}</Text>
-          <Text dimColor>{' / '}</Text>
-          <Text color="#4ade80" bold>{'/approve'}</Text>
-          <Text dimColor>{' / '}</Text>
-          <Text color="#ef4444" bold>{'/cancel'}</Text>
-          <Text dimColor>{').'}</Text>
-        </Box>
+        {committed ? (
+          <Text dimColor>{'Plan moved to history.'}</Text>
+        ) : (
+          <Box>
+            <Text color="#fbbf24" bold>{'Awaiting approval: '}</Text>
+            <Text dimColor>{'press '}</Text>
+            <Text color="#4ade80" bold>{'Y'}</Text>
+            <Text dimColor>{' to approve, '}</Text>
+            <Text color="#ef4444" bold>{'N'}</Text>
+            <Text dimColor>{' to reject (or type '}</Text>
+            <Text color="#4ade80" bold>{'go'}</Text>
+            <Text dimColor>{' / '}</Text>
+            <Text color="#4ade80" bold>{'/approve'}</Text>
+            <Text dimColor>{' / '}</Text>
+            <Text color="#ef4444" bold>{'/cancel'}</Text>
+            <Text dimColor>{').'}</Text>
+          </Box>
+        )}
       </Box>
     );
   }
@@ -186,24 +190,28 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
       })}
 
       <Text dimColor>{thinBar}</Text>
-      <Box>
-        <Text color="#fbbf24" bold>{'Awaiting approval: '}</Text>
-        <Text dimColor>{'type '}</Text>
-        <Text color="#4ade80" bold>{'go'}</Text>
-        <Text dimColor>{', '}</Text>
-        <Text color="#4ade80" bold>{'yes'}</Text>
-        <Text dimColor>{', or '}</Text>
-        <Text color="#4ade80" bold>{'/approve'}</Text>
-        <Text dimColor>{' to execute. Type '}</Text>
-        <Text color="#ef4444" bold>{'/cancel'}</Text>
-        <Text dimColor>{' to reject.'}</Text>
-      </Box>
+      {committed ? (
+        <Text dimColor>{'Plan moved to history.'}</Text>
+      ) : (
+        <Box>
+          <Text color="#fbbf24" bold>{'Awaiting approval: '}</Text>
+          <Text dimColor>{'type '}</Text>
+          <Text color="#4ade80" bold>{'go'}</Text>
+          <Text dimColor>{', '}</Text>
+          <Text color="#4ade80" bold>{'yes'}</Text>
+          <Text dimColor>{', or '}</Text>
+          <Text color="#4ade80" bold>{'/approve'}</Text>
+          <Text dimColor>{' to execute. Type '}</Text>
+          <Text color="#ef4444" bold>{'/cancel'}</Text>
+          <Text dimColor>{' to reject.'}</Text>
+        </Box>
+      )}
     </Box>
   );
 });
 export { PlanProposalView };
 
-// @kern-source: plan-view:224
+// @kern-source: plan-view:233
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');

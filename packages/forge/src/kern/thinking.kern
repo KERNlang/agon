@@ -20,8 +20,11 @@
 //   - Prompt-scaffold path (single structured dispatch, parsed back) — works
 //     for engines with weak/absent adaptive thinking, which is the point.
 //
-// Deferred to v1.5+: tot/graph strategies, per-thought multi-engine
-// adversarial critique, branch pruning, calibrated stopping, engine rotation.
+// v1.5 (this change): tot (self-scored branch selection + pruning), graph
+// (branch merge), and hypothesis (competing-hypothesis elimination) strategies,
+// plus optional multi-engine adversarial critique (a second `critic` engine
+// attacks the chain). Still deferred: calibrated stopping, per-thought engine
+// rotation, true multi-roundtrip tree search (we do single-dispatch self-scoring).
 
 import from="node:fs" names="existsSync"
 import from="@agon/core" names="EngineAdapter" types=true
@@ -63,6 +66,8 @@ interface name=ThoughtNode
   field name=needsMoreThoughts type=boolean optional=true
   field name=grounded type=boolean optional=true
   field name=groundingNote type=string optional=true
+  field name=branchScore type=number optional=true
+  field name=pruned type=boolean optional=true
 
 // ── Handoff artifact — consumable by `agon goal` (the think→ask→goal seam) ──
 
@@ -76,12 +81,15 @@ interface name=ThinkResult
   field name=refinedSpec type=string
   field name=protocolValid type=boolean
   field name=groundingIssues type="string[]"
+  field name=chosenBranch type=string optional=true
+  field name=adversarialCritique type=string optional=true
+  field name=criticEngineId type=string optional=true
   field name=ok type=boolean
 
 // ── Strategy validation ─────────────────────────────────────────────
 
-fn name=isThinkStrategy params="s:string" returns=boolean export=true expr={{ return s === 'linear' || s === 'reflexion'; }}
-  doc "v1 ships `linear` and `reflexion`. tot/graph/hypothesis are deferred — adding one is a new transition pattern over ThinkChain, not a rewrite."
+fn name=isThinkStrategy params="s:string" returns=boolean export=true expr={{ return s === 'linear' || s === 'reflexion' || s === 'tot' || s === 'graph' || s === 'hypothesis'; }}
+  doc "Strategies: linear (classic), reflexion (forced critique+revision per step), tot (self-scored branches, prune to the winner), graph (branch then merge), hypothesis (competing hypotheses, eliminate losers). Each is a transition pattern over the same ThinkChain machine."
 
 fn name=joinProblemInput params="named:string|undefined, positionals:string[]" returns=string export=true
   doc "Combine citty's named positional with its `_` extras into one problem string. citty mirrors the named positional into `_`, so the first extra is dropped when it equals `named` — this prevents the doubled-prompt bug while still folding in trailing unquoted words."
@@ -104,7 +112,8 @@ fn name=buildThinkPrompt params="problem:string, strategy:string, maxThoughts:nu
       '  "thoughts": [',
       '    { "thoughtNumber": 1, "totalThoughts": <est>, "thought": "<one reasoning step>",',
       '      "kind": "analysis"|"critique"|"revision"|"decision"|"question"|"decompose"|"hypothesis",',
-      '      "nextThoughtNeeded": true|false, "branchId": "<optional A/B/C>", "branchFromThought": <optional number> }',
+      '      "nextThoughtNeeded": true|false, "branchId": "<optional A/B/C>", "branchFromThought": <optional number>,',
+      '      "branchScore": <optional 0-100, how promising this branch is> }',
       '  ],',
       '  "summary": "<the conclusion in 1-3 sentences>",',
       '  "openQuestions": ["<question the user must answer before implementation>"],',
@@ -127,6 +136,33 @@ fn name=buildThinkPrompt params="problem:string, strategy:string, maxThoughts:nu
       'each building on the last. Surface assumptions explicitly as their own thoughts.',
     ].join('\n');
 
+    const tot = [
+      'METHOD = tree-of-thoughts. Branch into the candidate next-steps at each pivotal',
+      'decision, tag each with a "branchId", and give every branch thought a "branchScore"',
+      '(0-100) estimating how promising that path is. Pursue the strongest branches; abandon',
+      'weak ones. In "summary" name the winning branchId and why it beat the others.',
+    ].join('\n');
+
+    const graph = [
+      'METHOD = graph-of-thoughts. Explore alternative branches (each with a "branchId"),',
+      'then MERGE the strongest ideas from multiple branches into a combined "decision"',
+      'thought that is better than any single branch. Reference the branches you merged.',
+    ].join('\n');
+
+    const hypothesis = [
+      'METHOD = hypothesis-elimination. First state at least TWO competing "hypothesis"',
+      'thoughts. Then seek DISCRIMINATING evidence ("analysis"/"critique") that tells them',
+      'apart and eliminates the losers. End with a "decision" naming the surviving hypothesis.',
+      'Do not anchor on the first idea — the point is to actively try to kill each hypothesis.',
+    ].join('\n');
+
+    const method =
+      strategy === 'reflexion' ? reflexion :
+      strategy === 'tot' ? tot :
+      strategy === 'graph' ? graph :
+      strategy === 'hypothesis' ? hypothesis :
+      linear;
+
     const branching = branches > 1
       ? [
           '',
@@ -140,7 +176,7 @@ fn name=buildThinkPrompt params="problem:string, strategy:string, maxThoughts:nu
 
     return [
       'You are a structured sequential reasoner. Think step by step about the task below.',
-      strategy === 'reflexion' ? reflexion : linear,
+      method,
       branching,
       '',
       'TASK:',
@@ -231,6 +267,7 @@ fn name=parseThoughts params="raw:string, maxThoughts:number" returns="{thoughts
         branchFromThought: Number.isFinite(t?.branchFromThought) ? Number(t.branchFromThought) : undefined,
         branchId: typeof t?.branchId === 'string' ? t.branchId : undefined,
         needsMoreThoughts: t?.needsMoreThoughts === true ? true : undefined,
+        branchScore: Number.isFinite(t?.branchScore) ? Math.max(0, Math.min(100, Number(t.branchScore))) : undefined,
       };
     });
 
@@ -318,16 +355,93 @@ fn name=validateChain params="thoughts:ThoughtNode[], strategy:string" returns=b
       const hasRevision = thoughts.some((t) => t.kind === 'revision');
       if (!hasCritique || !hasRevision) return false;
     }
+    // hypothesis-elimination must actually weigh >=2 competing hypotheses.
+    if (strategy === 'hypothesis') {
+      const hypotheses = thoughts.filter((t) => t.kind === 'hypothesis').length;
+      if (hypotheses < 2) return false;
+    }
     return true;
+  >>>
+
+// ── Branch selection (tot): keep the best-scored branch, prune the rest ──
+
+fn name=selectBranch params="thoughts:ThoughtNode[]" returns="{thoughts:ThoughtNode[], chosenBranch?:string}" export=true
+  doc "For branched chains: pick the branchId with the highest mean branchScore and mark thoughts in the losing branches pruned=true. Shared (branchId-less) lead-up thoughts are never pruned. Returns chosenBranch=undefined when there are fewer than two branches."
+  handler <<<
+    const byBranch = new Map<string, ThoughtNode[]>();
+    for (const t of thoughts) {
+      if (!t.branchId || !t.branchId.trim()) continue;
+      const id = t.branchId.trim();
+      const arr = byBranch.get(id) ?? [];
+      arr.push(t);
+      byBranch.set(id, arr);
+    }
+    if (byBranch.size < 2) return { thoughts, chosenBranch: undefined };
+
+    let chosen: string | undefined;
+    let best = -1;
+    let anyScored = false;
+    for (const [id, group] of byBranch) {
+      const scored = group.filter((t) => Number.isFinite(t.branchScore as number));
+      if (scored.length > 0) anyScored = true;
+      const mean = scored.length > 0
+        ? scored.reduce((a, t) => a + (t.branchScore ?? 0), 0) / scored.length
+        : 0;
+      if (mean > best) { best = mean; chosen = id; }
+    }
+    // No branch carried a score → selection would be arbitrary; don't claim one.
+    if (!chosen || !anyScored) return { thoughts, chosenBranch: undefined };
+
+    const pruned = thoughts.map((t) =>
+      (t.branchId && t.branchId.trim() && t.branchId.trim() !== chosen)
+        ? { ...t, pruned: true }
+        : t);
+    return { thoughts: pruned, chosenBranch: chosen };
+  >>>
+
+// ── Multi-engine adversarial critique (what the MCP original can't do) ──
+
+fn name=runAdversarialCritique async=true params="opts:{problem:string, thoughts:ThoughtNode[], summary:string, criticId:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, cwd?:string, signal?:AbortSignal}" returns="Promise<string>" export=true
+  doc "Have a SECOND engine attack the chain — the cross-engine adversarial check the single-model MCP original cannot do. Returns terse critique bullets, or '' if the critic is unavailable/empty."
+  handler <<<
+    try {
+      const critic = opts.registry.get(opts.criticId);
+      const chainText = opts.thoughts.map((t) => `${t.thoughtNumber}. [${t.kind}] ${t.thought}`).join('\n');
+      const prompt = [
+        `A reasoner produced this chain for the task: ${opts.problem}`,
+        '',
+        chainText,
+        '',
+        `Conclusion: ${opts.summary}`,
+        '',
+        'You are an adversarial critic. In <=6 bullets, name the laziest, weakest, wrong, unsupported, or missing steps. Be specific and harsh. Do NOT rewrite the chain.',
+      ].join('\n');
+      const result = await opts.adapter.dispatch({
+        engine: critic,
+        prompt,
+        systemPrompt: 'You are an adversarial reviewer of a reasoning chain. Respond with terse, specific critique bullets only. Do NOT use tools, read files, or run commands.',
+        cwd: opts.cwd ?? process.cwd(),
+        mode: 'exec',
+        timeout: opts.timeout,
+        outputDir: opts.outputDir,
+        signal: opts.signal,
+      });
+      const out = String(result.stdout ?? '').trim();
+      return (result.exitCode === 0 && !result.timedOut && out) ? out : '';
+    } catch (err) {
+      console.warn(`[agon] think adversarial critique (${opts.criticId}) failed: ${err instanceof Error ? err.message : String(err)}`);
+      return '';
+    }
   >>>
 
 // ── Orchestrator ────────────────────────────────────────────────────
 
-fn name=runThinkChain async=true params="opts:{problem:string, strategy:string, engineId:string, registry:EngineRegistry, adapter:EngineAdapter, maxThoughts:number, branches?:number, timeout:number, outputDir:string, ground:boolean, signal?:AbortSignal}" returns="Promise<ThinkResult>" export=true
-  doc "Run one sequential-thinking chain via a single structured dispatch, then ground + machine-validate the result. Pure prompt-scaffold path (no engine tools) so it works for engines with weak/absent adaptive thinking. branches>1 asks for that many alternative reasoning branches (emission only — no auto-scoring). Returns a ThinkResult whose refinedSpec is the handoff to `agon goal`."
+fn name=runThinkChain async=true params="opts:{problem:string, strategy:string, engineId:string, registry:EngineRegistry, adapter:EngineAdapter, maxThoughts:number, branches?:number, critic?:string, timeout:number, outputDir:string, cwd?:string, ground:boolean, signal?:AbortSignal}" returns="Promise<ThinkResult>" export=true
+  doc "Run one sequential-thinking chain via a single structured dispatch, then ground, machine-validate, select the winning branch (tot only), and optionally run a second `critic` engine to adversarially attack the chain. Pure prompt-scaffold path so it works for engines with weak/absent adaptive thinking. cwd defaults to process.cwd() but callers (e.g. goal --cwd) should pass the target repo so dispatch + grounding resolve there. Returns a ThinkResult whose refinedSpec is the handoff to `agon goal`."
   handler <<<
     const strategy = isThinkStrategy(opts.strategy) ? opts.strategy : 'linear';
     const branches = Math.max(1, Math.min(opts.branches ?? 1, 8));
+    const cwd = opts.cwd ?? process.cwd();
     const engine = opts.registry.get(opts.engineId);
     const prompt = buildThinkPrompt(opts.problem, strategy, opts.maxThoughts, branches);
 
@@ -338,7 +452,7 @@ fn name=runThinkChain async=true params="opts:{problem:string, strategy:string, 
         engine,
         prompt,
         systemPrompt: 'You are a structured sequential reasoner. Output ONLY the JSON object requested. Do NOT use tools, read files, or run commands.',
-        cwd: process.cwd(),
+        cwd,
         mode: 'exec',
         timeout: opts.timeout,
         outputDir: opts.outputDir,
@@ -372,20 +486,52 @@ fn name=runThinkChain async=true params="opts:{problem:string, strategy:string, 
     const cap = Math.min(opts.maxThoughts * branches, 80);
     const parsed = parseThoughts(raw, cap);
     const grounded = opts.ground
-      ? groundThoughts(parsed.thoughts, process.cwd())
+      ? groundThoughts(parsed.thoughts, cwd)
       : { thoughts: parsed.thoughts, issues: [] as string[] };
     const protocolValid = validateChain(grounded.thoughts, strategy);
+
+    // tot picks the best-scored branch and prunes losers. graph/hypothesis
+    // keep all branches (graph MERGES them; pruning would misrepresent that).
+    const selected = strategy === 'tot'
+      ? selectBranch(grounded.thoughts)
+      : { thoughts: grounded.thoughts, chosenBranch: undefined as string | undefined };
+
+    // Optional second-engine adversarial critique (skip if it is the same engine).
+    let adversarialCritique: string | undefined;
+    let criticEngineId: string | undefined;
+    const criticId = opts.critic?.trim();
+    if (criticId && criticId !== opts.engineId) {
+      const critique = await runAdversarialCritique({
+        problem: opts.problem,
+        thoughts: selected.thoughts,
+        summary: parsed.summary,
+        criticId,
+        registry: opts.registry,
+        adapter: opts.adapter,
+        timeout: opts.timeout,
+        outputDir: opts.outputDir,
+        cwd,
+        signal: opts.signal,
+      });
+      if (critique) {
+        adversarialCritique = critique;
+        criticEngineId = criticId;
+      }
+    }
 
     return {
       problem: opts.problem,
       strategy,
       engineId: opts.engineId,
-      thoughts: grounded.thoughts,
+      thoughts: selected.thoughts,
       summary: parsed.summary,
       openQuestions: parsed.openQuestions,
       refinedSpec: parsed.refinedSpec || opts.problem,
       protocolValid,
       groundingIssues: grounded.issues,
+      chosenBranch: selected.chosenBranch,
+      adversarialCritique,
+      criticEngineId,
       ok: true,
     };
   >>>

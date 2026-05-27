@@ -131,7 +131,7 @@ describe('persistent session streaming dedupe', () => {
       }
     }));
 
-    const { createCompanionSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+    const { createCompanionSession } = await import('../../packages/core/src/persistent-session.js');
     const session = createCompanionSession({
       engine: {
         id: 'codex',
@@ -178,7 +178,7 @@ describe('persistent session streaming dedupe', () => {
       }
     }));
 
-    const { createCompanionSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+    const { createCompanionSession } = await import('../../packages/core/src/persistent-session.js');
     const session = createCompanionSession({
       engine: {
         id: 'codex',
@@ -237,7 +237,7 @@ describe('persistent session streaming dedupe', () => {
       return proc;
     });
 
-    const { createStreamJsonSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+    const { createStreamJsonSession } = await import('../../packages/core/src/persistent-session.js');
     const session = createStreamJsonSession({
       engine: { id: 'claude', binary: 'claude' } as any,
       binaryPath: '/usr/local/bin/claude',
@@ -255,7 +255,7 @@ describe('persistent session streaming dedupe', () => {
     const testHome = setupTestAgonHome('persistent-session-continuity-default-off');
     try {
       const { saveSessionState, saveConversation, clearSessionState, clearConversation } = await import('@agon/core');
-      const { createResumeSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+      const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
 
       saveSessionState('gemini', {
         messageHistory: [
@@ -295,7 +295,7 @@ describe('persistent session streaming dedupe', () => {
     const testHome = setupTestAgonHome('persistent-session-continuity');
     try {
       const { saveSessionState, saveConversation, clearSessionState, clearConversation } = await import('@agon/core');
-      const { createResumeSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+      const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
 
       saveSessionState('gemini', {
         messageHistory: [
@@ -336,7 +336,7 @@ describe('persistent session streaming dedupe', () => {
   });
 
   it('does not session-cache Read calls above the mtime-aware Read tool in API loops', async () => {
-    const { createResumeSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+    const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
     let readCount = 0;
     apiStreamDispatchWithHistoryMock.mockImplementation(() => streamTextToolCall('Read', { file_path: 'package.json' }));
 
@@ -366,7 +366,7 @@ describe('persistent session streaming dedupe', () => {
   });
 
   it('executes native tool calls from structured parts, not the text round-trip (args containing </tool> survive)', async () => {
-    const { createResumeSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+    const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
     // An arg value that WOULD be mangled by the <tool>{json}</tool> regex round-trip.
     const trickyArgs = { command: 'echo "</tool> and <tool name=\\"x\\">"' };
     let captured: { name: string; args: any } | null = null;
@@ -407,7 +407,7 @@ describe('persistent session streaming dedupe', () => {
   });
 
   it('recovers once from repeated stale-read retry batches before hard-stopping', async () => {
-    const { createResumeSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+    const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
     let readCount = 0;
     apiStreamDispatchWithHistoryMock
       .mockImplementationOnce(() => streamStaleReadRetryBatch(25))
@@ -448,7 +448,7 @@ describe('persistent session streaming dedupe', () => {
   });
 
   it('does not stop stale-read narration when the engine reads different files', async () => {
-    const { createResumeSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+    const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
     let readCount = 0;
     apiStreamDispatchWithHistoryMock
       .mockImplementationOnce(() => streamStaleReadRetryBatchFrom(0, 2))

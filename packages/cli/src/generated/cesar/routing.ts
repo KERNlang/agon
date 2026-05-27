@@ -301,9 +301,14 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
   // Suppress the ProposePlan suggestion when we're already inside a running
   // plan step — calling it from there creates a nested plan, which is
   // blocked downstream and pollutes the transcript with policy errors.
-  const insideActivePlan = ctx.activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(ctx.activePlan.state);
+  // awaiting_approval is handled separately: the plan is only a proposal the
+  // user hasn't accepted, so Cesar IS allowed to replace it.
+  const insideActivePlan = ctx.activePlan && ['planning', 'running', 'paused'].includes(ctx.activePlan.state);
+  const planAwaitingApproval = ctx.activePlan && ctx.activePlan.state === 'awaiting_approval';
   if (insideActivePlan) {
     parts.push(`FLOW RULE: a plan is already active — execute this step's instructions directly with tools (Read/Edit/Bash). Do NOT call ProposePlan; do NOT propose another plan; do NOT ask whether to start. Use brainstorm/tribunal/campfire/review only if the step explicitly calls for it.`);
+  } else if (planAwaitingApproval) {
+    parts.push(`FLOW RULE: a plan is awaiting the user's approval. Do NOT mutate anything yet. If that pending plan is wrong, too broad, or the user asked for something different, call ProposePlan again — the new plan REPLACES the pending one (no need to cancel first). Otherwise answer their question and let them approve (go/yes) or cancel.`);
   } else {
     parts.push(`FLOW RULE: quick-fix/bug-fix = read, patch, verify live; spec-first/plan-first = clarify scope and call ProposePlan before mutating; brainstorm/tribunal/campfire/review = call that orchestration tool directly when it fits.`);
   }
@@ -412,7 +417,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
 /**
  * Pure, zero-LLM-cost classification: should this /agent request run as a team (parallel engines) rather than solo? Returns true when the task pattern suggests cross-module fan-out AND at least 2 API engines are available. Based on the same FANOUT_RE/scopeDirSpread signals that buildRoutingContext includes in the Cesar prompt — but exported so dispatch can use them without a full brain call.
  */
-// @kern-source: routing:387
+// @kern-source: routing:392
 export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean {
   // Need at least 2 active engines for team mode to make sense.
   const available = ctx.activeEngines();
@@ -426,7 +431,7 @@ export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean 
 /**
  * Cost-aware speculation gate. Returns true only when: (1) estimated step cost exceeds speculativeThresholdUsd, (2) uncertainty is not 'none', (3) ELO spread between top engines is below speculativeEloSpreadThreshold. Prevents wasteful scout+parallel runs on cheap, sure, or lopsided tasks.
  */
-// @kern-source: routing:397
+// @kern-source: routing:402
 export function shouldSpeculate(hints: CesarRoutingHints, config: Required<AgonConfig>): boolean {
   const threshold = (config as any).speculativeThresholdUsd ?? 0.50;
   const eloThreshold = (config as any).speculativeEloSpreadThreshold ?? 15;

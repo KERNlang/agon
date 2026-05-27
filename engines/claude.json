@@ -29,6 +29,11 @@
     "flag": "--model"
   },
 
+  "effort": {
+    "flag": "--effort",
+    "levels": ["low", "medium", "high", "xhigh", "max"]
+  },
+
   "api": {
     "baseUrl": "https://api.anthropic.com",
     "apiKeyEnv": "ANTHROPIC_API_KEY",

@@ -26,8 +26,12 @@
 
   "model": {
     "configKey": "codex_model",
-    "flag": "--model",
-    "default": "gpt-5.3-codex"
+    "flag": "--model"
+  },
+
+  "effort": {
+    "configKey": "model_reasoning_effort",
+    "levels": ["low", "medium", "high", "xhigh"]
   },
 
   "api": {

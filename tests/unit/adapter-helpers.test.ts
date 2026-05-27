@@ -132,3 +132,51 @@ describe('computeEngineIsolation (auth-gated clean-dir materialisation)', () => 
     expect(iso.env).toBeUndefined();
   });
 });
+
+// Reasoning effort + "defer to the CLI's own config by default" (model/effort
+// are only forced when the user explicitly picks them in agon; otherwise the
+// CLI uses its own setting — which also keeps agon working if the /model probe
+// ever breaks because the CLI changed its TUI).
+describe('reasoning effort + respect-CLI-own-config', () => {
+  it('claude-style effort applies as [--effort, level]', () => {
+    const eng = {
+      id: 'claude-test', exec: { args: ['--print', '{prompt}'] },
+      effort: { flag: '--effort', levels: ['low', 'high'], default: 'high' },
+    } as any;
+    const { args } = buildCommand(eng, 'exec', 'hi', '/wt', 180, 'claude');
+    const i = args.indexOf('--effort');
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(args[i + 1]).toBe('high');
+  });
+
+  it('codex-style effort applies as [-c, key=level]', () => {
+    const eng = {
+      id: 'codex-test', exec: { args: ['exec', '{prompt}'] },
+      effort: { configKey: 'model_reasoning_effort', levels: ['low', 'high'], default: 'high' },
+    } as any;
+    const { args } = buildCommand(eng, 'exec', 'hi', '/wt', 180, 'codex');
+    const i = args.indexOf('-c');
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(args[i + 1]).toBe('model_reasoning_effort=high');
+  });
+
+  it('no effort is forced when the engine has no default and nothing is picked (uses the CLI own setting)', () => {
+    const eng = {
+      id: 'codex-noeffort', exec: { args: ['exec', '{prompt}'] },
+      effort: { configKey: 'model_reasoning_effort', levels: ['low', 'high'] },
+    } as any;
+    const { args } = buildCommand(eng, 'exec', 'hi', '/wt', 180, 'codex');
+    expect(args).not.toContain('-c');
+    expect(args).toEqual(['exec', 'hi']);
+  });
+
+  it('no --model is forced when there is no default and nothing is picked (defers to the CLI config)', () => {
+    const eng = {
+      id: 'codex-nomodeldefault', model: { configKey: 'codex_model', flag: '--model' },
+      exec: { args: ['exec', '{prompt}'] },
+    } as any;
+    const { args } = buildCommand(eng, 'exec', 'hi', '/wt', 180, 'codex');
+    expect(args).not.toContain('--model');
+    expect(args).toEqual(['exec', 'hi']);
+  });
+});

@@ -102,6 +102,16 @@ fn name=resolveModel params="engine:EngineDefinition,cwd?:string" returns="strin
     return modelConfig.default ?? null;
   >>>
 
+fn name=resolveEffort params="engine:EngineDefinition,cwd?:string" returns="string|null"
+  doc "Resolve the reasoning-effort level for an engine: configured engineEfforts[id] override, else the effort block's default, else null. Only meaningful for engines with an effort block (claude/codex); agy bakes effort into its model tiers."
+  handler <<<
+    const effortConfig = engine.effort;
+    if (!effortConfig) return null;
+    const configured = (loadConfig(cwd) as any).engineEfforts?.[engine.id];
+    if (configured && effortConfig.levels.includes(configured)) return configured;
+    return effortConfig.default ?? null;
+  >>>
+
 fn name=formatFileSize params="bytes:number" returns="string" export=false
   handler lang="kern"
     if cond="bytes < 1024"
@@ -177,6 +187,22 @@ fn name=buildCommand params="engine:EngineDefinition, mode:EngineMode, prompt:st
         args.splice(promptIdx, 0, engine.model.flag, model);
       } else {
         args.unshift(engine.model.flag, model);
+      }
+    }
+
+    // Reasoning effort: claude → [--effort, level]; codex → [-c, key=level].
+    // Inserted just before the prompt so it sits with the other leading flags.
+    const effort = resolveEffort(engine, cwd);
+    if (effort && engine.effort) {
+      const effortArgs = engine.effort.flag
+        ? [engine.effort.flag, effort]
+        : engine.effort.configKey
+          ? ['-c', `${engine.effort.configKey}=${effort}`]
+          : [];
+      if (effortArgs.length > 0) {
+        const pIdx = args.indexOf(effectivePrompt);
+        const at = pIdx >= 0 ? pIdx : args.length;
+        args.splice(at, 0, ...effortArgs);
       }
     }
 

@@ -27,7 +27,7 @@ export type { TeamBrainstormOptions } from './generated/team-brainstorm.js';
 export { runCampfire } from './generated/campfire.js';
 export type { CampfireResult } from './generated/campfire.js';
 // ── Sequential thinking ──
-export { runThinkChain, buildThinkPrompt, parseThoughts, groundThoughts, validateChain, isThinkStrategy } from './generated/thinking.js';
+export { runThinkChain, buildThinkPrompt, parseThoughts, groundThoughts, validateChain, isThinkStrategy, joinProblemInput } from './generated/thinking.js';
 export type { ThoughtNode, ThinkResult } from './generated/thinking.js';
 // ── Delegate ──
 export { runDelegate } from './generated/delegate.js';

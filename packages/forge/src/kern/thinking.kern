@@ -83,6 +83,16 @@ interface name=ThinkResult
 fn name=isThinkStrategy params="s:string" returns=boolean export=true expr={{ return s === 'linear' || s === 'reflexion'; }}
   doc "v1 ships `linear` and `reflexion`. tot/graph/hypothesis are deferred — adding one is a new transition pattern over ThinkChain, not a rewrite."
 
+fn name=joinProblemInput params="named:string|undefined, positionals:string[]" returns=string export=true
+  doc "Combine citty's named positional with its `_` extras into one problem string. citty mirrors the named positional into `_`, so the first extra is dropped when it equals `named` — this prevents the doubled-prompt bug while still folding in trailing unquoted words."
+  handler <<<
+    const name = (named ?? '').trim();
+    const extras = (positionals.length > 0 && positionals[0] === name && name)
+      ? positionals.slice(1)
+      : positionals;
+    return [name, extras.join(' ')].filter(Boolean).join(' ').trim();
+  >>>
+
 // ── Prompt scaffold — inject the protocol, parse structured output back ──
 
 fn name=buildThinkPrompt params="problem:string, strategy:string, maxThoughts:number, branches:number" returns=string export=true

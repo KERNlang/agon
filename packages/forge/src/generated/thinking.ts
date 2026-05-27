@@ -119,9 +119,21 @@ export function isThinkStrategy(s: string): boolean {
 }
 
 /**
+ * Combine citty's named positional with its `_` extras into one problem string. citty mirrors the named positional into `_`, so the first extra is dropped when it equals `named` — this prevents the doubled-prompt bug while still folding in trailing unquoted words.
+ */
+// @kern-source: thinking:86
+export function joinProblemInput(named: string|undefined, positionals: string[]): string {
+  const name = (named ?? '').trim();
+  const extras = (positionals.length > 0 && positionals[0] === name && name)
+    ? positionals.slice(1)
+    : positionals;
+  return [name, extras.join(' ')].filter(Boolean).join(' ').trim();
+}
+
+/**
  * Build the structured-thinking prompt. The scaffold IS the value for weak-adaptive-thinking engines: it forces numbered decomposition and (in reflexion) a mandatory self-critique + revision per step. When branches>1 it asks for alternative reasoning branches tagged with branchId (emission only — v1 does not auto-score/prune branches). Output is a single JSON object so one dispatch yields the whole chain.
  */
-// @kern-source: thinking:88
+// @kern-source: thinking:98
 export function buildThinkPrompt(problem: string, strategy: string, maxThoughts: number, branches: number): string {
   const schema = [
     'Respond with ONLY a single JSON object (no prose, no markdown fences) of shape:',
@@ -178,7 +190,7 @@ export function buildThinkPrompt(problem: string, strategy: string, maxThoughts:
 /**
  * Pull the first balanced top-level JSON object out of an engine response, tolerating code fences and surrounding prose.
  */
-// @kern-source: thinking:145
+// @kern-source: thinking:155
 export function extractThinkJson(raw: string): any|null {
   const stripped = raw.replace(/```(?:json)?/gi, '');
   let depth = 0;
@@ -205,7 +217,7 @@ export function extractThinkJson(raw: string): any|null {
 /**
  * Parse the engine's JSON chain into normalized ThoughtNodes. Falls back to a single analysis thought wrapping the raw text when parsing fails, so a chain is always returned.
  */
-// @kern-source: thinking:172
+// @kern-source: thinking:182
 export function parseThoughts(raw: string, maxThoughts: number): {thoughts:ThoughtNode[], summary:string, openQuestions:string[], refinedSpec:string} {
   const ALLOWED = ['analysis','critique','revision','decision','question','decompose','hypothesis'];
   const parsed = extractThinkJson(raw);
@@ -254,7 +266,7 @@ export function parseThoughts(raw: string, maxThoughts: number): {thoughts:Thoug
 /**
  * Scan each thought for file-path-like tokens and verify they exist relative to cwd. A thought citing a non-existent path is annotated grounded=false; the path is collected into issues. Keeps thinking output at or above AGON's existing witness-command safety baseline.
  */
-// @kern-source: thinking:221
+// @kern-source: thinking:231
 export function groundThoughts(thoughts: ThoughtNode[], cwd: string): {thoughts:ThoughtNode[], issues:string[]} {
   const PATH_RE = /\b[\w./-]+\.(?:ts|tsx|js|jsx|kern|json|md|mjs|cjs)\b/g;
   const issues: string[] = [];
@@ -276,7 +288,7 @@ export function groundThoughts(thoughts: ThoughtNode[], cwd: string): {thoughts:
 /**
  * Fold the parsed thoughts through the ThinkChain machine. A reflexion chain whose revision doesn't follow a critique trips a ThinkChainStateError, so an engine can't claim to have reflected without actually doing it. Branch-aware: each branchId group is validated as its own chain. Returns false on any illegal transition.
  */
-// @kern-source: thinking:243
+// @kern-source: thinking:253
 export function validateChain(thoughts: ThoughtNode[], strategy: string): boolean {
   const fold = (chain: ThoughtNode[]): boolean => {
     try {
@@ -324,7 +336,7 @@ export function validateChain(thoughts: ThoughtNode[], strategy: string): boolea
 /**
  * Run one sequential-thinking chain via a single structured dispatch, then ground + machine-validate the result. Pure prompt-scaffold path (no engine tools) so it works for engines with weak/absent adaptive thinking. branches>1 asks for that many alternative reasoning branches (emission only — no auto-scoring). Returns a ThinkResult whose refinedSpec is the handoff to `agon goal`.
  */
-// @kern-source: thinking:291
+// @kern-source: thinking:301
 export async function runThinkChain(opts: {problem:string, strategy:string, engineId:string, registry:EngineRegistry, adapter:EngineAdapter, maxThoughts:number, branches?:number, timeout:number, outputDir:string, ground:boolean, signal?:AbortSignal}): Promise<ThinkResult> {
   const strategy = isThinkStrategy(opts.strategy) ? opts.strategy : 'linear';
   const branches = Math.max(1, Math.min(opts.branches ?? 1, 8));

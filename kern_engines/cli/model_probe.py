@@ -143,6 +143,54 @@ def parse_model_picker(stripped: str) -> dict:
     return {"models": models, "current": current_name}
 
 
+# codex /model ("Select Model and Effort") collapses to ONE line (cursor-
+# positioned TUI, no surviving newlines), so parse by the "N. <id>" pattern
+# between the header and the confirm/footer text. ids are clean version tokens
+# (gpt-5.x) used verbatim as id AND name; the active row carries "(current)".
+_CODEX_ENTRY_RE = re.compile(r"\b\d+\.\s+([A-Za-z][\w.\-]*)(\s*\(current\))?")
+
+
+def parse_codex_picker(stripped: str) -> dict:
+    """Parse codex's /model picker (single-line, gpt-5.x ids)."""
+    text = re.sub(r"\s+", " ", stripped)
+    head = re.search(r"Select Model", text)
+    if head:
+        text = text[head.end():]
+    foot = re.search(r"(Press enter|enter to confirm|esc to)", text, re.IGNORECASE)
+    if foot:
+        text = text[:foot.start()]
+    models: list[dict] = []
+    seen: set[str] = set()
+    current_name: str | None = None
+    for m in _CODEX_ENTRY_RE.finditer(text):
+        mid = m.group(1)
+        if not re.search(r"\d", mid):  # real model ids carry a version digit
+            continue
+        if mid in seen:
+            continue
+        seen.add(mid)
+        cur = bool(m.group(2))
+        if cur:
+            current_name = mid
+        models.append({"id": mid, "name": mid, "current": cur})
+    return {"models": models, "current": current_name}
+
+
+# Per-engine parser registry (keyed by binary basename). New engines slot in
+# here with their own parser; default is the agy "Switch Model" style.
+PARSERS = {
+    "agy": parse_model_picker,
+    "antigravity": parse_model_picker,
+    "codex": parse_codex_picker,
+}
+
+
+def parse_picker(binary: str, stripped: str) -> dict:
+    """Dispatch to the right per-engine parser by binary basename."""
+    key = os.path.basename(binary)
+    return PARSERS.get(key, parse_model_picker)(stripped)
+
+
 def probe_models(binary: str, slash_command: str = "/model",
                  boot_idle_ms: int = 1500, boot_cap_ms: int = 15000,
                  picker_idle_ms: int = 1200, picker_cap_ms: int = 9000) -> dict:
@@ -167,7 +215,7 @@ def probe_models(binary: str, slash_command: str = "/model",
         time.sleep(0.4)
         os.write(fd, b"\r")
         picker = _read_until_idle(fd, picker_idle_ms, picker_cap_ms)
-        parsed = parse_model_picker(strip_ansi_bytes(picker))
+        parsed = parse_picker(binary, strip_ansi_bytes(picker))
         # Cancel the picker without changing the selection, then quit.
         try:
             os.write(fd, b"\x1b")

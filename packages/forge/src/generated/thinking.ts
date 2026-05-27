@@ -416,7 +416,7 @@ export function selectBranch(thoughts: ThoughtNode[]): {thoughts:ThoughtNode[], 
   let best = -1;
   let anyScored = false;
   for (const [id, group] of byBranch) {
-    const scored = group.filter((t) => typeof t.branchScore === 'number');
+    const scored = group.filter((t) => Number.isFinite(t.branchScore as number));
     if (scored.length > 0) anyScored = true;
     const mean = scored.length > 0
       ? scored.reduce((a, t) => a + (t.branchScore ?? 0), 0) / scored.length

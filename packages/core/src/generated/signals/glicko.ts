@@ -262,3 +262,43 @@ export function advisorScore(engineId: string, mode: 'forge'|'brainstorm'|'tribu
   }
   return Math.round(rating.mu - 2 * phi);
 }
+
+/**
+ * Rank engines by Glicko-2 confidence floor (mu - 2*phi), highest first, WITHIN a scope. When `mode` is given, ranking uses that discipline's byMode ratings (e.g. mode='tribunal' = adversarial/critique skill — the right proxy for a Nero-style critic, since the best BUILDER is not the best CRITIC); otherwise the global pool. Only engines that already hold a rating record IN THAT SCOPE are returned; the rest are omitted so callers can fall back. Ties break on mu, then engine id for determinism.
+ */
+// @kern-source: glicko:225
+export function rankEnginesByRating(engineIds: string[], ratings: RatingRecord, mode?: 'forge'|'brainstorm'|'tribunal'): string[] {
+  const scope = mode ? (ratings.byMode[mode] ?? {}) : ratings.global;
+  const rated = engineIds.filter((id) => scope[id] !== undefined);
+  return rated.sort((a, b) => {
+    const ra = scope[a];
+    const rb = scope[b];
+    const floorA = ra.mu - 2 * ra.phi;
+    const floorB = rb.mu - 2 * rb.phi;
+    if (floorB !== floorA) return floorB - floorA;
+    if (rb.mu !== ra.mu) return rb.mu - ra.mu;
+    return a.localeCompare(b);
+  });
+}
+
+/**
+ * Pick the single best engine for a role. Selection order: (1) top of the DISCIPLINE ranking when opts.mode is given and any pooled engine has a rating there (use mode='tribunal' for adversarial roles like Nero); (2) top of the GLOBAL ranking; (3) a random engine when NO engine has any rating yet. opts.exclude drops engines from the pool (e.g. the author being challenged, to avoid grading-own-homework) but is ignored if it would empty the pool. rng is injectable for deterministic tests. scope reports WHICH rating decided the pick.
+ */
+// @kern-source: glicko:241
+export function pickTopRatedEngine(engineIds: string[], ratings: RatingRecord, opts?: { mode?:'forge'|'brainstorm'|'tribunal'; exclude?:string[]; rng?:() => number }): { engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'global' | null } {
+  const exclude = new Set(opts?.exclude ?? []);
+  let pool = engineIds.filter((id) => !exclude.has(id));
+  if (pool.length === 0) pool = engineIds.slice();
+  if (pool.length === 0) return { engineId: '', reason: 'none' as const, scope: null };
+
+  if (opts?.mode) {
+    const ranked = rankEnginesByRating(pool, ratings, opts.mode);
+    if (ranked.length > 0) return { engineId: ranked[0], reason: 'top-rated' as const, scope: opts.mode };
+  }
+  const global = rankEnginesByRating(pool, ratings);
+  if (global.length > 0) return { engineId: global[0], reason: 'top-rated' as const, scope: 'global' as const };
+
+  const r = opts?.rng ? opts.rng() : Math.random();
+  const idx = Math.min(pool.length - 1, Math.max(0, Math.floor(r * pool.length)));
+  return { engineId: pool[idx], reason: 'random' as const, scope: null };
+}

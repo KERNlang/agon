@@ -77,6 +77,26 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('maps nero to the adversarial self-challenge bridge', () => {
+    expect(buildCallCommands({
+      workflow: 'nero',
+      input: 'Cache tokens in Redis',
+      reasoning: 'Redis is fast and shared across workers',
+      focus: 'invalidation',
+      confidence: '80',
+      engineTimeout: '90',
+      engines: 'codex,agy',
+    }).commands).toEqual([
+      ['nero', 'Cache tokens in Redis', '--reasoning', 'Redis is fast and shared across workers', '--focus', 'invalidation', '--confidence', '80', '--timeout', '90', '--engines', 'codex,agy'],
+    ]);
+  });
+
+  it('maps nero with just the decision', () => {
+    expect(buildCallCommands({ workflow: 'nero', input: 'Ship the migration tonight' }).commands).toEqual([
+      ['nero', 'Ship the migration tonight'],
+    ]);
+  });
+
   it('maps synthesis to the synthesis command bridge', () => {
     expect(buildCallCommands({
       workflow: 'synthesis',

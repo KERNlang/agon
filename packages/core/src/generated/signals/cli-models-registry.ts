@@ -39,7 +39,7 @@ export interface CliProviderGroup {
 }
 
 // @kern-source: cli-models-registry:36
-export const ENGINE_PROVIDER_MAP: Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[]}> = ({ anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'] }, openai: { providerId: 'openai', engineId: 'codex', engineBinary: 'codex', versionCmd: ['--version'] }, google: { providerId: 'google', engineId: 'agy', engineBinary: 'agy', versionCmd: ['--version'] }, opencode: { providerId: 'opencode', engineId: 'opencode', engineBinary: 'opencode', versionCmd: ['--version'] }, mistral: { providerId: 'mistral', engineId: 'mistral', engineBinary: 'mistral', versionCmd: ['--version'] }, openrouter: { providerId: 'openrouter', engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] } });
+export const ENGINE_PROVIDER_MAP: Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[], listCmd?:string[]}> = ({ anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'], listCmd: ['__pty:/model'] }, openai: { providerId: 'openai', engineId: 'codex', engineBinary: 'codex', versionCmd: ['--version'], listCmd: ['__pty:/model'] }, google: { providerId: 'google', engineId: 'agy', engineBinary: 'agy', versionCmd: ['--version'], listCmd: ['__pty:/model'] }, opencode: { providerId: 'opencode', engineId: 'opencode', engineBinary: 'opencode', versionCmd: ['--version'], listCmd: ['models'] }, mistral: { providerId: 'mistral', engineId: 'mistral', engineBinary: 'mistral', versionCmd: ['--version'] }, openrouter: { providerId: 'openrouter', engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] } });
 
 // @kern-source: cli-models-registry:40
 export const FALLBACK_MODELS: Record<string, {id:string, name:string, contextWindow?:number, toolCall?:boolean, reasoning?:boolean}[]> = ({ anthropic: [ { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextWindow: 200000, toolCall: true, reasoning: true }, { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', contextWindow: 200000, toolCall: true, reasoning: true } ], openai: [ { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'o4-mini', name: 'o4-mini', contextWindow: 200000, toolCall: true, reasoning: true } ], google: [ { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', contextWindow: 1048576, toolCall: true, reasoning: true }, { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', contextWindow: 1048576, toolCall: true, reasoning: true } ], mistral: [ { id: 'mistral-large-latest', name: 'Mistral Large', contextWindow: 128000, toolCall: true, reasoning: false }, { id: 'codestral-latest', name: 'Codestral', contextWindow: 256000, toolCall: true, reasoning: false } ], openrouter: [ { id: 'auto', name: 'Auto (best for task)', toolCall: true, reasoning: false } ], opencode: [ { id: 'anthropic/claude-sonnet-4', name: 'anthropic/claude-sonnet-4', toolCall: true, reasoning: false }, { id: 'openai/gpt-5.3-codex', name: 'openai/gpt-5.3-codex', toolCall: true, reasoning: false } ] });
@@ -131,6 +131,9 @@ function parsePlainModelList(stdout: string): ProbedModel[] {
  */
 // @kern-source: cli-models-registry:117
 export async function refreshProbedCliModels(engineId: string, binary: string, listCmd?: string[], pythonBin?: string): Promise<boolean> {
+  // Fresh cache → skip the (slow) re-probe. Lets buildCliModelGroupsAsync call
+  // this for every engine on each /models open cheaply once the cache is warm.
+  if (readProbedCliModels(engineId)) return true;
   const cmd = (listCmd && listCmd.length > 0) ? listCmd : ['__pty:/model'];
   const first = cmd[0];
   try {
@@ -168,7 +171,7 @@ export async function refreshProbedCliModels(engineId: string, binary: string, l
   }
 }
 
-// @kern-source: cli-models-registry:159
+// @kern-source: cli-models-registry:162
 export async function fetchCliModelsRegistry(): Promise<Record<string, any> | null> {
   const cacheDir = getCacheDir();
   const cacheFile = join(cacheDir, 'models-dev.json');
@@ -206,7 +209,7 @@ export async function fetchCliModelsRegistry(): Promise<Record<string, any> | nu
   }
 }
 
-// @kern-source: cli-models-registry:197
+// @kern-source: cli-models-registry:200
 export function findBinary(binary: string): string|null {
   try {
     const result = execSync(`which ${binary}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -226,7 +229,7 @@ export function findBinary(binary: string): string|null {
   return null;
 }
 
-// @kern-source: cli-models-registry:212
+// @kern-source: cli-models-registry:215
 export function getBinaryVersion(binary: string, versionCmd: string[]): string|null {
   if (!versionCmd.length) {
     return null;
@@ -242,7 +245,7 @@ export function getBinaryVersion(binary: string, versionCmd: string[]): string|n
 /**
  * Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync.
  */
-// @kern-source: cli-models-registry:222
+// @kern-source: cli-models-registry:225
 export function buildCliModelGroups(): CliProviderGroup[] {
   const groups: CliProviderGroup[] = [];
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
@@ -258,42 +261,35 @@ export function buildCliModelGroups(): CliProviderGroup[] {
 }
 
 /**
- * Build CLI provider groups with latest models from models.dev API. Falls back to static list on failure.
+ * Build CLI provider groups showing each engine's REAL models: its live /model probe (cached; refreshed here in parallel for installed probe-capable engines, cheap once warm) when available, else the small static FALLBACK. Deliberately does NOT use the models.dev catalog — that's the API view (buildModelEntries). Keeps the CLI picker to what the CLI actually offers, and stays correct if a probe breaks (falls back to FALLBACK, never a 150-model dump).
  */
-// @kern-source: cli-models-registry:236
+// @kern-source: cli-models-registry:239
 export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
-  let registry: Record<string, any> | null = null;
-  try {
-    registry = await fetchCliModelsRegistry();
-  } catch (e) {
-    registry = null;
-  }
+  // Phase 1: refresh probes for installed, probe-capable engines in parallel.
+  // refreshProbedCliModels short-circuits on a fresh cache, so this is cheap
+  // once warm; on a cold cache it spawns the probes concurrently (~one probe's
+  // latency, not the sum). Failures fall through to FALLBACK per engine.
+  await Promise.all(
+    Object.values(ENGINE_PROVIDER_MAP)
+      .filter((e) => Array.isArray(e.listCmd) && e.listCmd.length > 0)
+      .map((e) => {
+        const bin = findBinary(e.engineBinary);
+        return bin ? refreshProbedCliModels(e.engineId, bin, e.listCmd).catch(() => false) : Promise.resolve(false);
+      }),
+  );
+
+  // Phase 2: build groups from the probe cache → small FALLBACK (no models.dev).
   const groups: CliProviderGroup[] = [];
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
     const binaryPath = findBinary(eng.engineBinary);
     const installed = binaryPath !== null;
     const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
-    let models: CliModelEntry[] = [];
-    // Try to get models from the API registry
-    if (registry && registry[eng.providerId]) {
-      const provider = registry[eng.providerId];
-      const providerName = provider.name ?? key.charAt(0).toUpperCase() + key.slice(1);
-      const apiModels = provider.models ?? {};
-      models = Object.values(apiModels).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: providerName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.limit?.context, toolCall: m.tool_call ?? false, reasoning: m.reasoning ?? false }));
-    }
-    // Fallback to static list
-    if (models.length === 0) {
-      const fallbackModels = FALLBACK_MODELS[key] ?? [];
-      models = fallbackModels.map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: key.charAt(0).toUpperCase() + key.slice(1), engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
-    }
-    // Determine display name
-    const displayName = registry?.[eng.providerId]?.name ?? key.charAt(0).toUpperCase() + key.slice(1);
-    // Prefer the engine's live /model probe (e.g. agy's real CLI tiers) over models.dev when a fresh probe is cached.
-    const probedAsync = readProbedCliModels(eng.engineId);
-    if (probedAsync && probedAsync.length > 0) {
-      models = probedAsync.map((m: ProbedModel) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }));
-    }
-    groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed: installed, version: version, models: models });
+    const displayName = key.charAt(0).toUpperCase() + key.slice(1);
+    const probed = readProbedCliModels(eng.engineId);
+    const models: CliModelEntry[] = (probed && probed.length > 0)
+      ? probed.map((m) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }))
+      : (FALLBACK_MODELS[key] ?? []).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+    groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models });
   }
   return groups;
 }

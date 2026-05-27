@@ -1272,16 +1272,11 @@ export function App() {
 
     setModelPickerCliGroups([]);
 
-    import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroupsAsync, refreshProbedCliModels }) => {
-      // If this engine exposes a live model picker (dynamicListCmd, e.g. agy's
-      // __pty:/model), probe it first (behind the loading state) so the groups
-      // show its REAL current models, not just models.dev/static. Best-effort:
-      // on failure the builder falls back to the static/models.dev list.
-      const dyn = engine?.cliModels?.dynamicListCmd;
-      const probeFirst = (Array.isArray(dyn) && dyn.length > 0 && engine?.binary)
-        ? refreshProbedCliModels(engineId, engine.binary, dyn).catch(() => false)
-        : Promise.resolve(false);
-      probeFirst.then(() => buildCliModelGroupsAsync()).then((cliGroups: any) => {
+    import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroupsAsync }) => {
+      // buildCliModelGroupsAsync self-probes each engine's live /model list
+      // (cached, parallel) and shows the REAL CLI models — not the models.dev
+      // catalog (that's the API view below).
+      buildCliModelGroupsAsync().then((cliGroups: any) => {
         setModelPickerCliGroups(cliGroups);
       });
       fetchModelsRegistry().then((reg: any) => {
@@ -2418,7 +2413,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:82
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2113
+// @kern-source: app:2108
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

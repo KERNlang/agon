@@ -27,7 +27,7 @@ import from="../cesar/pause-state.js" names="PauseState" types=true
 import from="../cesar/scoreboard.js" names="Scoreboard" types=true
 import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
 import from="../signals/paste-handler.js" names="processPasteContent,expandPastePlaceholders,recordPastePlaceholder"
-import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch,isCesarPlanApprovalInput"
+import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch,isCesarPlanApprovalInput,isCesarPlanStatusInput"
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
 import from="../cesar/telemetry-poller.js" names="createTelemetryPoller,TelemetryPoller"
 import from="../cesar/telemetry.js" names="EngineVitals" types=true
@@ -1113,6 +1113,26 @@ screen name=App target=ink
 
       if (!input.startsWith('/') && activePlanRef.current?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
         input = '/approve';
+      }
+
+      // When the user moves forward from a pinned plan proposal, demote it
+      // from the live pane into scrollback history (Claude-style) so this
+      // turn's output is the bottom-most content instead of being buried
+      // under the plan. The chat-route approval ("go sounds legit") never
+      // emits plan-execution, so this turn boundary is the reliable hook.
+      // Exclusions, so an input that is NOT a response to the plan can't
+      // falsely retire it:
+      //   - side-channel slash commands (/btw, /status, /clear, …) — and
+      //     /cancel, which keeps its own plan-cancelled path (no history block)
+      //   - status/progress queries are questions about the plan, not responses
+      const dismissLower = input.trim().toLowerCase();
+      const isSlashNonApprove = dismissLower.startsWith('/') && dismissLower !== '/approve';
+      if (
+        activePlanRef.current?.state === 'awaiting_approval' &&
+        !isSlashNonApprove &&
+        !isCesarPlanStatusInput(input)
+      ) {
+        dispatch({ type: 'plan-dismiss' } as any);
       }
 
       // /btw <question> — side-channel question during active dispatch

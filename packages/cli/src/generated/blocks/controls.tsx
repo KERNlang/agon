@@ -316,6 +316,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
     const providerAliasByTerm: Record<string, string> = {
       claude: 'anthropic',
       codex: 'openai',
+      gemini: 'google',
       agy: 'google',
       antigravity: 'google',
       anthropic: 'anthropic',
@@ -516,7 +517,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
         cliFiltered.length === 0 ? (
           <Box flexDirection="column">
             <Text dimColor>{'  No CLI engine definitions found'}</Text>
-            <Text dimColor>{'  Install: claude, codex, gemini, etc.'}</Text>
+            <Text dimColor>{'  Install: claude, codex, agy, etc.'}</Text>
           </Box>
         ) : (
           (() => {
@@ -597,7 +598,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   );
 }
 
-// @kern-source: controls:590
+// @kern-source: controls:591
 export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
   const eColor = engineColor(event.winnerId);
   const codeWidth = contentWidth(10);
@@ -636,7 +637,7 @@ export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(
   );
 }
 
-// @kern-source: controls:632
+// @kern-source: controls:633
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines:string[]; currentCesar:string; onSelect:(engineId: string) => void; onCancel:() => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

@@ -47,8 +47,11 @@ export const installAgentPromptsCommand: any = defineCommand({
       {
         id: 'agy',
         label: 'Antigravity (agy)',
-        baseDir: join(home, '.antigravity'),
-        files: [{ file: join(home, '.antigravity', 'commands', 'agon.toml'), content: agonShim('agy') }],
+        // The agy CLI roots its config at ~/.antigravitycli (it symlinks into
+        // ~/.gemini/config — agy is the Gemini CLI successor). ~/.antigravity is
+        // the Antigravity *IDE* (a VS Code fork), NOT the CLI.
+        baseDir: join(home, '.antigravitycli'),
+        files: [{ file: join(home, '.antigravitycli', 'commands', 'agon.toml'), content: agonShim('agy') }],
       },
       {
         id: 'claude',
@@ -80,7 +83,7 @@ export const installAgentPromptsCommand: any = defineCommand({
       if (requested.length > 0) {
         process.stderr.write(`agon install-agent-prompts: no known CLI matched "${requested.join(', ')}" (known: ${knownIds.join(', ')})\n`);
       } else {
-        process.stderr.write('agon install-agent-prompts: no CLI config dirs found (~/.codex, ~/.antigravity, ~/.claude). Pass --cli codex,agy,claude to force.\n');
+        process.stderr.write('agon install-agent-prompts: no CLI config dirs found (~/.codex, ~/.antigravitycli, ~/.claude). Pass --cli codex,agy,claude to force.\n');
       }
       process.exitCode = 1;
       return;

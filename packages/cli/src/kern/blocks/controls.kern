@@ -304,6 +304,7 @@ screen name=ModelPicker target=ink
         const providerAliasByTerm: Record<string, string> = {
           claude: 'anthropic',
           codex: 'openai',
+          gemini: 'google',
           agy: 'google',
           antigravity: 'google',
           anthropic: 'anthropic',
@@ -504,7 +505,7 @@ screen name=ModelPicker target=ink
             cliFiltered.length === 0 ? (
               <Box flexDirection="column">
                 <Text dimColor>{'  No CLI engine definitions found'}</Text>
-                <Text dimColor>{'  Install: claude, codex, gemini, etc.'}</Text>
+                <Text dimColor>{'  Install: claude, codex, agy, etc.'}</Text>
               </Box>
             ) : (
               (() => {

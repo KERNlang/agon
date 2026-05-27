@@ -50,7 +50,5 @@
       { "id": "gpt-oss-120b-medium", "name": "GPT-OSS 120B (Medium)" }
     ],
     "dynamicListCmd": ["__pty:/model"]
-  },
-
-  "capabilities": ["vision"]
+  }
 }

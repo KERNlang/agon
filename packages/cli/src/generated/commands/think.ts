@@ -114,11 +114,23 @@ export const thinkCommand: any = defineCommand({
     const json = !!args.json;
     const strategy = String(args.strategy || 'linear');
     if (!isThinkStrategy(strategy) && !quiet) {
-      console.warn(`[agon] strategy '${strategy}' is deferred (v1 ships linear|reflexion) — using linear.`);
+      console.warn(`[agon] unknown strategy '${strategy}' — using linear (valid: linear|reflexion|tot|graph|hypothesis).`);
     }
     const steps = Math.max(1, Math.min(parseInt(String(args.steps ?? '6'), 10) || 6, 20));
     const branches = Math.max(1, Math.min(parseInt(String(args.branches ?? '1'), 10) || 1, 8));
     const timeoutSec = parseInt(String(args.timeout ?? '120'), 10) || 120;
+
+    // Validate the optional --critic engine up front; a bad id otherwise only
+    // surfaces as a buried console.warn after the main chain already ran.
+    let critic: string | undefined;
+    if (typeof args.critic === 'string' && args.critic.trim()) {
+      const wanted = registry.resolveId(args.critic.trim());
+      if (active.includes(wanted) || registry.activeIds(config as any).includes(wanted)) {
+        critic = wanted;
+      } else {
+        console.warn(`[agon] --critic '${args.critic.trim()}' is not an active engine — skipping the adversarial critique.`);
+      }
+    }
 
     const engine = registry.get(engineId);
     const startedAt = new Date().toISOString();
@@ -138,9 +150,10 @@ export const thinkCommand: any = defineCommand({
       adapter,
       maxThoughts: steps,
       branches,
-      critic: typeof args.critic === 'string' ? args.critic.trim() : undefined,
+      critic,
       timeout: timeoutSec,
       outputDir,
+      cwd: process.cwd(),
       ground: args.ground !== false,
     });
 

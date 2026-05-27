@@ -255,4 +255,34 @@ describe('validateChain (machine-enforced protocol)', () => {
     ];
     expect(validateChain(chain, 'linear')).toBe(true);
   });
+
+  it('accepts a tot chain of scored branches', () => {
+    const chain = [
+      node({ kind: 'analysis' }),
+      node({ kind: 'analysis', branchId: 'A', branchScore: 80 }),
+      node({ kind: 'decision', branchId: 'B', branchScore: 40 }),
+    ];
+    expect(validateChain(chain, 'tot')).toBe(true);
+  });
+
+  it('accepts a graph chain ending in a merge decision', () => {
+    const chain = [
+      node({ kind: 'analysis', branchId: 'A' }),
+      node({ kind: 'analysis', branchId: 'B' }),
+      node({ kind: 'decision' }), // merge
+    ];
+    expect(validateChain(chain, 'graph')).toBe(true);
+  });
+
+  it('requires >=2 hypotheses for the hypothesis strategy', () => {
+    const ok = [
+      node({ kind: 'hypothesis' }),
+      node({ kind: 'hypothesis' }),
+      node({ kind: 'analysis' }),
+      node({ kind: 'decision' }),
+    ];
+    expect(validateChain(ok, 'hypothesis')).toBe(true);
+    const tooFew = [node({ kind: 'hypothesis' }), node({ kind: 'decision' })];
+    expect(validateChain(tooFew, 'hypothesis')).toBe(false);
+  });
 });

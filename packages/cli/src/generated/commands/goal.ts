@@ -2,7 +2,7 @@
 
 import { defineCommand } from 'citty';
 
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync, writeFileSync } from 'node:fs';
 
 import { resolve } from 'node:path';
 
@@ -109,6 +109,7 @@ return defineCommand({
     dryRun: { type: 'boolean', description: 'Resolve the queue + spec and print the plan without running', default: false },
     think: { type: 'boolean', description: 'Run a sequential-thinking decompose pass on the intent BEFORE the run — surface sub-problems, open questions, and grounding, and feed a refined spec as the goal intent. Frontloads reasoning so an 8-24h run never starts from a half-understood prompt.', default: false },
     thinkStrategy: { type: 'string', description: 'Strategy for --think (linear|reflexion|tot|graph|hypothesis). Default hypothesis — surface competing problem framings.', default: 'hypothesis' },
+    thinkSteps: { type: 'string', description: 'Max thoughts for the --think decompose pass (1..20, default 8).', default: '8' },
     supervised: { type: 'boolean', description: 'Run UNATTENDED: a supervisor re-execs `agon goal --resume` if the run CRASHES (non-zero exit), with exponential backoff + a restart cap, until done / a clean stop / a deterministic misconfig / the cap. Survives a terminal close or transient crash overnight; the journal makes each restart resume where it left off.', default: false },
     maxRestarts: { type: 'string', description: 'With --supervised: max crash-restarts before giving up (default 10; 0 = one-shot).' },
   },
@@ -225,51 +226,6 @@ return defineCommand({
       process.exit(1);
     }
 
-    // --think: frontload reasoning before a long autonomous run. Decompose the
-    // intent, surface sub-problems + open questions, and feed the refined spec
-    // back in as the goal intent. Informational + intent-refining — it never
-    // blocks or alters the queue/controller.
-    let thinkRefinedIntent: string | undefined;
-    if (args.think && (args.intent ?? '').toString().trim()) {
-      const thinkEngine = (() => {
-        if (args.engines) {
-          const first = String(args.engines).split(',').map((s: string) => s.trim()).filter(Boolean)[0];
-          if (first) { const id = registry.resolveId(first); if (available.includes(id)) return id; }
-        }
-        return available[0];
-      })();
-      const { path: thinkDir } = createRunDir({ mode: 'think', label: goalId, announce: false });
-      info(cyan(`Thinking through the goal first (${args.thinkStrategy}, ${thinkEngine})...`));
-      const tr = await runThinkChain({
-        problem: (args.intent ?? goalId).toString(),
-        strategy: String(args.thinkStrategy || 'hypothesis'),
-        engineId: thinkEngine,
-        registry,
-        adapter,
-        maxThoughts: 8,
-        timeout: parseInt(String(args.timeout ?? '120'), 10) || 120,
-        outputDir: thinkDir,
-        ground: true,
-      });
-      if (tr.ok) {
-        for (const t of tr.thoughts) info(`  • [${t.kind}] ${t.thought.slice(0, 160)}`);
-        if (tr.openQuestions.length > 0) {
-          warn(`Open questions before this run is fully specified:`);
-          for (const q of tr.openQuestions) warn(`  ? ${q}`);
-        }
-        if (tr.groundingIssues.length > 0) {
-          warn(`Grounding warnings (thoughts cited paths that don't exist):`);
-          for (const g of tr.groundingIssues) warn(`  ⚠ ${g}`);
-        }
-        if (tr.refinedSpec && tr.refinedSpec.trim()) {
-          thinkRefinedIntent = tr.refinedSpec.trim();
-          info(green(`Refined intent: ${thinkRefinedIntent.slice(0, 200)}`));
-        }
-      } else {
-        warn('Think pass produced no usable chain — proceeding with the original intent.');
-      }
-    }
-
     let requestedEngines: string[] | undefined;
     if (args.engines) {
       // resolveId echoes unknown ids back rather than returning empty, so
@@ -284,6 +240,55 @@ return defineCommand({
       if (requestedEngines.length === 0) {
         fail(`None of the requested engines are active: ${raw.join(', ')}. Run "agon doctor" to see what's available.`);
         process.exit(1);
+      }
+    }
+
+    // --think: frontload reasoning before a long autonomous run. Decompose the
+    // intent, surface sub-problems + open questions + grounding, and feed the
+    // refined spec back in as the goal intent. Runs AFTER --engines is validated
+    // (so a typo fails before we spend a think dispatch); skipped on --dry-run
+    // and on --resume (the journal already carries the spec, and supervised
+    // restarts add --resume — we must not re-run an unmetered pass each restart).
+    let thinkRefinedIntent: string | undefined;
+    if (args.think && !args.dryRun && !args.resume && (args.intent ?? '').toString().trim()) {
+      const thinkEngine = requestedEngines?.[0] ?? available[0];
+      const thinkSteps = Math.max(1, Math.min(parseInt(String(args.thinkSteps ?? '8'), 10) || 8, 20));
+      const { path: thinkDir } = createRunDir({ mode: 'think', label: goalId, announce: false });
+      info(cyan(`Thinking through the goal first (${args.thinkStrategy}, ${thinkEngine})...`));
+      const tr = await runThinkChain({
+        problem: (args.intent ?? goalId).toString(),
+        strategy: String(args.thinkStrategy || 'hypothesis'),
+        engineId: thinkEngine,
+        registry,
+        adapter,
+        maxThoughts: thinkSteps,
+        timeout: parseInt(String(args.timeout ?? '120'), 10) || 120,
+        outputDir: thinkDir,
+        cwd: args.cwd,
+        ground: true,
+      });
+      // Persist the decomposition so a crash/forensics keeps it.
+      try { writeFileSync(`${thinkDir}/think.json`, JSON.stringify(tr, null, 2)); } catch { /* best-effort */ }
+      if (tr.ok) {
+        for (const t of tr.thoughts) info(`  • [${t.kind}] ${t.thought.slice(0, 160)}`);
+        if (tr.openQuestions.length > 0) {
+          warn(`Open questions before this run is fully specified:`);
+          for (const q of tr.openQuestions) warn(`  ? ${q}`);
+        }
+        if (tr.groundingIssues.length > 0) {
+          warn(`Grounding warnings (thoughts cited paths that don't exist):`);
+          for (const g of tr.groundingIssues) warn(`  ⚠ ${g}`);
+        }
+        // Only adopt the refined spec when the chain actually held its protocol;
+        // a malformed decomposition shouldn't silently rewrite the goal intent.
+        if (tr.protocolValid && tr.refinedSpec && tr.refinedSpec.trim()) {
+          thinkRefinedIntent = tr.refinedSpec.trim();
+          info(green(`Refined intent: ${thinkRefinedIntent.slice(0, 200)}`));
+        } else if (!tr.protocolValid) {
+          warn('Think pass did not satisfy its strategy protocol — keeping the original intent.');
+        }
+      } else {
+        warn('Think pass produced no usable chain — proceeding with the original intent.');
       }
     }
     // Every task's diff is reviewed by ALL active engines before its commit

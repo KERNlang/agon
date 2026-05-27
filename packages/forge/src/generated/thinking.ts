@@ -389,13 +389,18 @@ export function validateChain(thoughts: ThoughtNode[], strategy: string): boolea
     const hasRevision = thoughts.some((t) => t.kind === 'revision');
     if (!hasCritique || !hasRevision) return false;
   }
+  // hypothesis-elimination must actually weigh >=2 competing hypotheses.
+  if (strategy === 'hypothesis') {
+    const hypotheses = thoughts.filter((t) => t.kind === 'hypothesis').length;
+    if (hypotheses < 2) return false;
+  }
   return true;
 }
 
 /**
  * For branched chains: pick the branchId with the highest mean branchScore and mark thoughts in the losing branches pruned=true. Shared (branchId-less) lead-up thoughts are never pruned. Returns chosenBranch=undefined when there are fewer than two branches.
  */
-// @kern-source: thinking:363
+// @kern-source: thinking:368
 export function selectBranch(thoughts: ThoughtNode[]): {thoughts:ThoughtNode[], chosenBranch?:string} {
   const byBranch = new Map<string, ThoughtNode[]>();
   for (const t of thoughts) {
@@ -409,14 +414,17 @@ export function selectBranch(thoughts: ThoughtNode[]): {thoughts:ThoughtNode[], 
 
   let chosen: string | undefined;
   let best = -1;
+  let anyScored = false;
   for (const [id, group] of byBranch) {
     const scored = group.filter((t) => typeof t.branchScore === 'number');
+    if (scored.length > 0) anyScored = true;
     const mean = scored.length > 0
       ? scored.reduce((a, t) => a + (t.branchScore ?? 0), 0) / scored.length
       : 0;
     if (mean > best) { best = mean; chosen = id; }
   }
-  if (!chosen) return { thoughts, chosenBranch: undefined };
+  // No branch carried a score → selection would be arbitrary; don't claim one.
+  if (!chosen || !anyScored) return { thoughts, chosenBranch: undefined };
 
   const pruned = thoughts.map((t) =>
     (t.branchId && t.branchId.trim() && t.branchId.trim() !== chosen)
@@ -428,8 +436,8 @@ export function selectBranch(thoughts: ThoughtNode[]): {thoughts:ThoughtNode[], 
 /**
  * Have a SECOND engine attack the chain — the cross-engine adversarial check the single-model MCP original cannot do. Returns terse critique bullets, or '' if the critic is unavailable/empty.
  */
-// @kern-source: thinking:396
-export async function runAdversarialCritique(opts: {problem:string, thoughts:ThoughtNode[], summary:string, criticId:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<string> {
+// @kern-source: thinking:404
+export async function runAdversarialCritique(opts: {problem:string, thoughts:ThoughtNode[], summary:string, criticId:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, cwd?:string, signal?:AbortSignal}): Promise<string> {
   try {
     const critic = opts.registry.get(opts.criticId);
     const chainText = opts.thoughts.map((t) => `${t.thoughtNumber}. [${t.kind}] ${t.thought}`).join('\n');
@@ -446,7 +454,7 @@ export async function runAdversarialCritique(opts: {problem:string, thoughts:Tho
       engine: critic,
       prompt,
       systemPrompt: 'You are an adversarial reviewer of a reasoning chain. Respond with terse, specific critique bullets only. Do NOT use tools, read files, or run commands.',
-      cwd: process.cwd(),
+      cwd: opts.cwd ?? process.cwd(),
       mode: 'exec',
       timeout: opts.timeout,
       outputDir: opts.outputDir,
@@ -461,12 +469,13 @@ export async function runAdversarialCritique(opts: {problem:string, thoughts:Tho
 }
 
 /**
- * Run one sequential-thinking chain via a single structured dispatch, then ground, machine-validate, select the winning branch (tot), and optionally run a second `critic` engine to adversarially attack the chain. Pure prompt-scaffold path so it works for engines with weak/absent adaptive thinking. Returns a ThinkResult whose refinedSpec is the handoff to `agon goal`.
+ * Run one sequential-thinking chain via a single structured dispatch, then ground, machine-validate, select the winning branch (tot only), and optionally run a second `critic` engine to adversarially attack the chain. Pure prompt-scaffold path so it works for engines with weak/absent adaptive thinking. cwd defaults to process.cwd() but callers (e.g. goal --cwd) should pass the target repo so dispatch + grounding resolve there. Returns a ThinkResult whose refinedSpec is the handoff to `agon goal`.
  */
-// @kern-source: thinking:431
-export async function runThinkChain(opts: {problem:string, strategy:string, engineId:string, registry:EngineRegistry, adapter:EngineAdapter, maxThoughts:number, branches?:number, critic?:string, timeout:number, outputDir:string, ground:boolean, signal?:AbortSignal}): Promise<ThinkResult> {
+// @kern-source: thinking:439
+export async function runThinkChain(opts: {problem:string, strategy:string, engineId:string, registry:EngineRegistry, adapter:EngineAdapter, maxThoughts:number, branches?:number, critic?:string, timeout:number, outputDir:string, cwd?:string, ground:boolean, signal?:AbortSignal}): Promise<ThinkResult> {
   const strategy = isThinkStrategy(opts.strategy) ? opts.strategy : 'linear';
   const branches = Math.max(1, Math.min(opts.branches ?? 1, 8));
+  const cwd = opts.cwd ?? process.cwd();
   const engine = opts.registry.get(opts.engineId);
   const prompt = buildThinkPrompt(opts.problem, strategy, opts.maxThoughts, branches);
 
@@ -477,7 +486,7 @@ export async function runThinkChain(opts: {problem:string, strategy:string, engi
       engine,
       prompt,
       systemPrompt: 'You are a structured sequential reasoner. Output ONLY the JSON object requested. Do NOT use tools, read files, or run commands.',
-      cwd: process.cwd(),
+      cwd,
       mode: 'exec',
       timeout: opts.timeout,
       outputDir: opts.outputDir,
@@ -511,12 +520,15 @@ export async function runThinkChain(opts: {problem:string, strategy:string, engi
   const cap = Math.min(opts.maxThoughts * branches, 80);
   const parsed = parseThoughts(raw, cap);
   const grounded = opts.ground
-    ? groundThoughts(parsed.thoughts, process.cwd())
+    ? groundThoughts(parsed.thoughts, cwd)
     : { thoughts: parsed.thoughts, issues: [] as string[] };
   const protocolValid = validateChain(grounded.thoughts, strategy);
 
-  // tot/graph: pick the best-scored branch and prune the losers.
-  const selected = selectBranch(grounded.thoughts);
+  // tot picks the best-scored branch and prunes losers. graph/hypothesis
+  // keep all branches (graph MERGES them; pruning would misrepresent that).
+  const selected = strategy === 'tot'
+    ? selectBranch(grounded.thoughts)
+    : { thoughts: grounded.thoughts, chosenBranch: undefined as string | undefined };
 
   // Optional second-engine adversarial critique (skip if it is the same engine).
   let adversarialCritique: string | undefined;
@@ -532,6 +544,7 @@ export async function runThinkChain(opts: {problem:string, strategy:string, engi
       adapter: opts.adapter,
       timeout: opts.timeout,
       outputDir: opts.outputDir,
+      cwd,
       signal: opts.signal,
     });
     if (critique) {

@@ -252,8 +252,8 @@ fn name=deriveRoutingHints params="input:string, ctx:HandlerContext" returns="Ce
     };
   >>>
 
-fn name=buildRoutingContext params="input:string, ctx:HandlerContext" returns=string
-  doc "Build a lightweight routing context (~200-600 tokens) for Cesar to make intelligent intake, mode, and team decisions."
+fn name=buildRoutingContext params="input:string, ctx:HandlerContext, consume?:boolean" returns=string
+  doc "Build a lightweight routing context (~200-600 tokens) for Cesar to make intelligent intake, mode, and team decisions. consume defaults to true: pass consume=false from diagnostic/preview callers (e.g. /cesar-hints) so they don't burn one-shot turn flags like justExitedPlanMode."
   handler <<<
     const parts: string[] = [];
 
@@ -284,7 +284,10 @@ fn name=buildRoutingContext params="input:string, ctx:HandlerContext" returns=st
     // self-escalation back into planning for this one turn so it can't thrash
     // in/out. One-shot — clear the flag as we read it.
     const justExitedPlanMode = !!(ctx.cesar && (ctx.cesar as any).justExitedPlanMode);
-    if (justExitedPlanMode && ctx.cesar) (ctx.cesar as any).justExitedPlanMode = false;
+    // One-shot flag: only consume it on a real routing turn. Diagnostic/preview
+    // callers pass consume=false (e.g. /cesar-hints) so previewing the routing
+    // context doesn't eat the next live turn's ping-pong cooldown.
+    if (justExitedPlanMode && ctx.cesar && consume !== false) (ctx.cesar as any).justExitedPlanMode = false;
     if (insideActivePlan) {
       parts.push(`FLOW RULE: a plan is already active — execute this step's instructions directly with tools (Read/Edit/Bash). Do NOT call ProposePlan; do NOT propose another plan; do NOT ask whether to start. Use brainstorm/tribunal/campfire/review only if the step explicitly calls for it.`);
     } else if (planAwaitingApproval) {

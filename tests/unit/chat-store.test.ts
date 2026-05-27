@@ -173,4 +173,20 @@ describe('chat-store', () => {
     expect(loaded?.summarizedMessageCount).toBe(session.summarizedMessageCount);
     expect(formatChatContextForPrompt(loaded, { maxMessages: 3 })).toContain('persisted-0');
   });
+
+  it('frees already-summarized bodies on resume so a long --continue does not restore the RAM footprint', () => {
+    const session = startChatSession();
+    for (let i = 0; i < 40; i++) {
+      appendMessage(session, { role: 'engine', engineId: 'codex', content: `RESUME-${i}-` + 'y'.repeat(2000), timestamp: new Date().toISOString() });
+    }
+    const loaded = loadChatSession(session.id);
+    expect(loaded).not.toBeNull();
+    const count = loaded!.summarizedMessageCount ?? 0;
+    expect(count).toBeGreaterThan(0);
+    // The summarized prefix is reloaded as empty bodies (covered by the summary + disk)…
+    expect(loaded!.messages.slice(0, count).every((m: any) => m.content === '')).toBe(true);
+    // …the tail keeps full content, and old turns are still recoverable via the summary.
+    expect(loaded!.messages.slice(count).some((m: any) => (m.content?.length ?? 0) > 1000)).toBe(true);
+    expect(loaded!.summary).toContain('RESUME-0');
+  });
 });

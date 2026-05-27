@@ -126,6 +126,17 @@ describe('parseThoughts', () => {
     expect(out.summary).toContain('{ braces }');
   });
 
+  it('preserves a fenced code block inside a thought string (no fence-stripping)', () => {
+    const raw = JSON.stringify({
+      thoughts: [{ thought: 'write:\n```ts\nfn x() { return 1; }\n```\ndone', kind: 'analysis' }],
+      summary: 's',
+    });
+    const out = parseThoughts(raw, 6);
+    expect(out.thoughts).toHaveLength(1);
+    expect(out.thoughts[0].thought).toContain('```ts');
+    expect(out.thoughts[0].thought).toContain('fn x() { return 1; }');
+  });
+
   it('extracts JSON even with prose and a stray brace before it', () => {
     const raw = 'Here is my answer (note: use {} carefully):\n{"thoughts":[{"thought":"x","kind":"analysis"}],"summary":"s"}';
     const out = parseThoughts(raw, 6);
@@ -161,6 +172,14 @@ describe('groundThoughts', () => {
 
   it('ignores bare filenames without a path separator', () => {
     const { issues } = groundThoughts([node({ thought: 'see index.js somewhere' })], process.cwd());
+    expect(issues).toHaveLength(0);
+  });
+
+  it('does not flag URLs or dotted hosts as missing local files', () => {
+    const { issues } = groundThoughts(
+      [node({ thought: 'see https://github.com/foo/bar.md and docs at example.com/spec.json' })],
+      process.cwd(),
+    );
     expect(issues).toHaveLength(0);
   });
 });

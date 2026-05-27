@@ -590,7 +590,17 @@ export function App() {
           if (!activeStream || !activeStream.content) {
             return null;
           }
-          const cleaned = cleanEngineOutput(activeStream.content);
+          // Only the LAST line is needed, so clean the TAIL — not the whole buffer.
+          // cleanEngineOutput+split over the full accumulated stream every throttle tick
+          // is O(n) per tick and grows the longer a forge/brainstorm run streams → the
+          // progressive lag. Slicing the tail bounds the work to a constant per tick.
+          // Drop the (possibly partial) first line of the slice so we never start the
+          // window mid-line — which could split a multi-byte char or an ANSI escape.
+          const raw = activeStream.content;
+          const sliced = (raw.length > 4000) ? raw.slice(-4000) : raw;
+          const nlAt = (raw.length > 4000) ? sliced.indexOf('\n') : (-1);
+          const tail = (nlAt >= 0) ? sliced.slice(nlAt + 1) : sliced;
+          const cleaned = cleanEngineOutput(tail);
           const lines = cleaned.split('\n').filter((l: string) => l.trim());
           if (lines.length === 0) {
             return null;
@@ -2427,7 +2437,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:82
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2123
+// @kern-source: app:2133
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

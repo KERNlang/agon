@@ -317,23 +317,38 @@ HARD RULE: Your turn MUST end with a ProposePlan call. If you respond with text 
     return systemParts.join('\n\n');
   >>>
 
+const name=CESAR_SNAPSHOT_MSG_CHAR_CAP type=number value=4000 doc="Max chars per message folded into Cesar's continuity snapshot. Keeps a big review/brainstorm/tribunal reply (or a huge tool result) from flooding Cesar's context (the human transcript still shows it in full)."
+
+fn name=capSnapshotMessageContent params="content:string" returns="string"
+  doc "Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it."
+  handler <<<
+    if (content.length <= CESAR_SNAPSHOT_MSG_CHAR_CAP) return content;
+    return `${content.slice(0, CESAR_SNAPSHOT_MSG_CHAR_CAP)}\n… [${content.length - CESAR_SNAPSHOT_MSG_CHAR_CAP} chars truncated for Cesar context]`;
+  >>>
+
 fn name=buildCesarConversationSnapshot params="session:PersistentSession|null, chatSession:any" returns="Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>" export=true
-  doc "Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript."
+  doc "Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched."
   handler lang="kern"
     let name=directHistory value="session?.getMessageHistory?.() ?? []"
     if cond="directHistory.length > 0"
-      return value="directHistory.filter((msg: any) => msg && typeof msg.role === 'string')"
+      return value="directHistory.filter((msg: any) => msg && typeof msg.role === 'string').map((msg: any) => typeof msg.content === 'string' && msg.content.length > CESAR_SNAPSHOT_MSG_CHAR_CAP ? Object.assign({}, msg, { content: capSnapshotMessageContent(msg.content) }) : msg)"
     let name=transcript value="Array.isArray(chatSession?.messages) ? chatSession.messages : []"
     let name=snapshot type="Array<{role:string,content:any}>" value="[]"
     each name=msg in="transcript.slice(-80)"
       if cond="!msg || typeof msg.content !== 'string' || !msg.content.trim()"
         continue
+      comment raw="// Cap each message before it enters Cesar's continuity context. A review /"
+      comment raw="// brainstorm / tribunal engine reply can be tens of KB of prose — fed in whole"
+      comment raw="// it floods Cesar's context with spam. The human-visible transcript keeps the"
+      comment raw="// full text; only this continuity snapshot is bounded (mirrors the 1200-char/"
+      comment raw="// msg cap buildHistoryPrimedPrompt already applies on the API-fallback path)."
+      let name=capped value="capSnapshotMessageContent(msg.content)"
       if cond="msg.role === 'user'"
-        do value="snapshot.push({ role: 'user', content: msg.content })"
+        do value="snapshot.push({ role: 'user', content: capped })"
         continue
       if cond="msg.role === 'engine'"
         let name=prefix value="msg.engineId && msg.engineId !== 'cesar' ? `[${msg.engineId}] ` : ''"
-        do value="snapshot.push({ role: 'assistant', content: `${prefix}${msg.content}` })"
+        do value="snapshot.push({ role: 'assistant', content: `${prefix}${capped}` })"
     return value="snapshot"
 
 fn name=saveCesarConversationSnapshot params="session:PersistentSession|null, chatSession:any" returns=void export=true

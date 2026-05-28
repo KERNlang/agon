@@ -322,6 +322,7 @@ fn name=seedEnginesFromLineage params="ratings:RatingRecord, lineage:Record<stri
       ratings.engineMeta[engineId] ??= defaultEngineMeta();
       ratings.engineMeta[engineId].derivedFrom = predId;
       ratings.engineMeta[predId] ??= defaultEngineMeta();
+      ratings.engineMeta[predId].versions ??= [];
       if (!ratings.engineMeta[predId].versions.includes(engineId)) ratings.engineMeta[predId].versions.push(engineId);
       seeded.push(engineId);
     }

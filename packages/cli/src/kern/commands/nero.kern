@@ -12,7 +12,7 @@ import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createR
 import from="@agon/core" names="RunStatus,RunStatusEngine" types=true
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@agon/adapter-cli" names="createCliAdapter"
-import from="@agon/forge" names="runNero"
+import from="@agon/forge" names="runNero,joinProblemInput"
 import from="../blocks/output-format.js" names="header,info,bold,dim"
 import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
 
@@ -79,8 +79,10 @@ const name=neroCommand type=any
         registry.load(resolveBuiltinEnginesDir());
         const adapter = createCliAdapter(registry);
 
+        // citty mirrors the named positional into `_`; joinProblemInput drops the
+        // duplicate first extra so the decision isn't sent twice (same helper think/council use).
         const positionals = Array.isArray((args as any)._) ? (args as any)._.map(String) : [];
-        const decision = [args.decision, ...positionals].filter((p) => typeof p === 'string' && p.trim()).map((p) => String(p).trim()).join(' ').trim();
+        const decision = joinProblemInput(args.decision as string | undefined, positionals);
         if (!decision) {
           console.error('Provide a decision to challenge. Usage: agon nero "your decision" [--reasoning "..."] [--focus "..."]');
           process.exitCode = 1;

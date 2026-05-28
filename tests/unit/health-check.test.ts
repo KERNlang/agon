@@ -27,7 +27,7 @@ function makeRepo(): string {
     forgeDispatchTimeout: 30,
     forgeFitnessTimeout: 1,
     forgeHealthCheckEnabled: true,
-    forgeHealthCheckTimeoutSec: 2,
+    forgeHealthCheckTimeoutSec: 10,
     forgeEarlyFinalizeEnabled: false,
   }, null, 2));
   execFileSync('git', ['init', '-q'], { cwd: dir });
@@ -77,9 +77,10 @@ describe('forge pre-flight health check', () => {
         const isHealthProbe = String(prompt ?? '').includes(HEALTH_PROBE_PROMPT);
         if (isHealthProbe) {
           if (engine.id === 'dead') {
-            // Simulate a hanging engine: return empty stdout AFTER the probe
-            // timeout would have fired. The bridge treats timeout as unhealthy.
-            await new Promise((resolve) => setTimeout(resolve, 4_000));
+            // A hung/timed-out engine surfaces as timedOut:true from the bridge
+            // (spawnWithTimeout). Return it directly — health-check keys off the
+            // flag (health-check.kern:108), so this is deterministic and doesn't
+            // depend on a real probe-timeout firing under CI load.
             return { exitCode: 0, stdout: '', stderr: '', timedOut: true };
           }
           return { exitCode: 0, stdout: 'ok', stderr: '', timedOut: false };

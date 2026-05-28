@@ -26,6 +26,7 @@ const name=agentGuideCommand type=any
           process.stdout.write(JSON.stringify({
             modes: [
               { name: 'forge', cmd: 'agon forge "<task>" -t "<test cmd>"', use: 'multiple valid approaches + a runnable test', setup: 'the -t test IS the spec: it must FAIL a plausibly-wrong impl and be RED-at-base. Red-team it with `agon nero` before launching.' },
+              { name: 'synthesis', cmd: 'agon synthesis "<prompt>" [-s <swaps>] [-j <judge>]', use: 'one polished result blending the best ideas; no clean pass/fail test' },
               { name: 'brainstorm', cmd: 'agon brainstorm "<question>"', use: 'cheap second opinion / ideas' },
               { name: 'tribunal', cmd: 'agon tribunal "<question>" --mode adversarial', use: 'decisions with real tradeoffs' },
               { name: 'campfire', cmd: 'agon campfire "<topic>"', use: 'open exploration, no winner' },

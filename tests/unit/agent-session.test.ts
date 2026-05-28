@@ -57,6 +57,30 @@ describe('AgentSession', () => {
     expect(mockRun).toHaveBeenCalledTimes(2);
   });
 
+  it('classifies a flagged engine fault as an error turn, not a 0-tool completion (RC2)', async () => {
+    // The inner loop returns a permanent failure as a normal result carrying
+    // failed/engineFault — it does NOT throw. The session must surface that as
+    // stopReason 'error' (so the handler quarantines + does not auto-resume),
+    // not the default 'completed' that an unflagged empty result would yield.
+    mockRun.mockResolvedValue({
+      response: 'Error: Missing API key: set GOOGLE_API_KEY',
+      toolCalls: 0,
+      steps: 0,
+      failed: true,
+      engineFault: true,
+      errorReason: 'Missing API key: set GOOGLE_API_KEY',
+    });
+    const session = new AgentSession(makeConfig());
+
+    const r = await session.step('refactor the files');
+    expect(r.stopReason).toBe('error');
+    expect(r.engineFault).toBe(true);
+    expect(r.error).toContain('Missing API key');
+    // Terminal 'failed' state blocks further steps so the session can't be
+    // re-driven into the same dead engine.
+    expect(session.getStats().state).toBe('failed');
+  });
+
   it('refuses step() when turn budget is exhausted', async () => {
     mockRun.mockResolvedValue({ response: 'ok', toolCalls: 0, steps: 1 });
     const session = new AgentSession(makeConfig({ budget: { maxTurns: 2, maxDurationMs: 60_000 } }));

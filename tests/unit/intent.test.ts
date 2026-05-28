@@ -74,6 +74,57 @@ describe('Intent Detection — Slash Commands', () => {
     if (r.type === 'campfire') expect(r.topic).toBe('the future of AI');
   });
 
+  it('/think parses problem (no longer aliases to campfire)', () => {
+    const r = detectIntent('/think how should we shard the cache?');
+    expect(r.type).toBe('think');
+    expect((r as any).input).toBe('how should we shard the cache?');
+  });
+
+  it('/think parses --strategy and --steps flags out of the problem', () => {
+    const r = detectIntent('/think --strategy reflexion --steps 8 design the retry policy');
+    expect(r.type).toBe('think');
+    expect((r as any).strategy).toBe('reflexion');
+    expect((r as any).steps).toBe(8);
+    expect((r as any).input).toBe('design the retry policy');
+  });
+
+  it('/council parses decision', () => {
+    const r = detectIntent('/council should we adopt event sourcing?');
+    expect(r.type).toBe('council');
+    expect((r as any).question).toBe('should we adopt event sourcing?');
+  });
+
+  it('/synthesis parses prompt and --swaps', () => {
+    const r = detectIntent('/synthesis --swaps 2 write a rate limiter');
+    expect(r.type).toBe('synthesis');
+    expect((r as any).swaps).toBe(2);
+    expect((r as any).input).toBe('write a rate limiter');
+  });
+
+  it('bare /nero toggles in-session adversarial mode', () => {
+    const r = detectIntent('/nero');
+    expect(r.type).toBe('nero');
+  });
+
+  it('/nero <decision> fires a standalone challenge', () => {
+    const r = detectIntent('/nero ship the migration without a backfill');
+    expect(r.type).toBe('nero-challenge');
+    expect((r as any).input).toBe('ship the migration without a backfill');
+  });
+
+  it('/nero <decision> --reasoning captures the reasoning tail', () => {
+    const r = detectIntent('/nero drop the index --reasoning it is never queried');
+    expect(r.type).toBe('nero-challenge');
+    expect((r as any).input).toBe('drop the index');
+    expect((r as any).reasoning).toBe('it is never queried');
+  });
+
+  it('think/council/synthesis appear in the /help slash list', () => {
+    for (const cmd of ['/think', '/council', '/synthesis']) {
+      expect(SLASH_COMMANDS.some((c) => c.cmd === cmd)).toBe(true);
+    }
+  });
+
   it('/review parses explicit engine and target in either order', () => {
     const engineFirst = detectIntent('/review with gemini branch:main');
     expect(engineFirst.type).toBe('review');

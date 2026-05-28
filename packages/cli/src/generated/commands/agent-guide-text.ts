@@ -65,14 +65,14 @@ export function agentGuideMarkdown(): string {
 // @kern-source: agent-guide-text:64
 export function agonShim(format: string): string {
   const body = [
-    'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, review, goal).',
+    'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, review, goal).',
     'First run `agon agent-guide` in the shell to see exactly how to call it, then use the right Agon mode to handle the request.',
     'Call agon with your normal shell/Bash tool — there is no MCP and nothing is loaded until you invoke it.',
   ].join('\n');
 
   if (format === 'agy') {
     return [
-      'description = "Use Agon multi-AI orchestration (forge/synthesis/tribunal/council/brainstorm/review/goal)"',
+      'description = "Use Agon multi-AI orchestration (forge/synthesis/tribunal/council/think/nero/brainstorm/review/goal)"',
       'prompt = """',
       body,
       '',
@@ -85,7 +85,7 @@ export function agonShim(format: string): string {
   if (format === 'claude') {
     return [
       '---',
-      'description: Use Agon multi-AI orchestration (forge/synthesis/tribunal/council/brainstorm/review/goal)',
+      'description: Use Agon multi-AI orchestration (forge/synthesis/tribunal/council/think/nero/brainstorm/review/goal)',
       'argument-hint: [task]',
       '---',
       '',
@@ -115,7 +115,7 @@ export function codexSkillMarkdown(): string {
   return [
     '---',
     'name: agon',
-    'description: "Use when the user explicitly asks for Agon, $agon, /agon, or wants Agon multi-AI orchestration modes such as forge, synthesis, brainstorm, tribunal, council, campfire, review, or goal."',
+    'description: "Use when the user explicitly asks for Agon, $agon, /agon, or wants Agon multi-AI orchestration modes such as forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, review, or goal."',
     '---',
     '',
     '# Agon',
@@ -137,6 +137,8 @@ export function codexSkillMarkdown(): string {
     '- `tribunal`: engines debate opposing technical positions.',
     '- `council`: a roundtable of all engines, each in a role, chaired by the top-rated engine — one verdict with confidence + kill-switch for a high-stakes call.',
     '- `campfire`: open multi-engine discussion.',
+    '- `think`: sequential thinking — decompose a problem (optionally branch) and surface open questions before acting.',
+    '- `nero`: adversarial self-challenge — the top-rated critic attacks a decision and returns a verdict (FLAWED / PROCEED WITH CAUTION / SOUND).',
     '- `review`: non-interactive AI review of a diff target.',
     '- `goal`: autonomous task-queue execution with stronger gates.',
     '',
@@ -146,7 +148,7 @@ export function codexSkillMarkdown(): string {
 /**
  * Codex UI metadata for the Agon skill.
  */
-// @kern-source: agent-guide-text:144
+// @kern-source: agent-guide-text:146
 export function codexSkillOpenAiYaml(): string {
   return [
     'interface:',

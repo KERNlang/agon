@@ -27,6 +27,7 @@ export interface CallCommandOptions {
   confidence?: string;
   roles?: string;
   chairman?: string;
+  oracleGate?: string;
 }
 
 export interface BuiltCallCommands {
@@ -180,6 +181,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       cwd,
       ...textFlag('--queue', opts.queue),
       ...textFlag('--gate', opts.gate),
+      ...textFlag('--oracle-gate', opts.oracleGate),
       ...timeout,
       ...engines,
     ]);
@@ -365,6 +367,10 @@ export const callCommand = defineCommand({
       type: 'string',
       description: 'For council: force a specific engine to chair',
     },
+    oracleGate: {
+      type: 'string',
+      description: 'For goal: oracle red-team pre-flight (off|warn|strict) — panel tries to game each verify before forging',
+    },
   },
   async run({ args }) {
     let built: BuiltCallCommands;
@@ -394,6 +400,7 @@ export const callCommand = defineCommand({
         confidence: args.confidence,
         roles: args.roles,
         chairman: args.chairman,
+        oracleGate: args.oracleGate,
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

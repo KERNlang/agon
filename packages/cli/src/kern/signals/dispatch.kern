@@ -15,7 +15,7 @@ import from="./intent.js" names="detectIntent,FITNESS_PATTERN"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./icons.js" names="icons"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
-import from="../../handlers/index.js" names="handleForge,handleChat,handleBrainstorm,handleCampfire,handleTribunal,handleLeaderboard,handleCesarReport,handleCesarHints,handleHistory,handleEngines,handleDiscover,handleConfig,handleUse,handleCesar,handleTokens,handleModels,handleWorkspace,handleChats,handlePlanShow,handlePlansList,handleApprove,handleRetry,handleCancel,handleApplyPatch,handleCp,handleCommit,handleFlowReport,handleFlowAnalysis,handleBuild,handleRun,handleReview,handleReviewMany,runAgentMode,runAgentTeam"
+import from="../../handlers/index.js" names="handleForge,handleChat,handleBrainstorm,handleCampfire,handleTribunal,handleThink,handleCouncil,handleSynthesis,handleNeroChallenge,handleLeaderboard,handleCesarReport,handleCesarHints,handleHistory,handleEngines,handleDiscover,handleConfig,handleUse,handleCesar,handleTokens,handleModels,handleWorkspace,handleChats,handlePlanShow,handlePlansList,handleApprove,handleRetry,handleCancel,handleApplyPatch,handleCp,handleCommit,handleFlowReport,handleFlowAnalysis,handleBuild,handleRun,handleReview,handleReviewMany,runAgentMode,runAgentTeam"
 import from="../handlers/forge.js" names="prepareForgeFitnessCommand,inferProjectFitnessCommand"
 import from="../handlers/team-tribunal.js" names="handleTeamTribunal"
 import from="../handlers/team-forge.js" names="handleTeamForge"
@@ -1545,6 +1545,58 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           if (cb.eventBus) cb.eventBus.emit('post:campfire', { topic: intent.topic, cwd: _cCwd }).catch(() => {});
           const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
           if (chatContext) await continueCesarAfterResult(`Campfire discussion on: "${(intent.topic ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb, continuationEpoch, continuationUserTurns);
+        }, cb.ctx));
+        return { handled: true, ranAsJob: true };
+      }
+      case 'think': {
+        if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /think <problem> [--strategy reflexion] [--steps 8]' }); return { handled: true, ranAsJob: false }; }
+        const _thCwd = resolveWorkingDir();
+        const _thLabel = intent.input?.slice(0, 40) ?? 'think';
+        const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+        const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+        cb.runAsJob('think', _thLabel, withThreadOutcome(_thCwd, 'think', _thLabel, async () => {
+          await handleThink(intent.input, cb.dispatch, cb.ctx, { strategy: intent.strategy, steps: intent.steps });
+          const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
+          if (chatContext) await continueCesarAfterResult(`Think chain on: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nReview the reasoning, resolve any open questions, and take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
+        }, cb.ctx));
+        return { handled: true, ranAsJob: true };
+      }
+      case 'council': {
+        if (!intent.question?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /council <decision>' }); return { handled: true, ranAsJob: false }; }
+        const _coCwd = resolveWorkingDir();
+        const _coLabel = intent.question?.slice(0, 40) ?? 'council';
+        const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+        const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+        cb.runAsJob('council', _coLabel, withThreadOutcome(_coCwd, 'council', _coLabel, async () => {
+          await handleCouncil(intent.question, cb.dispatch, cb.ctx);
+          const chatContext = collectRecentEngineContext(cb.ctx, 14, 1500);
+          if (chatContext) await continueCesarAfterResult(`Council deliberated on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the chairman verdict and the strongest dissent, then recommend the next step.`, cb, continuationEpoch, continuationUserTurns);
+        }, cb.ctx));
+        return { handled: true, ranAsJob: true };
+      }
+      case 'synthesis': {
+        if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /synthesis <task> [--swaps 2]' }); return { handled: true, ranAsJob: false }; }
+        const _syCwd = resolveWorkingDir();
+        const _syLabel = intent.input?.slice(0, 40) ?? 'synthesis';
+        const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+        const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+        cb.runAsJob('synthesis', _syLabel, withThreadOutcome(_syCwd, 'synthesis', _syLabel, async () => {
+          await handleSynthesis(intent.input, cb.dispatch, cb.ctx, { swaps: intent.swaps });
+          const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
+          if (chatContext) await continueCesarAfterResult(`Synthesis completed on: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the winning artifact and take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
+        }, cb.ctx));
+        return { handled: true, ranAsJob: true };
+      }
+      case 'nero-challenge': {
+        if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /nero <decision to challenge>' }); return { handled: true, ranAsJob: false }; }
+        const _neCwd = resolveWorkingDir();
+        const _neLabel = intent.input?.slice(0, 40) ?? 'nero';
+        const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+        const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+        cb.runAsJob('nero', _neLabel, withThreadOutcome(_neCwd, 'nero', _neLabel, async () => {
+          await handleNeroChallenge(intent.input, cb.dispatch, cb.ctx, { reasoning: intent.reasoning });
+          const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
+          if (chatContext) await continueCesarAfterResult(`Nero challenged: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nWeigh the critic's verdict honestly: if it found a real flaw, adjust the plan; if not, say why and proceed.`, cb, continuationEpoch, continuationUserTurns);
         }, cb.ctx));
         return { handled: true, ranAsJob: true };
       }

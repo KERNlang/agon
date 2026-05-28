@@ -120,6 +120,24 @@ describe('agon call command mapping', () => {
     expect(() => buildCallCommands({ workflow: 'council' })).toThrow('agon call council requires a prompt/task argument');
   });
 
+  it('maps goal with --oracle-gate forwarded', () => {
+    expect(buildCallCommands({
+      workflow: 'goal',
+      input: 'close all kern gaps',
+      cwd: '/tmp/project',
+      queue: '.kern-gaps/',
+      gate: 'npm test',
+      oracleGate: 'strict',
+    }).commands).toEqual([
+      ['goal', 'close all kern gaps', '--cwd', '/tmp/project', '--queue', '.kern-gaps/', '--gate', 'npm test', '--oracle-gate', 'strict'],
+    ]);
+  });
+
+  it('omits --oracle-gate when not provided', () => {
+    const { commands } = buildCallCommands({ workflow: 'goal', input: 'x', cwd: '/tmp/p', queue: '.q/', gate: 'true' });
+    expect(commands[0]).not.toContain('--oracle-gate');
+  });
+
   it('maps synthesis to the synthesis command bridge', () => {
     expect(buildCallCommands({
       workflow: 'synthesis',

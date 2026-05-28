@@ -274,6 +274,7 @@ agon goal "Close all KERN gaps" \
 | `--engines` | Implementer roster; **authoritative** when set (no routing/narrowing) | all active |
 | `--review-engines` / `--judge` | The review panel and the adjudicator | all / config→Cesar→first |
 | `--require-tests` | Reject a source change with no test | on |
+| `--oracle-gate` | Pre-flight oracle red-team (`off`\|`warn`\|`strict`): the panel tries to GAME each task's `verify`; `strict` refuses to launch if any is gameable | `off` |
 | `--max-attempts` | Attempts per task before park | `3` |
 | `--max-hours` / `--budget` | Wall-clock and/or USD ceiling — either, both, or neither | off (`0`) |
 | `--push` / `--pr` | Push the goal branch per task / open a PR at the end (never `main`) | off |
@@ -282,6 +283,8 @@ agon goal "Close all KERN gaps" \
 Read a run's digest from any session with `agon goal --status --id close-all-kern-gaps`. Reachable from external CLIs via `agon call goal "<intent>" --queue <dir> --gate "<cmd>"`. _(Roadmap: hermetic gate isolation, detached delegation + async callback.)_
 
 **Designing the gate — it _is_ the spec.** The forge only optimizes to make your `--gate` (and each task's `verify`) pass, so that command is the actual specification. Make it **discriminating**: it must FAIL a plausibly-wrong implementation, not merely pass the intended one (use distinct/edge inputs — `atan2(3,4)`, not `atan2(0,1)`). Before a long run, red-team your own oracle with `agon nero "<the gate I wrote>" --reasoning "is this gameable?"` — if a wrong impl can slip through, add a killer case first. A non-discriminating gate lets buggy-but-passing code land green and dead-loops the run.
+
+Or **automate the red-team**: `--oracle-gate=warn` (or `strict`) runs a pre-flight where the review panel tries to make each task's `verify` pass with a *cheating* impl (hardcode, ignore inputs). If any engine succeeds, the verify is gameable — `warn` reports it and continues, `strict` refuses to launch so you strengthen it first. It's the discriminating-oracle discipline built into the tool, so it no longer depends on remembering to dogfood it.
 
 ## Interactive REPL
 

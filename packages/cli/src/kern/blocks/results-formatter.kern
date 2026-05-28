@@ -1,4 +1,4 @@
-import from="@agon/core" names="SessionResult,BrainstormResultData,CampfireResultData,TribunalResultData,ForgeResultData,ChatSession" types=true
+import from="@agon/core" names="SessionResult,BrainstormResultData,CampfireResultData,TribunalResultData,ForgeResultData,ThinkResultData,CouncilResultData,SynthesisResultData,NeroResultData,ChatSession" types=true
 
 const name=BOLD type=string value={{ '\x1b[1m' }}
 
@@ -137,10 +137,77 @@ fn name=formatForge params="r:SessionResult, idx:number" returns=string
     do value="lines.push('')"
     return value="lines.join('\\n')"
 
+fn name=formatThink params="r:SessionResult, idx:number" returns=string
+  handler lang="kern"
+    let name=data value="r.data as ThinkResultData"
+    let name=lines type="string[]" value="[]"
+    do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
+    do value="lines.push(`${BOLD} THINK #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${data.strategy} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
+    do value="lines.push(`${DIM} Engine: ${r.engines.join(', ')} · ${data.thoughtCount} thoughts${RESET}`)"
+    do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
+    do value="lines.push('')"
+    if cond="data.summary"
+      do value="lines.push(`${BOLD}── Summary ──${RESET}`)"
+      do value="lines.push(data.summary)"
+      do value="lines.push('')"
+    if cond="data.openQuestions && data.openQuestions.length > 0"
+      do value="lines.push(`${BOLD}── Open questions ──${RESET}`)"
+      each name=q in="data.openQuestions"
+        do value="lines.push(`  ❓ ${q}`)"
+      do value="lines.push('')"
+    return value="lines.join('\\n')"
+
+fn name=formatCouncil params="r:SessionResult, idx:number" returns=string
+  handler lang="kern"
+    let name=data value="r.data as CouncilResultData"
+    let name=lines type="string[]" value="[]"
+    do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
+    do value="lines.push(`${BOLD} COUNCIL #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
+    do value="lines.push(`${DIM} Chair: ${data.chairmanId}${data.confidence != null ? ` · ${data.confidence}% confidence` : ''}${RESET}`)"
+    let name=seatLabels type="string[]" value="[]"
+    each name=seat in="data.seats"
+      do value="seatLabels.push(`${seat.role}=${seat.engineId}`)"
+    do value="lines.push(`${DIM} Seats: ${seatLabels.join(', ')}${RESET}`)"
+    do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
+    do value="lines.push('')"
+    do value="lines.push(`${BOLD}${GREEN}── Chairman verdict ──${RESET}`)"
+    do value="lines.push(data.verdict)"
+    do value="lines.push('')"
+    return value="lines.join('\\n')"
+
+fn name=formatSynthesis params="r:SessionResult, idx:number" returns=string
+  handler lang="kern"
+    let name=data value="r.data as SynthesisResultData"
+    let name=lines type="string[]" value="[]"
+    do value="lines.push(`${BOLD}${GREEN}${RULE}${RESET}`)"
+    do value="lines.push(`${BOLD} SYNTHESIS #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
+    do value="lines.push(`${DIM} Engines: ${r.engines.join(', ')}${data.winner ? ` · Winner: ${data.winner}` : ''} · ${data.swaps} swap(s)${RESET}`)"
+    do value="lines.push(`${BOLD}${GREEN}${RULE}${RESET}`)"
+    do value="lines.push('')"
+    if cond="data.judgeReasoning"
+      do value="lines.push(`${BOLD}── Judge reasoning ──${RESET}`)"
+      do value="lines.push(data.judgeReasoning)"
+      do value="lines.push('')"
+    return value="lines.join('\\n')"
+
+fn name=formatNero params="r:SessionResult, idx:number" returns=string
+  handler lang="kern"
+    let name=data value="r.data as NeroResultData"
+    let name=lines type="string[]" value="[]"
+    do value="lines.push(`${BOLD}${RED}${RULE}${RESET}`)"
+    do value="lines.push(`${BOLD} NERO #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
+    do value="lines.push(`${DIM} Critic: ${data.criticId} · ${data.verdict.toUpperCase()}${data.challengeConfidence != null ? ` · Nero ${data.challengeConfidence}% sure original is correct` : ''}${RESET}`)"
+    do value="lines.push(`${BOLD}${RED}${RULE}${RESET}`)"
+    do value="lines.push('')"
+    if cond="data.challengeText"
+      do value="lines.push(data.challengeText)"
+      do value="lines.push('')"
+    return value="lines.join('\\n')"
+
 fn name=formatSessionResults params="results:SessionResult[]" returns=string export=true
   handler <<<
     if (results.length === 0) {
-      return `${DIM}No results in this session yet. Run /brainstorm, /campfire, /tribunal, or /forge first.${RESET}\n`;
+      return `${DIM}No results in this session yet. Run /brainstorm, /campfire, /tribunal, /forge, /think, /council, /synthesis, or /nero first.${RESET}\n`;
     }
 
     const sections: string[] = [];
@@ -154,6 +221,10 @@ fn name=formatSessionResults params="results:SessionResult[]" returns=string exp
         case 'campfire': sections.push(formatCampfire(r, idx)); break;
         case 'tribunal': sections.push(formatTribunal(r, idx)); break;
         case 'forge': sections.push(formatForge(r, idx)); break;
+        case 'think': sections.push(formatThink(r, idx)); break;
+        case 'council': sections.push(formatCouncil(r, idx)); break;
+        case 'synthesis': sections.push(formatSynthesis(r, idx)); break;
+        case 'nero': sections.push(formatNero(r, idx)); break;
       }
     }
 

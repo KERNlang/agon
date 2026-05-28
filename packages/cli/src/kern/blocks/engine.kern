@@ -14,6 +14,10 @@ import from="./markdown.js" names="truncateCodeLine"
 import from="./arena.js" names="ForgeArena,BrainstormStorm,CampfireFire,TribunalCourt"
 import from="./plan-view.js" names="PlanProposalView,PlanExecutionView"
 import from="./engine-helpers.js" names="parseToolInputPayload,extractPatchText,parsePatchPreview,extractSummary"
+import from="node:module" names="createRequire"
+import from="node:fs" names="readFileSync,existsSync"
+import from="node:path" names="dirname,join"
+import from="node:url" names="fileURLToPath"
 
 module name=EngineHelperExports
   export from="./engine-helpers.js" names="parseToolInputPayload,extractPatchText,parsePatchPreview,extractSummary"
@@ -24,14 +28,36 @@ const name=BRAND type="readonly string[]" value={{ ['#fbbf24', '#f9a816', '#f973
 
 const name=LOGO_LINES type="string[]" value={{ ['    █████╗  ██████╗  ██████╗ ███╗   ██╗', '   ██╔══██╗██╔════╝ ██╔═══██╗████╗  ██║', '   ███████║██║  ███╗██║   ██║██╔██╗ ██║', '   ██╔══██╗██║   ██╗██║   ██║██║╚██╗██║', '   ██║  ██║╚██████╔╝╚██████╔╝██║ ╚████║', '   ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝'] }}
 
-const name=VERSION type=string value={{ '0.1.0' }}
+fn name=resolvePackageVersion params="resolveSpecifier:string|null, wantName:string, fallback:string" returns=string
+  doc "Read a package's installed version from its package.json at runtime so the banner auto-reflects npm upgrades instead of a frozen literal. Walks up from a resolvable entry (or this module for the own package) to the nearest package.json whose name matches. Falls back to the literal if resolution fails — e.g. an exports-locked package.json that can't be required by path."
+  handler <<<
+    try {
+      const req = createRequire(import.meta.url);
+      const startFile = resolveSpecifier ? req.resolve(resolveSpecifier) : fileURLToPath(import.meta.url);
+      let dir = dirname(startFile);
+      for (let i = 0; i < 10; i += 1) {
+        const pkgPath = join(dir, 'package.json');
+        if (existsSync(pkgPath)) {
+          const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+          if (pkg && pkg.name === wantName && typeof pkg.version === 'string') return pkg.version;
+        }
+        const parent = dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+      }
+    } catch { /* resolution failed — use the pinned fallback */ }
+    return fallback;
+  >>>
 
-// agon's own version is intentionally pinned at 0.1.0 — the @kernlang/* family is
-// the source of truth. KERN_VERSION surfaces the KERN toolchain version the build
-// runs against, so the banner reflects what actually MOVES rather than looking
-// frozen. Tracks @kernlang/cli (its package.json is exports-locked, so this is a
-// display literal); kern:compile validates the resolved family — bump on upgrade.
-const name=KERN_VERSION type=string value={{ '3.5.3' }}
+// Both versions are read from the installed package.json at runtime so the banner
+// auto-updates on `npm` upgrades instead of drifting behind a frozen literal.
+// VERSION = this CLI (@agon/cli); KERN_VERSION = the @kernlang/* toolchain the
+// runtime actually loads (@kernlang/terminal, whose package.json is exports-locked
+// so we resolve it via its exported /runtime entry and walk up to package.json).
+// The literals are last-resort fallbacks if resolution fails.
+const name=VERSION type=string value={{ resolvePackageVersion(null, '@agon/cli', '0.1.0') }}
+
+const name=KERN_VERSION type=string value={{ resolvePackageVersion('@kernlang/terminal/runtime', '@kernlang/terminal', '3.5.5') }}
 
 
 // ── Interface: OutputBlock ──────────────────────────────────────────

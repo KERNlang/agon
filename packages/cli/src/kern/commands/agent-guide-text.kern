@@ -26,7 +26,7 @@ fn name=agentGuideMarkdown returns=string export=true
       '',
       '## Setting up forge & goal — the test/gate IS the spec',
       'These two modes only optimize to make your test (`-t` for forge) or gate/verify (for goal) pass. That command IS the specification — not the prose task. A check that a wrong implementation can still pass will ship a wrong implementation, and often dead-loops the run. Before launching:',
-      '- Discriminate: every check must FAIL a plausibly-wrong impl, not just pass the intended one. Use distinct/edge args (atan2(3,4) not atan2(0,1); `5.5 % 2` to catch int() truncation; cbrt(27) to reject pow(x,1/3)).',
+      '- Discriminate: every check must FAIL a plausibly-wrong impl, not just pass the intended one. Use distinct/edge args (atan2(3,4) not atan2(0,1); `5.5 % 2` to catch int() truncation; cbrt(-27) to reject pow(x,1/3), since pow returns NaN on a negative base).',
       '- RED at base: confirm the test fails on the current code for the RIGHT reason before the run, and turns green only when the task is genuinely done.',
       '- Coverage over tolerance: add enough cases that wrong variants die on their own; never loosen a gate or tolerance to force a pass.',
       '- Red-team your own oracle first: run `agon nero "<the test/gate I wrote>" --reasoning "is this gameable?"`, or hand one engine the test + signature and ask it to write a subtly-wrong impl that still passes. If it can, the oracle has a hole — add a killer case and repeat until it cannot.',

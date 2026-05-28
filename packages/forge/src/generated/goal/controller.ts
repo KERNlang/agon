@@ -12,6 +12,8 @@ import { createJournal, loadJournal, saveJournal, addTasks, requeueInflightTasks
 
 import { snapshotOracle, witnessTest, witnessVerifyCommand } from './oracle.js';
 
+import { oracleGateDecision } from './oracle-redteam.js';
+
 import { generateMutants, mutationSurvivors } from './mutation.js';
 
 import type { Mutant } from './mutation.js';
@@ -25,7 +27,7 @@ import type { JournalState, GoalSpec, GoalTask } from './types.js';
 /**
  * Persist the EXACT gate stdout/stderr to <goalDir>/<taskId>-gate.log so a parked task's failure is inspectable without re-running the gate by hand. Returns the path, or '' if it couldn't be written.
  */
-// @kern-source: controller:25
+// @kern-source: controller:26
 export function persistGateLog(goalId: string, taskId: string, gateCmd: string, res: {stdout?:string, stderr?:string, exitCode?:number, timedOut?:boolean}): string {
   try {
     const body = `$ ${gateCmd}\n[exit ${res.exitCode ?? '?'}${res.timedOut ? ' (timed out)' : ''}]\n\n--- stdout ---\n${res.stdout ?? ''}\n\n--- stderr ---\n${res.stderr ?? ''}\n`;
@@ -40,7 +42,7 @@ export function persistGateLog(goalId: string, taskId: string, gateCmd: string, 
 /**
  * Compact human digest of a finished (or stopped) run — gaps closed/parked/failed, commits, spend, wall-clock. The detached-delegation callback ships this, never a transcript dump.
  */
-// @kern-source: controller:38
+// @kern-source: controller:39
 export function summarizeGoal(state: JournalState): string {
   const by = (s: string) => state.tasks.filter((t) => t.status === s);
   const done = by('done'), parked = by('parked'), failed = by('failed');
@@ -79,7 +81,7 @@ export function summarizeGoal(state: JournalState): string {
 /**
  * Persist the durable terminal artifacts (result.json + summary.md) any session can read via `agon goal status <id>` — the source of truth when the originating CLI is long dead.
  */
-// @kern-source: controller:75
+// @kern-source: controller:76
 export function writeGoalArtifacts(state: JournalState): {resultPath:string, summaryPath:string} {
   assertSafeGoalId(state.spec.goalId);
   ensureAgonHome();
@@ -107,8 +109,8 @@ export function writeGoalArtifacts(state: JournalState): {resultPath:string, sum
 /**
  * Run the goal to a terminal state (done / budget / time / breaker / abort). Resumable: re-invoking with resume=true picks up the journal. Returns the final JournalState; durable artifacts are written before return.
  */
-// @kern-source: controller:101
-export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[],verify?:string}>, oracleFiles?: string[], resume?: boolean, push?: boolean, remote?: string, requireTests?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, breakerWindow?: number, breakerMinSuccessRate?: number, mutationHighSignalMax?: number, mutationSurvivorRatio?: number, mutationFloor?: number, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, mutationEvidence?:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string, costUsd?:number}> }): Promise<JournalState> {
+// @kern-source: controller:102
+export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string, tasks: Array<{id:string,source:string,dependsOn?:string[],verify?:string}>, oracleFiles?: string[], resume?: boolean, push?: boolean, remote?: string, requireTests?: boolean, gateTimeoutSec?: number, witnessCmd?: string, witnessTimeoutSec?: number, maxParkStreak?: number, maxNoProgress?: number, breakerWindow?: number, breakerMinSuccessRate?: number, mutationHighSignalMax?: number, mutationSurvivorRatio?: number, mutationFloor?: number, oracleGate?: 'off'|'warn'|'strict', oracleRedTeam?: (a:{tasks:Array<{id:string,source:string,verify?:string}>, baseWorktree:string, repoRoot:string, signal?:AbortSignal})=>Promise<{holes:Array<{taskId:string,engine:string,evidence:string}>, costUsd:number}>, signal?: AbortSignal, onEvent?: (e:{kind:string,taskId?:string,detail?:string})=>void, implement: (a:{task:GoalTask, worktree:string, baseSha:string, repoRoot:string, fixContext?:string, signal?:AbortSignal})=>Promise<{ok:boolean, costUsd:number, error?:string}>, review: (a:{worktree:string, baseSha:string, diff:string, label:string, mutationEvidence?:string, signal?:AbortSignal})=>Promise<{blocking:boolean, summary:string, costUsd?:number}> }): Promise<JournalState> {
   const { spec, repoRoot } = opts;
   assertSafeGoalId(spec.goalId);
   ensureAgonHome();
@@ -232,6 +234,73 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
       return state;
     }
     emit('preflight-ok', undefined, 'gate green at base');
+
+    // 3.6 PRE-FLIGHT — oracle red-team (opt-in, --oracle-gate). Prove each task's
+    //     `verify` is DISCRIMINATING before forging: the panel tries to make the
+    //     verify PASS with a CHEAT (hardcode/ignore inputs) instead of a real impl.
+    //     If any engine can, the verify would let buggy-but-passing code land green
+    //     and dead-loop the run (the atan2 lesson) — warn (continue) or, in strict
+    //     mode, abort the launch. A red-team ERROR never aborts: it's a safety check,
+    //     not the work, so a flaky probe must not stop a run with a fine oracle.
+    //     Runs ONCE per goal (state.oracleGateChecked is persisted), so a
+    //     --resume / supervised restart never repeats the costly panel red-team.
+    const oracleGate = opts.oracleGate ?? 'off';
+    if (oracleGate !== 'off' && opts.oracleRedTeam && !state.oracleGateChecked
+        && !opts.signal?.aborted && !budgetExceeded(state) && !timeExceeded(state, Date.now())) {
+      // Only red-team tasks whose dependencies are already satisfied: a task that
+      // depends on un-built work would have its verify fail to even run at base
+      // (a false signal), so skip it here (per-task JIT red-team is a follow-up).
+      const doneIds = new Set(state.tasks.filter((t) => t.status === 'done').map((t) => t.id));
+      const verifyTasks = state.tasks
+        .filter((t) => t.status === 'queued' && typeof t.verify === 'string' && (t.verify as string).trim()
+          && (!t.dependsOn || t.dependsOn.every((d) => doneIds.has(d))))
+        .map((t) => ({ id: t.id, source: t.source, verify: t.verify as string }));
+      if (verifyTasks.length > 0) {
+        emit('oracle-gate-start', undefined, `${verifyTasks.length} task(s) with a verify · mode=${oracleGate}`);
+        const rtBaseSha = (await git(['rev-parse', spec.branch])).stdout.trim();
+        const rtWt = join(goalDir(spec.goalId), 'oracle-redteam', String(Date.now()));
+        let holes: Array<{ taskId: string; engine: string; evidence: string }> = [];
+        let rtErrored = false;
+        try {
+          worktreeCreate(repoRoot, rtWt, rtBaseSha);
+          const rt = await opts.oracleRedTeam({ tasks: verifyTasks, baseWorktree: rtWt, repoRoot, signal: opts.signal });
+          holes = rt.holes ?? [];
+          if ((rt.costUsd ?? 0) > 0) state = { ...state, spentUsd: state.spentUsd + rt.costUsd };
+        } catch (e: unknown) {
+          rtErrored = true;
+          emit('oracle-gate-error', undefined, e instanceof Error ? e.message : String(e));
+        } finally {
+          worktreeRemoveBestEffort(repoRoot, rtWt);
+        }
+        // Single source of truth for the warn/strict outcome (unit-tested).
+        const decision = oracleGateDecision(holes, oracleGate);
+        if (holes.length > 0) {
+          for (const h of holes) {
+            state = logEvent(state, 'oracle-gameable', h.taskId, `${h.engine}: ${h.evidence}`);
+            // emit too — logEvent only writes the journal; the CLI surfaces holes via onEvent.
+            emit('oracle-gameable', h.taskId, `${h.engine}: ${h.evidence}`);
+          }
+          emit('oracle-gate-holes', undefined, holes.map((h) => `${h.taskId} gamed by ${h.engine}`).join('; '));
+          if (decision.abort) {
+            // CAVEAT: a "hole" means an engine made the verify PASS under a cheat
+            // prompt — it can't PROVE the engine cheated (one that ignores the
+            // instruction and implements the gap correctly also wins), so strict
+            // can occasionally false-positive. warn is the safer default.
+            state = logEvent(state, 'stop', undefined, 'oracle-gameable');
+            saveJournal(state); try { writeGoalArtifacts(state); } catch { /* best-effort */ }
+            emit('stop', undefined, decision.summary);
+            return state;
+          }
+        } else if (!rtErrored) {
+          emit('oracle-gate-ok', undefined, decision.summary);
+        }
+        // Mark checked ONLY on a clean run (no transient error) — a strict abort
+        // returned above without setting it, so fixing the oracle re-checks, and
+        // a transient red-team error is retried on the next run.
+        if (!rtErrored) state = { ...state, oracleGateChecked: true };
+        saveJournal(state);
+      }
+    }
   }
 
   // 4. Main loop — one task per iteration, each transactional.

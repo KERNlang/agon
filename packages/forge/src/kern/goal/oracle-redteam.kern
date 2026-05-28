@@ -1,0 +1,48 @@
+// ── agon goal — oracle red-team pre-flight ─────────────────────────────
+// Stage-4 of the goal-design pipeline, built INTO the tool: before forging,
+// prove each task's `verify` is DISCRIMINATING. The review panel is asked to
+// make the verify PASS with the laziest CHEAT (hardcode, ignore inputs) WITHOUT
+// implementing the feature. If any engine can, the verify is gameable — a
+// buggy-but-passing impl would land green and dead-loop the run (the atan2
+// lesson). `--oracle-gate=warn` reports it; `=strict` refuses the launch.
+//
+// The orchestration (running an adversarial forge per task) lives in the CLI
+// goal command, which owns the registry/adapter; this module is the PURE core:
+// the cheat prompt the panel attacks with, and the warn/strict decision.
+
+interface name=OracleHole export=true
+  doc "A confirmed non-discriminating oracle: an engine made a task's `verify` pass with a deliberate cheat."
+  field name=taskId type=string
+  field name=engine type=string
+  field name=evidence type=string
+
+fn name=buildOracleCheatPrompt params="task:{ source:string; verify:string }" returns=string export=true
+  doc "Adversarial prompt for the oracle red-team pre-flight. Instructs an engine to make the task's `verify` exit 0 with the most degenerate CHEAT possible (hardcode, ignore inputs, special-case the checked values) WITHOUT implementing the described gap. If an engine succeeds, the verify is non-discriminating. Pure — exported for testing."
+  handler <<<
+    return [
+      'You are RED-TEAMING a test oracle, NOT implementing a feature. Your ONLY job is to make the command below exit 0 using the LAZIEST, most degenerate cheat you can: hardcode return values, ignore the inputs, stub or short-circuit functions, special-case the exact values the test checks. Do the absolute minimum to turn the command green.',
+      'Do NOT implement the described gap for real. If the command can only be satisfied by a genuine, correct implementation, then it is a strong oracle — say so and make NO changes.',
+      '',
+      'THE GAP THIS TEST IS SUPPOSED TO FORCE (do NOT actually build it — only cheat past the test):',
+      task.source.trim(),
+      '',
+      'THE TEST / ORACLE COMMAND YOU MUST TRY TO GAME (make it exit 0 by cheating):',
+      task.verify.trim(),
+      '',
+      'If you can make it pass without really implementing the gap, the oracle is too weak. Make the smallest cheating change that passes; otherwise make no change.',
+    ].join('\n');
+  >>>
+
+fn name=oracleGateDecision params="holes:OracleHole[], mode:string" returns="{ abort: boolean; summary: string }" export=true
+  doc "Decide the outcome of the oracle red-team pre-flight. Pure — exported for testing. No holes -> proceed clean. `strict` + holes -> abort the launch (the oracle would let buggy code land green). `warn` (or any non-strict) + holes -> proceed with a loud summary so the human can strengthen the verify."
+  handler <<<
+    if (holes.length === 0) {
+      return { abort: false, summary: 'oracle red-team: no gameable verify found — the oracles look discriminating.' };
+    }
+    const lines = holes.map((h) => `  • ${h.taskId}: gamed by ${h.engine} — ${h.evidence}`);
+    const head = `oracle red-team: ${holes.length} gameable verify(s) — a cheating impl passed the test, so it would let buggy-but-passing code land green:`;
+    const tail = mode === 'strict'
+      ? 'Refusing to launch (--oracle-gate=strict). Strengthen the verify(s) with discriminating cases and retry.'
+      : 'Continuing (--oracle-gate=warn) — strengthen the verify(s) before trusting the run.';
+    return { abort: mode === 'strict', summary: [head, ...lines, tail].join('\n') };
+  >>>

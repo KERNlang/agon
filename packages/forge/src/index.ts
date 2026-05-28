@@ -58,3 +58,5 @@ export type { SynthCandidate, SynthPlanOpts, SynthPlan } from './generated/synth
 export { summarizeGoal, writeGoalArtifacts, runGoalController } from './generated/goal/controller.js';
 export { supervisorDecision, computeBackoffMs, isDeterministicExit, runSupervisor } from './generated/goal/supervisor.js';
 export type { SupervisorDecision } from './generated/goal/supervisor.js';
+export { buildOracleCheatPrompt, oracleGateDecision } from './generated/goal/oracle-redteam.js';
+export type { OracleHole } from './generated/goal/oracle-redteam.js';

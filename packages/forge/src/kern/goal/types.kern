@@ -60,6 +60,8 @@ interface name=JournalState export=true
   field name=recentOutcomes type="string[]" optional=true
     doc "Bounded ring of recent TERMINAL task outcomes ('done' | 'parked'). The sliding-window breaker keys on this so a cluster of hard tasks doesn't abort a run that still has productive work behind it — only a window with too few successes (a broken gate or uniformly-too-hard queue) stops the run."
   field name=oracleHash type=string optional=true
+  field name=oracleGateChecked type=boolean optional=true
+    doc "True once the oracle red-team pre-flight (--oracle-gate) has run for this goal. Persisted so a --resume / supervised restart never re-runs the costly panel red-team. A strict ABORT does NOT set it, so fixing the oracle and re-launching re-checks."
   field name=tasks type="GoalTask[]"
   field name=events type="GoalEvent[]"
   field name=droppedEvents type=number optional=true

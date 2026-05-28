@@ -25,6 +25,8 @@ export interface CallCommandOptions {
   reasoning?: string;
   focus?: string;
   confidence?: string;
+  roles?: string;
+  chairman?: string;
 }
 
 export interface BuiltCallCommands {
@@ -149,6 +151,20 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...timeout,
       ...engines,
     ]);
+  } else if (workflow === 'council') {
+    // Roundtable of all engines, each in a role, chaired by the top-rated engine.
+    // Agon's stronger LLM-Council: heterogeneous models, decision brief, directed
+    // critique, a chairman verdict with confidence + kill-switch. --engines sets
+    // the panel (>= 2); --roles overrides advisor roles; --chairman forces the chair.
+    const question = requireInput(workflow, opts.input);
+    commands.push([
+      'council',
+      question,
+      ...textFlag('--roles', opts.roles),
+      ...textFlag('--chairman', opts.chairman),
+      ...timeout,
+      ...engines,
+    ]);
   } else if (workflow === 'review') {
     commands.push(['review', opts.input?.trim() || 'uncommitted', ...timeout, ...engines]);
   } else if (workflow === 'goal') {
@@ -181,7 +197,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
     commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
   } else {
-    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, campfire, think, nero, pipeline, review, goal, doctor, or a team-* workflow.`);
+    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, pipeline, review, goal, doctor, or a team-* workflow.`);
   }
 
   return { cwd, commands };
@@ -242,7 +258,7 @@ export const callCommand = defineCommand({
   args: {
     workflow: {
       type: 'positional',
-      description: 'Workflow: forge, brainstorm, synthesis, tribunal, campfire, think, nero, pipeline, review, goal, doctor, or team-*',
+      description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, pipeline, review, goal, doctor, or team-*',
       required: true,
     },
     input: {
@@ -341,6 +357,14 @@ export const callCommand = defineCommand({
       type: 'string',
       description: "For nero: the author's confidence (0-100) so Nero can compare",
     },
+    roles: {
+      type: 'string',
+      description: 'For council: override advisor roles (comma-separated, priority order)',
+    },
+    chairman: {
+      type: 'string',
+      description: 'For council: force a specific engine to chair',
+    },
   },
   async run({ args }) {
     let built: BuiltCallCommands;
@@ -368,6 +392,8 @@ export const callCommand = defineCommand({
         reasoning: args.reasoning,
         focus: args.focus,
         confidence: args.confidence,
+        roles: args.roles,
+        chairman: args.chairman,
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

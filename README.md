@@ -74,6 +74,7 @@ Pick by the **shape** of the problem, not the topic:
 | Ideas / options / "what am I missing?" | **brainstorm** | Cheap and fast — engines bid confidence and surface approaches and gaps. |
 | One refined output from many opinions | **synthesis** | Engines draft, improve each other's drafts over swap rounds, and a judge picks the best evolved result. |
 | A decision with real tradeoffs settled | **tribunal** | Structured debate (adversarial / steelman / socratic / red-team / synthesis / postmortem) that argues the sides. |
+| The whole panel on a high-stakes call | **council** | A roundtable — every engine takes a distinct role (Contrarian = top critic, Red-Team, …); a top-rated chair returns ONE verdict with a confidence + kill-switch. |
 | Open exploration, no decision yet | **campfire** | Relaxed multi-engine discussion — no scoring, no winner. |
 | A problem decomposed before you act | **think** | Sequential thinking — linear or reflexion (forced self-critique), optional branches; surfaces open questions + a `goal` handoff. |
 | Your own decision pressure-tested | **nero** | Adversarial self-challenge — the top-rated *critic* (by tribunal rating, not the best builder) attacks it and returns a verdict. |
@@ -96,6 +97,7 @@ Pick by the **shape** of the problem, not the topic:
 - Need a task queue executed → `goal`
 - Need to think a problem through before acting → `think`
 - Need your own decision attacked before you commit → `nero`
+- Need the whole panel on a high-stakes, hard-to-reverse call → `council`
 
 **forge vs. speculate vs. synthesis** — all three run multiple engines, but they pick the winner differently:
 - **forge** *scores* every candidate against the test and applies the best.
@@ -174,6 +176,24 @@ Engines debate a proposed solution, argue its flaws, and attempt to reach consen
 ```bash
 /tribunal --mode red-team "Review the new authentication middleware for security flaws"
 ```
+
+### Council
+A roundtable of **all** your active engines — Agon's stronger answer to the viral "LLM Council" pattern. Where that runs one model wearing different hats, council seats *genuinely different models*, each in a distinct role, and chairs the panel with the top-rated engine.
+
+```bash
+agon council "Should we adopt event sourcing for the ledger?"
+agon council "Rewrite the scheduler in Rust?" --engines claude,codex,agy   # constrain the panel
+agon council "..." --roles "Contrarian,Red-Team,First-Principles"          # override the roles
+agon council "..." --chairman claude                                       # force the chair
+agon council "..." --json                                                  # emit the CouncilResult, pipe-friendly
+```
+
+- **Four moves, not a free-for-all.** (0) the chair frames a **decision brief** — options, stakes, reversibility, known evidence, what would change the answer — so every advisor argues the same thing; (1) each advisor responds **in role**; (2) an **O(N) directed peer critique** — each advisor sharpens exactly one peer (biggest blind spot, most fragile assumption, best rival option), cheaper and sharper than an N² blind round; (3) the chair returns **ONE verdict** with a confidence, the strongest counterargument, one next step, and a **kill-switch** (the evidence that would reverse it) — and must cite which critiques it accepted or rejected, so dissent can't be quietly laundered away.
+- **Glicko-informed seating.** The **Contrarian** seat goes to the top-rated *critic* (the same `critique → tribunal → global` cascade Nero uses — the best builder is rarely the best critic); the **chair** is the top-rated engine overall. Roles fill in priority order: Contrarian, First-Principles, Red-Team, Outsider, Expansionist.
+- **Scales to your roster.** N engines → N−1 advisors + 1 chair. With exactly 2 engines both are advisors and the configured Cesar engine chairs (with a loud "thin panel" warning). Below 2 it refuses. A single engine failing degrades the run with a warning rather than aborting it.
+- **For external CLIs too** — `agon council` and `agon call council "<decision>" --jsonl` give Codex / Antigravity / Claude the full heterogeneous panel for a high-stakes call.
+
+**council vs. tribunal** — tribunal is a 2-side structured *debate* (adversarial / steelman / …); council is a *roundtable* with named roles, a decision brief, directed critique, and a single accountable chairman verdict. Reach for council when the decision is high-stakes or hard to reverse and you want the whole panel, not just two sides.
 
 ### Campfire
 A relaxed, open-ended discussion mode where engines can collaborate without competitive scoring or tight token constraints.

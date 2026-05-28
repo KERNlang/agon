@@ -11,6 +11,6 @@
     "typecheck": "echo 'saas-api emits Python; no TS typecheck'"
   },
   "dependencies": {
-    "@kernlang/python": "~3.5.3"
+    "@kernlang/python": "~3.5.5"
   }
 }

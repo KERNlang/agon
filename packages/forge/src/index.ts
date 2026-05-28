@@ -2,6 +2,12 @@ export { runForge } from './forge.js';
 export { runBrainstorm, runScout } from './brainstorm.js';
 export { runNero, buildNeroPrompt, parseNeroVerdict, parseNeroConfidence } from './nero.js';
 export type { NeroOptions, NeroResult } from './nero.js';
+export {
+  runCouncil, assignCouncilRoles, roleGuidance, buildCouncilBriefPrompt,
+  buildRolePrompt, buildCritiquePrompt, buildChairmanPrompt, parseCouncilConfidence,
+  DEFAULT_COUNCIL_ROLES,
+} from './council.js';
+export type { CouncilOptions, CouncilResult, CouncilSeat } from './council.js';
 export { runTribunal } from './tribunal.js';
 export { runSynthesis } from './synthesis.js';
 export { runSynthesisModus, synthesisRoutingAdvice } from './synthesis-modus.js';

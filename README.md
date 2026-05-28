@@ -248,7 +248,7 @@ agon goal "Close all KERN gaps" \
 
 | Flag | Purpose | Default |
 | --- | --- | --- |
-| `--queue` | Task source: a directory (one task/file) or a `.jsonl` of `{id,source,dependsOn}` | required |
+| `--queue` | Task source: a directory (one task/file) or a `.jsonl` of `{id,source,dependsOn,verify}` | required |
 | `--gate` | Green-oracle command — the authoritative pass/fail, frozen at start | required |
 | `--branch` | Goal branch (`goal/<id>`) — **never `main`** | `goal/<id>` |
 | `--engines` | Implementer roster; **authoritative** when set (no routing/narrowing) | all active |
@@ -260,6 +260,8 @@ agon goal "Close all KERN gaps" \
 | `--resume` / `--status` / `--dry-run` | Resume from journal / print a run's digest / plan only | — |
 
 Read a run's digest from any session with `agon goal --status --id close-all-kern-gaps`. Reachable from external CLIs via `agon call goal "<intent>" --queue <dir> --gate "<cmd>"`. _(Roadmap: hermetic gate isolation, detached delegation + async callback.)_
+
+**Designing the gate — it _is_ the spec.** The forge only optimizes to make your `--gate` (and each task's `verify`) pass, so that command is the actual specification. Make it **discriminating**: it must FAIL a plausibly-wrong implementation, not merely pass the intended one (use distinct/edge inputs — `atan2(3,4)`, not `atan2(0,1)`). Before a long run, red-team your own oracle with `agon nero "<the gate I wrote>" --reasoning "is this gameable?"` — if a wrong impl can slip through, add a killer case first. A non-discriminating gate lets buggy-but-passing code land green and dead-loops the run.
 
 ## Interactive REPL
 

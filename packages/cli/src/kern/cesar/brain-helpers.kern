@@ -79,7 +79,7 @@ fn name=shouldRunEagerRepairTool params="toolName:string,meta:any,failedToolName
 fn name=shouldStopAfterXmlToolCall params="toolName:string" returns=boolean export=true
   doc "Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet."
   handler lang="kern"
-    let name=HANDOFF_TOOLS value="new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan'])"
+    let name=HANDOFF_TOOLS value="new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan', 'ExitPlanMode'])"
     return value="HANDOFF_TOOLS.has(String(toolName ?? ''))"
 
 fn name=buildReviewFollowupPrompt params="input:string, ctx:HandlerContext" returns="{ matched: boolean; prompt: string }" export=true

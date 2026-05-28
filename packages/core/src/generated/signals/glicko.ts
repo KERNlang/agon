@@ -374,6 +374,7 @@ export function seedEnginesFromLineage(ratings: RatingRecord, lineage: Record<st
     ratings.engineMeta[engineId] ??= defaultEngineMeta();
     ratings.engineMeta[engineId].derivedFrom = predId;
     ratings.engineMeta[predId] ??= defaultEngineMeta();
+    ratings.engineMeta[predId].versions ??= [];
     if (!ratings.engineMeta[predId].versions.includes(engineId)) ratings.engineMeta[predId].versions.push(engineId);
     seeded.push(engineId);
   }
@@ -383,7 +384,7 @@ export function seedEnginesFromLineage(ratings: RatingRecord, lineage: Record<st
 /**
  * Build an engineId -> derivedFrom map from the registered engine definitions (EngineDefinition.derivedFrom). Engines with no declared predecessor are omitted.
  */
-// @kern-source: glicko:331
+// @kern-source: glicko:332
 export function lineageFromRegistry(registry: EngineRegistry): Record<string,string> {
   const map: Record<string, string> = {};
   for (const def of registry.list() as EngineDefinition[]) {
@@ -395,7 +396,7 @@ export function lineageFromRegistry(registry: EngineRegistry): Record<string,str
 /**
  * One-shot cold-start seeding: read engine lineage from the registry, seed any new engine's global rating from its predecessor, and persist if anything changed. Safe to call repeatedly (idempotent — only seeds engines with no rating yet). Call before a competition so a freshly-dropped model version enters ranked play near its family's strength instead of from 1500.
  */
-// @kern-source: glicko:341
+// @kern-source: glicko:342
 export function seedNewEnginesFromRegistry(registry: EngineRegistry): string[] {
   const ratings = loadRatings();
   const seeded = seedEnginesFromLineage(ratings, lineageFromRegistry(registry));

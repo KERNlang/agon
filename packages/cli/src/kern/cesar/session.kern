@@ -302,7 +302,7 @@ is expensive and the user prefers Cesar self-execute unless there's a real reaso
 not to.
 
 BLOCKED: Forge, Pipeline, Agent, Edit, Write. No code execution until the plan is approved.
-ALLOWED: Read, Grep, Glob, Bash (read-only), Delegate, Brainstorm, Tribunal, Campfire, ReportConfidence, ProposePlan.
+ALLOWED: Read, Grep, Glob, Bash (read-only), Delegate, Brainstorm, Tribunal, Campfire, ReportConfidence, ProposePlan, ExitPlanMode.
 
 RULE: End your turn by calling EITHER ProposePlan (if a plan helps) OR ExitPlanMode (if it doesn't) — not with plain narration. Both are valid; you choose.${budgetWarning}`);
       }
@@ -494,7 +494,10 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         // events; pass null when planDispatch is unavailable rather than
         // blocking the exit (state cleanup does not depend on it).
         const { handleExitPlanMode } = await import('../handlers/plan-mode.js');
-        return handleExitPlanMode(String((args as any).reason ?? ''), ctx.cesar?.planDispatch ?? null, ctx);
+        // [DELEGATION_BREAK] stops the persistent tool loop (like ProposePlan) so a
+        // native-tools Cesar cannot keep issuing mutating tools in the same turn
+        // after the plan guard has been lifted; proceed live on the next turn.
+        return '[DELEGATION_BREAK] ' + handleExitPlanMode(String((args as any).reason ?? ''), ctx.cesar?.planDispatch ?? null, ctx);
       }
 
       if (name === 'ProposePlan') {
@@ -1054,7 +1057,7 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
     } else if (isCompanion) {
       // CLI companion with MCP orchestration: reference MCP tools, no XML for orchestration
-      fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Agent, Delegate, QuickNero, ReportConfidence, ProposePlan\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool except Delegate, QuickNero, and ReportConfidence: STOP and wait.';
+      fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Agent, Delegate, QuickNero, ReportConfidence, ProposePlan, ExitPlanMode\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool except Delegate, QuickNero, and ReportConfidence: STOP and wait.';
     } else {
       // Fallback: XML tool descriptions for engines without native tools or MCP
       const toolPrompt = buildToolSystemPrompt(toolRegistry);

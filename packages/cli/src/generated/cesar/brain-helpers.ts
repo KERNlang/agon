@@ -93,7 +93,7 @@ export function shouldRunEagerRepairTool(toolName: string, meta: any, failedTool
  */
 // @kern-source: brain-helpers:79
 export function shouldStopAfterXmlToolCall(toolName: string): boolean {
-  const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan']);
+  const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan', 'ExitPlanMode']);
   return HANDOFF_TOOLS.has(String(toolName ?? ''));
 }
 

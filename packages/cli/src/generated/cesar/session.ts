@@ -318,7 +318,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   not to.
 
   BLOCKED: Forge, Pipeline, Agent, Edit, Write. No code execution until the plan is approved.
-  ALLOWED: Read, Grep, Glob, Bash (read-only), Delegate, Brainstorm, Tribunal, Campfire, ReportConfidence, ProposePlan.
+  ALLOWED: Read, Grep, Glob, Bash (read-only), Delegate, Brainstorm, Tribunal, Campfire, ReportConfidence, ProposePlan, ExitPlanMode.
 
   RULE: End your turn by calling EITHER ProposePlan (if a plan helps) OR ExitPlanMode (if it doesn't) — not with plain narration. Both are valid; you choose.${budgetWarning}`);
         }
@@ -526,7 +526,10 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       // events; pass null when planDispatch is unavailable rather than
       // blocking the exit (state cleanup does not depend on it).
       const { handleExitPlanMode } = await import('../handlers/plan-mode.js');
-      return handleExitPlanMode(String((args as any).reason ?? ''), ctx.cesar?.planDispatch ?? null, ctx);
+      // [DELEGATION_BREAK] stops the persistent tool loop (like ProposePlan) so a
+      // native-tools Cesar cannot keep issuing mutating tools in the same turn
+      // after the plan guard has been lifted; proceed live on the next turn.
+      return '[DELEGATION_BREAK] ' + handleExitPlanMode(String((args as any).reason ?? ''), ctx.cesar?.planDispatch ?? null, ctx);
     }
 
     if (name === 'ProposePlan') {
@@ -670,7 +673,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:638
+// @kern-source: session:641
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -853,7 +856,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:822
+// @kern-source: session:825
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -887,7 +890,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:856
+// @kern-source: session:859
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -911,7 +914,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:880
+// @kern-source: session:883
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -923,7 +926,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:887
+// @kern-source: session:890
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -943,7 +946,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:905
+// @kern-source: session:908
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -968,7 +971,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:931
+// @kern-source: session:934
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1094,7 +1097,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
   } else if (isCompanion) {
     // CLI companion with MCP orchestration: reference MCP tools, no XML for orchestration
-    fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Agent, Delegate, QuickNero, ReportConfidence, ProposePlan\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool except Delegate, QuickNero, and ReportConfidence: STOP and wait.';
+    fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Agent, Delegate, QuickNero, ReportConfidence, ProposePlan, ExitPlanMode\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool except Delegate, QuickNero, and ReportConfidence: STOP and wait.';
   } else {
     // Fallback: XML tool descriptions for engines without native tools or MCP
     const toolPrompt = buildToolSystemPrompt(toolRegistry);

@@ -57,6 +57,30 @@ describe('AgentSession', () => {
     expect(mockRun).toHaveBeenCalledTimes(2);
   });
 
+  it('classifies a flagged engine fault as an error turn, not a 0-tool completion (RC2)', async () => {
+    // The inner loop returns a permanent failure as a normal result carrying
+    // failed/engineFault — it does NOT throw. The session must surface that as
+    // stopReason 'error' (so the handler quarantines + does not auto-resume),
+    // not the default 'completed' that an unflagged empty result would yield.
+    mockRun.mockResolvedValue({
+      response: 'Error: Missing API key: set GOOGLE_API_KEY',
+      toolCalls: 0,
+      steps: 0,
+      failed: true,
+      engineFault: true,
+      errorReason: 'Missing API key: set GOOGLE_API_KEY',
+    });
+    const session = new AgentSession(makeConfig());
+
+    const r = await session.step('refactor the files');
+    expect(r.stopReason).toBe('error');
+    expect(r.engineFault).toBe(true);
+    expect(r.error).toContain('Missing API key');
+    // Terminal 'failed' state blocks further steps so the session can't be
+    // re-driven into the same dead engine.
+    expect(session.getStats().state).toBe('failed');
+  });
+
   it('refuses step() when turn budget is exhausted', async () => {
     mockRun.mockResolvedValue({ response: 'ok', toolCalls: 0, steps: 1 });
     const session = new AgentSession(makeConfig({ budget: { maxTurns: 2, maxDurationMs: 60_000 } }));
@@ -123,21 +147,17 @@ describe('AgentSession', () => {
   });
 
   it('post-step duration overrun is detected and returned as budget_exceeded', async () => {
-    // Slow mock: inner loop takes 50ms; maxDurationMs=40ms → post-check fires.
+    // Inner loop takes 50ms; with a 1ms duration budget the step is already over
+    // budget by the time it returns, so the duration check returns budget_exceeded.
+    // Deterministic: relies only on 50ms >> 1ms, not on wall-clock starvation
+    // (the old 30_000ms budget flaked on loaded CI when Date.now jumped past it).
     mockRun.mockImplementation(async () => {
       await new Promise((r) => setTimeout(r, 50));
       return { response: 'ok', toolCalls: 0, steps: 1 };
     });
-    // maxDurationMs must be >= 30_000 so the pre-check passes but <50ms… that's contradictory.
-    // Instead: set maxDurationMs=30_000 (pre-check passes) and let elapsed exceed it by mocking
-    // Date.now. This is inherently flaky — skip if the wall-clock path is hard to simulate.
-    // Using a smaller maxDurationMs with a long-running mock fails the pre-check instead.
-    // So this test is really "if the pre-check allowed a step that then ran long, post-check
-    // catches it" — which requires manipulating time. Deferred to integration tests.
-    const session = new AgentSession(makeConfig({ budget: { maxTurns: 5, maxDurationMs: 30_000 } }));
+    const session = new AgentSession(makeConfig({ budget: { maxTurns: 5, maxDurationMs: 1 } }));
     const result = await session.step('x');
-    // Under normal conditions (50ms elapsed << 30_000ms budget), step completes.
-    expect(result.stopReason).toBe('completed');
+    expect(result.stopReason).toBe('budget_exceeded');
   });
 
   it('cancel() aborts the signal and prevents further steps', async () => {

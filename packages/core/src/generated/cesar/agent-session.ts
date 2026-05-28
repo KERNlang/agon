@@ -32,9 +32,10 @@ export interface AgentStepResult {
   costUsd: number;
   stopReason: 'completed'|'budget_exceeded'|'cancelled'|'error';
   error?: string;
+  engineFault?: boolean;
 }
 
-// @kern-source: agent-session:45
+// @kern-source: agent-session:46
 export interface AgentSessionStats {
   turnsUsed: number;
   turnsRemaining: number;
@@ -47,7 +48,7 @@ export interface AgentSessionStats {
   state: 'idle'|'running'|'completed'|'cancelled'|'failed';
 }
 
-// @kern-source: agent-session:58
+// @kern-source: agent-session:59
 export interface AgentSessionConfig {
   engineId: string;
   api: ApiConfig;
@@ -69,7 +70,7 @@ export interface AgentSessionConfig {
 /**
  * Create a typed budget-exceeded error. Kind is attached to error.name for structural matching.
  */
-// @kern-source: agent-session:77
+// @kern-source: agent-session:78
 export function makeBudgetError(kind: 'turns'|'tokens'|'duration', detail: string): Error {
   const err = new Error(`Agent budget exceeded: ${kind} — ${detail}`);
   err.name = `AgentBudget${kind.charAt(0).toUpperCase() + kind.slice(1)}Exceeded`;
@@ -79,7 +80,7 @@ export function makeBudgetError(kind: 'turns'|'tokens'|'duration', detail: strin
 /**
  * Stateful agent invocation wrapper with budget enforcement and abort. Phase 1: API engines only.
  */
-// @kern-source: agent-session:86
+// @kern-source: agent-session:87
 export class AgentSession {
   private config: AgentSessionConfig;
   private turnsUsed: number = 0;
@@ -293,6 +294,29 @@ export class AgentSession {
         tokensUsed: partialTotal,
         costUsd: estimateCost(this.config.engineId, partialTotal, this.config.api.model),
         stopReason: 'cancelled',
+      };
+    }
+
+    // RC2: the inner loop signals a permanent failure (auth/dispatch fault,
+    // exhausted transient retries, or empty model output) via result.failed
+    // rather than throwing. Classify it as an error turn — NOT a 0-tool
+    // 'completed' — so the caller surfaces the failure, quarantines the
+    // engine (on engineFault), and never auto-resumes into a spin.
+    if ((result as any).failed) {
+      this.state = 'failed';
+      this.turnsUsed += 1;
+      this.tokensUsed += promptTokens;
+      this.totalToolCalls += result.toolCalls;
+      this.totalCostUsd += estimateCost(this.config.engineId, promptTokens, this.config.api.model);
+      return {
+        response: result.response,
+        toolCalls: result.toolCalls,
+        innerSteps: result.steps,
+        tokensUsed: promptTokens,
+        costUsd: estimateCost(this.config.engineId, promptTokens, this.config.api.model),
+        stopReason: 'error',
+        error: (result as any).errorReason ?? result.response,
+        engineFault: (result as any).engineFault ?? false,
       };
     }
 

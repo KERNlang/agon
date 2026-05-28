@@ -22,6 +22,14 @@ export function agentGuideMarkdown(): string {
     '- `agon review <uncommitted|branch:NAME|commit:SHA>` — non-interactive multi-engine code review.',
     '- `agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"` — autonomous controller: drives a task queue to completion unattended, looping build -> witness -> gate -> review (panel + judge) -> fix -> commit per task on a goal/ branch. Bound it with `--max-hours`/`--budget`; `--push` pushes each task. Long-running (designed for 8-24h).',
     '',
+    '## Setting up forge & goal — the test/gate IS the spec',
+    'These two modes only optimize to make your test (`-t` for forge) or gate/verify (for goal) pass. That command IS the specification — not the prose task. A check that a wrong implementation can still pass will ship a wrong implementation, and often dead-loops the run. Before launching:',
+    '- Discriminate: every check must FAIL a plausibly-wrong impl, not just pass the intended one. Use distinct/edge args (atan2(3,4) not atan2(0,1); `5.5 % 2` to catch int() truncation; cbrt(27) to reject pow(x,1/3)).',
+    '- RED at base: confirm the test fails on the current code for the RIGHT reason before the run, and turns green only when the task is genuinely done.',
+    '- Coverage over tolerance: add enough cases that wrong variants die on their own; never loosen a gate or tolerance to force a pass.',
+    '- Red-team your own oracle first: run `agon nero "<the test/gate I wrote>" --reasoning "is this gameable?"`, or hand one engine the test + signature and ask it to write a subtly-wrong impl that still passes. If it can, the oracle has a hole — add a killer case and repeat until it cannot.',
+    '- goal only: pre-flight with `--dryRun`; each queued task verify must be RED-at-base for the right reason while `--gate` is green at base; keep mutation scoped to the verify (match `--witnessCmd` to the same narrow command).',
+    '',
     '## Common flags',
     '- `--engines claude,codex,agy` — limit which engines compete',
     '- `--timeout <sec>` — per-engine timeout',
@@ -52,7 +60,7 @@ export function agentGuideMarkdown(): string {
 /**
  * Per-CLI /agon slash-command shim. format is one of agy | claude | markdown.
  */
-// @kern-source: agent-guide-text:54
+// @kern-source: agent-guide-text:62
 export function agonShim(format: string): string {
   const body = [
     'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, campfire, review, goal).',
@@ -100,7 +108,7 @@ export function agonShim(format: string): string {
 /**
  * Native Codex skill that exposes Agon as $agon.
  */
-// @kern-source: agent-guide-text:100
+// @kern-source: agent-guide-text:108
 export function codexSkillMarkdown(): string {
   return [
     '---',
@@ -135,7 +143,7 @@ export function codexSkillMarkdown(): string {
 /**
  * Codex UI metadata for the Agon skill.
  */
-// @kern-source: agent-guide-text:133
+// @kern-source: agent-guide-text:141
 export function codexSkillOpenAiYaml(): string {
   return [
     'interface:',

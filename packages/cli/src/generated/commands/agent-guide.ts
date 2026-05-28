@@ -29,7 +29,7 @@ export const agentGuideCommand: any = defineCommand({
           { name: 'think', cmd: 'agon think "<problem>" --strategy reflexion [--steps N --branches N]', use: 'sequential thinking — decompose a problem (optionally branch) and surface open questions before acting' },
           { name: 'nero', cmd: 'agon nero "<decision>" --reasoning "<why>"', use: 'adversarial self-challenge — the top-rated critic attacks YOUR decision and returns a verdict. Use this instead of an internal evil-twin/devils-advocate pass' },
           { name: 'review', cmd: 'agon review uncommitted', use: 'multi-engine code review' },
-          { name: 'goal', cmd: 'agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"', use: 'autonomously drive a task queue to completion (build->review->fix->commit per task); long-running', setup: 'each task verify + --gate IS the spec: --dryRun, gate green at base, each slice RED-at-base for the right reason. Red-team the oracle with `agon nero` first.' },
+          { name: 'goal', cmd: 'agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"', use: 'autonomously drive a task queue to completion (build->review->fix->commit per task); long-running', setup: 'each task verify + --gate IS the spec: --dryRun, gate green at base, each slice RED-at-base for the right reason. Add --oracle-gate=warn|strict to have the panel try to GAME each verify before forging (strict refuses to launch if any verify is gameable) — the built-in oracle red-team.' },
         ],
         flags: ['--engines claude,codex,agy', '--timeout <sec>'],
         machineReadable: 'agon call <mode> "<input>" [flags] --jsonl',

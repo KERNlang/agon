@@ -10,7 +10,7 @@ import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@agon/adapter-cli';
 
-import { runCouncil } from '@agon/forge';
+import { runCouncil, joinProblemInput } from '@agon/forge';
 
 import { header, info, bold, dim } from '../blocks/output-format.js';
 
@@ -79,8 +79,10 @@ export const councilCommand: any = defineCommand({
     registry.load(resolveBuiltinEnginesDir());
     const adapter = createCliAdapter(registry);
 
+    // citty mirrors the named positional into `_`, so a naive concat doubles the
+    // prompt — joinProblemInput drops the duplicate first extra (same helper think uses).
     const positionals = Array.isArray((args as any)._) ? (args as any)._.map(String) : [];
-    const question = [args.question, ...positionals].filter((p) => typeof p === 'string' && p.trim()).map((p) => String(p).trim()).join(' ').trim();
+    const question = joinProblemInput(args.question as string | undefined, positionals);
     if (!question) {
       console.error('Provide a decision for the council. Usage: agon council "your decision" [--roles "..."] [--engines "..."]');
       process.exitCode = 1;

@@ -273,7 +273,12 @@ export async function runCouncil(opts: CouncilOptions): Promise<CouncilResult> {
       const cleaned = raw.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
       const dispatchOk = result.exitCode === 0 && !result.timedOut && cleaned.length > 0;
       if (dispatchOk) return { text: cleaned, ok: true };
-      const diag = result.timedOut ? 'timed out' : (result.stderr?.trim() || `exit ${result.exitCode}`);
+      // Not-ok reaches here on timeout, non-zero exit, OR a clean exit with no visible
+      // output (e.g. an engine that emitted only <think>…</think>). Don't report the
+      // last case as a bare "exit 0" — say "empty response" so the warning is honest.
+      const diag = result.timedOut
+        ? 'timed out'
+        : (result.stderr?.trim() || (cleaned.length === 0 ? 'empty response (no visible output)' : `exit ${result.exitCode}`));
       warnings.push(`${phase} (${engineId}) failed: ${diag}`);
       opts.onEvent?.({ type: 'engine:failed', data: { engineId, phase, error: diag } });
       return { text: cleaned, ok: false };

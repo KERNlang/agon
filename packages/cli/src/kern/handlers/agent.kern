@@ -14,7 +14,7 @@
 // user messages is deferred — when it's needed, wrap the body below
 // in a while-loop keyed on AgentState.phase.
 
-import from="@agon/core" names="AgentSession,AgentTeam,createAgentState,beginTurn,completeTurn,cancelAgent,completeAgent,failAgent,checkBudget,isTerminal,resolveWorkingDir,determineWinner,scoreAgentTeamResult,estimatedTokensToCost,worktreeChangedDiff,worktreeChangedShortstat,spawnWithTimeout,RUNS_DIR,runAgentTeamSynthesis,runAgentInvestigateSynthesis,runPostSynthesisFitnessCheck,detectSynthesisInsightMention,loadOrCreateActiveThread,createStreamBridge,isReadOnlyCommand"
+import from="@agon/core" names="AgentSession,AgentTeam,createAgentState,beginTurn,completeTurn,cancelAgent,completeAgent,failAgent,checkBudget,isTerminal,resolveWorkingDir,determineWinner,scoreAgentTeamResult,estimatedTokensToCost,worktreeChangedDiff,worktreeChangedShortstat,spawnWithTimeout,RUNS_DIR,runAgentTeamSynthesis,runAgentInvestigateSynthesis,runPostSynthesisFitnessCheck,detectSynthesisInsightMention,loadOrCreateActiveThread,createStreamBridge,isReadOnlyCommand,engineHealth,classifyDispatchFailure"
 import from="@agon/core" names="AgentBudget,AgentState,AgentStepResult,AgentEvent,AgentTeamConfig,AgentTeamMemberConfig,AgentTeamResult,EngineDefinition,EngineResult,AgentSynthesisLoser" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="node:fs" names="writeFileSync,mkdirSync,existsSync"
@@ -152,12 +152,27 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
         });
         return null;
       }
+      // RC1: agent mode is API-only — a present api block with an unset key env
+      // would instant-fail with "Missing API key", so reject it up front with a
+      // message that names the exact env var to set.
+      if (engine.api.apiKeyEnv && !process.env[engine.api.apiKeyEnv]) {
+        dispatch({
+          type: 'error',
+          message: `${engineId} needs ${engine.api.apiKeyEnv} for agent mode (API-only), but it is unset. Set the key or pick a keyed engine.`,
+        });
+        return null;
+      }
     } else {
-      // No engine specified — find the first active API engine.
+      // No engine specified — find the first active API engine WITH usable
+      // credentials. Agent mode is API-only (Phase 1), so an engine whose api
+      // block exists but whose key env is unset would instant-fail with
+      // "Missing API key" and spin the auto-continue loop. Skip it here so a
+      // credential-less engine that merely sorts first (e.g. agy without
+      // GOOGLE_API_KEY) never gets picked. (RC1: agent auth gate.)
       for (const id of available) {
         try {
           const candidate = ctx.registry.get(id);
-          if (candidate.api) {
+          if (candidate.api && (!candidate.api.apiKeyEnv || process.env[candidate.api.apiKeyEnv])) {
             engine = candidate;
             engineId = id;
             break;
@@ -165,9 +180,21 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
         } catch { /* skip unresolvable engines */ }
       }
       if (!engine || !engineId) {
+        // Distinguish "no API engines at all" from "API engines present but
+        // keyless" so the error names exactly what to fix.
+        const keyless: string[] = [];
+        for (const id of available) {
+          try {
+            const e = ctx.registry.get(id);
+            if (e.api && e.api.apiKeyEnv && !process.env[e.api.apiKeyEnv]) keyless.push(`${id} (set ${e.api.apiKeyEnv})`);
+          } catch { /* ignore */ }
+        }
+        const hint = keyless.length > 0
+          ? ` These active engines have an API config but no credentials: ${keyless.join(', ')}.`
+          : '';
         dispatch({
           type: 'error',
-          message: `Agent mode requires an API engine, and none of the active engines have an API config. Active: ${available.join(', ')}. (CLI-binary agent mode lands in a follow-up.)`,
+          message: `Agent mode requires an API engine with credentials, and none of the active engines qualify. Active: ${available.join(', ')}.${hint} (CLI-binary agent mode lands in a follow-up.)`,
         });
         return null;
       }
@@ -413,6 +440,17 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       } else if (stepResult.stopReason === 'budget_exceeded') {
         dispatch({ type: 'warning', message: `Agent stopped — ${stepResult.error ?? 'budget exceeded'}` });
       } else {
+        // RC2: a genuine engine/transport fault (auth failure, dead dispatch,
+        // exhausted transient retries) is quarantined for the session so the
+        // orchestrator won't keep re-picking a dead engine and spinning. Only
+        // engineFault failures quarantine — model-misbehavior errors (empty
+        // output, hidden-only reasoning) fail the turn but leave the engine
+        // selectable.
+        if ((stepResult as any).engineFault) {
+          try {
+            engineHealth.mark(engineId, classifyDispatchFailure({ stderr: stepResult.error, timedOut: false }), stepResult.error ?? 'agent dispatch failed');
+          } catch { /* health marking must never break the failure path */ }
+        }
         dispatch({ type: 'error', message: stepResult.error ?? 'Agent session failed' });
       }
       followUp = {

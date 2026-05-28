@@ -144,6 +144,10 @@ describe('runApiAgentLoop', () => {
 
       expect(result.response).toContain('Error: API engine produced hidden reasoning');
       expect(apiStreamDispatchWithHistoryMock).toHaveBeenCalledTimes(3);
+      // RC2: empty/hidden-only output fails the turn but is NOT an engine fault
+      // — the model misbehaved, the transport was fine, so it stays selectable.
+      expect(result.failed).toBe(true);
+      expect(result.engineFault).toBeFalsy();
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -232,6 +236,12 @@ describe('runApiAgentLoop', () => {
 
       expect(result.response).toContain('Missing API key');
       expect(calls).toBe(1); // permanent failure must not be retried
+      // RC2: a permanent dispatch failure is flagged as an engine fault so the
+      // session classifies it as an error turn (not a 0-tool 'completed') and
+      // the engine is quarantined for the session.
+      expect(result.failed).toBe(true);
+      expect(result.engineFault).toBe(true);
+      expect(result.errorReason).toContain('Missing API key');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -97,6 +97,29 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('maps council to the roundtable bridge with roles/chairman', () => {
+    expect(buildCallCommands({
+      workflow: 'council',
+      input: 'Adopt event sourcing for the ledger?',
+      roles: 'Contrarian,Red-Team',
+      chairman: 'claude',
+      engineTimeout: '150',
+      engines: 'codex,agy,claude',
+    }).commands).toEqual([
+      ['council', 'Adopt event sourcing for the ledger?', '--roles', 'Contrarian,Red-Team', '--chairman', 'claude', '--timeout', '150', '--engines', 'codex,agy,claude'],
+    ]);
+  });
+
+  it('maps council with just the question', () => {
+    expect(buildCallCommands({ workflow: 'council', input: 'Rewrite the scheduler?' }).commands).toEqual([
+      ['council', 'Rewrite the scheduler?'],
+    ]);
+  });
+
+  it('requires input for council', () => {
+    expect(() => buildCallCommands({ workflow: 'council' })).toThrow('agon call council requires a prompt/task argument');
+  });
+
   it('maps synthesis to the synthesis command bridge', () => {
     expect(buildCallCommands({
       workflow: 'synthesis',

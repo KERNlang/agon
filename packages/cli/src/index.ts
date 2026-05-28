@@ -24,6 +24,7 @@ import { synthesisCommand } from './commands/synthesis.js';
 import { askCommand } from './commands/ask.js';
 import { thinkCommand } from './commands/think.js';
 import { neroCommand } from './commands/nero.js';
+import { councilCommand } from './commands/council.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { loginCommand } from './commands/login.js';
 import { startRepl } from './repl.js';
@@ -183,6 +184,7 @@ const main = defineCommand({
     ask: askCommand,
     think: thinkCommand,
     nero: neroCommand,
+    council: councilCommand,
     worktree: worktreeCommand,
     wt: worktreeCommand,
     login: loginCommand,

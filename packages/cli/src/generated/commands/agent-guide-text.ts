@@ -16,6 +16,7 @@ export function agentGuideMarkdown(): string {
     '- `agon synthesis "<prompt>" [-s <swaps>] [-j <judge>]` — engines draft, then swap and improve on the other drafts; a judge picks the best evolved artifact. Use when you want one polished result that blends the best ideas and no clean pass/fail test exists.',
     '- `agon brainstorm "<question>"` — engines bid confidence, the most confident answers. Cheap second opinion.',
     '- `agon tribunal "<question>" [--mode adversarial|steelman|socratic|red-team|synthesis|postmortem]` — structured multi-engine debate. Use for decisions with real tradeoffs.',
+    '- `agon council "<decision>" [--roles "r1,r2,..."] [--chairman <id>] [--engines ...]` — a roundtable of ALL active engines, each in a distinct role (Contrarian = the top-rated critic, plus First-Principles, Red-Team, Outsider, Expansionist), chaired by the top-rated engine. The chair frames a decision brief, advisors respond and run an O(N) directed peer critique, then the chair returns ONE verdict with a confidence and a KILL-SWITCH (what evidence would reverse it). Use for a high-stakes / hard-to-reverse decision where you want the whole panel and named roles, not just a 2-side debate. Scales to the engine count; needs >= 2 engines.',
     '- `agon campfire "<topic>"` — open multi-engine discussion, no winner. For exploration.',
     '- `agon think "<problem>" [--strategy linear|reflexion] [--steps N] [--branches N]` — sequential thinking: decompose a problem into structured thoughts (reflexion forces a self-critique+revision per step; --branches explores alternatives), surface open questions, and emit a refined spec to hand to `agon goal`. Use to think before acting, or for engines with weak built-in reasoning.',
     '- `agon nero "<decision>" [--reasoning "<why>"] [--focus "<concern>"] [--confidence N]` — adversarial self-challenge. The top-rated CRITIC (picked by tribunal-discipline rating, not the best builder) attacks your decision with concrete failure scenarios and returns a verdict (FLAWED | PROCEED WITH CAUTION | SOUND) plus its own confidence the original is correct. Use this INSTEAD of an internal evil-twin / devil\'s-advocate pass — it gives you a real second model, not your own reasoning mirrored.',
@@ -46,6 +47,7 @@ export function agentGuideMarkdown(): string {
     '- multiple valid approaches + a test  -> forge',
     '- want one blended artifact, no test  -> synthesis',
     '- a decision with tradeoffs           -> tribunal',
+    '- high-stakes decision, whole panel   -> council',
     '- need ideas / unsure                 -> brainstorm',
     '- explore, no decision needed         -> campfire',
     '- think before acting / decompose     -> think',
@@ -60,17 +62,17 @@ export function agentGuideMarkdown(): string {
 /**
  * Per-CLI /agon slash-command shim. format is one of agy | claude | markdown.
  */
-// @kern-source: agent-guide-text:62
+// @kern-source: agent-guide-text:64
 export function agonShim(format: string): string {
   const body = [
-    'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, campfire, review, goal).',
+    'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, review, goal).',
     'First run `agon agent-guide` in the shell to see exactly how to call it, then use the right Agon mode to handle the request.',
     'Call agon with your normal shell/Bash tool — there is no MCP and nothing is loaded until you invoke it.',
   ].join('\n');
 
   if (format === 'agy') {
     return [
-      'description = "Use Agon multi-AI orchestration (forge/synthesis/tribunal/brainstorm/review/goal)"',
+      'description = "Use Agon multi-AI orchestration (forge/synthesis/tribunal/council/brainstorm/review/goal)"',
       'prompt = """',
       body,
       '',
@@ -83,7 +85,7 @@ export function agonShim(format: string): string {
   if (format === 'claude') {
     return [
       '---',
-      'description: Use Agon multi-AI orchestration (forge/synthesis/tribunal/brainstorm/review/goal)',
+      'description: Use Agon multi-AI orchestration (forge/synthesis/tribunal/council/brainstorm/review/goal)',
       'argument-hint: [task]',
       '---',
       '',
@@ -108,12 +110,12 @@ export function agonShim(format: string): string {
 /**
  * Native Codex skill that exposes Agon as $agon.
  */
-// @kern-source: agent-guide-text:108
+// @kern-source: agent-guide-text:110
 export function codexSkillMarkdown(): string {
   return [
     '---',
     'name: agon',
-    'description: "Use when the user explicitly asks for Agon, $agon, /agon, or wants Agon multi-AI orchestration modes such as forge, synthesis, brainstorm, tribunal, campfire, review, or goal."',
+    'description: "Use when the user explicitly asks for Agon, $agon, /agon, or wants Agon multi-AI orchestration modes such as forge, synthesis, brainstorm, tribunal, council, campfire, review, or goal."',
     '---',
     '',
     '# Agon',
@@ -133,6 +135,7 @@ export function codexSkillMarkdown(): string {
     '- `synthesis`: engines draft, swap, improve, and judge a final artifact.',
     '- `brainstorm`: engines compare approaches or surface gaps.',
     '- `tribunal`: engines debate opposing technical positions.',
+    '- `council`: a roundtable of all engines, each in a role, chaired by the top-rated engine — one verdict with confidence + kill-switch for a high-stakes call.',
     '- `campfire`: open multi-engine discussion.',
     '- `review`: non-interactive AI review of a diff target.',
     '- `goal`: autonomous task-queue execution with stronger gates.',
@@ -143,7 +146,7 @@ export function codexSkillMarkdown(): string {
 /**
  * Codex UI metadata for the Agon skill.
  */
-// @kern-source: agent-guide-text:141
+// @kern-source: agent-guide-text:144
 export function codexSkillOpenAiYaml(): string {
   return [
     'interface:',

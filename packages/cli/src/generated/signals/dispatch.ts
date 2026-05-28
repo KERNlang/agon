@@ -505,6 +505,13 @@ export function shouldAutoResumeAgentResult(result: any, launchInputEpoch: numbe
   if (!status || status === 'cancelled') {
     return false;
   }
+  // RC3: a failed agent (permanent fault — e.g. an engine with no/invalid
+  // credentials, or a dispatch that died after retries) must NOT auto-resume.
+  // Re-feeding 'continue from this result' just re-delegates into the same
+  // dead engine and spins. The failure is already surfaced by the handler.
+  if (status === 'failed') {
+    return false;
+  }
   if ((ctx.inputEpoch ?? 0) !== launchInputEpoch) {
     return false;
   }
@@ -514,7 +521,7 @@ export function shouldAutoResumeAgentResult(result: any, launchInputEpoch: numbe
   return true;
 }
 
-// @kern-source: dispatch:431
+// @kern-source: dispatch:437
 export function buildAgentAutoResumePrompt(originalTask: string, result: any): string {
   if (!result || typeof result !== 'object') {
     return '';
@@ -545,9 +552,14 @@ export function buildAgentAutoResumePrompt(originalTask: string, result: any): s
   return lines.join('\n');
 }
 
-// @kern-source: dispatch:456
+// @kern-source: dispatch:462
 export async function resumeCesarAfterAgent(originalTask: string, launchInputEpoch: number, launchUserTurns: number, result: any, cb: DispatchCallbacks): Promise<void> {
   if (!shouldAutoResumeAgentResult(result, launchInputEpoch, launchUserTurns, cb.ctx)) {
+    // Make a genuine failure visible: explain WHY Cesar is stopping rather
+    // than silently dropping the turn (vs a cancel/stale-epoch skip).
+    if (result && typeof result === 'object' && String((result as any).status ?? '') === 'failed') {
+      cb.dispatch({ type: 'warning', message: 'Agent failed — Cesar will not auto-continue. Fix the cause (e.g. engine credentials via /engines) and retry.' });
+    }
     return;
   }
   const prompt = buildAgentAutoResumePrompt(originalTask, result);
@@ -558,7 +570,7 @@ export async function resumeCesarAfterAgent(originalTask: string, launchInputEpo
   await routeWithCesar(prompt, [], cb);
 }
 
-// @kern-source: dispatch:466
+// @kern-source: dispatch:476
 export async function runAgentJobWithAutoResume(originalTask: string, cb: DispatchCallbacks, runner: ()=>Promise<any>): Promise<void> {
   const launchInputEpoch = cb.ctx.inputEpoch ?? 0;
   const launchUserTurns = countTrackedUserTurns(cb.ctx);
@@ -569,7 +581,7 @@ export async function runAgentJobWithAutoResume(originalTask: string, cb: Dispat
 /**
  * Build the message used to feed completed review findings back into Cesar so the orchestrator knows what the reviewer found and can propose the fix path.
  */
-// @kern-source: dispatch:473
+// @kern-source: dispatch:483
 export function buildReviewAbsorptionPrompt(sourceInput: string, review: { engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number }): string {
   const output = String(review.reviewOutput ?? '').trim();
   const cappedOutput = (output.length > 12000) ? `${output.slice(0, 12000)}\n... [review output truncated]` : output;
@@ -581,7 +593,7 @@ export function buildReviewAbsorptionPrompt(sourceInput: string, review: { engin
 /**
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
-// @kern-source: dispatch:482
+// @kern-source: dispatch:492
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
       try {
@@ -1356,7 +1368,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
 /**
  * Return true for natural approval replies users type after Cesar says go/run it.
  */
-// @kern-source: dispatch:1255
+// @kern-source: dispatch:1265
 export function isCesarPlanApprovalInput(input: string): boolean {
   const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
   return /^(?:y|yes|yes go|yes please|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute|ok|okay|sure)$/i.test(text);
@@ -1365,7 +1377,7 @@ export function isCesarPlanApprovalInput(input: string): boolean {
 /**
  * Return true for approval phrases strong enough to recover a saved pending plan even when no plan panel is active.
  */
-// @kern-source: dispatch:1261
+// @kern-source: dispatch:1271
 export function isStrongCesarPlanApprovalInput(input: string): boolean {
   const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
   return /^(?:yes go|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute)$/i.test(text);
@@ -1374,7 +1386,7 @@ export function isStrongCesarPlanApprovalInput(input: string): boolean {
 /**
  * Find the most relevant pending Cesar plan: proposed plan first, active plan second, then latest saved awaiting_approval plan.
  */
-// @kern-source: dispatch:1267
+// @kern-source: dispatch:1277
 export function findPendingCesarPlan(ctx: HandlerContext): CesarPlan | null {
   const proposed = ctx.cesar?.proposedPlan as CesarPlan | undefined;
   if (proposed && proposed.state === 'awaiting_approval') {
@@ -1391,7 +1403,7 @@ export function findPendingCesarPlan(ctx: HandlerContext): CesarPlan | null {
 /**
  * Return the in-session paused/running plan if any. No disk fallback — stale persisted plans must be resumed explicitly via `/plan resume <id>` so innocuous words like 'go' or 'continue' cannot resurrect them.
  */
-// @kern-source: dispatch:1279
+// @kern-source: dispatch:1289
 export function findResumableCesarPlan(ctx: HandlerContext): CesarPlan | null {
   const active = ctx.activePlan as CesarPlan | undefined;
   if (active && (active.state === 'paused' || active.state === 'running')) {
@@ -1403,7 +1415,7 @@ export function findResumableCesarPlan(ctx: HandlerContext): CesarPlan | null {
 /**
  * Treat natural approval text as /approve only when a live pending plan is visible in this session.
  */
-// @kern-source: dispatch:1287
+// @kern-source: dispatch:1297
 export function shouldApprovePendingCesarPlanInput(input: string, ctx: HandlerContext): boolean {
   const text = String(input ?? '').trim();
   if (!text || text.startsWith('/')) {
@@ -1418,7 +1430,7 @@ export function shouldApprovePendingCesarPlanInput(input: string, ctx: HandlerCo
 /**
  * Return true when the user is clearly telling a paused/running plan to continue.
  */
-// @kern-source: dispatch:1298
+// @kern-source: dispatch:1308
 export function isCesarPlanResumeInput(input: string): boolean {
   const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
   return /^(?:go|run|resume|continue|proceed|start)(?:\b|$)/i.test(text) || /^(?:do it|do so|keep going|carry on|ok do last part|do last part|last part)$/i.test(text);
@@ -1427,7 +1439,7 @@ export function isCesarPlanResumeInput(input: string): boolean {
 /**
  * Return true for short status checks that should be answered from plan state instead of routed to Cesar chat.
  */
-// @kern-source: dispatch:1304
+// @kern-source: dispatch:1314
 export function isCesarPlanStatusInput(input: string): boolean {
   const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
   return /^(?:done|done yet|status|progress|what happened|what went wrong|what did you do|what yu do|what you do|why stop|why stopped|why did it stop|are you doing something|are you still working|still working|is it running|where are we)$/i.test(text);
@@ -1436,7 +1448,7 @@ export function isCesarPlanStatusInput(input: string): boolean {
 /**
  * Render a concise persisted plan status so Cesar chat cannot hallucinate whether a plan is running.
  */
-// @kern-source: dispatch:1310
+// @kern-source: dispatch:1320
 export function formatCesarPlanRuntimeStatus(plan: CesarPlan): string {
   const total = plan.steps.length;
   const done = plan.steps.filter((s: any) => s.state === 'done').length;
@@ -1458,7 +1470,7 @@ export function formatCesarPlanRuntimeStatus(plan: CesarPlan): string {
 /**
  * Compute resume prompt context: how many steps done/failed/remain, which step failed, and estimated cost to finish.
  */
-// @kern-source: dispatch:1326
+// @kern-source: dispatch:1336
 export function buildResumePromptContext(plan: CesarPlan): { doneCount:number; failedCount:number; remainingCount:number; failedStep:any|null; remainingCostUsd:number; remainingTokens:number } {
   const steps = plan.steps ?? [];
   const doneCount = steps.filter((s: any) => s.state === 'done').length;
@@ -1475,7 +1487,7 @@ export function buildResumePromptContext(plan: CesarPlan): { doneCount:number; f
 /**
  * Mark done steps as skipped so executePlan skips them on resume. Keeps failed steps as pending (unless review-exhausted).
  */
-// @kern-source: dispatch:1340
+// @kern-source: dispatch:1350
 export function skipCompletedSteps(plan: CesarPlan): CesarPlan {
   const cyclesUsedAtResume = (plan as any).reviewCyclesUsed ?? 0;
   const newSteps = plan.steps.map((s: any) => {
@@ -1491,7 +1503,7 @@ export function skipCompletedSteps(plan: CesarPlan): CesarPlan {
 /**
  * Resume a paused or stale-running Cesar plan through the shared executor path. Shows a resume prompt with context before executing.
  */
-// @kern-source: dispatch:1354
+// @kern-source: dispatch:1364
 export async function resumeCesarPlan(plan: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const ctx = buildResumePromptContext(plan);
   const lines = [
@@ -1548,7 +1560,7 @@ export async function resumeCesarPlan(plan: CesarPlan, cb: DispatchCallbacks): P
 /**
  * Approve and execute the pending CesarPlan, if one exists. Backs /approve and natural approval aliases like go.
  */
-// @kern-source: dispatch:1409
+// @kern-source: dispatch:1419
 export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<boolean> {
   const pending = findPendingCesarPlan(cb.ctx);
   if (!pending) {
@@ -1575,7 +1587,7 @@ export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<bo
 /**
  * Ask a keyboard-choice question in the composer instead of falling back to a blank free-text field.
  */
-// @kern-source: dispatch:1429
+// @kern-source: dispatch:1439
 export function askChoiceQuestion(cb: DispatchCallbacks, prompt: string, choices: any[], defaultChoiceKey?: string): Promise<string> {
   return new Promise<string>((resolve) => {
     cb.dispatch({ type: 'question', prompt, choices, defaultChoiceKey, resolve } as any);
@@ -1585,7 +1597,7 @@ export function askChoiceQuestion(cb: DispatchCallbacks, prompt: string, choices
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */
-// @kern-source: dispatch:1437
+// @kern-source: dispatch:1447
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {
@@ -2934,7 +2946,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 /**
  * Activate a proposed Cesar plan. Auto-approved plans execute immediately; manual approval is intentionally non-blocking so the REPL returns to idle and accepts go, yes, or /approve through the normal composer.
  */
-// @kern-source: dispatch:2784
+// @kern-source: dispatch:2794
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -2981,7 +2993,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2834
+// @kern-source: dispatch:2844
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -3115,7 +3127,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * Return true when a failed plan step looks like it was interrupted by stall/fallback handling rather than a semantic task failure.
  */
-// @kern-source: dispatch:2966
+// @kern-source: dispatch:2976
 export function failedPlanStepIsFallbackRetryable(step: any): boolean {
   if (!step || step.state !== 'failed') {
     return false;
@@ -3131,7 +3143,7 @@ export function failedPlanStepIsFallbackRetryable(step: any): boolean {
 /**
  * Reset one retryable failed plan step and bind it to the fallback engine. The caller runs executePlan again with a fresh abort controller.
  */
-// @kern-source: dispatch:2977
+// @kern-source: dispatch:2987
 export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string): CesarPlan|null {
   const engine = String(fallbackEngine ?? '').trim();
   if (!engine || !Array.isArray(plan.steps)) return null;
@@ -3171,7 +3183,7 @@ export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:3015
+// @kern-source: dispatch:3025
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx, cb.dispatch);
   let abortController = new AbortController();
@@ -3242,7 +3254,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:3084
+// @kern-source: dispatch:3094
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const FORGE_LIKE = new Set(['forge', 'teamforge', 'pipeline']);

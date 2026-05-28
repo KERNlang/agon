@@ -39,6 +39,7 @@ interface name=AgentStepResult
   field name=costUsd type=number
   field name=stopReason type="'completed'|'budget_exceeded'|'cancelled'|'error'"
   field name=error type=string optional=true
+  field name=engineFault type=boolean optional=true
 
 // ── Cumulative session stats ──────────────────────────────────────
 
@@ -301,6 +302,29 @@ service name=AgentSession export=true
           tokensUsed: partialTotal,
           costUsd: estimateCost(this.config.engineId, partialTotal, this.config.api.model),
           stopReason: 'cancelled',
+        };
+      }
+
+      // RC2: the inner loop signals a permanent failure (auth/dispatch fault,
+      // exhausted transient retries, or empty model output) via result.failed
+      // rather than throwing. Classify it as an error turn — NOT a 0-tool
+      // 'completed' — so the caller surfaces the failure, quarantines the
+      // engine (on engineFault), and never auto-resumes into a spin.
+      if ((result as any).failed) {
+        this.state = 'failed';
+        this.turnsUsed += 1;
+        this.tokensUsed += promptTokens;
+        this.totalToolCalls += result.toolCalls;
+        this.totalCostUsd += estimateCost(this.config.engineId, promptTokens, this.config.api.model);
+        return {
+          response: result.response,
+          toolCalls: result.toolCalls,
+          innerSteps: result.steps,
+          tokensUsed: promptTokens,
+          costUsd: estimateCost(this.config.engineId, promptTokens, this.config.api.model),
+          stopReason: 'error',
+          error: (result as any).errorReason ?? result.response,
+          engineFault: (result as any).engineFault ?? false,
         };
       }
 

@@ -390,6 +390,7 @@ describe('Dispatch routing helpers', () => {
     expect(shouldAutoResumeAgentResult({ status: 'completed' }, 5, 1, ctx)).toBe(false); // user typed → new epoch
     expect(shouldAutoResumeAgentResult({ status: 'completed' }, 4, 2, ctx)).toBe(true);  // turn drift, same epoch → still resume
     expect(shouldAutoResumeAgentResult({ status: 'cancelled' }, 4, 1, ctx)).toBe(false);
+    expect(shouldAutoResumeAgentResult({ status: 'failed' }, 4, 1, ctx)).toBe(false); // RC3: a failed agent must NOT re-delegate into the same dead engine
   });
 
   it('continues delegated results while the input epoch is unchanged (turn-count drift does NOT suppress)', () => {

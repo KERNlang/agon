@@ -29,6 +29,7 @@ const name=agentGuideCommand type=any
               { name: 'synthesis', cmd: 'agon synthesis "<prompt>" [-s <swaps>] [-j <judge>]', use: 'one polished result blending the best ideas; no clean pass/fail test' },
               { name: 'brainstorm', cmd: 'agon brainstorm "<question>"', use: 'cheap second opinion / ideas' },
               { name: 'tribunal', cmd: 'agon tribunal "<question>" --mode adversarial', use: 'decisions with real tradeoffs' },
+              { name: 'council', cmd: 'agon council "<decision>" [--roles "..."] [--chairman <id>]', use: 'high-stakes decision: ALL engines take distinct roles (Contrarian=top critic, Red-Team, First-Principles, ...), the top-rated engine chairs and returns ONE verdict with confidence + a kill-switch' },
               { name: 'campfire', cmd: 'agon campfire "<topic>"', use: 'open exploration, no winner' },
               { name: 'think', cmd: 'agon think "<problem>" --strategy reflexion [--steps N --branches N]', use: 'sequential thinking — decompose a problem (optionally branch) and surface open questions before acting' },
               { name: 'nero', cmd: 'agon nero "<decision>" --reasoning "<why>"', use: 'adversarial self-challenge — the top-rated critic attacks YOUR decision and returns a verdict. Use this instead of an internal evil-twin/devils-advocate pass' },

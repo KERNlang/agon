@@ -1,0 +1,236 @@
+// `agon council` — a roundtable of ALL active engines, each in a distinct role,
+// chaired by the top-rated engine. Agon's stronger answer to the viral "LLM
+// Council" pattern: genuinely heterogeneous models (not one model in personas),
+// Glicko-informed seating (Contrarian = top critic, chair = top overall), a
+// decision brief up front, O(N) directed peer critique, and a chairman verdict
+// that must carry a confidence + kill-switch and cite which critiques it accepted
+// or rejected. Scales to the engine count; refuses below 2.
+
+import from="citty" names="defineCommand"
+import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,writeRunStatus,printRunSummary"
+import from="@agon/core" names="RunStatus,RunStatusEngine" types=true
+import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
+import from="@agon/adapter-cli" names="createCliAdapter"
+import from="@agon/forge" names="runCouncil"
+import from="../blocks/output-format.js" names="header,info,bold,dim"
+import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
+
+fn name=chairmanPickLabel params="reason:string" returns=string export=true
+  doc "Human-readable description of how the chairman was chosen."
+  handler <<<
+    if (reason === 'forced') return 'forced';
+    if (reason === 'cesar') return 'cesar-chaired (2-engine council)';
+    if (reason === 'random') return 'random — no Elo yet';
+    if (reason === 'top-rated') return 'top-rated';
+    return reason;
+  >>>
+
+const name=councilCommand type=any
+  handler <<<
+    defineCommand({
+      meta: {
+        name: 'council',
+        description: 'Roundtable of ALL active engines — each takes a role, the top-rated engine chairs. `agon council "<decision>"`. Agon\'s stronger LLM-Council: real heterogeneous models, decision brief, directed critique, a chairman verdict with confidence + kill-switch.',
+      },
+      args: {
+        question: {
+          type: 'positional',
+          description: 'The decision / question for the council to deliberate.',
+          required: false,
+        },
+        engines: {
+          type: 'string',
+          alias: 'e',
+          description: 'Constrain the panel (comma-separated). Default: all active orchestration engines.',
+        },
+        roles: {
+          type: 'string',
+          description: 'Override advisor roles (comma-separated, priority order). Default: Contrarian,First-Principles,Red-Team,Outsider,Expansionist.',
+        },
+        chairman: {
+          type: 'string',
+          description: 'Force a specific engine to chair (skips rating-based selection).',
+        },
+        timeout: {
+          type: 'string',
+          description: 'Per-engine timeout in seconds.',
+          default: '120',
+        },
+        json: {
+          type: 'boolean',
+          description: 'Emit the full CouncilResult as JSON on stdout (pipe-friendly).',
+        },
+        quiet: {
+          type: 'boolean',
+          description: 'Print only the chairman verdict.',
+        },
+        label: {
+          type: 'string',
+          description: 'Human-readable suffix baked into the run dir name.',
+        },
+      },
+      async run({ args }) {
+        ensureAgonHome();
+        const config = loadConfig(process.cwd());
+
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        const adapter = createCliAdapter(registry);
+
+        const positionals = Array.isArray((args as any)._) ? (args as any)._.map(String) : [];
+        const question = [args.question, ...positionals].filter((p) => typeof p === 'string' && p.trim()).map((p) => String(p).trim()).join(' ').trim();
+        if (!question) {
+          console.error('Provide a decision for the council. Usage: agon council "your decision" [--roles "..."] [--engines "..."]');
+          process.exitCode = 1;
+          return;
+        }
+
+        // Only real, installed engines may join the panel — registry.get() THROWS
+        // on unknown ids, so validate the requested set up front.
+        const known = new Set(registry.listIds());
+        const active = filterDefaultOrchestrationEngines(registry.activeIds(config as any));
+        let pool = active;
+        if (typeof args.engines === 'string' && args.engines.trim()) {
+          const requested = args.engines.split(',').map((s) => s.trim()).filter(Boolean);
+          const wanted = requested.map((s) => registry.resolveId(s)).filter((id) => known.has(id));
+          const unknown = requested.filter((s) => !known.has(registry.resolveId(s)));
+          if (unknown.length > 0) {
+            console.error(`Unknown engine${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}. Run \`agon engine list\` to see available engines.`);
+            process.exitCode = 1;
+            return;
+          }
+          if (wanted.length > 0) pool = wanted;
+        }
+
+        let chairman: string | undefined;
+        if (typeof args.chairman === 'string' && args.chairman.trim()) {
+          const resolved = registry.resolveId(args.chairman.trim());
+          if (!known.has(resolved)) {
+            console.error(`Unknown chairman engine '${args.chairman.trim()}'. Run \`agon engine list\` to see available engines.`);
+            process.exitCode = 1;
+            return;
+          }
+          // Known != usable: a registered-but-uninstalled / uncredentialed chairman
+          // would pass and then fail at dispatch. Require it to be ACTIVE up front.
+          if (!registry.activeIds(config as any).includes(resolved)) {
+            console.error(`Chairman engine '${args.chairman.trim()}' is not available (not installed or missing credentials). Run \`agon engine list\`.`);
+            process.exitCode = 1;
+            return;
+          }
+          chairman = resolved;
+          if (!pool.includes(chairman)) pool = [chairman, ...pool];
+        }
+
+        // Dedupe while preserving order.
+        pool = [...new Set(pool)];
+
+        if (pool.length < 2) {
+          console.error(`A council needs at least 2 engines (have ${pool.length}). Run \`agon engine list\` or \`agon engine add <id>\`.`);
+          process.exitCode = 1;
+          return;
+        }
+
+        const roles = typeof args.roles === 'string' && args.roles.trim()
+          ? args.roles.split(',').map((s) => s.trim()).filter(Boolean)
+          : undefined;
+
+        const quiet = !!args.quiet;
+        const json = !!args.json;
+        const timeoutSec = parseInt(String(args.timeout ?? '120'), 10) || 120;
+
+        const startedAt = new Date().toISOString();
+        const { path: outputDir } = createRunDir({ mode: 'council', label: args.label, announce: false });
+
+        if (!quiet && !json) {
+          header(`Council · ${pool.length} engines`);
+          info(question.length > 120 ? question.slice(0, 120) + '...' : question);
+          console.log('');
+        }
+
+        const result = await runCouncil({
+          question,
+          engines: pool,
+          roles,
+          chairman,
+          registry,
+          adapter,
+          timeout: timeoutSec,
+          outputDir,
+          cwd: process.cwd(),
+        });
+
+        const engineStatuses: RunStatusEngine[] = [
+          { id: result.chairmanId || '(none)', status: result.ok ? 'ok' : 'error', detail: `chairman (${chairmanPickLabel(result.chairmanReason)})` },
+          ...result.seats.map((s) => ({
+            id: s.engineId,
+            status: (s.response && s.response !== '(no response)' ? 'ok' : 'error') as 'ok' | 'error',
+            detail: `${s.role}${s.critique ? ' +critique' : ''}`,
+          })),
+        ];
+        const status: RunStatus = {
+          mode: 'council',
+          label: args.label,
+          startedAt,
+          endedAt: new Date().toISOString(),
+          engines: engineStatuses,
+          summary: result.ok
+            ? `${result.seats.length} advisors, chaired by ${result.chairmanId}${result.confidence != null ? ` · ${result.confidence}% confidence` : ''}`
+            : 'council produced no usable verdict',
+          ok: result.ok,
+          requested: pool,
+          timeoutSec,
+        };
+        writeRunStatus(outputDir, status);
+
+        if (json) {
+          console.log(JSON.stringify(result, null, 2));
+          if (!result.ok) process.exitCode = 1;
+          return;
+        }
+
+        if (quiet) {
+          console.log(result.verdict);
+          if (!result.ok) process.exitCode = 1;
+          return;
+        }
+
+        const seating = result.seats.map((s) => `${s.role}=${s.engineId}`).join(', ');
+        info(dim(`Chair: ${result.chairmanId} (${chairmanPickLabel(result.chairmanReason)})  ·  ${seating}`));
+        console.log('');
+
+        if (result.brief && result.brief !== question) {
+          console.log(bold('Decision brief'));
+          console.log(result.brief);
+          console.log('');
+        }
+
+        for (const s of result.seats) {
+          console.log(bold(`${s.role} — ${s.engineId}`));
+          console.log(s.response || '(no response)');
+          if (s.critique) {
+            console.log('');
+            console.log(dim(`↳ ${s.role} critiquing ${s.critiquedRole}:`));
+            console.log(s.critique);
+          }
+          console.log('');
+        }
+
+        console.log(bold('━━━ Chairman verdict ━━━'));
+        console.log(result.verdict);
+        console.log('');
+        if (result.confidence != null) {
+          console.log(bold(`Confidence: ${result.confidence}%`));
+        }
+
+        if (result.warnings.length > 0) {
+          console.log('');
+          for (const w of result.warnings) info(dim(`⚠ ${w}`));
+        }
+
+        console.log('');
+        info(dim(`Saved: ${outputDir}`));
+        printRunSummary(status);
+        if (!result.ok) process.exitCode = 1;
+      },
+    })
+  >>>

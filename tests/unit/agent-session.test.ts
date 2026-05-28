@@ -147,21 +147,17 @@ describe('AgentSession', () => {
   });
 
   it('post-step duration overrun is detected and returned as budget_exceeded', async () => {
-    // Slow mock: inner loop takes 50ms; maxDurationMs=40ms → post-check fires.
+    // Inner loop takes 50ms; with a 1ms duration budget the step is already over
+    // budget by the time it returns, so the duration check returns budget_exceeded.
+    // Deterministic: relies only on 50ms >> 1ms, not on wall-clock starvation
+    // (the old 30_000ms budget flaked on loaded CI when Date.now jumped past it).
     mockRun.mockImplementation(async () => {
       await new Promise((r) => setTimeout(r, 50));
       return { response: 'ok', toolCalls: 0, steps: 1 };
     });
-    // maxDurationMs must be >= 30_000 so the pre-check passes but <50ms… that's contradictory.
-    // Instead: set maxDurationMs=30_000 (pre-check passes) and let elapsed exceed it by mocking
-    // Date.now. This is inherently flaky — skip if the wall-clock path is hard to simulate.
-    // Using a smaller maxDurationMs with a long-running mock fails the pre-check instead.
-    // So this test is really "if the pre-check allowed a step that then ran long, post-check
-    // catches it" — which requires manipulating time. Deferred to integration tests.
-    const session = new AgentSession(makeConfig({ budget: { maxTurns: 5, maxDurationMs: 30_000 } }));
+    const session = new AgentSession(makeConfig({ budget: { maxTurns: 5, maxDurationMs: 1 } }));
     const result = await session.step('x');
-    // Under normal conditions (50ms elapsed << 30_000ms budget), step completes.
-    expect(result.stopReason).toBe('completed');
+    expect(result.stopReason).toBe('budget_exceeded');
   });
 
   it('cancel() aborts the signal and prevents further steps', async () => {

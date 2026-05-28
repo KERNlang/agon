@@ -1,0 +1,142 @@
+// REPL handler for `/nero <decision>` — standalone adversarial self-challenge.
+// The top-rated critic (picked by the critique→tribunal→global Glicko cascade)
+// attacks a decision and returns failure scenarios + a verdict. Mirrors the
+// `agon nero` CLI command but renders via dispatch events and appends the
+// challenge + verdict to the chat session so Cesar can weigh it.
+//
+// Note: bare `/nero` stays the in-session adversarial-mode TOGGLE; this handler
+// is only reached when `/nero` carries a decision argument.
+
+import from="node:path" names="join"
+import from="node:fs" names="mkdirSync"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,tracker,appendMessage,resolveWorkingDir"
+import from="@agon/forge" names="runNero"
+import from="../models/session-results.js" names="sessionResultStore"
+import from="../../telemetry/index.js" names="recordRun,formatRunSummary"
+import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
+import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
+
+fn name=verdictGlyph params="verdict:string" returns=string expr={{ return verdict === 'flawed' ? '🔴' : verdict === 'proceed-with-caution' ? '🟡' : verdict === 'sound' ? '🟢' : '⚪'; }}
+  doc "Map a Nero verdict to a render glyph."
+
+fn name=handleNeroChallenge params="decision:string, dispatch:Dispatch, ctx:HandlerContext, opts?:{reasoning?:string, focus?:string, confidence?:number, engine?:string}" returns="Promise<void>" async=true
+  signal name=neAbort
+  handler <<<
+    ensureAgonHome();
+
+    if (!decision || !decision.trim()) {
+      dispatch({ type: 'warning', message: 'No decision provided. Usage: /nero <decision to challenge>' });
+      return;
+    }
+
+    const allEngines = ctx.activeEngines();
+    let pool = filterDefaultOrchestrationEngines(allEngines);
+    if (pool.length === 0) {
+      dispatch({ type: 'error', message: 'No engines available.' });
+      return;
+    }
+
+    let forced: string | undefined;
+    if (opts?.engine && opts.engine.trim()) {
+      const resolved = ctx.registry.resolveId(opts.engine.trim());
+      if (ctx.registry.activeIds(ctx.config as any).includes(resolved)) {
+        forced = resolved;
+        if (!pool.includes(forced)) pool = [forced, ...pool];
+      } else {
+        dispatch({ type: 'info', message: `Engine '${opts.engine.trim()}' is not available — using rating-based selection.` });
+      }
+    }
+
+    dispatch({ type: 'header', title: 'Nero · adversarial challenge' });
+    dispatch({ type: 'info', message: decision.length > 120 ? decision.slice(0, 120) + '…' : decision });
+
+    const outputDir = join(RUNS_DIR, `nero-${Date.now()}`);
+    mkdirSync(outputDir, { recursive: true });
+
+    ctx.setActiveAbort(neAbort);
+
+    const startTime = Date.now();
+    const progressInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const progress: EngineProgress[] = [{ id: forced ?? 'critic', status: `challenging… ${elapsed}s`, elapsed, done: false, failed: false }];
+      dispatch({ type: 'progress-update', engines: progress });
+    }, 250);
+
+    let progressCleared = false;
+    function clearProgress(): void {
+      if (progressCleared) return;
+      progressCleared = true;
+      clearInterval(progressInterval);
+      dispatch({ type: 'progress-clear' });
+    }
+
+    let result: any;
+    try {
+      result = await runNero({
+        decision,
+        reasoning: opts?.reasoning,
+        focus: opts?.focus,
+        confidence: opts?.confidence,
+        engines: pool,
+        engine: forced,
+        registry: ctx.registry,
+        adapter: ctx.adapter,
+        timeout: 120,
+        outputDir,
+        cwd: resolveWorkingDir(),
+        signal: neAbort.signal,
+      });
+    } catch (err) {
+      clearProgress();
+      throw err;
+    }
+    clearProgress();
+
+    if (!result.ok) {
+      dispatch({ type: 'error', message: `Nero produced no usable challenge${result.challengeText ? `: ${result.challengeText}` : '.'}` });
+      return;
+    }
+
+    const pick = result.reason === 'forced'
+      ? 'forced'
+      : result.reason === 'random'
+        ? 'random — no Elo yet'
+        : `top-rated via ${result.scope}`;
+    dispatch({ type: 'info', message: `Critic: ${result.engineId} (${pick})` });
+
+    dispatch({ type: 'engine-block', engineId: result.engineId, color: 196, content: result.challengeText });
+    const verdictLine = `${verdictGlyph(result.verdict)} VERDICT: ${result.verdict.toUpperCase()}${result.challengeConfidence != null ? `  ·  Nero is ${result.challengeConfidence}% sure the original is correct` : ''}`;
+    dispatch({ type: 'text', content: verdictLine });
+
+    appendMessage(ctx.chatSession, { role: 'user', content: `[nero] ${decision}`, timestamp: new Date().toISOString() });
+    appendMessage(ctx.chatSession, { role: 'engine', engineId: result.engineId, content: `${result.challengeText}\n\n${verdictLine}`, timestamp: new Date().toISOString() });
+    tracker.record(result.engineId, { prompt: decision, response: result.challengeText });
+
+    sessionResultStore.add({
+      type: 'nero',
+      timestamp: new Date().toISOString(),
+      question: decision,
+      engines: result.engineId ? [result.engineId] : [],
+      winner: result.engineId ?? null,
+      data: {
+        verdict: result.verdict,
+        criticId: result.engineId ?? '',
+        challengeConfidence: result.challengeConfidence ?? null,
+        challengeText: result.challengeText ?? '',
+      },
+    });
+
+    const runRecord = recordRun({
+      mode: 'nero',
+      intent: decision,
+      winner: result.engineId ?? undefined,
+      success: true,
+      durationMs: Date.now() - startTime,
+      engineIds: result.engineId ? [result.engineId] : [],
+      completionState: 'completed',
+    });
+    if (!process.env.AGON_NO_SUMMARY) dispatch({ type: 'info', message: formatRunSummary(runRecord) });
+  >>>
+  cleanup <<<
+    ctx.setActiveAbort(null);
+  >>>

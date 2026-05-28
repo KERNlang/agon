@@ -14,10 +14,33 @@ interface name=ForgeResultData export=true
   field name=winner type="string | null"
   field name=synthesis type="{ pass: boolean; score: number } | undefined" optional=true
 
+interface name=ThinkResultData export=true
+  field name=strategy type=string
+  field name=thoughtCount type=number
+  field name=summary type=string
+  field name=openQuestions type="string[]"
+
+interface name=CouncilResultData export=true
+  field name=verdict type=string
+  field name=chairmanId type=string
+  field name=confidence type="number | null"
+  field name=seats type="{ role: string; engineId: string }[]"
+
+interface name=SynthesisResultData export=true
+  field name=winner type="string | null"
+  field name=judgeReasoning type=string
+  field name=swaps type=number
+
+interface name=NeroResultData export=true
+  field name=verdict type=string
+  field name=criticId type=string
+  field name=challengeConfidence type="number | null"
+  field name=challengeText type=string
+
 interface name=SessionResult export=true
-  field name=type type="'brainstorm' | 'campfire' | 'tribunal' | 'forge'"
+  field name=type type="'brainstorm' | 'campfire' | 'tribunal' | 'forge' | 'think' | 'council' | 'synthesis' | 'nero'"
   field name=timestamp type=string
   field name=question type=string
   field name=engines type="string[]"
   field name=winner type="string | null"
-  field name=data type="BrainstormResultData | CampfireResultData | TribunalResultData | ForgeResultData"
+  field name=data type="BrainstormResultData | CampfireResultData | TribunalResultData | ForgeResultData | ThinkResultData | CouncilResultData | SynthesisResultData | NeroResultData"

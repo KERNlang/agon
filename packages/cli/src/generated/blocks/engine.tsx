@@ -28,17 +28,25 @@ import { PlanProposalView, PlanExecutionView } from './plan-view.js';
 
 import { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary } from './engine-helpers.js';
 
+import { createRequire } from 'node:module';
+
+import { readFileSync, existsSync } from 'node:fs';
+
+import { dirname, join } from 'node:path';
+
+import { fileURLToPath } from 'node:url';
+
 // ── Module: EngineHelperExports ──
 
 export { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary } from './engine-helpers.js';
 
-// @kern-source: engine:39
+// @kern-source: engine:65
 export interface OutputBlock {
   id: number;
   event: OutputEvent;
 }
 
-// @kern-source: engine:45
+// @kern-source: engine:71
 export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]; mode?:string }) {
   // Use explicit mode if it's an arena mode, otherwise detect from status text
   const arenaModes = ['forge', 'brainstorm', 'campfire', 'tribunal'];
@@ -77,7 +85,7 @@ export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]
   );
 }
 
-// @kern-source: engine:89
+// @kern-source: engine:115
 const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }: { engineId:string; color:number; content:string }) {
   const wrapWidth = contentWidth(8);
   const cleaned = cleanEngineOutput(content);
@@ -106,7 +114,7 @@ const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }
 });
 export { EngineBlock };
 
-// @kern-source: engine:123
+// @kern-source: engine:149
 const ConversationalResponse = React.memo(function ConversationalResponse({ engineId, content }: { engineId:string; content:string }) {
   const wrapWidth = contentWidth(2);
   const cleaned = cleanEngineOutput(content);
@@ -123,7 +131,7 @@ const ConversationalResponse = React.memo(function ConversationalResponse({ engi
 });
 export { ConversationalResponse };
 
-// @kern-source: engine:144
+// @kern-source: engine:170
 const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:OutputEvent & { type: 'cesar-recap' } }) {
   const files = Array.isArray((event as any).files) ? (event as any).files : [];
   const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
@@ -225,7 +233,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
 });
 export { CesarRecapBlock };
 
-// @kern-source: engine:249
+// @kern-source: engine:275
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -293,7 +301,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-// @kern-source: engine:321
+// @kern-source: engine:347
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -317,7 +325,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:350
+// @kern-source: engine:376
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -928,7 +936,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:967
+// @kern-source: engine:993
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -1029,7 +1037,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1074
+// @kern-source: engine:1100
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1055,7 +1063,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1103
+// @kern-source: engine:1129
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -1085,14 +1093,37 @@ const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[]
 });
 export { BidGroup };
 
-// @kern-source: engine:23
+// @kern-source: engine:27
 export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const;
 
-// @kern-source: engine:25
+// @kern-source: engine:29
 export const LOGO_LINES: string[] = ['    █████╗  ██████╗  ██████╗ ███╗   ██╗', '   ██╔══██╗██╔════╝ ██╔═══██╗████╗  ██║', '   ███████║██║  ███╗██║   ██║██╔██╗ ██║', '   ██╔══██╗██║   ██╗██║   ██║██║╚██╗██║', '   ██║  ██║╚██████╔╝╚██████╔╝██║ ╚████║', '   ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝'];
 
-// @kern-source: engine:27
-export const VERSION: string = '0.1.0';
+/**
+ * Read a package's installed version from its package.json at runtime so the banner auto-reflects npm upgrades instead of a frozen literal. Walks up from a resolvable entry (or this module for the own package) to the nearest package.json whose name matches. Falls back to the literal if resolution fails — e.g. an exports-locked package.json that can't be required by path.
+ */
+// @kern-source: engine:31
+export function resolvePackageVersion(resolveSpecifier: string|null, wantName: string, fallback: string): string {
+  try {
+    const req = createRequire(import.meta.url);
+    const startFile = resolveSpecifier ? req.resolve(resolveSpecifier) : fileURLToPath(import.meta.url);
+    let dir = dirname(startFile);
+    for (let i = 0; i < 10; i += 1) {
+      const pkgPath = join(dir, 'package.json');
+      if (existsSync(pkgPath)) {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+        if (pkg && pkg.name === wantName && typeof pkg.version === 'string') return pkg.version;
+      }
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  } catch { /* resolution failed — use the pinned fallback */ }
+  return fallback;
+}
 
-// @kern-source: engine:34
-export const KERN_VERSION: string = '3.5.3';
+// @kern-source: engine:58
+export const VERSION: string = resolvePackageVersion(null, '@agon/cli', '0.1.0');
+
+// @kern-source: engine:60
+export const KERN_VERSION: string = resolvePackageVersion('@kernlang/terminal/runtime', '@kernlang/terminal', '3.5.5');

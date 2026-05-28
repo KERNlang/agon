@@ -72,11 +72,12 @@ When you add an agon mode/command (e.g. the `think` mode = sequential thinking, 
 
 1. **Core/orchestration** — `packages/forge/src/kern/<mode>.kern` (the `run*` fn, takes `registry`+`adapter`), exported from `packages/forge/src/index.ts`.
 2. **CLI command** — `packages/cli/src/kern/commands/<mode>.kern`, facade `packages/cli/src/commands/<mode>.ts`, registered in `packages/cli/src/index.ts` `subCommands`.
-3. **External-CLI bridge** — add a branch in `packages/cli/src/commands/call.ts` (so `agon call <mode>` works) and a test in `tests/unit/call-command.test.ts`.
-4. **Agent guide** (what `install-agent-prompts` ships to Codex/Antigravity/Claude) — `packages/cli/src/kern/commands/agent-guide.kern` (JSON `modes`) AND `agent-guide-text.kern` (prose + "Pick a mode").
-5. **README.md** — the "You need… / Use / Why" table, the rule-of-thumb list, and a `### <Mode>` section with usage.
-6. **This CLAUDE.md** and the **top-level `~/.claude/CLAUDE.md`** (the buddies→agon mapping) — so future sessions know the mode exists and how to call it.
-7. **Tests** — `tests/unit/<mode>.test.ts` for the pure logic.
+3. **REPL slash command** (the interactive `agon` surface — EASY TO FORGET; the CLI subcommand and the REPL are SEPARATE surfaces). Five touch-points: (a) `SLASH_COMMANDS` help list in `packages/cli/src/kern/signals/intent.kern`; (b) a parser `case` in that file's `parseSlashCommand` switch returning a `{ type: '<mode>' }` Intent (add any new fields to the `Intent` interface there) — do NOT alias it to an existing mode (the old `/think`→campfire bug); (c) a REPL handler `packages/cli/src/kern/handlers/<mode>.kern` (`handle<Mode>` — renders via `dispatch` events + `appendMessage` for Cesar continuity + `recordRun`/`sessionResultStore`, mirroring `handlers/campfire.kern`), exported from `packages/cli/src/handlers/index.ts`; (d) a `case '<mode>'` in `dispatchIntent` (`packages/cli/src/kern/signals/dispatch.kern`) that `runAsJob`s the handler then feeds the result to Cesar via `continueCesarAfterResult`; (e) if it produces a session result, extend the `SessionResult` union + add a `format<Mode>` in `blocks/results-formatter.kern`. Test the parser in `tests/unit/intent.test.ts`.
+4. **External-CLI bridge** — add a branch in `packages/cli/src/commands/call.ts` (so `agon call <mode>` works) and a test in `tests/unit/call-command.test.ts`.
+5. **Agent guide** (what `install-agent-prompts` ships to Codex/Antigravity/Claude) — `packages/cli/src/kern/commands/agent-guide.kern` (JSON `modes`) AND `agent-guide-text.kern` (prose + "Pick a mode").
+6. **README.md** — the "You need… / Use / Why" table, the rule-of-thumb list, and a `### <Mode>` section with usage.
+7. **This CLAUDE.md** and the **top-level `~/.claude/CLAUDE.md`** (the buddies→agon mapping) — so future sessions know the mode exists and how to call it.
+8. **Tests** — `tests/unit/<mode>.test.ts` for the pure logic.
 
 ## Key Patterns
 

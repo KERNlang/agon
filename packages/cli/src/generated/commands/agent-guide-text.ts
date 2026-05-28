@@ -29,7 +29,7 @@ export function agentGuideMarkdown(): string {
     '- RED at base: confirm the test fails on the current code for the RIGHT reason before the run, and turns green only when the task is genuinely done.',
     '- Coverage over tolerance: add enough cases that wrong variants die on their own; never loosen a gate or tolerance to force a pass.',
     '- Red-team your own oracle first: run `agon nero "<the test/gate I wrote>" --reasoning "is this gameable?"`, or hand one engine the test + signature and ask it to write a subtly-wrong impl that still passes. If it can, the oracle has a hole — add a killer case and repeat until it cannot.',
-    '- goal only: pre-flight with `--dryRun`; each queued task verify must be RED-at-base for the right reason while `--gate` is green at base; keep mutation scoped to the verify (match `--witnessCmd` to the same narrow command).',
+    '- goal only: pre-flight with `--dryRun`; each queued task verify must be RED-at-base for the right reason while `--gate` is green at base; keep mutation scoped to the verify (match `--witnessCmd` to the same narrow command). Add `--oracle-gate=warn|strict` to AUTOMATE the red-team: before forging, the panel tries to make each verify PASS with a cheating impl; strict refuses to launch if any verify is gameable, so a non-discriminating oracle is caught up front instead of dead-looping the run.',
     '',
     '## Common flags',
     '- `--engines claude,codex,agy` — limit which engines compete',

@@ -26,7 +26,7 @@ import { icons } from './icons.js';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
-import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun, handleReview, handleReviewMany, runAgentMode, runAgentTeam } from '../../handlers/index.js';
+import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun, handleReview, handleReviewMany, runAgentMode, runAgentTeam } from '../../handlers/index.js';
 
 import { prepareForgeFitnessCommand, inferProjectFitnessCommand } from '../handlers/forge.js';
 
@@ -1700,6 +1700,58 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
     }
+    case 'think': {
+      if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /think <problem> [--strategy reflexion] [--steps 8]' }); return { handled: true, ranAsJob: false }; }
+      const _thCwd = resolveWorkingDir();
+      const _thLabel = intent.input?.slice(0, 40) ?? 'think';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('think', _thLabel, withThreadOutcome(_thCwd, 'think', _thLabel, async () => {
+        await handleThink(intent.input, cb.dispatch, cb.ctx, { strategy: intent.strategy, steps: intent.steps });
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
+        if (chatContext) await continueCesarAfterResult(`Think chain on: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nReview the reasoning, resolve any open questions, and take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'council': {
+      if (!intent.question?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /council <decision>' }); return { handled: true, ranAsJob: false }; }
+      const _coCwd = resolveWorkingDir();
+      const _coLabel = intent.question?.slice(0, 40) ?? 'council';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('council', _coLabel, withThreadOutcome(_coCwd, 'council', _coLabel, async () => {
+        await handleCouncil(intent.question, cb.dispatch, cb.ctx);
+        const chatContext = collectRecentEngineContext(cb.ctx, 14, 1500);
+        if (chatContext) await continueCesarAfterResult(`Council deliberated on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the chairman verdict and the strongest dissent, then recommend the next step.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'synthesis': {
+      if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /synthesis <task> [--swaps 2]' }); return { handled: true, ranAsJob: false }; }
+      const _syCwd = resolveWorkingDir();
+      const _syLabel = intent.input?.slice(0, 40) ?? 'synthesis';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('synthesis', _syLabel, withThreadOutcome(_syCwd, 'synthesis', _syLabel, async () => {
+        await handleSynthesis(intent.input, cb.dispatch, cb.ctx, { swaps: intent.swaps });
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
+        if (chatContext) await continueCesarAfterResult(`Synthesis completed on: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the winning artifact and take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'nero-challenge': {
+      if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /nero <decision to challenge>' }); return { handled: true, ranAsJob: false }; }
+      const _neCwd = resolveWorkingDir();
+      const _neLabel = intent.input?.slice(0, 40) ?? 'nero';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('nero', _neLabel, withThreadOutcome(_neCwd, 'nero', _neLabel, async () => {
+        await handleNeroChallenge(intent.input, cb.dispatch, cb.ctx, { reasoning: intent.reasoning });
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
+        if (chatContext) await continueCesarAfterResult(`Nero challenged: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nWeigh the critic's verdict honestly: if it found a real flaw, adjust the plan; if not, say why and proceed.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
     case 'team-tribunal': {
       const _ttCwd = resolveWorkingDir();
       const _ttLabel = intent.question?.slice(0, 40) ?? 'team-tribunal';
@@ -2946,7 +2998,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 /**
  * Activate a proposed Cesar plan. Auto-approved plans execute immediately; manual approval is intentionally non-blocking so the REPL returns to idle and accepts go, yes, or /approve through the normal composer.
  */
-// @kern-source: dispatch:2794
+// @kern-source: dispatch:2846
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -2993,7 +3045,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2844
+// @kern-source: dispatch:2896
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -3127,7 +3179,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * Return true when a failed plan step looks like it was interrupted by stall/fallback handling rather than a semantic task failure.
  */
-// @kern-source: dispatch:2976
+// @kern-source: dispatch:3028
 export function failedPlanStepIsFallbackRetryable(step: any): boolean {
   if (!step || step.state !== 'failed') {
     return false;
@@ -3143,7 +3195,7 @@ export function failedPlanStepIsFallbackRetryable(step: any): boolean {
 /**
  * Reset one retryable failed plan step and bind it to the fallback engine. The caller runs executePlan again with a fresh abort controller.
  */
-// @kern-source: dispatch:2987
+// @kern-source: dispatch:3039
 export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string): CesarPlan|null {
   const engine = String(fallbackEngine ?? '').trim();
   if (!engine || !Array.isArray(plan.steps)) return null;
@@ -3183,7 +3235,7 @@ export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:3025
+// @kern-source: dispatch:3077
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx, cb.dispatch);
   let abortController = new AbortController();
@@ -3254,7 +3306,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:3094
+// @kern-source: dispatch:3146
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const FORGE_LIKE = new Set(['forge', 'teamforge', 'pipeline']);

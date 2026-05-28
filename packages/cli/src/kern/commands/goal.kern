@@ -100,7 +100,11 @@ const name=goalCommand type=any
         mutationFloor: { type: 'string', description: 'Mutation gate fallback: minimum surviving-mutant count before the --mutation-survivor-ratio check applies (default 3) — tiny mutant counts always land.' },
         cwd: { type: 'string', description: 'Repo working directory', default: process.cwd() },
         requireTests: { type: 'boolean', description: 'Reject a task whose diff changes source but adds no test (the witness has nothing to witness). Default true; --no-require-tests to allow test-free changes.', default: true },
-        oracleGate: { type: 'string', description: 'Oracle red-team pre-flight (off|warn|strict, default off): before forging, the review panel tries to make each task\'s --queue "verify" PASS with a CHEATING impl (hardcode/ignore inputs). off = skip; warn = run + report any gameable verify but continue; strict = ABORT the launch if any verify is gameable. Catches a non-discriminating oracle before it lets buggy code land green and wastes the run. Note: a "gameable" verdict only proves a panel engine made the verify pass — it can\'t prove the engine cheated vs. implemented it correctly, so strict can rarely false-positive; prefer warn for human review.', default: 'off' },
+        oracleGate: { type: 'string', description: 'Oracle red-team pre-flight (off|warn|strict, default off): before forging, the review panel tries to make each task\'s --queue "verify" PASS with a CHEATING impl (hardcode/ignore inputs). off = skip; warn = run + report any gameable verify but continue; strict = ABORT the launch if any verify is gameable. Catches a non-discriminating oracle before it lets buggy code land green and wastes the run. Note: a "gameable" verdict only proves a panel engine made the verify pass — it can\'t prove the engine cheated vs. implemented it correctly, so strict can rarely false-positive; prefer warn for human review.' },
+        // NOTE: deliberately NO `default: 'off'` here — citty fails to map a kebab
+        // flag (--oracle-gate) onto a camelCase key that carries a citty default, so
+        // a default would silently swallow `--oracle-gate=strict`. The code below
+        // applies the 'off' default via `?? 'off'` instead.
         push: { type: 'boolean', description: 'Push the goal branch to origin after EACH task commits (build→review→fix→commit→push per task). Only the goal/* branch, never main.', default: false },
         pr: { type: 'boolean', description: 'With --push, open a PR for the goal branch when the run finishes (needs gh).', default: false },
         remote: { type: 'string', description: 'Git remote to push to (default origin).', default: 'origin' },
@@ -155,6 +159,15 @@ const name=goalCommand type=any
         const queueSource = (args.queue ?? '').trim();
         if (!queueSource && !args.resume) {
           fail('A --queue is required (a directory of tasks or a .jsonl/.json file). E.g. --queue .kern-gaps/.');
+          process.exit(1);
+        }
+
+        // Validate --oracle-gate EARLY (before the run plan prints) so a typo fails
+        // fast instead of silently disabling the gate. The flag carries no citty
+        // `default` (see its definition) so the kebab form maps correctly here.
+        const oracleGateMode = String(args.oracleGate ?? 'off').trim().toLowerCase();
+        if (!['off', 'warn', 'strict'].includes(oracleGateMode)) {
+          fail(`--oracle-gate must be off, warn, or strict (got "${args.oracleGate}").`);
           process.exit(1);
         }
 
@@ -622,11 +635,6 @@ const name=goalCommand type=any
         // own sub-worktree and only reads the base, so a winner means some engine made
         // the verify pass by cheating → the oracle is gameable. We never apply a patch —
         // a winner is the signal, not work. Built only when --oracle-gate is on.
-        const oracleGateMode = String(args.oracleGate ?? 'off').trim().toLowerCase();
-        if (!['off', 'warn', 'strict'].includes(oracleGateMode)) {
-          fail(`--oracle-gate must be off, warn, or strict (got "${args.oracleGate}").`);
-          process.exit(1);
-        }
         const oracleRedTeam = (oracleGateMode === 'warn' || oracleGateMode === 'strict')
           ? async (a: { tasks: Array<{ id: string; source: string; verify?: string }>; baseWorktree: string; repoRoot: string; signal?: AbortSignal }) => {
               const holes: Array<{ taskId: string; engine: string; evidence: string }> = [];

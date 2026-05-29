@@ -8,7 +8,7 @@ import type { Dispatch } from '../../../handlers/types.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleBuild, handleReviewMany, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
+import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleConquer, handleBuild, handleReviewMany, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -118,6 +118,20 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
         await handleCouncil(intent.question, cb.dispatch, cb.ctx);
         const chatContext = collectRecentEngineContext(cb.ctx, 14, 1500);
         if (chatContext) await continueCesarAfterResult(`Council deliberated on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the chairman verdict and the strongest dissent, then recommend the next step.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'conquer': {
+      if (!intent.task?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /conquer <task> --gate "<test cmd>"' }); return { handled: true, ranAsJob: false }; }
+      if (!intent.gate?.trim()) { cb.dispatch({ type: 'warning', message: '/conquer needs a --gate command (the done-oracle), e.g. /conquer build X --gate "npm test"' }); return { handled: true, ranAsJob: false }; }
+      const _cqCwd = resolveWorkingDir();
+      const _cqLabel = intent.task?.slice(0, 40) ?? 'conquer';
+      const cqEpoch = cb.ctx.inputEpoch ?? 0;
+      const cqUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('conquer', _cqLabel, withThreadOutcome(_cqCwd, 'conquer', _cqLabel, async () => {
+        await handleConquer(intent.task ?? '', cb.dispatch, cb.ctx, { gate: intent.gate, builder: intent.builder, engineIds: intent.engineIds, maxTurns: intent.maxTurns });
+        const chatContext = collectRecentEngineContext(cb.ctx, 14, 1500);
+        if (chatContext) await continueCesarAfterResult(`Conquer build on: "${(intent.task ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize what was built + the done-oracle outcome, and recommend the next step (review/merge or keep going).`, cb, cqEpoch, cqUserTurns);
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
     }

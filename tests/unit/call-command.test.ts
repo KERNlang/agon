@@ -110,6 +110,24 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('maps conquer to the supervised-build bridge with --gate', () => {
+    expect(buildCallCommands({
+      workflow: 'conquer',
+      input: 'Build a CSV importer',
+      gate: 'npm run build && npm test',
+      engineTimeout: '600',
+      engines: 'codex,claude',
+    }).commands).toEqual([
+      ['conquer', 'Build a CSV importer', '--gate', 'npm run build && npm test', '--timeout', '600', '--engines', 'codex,claude'],
+    ]);
+  });
+
+  it('maps conquer with just the task + gate', () => {
+    expect(buildCallCommands({ workflow: 'conquer', input: 'Build X', gate: 'npm test' }).commands).toEqual([
+      ['conquer', 'Build X', '--gate', 'npm test'],
+    ]);
+  });
+
   it('maps council with just the question', () => {
     expect(buildCallCommands({ workflow: 'council', input: 'Rewrite the scheduler?' }).commands).toEqual([
       ['council', 'Rewrite the scheduler?'],

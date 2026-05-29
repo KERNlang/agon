@@ -119,8 +119,25 @@ describe('Intent Detection — Slash Commands', () => {
     expect((r as any).reasoning).toBe('it is never queried');
   });
 
-  it('think/council/synthesis appear in the /help slash list', () => {
-    for (const cmd of ['/think', '/council', '/synthesis']) {
+  it('/conquer parses task + --gate', () => {
+    const r = detectIntent('/conquer build a CSV importer --gate "npm run build && npm test"');
+    expect(r.type).toBe('conquer');
+    expect((r as any).task).toBe('build a CSV importer');
+    expect((r as any).gate).toBe('npm run build && npm test');
+  });
+
+  it('/conquer parses --builder, -e, and --max-turns out of the task', () => {
+    const r = detectIntent('/conquer add OAuth --gate "npm test" --builder codex -e claude,agy --max-turns 20');
+    expect(r.type).toBe('conquer');
+    expect((r as any).task).toBe('add OAuth');
+    expect((r as any).gate).toBe('npm test');
+    expect((r as any).builder).toBe('codex');
+    expect((r as any).engineIds).toEqual(['claude', 'agy']);
+    expect((r as any).maxTurns).toBe(20);
+  });
+
+  it('think/council/synthesis/conquer appear in the /help slash list', () => {
+    for (const cmd of ['/think', '/council', '/synthesis', '/conquer']) {
       expect(SLASH_COMMANDS.some((c) => c.cmd === cmd)).toBe(true);
     }
   });

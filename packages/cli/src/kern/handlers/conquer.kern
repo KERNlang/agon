@@ -1,0 +1,93 @@
+// REPL handler for `/conquer` — supervised-autonomous build. Mirrors the `agon
+// conquer` CLI command but renders via dispatch events and runs inside the REPL
+// job system (dispatched via runAsJob, since a conquer run is long). Cesar drives
+// the builder; on a CONQUER_ASK fork it convenes a consult; on CONQUER_DONE a
+// layered done-oracle runs; it stops at a human merge gate (changes left in the
+// tree for review). See packages/forge/src/kern/conquer.kern.
+
+import from="node:path" names="join"
+import from="node:fs" names="mkdirSync"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,resolveWorkingDir,spawnWithTimeout"
+import from="@agon/forge" names="runConquer"
+import from="@agon/forge" names="ConquerTurn" types=true
+import from="../../telemetry/index.js" names="recordRun,formatRunSummary"
+import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
+
+fn name=handleConquer params="task:string, dispatch:Dispatch, ctx:HandlerContext, opts?:{gate?:string, builder?:string, engineIds?:string[], maxTurns?:number}" returns="Promise<void>" async=true
+  signal name=cqAbort
+  handler <<<
+    ensureAgonHome();
+    if (!task || !task.trim()) { dispatch({ type: 'warning', message: 'Usage: /conquer <task> --gate "<test cmd>"' }); return; }
+    const gate = opts?.gate?.trim();
+    if (!gate) { dispatch({ type: 'error', message: '/conquer needs a --gate command (the done-oracle). e.g. /conquer build X --gate "npm test"' }); return; }
+
+    const cwd = resolveWorkingDir();
+    const activeIds = ctx.activeEngines();
+    const active = filterDefaultOrchestrationEngines(activeIds);
+    const builder = opts?.builder ? ctx.registry.resolveId(opts.builder) : (active.includes('codex') ? 'codex' : active[0]);
+    if (!builder || !activeIds.includes(builder)) {
+      dispatch({ type: 'error', message: `Builder engine '${opts?.builder ?? builder ?? '(none)'}' is not available. Run /engines.` });
+      return;
+    }
+
+    let advisors = active.filter((e) => e !== builder);
+    if (opts?.engineIds && opts.engineIds.length > 0) {
+      const resolved = opts.engineIds.map((s) => ctx.registry.resolveId(s));
+      const bad = opts.engineIds.filter((_s, i) => !activeIds.includes(resolved[i]));
+      if (bad.length > 0) { dispatch({ type: 'error', message: `Advisor engine${bad.length > 1 ? 's' : ''} not available: ${bad.join(', ')}.` }); return; }
+      advisors = resolved.filter((id) => id !== builder);
+    }
+
+    const maxTurns = opts?.maxTurns && opts.maxTurns > 0 ? opts.maxTurns : 40;
+    const outputDir = join(RUNS_DIR, `conquer-${Date.now()}`);
+    mkdirSync(outputDir, { recursive: true });
+
+    dispatch({ type: 'header', title: `Conquer · builder=${builder} · advisors=${advisors.join(',') || '(none)'}` });
+    dispatch({ type: 'info', message: task.length > 120 ? task.slice(0, 120) + '…' : task });
+    dispatch({ type: 'info', message: `gate: ${gate}` });
+
+    ctx.setActiveAbort(cqAbort);
+    const startTime = Date.now();
+
+    const evaluateDone = async (_claim: string) => {
+      try {
+        const diffRes = await spawnWithTimeout({ command: 'git', args: ['diff'], cwd, timeout: 30_000 });
+        const gateRes = await spawnWithTimeout({ command: 'sh', args: ['-c', gate], cwd, timeout: 1_800_000 });
+        return { diff: String(diffRes.stdout ?? ''), gateOk: gateRes.exitCode === 0, oracleTampered: false };
+      } catch (err) {
+        dispatch({ type: 'info', message: `done-check gate errored: ${err instanceof Error ? err.message : String(err)} — treating as not-done.` });
+        return { diff: '', gateOk: false, oracleTampered: false };
+      }
+    };
+
+    const result = await runConquer({
+      task, builderEngine: builder, advisorEngines: advisors,
+      registry: ctx.registry, adapter: ctx.adapter, timeout: 600, outputDir, cwd,
+      caps: { maxTurns, maxWallClockMs: 0 },
+      evaluateDone,
+      onTurn: (t: ConquerTurn) => dispatch({ type: 'info', message: `turn ${t.n} · ${t.action}${t.action === 'consult' || t.action === 'done-check' ? ` — ${t.detail.slice(0, 80)}` : ''}` }),
+      signal: cqAbort.signal,
+    });
+
+    dispatch({ type: 'info', message: `Stopped: ${result.stopReason} · turns ${result.turnsUsed} · consults ${result.consultsRun}` });
+    if (result.done) {
+      const claim = result.lastClaim || '(no claim captured)';
+      dispatch({ type: 'info', message: `✓ Conquered. Claim: ${claim}` });
+      dispatch({ type: 'info', message: 'The builder\'s changes are in the working tree — review, then commit + push + open a PR to merge (this is your merge gate).' });
+      appendMessage(ctx.chatSession, { role: 'engine', engineId: builder, content: `[conquer:done] ${claim}`, timestamp: new Date().toISOString() });
+    } else {
+      dispatch({ type: 'info', message: result.doneReason ? `Not verified done — ${result.doneReason}` : 'Did not reach a verified done state — inspect the working tree.' });
+      appendMessage(ctx.chatSession, { role: 'engine', engineId: builder, content: `[conquer:stopped] ${result.stopReason}${result.doneReason ? ` — ${result.doneReason}` : ''}`, timestamp: new Date().toISOString() });
+    }
+
+    const runRecord = recordRun({
+      mode: 'conquer', intent: task, winner: builder, success: result.done,
+      durationMs: Date.now() - startTime, engineIds: [builder, ...advisors],
+      completionState: result.done ? 'completed' : result.stopReason === 'builder-failed' ? 'crashed' : 'aborted',
+    });
+    if (!process.env.AGON_NO_SUMMARY) dispatch({ type: 'info', message: formatRunSummary(runRecord) });
+  >>>
+  cleanup <<<
+    ctx.setActiveAbort(null);
+  >>>

@@ -1,6 +1,13 @@
 // ── Dispatch utils — leaf helpers (recovery status, turn counting, session clear) ──
-import from="@agon/core" names="clearConversation,clearSessionState"
+import from="@agon/core" names="clearConversation,clearSessionState,resolveWorkingDir"
 import from="../../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="../dispatch.js" names="DispatchCallbacks" types=true
+
+fn name=emitPostDispatch params="intent:any, input:string, cb:DispatchCallbacks" returns=void export=true
+  doc "Fire the post:dispatch lifecycle event (best-effort). Extracted from dispatchIntent's local _emitPost closure so the intent sub-dispatchers can call it without importing back from the router module (which would create an ESM cycle)."
+  handler <<<
+    if (cb.eventBus) cb.eventBus.emit('post:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() }).catch(() => {});
+  >>>
 
 fn name=clearPersistedSessionContext params="ctx:HandlerContext" returns="string[]" export=true
   doc "Delete persisted workspace conversation plus per-engine session state/tool caches so /clear and /clean start with a genuinely empty context."

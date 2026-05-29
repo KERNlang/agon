@@ -1,0 +1,194 @@
+// `agon conquer` — supervised-autonomous build. Cesar drives an external builder
+// CLI (codex/claude/agy) unattended toward a task; on a fork the builder emits a
+// CONQUER_ASK sentinel and Cesar convenes the cheapest sufficient consult
+// (nero/tribunal/brainstorm/council) and feeds back a compact verdict; on a
+// CONQUER_DONE claim Cesar runs the done-oracle (the --gate command + diff
+// acceptance-drift + a nero falsification round). Stops at a human merge gate.
+//
+// v1 safety: runs in the CURRENT cwd/branch and, by default, LEAVES the builder's
+// changes in the working tree for the human to review + commit/PR (no surprising
+// git mutations). `--push` commits + pushes the current branch and prints the PR
+// link. Per-session git-worktree isolation + auto-branch are the hardening
+// follow-up. See .design-docs-local/cesar-autonomous-mode.md.
+
+import from="citty" names="defineCommand"
+import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,spawnWithTimeout"
+import from="@agon/forge" names="runConquer"
+import from="@agon/forge" names="ConquerResult,ConquerTurn" types=true
+import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
+import from="@agon/adapter-cli" names="createCliAdapter"
+import from="../blocks/output-format.js" names="header,info,bold,dim"
+import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
+
+const name=conquerCommand type=any
+  handler <<<
+    defineCommand({
+      meta: {
+        name: 'conquer',
+        description: 'Supervised-autonomous build: Cesar drives an external builder CLI (codex/claude/agy) unattended toward a task, convening nero/tribunal/council on forks, and stops at a human merge gate. `agon conquer "<task>" --gate "<test cmd>"`.',
+      },
+      args: {
+        task: { type: 'positional', description: 'What to build.', required: false },
+        builder: { type: 'string', alias: 'b', description: 'Builder engine (codex|claude|agy). Default: codex if active, else the first active engine.' },
+        engines: { type: 'string', alias: 'e', description: 'Advisor pool for consults (comma-separated). Default: active orchestration engines minus the builder.' },
+        gate: { type: 'string', alias: 'g', description: 'REQUIRED — the acceptance gate command (build/typecheck/lint/tests), e.g. "npm run build && npm test". This IS the done-oracle.' },
+        gateTimeout: { type: 'string', description: 'Per-gate timeout in seconds (default 1800).' },
+        maxTurns: { type: 'string', description: 'Max builder turns (default 40).' },
+        maxHours: { type: 'string', description: 'Wall-clock cap in hours (default: none).' },
+        timeout: { type: 'string', description: 'Per-builder-turn timeout in seconds (default 600).' },
+        push: { type: 'boolean', description: 'On success, commit the builder work and push the current branch (prints a PR hint). Default: leave changes in the tree for you to review.' },
+        label: { type: 'string', description: 'Human-readable suffix baked into the run dir name.' },
+      },
+      async run({ args }) {
+        ensureAgonHome();
+        const cwd = process.cwd();
+        const config = loadConfig(cwd);
+
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        const adapter = createCliAdapter(registry);
+
+        const positionals = Array.isArray((args as any)._) ? (args as any)._.map(String) : [];
+        const taskStr = (typeof args.task === 'string' && args.task.trim())
+          ? args.task.trim()
+          : positionals.join(' ').trim();
+        if (!taskStr) {
+          console.error('Provide a task. Usage: agon conquer "build X" --gate "npm run build && npm test"');
+          process.exitCode = 1;
+          return;
+        }
+
+        const gate = typeof args.gate === 'string' ? args.gate.trim() : '';
+        if (!gate) {
+          console.error('A --gate command is required — it is the done-oracle. e.g. --gate "npm run build && npm test"');
+          process.exitCode = 1;
+          return;
+        }
+
+        const known = new Set(registry.listIds());
+        const activeIds = registry.activeIds(config as any);
+        const active = filterDefaultOrchestrationEngines(activeIds);
+        const builder = (typeof args.builder === 'string' && args.builder.trim())
+          ? registry.resolveId(args.builder.trim())
+          : (active.includes('codex') ? 'codex' : active[0]);
+        if (!builder || !activeIds.includes(builder)) {
+          console.error(`Builder engine '${args.builder ?? builder ?? '(none)'}' is not available (not installed or missing credentials). Run \`agon engine list\`.`);
+          process.exitCode = 1;
+          return;
+        }
+
+        let advisors = active.filter((e) => e !== builder);
+        if (typeof args.engines === 'string' && args.engines.trim()) {
+          // An explicit advisor list must be valid + active — never silently fall back to
+          // defaults on a typo (that would run a different panel than the user asked for).
+          const requested = args.engines.split(',').map((s) => s.trim()).filter(Boolean);
+          const resolved = requested.map((s) => registry.resolveId(s));
+          const bad = requested.filter((_s, i) => !activeIds.includes(resolved[i]));
+          if (bad.length > 0) {
+            console.error(`Advisor engine${bad.length > 1 ? 's' : ''} not available: ${bad.join(', ')}. Run \`agon engine list\`.`);
+            process.exitCode = 1;
+            return;
+          }
+          advisors = resolved.filter((id) => id !== builder);
+        }
+
+        const maxTurns = parseInt(String(args.maxTurns ?? '40'), 10);
+        if (Number.isNaN(maxTurns) || maxTurns < 1) { console.error(`Invalid --max-turns: ${args.maxTurns}`); process.exitCode = 1; return; }
+        let maxHours = 0;
+        if (args.maxHours !== undefined && String(args.maxHours).trim() !== '') {
+          maxHours = parseFloat(String(args.maxHours));
+          if (Number.isNaN(maxHours) || maxHours < 0) { console.error(`Invalid --max-hours: ${args.maxHours}`); process.exitCode = 1; return; }
+        }
+        const turnTimeout = parseInt(String(args.timeout ?? '600'), 10) || 600;
+        const gateTimeout = parseInt(String(args.gateTimeout ?? '1800'), 10) || 1800;
+
+        // --push commits whatever is dirty after the run, so the tree MUST start clean —
+        // otherwise unrelated WIP/untracked files (or another session's edits) get committed.
+        if (args.push) {
+          const st = await spawnWithTimeout({ command: 'git', args: ['status', '--porcelain'], cwd, timeout: 15_000 });
+          if (String(st.stdout ?? '').trim()) {
+            console.error('--push needs a clean working tree at start so only the builder\'s changes are committed. Commit/stash first, or run without --push and review the diff yourself.');
+            process.exitCode = 1;
+            return;
+          }
+        }
+
+        const { path: outputDir } = createRunDir({ mode: 'conquer', label: args.label, announce: false });
+
+        header(`Conquer · builder=${builder} · advisors=${advisors.join(',') || '(none)'}`);
+        info(taskStr.length > 120 ? taskStr.slice(0, 120) + '…' : taskStr);
+        info(dim(`gate: ${gate}`));
+        console.log('');
+
+        // The done-oracle's environment ops: diff (for L1 acceptance-drift) + the gate
+        // (L0). oracleTampered is left false in v1 — L1 diff-integrity catches test
+        // weakening; a frozen-oracle hash is the hardening follow-up.
+        const evaluateDone = async (_claim: string) => {
+          try {
+            const diffRes = await spawnWithTimeout({ command: 'git', args: ['diff'], cwd, timeout: 30_000 });
+            const gateRes = await spawnWithTimeout({ command: 'sh', args: ['-c', gate], cwd, timeout: gateTimeout * 1000 });
+            return { diff: String(diffRes.stdout ?? ''), gateOk: gateRes.exitCode === 0, oracleTampered: false };
+          } catch (err) {
+            // A spawn failure (no fds, shell init, etc.) must not crash the unattended loop —
+            // treat the done-check as "not done" so the builder keeps going or hits a cap.
+            info(dim(`done-check gate errored: ${err instanceof Error ? err.message : String(err)} — treating as not-done.`));
+            return { diff: '', gateOk: false, oracleTampered: false };
+          }
+        };
+
+        const result: ConquerResult = await runConquer({
+          task: taskStr,
+          builderEngine: builder,
+          advisorEngines: advisors,
+          registry,
+          adapter,
+          timeout: turnTimeout,
+          outputDir,
+          cwd,
+          caps: { maxTurns, maxWallClockMs: maxHours > 0 ? Math.round(maxHours * 3_600_000) : 0 },
+          evaluateDone,
+          onTurn: (t: ConquerTurn) => info(dim(`  turn ${t.n} · ${t.action}${t.action === 'consult' || t.action === 'done-check' ? ` — ${t.detail.slice(0, 80)}` : ''}`)),
+        });
+
+        console.log('');
+        info(`Stopped: ${result.stopReason} · turns ${result.turnsUsed} · consults ${result.consultsRun}`);
+        if (!result.done) {
+          info(result.doneReason ? `Not verified done — ${result.doneReason}` : 'Did not reach a verified done state. Inspect the working tree + the run log.');
+          process.exitCode = 1;
+          return;
+        }
+
+        info(bold('✓ Conquered — build complete and the done-oracle passed.'));
+        const claim = result.lastClaim || '(no claim captured)';
+        info(`Claim: ${claim}`);
+        if (args.push) {
+          const git = (a: string[], t: number) => spawnWithTimeout({ command: 'git', args: a, cwd, timeout: t });
+          const branchRes = await git(['rev-parse', '--abbrev-ref', 'HEAD'], 15_000);
+          const branch = String(branchRes.stdout ?? '').trim();
+          if (branchRes.exitCode !== 0 || !branch || branch === 'HEAD') {
+            info(dim('Could not resolve a branch to push (detached HEAD?). The builder\'s changes are uncommitted in the tree — review + commit + push manually.'));
+            process.exitCode = 1;
+          } else {
+            const add = await git(['add', '-A'], 30_000);
+            const commit = add.exitCode === 0 ? await git(['commit', '-m', `conquer: ${taskStr}`, '-m', claim], 30_000) : add;
+            if (add.exitCode !== 0 || commit.exitCode !== 0) {
+              const stage = add.exitCode !== 0 ? 'add' : 'commit';
+              const errTxt = String((add.exitCode !== 0 ? add.stderr : commit.stderr) ?? '').slice(0, 200);
+              info(dim(`git ${stage} failed: ${errTxt} — review the tree manually.`));
+              process.exitCode = 1;
+            } else {
+              const push = await git(['push', '-u', 'origin', branch], 120_000);
+              if (push.exitCode !== 0) {
+                info(dim(`git push failed: ${String(push.stderr ?? '').slice(0, 200)} — committed locally on ${branch}; push it manually.`));
+                process.exitCode = 1;
+              } else {
+                info(`Pushed ${branch}. Open a PR to review + merge — this is your merge gate.`);
+              }
+            }
+          }
+        } else {
+          info(dim('The builder\'s changes are in the working tree. Review them, then commit + push + open a PR to merge (this is your merge gate). Pass --push to auto-commit+push the current branch.'));
+        }
+      },
+    })
+  >>>

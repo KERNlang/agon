@@ -1,0 +1,114 @@
+// ── Dispatch plan queries — Cesar plan predicates + state reads ──
+import from="node:path" names="join"
+import from="@agon/core" names="listCesarPlans,executePlan"
+import from="@agon/core" names="CesarPlan" types=true
+import from="../../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="../dispatch.js" names="DispatchCallbacks" types=true
+
+fn name=isCesarPlanApprovalInput params="input:string" returns=boolean export=true
+  doc "Return true for natural approval replies users type after Cesar says go/run it."
+  handler lang="kern"
+    let name=text value="String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\\s+/g, ' ')"
+    return value="/^(?:y|yes|yes go|yes please|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute|ok|okay|sure)$/i.test(text)"
+
+fn name=isStrongCesarPlanApprovalInput params="input:string" returns=boolean export=true
+  doc "Return true for approval phrases strong enough to recover a saved pending plan even when no plan panel is active."
+  handler lang="kern"
+    let name=text value="String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\\s+/g, ' ')"
+    return value="/^(?:yes go|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute)$/i.test(text)"
+
+fn name=findPendingCesarPlan params="ctx:HandlerContext" returns="CesarPlan | null" export=true
+  doc "Find the most relevant pending Cesar plan: proposed plan first, active plan second, then latest saved awaiting_approval plan."
+  handler lang="kern"
+    let name=proposed value="ctx.cesar?.proposedPlan as CesarPlan | undefined"
+    if cond="proposed && proposed.state === 'awaiting_approval'"
+      return value="proposed"
+    let name=active value="ctx.activePlan as CesarPlan | undefined"
+    if cond="active && active.state === 'awaiting_approval'"
+      return value="active"
+    let name=saved value="listCesarPlans() .filter((p: CesarPlan) => p.state === 'awaiting_approval') .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt))"
+    return value="saved[0] ?? null"
+
+fn name=findResumableCesarPlan params="ctx:HandlerContext" returns="CesarPlan | null" export=true
+  doc "Return the in-session paused/running plan if any. No disk fallback — stale persisted plans must be resumed explicitly via `/plan resume <id>` so innocuous words like 'go' or 'continue' cannot resurrect them."
+  handler lang="kern"
+    let name=active value="ctx.activePlan as CesarPlan | undefined"
+    if cond="active && (active.state === 'paused' || active.state === 'running')"
+      return value="active"
+    return value="null"
+
+fn name=shouldApprovePendingCesarPlanInput params="input:string,ctx:HandlerContext" returns=boolean export=true
+  doc "Treat natural approval text as /approve only when a live pending plan is visible in this session."
+  handler lang="kern"
+    let name=text value="String(input ?? '').trim()"
+    if cond="!text || text.startsWith('/')"
+      return value="false"
+    let name=proposed value="ctx.cesar?.proposedPlan as CesarPlan | undefined"
+    let name=active value="ctx.activePlan as CesarPlan | undefined"
+    let name=hasLivePending value="(proposed && proposed.state === 'awaiting_approval') || (active && active.state === 'awaiting_approval')"
+    return value="!!hasLivePending && isCesarPlanApprovalInput(text)"
+
+fn name=isCesarPlanResumeInput params="input:string" returns=boolean export=true
+  doc "Return true when the user is clearly telling a paused/running plan to continue."
+  handler lang="kern"
+    let name=text value="String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\\s+/g, ' ')"
+    return value="/^(?:go|run|resume|continue|proceed|start)(?:\\b|$)/i.test(text) || /^(?:do it|do so|keep going|carry on|ok do last part|do last part|last part)$/i.test(text)"
+
+fn name=isCesarPlanStatusInput params="input:string" returns=boolean export=true
+  doc "Return true for short status checks that should be answered from plan state instead of routed to Cesar chat."
+  handler lang="kern"
+    let name=text value="String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\\s+/g, ' ')"
+    return value="/^(?:done|done yet|status|progress|what happened|what went wrong|what did you do|what yu do|what you do|why stop|why stopped|why did it stop|are you doing something|are you still working|still working|is it running|where are we)$/i.test(text)"
+
+fn name=formatCesarPlanRuntimeStatus params="plan:CesarPlan" returns=string export=true
+  doc "Render a concise persisted plan status so Cesar chat cannot hallucinate whether a plan is running."
+  handler lang="kern"
+    let name=total value="plan.steps.length"
+    let name=done value="plan.steps.filter((s: any) => s.state === 'done').length"
+    let name=failed value="plan.steps.find((s: any) => s.state === 'failed')"
+    let name=current value="plan.steps.find((s: any) => s.state === 'running') ?? plan.steps.find((s: any) => s.state === 'pending') ?? plan.steps.find((s: any) => s.state === 'blocked')"
+    let name=lines value="[ `Plan ${plan.id.slice(0, 12)} is ${plan.state}: ${done}/${total} steps done.`, ]"
+    if cond="current"
+      do value="lines.push(`Next: ${current.description}`)"
+    if cond="failed"
+      do value="lines.push(`Blocked: ${failed.description}${failed.result?.error ? ` — ${failed.result.error}` : ''}`)"
+    if cond="plan.state === 'paused' || plan.state === 'running'"
+      do value="lines.push('Use /plan resume or say \"go\" to continue it.')"
+    return value="lines.join('\\n')"
+
+fn name=buildResumePromptContext params="plan:CesarPlan" returns="{ doneCount:number; failedCount:number; remainingCount:number; failedStep:any|null; remainingCostUsd:number; remainingTokens:number }" export=true
+  doc "Compute resume prompt context: how many steps done/failed/remain, which step failed, and estimated cost to finish."
+  handler lang="kern"
+    let name=steps value="plan.steps ?? []"
+    let name=doneCount value="steps.filter((s: any) => s.state === 'done').length"
+    let name=failedSteps value="steps.filter((s: any) => s.state === 'failed')"
+    let name=failedCount value="failedSteps.length"
+    let name=failedStep value="failedSteps[0] ?? null"
+    let name=remainingSteps value="steps.filter((s: any) => s.state !== 'done' && s.state !== 'skipped')"
+    let name=remainingCount value="remainingSteps.length"
+    let name=remainingCostUsd value="remainingSteps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0)"
+    let name=remainingTokens value="remainingSteps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0)"
+    return value="{ doneCount, failedCount, remainingCount, failedStep, remainingCostUsd, remainingTokens }"
+
+fn name=skipCompletedSteps params="plan:CesarPlan" returns=CesarPlan export=true
+  doc "Mark done steps as skipped so executePlan skips them on resume. Keeps failed steps as pending (unless review-exhausted)."
+  handler <<<
+    const cyclesUsedAtResume = (plan as any).reviewCyclesUsed ?? 0;
+    const newSteps = plan.steps.map((s: any) => {
+      if (s.state === 'done' || s.state === 'skipped') return { ...s, state: 'skipped' as any };
+      if (s.state === 'failed' && s.type === 'review' && cyclesUsedAtResume >= 2) return s;
+      if (s.state === 'failed') return { ...s, state: 'pending' as any, result: undefined };
+      if (s.state === 'blocked') return s;
+      return { ...s, state: 'pending' as any };
+    });
+    return { ...plan, steps: newSteps };
+  >>>
+
+fn name=askChoiceQuestion params="cb:DispatchCallbacks,prompt:string,choices:any[],defaultChoiceKey?:string" returns="Promise<string>" export=true
+  doc "Ask a keyboard-choice question in the composer instead of falling back to a blank free-text field."
+  handler <<<
+    return new Promise<string>((resolve) => {
+      cb.dispatch({ type: 'question', prompt, choices, defaultChoiceKey, resolve } as any);
+    });
+  >>>
+

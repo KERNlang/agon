@@ -56,6 +56,8 @@ interface name=CouncilResult
   field name=brief type=string
   field name=chairmanId type=string
   field name=chairmanReason type="'top-rated' | 'random' | 'forced' | 'cesar' | 'none'"
+  field name=actingChairmanId type=string
+    doc "The engine that ACTUALLY produced the verdict — equals chairmanId unless the seated chair failed and an advisor stepped in (failover). Use this for verdict attribution; use chairmanId for who was seated."
   field name=seats type="CouncilSeat[]"
   field name=verdict type=string
   field name=confidence type="number | null"
@@ -200,7 +202,7 @@ fn name=runCouncil async=true params="opts:CouncilOptions" returns="Promise<Coun
 
     if (engines.length < 2) {
       return {
-        ok: false, question, brief: '', chairmanId: '', chairmanReason: 'none', seats: [],
+        ok: false, question, brief: '', chairmanId: '', chairmanReason: 'none', actingChairmanId: '', seats: [],
         verdict: 'A council needs at least 2 engines. Add engines with `agon engine add <id>` or widen --engines.',
         confidence: null, degraded: true, warnings: ['Fewer than 2 engines available.'], outputDir,
       };
@@ -289,15 +291,43 @@ fn name=runCouncil async=true params="opts:CouncilOptions" returns="Promise<Coun
     const ADVISOR_SYS = 'You are an expert council member. Respond directly with your analysis as plain text. Do NOT use tools, read files, or run commands.';
     const CHAIR_SYS = 'You are the council chairman. Respond directly with your verdict as plain text. Do NOT use tools, read files, or run commands.';
 
+    // Chair failover order: the seated chair first, then advisors best-first. A
+    // chair that returns no usable output (empty / timeout / error) must not sink
+    // the whole council — promote the next-best engine to ACTING chair, exactly as
+    // a failed advisor already degrades gracefully. Without this, one flaky chair
+    // loses the brief AND the verdict. Dedupe preserves order.
+    // rankEnginesByRating drops engines with no rating, so recover the unranked ones
+    // (mirrors the seating logic above) — else failover has no candidates on a cold roster.
+    const rankedAdvisors = rankEnginesByRating(advisors, ratings);
+    const orderedAdvisors = [...rankedAdvisors, ...advisors.filter((a) => !rankedAdvisors.includes(a))];
+    const chairCandidates = Array.from(new Set([chairmanId, ...orderedAdvisors])).filter((id) => !!id);
+
+    const dispatchChair = async (prompt: string, phase: string): Promise<{ text: string; ok: boolean; engineId: string }> => {
+      for (const cand of chairCandidates) {
+        if (signal?.aborted) break;
+        const res = await dispatchText(cand, prompt, CHAIR_SYS, cand === chairmanId ? phase : `${phase}-failover`);
+        if (res.ok && res.text.length > 0) {
+          if (cand !== chairmanId) {
+            const what = phase === 'council-brief' ? 'brief' : 'verdict';
+            warnings.push(`Chair ${chairmanId} returned no ${what}; ${cand} stepped in as acting chair.`);
+            degraded = true; // the council did not run with its seated chair
+          }
+          return { text: res.text, ok: true, engineId: cand };
+        }
+      }
+      return { text: '', ok: false, engineId: chairmanId };
+    };
+
     // ── Round 0: decision brief (chairman) ────────────────────────────────
     opts.onEvent?.({ type: 'synthesis:start' });
     let brief = question.trim();
+    let briefBy = chairmanId;
     if (!signal?.aborted) {
-      const briefRes = await dispatchText(chairmanId, buildCouncilBriefPrompt(question), CHAIR_SYS, 'council-brief');
-      if (briefRes.ok) brief = briefRes.text;
-      else warnings.push('Decision brief failed — advisors argued the raw question instead of a framed brief.');
+      const briefRes = await dispatchChair(buildCouncilBriefPrompt(question), 'council-brief');
+      if (briefRes.ok) { brief = briefRes.text; briefBy = briefRes.engineId; }
+      else warnings.push('Decision brief failed on every engine — advisors argued the raw question instead of a framed brief.');
     }
-    sidechain.log('council:brief', chairmanId, { length: brief.length });
+    sidechain.log('council:brief', briefBy, { length: brief.length });
 
     // ── Round 1: role responses (parallel) ────────────────────────────────
     if (!signal?.aborted) {
@@ -326,19 +356,19 @@ fn name=runCouncil async=true params="opts:CouncilOptions" returns="Promise<Coun
     // ── Round 3: chairman verdict ─────────────────────────────────────────
     let verdict = '';
     let ok = false;
+    let actingChairmanId = chairmanId;
     if (!signal?.aborted) {
-      const chairRes = await dispatchText(
-        chairmanId,
+      const chairRes = await dispatchChair(
         buildChairmanPrompt({ brief, seats: seats.map((s) => ({ role: s.role, response: s.response, critique: s.critique, critiquedRole: s.critiquedRole })) }),
-        CHAIR_SYS,
         'council-verdict',
       );
       verdict = chairRes.text;
       ok = chairRes.ok && chairRes.text.length > 0;
+      if (ok) actingChairmanId = chairRes.engineId;
     }
-    if (!verdict) verdict = 'The chairman produced no verdict. See the advisor positions above and the warnings below.';
+    if (!verdict) verdict = 'The chairman produced no verdict on any engine. See the advisor positions above and the warnings below.';
 
-    sidechain.log('council:done', undefined, { ok, seats: seats.length, verdictLength: verdict.length, warnings: warnings.length });
+    sidechain.log('council:done', actingChairmanId, { ok, seats: seats.length, verdictLength: verdict.length, warnings: warnings.length });
     opts.onEvent?.({ type: 'forge:done' });
 
     // ── Glicko: council is debate + critique. Only rate a REAL competition — a
@@ -362,7 +392,7 @@ fn name=runCouncil async=true params="opts:CouncilOptions" returns="Promise<Coun
     }
 
     return {
-      ok, question, brief, chairmanId, chairmanReason, seats, verdict,
+      ok, question, brief, chairmanId, chairmanReason, actingChairmanId, seats, verdict,
       confidence: parseCouncilConfidence(verdict), degraded, warnings, outputDir,
     };
   >>>

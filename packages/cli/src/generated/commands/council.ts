@@ -164,7 +164,7 @@ export const councilCommand: any = defineCommand({
     });
 
     const engineStatuses: RunStatusEngine[] = [
-      { id: result.chairmanId || '(none)', status: result.ok ? 'ok' : 'error', detail: `chairman (${chairmanPickLabel(result.chairmanReason)})` },
+      { id: result.chairmanId || '(none)', status: result.ok && (result.actingChairmanId || result.chairmanId) === result.chairmanId ? 'ok' : 'error', detail: result.actingChairmanId && result.actingChairmanId !== result.chairmanId ? `chairman (${chairmanPickLabel(result.chairmanReason)}) — failed; ${result.actingChairmanId} acted` : `chairman (${chairmanPickLabel(result.chairmanReason)})` },
       ...result.seats.map((s) => ({
         id: s.engineId,
         status: (s.response && s.response !== '(no response)' ? 'ok' : 'error') as 'ok' | 'error',
@@ -178,7 +178,7 @@ export const councilCommand: any = defineCommand({
       endedAt: new Date().toISOString(),
       engines: engineStatuses,
       summary: result.ok
-        ? `${result.seats.length} advisors, chaired by ${result.chairmanId}${result.confidence != null ? ` · ${result.confidence}% confidence` : ''}`
+        ? `${result.seats.length} advisors, chaired by ${result.actingChairmanId || result.chairmanId}${result.actingChairmanId && result.actingChairmanId !== result.chairmanId ? ` (acting; seated ${result.chairmanId} failed)` : ''}${result.confidence != null ? ` · ${result.confidence}% confidence` : ''}`
         : 'council produced no usable verdict',
       ok: result.ok,
       requested: pool,

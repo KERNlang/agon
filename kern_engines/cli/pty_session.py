@@ -256,6 +256,19 @@ def _terminate(pid: int, fd: int, sigterm_grace_s: float, reap_grace_s: float) -
 
 _BOX = re.compile(r"[─-▟\s]+")
 
+# Claude renders its live "thinking" spinner as a rotating dingbat star/bullet
+# glyph (✶ ✷ ✸ ✹ ✺ ✻ ✼ ✽ ✾ ✿ ❀ ✢ ✣ ✤ ✥ ✦ ✧ ✳ ✴ ✵ and the ● bullet).
+# Crucially it paints that spinner to the RIGHT of (or just below) the assistant
+# reply on the SAME screen row — e.g. "⏺ PONG  ✽ Channelling… (1s · ↓ 1 tokens)".
+# Our ANSI movement→space substitution then MERGES the spinner onto the answer's
+# line, and the line-based chrome filter drops the whole line (chrome substring
+# present), taking the answer with it. Cutting each line at its first spinner
+# glyph (see _dedupe_filter) recovers the answer regardless of which (drifting)
+# verb the spinner is currently showing — the glyph class is stable as verbs churn.
+# ❯ (U+276F, the input-bar prompt arrow) is included: when it merges onto the
+# answer's row it marks the start of input-bar chrome ("Yellow ❯" → "Yellow").
+_SPINNER_GLYPH = re.compile("[✢-❀●◉○❯]")
+
 
 def _dedupe_filter(text: str, chrome: re.Pattern) -> str:
     """Filter chrome lines and dedupe — works whether or not the
@@ -290,6 +303,15 @@ def _dedupe_filter(text: str, chrome: re.Pattern) -> str:
         # text with varying internal whitespace, and "Foo  Bar" vs
         # "Foo Bar" would otherwise be treated as distinct entries.
         line = re.sub(r"\s+", " ", line)
+        if not line:
+            continue
+        # Cut the line at the live spinner glyph claude paints to the RIGHT of
+        # the reply on the same screen row (merged onto this line by the ANSI
+        # movement→space strip). Keeps the answer PREFIX; a pure-chrome line
+        # collapses to "" and is dropped just below. This is precisely what
+        # stops "⏺ PONG  ✽ Channelling… (1s · …)" from losing PONG when the
+        # whole-line chrome filter would otherwise discard it.
+        line = _SPINNER_GLYPH.split(line, 1)[0].strip()
         if not line:
             continue
         if _BOX.fullmatch(line):
@@ -328,8 +350,27 @@ def extract_response(post_text: str, cfg: EngineConfig) -> str:
     if cfg.response_marker and cfg.response_marker in text:
         idx = text.rindex(cfg.response_marker)
         tail = text[idx + len(cfg.response_marker):]
-        return _dedupe_filter(tail, chrome)
-    return _dedupe_filter(text, chrome)
+        return _dedupe_filter(_crop_to_transcript(tail), chrome)
+    return _dedupe_filter(_crop_to_transcript(text), chrome)
+
+
+def _crop_to_transcript(tail: str) -> str:
+    """Drop everything from the first long horizontal divider onward.
+
+    Claude paints a full-width ``─────`` divider between the transcript (where
+    the ⏺ reply lives) and the input box + status area below it. Everything
+    past that divider is bottom-of-screen chrome — spinner, "esc to interrupt",
+    the input bar, the status line — never answer text. Cropping here isolates
+    the answer region (the tribunal's region-crop idea, minus a full VT grid)
+    BEFORE the line filter runs, so the bottom area's partial-redraw fragments
+    (e.g. "ita 2", "f d") can never survive as short non-chrome scraps.
+
+    A real reply almost never contains a run of 8+ U+2500 box chars (markdown
+    rules use ASCII '-'), and ``_dedupe_filter`` already strips short divider
+    runs — so this is safe against legitimate content.
+    """
+    div = re.search(r"─{8,}", tail)
+    return tail[: div.start()] if div else tail
 
 
 # ── session ───────────────────────────────────────────────────────────────

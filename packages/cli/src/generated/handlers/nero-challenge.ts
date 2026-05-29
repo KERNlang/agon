@@ -91,6 +91,8 @@ export async function handleNeroChallenge(decision: string, dispatch: Dispatch, 
         outputDir,
         cwd: resolveWorkingDir(),
         signal: neAbort.signal,
+        // Surface retry/down-pass narration in the REPL transcript.
+        onStatus: (m: string) => dispatch({ type: 'info', message: m }),
       });
     } catch (err) {
       clearProgress();

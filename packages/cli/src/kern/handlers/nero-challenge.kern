@@ -85,6 +85,8 @@ fn name=handleNeroChallenge params="decision:string, dispatch:Dispatch, ctx:Hand
         outputDir,
         cwd: resolveWorkingDir(),
         signal: neAbort.signal,
+        // Surface retry/down-pass narration in the REPL transcript.
+        onStatus: (m: string) => dispatch({ type: 'info', message: m }),
       });
     } catch (err) {
       clearProgress();

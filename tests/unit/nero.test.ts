@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { rankEnginesByRating, pickTopRatedEngine, seedSuccessorRating, seedEnginesFromLineage } from '@agon/core';
 import type { GlickoRating, RatingRecord } from '@agon/core';
-import { buildNeroPrompt, parseNeroVerdict, parseNeroConfidence, runNero } from '@agon/forge';
+import { buildNeroPrompt, parseNeroVerdict, parseNeroConfidence, runNero, rankNeroCritics } from '@agon/forge';
 
 const rating = (mu: number, phi = 50): GlickoRating => ({
   mu,
@@ -160,7 +160,7 @@ describe('runNero — verdict-gate contract', () => {
   const registry = { get: (id: string) => ({ id }), list: () => [] } as any;
   const adapterReturning = (over: Record<string, unknown>) =>
     ({ dispatch: async () => ({ exitCode: 0, stdout: '', stderr: '', durationMs: 1, timedOut: false, ...over }) }) as any;
-  const base = { decision: 'x', engines: ['fake'], engine: 'fake', timeout: 30, outputDir: '/tmp/nero-test', cwd: '/tmp' };
+  const base = { decision: 'x', engines: ['fake'], engine: 'fake', timeout: 30, outputDir: '/tmp/nero-test', cwd: '/tmp', retryBackoffMs: 0 };
 
   it('ok:true only on a clean exit WITH a parseable verdict', async () => {
     const res = await runNero({ ...base, registry, adapter: adapterReturning({ stdout: 'Confidence: 20%\n## Challenge 1\n…\nVERDICT: FLAWED' }) } as any);
@@ -192,6 +192,96 @@ describe('runNero — verdict-gate contract', () => {
     const res = await runNero({ ...base, registry: throwingRegistry, adapter: adapterReturning({ stdout: 'VERDICT: SOUND' }) } as any);
     expect(res.ok).toBe(false);
     expect(res.challengeText).toContain('EngineNotFound');
+  });
+});
+
+describe('rankNeroCritics — critic cascade (down-pass order)', () => {
+  it('ranks critics best→worst so a failed top critic can fall through', () => {
+    const r = ratings({ global: { a: rating(1500), b: rating(1700), c: rating(1600) } });
+    expect(rankNeroCritics(['a', 'b', 'c'], r).map((p) => p.engineId)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('never reintroduces an excluded author, even when the pool-reset quirk fires', () => {
+    // pickTopRatedEngine resets to the full list once exclude empties the pool;
+    // the seen-guard must stop the cascade instead of re-surfacing the author.
+    const r = ratings({ global: { author: rating(1900), a: rating(1600), b: rating(1500) } });
+    const ranked = rankNeroCritics(['author', 'a', 'b'], r, { exclude: ['author'] }).map((p) => p.engineId);
+    expect(ranked).toEqual(['a', 'b']);
+    expect(ranked).not.toContain('author');
+  });
+
+  it('still enumerates every critic when nobody is rated yet (random tier)', () => {
+    const ranked = rankNeroCritics(['a', 'b'], ratings()).map((p) => p.engineId);
+    expect(ranked).toHaveLength(2);
+    expect(new Set(ranked)).toEqual(new Set(['a', 'b']));
+  });
+});
+
+describe('runNero — self-healing dispatch (resend + down-pass)', () => {
+  const registry = { get: (id: string) => ({ id }), list: () => [] } as any;
+  const VALID = 'Confidence: 50%\n## Challenge 1\n…\nVERDICT: SOUND';
+  // Adapter scripted per engine id: each engine consumes its result list across
+  // calls (clamping to the last entry), so we can simulate empty-then-valid etc.
+  const scripted = (script: Record<string, Array<Record<string, unknown>>>) => {
+    const calls: Record<string, number> = {};
+    const adapter = {
+      dispatch: async ({ engine }: any) => {
+        const id = engine.id;
+        const n = calls[id] ?? 0;
+        calls[id] = n + 1;
+        const seq = script[id] ?? [{}];
+        const over = seq[Math.min(n, seq.length - 1)] ?? {};
+        return { exitCode: 0, stdout: '', stderr: '', durationMs: 1, timedOut: false, ...over };
+      },
+    } as any;
+    return { adapter, calls };
+  };
+  const baseC = { decision: 'x', timeout: 30, outputDir: '/tmp/nero-test', cwd: '/tmp', retryBackoffMs: 0, registry };
+
+  it('resends the SAME critic on a transient empty and accepts the retry', async () => {
+    const { adapter, calls } = scripted({ a: [{ stdout: '' }, { stdout: VALID }] });
+    const res = await runNero({ ...baseC, engines: ['a'], engine: 'a', adapter } as any);
+    expect(res.ok).toBe(true);
+    expect(res.engineId).toBe('a');
+    expect(calls.a).toBe(2); // empty → resend → valid
+  });
+
+  it('down-passes to the next-best critic when the top one is unusable', async () => {
+    const r = ratings({ global: { a: rating(1700), b: rating(1500) } });
+    const { adapter, calls } = scripted({ a: [{ stdout: '' }], b: [{ stdout: VALID }] });
+    const res = await runNero({ ...baseC, engines: ['a', 'b'], ratings: r, adapter } as any);
+    expect(res.ok).toBe(true);
+    expect(res.engineId).toBe('b');
+    expect(calls.a).toBe(2);  // exhausted both attempts on the top critic
+    expect(calls.b).toBe(1);  // then fell through to the next-best
+  });
+
+  it('reports no valid verdict when every critic fails (and lists what it tried)', async () => {
+    const r = ratings({ global: { a: rating(1700), b: rating(1500) } });
+    const { adapter, calls } = scripted({ a: [{ stdout: '' }], b: [{ stdout: 'no verdict here' }] });
+    const res = await runNero({ ...baseC, engines: ['a', 'b'], ratings: r, adapter } as any);
+    expect(res.ok).toBe(false);
+    expect(res.challengeText).toContain('No critic produced a valid verdict');
+    expect(calls.a).toBe(2);
+    expect(calls.b).toBe(2);
+  });
+
+  it('a forced engine retries but NEVER down-passes (manual override)', async () => {
+    const { adapter, calls } = scripted({ a: [{ stdout: '' }], b: [{ stdout: VALID }] });
+    const res = await runNero({ ...baseC, engines: ['a', 'b'], engine: 'a', adapter } as any);
+    expect(res.ok).toBe(false);
+    expect(res.engineId).toBe('a');
+    expect(calls.a).toBe(2);
+    expect(calls.b).toBeUndefined(); // b is a candidate but the override pinned 'a'
+  });
+
+  it('emits onStatus narration for the retry and the down-pass', async () => {
+    const r = ratings({ global: { a: rating(1700), b: rating(1500) } });
+    const { adapter } = scripted({ a: [{ stdout: '' }], b: [{ stdout: VALID }] });
+    const msgs: string[] = [];
+    await runNero({ ...baseC, engines: ['a', 'b'], ratings: r, adapter, onStatus: (m: string) => msgs.push(m) } as any);
+    expect(msgs.some((m) => /retrying \(2\/2\)/.test(m))).toBe(true);
+    expect(msgs.some((m) => /down-passing to b/.test(m))).toBe(true);
   });
 });
 

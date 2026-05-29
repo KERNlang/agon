@@ -224,13 +224,40 @@ describe('runCouncil — contract', () => {
     expect(res.warnings.length).toBeGreaterThan(0);
   });
 
-  it('ok:false when the chairman verdict dispatch fails', async () => {
+  it('ok:false only when the verdict fails on EVERY engine (failover exhausted)', async () => {
+    // Route by prompt, so the verdict fails for the chair AND every failover candidate.
     const res = await runCouncil(base({
       engines: ['a', 'b', 'c'],
       outputDir: outDir,
       adapter: adapter((p) => (p.includes('Synthesize the advisors') ? fail() : ok(okStdout))),
     }));
     expect(res.ok).toBe(false);
+  });
+
+  it('fails the chair over to an advisor when the seated chair cannot produce the verdict', async () => {
+    // Only the seated chair (forced 'a') fails the verdict; advisor 'b' can synthesize.
+    const routed = (engineId: string, prompt: string) =>
+      prompt.includes('Synthesize the advisors') && engineId === 'a' ? fail() : ok(okStdout);
+    const byEngine = { dispatch: async ({ engine, prompt }: { engine: { id: string }; prompt: string }) => routed(engine.id, prompt) } as any;
+    const res = await runCouncil(base({ engines: ['a', 'b', 'c'], chairman: 'a', outputDir: outDir, adapter: byEngine }));
+    expect(res.ok).toBe(true);
+    expect(res.confidence).toBe(72);
+    expect(res.warnings.some((w) => /stepped in as acting chair/i.test(w))).toBe(true);
+    expect(res.chairmanId).toBe('a'); // seated chair preserved for the record
+    expect(res.actingChairmanId).not.toBe('a'); // an advisor actually produced the verdict
+    expect(['b', 'c']).toContain(res.actingChairmanId);
+    expect(res.degraded).toBe(true); // ran without its seated chair
+  });
+
+  it('fails the chair over for the BRIEF too, not just the verdict', async () => {
+    // Seated chair 'a' fails everything; an advisor must frame the brief AND synthesize.
+    const routed = (engineId: string) => (engineId === 'a' ? fail() : ok(okStdout));
+    const byEngine = { dispatch: async ({ engine }: { engine: { id: string } }) => routed(engine.id) } as any;
+    const res = await runCouncil(base({ engines: ['a', 'b', 'c'], chairman: 'a', outputDir: outDir, adapter: byEngine }));
+    expect(res.ok).toBe(true);
+    expect(res.warnings.some((w) => /returned no brief/i.test(w))).toBe(true);
+    expect(res.chairmanId).toBe('a');
+    expect(res.actingChairmanId).not.toBe('a');
   });
 
   it('honors a forced chairman', async () => {

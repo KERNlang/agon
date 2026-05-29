@@ -197,86 +197,9 @@ fn name=buildReviewAbsorptionPrompt params="sourceInput:string, review:{ engineI
     let name=original value="String(sourceInput ?? '').trim() || '(review command)'"
     return value="[ '[REVIEW RESULT]', 'A delegated code review just completed. You are Cesar; absorb these findings and respond to the user now.', `Original user request: ${original}`, `Review target: ${label}`, `Review engine: ${String(review.engineId ?? 'unknown')}`, '', '## REVIEW OUTPUT', cappedOutput || '(review output missing)', '', '## YOUR NEXT RESPONSE', '1. In 1-3 sentences, summarize what the reviewer found.', '2. Distill the findings worth acting on into a prioritized fix-list — each item names the file/area and the concrete change. Drop noise; if you disagree with a finding, say so in one line instead of listing it.', '3. Call the TodoWrite tool with that fix-list (one pending todo per item) so the fixes are tracked and visible above the composer.', 'Then act on the original user request:', '- If it asked to fix or apply the review (or to review AND fix), start fixing now: work the todos top-down with Edit/Write/Bash, marking each running then done as you go.', '- If it only asked to review, do NOT edit yet. End with ONE direct question (ending in a question mark) that offers to apply the fixes — tell the user to reply fix to apply all, or to name which items they want.', 'Do not say you lack the review output; it is above.', ].join('\\n')"
 
-fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[], cb:DispatchCallbacks" returns="Promise<boolean>"
-  doc "Unified Cesar brain routing. Returns true if a background job was dispatched."
+fn name=handleDelegatedAction async=true params="result:any, input:string, cb:DispatchCallbacks" returns="Promise<boolean | null>"
+  doc "Execute a delegated Cesar action (the big routeAction switch). Extracted from routeWithCesar; kept SAME-FILE to avoid the continueCesarAfterResult<->routeWithCesar ESM cycle. Returns true = a background job was dispatched; false = the in-delegated-continuation recursive-thinking skip; null = the switch fell through (delegate with no target, or an unmatched action) so the caller continues to the responded/crash-recovery tail."
   handler <<<
-    cb.setPendingImages(() => []);
-    try {
-      const routingHints = deriveRoutingHints(input, cb.ctx);
-      const recapStartedFiles = listFiles();
-      const recapCapture = createCesarRecapCapture(input, Date.now());
-      const cesarDispatch = (event: any) => {
-        recordCesarRecapEvent(recapCapture, event);
-        cb.dispatch(event);
-      };
-      const result = await handleCesarBrain(input, cesarDispatch as any, cb.ctx, images);
-      const emitRecap = () => {
-        const recapEvent = buildCesarTurnRecapEvent(recapCapture, result, recapStartedFiles, listFiles());
-        const changedFiles = Array.isArray((recapEvent as any).files)
-          ? (recapEvent as any).files.filter((file: any) => String(file?.status ?? '') !== 'read').slice(0, 4)
-          : [];
-        if (changedFiles.length > 0) {
-          const diffsByPath: Record<string, string> = {};
-          for (const file of changedFiles) {
-            const path = String(file?.path ?? '');
-            if (!path) continue;
-            const diff = getFileDiff(path, 24);
-            if (diff.trim()) diffsByPath[path] = diff;
-          }
-          const diffPreview = buildCesarRecapDiffPreview(changedFiles, diffsByPath, 4, 6);
-          if (Array.isArray(diffPreview?.files) && diffPreview.files.length > 0) {
-            (recapEvent as any).diffPreview = diffPreview;
-          }
-        }
-        if (shouldEmitCesarRecap(recapEvent)) cb.dispatch(recapEvent as any);
-      };
-      const proposedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
-      if (proposedPlan && proposedPlan.state === 'awaiting_approval') {
-        emitRecap();
-        cb.setActivePlan(proposedPlan);
-        await handleProposedCesarPlan(proposedPlan, cb);
-        return false;
-      }
-      try {
-        const tracePath = join(RUNS_DIR, 'cesar-decisions.jsonl');
-        const actualMode = result.mode ?? result.action ?? 'unknown';
-        appendFileSync(tracePath, JSON.stringify({
-          ts: new Date().toISOString(),
-          mode: actualMode,
-          delegated: result.delegated,
-          responded: result.responded,
-          decisionReason: result.decisionReason,
-          scope: (result as any).scope,
-          confidence: cb.ctx.cesar?.reportedConfidence,
-          engineId: (result as any).cesarEngineId ?? ((cb.ctx.config as any).cesarEngine ?? cb.ctx.config.forgeFixedStarter ?? 'claude'),
-          backend: (result as any).cesarBackend ?? ((cb.ctx.config as any).cesarBackend ?? 'auto'),
-          hasNativeTools: (result as any).hasNativeTools,
-          toolCount: (result as any).toolCount ?? 0,
-          toolEventCount: (result as any).toolEventCount ?? 0,
-          toolCallTurns: (result as any).toolCallTurns ?? 0,
-          toolsUsed: (result as any).toolsUsed,
-          nativeToolCalls: (result as any).nativeToolCalls ?? 0,
-          mcpToolCalls: (result as any).mcpToolCalls ?? 0,
-          xmlToolCalls: (result as any).xmlToolCalls ?? 0,
-          narratedToolStalls: (result as any).narratedToolStalls ?? 0,
-          autoToolExecutions: (result as any).autoToolExecutions ?? 0,
-          confidenceToolUsed: (result as any).confidenceToolUsed === true,
-          taskClass: routingHints.taskClass,
-          intakeKind: routingHints.intakeKind,
-          recommendedFlow: routingHints.recommendedFlow,
-          uncertaintyFamily: routingHints.uncertaintyFamily,
-          escalationHint: routingHints.escalationHint,
-          breadthHint: routingHints.recommendedBreadth,
-          forgeScopeHint: routingHints.recommendedForgeScope,
-          matchedEscalationHint: routingHints.escalationHint === actualMode || (routingHints.escalationHint === 'forge' && actualMode === 'forge-slice'),
-          matchedBreadthHint: routingHints.recommendedBreadth === 'team'
-            ? actualMode.startsWith('team-')
-            : !actualMode.startsWith('team-'),
-          inputLen: input.length,
-        }) + '\n');
-      } catch { /* decision logging is best-effort */ }
-      emitRecap();
-      if (result.delegated && result.action) {
         const labelSource = (result.task && result.task.trim())
           ? result.task
           : (result.reasoning && !result.reasoning.includes('User context:')
@@ -588,21 +511,12 @@ You still own the overall task. Integrate the forged slice with the rest of the 
             return true;
           }
         }
-      }
-      if (!result.delegated && result.responded && result.mode) {
-        const localLabel = result.mode === 'self-nero' ? 'self + nero' : result.mode;
-        cb.dispatch({ type: 'info', message: `Cesar → ${localLabel}` });
-      }
-      if (result.responded) return false;
-    } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
+    return null;
+  >>>
 
-    // If brain handler queued the message (responded=true), don't fall back
-    // The queue auto-drains when the current turn finishes
-
-    // Check if a delegation was pending from the crashed session (with 60s TTL)
-    const crashDel = cb.ctx.cesar?.pendingDelegation;
-    if (crashDel) {
-      if (cb.ctx.cesar) cb.ctx.cesar.pendingDelegation = null;
+fn name=handleRecoveredDelegation async=true params="crashDel:any, input:string, cb:DispatchCallbacks" returns="Promise<boolean>"
+  doc "Confirm + run a delegation recovered from a crashed Cesar session: TTL stale-check, askQuestion confirm, then the recovered-action switch. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. The caller has already nulled cb.ctx.cesar.pendingDelegation. Returns true if a recovery job was dispatched; false on stale/declined/unmatched so the caller falls through to the brain fallback."
+  handler <<<
       // TTL: discard stale delegations older than 60 seconds
       if (crashDel.createdAt && Date.now() - crashDel.createdAt > 60000) {
         cb.dispatch({ type: 'warning', message: 'Stale delegation discarded (>60s old)' });
@@ -692,8 +606,12 @@ You still own the overall task. Integrate the forged slice with the rest of the 
         }
       }
     }
-    }
+    return false;
+  >>>
 
+fn name=runCesarBrainFallback async=true params="input:string, cb:DispatchCallbacks, crashDel:any" returns="Promise<boolean>"
+  doc "Last-resort Cesar recovery when the brain returned no usable response: api-backend silent same-engine retry, non-api session rebuild + retry, fresh one-shot dispatch (with suggestion parsing), then cross-engine acting-Cesar. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. crashDel is passed ONLY to preserve the pre-existing coupling where a pending delegation s engines seed a fresh fallback pipeline suggestion (behavior preserved verbatim; latent coupling flagged for a follow-up, per nero Ch.3)."
+  handler <<<
     // Cesar truly didn't respond — try fresh CLI dispatch
     const cesarConfig = cb.ctx.config;
     const cesarId = (cesarConfig as any).cesarEngine ?? 'claude';
@@ -968,5 +886,107 @@ You still own the overall task. Integrate the forged slice with the rest of the 
 
     cb.dispatch({ type: 'error', message: formatCesarRecoveryStatus('failed', 'all engines unavailable', 'run agon doctor engines') });
     return false;
+  >>>
+
+fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[], cb:DispatchCallbacks" returns="Promise<boolean>"
+  doc "Unified Cesar brain routing. Returns true if a background job was dispatched."
+  handler <<<
+    cb.setPendingImages(() => []);
+    try {
+      const routingHints = deriveRoutingHints(input, cb.ctx);
+      const recapStartedFiles = listFiles();
+      const recapCapture = createCesarRecapCapture(input, Date.now());
+      const cesarDispatch = (event: any) => {
+        recordCesarRecapEvent(recapCapture, event);
+        cb.dispatch(event);
+      };
+      const result = await handleCesarBrain(input, cesarDispatch as any, cb.ctx, images);
+      const emitRecap = () => {
+        const recapEvent = buildCesarTurnRecapEvent(recapCapture, result, recapStartedFiles, listFiles());
+        const changedFiles = Array.isArray((recapEvent as any).files)
+          ? (recapEvent as any).files.filter((file: any) => String(file?.status ?? '') !== 'read').slice(0, 4)
+          : [];
+        if (changedFiles.length > 0) {
+          const diffsByPath: Record<string, string> = {};
+          for (const file of changedFiles) {
+            const path = String(file?.path ?? '');
+            if (!path) continue;
+            const diff = getFileDiff(path, 24);
+            if (diff.trim()) diffsByPath[path] = diff;
+          }
+          const diffPreview = buildCesarRecapDiffPreview(changedFiles, diffsByPath, 4, 6);
+          if (Array.isArray(diffPreview?.files) && diffPreview.files.length > 0) {
+            (recapEvent as any).diffPreview = diffPreview;
+          }
+        }
+        if (shouldEmitCesarRecap(recapEvent)) cb.dispatch(recapEvent as any);
+      };
+      const proposedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
+      if (proposedPlan && proposedPlan.state === 'awaiting_approval') {
+        emitRecap();
+        cb.setActivePlan(proposedPlan);
+        await handleProposedCesarPlan(proposedPlan, cb);
+        return false;
+      }
+      try {
+        const tracePath = join(RUNS_DIR, 'cesar-decisions.jsonl');
+        const actualMode = result.mode ?? result.action ?? 'unknown';
+        appendFileSync(tracePath, JSON.stringify({
+          ts: new Date().toISOString(),
+          mode: actualMode,
+          delegated: result.delegated,
+          responded: result.responded,
+          decisionReason: result.decisionReason,
+          scope: (result as any).scope,
+          confidence: cb.ctx.cesar?.reportedConfidence,
+          engineId: (result as any).cesarEngineId ?? ((cb.ctx.config as any).cesarEngine ?? cb.ctx.config.forgeFixedStarter ?? 'claude'),
+          backend: (result as any).cesarBackend ?? ((cb.ctx.config as any).cesarBackend ?? 'auto'),
+          hasNativeTools: (result as any).hasNativeTools,
+          toolCount: (result as any).toolCount ?? 0,
+          toolEventCount: (result as any).toolEventCount ?? 0,
+          toolCallTurns: (result as any).toolCallTurns ?? 0,
+          toolsUsed: (result as any).toolsUsed,
+          nativeToolCalls: (result as any).nativeToolCalls ?? 0,
+          mcpToolCalls: (result as any).mcpToolCalls ?? 0,
+          xmlToolCalls: (result as any).xmlToolCalls ?? 0,
+          narratedToolStalls: (result as any).narratedToolStalls ?? 0,
+          autoToolExecutions: (result as any).autoToolExecutions ?? 0,
+          confidenceToolUsed: (result as any).confidenceToolUsed === true,
+          taskClass: routingHints.taskClass,
+          intakeKind: routingHints.intakeKind,
+          recommendedFlow: routingHints.recommendedFlow,
+          uncertaintyFamily: routingHints.uncertaintyFamily,
+          escalationHint: routingHints.escalationHint,
+          breadthHint: routingHints.recommendedBreadth,
+          forgeScopeHint: routingHints.recommendedForgeScope,
+          matchedEscalationHint: routingHints.escalationHint === actualMode || (routingHints.escalationHint === 'forge' && actualMode === 'forge-slice'),
+          matchedBreadthHint: routingHints.recommendedBreadth === 'team'
+            ? actualMode.startsWith('team-')
+            : !actualMode.startsWith('team-'),
+          inputLen: input.length,
+        }) + '\n');
+      } catch { /* decision logging is best-effort */ }
+      emitRecap();
+      if (result.delegated && result.action) {
+        const _delResult = await handleDelegatedAction(result, input, cb);
+        if (_delResult !== null) return _delResult;
+      }
+      if (!result.delegated && result.responded && result.mode) {
+        const localLabel = result.mode === 'self-nero' ? 'self + nero' : result.mode;
+        cb.dispatch({ type: 'info', message: `Cesar → ${localLabel}` });
+      }
+      if (result.responded) return false;
+    } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
+
+    // If brain handler queued the message (responded=true), don't fall back
+    // The queue auto-drains when the current turn finishes
+
+    // Check if a delegation was pending from the crashed session (with 60s TTL)
+    const crashDel = cb.ctx.cesar?.pendingDelegation;
+    if (crashDel) {
+      if (cb.ctx.cesar) cb.ctx.cesar.pendingDelegation = null;
+      if (await handleRecoveredDelegation(crashDel, input, cb)) return true;
+    }
+    return runCesarBrainFallback(input, cb, crashDel);
   >>>
 

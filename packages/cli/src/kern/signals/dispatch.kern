@@ -2,40 +2,8 @@
 // Interfaces stay DEFINED here so verbatimModuleSyntax never emits a runtime
 // re-export of an erased type; submodules type-import them back.
 
-import from="node:path" names="join,basename"
-import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,appendFileSync,existsSync"
-import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,listSnapshots,revertSnapshot,resumeChatSession,findSkill,renderSkillPrompt,configSet,loadConfig,startChatSession,currentBranch,gitChangedFiles,buildExtensionContext,sessionContext,RUNS_DIR,getAgonHome,clearConversation,clearSessionState,spawnWithTimeout"
-import from="../handlers/chat.js" names="invalidateCwdCache"
 import from="@agon/core" names="ImageAttachment,ChatSession" types=true
-import from="@agon/core" names="approveCesarPlan,saveCesarPlan,loadCesarPlan,listCesarPlans,executePlan,formatCesarPlanMarkdown,planCostEstimator"
-import from="@agon/core" names="CesarPlan,CesarPlanStep,CesarStepResult,StepExecutor" types=true
-import from="../handlers/plan-mode.js" names="buildStepExecutors"
-import from="../cesar/auto-approve-policy.js" names="applyAutoApprovePolicy"
-import from="./intent.js" names="detectIntent,FITNESS_PATTERN"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
-import from="./icons.js" names="icons"
-import from="../blocks/output-format.js" names="ENGINE_COLORS"
-import from="../../handlers/index.js" names="handleForge,handleChat,handleBrainstorm,handleCampfire,handleTribunal,handleThink,handleCouncil,handleSynthesis,handleNeroChallenge,handleLeaderboard,handleCesarReport,handleCesarHints,handleHistory,handleEngines,handleDiscover,handleConfig,handleUse,handleCesar,handleTokens,handleModels,handleWorkspace,handleChats,handlePlanShow,handlePlansList,handleApprove,handleRetry,handleCancel,handleApplyPatch,handleCp,handleCommit,handleFlowReport,handleFlowAnalysis,handleBuild,handleRun,handleReview,handleReviewMany,runAgentMode,runAgentTeam"
-import from="../handlers/forge.js" names="prepareForgeFitnessCommand,inferProjectFitnessCommand"
-import from="../handlers/team-tribunal.js" names="handleTeamTribunal"
-import from="../handlers/team-forge.js" names="handleTeamForge"
-import from="../handlers/team-brainstorm.js" names="handleTeamBrainstorm"
-import from="../../handlers/cesar-brain.js" names="handleCesarBrain,parseSuggestion,CESAR_SYSTEM_PROMPT,yieldToInk"
-import from="@agon/core" names="appendMessage,appendUserTurnIfAbsent,buildHistoryPrimedPrompt,formatChatContextForPrompt"
-import from="../handlers/pipeline.js" names="handlePipeline"
-import from="../handlers/provider.js" names="handleProvider"
-import from="../commands/doctor.js" names="diagnoseEngineDoctorEntry,checkDoctorWorktree,buildHarnessDoctorReport"
-import from="../cesar/routing.js" names="deriveRoutingHints"
-import from="../cesar/routing.js" names="shouldUseAgentTeam"
-import from="../cesar/session.js" names="buildCesarSystemPrompt,resolveCesarBackend"
-import from="../cesar/tool-observability.js" names="replayCesarHarnessLogs"
-import from="../cesar/recap.js" names="createCesarRecapCapture,recordCesarRecapEvent,buildCesarTurnRecapEvent,buildCesarRecapDiffPreview,shouldEmitCesarRecap"
-import from="../cesar/telemetry.js" names="renderTelemetrySnapshot,computeOverallHealth,createEngineVitals"
-import from="../cesar/telemetry.js" names="TelemetrySnapshot" types=true
-import from="@agon/core" names="createSpeculator,loadOrCreateActiveThread"
-import from="@agon/core" names="SpeculatorMemberConfig" types=true
-import from="./file-tracker.js" names="listFiles,getFileDiff"
-import from="./todos.js" names="todosFromPlanSteps"
 
 interface name=DispatchCallbacks
   field name=dispatch type=Dispatch

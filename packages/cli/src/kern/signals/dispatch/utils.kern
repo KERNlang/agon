@@ -1,0 +1,71 @@
+// ── Dispatch utils — leaf helpers (recovery status, turn counting, session clear) ──
+import from="@agon/core" names="clearConversation,clearSessionState"
+import from="../../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+
+fn name=clearPersistedSessionContext params="ctx:HandlerContext" returns="string[]" export=true
+  doc "Delete persisted workspace conversation plus per-engine session state/tool caches so /clear and /clean start with a genuinely empty context."
+  handler <<<
+    const engineIds = new Set<string>();
+    const add = (value: unknown) => {
+      const id = typeof value === 'string' ? value.trim() : '';
+      if (id) engineIds.add(id);
+    };
+
+    add((ctx.config as any)?.cesarEngine);
+    add((ctx.config as any)?.forgeFixedStarter);
+    add((ctx.cesarSession as any)?.engineId);
+    const enabled = (ctx.config as any)?.forgeEnabledEngines;
+    if (Array.isArray(enabled)) for (const id of enabled) add(id);
+    try {
+      const ids = typeof (ctx as any).activeEngines === 'function'
+        ? (ctx as any).activeEngines()
+        : [];
+      if (Array.isArray(ids)) for (const id of ids) add(id);
+    } catch { /* active engines unavailable */ }
+    try {
+      const ids = ctx.registry?.availableIds?.() ?? [];
+      if (Array.isArray(ids)) for (const id of ids) add(id);
+    } catch { /* registry unavailable */ }
+
+    clearConversation();
+    for (const engineId of engineIds) {
+      try { clearSessionState(engineId); } catch { /* best-effort */ }
+    }
+    return [...engineIds].sort();
+  >>>
+
+fn name=formatCesarRecoveryStatus params="stage:'delegation'|'rebuild'|'retry'|'acting'|'failed', subject:string, detail?:string" returns=string export=true
+  doc "Compact user-facing Cesar recovery messages. Keep these short because they render in the live status/transcript path during failure handling."
+  handler <<<
+    const suffix = detail ? ` - ${detail}` : '';
+    switch (stage) {
+      case 'delegation':
+        return `Cesar recovery: running ${subject}${suffix}`;
+      case 'rebuild':
+        return `Cesar recovery: rebuilding ${subject} session${suffix}`;
+      case 'retry':
+        return `Cesar recovery: retrying ${subject} with fresh dispatch${suffix}`;
+      case 'acting':
+        return `Cesar recovery: ${subject} acting as Cesar${suffix}`;
+      case 'failed':
+        return `Cesar recovery failed: ${subject}${suffix}`;
+      default:
+        return `Cesar recovery: ${subject}${suffix}`;
+    }
+  >>>
+
+fn name=normalizeCesarActingFallbackMode params="value:any" returns="'ask'|'auto'|'off'" export=true
+  doc "Normalize the cross-engine Cesar fallback policy. Defaults to auto: when the configured Cesar engine returns no response, Agon silently swaps to another available engine and attributes its output as Cesar so the user perceives one persona. 'ask' restores the legacy prompt-and-show-chrome behavior; 'off' never swaps."
+  handler lang="kern"
+    let name=mode value="String(value ?? 'auto').trim().toLowerCase()"
+    if cond="mode === 'ask' || mode === 'prompt' || mode === 'confirm'"
+      return value="'ask'"
+    if cond="mode === 'off' || mode === 'never' || mode === 'same-only' || mode === 'same'"
+      return value="'off'"
+    return value="'auto'"
+
+fn name=countTrackedUserTurns params="ctx:HandlerContext" returns=number
+  handler lang="kern"
+    let name=messages value="ctx.chatSession?.messages ?? []"
+    return value="messages.filter((m: any) => m.role === 'user').length"
+

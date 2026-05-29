@@ -23,7 +23,9 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "py/kern_engines/**/*.py",
+    "pyproject.toml"
   ],
   "scripts": {
     "build": "tsup && tsc -b tsconfig.json --force",

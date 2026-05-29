@@ -185,6 +185,18 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...timeout,
       ...engines,
     ]);
+  } else if (workflow === 'conquer') {
+    // Supervised-autonomous build. conquer enforces --gate itself (the done-oracle)
+    // and errors otherwise, so the bridge just forwards it + the advisor pool.
+    // Builder defaults to codex; long-running — the bridge call blocks until done.
+    const task = requireInput(workflow, opts.input);
+    commands.push([
+      'conquer',
+      task,
+      ...textFlag('--gate', opts.gate),
+      ...timeout,
+      ...engines,
+    ]);
   } else if (workflow === 'doctor') {
     // Passthrough so external CLIs that standardize on `agon call <workflow>`
     // can reach the top-level doctor. `agon call doctor` -> `agon doctor`,
@@ -199,7 +211,7 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
     commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
   } else {
-    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, pipeline, review, goal, doctor, or a team-* workflow.`);
+    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, conquer, pipeline, review, goal, doctor, or a team-* workflow.`);
   }
 
   return { cwd, commands };
@@ -260,7 +272,7 @@ export const callCommand = defineCommand({
   args: {
     workflow: {
       type: 'positional',
-      description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, pipeline, review, goal, doctor, or team-*',
+      description: 'Workflow: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, conquer, pipeline, review, goal, doctor, or team-*',
       required: true,
     },
     input: {

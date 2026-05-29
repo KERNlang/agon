@@ -60,6 +60,12 @@ CLAUDE = EngineConfig(
         r"Churned for|Cooked for|"
         r"running stop hooks|Accomplishing|"
         r"thought for [0-9]+s|"
+        # Generic completion-status line "<verb> for <n>s" (Worked/Crunched/
+        # Baked/Cooked/Channelled/…). Catches the whole drifting family at once
+        # so a NEW spinner verb can't leak the way "Pollinating…"/"Crunched for"
+        # did — the blacklist no longer has to enumerate every verb claude ships.
+        r"\b\w+ for [0-9]+s\b|"
+        r"esc to interrupt|\? for shortcuts|← for agents|"
         r"automode|⏵⏵|ctx:|/effort|tokens?\)|"
         r"\([0-9]+s\s*[·•])"
     ),
@@ -69,16 +75,31 @@ CLAUDE = EngineConfig(
         "CLAUDE_CODE_SESSION_ID",
         "CLAUDE_TOOL_RESULT_FD",
     ),
+    # `--setting-sources project,local`: load ONLY workspace settings, NOT the
+    # user's personal `~/.claude/settings.json`. That personal layer is where a
+    # custom statusLine lives (e.g. an animated context-gauge + plugin glyphs);
+    # under a pty it (a) renders glyphs no chrome filter matches and (b) ANIMATES
+    # continuously, defeating idle-based done-detection — so the scraper returns
+    # the statusline/spinner instead of the answer (the chrome-bleed bug). OAuth
+    # subscription auth lives in the macOS KEYCHAIN, NOT in a setting source, so
+    # dropping `user` keeps us authenticated (verified: a clean dir hits the
+    # login picker, but `--setting-sources project,local` does not). This is the
+    # workspace-pure principle (strip personal tooling, keep workspace config)
+    # applied to the pty path. NB: `--bare` is NOT usable here — it forces
+    # strictly ANTHROPIC_API_KEY and bypasses the subscription (would bill
+    # credits / hit the login screen).
     # Exec mode: same whitelist. Tool calls during chat (git status,
     # grep, etc.) auto-approve without pausing the scraper.
     extra_argv=(
         "--allowedTools", _CLAUDE_ALLOWED_TOOLS,
+        "--setting-sources", "project,local",
     ),
     # Agent mode: same whitelist. Edits and shell commands auto-approve.
     # No --dangerously-skip-permissions because it shows a startup banner
     # that breaks pty boot detection.
     agent_extra_argv=(
         "--allowedTools", _CLAUDE_ALLOWED_TOOLS,
+        "--setting-sources", "project,local",
     ),
     # Claude 2026+ TUI collapses a large burst write into
     # "[Pasted text +N lines, paste again to expand]" and a single Enter no

@@ -200,6 +200,7 @@ fn name=buildReviewAbsorptionPrompt params="sourceInput:string, review:{ engineI
 fn name=handleDelegatedAction async=true params="result:any, input:string, cb:DispatchCallbacks" returns="Promise<boolean | null>"
   doc "Execute a delegated Cesar action (the big routeAction switch). Extracted from routeWithCesar; kept SAME-FILE to avoid the continueCesarAfterResult<->routeWithCesar ESM cycle. Returns true = a background job was dispatched; false = the in-delegated-continuation recursive-thinking skip; null = the switch fell through (delegate with no target, or an unmatched action) so the caller continues to the responded/crash-recovery tail."
   handler <<<
+        if (!result) return null;
         const labelSource = (result.task && result.task.trim())
           ? result.task
           : (result.reasoning && !result.reasoning.includes('User context:')
@@ -517,6 +518,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
 fn name=handleRecoveredDelegation async=true params="crashDel:any, input:string, cb:DispatchCallbacks" returns="Promise<boolean>"
   doc "Confirm + run a delegation recovered from a crashed Cesar session: TTL stale-check, askQuestion confirm, then the recovered-action switch. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. The caller has already nulled cb.ctx.cesar.pendingDelegation. Returns true if a recovery job was dispatched; false on stale/declined/unmatched so the caller falls through to the brain fallback."
   handler <<<
+      if (!crashDel) return false;
       // TTL: discard stale delegations older than 60 seconds
       if (crashDel.createdAt && Date.now() - crashDel.createdAt > 60000) {
         cb.dispatch({ type: 'warning', message: 'Stale delegation discarded (>60s old)' });

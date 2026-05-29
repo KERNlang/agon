@@ -318,7 +318,16 @@ export async function runConquer(opts: ConquerOptions): Promise<ConquerResult> {
       mode: 'agent', timeout: opts.timeout, outputDir: opts.outputDir, signal: opts.signal,
     });
     const out = String(res?.stdout ?? '').trim();
-    if ((res?.exitCode ?? 0) !== 0 && !out) { emit(state.turn, 'stop', 'builder dispatch failed'); stopReason = 'builder-failed'; break; }
+    // A timed-out or non-zero-exit builder turn is a failure even with partial stdout —
+    // feeding garbage back would burn the whole turn budget. Capture diagnostics + stop.
+    if (res?.timedOut === true || (res?.exitCode ?? 0) !== 0) {
+      const why = res?.timedOut === true
+        ? 'builder timed out'
+        : `builder dispatch failed (exit ${res?.exitCode})${res?.stderr ? `: ${String(res.stderr).slice(0, 200)}` : ''}`;
+      emit(state.turn, 'stop', why);
+      stopReason = 'builder-failed';
+      break;
+    }
     emit(state.turn, 'build', out);
 
     const sig = parseBuilderSignals(out);

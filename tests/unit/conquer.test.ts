@@ -251,8 +251,15 @@ describe('runConquer — supervisory loop', () => {
     expect(res.turnsUsed).toBe(3);
   });
 
-  it('stops on builder failure (non-zero exit, no output)', async () => {
+  it('stops on builder failure (non-zero exit)', async () => {
     const adapter = { dispatch: async () => turn('', 1) } as any;
+    const res = await runConquer(base({ adapter, caps: { maxTurns: 5, maxWallClockMs: 0 } }));
+    expect(res.stopReason).toBe('builder-failed');
+    expect(res.turnsUsed).toBe(1);
+  });
+
+  it('stops on a timed-out builder turn even with partial output', async () => {
+    const adapter = { dispatch: async () => ({ exitCode: 0, stdout: 'partial work…', stderr: '', durationMs: 1, timedOut: true }) } as any;
     const res = await runConquer(base({ adapter, caps: { maxTurns: 5, maxWallClockMs: 0 } }));
     expect(res.stopReason).toBe('builder-failed');
     expect(res.turnsUsed).toBe(1);

@@ -74,14 +74,39 @@ export const conquerCommand: any = defineCommand({
 
     let advisors = active.filter((e) => e !== builder);
     if (typeof args.engines === 'string' && args.engines.trim()) {
-      const wanted = args.engines.split(',').map((s) => registry.resolveId(s.trim())).filter((id) => known.has(id) && id !== builder);
-      if (wanted.length > 0) advisors = wanted;
+      // An explicit advisor list must be valid + active — never silently fall back to
+      // defaults on a typo (that would run a different panel than the user asked for).
+      const requested = args.engines.split(',').map((s) => s.trim()).filter(Boolean);
+      const resolved = requested.map((s) => registry.resolveId(s));
+      const bad = requested.filter((_s, i) => !activeIds.includes(resolved[i]));
+      if (bad.length > 0) {
+        console.error(`Advisor engine${bad.length > 1 ? 's' : ''} not available: ${bad.join(', ')}. Run \`agon engine list\`.`);
+        process.exitCode = 1;
+        return;
+      }
+      advisors = resolved.filter((id) => id !== builder);
     }
 
-    const maxTurns = parseInt(String(args.maxTurns ?? '40'), 10) || 40;
-    const maxHours = args.maxHours ? parseFloat(String(args.maxHours)) : 0;
+    const maxTurns = parseInt(String(args.maxTurns ?? '40'), 10);
+    if (Number.isNaN(maxTurns) || maxTurns < 1) { console.error(`Invalid --max-turns: ${args.maxTurns}`); process.exitCode = 1; return; }
+    let maxHours = 0;
+    if (args.maxHours !== undefined && String(args.maxHours).trim() !== '') {
+      maxHours = parseFloat(String(args.maxHours));
+      if (Number.isNaN(maxHours) || maxHours < 0) { console.error(`Invalid --max-hours: ${args.maxHours}`); process.exitCode = 1; return; }
+    }
     const turnTimeout = parseInt(String(args.timeout ?? '600'), 10) || 600;
     const gateTimeout = parseInt(String(args.gateTimeout ?? '1800'), 10) || 1800;
+
+    // --push commits whatever is dirty after the run, so the tree MUST start clean —
+    // otherwise unrelated WIP/untracked files (or another session's edits) get committed.
+    if (args.push) {
+      const st = await spawnWithTimeout({ command: 'git', args: ['status', '--porcelain'], cwd, timeout: 15_000 });
+      if (String(st.stdout ?? '').trim()) {
+        console.error('--push needs a clean working tree at start so only the builder\'s changes are committed. Commit/stash first, or run without --push and review the diff yourself.');
+        process.exitCode = 1;
+        return;
+      }
+    }
 
     const { path: outputDir } = createRunDir({ mode: 'conquer', label: args.label, announce: false });
 
@@ -94,9 +119,16 @@ export const conquerCommand: any = defineCommand({
     // (L0). oracleTampered is left false in v1 — L1 diff-integrity catches test
     // weakening; a frozen-oracle hash is the hardening follow-up.
     const evaluateDone = async (_claim: string) => {
-      const diffRes = await spawnWithTimeout({ command: 'git', args: ['diff'], cwd, timeout: 30_000 });
-      const gateRes = await spawnWithTimeout({ command: 'sh', args: ['-c', gate], cwd, timeout: gateTimeout * 1000 });
-      return { diff: String(diffRes.stdout ?? ''), gateOk: gateRes.exitCode === 0, oracleTampered: false };
+      try {
+        const diffRes = await spawnWithTimeout({ command: 'git', args: ['diff'], cwd, timeout: 30_000 });
+        const gateRes = await spawnWithTimeout({ command: 'sh', args: ['-c', gate], cwd, timeout: gateTimeout * 1000 });
+        return { diff: String(diffRes.stdout ?? ''), gateOk: gateRes.exitCode === 0, oracleTampered: false };
+      } catch (err) {
+        // A spawn failure (no fds, shell init, etc.) must not crash the unattended loop —
+        // treat the done-check as "not done" so the builder keeps going or hits a cap.
+        info(dim(`done-check gate errored: ${err instanceof Error ? err.message : String(err)} — treating as not-done.`));
+        return { diff: '', gateOk: false, oracleTampered: false };
+      }
     };
 
     const result: ConquerResult = await runConquer({
@@ -122,14 +154,33 @@ export const conquerCommand: any = defineCommand({
     }
 
     info(bold('✓ Conquered — build complete and the done-oracle passed.'));
-    info(`Claim: ${result.lastClaim}`);
+    const claim = result.lastClaim || '(no claim captured)';
+    info(`Claim: ${claim}`);
     if (args.push) {
-      const branchRes = await spawnWithTimeout({ command: 'git', args: ['rev-parse', '--abbrev-ref', 'HEAD'], cwd, timeout: 15_000 });
+      const git = (a: string[], t: number) => spawnWithTimeout({ command: 'git', args: a, cwd, timeout: t });
+      const branchRes = await git(['rev-parse', '--abbrev-ref', 'HEAD'], 15_000);
       const branch = String(branchRes.stdout ?? '').trim();
-      await spawnWithTimeout({ command: 'git', args: ['add', '-A'], cwd, timeout: 30_000 });
-      await spawnWithTimeout({ command: 'git', args: ['commit', '-m', `conquer: ${taskStr}`, '-m', result.lastClaim], cwd, timeout: 30_000 });
-      await spawnWithTimeout({ command: 'git', args: ['push', '-u', 'origin', branch], cwd, timeout: 120_000 });
-      info(`Pushed ${branch}. Open a PR to review + merge — this is your merge gate.`);
+      if (branchRes.exitCode !== 0 || !branch || branch === 'HEAD') {
+        info(dim('Could not resolve a branch to push (detached HEAD?). The builder\'s changes are uncommitted in the tree — review + commit + push manually.'));
+        process.exitCode = 1;
+      } else {
+        const add = await git(['add', '-A'], 30_000);
+        const commit = add.exitCode === 0 ? await git(['commit', '-m', `conquer: ${taskStr}`, '-m', claim], 30_000) : add;
+        if (add.exitCode !== 0 || commit.exitCode !== 0) {
+          const stage = add.exitCode !== 0 ? 'add' : 'commit';
+          const errTxt = String((add.exitCode !== 0 ? add.stderr : commit.stderr) ?? '').slice(0, 200);
+          info(dim(`git ${stage} failed: ${errTxt} — review the tree manually.`));
+          process.exitCode = 1;
+        } else {
+          const push = await git(['push', '-u', 'origin', branch], 120_000);
+          if (push.exitCode !== 0) {
+            info(dim(`git push failed: ${String(push.stderr ?? '').slice(0, 200)} — committed locally on ${branch}; push it manually.`));
+            process.exitCode = 1;
+          } else {
+            info(`Pushed ${branch}. Open a PR to review + merge — this is your merge gate.`);
+          }
+        }
+      }
     } else {
       info(dim('The builder\'s changes are in the working tree. Review them, then commit + push + open a PR to merge (this is your merge gate). Pass --push to auto-commit+push the current branch.'));
     }

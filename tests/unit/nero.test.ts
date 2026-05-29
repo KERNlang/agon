@@ -258,12 +258,46 @@ describe('runNero — self-healing dispatch (resend + down-pass)', () => {
 
   it('reports no valid verdict when every critic fails (and lists what it tried)', async () => {
     const r = ratings({ global: { a: rating(1700), b: rating(1500) } });
-    const { adapter, calls } = scripted({ a: [{ stdout: '' }], b: [{ stdout: 'no verdict here' }] });
+    const { adapter, calls } = scripted({ a: [{ stdout: '' }], b: [{ stdout: '' }] });
     const res = await runNero({ ...baseC, engines: ['a', 'b'], ratings: r, adapter } as any);
     expect(res.ok).toBe(false);
     expect(res.challengeText).toContain('No critic produced a valid verdict');
-    expect(calls.a).toBe(2);
+    expect(calls.a).toBe(2); // empty is transient → both attempts
     expect(calls.b).toBe(2);
+  });
+
+  it('does NOT resend a verdict-less reply (deterministic miss) — down-passes after one dispatch', async () => {
+    const r = ratings({ global: { a: rating(1700), b: rating(1500) } });
+    // a returns a non-empty answer with no VERDICT line: a format mismatch, not a
+    // transient blip, so a resend would waste a paid dispatch. Down-pass straight to b.
+    const { adapter, calls } = scripted({ a: [{ stdout: 'lots of analysis but never concludes' }], b: [{ stdout: VALID }] });
+    const res = await runNero({ ...baseC, engines: ['a', 'b'], ratings: r, adapter } as any);
+    expect(res.ok).toBe(true);
+    expect(res.engineId).toBe('b');
+    expect(calls.a).toBe(1); // no wasted resend on the deterministic miss
+    expect(calls.b).toBe(1);
+  });
+
+  it('never lets an excluded author self-grade, even as the only candidate', async () => {
+    const { adapter, calls } = scripted({ author: [{ stdout: VALID }] });
+    const res = await runNero({ ...baseC, engines: ['author'], exclude: ['author'], adapter } as any);
+    expect(res.ok).toBe(false);
+    expect(res.engineId).not.toBe('author'); // contract: no grading own homework
+    expect(res.engineId).toBe('');
+    expect(calls.author).toBeUndefined(); // never dispatched
+  });
+
+  it('returns an aborted result immediately when dispatch rejects with AbortError', async () => {
+    const ac = new AbortController();
+    const adapter = {
+      dispatch: async () => {
+        ac.abort();
+        const e = new Error('The operation was aborted'); e.name = 'AbortError'; throw e;
+      },
+    } as any;
+    const res = await runNero({ ...baseC, engines: ['a'], engine: 'a', adapter, signal: ac.signal } as any);
+    expect(res.ok).toBe(false);
+    expect(res.challengeText).toContain('aborted');
   });
 
   it('a forced engine retries but NEVER down-passes (manual override)', async () => {

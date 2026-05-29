@@ -11,7 +11,7 @@
 // engine has any rating yet. The author being challenged is excluded from the
 // pool so Nero never grades its own homework.
 
-import from="@agon/core" names="EngineAdapter" types=true
+import from="@agon/core" names="EngineAdapter,RatingRecord" types=true
 import from="@agon/core" names="EngineRegistry,getRatings,pickTopRatedEngine,resolveWorkingDir,seedNewEnginesFromRegistry"
 
 interface name=NeroOptions
@@ -28,6 +28,9 @@ interface name=NeroOptions
   field name=outputDir type=string
   field name=cwd type="string | undefined" optional=true
   field name=signal type="AbortSignal | undefined" optional=true
+  field name=ratings type="RatingRecord | undefined" optional=true doc="Injectable ratings for deterministic critic-cascade tests; defaults to getRatings() (the on-disk Glicko store)."
+  field name=retryBackoffMs type="number | undefined" optional=true doc="Base backoff (ms) between same-critic retries; multiplied by the attempt number. Defaults to 1200. Set 0 in tests to skip the sleep."
+  field name=onStatus type="((msg: string) => void) | undefined" optional=true doc="Best-effort progress callback for retry/down-pass narration (e.g. 'codex empty — retrying (2/2)', 'down-passing to kimi'). The CLI routes it to stderr; the REPL dispatches an info event."
 
 interface name=NeroResult
   field name=ok type=boolean
@@ -103,72 +106,145 @@ fn name=parseNeroConfidence params="text:string" returns="number | null" export=
     return n;
   >>>
 
+fn name=rankNeroCritics params="engineIds:string[], ratings:RatingRecord, opts?:{ exclude?:string[] }" returns="Array<{ engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }>" export=true
+  doc "Build Nero's critic cascade, best critic first. Repeatedly picks the top-rated critic (critique -> tribunal -> global -> random) and excludes it from the next pick, so a failed top critic can down-pass to the next-best. Pure (ratings injected) — exported for testing. NOTE: pickTopRatedEngine IGNORES `exclude` if it would empty the pool (resetting to the full list); the `seen` guard below stops the cascade when that reset re-surfaces an already-ranked or author engine, so the author is never reintroduced as a critic."
+  handler <<<
+    const seen = new Set<string>(opts?.exclude ?? []);
+    const ranked: Array<{ engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }> = [];
+    for (let i = 0; i < engineIds.length; i++) {
+      const picked = pickTopRatedEngine(engineIds, ratings, { modes: ['critique', 'tribunal'], exclude: [...seen] });
+      if (!picked.engineId || seen.has(picked.engineId)) break; // pool reset re-surfaced a seen/author engine -> exhausted
+      ranked.push(picked);
+      seen.add(picked.engineId);
+    }
+    return ranked;
+  >>>
+
 fn name=runNero async=true params="opts:NeroOptions" returns="Promise<NeroResult>" export=true
-  doc "Run a one-shot adversarial challenge. Picks the top-rated adversarial engine (critique -> tribunal -> global -> random), excluding any author in opts.exclude, then dispatches the Nero prompt and parses the verdict + confidence."
+  doc "Run an adversarial challenge with self-healing dispatch. Builds the critic cascade (forced engine -> single critic; else top-rated critique/tribunal/global, author excluded), then for each critic RETRIES on a transient miss (empty / timed-out / verdict-less) up to MAX_ATTEMPTS with escalating backoff, and DOWN-PASSES to the next-best critic when one is genuinely unusable. This replaces the old one-shot dispatch that dead-ended on a single empty response — so `--engine codex` is no longer needed as a manual band-aid (it stays as a deliberate override). A valid result = clean exit (exit 0, not timed out) + non-empty + parseable verdict, mirroring the original verdict gate."
   handler <<<
     // Seed newly-dropped model versions so a fresh critic (with declared lineage) is
     // eligible in the cascade instead of being skipped until another competition rates it.
     seedNewEnginesFromRegistry(opts.registry);
-    const ratings = getRatings();
-    let engineId = '';
-    let reason: 'top-rated' | 'random' | 'forced' | 'none' = 'none';
-    let scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null = null;
+    const ratings = opts.ratings ?? getRatings();
+    const MAX_ATTEMPTS = 2;                       // attempts per critic (1 resend) before down-pass
+    const backoffMs = opts.retryBackoffMs ?? 1200;
 
+    // Build the ranked critic cascade. A forced engine is a single critic (retried,
+    // never down-passed). Otherwise rank all critics best->worst. An empty ranking
+    // means every candidate is the author (excluded) — do NOT fall back to a raw
+    // pickTopRatedEngine here: that helper ignores `exclude` once the pool empties
+    // and would resurface the author as its own critic (codex review, 0.96). The
+    // no-self-review contract wins over forcing a challenge: return no-engines.
     const forced = opts.engine?.trim();
+    let ranked: Array<{ engineId: string; reason: 'top-rated' | 'random' | 'forced' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }>;
     if (forced && opts.engines.includes(forced)) {
-      engineId = forced;
-      reason = 'forced';
+      ranked = [{ engineId: forced, reason: 'forced', scope: null }];
     } else {
-      // Prefer a proven critic (critique discipline, fed by adversarial tribunals),
-      // fall back to adversarial-debate skill (tribunal), then global, then random.
-      const picked = pickTopRatedEngine(opts.engines, ratings, { modes: ['critique', 'tribunal'], exclude: opts.exclude });
-      engineId = picked.engineId;
-      reason = picked.reason;
-      scope = picked.scope;
+      ranked = rankNeroCritics(opts.engines, ratings, { exclude: opts.exclude });
     }
 
-    if (!engineId) {
-      return { ok: false, engineId: '', reason: 'none', scope: null, verdict: 'unknown', challengeConfidence: null, challengeText: 'No engines available to play Nero.', outputDir: opts.outputDir };
+    if (ranked.length === 0) {
+      return { ok: false, engineId: '', reason: 'none', scope: null, verdict: 'unknown', challengeConfidence: null, challengeText: 'No engine available to play Nero (every candidate is the author under review).', outputDir: opts.outputDir };
     }
 
     const prompt = buildNeroPrompt(opts);
+    const sysPrompt = 'You are an adversarial critic. Respond directly with your analysis as plain text. Do NOT use tools, read files, or run commands.';
+    const tried: string[] = [];
+    let last: NeroResult | null = null;
+    // Abortable backoff: resolves early if the run is cancelled, so Ctrl+C / a
+    // stale-epoch abort isn't stuck waiting out the full sleep (codex/claude review).
+    const sleep = (ms: number) => new Promise<void>((resolve) => {
+      const t = setTimeout(resolve, ms);
+      if (opts.signal) opts.signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+    });
 
-    try {
-      // registry.get THROWS EngineNotFoundError on an unknown id — keep it inside
-      // the try so a stale/bad engine id returns a clean ok:false, never a crash.
-      const engine = opts.registry.get(engineId);
-      const result = await opts.adapter.dispatch({
-        engine,
-        prompt,
-        systemPrompt: 'You are an adversarial critic. Respond directly with your analysis as plain text. Do NOT use tools, read files, or run commands.',
-        cwd: opts.cwd ?? resolveWorkingDir(),
-        mode: 'exec' as any,
-        timeout: opts.timeout,
-        outputDir: opts.outputDir,
-        signal: opts.signal,
-      });
-      const cleaned = (result.stdout ?? '').trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
-      const verdict = parseNeroVerdict(cleaned);
-      // Nero is a VERDICT gate: ok:true only on a clean exit (exit 0, no timeout)
-      // with a parseable verdict. A timed-out / errored / verdict-less response is
-      // ok:false so `agon nero --json` and `agon call nero` can't report success
-      // for a non-answer — but we still surface the text/stderr as a diagnostic.
-      const dispatchOk = result.exitCode === 0 && !result.timedOut;
-      const ok = dispatchOk && cleaned.length > 0 && verdict !== 'unknown';
-      const diagnostic = cleaned.length > 0
-        ? cleaned
-        : (result.timedOut ? 'Nero engine timed out with no output.' : (result.stderr?.trim() || 'Empty response from engine.'));
-      return {
-        ok,
-        engineId,
-        reason,
-        scope,
-        verdict,
-        challengeConfidence: parseNeroConfidence(cleaned),
-        challengeText: diagnostic,
-        outputDir: opts.outputDir,
-      };
-    } catch (err) {
-      return { ok: false, engineId, reason, scope, verdict: 'unknown', challengeConfidence: null, challengeText: err instanceof Error ? err.message : String(err), outputDir: opts.outputDir };
+    for (let ci = 0; ci < ranked.length; ci++) {
+      const picked = ranked[ci];
+      const isLastCritic = ci === ranked.length - 1;
+
+      // registry.get THROWS EngineNotFoundError on a stale/bad id — a PERMANENT
+      // fault for this critic, so down-pass immediately instead of retrying it.
+      let engine: any;
+      try {
+        engine = opts.registry.get(picked.engineId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        tried.push(`${picked.engineId}: ${msg}`);
+        last = { ok: false, engineId: picked.engineId, reason: picked.reason, scope: picked.scope, verdict: 'unknown', challengeConfidence: null, challengeText: msg, outputDir: opts.outputDir };
+        if (!isLastCritic) opts.onStatus?.(`Nero: ${picked.engineId} unavailable (${msg}) — down-passing to ${ranked[ci + 1].engineId}`);
+        continue;
+      }
+
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        if (opts.signal?.aborted) {
+          return last ?? { ok: false, engineId: picked.engineId, reason: picked.reason, scope: picked.scope, verdict: 'unknown', challengeConfidence: null, challengeText: 'Nero aborted before a verdict.', outputDir: opts.outputDir };
+        }
+        let why = '';
+        // transient = worth a same-critic resend (empty / timed-out / a non-abort
+        // dispatch throw). A NON-EMPTY but verdict-less reply is a deterministic
+        // format mismatch, so resending the same critic just burns a paid dispatch
+        // — down-pass straight away instead (claude review #3 + cost bound).
+        let transient = false;
+        try {
+          const result = await opts.adapter.dispatch({
+            engine,
+            prompt,
+            systemPrompt: sysPrompt,
+            cwd: opts.cwd ?? resolveWorkingDir(),
+            mode: 'exec' as any,
+            timeout: opts.timeout,
+            outputDir: opts.outputDir,
+            signal: opts.signal,
+          });
+          const cleaned = (result.stdout ?? '').trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+          const verdict = parseNeroVerdict(cleaned);
+          const dispatchOk = result.exitCode === 0 && !result.timedOut;
+          // Valid = the same verdict gate as before: clean exit + non-empty + parseable verdict.
+          if (dispatchOk && cleaned.length > 0 && verdict !== 'unknown') {
+            return { ok: true, engineId: picked.engineId, reason: picked.reason, scope: picked.scope, verdict, challengeConfidence: parseNeroConfidence(cleaned), challengeText: cleaned, outputDir: opts.outputDir };
+          }
+          why = result.timedOut ? 'timed out' : (cleaned.length === 0 ? 'empty response' : 'no parseable verdict');
+          transient = result.timedOut || cleaned.length === 0;
+          last = {
+            ok: false,
+            engineId: picked.engineId,
+            reason: picked.reason,
+            scope: picked.scope,
+            verdict,
+            challengeConfidence: parseNeroConfidence(cleaned),
+            challengeText: cleaned.length > 0
+              ? cleaned
+              : (result.timedOut ? 'Nero engine timed out with no output.' : (result.stderr?.trim() || 'Empty response from engine.')),
+            outputDir: opts.outputDir,
+          };
+        } catch (err) {
+          // A cancelled dispatch must surface as an abort immediately — do NOT treat
+          // it as a retryable engine failure (codex review, 0.88).
+          if (opts.signal?.aborted || (err as any)?.name === 'AbortError') {
+            return { ok: false, engineId: picked.engineId, reason: picked.reason, scope: picked.scope, verdict: 'unknown', challengeConfidence: null, challengeText: 'Nero aborted before a verdict.', outputDir: opts.outputDir };
+          }
+          // A non-abort throw (rate limit / stream drop) is plausibly transient → resend.
+          why = err instanceof Error ? err.message : String(err);
+          transient = true;
+          last = { ok: false, engineId: picked.engineId, reason: picked.reason, scope: picked.scope, verdict: 'unknown', challengeConfidence: null, challengeText: why, outputDir: opts.outputDir };
+        }
+        tried.push(`${picked.engineId} attempt ${attempt}: ${why}`);
+        if (transient && attempt < MAX_ATTEMPTS) {
+          opts.onStatus?.(`Nero: ${picked.engineId} ${why} — retrying (${attempt + 1}/${MAX_ATTEMPTS})`);
+          if (backoffMs > 0) await sleep(backoffMs * attempt);
+          continue;
+        }
+        // Give up on this critic: retries exhausted, or a deterministic (non-transient) miss.
+        if (!isLastCritic) opts.onStatus?.(`Nero: ${picked.engineId} ${why}${transient ? ` after ${attempt} tries` : ''} — down-passing to ${ranked[ci + 1].engineId}`);
+        break;
+      }
     }
+
+    // Every critic exhausted its retries — no usable verdict from anyone.
+    const triedSummary = tried.length ? ` Tried: ${tried.join('; ')}.` : '';
+    if (last) {
+      return { ...last, challengeText: `No critic produced a valid verdict.${triedSummary}\n\nLast response:\n${last.challengeText}` };
+    }
+    return { ok: false, engineId: '', reason: 'none', scope: null, verdict: 'unknown', challengeConfidence: null, challengeText: `No critic produced a valid verdict.${triedSummary}`, outputDir: opts.outputDir };
   >>>

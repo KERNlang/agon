@@ -1,6 +1,6 @@
 export { runForge } from './forge.js';
 export { runBrainstorm, runScout } from './brainstorm.js';
-export { runNero, buildNeroPrompt, parseNeroVerdict, parseNeroConfidence } from './nero.js';
+export { runNero, rankNeroCritics, buildNeroPrompt, parseNeroVerdict, parseNeroConfidence } from './nero.js';
 export type { NeroOptions, NeroResult } from './nero.js';
 export {
   runCouncil, assignCouncilRoles, roleGuidance, buildCouncilBriefPrompt,

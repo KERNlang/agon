@@ -1,0 +1,67 @@
+// ── Dispatch intent router — preamble + chain to domain sub-dispatchers ──
+import from="@agon/core" names="resolveWorkingDir,buildExtensionContext"
+import from="../../../handlers/types.js" names="Dispatch" types=true
+import from="../dispatch.js" names="DispatchCallbacks,DispatchResult" types=true
+import from="./plan-queries.js" names="findResumableCesarPlan,shouldApprovePendingCesarPlanInput,isCesarPlanResumeInput,isCesarPlanStatusInput,formatCesarPlanRuntimeStatus"
+import from="./plan-execution.js" names="resumeCesarPlan,approvePendingCesarPlan"
+import from="./utils.js" names="emitPostDispatch"
+import from="./intent-orchestration.js" names="dispatchOrchestrationIntent"
+import from="./intent-session.js" names="dispatchSessionInfoIntent"
+import from="./intent-meta.js" names="dispatchMetaIntent"
+import from="./intent-init.js" names="dispatchInitIntent"
+import from="./intent-skills.js" names="dispatchSkillsUiIntent"
+
+fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchCallbacks" returns="Promise<DispatchResult>"
+  doc "Route a parsed intent. Preamble (events/plan-guards/registry) then a chain of domain sub-dispatchers; null = unmatched, any object = terminal."
+  handler <<<
+    // ── Emit pre:dispatch event ──
+    if (cb.eventBus) {
+      await cb.eventBus.emit('pre:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() });
+    }
+
+    if (shouldApprovePendingCesarPlanInput(input, cb.ctx)) {
+      if (await approvePendingCesarPlan(cb)) {
+        emitPostDispatch(intent, input, cb);
+        return { handled: true, ranAsJob: false };
+      }
+    }
+    const resumablePlan = findResumableCesarPlan(cb.ctx);
+    if (resumablePlan && isCesarPlanResumeInput(input)) {
+      await resumeCesarPlan(resumablePlan, cb);
+      emitPostDispatch(intent, input, cb);
+      return { handled: true, ranAsJob: false };
+    }
+    if (resumablePlan && isCesarPlanStatusInput(input)) {
+      cb.dispatch({ type: 'info', message: formatCesarPlanRuntimeStatus(resumablePlan) });
+      emitPostDispatch(intent, input, cb);
+      return { handled: true, ranAsJob: false };
+    }
+
+    // ── Registry-first dispatch — extensions and real handlers get priority ──
+    if (cb.commandRegistry) {
+      const cmdName = intent.type === 'extension-command' ? intent.commandName : intent.type;
+      const registryHandler = cb.commandRegistry.get(cmdName);
+      if (registryHandler && registryHandler.definition.source !== 'builtin') {
+        // Real handler (not a builtin shim) — always use parseArgs for consistent contract
+        const rawArgs = intent.type === 'extension-command'
+          ? (intent.args ?? '')
+          : (intent.input ?? intent.task ?? intent.question ?? intent.topic ?? '');
+        const args = registryHandler.parseArgs(rawArgs);
+        // Build sandboxed context for extension handlers
+        const extCtx = buildExtensionContext(cb, registryHandler.definition.source ?? 'unknown');
+        const result = await registryHandler.execute(args, extCtx);
+        if (result.handled) return result;
+      }
+    }
+
+    const _r = (await dispatchOrchestrationIntent(intent, input, cb))
+      ?? (await dispatchSessionInfoIntent(intent, input, cb))
+      ?? (await dispatchMetaIntent(intent, input, cb))
+      ?? (await dispatchInitIntent(intent, input, cb))
+      ?? (await dispatchSkillsUiIntent(intent, input, cb));
+    if (_r) return _r;   // sub-dispatcher already fired emitPostDispatch on its break-path
+
+    cb.dispatch({ type: 'warning', message: `Unknown command: ${intent.type}` });
+    emitPostDispatch(intent, input, cb);
+    return { handled: true, ranAsJob: false };
+  >>>

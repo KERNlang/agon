@@ -156,6 +156,8 @@ export const neroCommand: any = defineCommand({
       timeout: timeoutSec,
       outputDir,
       cwd: process.cwd(),
+      // Narrate retry/down-pass to stderr so --json stdout stays clean.
+      onStatus: (m: string) => { if (!json) console.error(dim(m)); },
     });
 
     const engineStatus: RunStatusEngine = {

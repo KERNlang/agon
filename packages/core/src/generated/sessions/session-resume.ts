@@ -438,6 +438,26 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             let repeatedReadOnlyRetrySteps = 0;
             let readOnlyLoopRecoveryUsed = false;
             let lastReadOnlySignature = '';
+            // ── Read-spin detector (codex/nero-reviewed) ──
+            // The exact-signature guard above only fires on byte-identical read
+            // batches; an engine re-reading the same content in VARYING batch
+            // compositions (Read×2, then ×3, then ×6) evades it while every read
+            // extends the budget. Extra signal, feeding the SAME recovery:
+            // seenReadKeys accumulator — a read-only step that introduces ZERO new
+            // cache-keys is an exact re-read. cacheKey() is full-arg (name + sorted
+            // args), so reading DIFFERENT files, a WIDER range, or a DIFFERENT grep
+            // pattern yields a NEW key and resets the counter — no false-positive on
+            // legitimate investigation/narrowing passes (nero Ch.1/Ch.5 defused by the
+            // fine-grained key). An earlier narration-repeat signal was dropped: it
+            // false-positived on repeated prose while reading genuinely-new files.
+            const seenReadKeys = new Set<string>();
+            let noNewInfoReadSteps = 0;
+            // Bounded retry for empty (non-overflow) completions — usually a transient
+            // rate-limit (per the comment at the empty-response branch below), which
+            // previously dead-stopped the turn. Capped per-turn so a deterministic
+            // content-filter/format empty still surfaces the real error after retries.
+            let emptyResponseRetries = 0;
+            const MAX_EMPTY_RETRIES = 2;
             // One-shot emergency recovery: if a request fails with an overflow-shaped
             // error, hard-trim history once and retry the same step instead of
             // surfacing an empty response (the spin trigger). Token estimates can be
@@ -566,8 +586,19 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 }
                 // Empty response after successful stream: usually means the model returned
                 // an empty completion (rate limit, content filter, or format mismatch — common
-                // with Kimi/ZAI when tool-use format doesn't line up). Surface it so the
-                // upper layer can warn the user instead of silently breaking.
+                // with Kimi/ZAI when tool-use format doesn't line up). Most empties are
+                // TRANSIENT rate-limits, so retry the same step a bounded number of times
+                // with backoff before surfacing the error — this is what previously
+                // dead-stopped a whole turn ("Cesar … stopped — engine did not respond").
+                // A deterministic content-filter/format empty will still fail after the
+                // retries and surface the real error below.
+                if (!opts.signal?.aborted && emptyResponseRetries < MAX_EMPTY_RETRIES) {
+                  emptyResponseRetries++;
+                  yield { type: 'status' as const, content: `engine returned empty — retrying (${emptyResponseRetries}/${MAX_EMPTY_RETRIES})…` };
+                  await new Promise(r => setTimeout(r, 1200 * emptyResponseRetries));
+                  step--; // retry the same step
+                  continue;
+                }
                 yield { type: 'error' as const, content: lastStderr && OVERFLOW_RE.test(lastStderr)
                   ? `Engine context overflow could not be recovered: ${lastStderr.slice(0, 160)}`
                   : 'Engine returned an empty response (possible rate limit, content filter, or tool-format mismatch).' };
@@ -657,7 +688,20 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   repeatedReadOnlyRetrySteps = 0;
                 }
                 lastReadOnlySignature = readOnlySignature;
-                if ((readOnlyStep && staleReadRetryText && parsedCalls.length > 20) || repeatedReadOnlyRetrySteps >= 3) {
+                // ── Generalized re-read spin signal (see decls above) ──
+                // Accumulate read-keys across the turn: a read-only step that adds NO
+                // new key is an exact re-read (full-arg keys ⇒ different files / wider
+                // ranges / new grep patterns count as new info and reset the counter).
+                const readKeysThisStep = readOnlyStep ? parsedCalls.map(tc => cacheKey(tc.name, tc.args)) : [];
+                const newReadKeys = readKeysThisStep.filter(k => !seenReadKeys.has(k));
+                for (const k of readKeysThisStep) seenReadKeys.add(k);
+                if (readOnlyStep) {
+                  if (readKeysThisStep.length > 0 && newReadKeys.length === 0) noNewInfoReadSteps++; else noNewInfoReadSteps = 0;
+                } else {
+                  noNewInfoReadSteps = 0;
+                }
+                const readSpin = noNewInfoReadSteps >= 3;
+                if ((readOnlyStep && staleReadRetryText && parsedCalls.length > 20) || repeatedReadOnlyRetrySteps >= 3 || readSpin) {
                   if (messageHistory[messageHistory.length - 1] === assistToolMsg) {
                     messageHistory.pop();
                   }
@@ -670,11 +714,11 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                     });
                     messageHistory.push({
                       role: 'user',
-                      content: 'Agon detected repeated Read/Grep/Glob calls after a stale-file notice. Do not re-read the same files again. Use the latest content already in context and either finish the answer, call the required Edit/Write/Bash tool once, or explain the exact blocker.',
+                      content: 'Agon detected repeated Read/Grep/Glob calls without new information. Do not re-read the same files again. Use the latest content already in context and either finish the answer, call the required Edit/Write/Bash tool once, or explain the exact blocker.',
                     });
                     continue;
                   }
-                  yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after stale edit/read recovery. The engine kept repeating reads instead of finishing, editing, or explaining the blocker.' };
+                  yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after recovery. The engine kept repeating reads instead of finishing, editing, or explaining the blocker.' };
                   messageHistory.push({
                     role: 'assistant',
                     content: `${cleanText ? `${cleanText}\n` : ''}[Tool loop stopped — repeated read-only stale-edit retry before executing duplicate read-only calls]`,

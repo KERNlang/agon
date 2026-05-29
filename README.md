@@ -81,6 +81,7 @@ Pick by the **shape** of the problem, not the topic:
 | Code built competitively against a test | **forge** | Engines race on the same task in isolated worktrees; the best test-passing patch is applied. |
 | The **first** passing solution, fast | **speculate** | N engines race; the first to pass the test wins and is applied immediately. |
 | A routine build with one engine | **pipeline** | Single-engine build → review → fix loop; no competition overhead. |
+| A whole open-ended thing built unattended | **conquer** | Cesar drives a builder CLI (codex/claude/agy) through the build, convening nero/tribunal/council on forks, and stops at a human merge gate. The open-ended sibling to **goal**. |
 | Existing code checked for bugs | **review** | Multi-engine review folded into one confidence-tiered consensus. |
 | A task done end-to-end autonomously | **agent** | One engine (Cesar-routed) runs a multi-turn tool loop to do the work. |
 | A whole queue driven to "done" unattended | **goal** | Per task: build → witness → gate → review + judge → commit, for hours. |
@@ -285,6 +286,23 @@ Read a run's digest from any session with `agon goal --status --id close-all-ker
 **Designing the gate — it _is_ the spec.** The forge only optimizes to make your `--gate` (and each task's `verify`) pass, so that command is the actual specification. Make it **discriminating**: it must FAIL a plausibly-wrong implementation, not merely pass the intended one (use distinct/edge inputs — `atan2(3,4)`, not `atan2(0,1)`). Before a long run, red-team your own oracle with `agon nero "<the gate I wrote>" --reasoning "is this gameable?"` — if a wrong impl can slip through, add a killer case first. A non-discriminating gate lets buggy-but-passing code land green and dead-loops the run.
 
 Or **automate the red-team**: `--oracle-gate=warn` (or `strict`) runs a pre-flight where the review panel tries to make each task's `verify` pass with a *cheating* impl (hardcode, ignore inputs). If any engine succeeds, the verify is gameable — `warn` reports it and continues, `strict` refuses to launch so you strengthen it first. It's the discriminating-oracle discipline built into the tool, so it no longer depends on remembering to dogfood it.
+
+### Conquer
+
+Supervised-autonomous **build** of an open-ended task. Where `agon goal` optimizes code to pass a discriminating oracle (great for narrow, verifiable tasks), **conquer** targets the open-ended work you _can't_ pre-oracle — "build me a whole tool." Cesar drives a pluggable builder CLI (codex / claude / agy) in agent mode, turn by turn, while you're away from the desk.
+
+```bash
+agon conquer "Build a CSV-import tool with quoted-field handling" --gate "npm run build && npm test"
+agon conquer "..." --builder codex -e claude,agy   # pick the builder + the advisor panel
+agon conquer "..." --max-turns 60 --max-hours 4     # bound the run
+agon conquer "..." --push                           # on success, commit + push the branch (needs a clean start tree)
+```
+
+- **Cesar consults on forks.** When the builder hits a genuine fork it emits `CONQUER_ASK: <question>`; Cesar classifies it and convenes the _cheapest sufficient_ panel — `nero` (quick), `tribunal` (a choice), `brainstorm` (open), `council` (high-stakes) — then feeds back a compact verdict. A normal agent loop re-prompts itself with the same blind spots; conquer brings the whole heterogeneous panel to bear.
+- **A layered done-oracle, not a self-claim.** On `CONQUER_DONE: <claim>`, Cesar runs the `--gate` command (L0), a diff acceptance-drift check that blocks weakened/rewritten existing tests (L1), and a **nero falsification** round that tries to break the claim with a runnable counterexample (L4), then a mechanical tiebreak. A reproducible counterexample, a red gate, or a tampered test blocks "done."
+- **Stops at a human merge gate.** conquer never auto-merges to main. By default it leaves the builder's changes in the working tree for you to review; `--push` commits + pushes the branch so you merge the PR. The done-oracle is irreducible for open-ended work, so the human merge gate is load-bearing — it holds the original product intent no automated layer can reconstruct.
+
+_(Roadmap: interactive `/conquer` in the REPL, per-session git-worktree isolation, frozen-oracle hash, and `agon call conquer` for external CLIs.)_
 
 ## Interactive REPL
 

@@ -22,6 +22,7 @@ export function agentGuideMarkdown(): string {
     '- `agon nero "<decision>" [--reasoning "<why>"] [--focus "<concern>"] [--confidence N]` — adversarial self-challenge. The top-rated CRITIC (picked by tribunal-discipline rating, not the best builder) attacks your decision with concrete failure scenarios and returns a verdict (FLAWED | PROCEED WITH CAUTION | SOUND) plus its own confidence the original is correct. Use this INSTEAD of an internal evil-twin / devil\'s-advocate pass — it gives you a real second model, not your own reasoning mirrored.',
     '- `agon review <uncommitted|branch:NAME|commit:SHA>` — non-interactive multi-engine code review.',
     '- `agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"` — autonomous controller: drives a task queue to completion unattended, looping build -> witness -> gate -> review (panel + judge) -> fix -> commit per task on a goal/ branch. Bound it with `--max-hours`/`--budget`; `--push` pushes each task. Long-running (designed for 8-24h).',
+    '- `agon conquer "<task>" --gate "<test cmd>"` — supervised-autonomous BUILD of an OPEN-ENDED task. Cesar drives a pluggable builder CLI (codex/claude/agy) in agent mode turn by turn; when the builder hits a fork it asks and Cesar convenes the cheapest sufficient consult (nero/tribunal/brainstorm/council) and feeds back a compact verdict; when it claims done, a layered done-oracle runs (the `--gate` command + diff acceptance-drift + a nero falsification round) and it STOPS at a HUMAN merge gate — it never auto-merges to main. The open-ended sibling to `goal`: use `conquer` when you CANNOT write a clean discriminating oracle up front (build a whole tool), `goal` when you can. `--push` needs a clean tree; bound it with `--max-turns`/`--max-hours`.',
     '',
     '## Setting up forge & goal — the test/gate IS the spec',
     'These two modes only optimize to make your test (`-t` for forge) or gate/verify (for goal) pass. That command IS the specification — not the prose task. A check that a wrong implementation can still pass will ship a wrong implementation, and often dead-loops the run. Before launching:',
@@ -54,6 +55,7 @@ export function agentGuideMarkdown(): string {
     '- pressure-test your own decision     -> nero',
     '- judge existing code                 -> review',
     '- drive a whole task queue to done    -> goal',
+    '- build a whole open-ended thing       -> conquer',
     '',
     'Run `agon <mode> --help` for the full flag list.',
   ].join('\n');
@@ -62,10 +64,10 @@ export function agentGuideMarkdown(): string {
 /**
  * Per-CLI /agon slash-command shim. format is one of agy | claude | markdown.
  */
-// @kern-source: agent-guide-text:64
+// @kern-source: agent-guide-text:66
 export function agonShim(format: string): string {
   const body = [
-    'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, review, goal).',
+    'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, review, goal, conquer).',
     'First run `agon agent-guide` in the shell to see exactly how to call it, then use the right Agon mode to handle the request.',
     'Call agon with your normal shell/Bash tool — there is no MCP and nothing is loaded until you invoke it.',
   ].join('\n');
@@ -110,7 +112,7 @@ export function agonShim(format: string): string {
 /**
  * Native Codex skill that exposes Agon as $agon.
  */
-// @kern-source: agent-guide-text:110
+// @kern-source: agent-guide-text:112
 export function codexSkillMarkdown(): string {
   return [
     '---',
@@ -148,7 +150,7 @@ export function codexSkillMarkdown(): string {
 /**
  * Codex UI metadata for the Agon skill.
  */
-// @kern-source: agent-guide-text:146
+// @kern-source: agent-guide-text:148
 export function codexSkillOpenAiYaml(): string {
   return [
     'interface:',

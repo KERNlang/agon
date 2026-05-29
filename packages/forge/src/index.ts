@@ -60,3 +60,6 @@ export { supervisorDecision, computeBackoffMs, isDeterministicExit, runSuperviso
 export type { SupervisorDecision } from './generated/goal/supervisor.js';
 export { buildOracleCheatPrompt, oracleGateDecision } from './generated/goal/oracle-redteam.js';
 export type { OracleHole } from './generated/goal/oracle-redteam.js';
+// ── Conquer (supervised-autonomous build) ──
+export { pickEscalationMode, classifyStuck, shouldEscalate, shouldAutoApprove, summarizeConsultForBuilder, ESCAPING_OPS } from './conquer.js';
+export type { StuckSignals } from './conquer.js';

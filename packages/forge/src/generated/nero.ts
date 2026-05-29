@@ -135,29 +135,33 @@ export async function runNero(opts: NeroOptions): Promise<NeroResult> {
   const backoffMs = opts.retryBackoffMs ?? 1200;
 
   // Build the ranked critic cascade. A forced engine is a single critic (retried,
-  // never down-passed). Otherwise rank all critics best->worst; if that yields
-  // nothing usable (degenerate: only the author is available), preserve the
-  // original behavior with one direct pick so we still attempt a challenge.
+  // never down-passed). Otherwise rank all critics best->worst. An empty ranking
+  // means every candidate is the author (excluded) — do NOT fall back to a raw
+  // pickTopRatedEngine here: that helper ignores `exclude` once the pool empties
+  // and would resurface the author as its own critic (codex review, 0.96). The
+  // no-self-review contract wins over forcing a challenge: return no-engines.
   const forced = opts.engine?.trim();
   let ranked: Array<{ engineId: string; reason: 'top-rated' | 'random' | 'forced' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }>;
   if (forced && opts.engines.includes(forced)) {
     ranked = [{ engineId: forced, reason: 'forced', scope: null }];
   } else {
     ranked = rankNeroCritics(opts.engines, ratings, { exclude: opts.exclude });
-    if (ranked.length === 0) {
-      const fb = pickTopRatedEngine(opts.engines, ratings, { modes: ['critique', 'tribunal'], exclude: opts.exclude });
-      if (fb.engineId) ranked = [fb];
-    }
   }
 
   if (ranked.length === 0) {
-    return { ok: false, engineId: '', reason: 'none', scope: null, verdict: 'unknown', challengeConfidence: null, challengeText: 'No engines available to play Nero.', outputDir: opts.outputDir };
+    return { ok: false, engineId: '', reason: 'none', scope: null, verdict: 'unknown', challengeConfidence: null, challengeText: 'No engine available to play Nero (every candidate is the author under review).', outputDir: opts.outputDir };
   }
 
   const prompt = buildNeroPrompt(opts);
   const sysPrompt = 'You are an adversarial critic. Respond directly with your analysis as plain text. Do NOT use tools, read files, or run commands.';
   const tried: string[] = [];
   let last: NeroResult | null = null;
+  // Abortable backoff: resolves early if the run is cancelled, so Ctrl+C / a
+  // stale-epoch abort isn't stuck waiting out the full sleep (codex/claude review).
+  const sleep = (ms: number) => new Promise<void>((resolve) => {
+    const t = setTimeout(resolve, ms);
+    if (opts.signal) opts.signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+  });
 
   for (let ci = 0; ci < ranked.length; ci++) {
     const picked = ranked[ci];
@@ -181,6 +185,11 @@ export async function runNero(opts: NeroOptions): Promise<NeroResult> {
         return last ?? { ok: false, engineId: picked.engineId, reason: picked.reason, scope: picked.scope, verdict: 'unknown', challengeConfidence: null, challengeText: 'Nero aborted before a verdict.', outputDir: opts.outputDir };
       }
       let why = '';
+      // transient = worth a same-critic resend (empty / timed-out / a non-abort
+      // dispatch throw). A NON-EMPTY but verdict-less reply is a deterministic
+      // format mismatch, so resending the same critic just burns a paid dispatch
+      // — down-pass straight away instead (claude review #3 + cost bound).
+      let transient = false;
       try {
         const result = await opts.adapter.dispatch({
           engine,
@@ -200,6 +209,7 @@ export async function runNero(opts: NeroOptions): Promise<NeroResult> {
           return { ok: true, engineId: picked.engineId, reason: picked.reason, scope: picked.scope, verdict, challengeConfidence: parseNeroConfidence(cleaned), challengeText: cleaned, outputDir: opts.outputDir };
         }
         why = result.timedOut ? 'timed out' : (cleaned.length === 0 ? 'empty response' : 'no parseable verdict');
+        transient = result.timedOut || cleaned.length === 0;
         last = {
           ok: false,
           engineId: picked.engineId,
@@ -213,18 +223,25 @@ export async function runNero(opts: NeroOptions): Promise<NeroResult> {
           outputDir: opts.outputDir,
         };
       } catch (err) {
-        // A dispatch throw (vs an empty result) may be transient (rate limit /
-        // stream drop), so it counts as a normal attempt and is retried.
+        // A cancelled dispatch must surface as an abort immediately — do NOT treat
+        // it as a retryable engine failure (codex review, 0.88).
+        if (opts.signal?.aborted || (err as any)?.name === 'AbortError') {
+          return { ok: false, engineId: picked.engineId, reason: picked.reason, scope: picked.scope, verdict: 'unknown', challengeConfidence: null, challengeText: 'Nero aborted before a verdict.', outputDir: opts.outputDir };
+        }
+        // A non-abort throw (rate limit / stream drop) is plausibly transient → resend.
         why = err instanceof Error ? err.message : String(err);
+        transient = true;
         last = { ok: false, engineId: picked.engineId, reason: picked.reason, scope: picked.scope, verdict: 'unknown', challengeConfidence: null, challengeText: why, outputDir: opts.outputDir };
       }
       tried.push(`${picked.engineId} attempt ${attempt}: ${why}`);
-      if (attempt < MAX_ATTEMPTS) {
+      if (transient && attempt < MAX_ATTEMPTS) {
         opts.onStatus?.(`Nero: ${picked.engineId} ${why} — retrying (${attempt + 1}/${MAX_ATTEMPTS})`);
-        if (backoffMs > 0) await new Promise((r) => setTimeout(r, backoffMs * attempt));
-      } else if (!isLastCritic) {
-        opts.onStatus?.(`Nero: ${picked.engineId} ${why} after ${MAX_ATTEMPTS} tries — down-passing to ${ranked[ci + 1].engineId}`);
+        if (backoffMs > 0) await sleep(backoffMs * attempt);
+        continue;
       }
+      // Give up on this critic: retries exhausted, or a deterministic (non-transient) miss.
+      if (!isLastCritic) opts.onStatus?.(`Nero: ${picked.engineId} ${why}${transient ? ` after ${attempt} tries` : ''} — down-passing to ${ranked[ci + 1].engineId}`);
+      break;
     }
   }
 

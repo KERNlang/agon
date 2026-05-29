@@ -49,6 +49,16 @@ async function* streamStaleReadRetryBatchFrom(start: number, count: number) {
   return {};
 }
 
+// Reads an EXPLICIT set of files in one read-only step. Used to exercise the
+// no-new-info re-read spin detector: varying batch *compositions* over the same
+// already-seen files (so the byte-identical-signature guard never fires) must
+// still be caught once they stop introducing new cache-keys.
+async function* streamReadFiles(paths: string[]) {
+  const calls = paths.map(p => `<tool name="Read">${JSON.stringify({ file_path: p })}</tool>`).join('\n');
+  yield `Let me look at the relevant files again.\n${calls}`;
+  return {};
+}
+
 function createMockProcess(onLine: (line: string, stdout: PassThrough) => void) {
   const proc = new EventEmitter() as any;
   const stdin = new PassThrough();
@@ -485,4 +495,110 @@ describe('persistent session streaming dedupe', () => {
     expect(chunks.some((chunk: any) => chunk.type === 'error' && /repeated read-only retry loop/.test(chunk.content))).toBe(false);
     expect(chunks.some((chunk: any) => chunk.type === 'text' && /Finished after fresh reads/.test(chunk.content))).toBe(true);
   });
+
+  it('breaks a re-read spin with varying batch composition (no new cache-keys)', async () => {
+    const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
+    let readCount = 0;
+    // Steps 2-4 re-read already-seen files in DIFFERENT compositions, so the
+    // byte-identical-signature guard never fires — only the no-new-info counter
+    // catches it. Step 1 establishes the keys; steps 2,3,4 add nothing new.
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(() => streamReadFiles(['src/a.ts', 'src/b.ts'])) // new keys → counter 0
+      .mockImplementationOnce(() => streamReadFiles(['src/a.ts']))             // no new → 1
+      .mockImplementationOnce(() => streamReadFiles(['src/b.ts']))             // no new → 2
+      .mockImplementationOnce(() => streamReadFiles(['src/a.ts', 'src/b.ts'])) // no new → 3 → recovery (omitted)
+      .mockImplementationOnce(async function* () {
+        yield 'Done after re-read recovery.';
+        return {};
+      });
+
+    const session = createResumeSession({
+      engine: {
+        id: 'api-test',
+        api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test' },
+      } as any,
+      binaryPath: '',
+      cwd: process.cwd(),
+      systemPrompt: 'You are Cesar.',
+      onToolCall: async () => {
+        readCount++;
+        return `read-${readCount}`;
+      },
+      toolLoopBaseBudget: 6,
+      toolLoopMaxBudget: 6,
+    });
+
+    await session.start();
+    const chunks = [];
+    for await (const chunk of session.send({ message: 'spin', toolLoopBaseBudget: 6, toolLoopMaxBudget: 6 })) {
+      chunks.push(chunk);
+    }
+
+    // Steps 1-3 executed (2 + 1 + 1 = 4 reads); step 4's duplicate batch was omitted.
+    expect(readCount).toBe(4);
+    expect(chunks.some((chunk: any) => chunk.type === 'status' && /recovering from repeated stale read loop/.test(chunk.content))).toBe(true);
+    expect(chunks.some((chunk: any) => chunk.type === 'text' && /Done after re-read recovery/.test(chunk.content))).toBe(true);
+    const history = session.getMessageHistory();
+    expect(history.some((msg: any) => msg.role === 'assistant' && /Agon omitted a duplicate read-only tool batch/.test(String(msg.content)))).toBe(true);
+  });
+
+  it('retries an empty completion before surfacing the empty-response error', async () => {
+    const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
+    apiStreamDispatchWithHistoryMock
+      .mockImplementationOnce(async function* () { return {}; })           // empty completion (transient)
+      .mockImplementationOnce(async function* () {
+        yield 'Recovered after a transient empty.';
+        return {};
+      });
+
+    const session = createResumeSession({
+      engine: {
+        id: 'api-test',
+        api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test' },
+      } as any,
+      binaryPath: '',
+      cwd: process.cwd(),
+      systemPrompt: 'You are Cesar.',
+      onToolCall: async () => 'unused',
+      toolLoopBaseBudget: 3,
+      toolLoopMaxBudget: 3,
+    });
+
+    await session.start();
+    const chunks = [];
+    for await (const chunk of session.send({ message: 'empty then ok', toolLoopBaseBudget: 3, toolLoopMaxBudget: 3 })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.some((chunk: any) => chunk.type === 'status' && /engine returned empty — retrying/.test(chunk.content))).toBe(true);
+    expect(chunks.some((chunk: any) => chunk.type === 'error' && /empty response/i.test(chunk.content))).toBe(false);
+    expect(chunks.some((chunk: any) => chunk.type === 'text' && /Recovered after a transient empty/.test(chunk.content))).toBe(true);
+  }, 15000);
+
+  it('still surfaces the empty-response error after exhausting retries', async () => {
+    const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
+    apiStreamDispatchWithHistoryMock.mockImplementation(async function* () { return {}; }); // always empty
+
+    const session = createResumeSession({
+      engine: {
+        id: 'api-test',
+        api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test' },
+      } as any,
+      binaryPath: '',
+      cwd: process.cwd(),
+      systemPrompt: 'You are Cesar.',
+      onToolCall: async () => 'unused',
+      toolLoopBaseBudget: 3,
+      toolLoopMaxBudget: 3,
+    });
+
+    await session.start();
+    const chunks = [];
+    for await (const chunk of session.send({ message: 'always empty', toolLoopBaseBudget: 3, toolLoopMaxBudget: 3 })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.filter((chunk: any) => chunk.type === 'status' && /engine returned empty — retrying/.test(chunk.content)).length).toBe(2);
+    expect(chunks.some((chunk: any) => chunk.type === 'error' && /empty response/i.test(chunk.content))).toBe(true);
+  }, 15000);
 });

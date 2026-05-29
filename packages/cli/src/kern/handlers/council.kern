@@ -105,8 +105,9 @@ fn name=handleCouncil params="question:string, dispatch:Dispatch, ctx:HandlerCon
     }
 
     dispatch({ type: 'separator' });
-    dispatch({ type: 'engine-block', engineId: result.chairmanId, color: (ENGINE_COLORS as Record<string, number>)[result.chairmanId] ?? 124, content: `━━━ Chairman verdict ━━━\n${result.verdict}${result.confidence != null ? `\n\nConfidence: ${result.confidence}%` : ''}` });
-    appendMessage(ctx.chatSession, { role: 'engine', engineId: result.chairmanId, content: `[council:verdict] ${result.verdict}`, timestamp: new Date().toISOString() });
+    const verdictBy = result.actingChairmanId || result.chairmanId; // the engine that actually synthesized (failover-aware)
+    dispatch({ type: 'engine-block', engineId: verdictBy, color: (ENGINE_COLORS as Record<string, number>)[verdictBy] ?? 124, content: `━━━ Chairman verdict ━━━\n${result.verdict}${result.confidence != null ? `\n\nConfidence: ${result.confidence}%` : ''}` });
+    appendMessage(ctx.chatSession, { role: 'engine', engineId: verdictBy, content: `[council:verdict] ${result.verdict}`, timestamp: new Date().toISOString() });
 
     if (result.warnings.length > 0) {
       for (const w of result.warnings) dispatch({ type: 'info', message: `⚠ ${w}` });
@@ -117,7 +118,7 @@ fn name=handleCouncil params="question:string, dispatch:Dispatch, ctx:HandlerCon
       timestamp: new Date().toISOString(),
       question,
       engines: pool,
-      winner: result.chairmanId,
+      winner: verdictBy,
       data: {
         verdict: result.verdict,
         chairmanId: result.chairmanId,
@@ -129,7 +130,7 @@ fn name=handleCouncil params="question:string, dispatch:Dispatch, ctx:HandlerCon
     const runRecord = recordRun({
       mode: 'council',
       intent: question,
-      winner: result.chairmanId,
+      winner: verdictBy,
       success: true,
       durationMs: Date.now() - startTime,
       engineIds: pool,

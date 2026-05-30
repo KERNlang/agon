@@ -145,15 +145,30 @@ const name=conquerCommand type=any
           timeout: turnTimeout,
           outputDir,
           cwd,
+          gate,
           caps: { maxTurns, maxWallClockMs: maxHours > 0 ? Math.round(maxHours * 3_600_000) : 0 },
           evaluateDone,
           onTurn: (t: ConquerTurn) => info(dim(`  turn ${t.n} · ${t.action}${t.action === 'consult' || t.action === 'done-check' ? ` — ${t.detail.slice(0, 80)}` : ''}`)),
         });
 
+        // Surface the falsifier's findings to the human merge gate — whether or not they
+        // blocked. A verified counterexample is shown plainly; an advisory attack (the
+        // critic probed but couldn't mechanically break it) gets a one-line pointer to
+        // the full log in the run dir.
+        const showFalsifier = (): void => {
+          if (result.counterexample) {
+            info(dim(`Falsifier counterexample: ${result.counterexample}${result.observed ? ` → observed: ${result.observed}` : ''}`));
+          }
+          if (result.attackText) {
+            info(dim(`Adversary falsifier log: ${outputDir} (advisory — review before merging).`));
+          }
+        };
+
         console.log('');
         info(`Stopped: ${result.stopReason} · turns ${result.turnsUsed} · consults ${result.consultsRun}`);
         if (!result.done) {
           info(result.doneReason ? `Not verified done — ${result.doneReason}` : 'Did not reach a verified done state. Inspect the working tree + the run log.');
+          showFalsifier();
           process.exitCode = 1;
           return;
         }
@@ -161,6 +176,7 @@ const name=conquerCommand type=any
         info(bold('✓ Conquered — build complete and the done-oracle passed.'));
         const claim = result.lastClaim || '(no claim captured)';
         info(`Claim: ${claim}`);
+        showFalsifier();
         if (args.push) {
           const git = (a: string[], t: number) => spawnWithTimeout({ command: 'git', args: a, cwd, timeout: t });
           const branchRes = await git(['rev-parse', '--abbrev-ref', 'HEAD'], 15_000);

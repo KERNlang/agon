@@ -66,7 +66,7 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
 
     const result = await runConquer({
       task, builderEngine: builder, advisorEngines: advisors,
-      registry: ctx.registry, adapter: ctx.adapter, timeout: 600, outputDir, cwd,
+      registry: ctx.registry, adapter: ctx.adapter, timeout: 600, outputDir, cwd, gate,
       caps: { maxTurns, maxWallClockMs: 0 },
       evaluateDone,
       onTurn: (t: ConquerTurn) => dispatch({ type: 'info', message: `turn ${t.n} · ${t.action}${t.action === 'consult' || t.action === 'done-check' ? ` — ${t.detail.slice(0, 80)}` : ''}` }),
@@ -74,6 +74,13 @@ export async function handleConquer(task: string, dispatch: Dispatch, ctx: Handl
     });
 
     dispatch({ type: 'info', message: `Stopped: ${result.stopReason} · turns ${result.turnsUsed} · consults ${result.consultsRun}` });
+    // Surface the falsifier's findings to the human merge gate (whether or not it blocked).
+    if (result.counterexample) {
+      dispatch({ type: 'info', message: `Falsifier counterexample: ${result.counterexample}${result.observed ? ` → observed: ${result.observed}` : ''}` });
+    }
+    if (result.attackText) {
+      dispatch({ type: 'info', message: `Adversary falsifier log in ${outputDir} (advisory — review before merging).` });
+    }
     if (result.done) {
       const claim = result.lastClaim || '(no claim captured)';
       dispatch({ type: 'info', message: `✓ Conquered. Claim: ${claim}` });

@@ -23,13 +23,14 @@
 // NOTE: budget-in-USD caps await a cost-bearing DispatchResult (today it carries
 // token usage, not price), so caps enforce turns + wall-clock; spend is best-effort.
 
-import from="@agon/core" names="EngineAdapter,EngineRegistry" types=true
-import from="@agon/core" names="resolveWorkingDir"
-import from="./nero.js" names="runNero"
+import from="@agon/core" names="EngineAdapter,EngineRegistry,RatingRecord" types=true
+import from="@agon/core" names="resolveWorkingDir,getRatings,seedNewEnginesFromRegistry,spawnWithTimeout"
+import from="./nero.js" names="runNero,rankNeroCritics,parseNeroVerdict"
 import from="./tribunal.js" names="runTribunal"
 import from="./brainstorm.js" names="runBrainstorm"
 import from="./council.js" names="runCouncil"
 import from="./goal/diff.js" names="isTestFile,parseChangedLines,newFilesInDiff"
+import from="node:path" names="join,dirname"
 
 const name=ESCAPING_OPS type="readonly string[]" value={{ ['push', 'force-push', 'publish', 'deploy', 'network-install', 'merge'] as const }}
   doc "Builder permission-request kinds whose blast radius ESCAPES the worktree (un-spendable tokens, remote/CI state, global package installs). Cesar never auto-approves these even inside isolation — they need a human or an explicit gate. The worktree contains git, not the environment."
@@ -119,6 +120,7 @@ interface name=ConquerOptions
   field name=timeout type=number
   field name=outputDir type=string
   field name=cwd type="string | undefined" optional=true
+  field name=gate type="string | undefined" optional=true doc="The acceptance-gate command (human-readable) — passed to the done-falsifier so the critic knows what 'passing' is supposed to mean and can probe for a gameable gate. Gate EXECUTION still happens in the injected evaluateDone seam; this is just the text for the falsifier prompt."
   field name=caps type="ConquerCaps | undefined" optional=true
   field name=evaluateDone type="(claim: string) => Promise<{ diff: string; gateOk: boolean; oracleTampered: boolean }>"
   field name=onTurn type="((t: ConquerTurn) => void) | undefined" optional=true
@@ -135,6 +137,9 @@ interface name=ConquerResult
   field name=doneReason type=string
   field name=transcript type="string[]"
   field name=outputDir type=string
+  field name=attackText type=string doc="The most recent done-falsifier critic's full attack log (advisory, for the human merge gate). '' when no falsification round ran."
+  field name=counterexample type=string doc="The most recent falsifier's runnable counterexample command, '' if none. Present whether or not it blocked (a verified one blocks; a rejected/advisory one is surfaced to the human)."
+  field name=observed type=string doc="The wrong output the falsifier reported observing, '' if none."
 
 interface name=DoneOracleInput
   field name=gateOk type=boolean
@@ -234,25 +239,184 @@ fn name=doneOracleDecision params="i:DoneOracleInput" returns="{ passed: boolean
     return { passed: true, reason: 'L0–L5 clean — ready for the human merge gate' };
   >>>
 
-fn name=runDoneOracle async=true params="opts:{ claim: string; diff: string; gateOk: boolean; oracleTampered: boolean; engines: string[]; registry: EngineRegistry; adapter: EngineAdapter; timeout: number; outputDir: string; cwd?: string; signal?: AbortSignal }" returns="Promise<{ passed: boolean; reason: string }>"
-  doc "Run the conquer done-oracle for a completion claim: L1 acceptance-drift (any EXISTING — non-new — test file modified in the diff is a weakening), then an L4 nero falsification round (a dedicated adversary tries to refute the claim with a runnable counterexample against the actual codebase), then the mechanical doneOracleDecision. gateOk + oracleTampered are computed by the caller in the worktree."
+// ── L4/L5: the real (tool-enabled, mechanically-verified) done-falsifier ─────
+// Replaces the tool-LESS nero hard-block (which could never return SOUND for an
+// open-ended build → 'done' was unreachable). Block 'done' ONLY on a counterexample
+// that ACTUALLY reproduces a failure when re-run in a sandbox — never on a bare
+// verdict/opinion. The critic's challenge text is kept as advisory for the human gate.
+
+interface name=SandboxOps
+  field name=clone type="(src: string, dest: string, signal?: AbortSignal) => Promise<boolean>"
+    doc "Make a throwaway copy of `src` at `dest` (which must NOT pre-exist). Returns success. Default: APFS clonefile (`cp -Rc`, near-instant CoW) with a plain `cp -R` fallback."
+  field name=exec type="(cmd: string, cwd: string, timeout: number, signal?: AbortSignal) => Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }>"
+    doc "Run a shell command in `cwd` and report its exit. Used to MECHANICALLY re-run the critic's proposed counterexample. Default: `sh -c`."
+  field name=remove type="(dir: string) => Promise<void>"
+    doc "Best-effort teardown of the sandbox dir. Default: `rm -rf`."
+
+interface name=FalsifierResult
+  field name=falsified type=boolean doc="TRUE only when the critic returned FLAWED with a counterexample AND re-running it reproduced a failure (non-zero exit). This is the L5 gate fed to doneOracleDecision as neroFalsified."
+  field name=counterexample type="string | null"
+  field name=observed type="string | null"
+  field name=attackText type=string doc="The critic's full challenge — advisory; surfaced to the human merge gate whether or not it blocked."
+  field name=critic type=string doc="Engine id used as the falsifier, '' when none was usable."
+  field name=advisoryOnly type=boolean doc="TRUE when the round could not produce a verifiable verdict (no agent-capable critic, sandbox/dispatch failure, timeout) — it must NOT block; it only informs the human."
+  field name=note type=string doc="Human-readable reason for the outcome (why it blocked / why it's advisory)."
+
+fn name=isAgentCapableEngine params="engine:{ binary?: string; agent?: unknown; modes?: readonly string[] }" returns=boolean export=true
+  doc "True when an engine can act as a TOOL-ENABLED agent critic in the done-falsifier — i.e. it has a real CLI binary that supports agent mode (codex/claude/agy/aider). API-only coding-plan engines (kimi/minimax/zai) have no binary and no agent-mode config, so they cannot reliably read code + run commands in the sandbox; the falsifier skips them and falls back to advisory. Pure — exported for testing. (FOLLOW-UP: an explicit `agentCapable` flag on EngineDefinition would beat this structural inference.)"
+  handler <<<
+    if (!engine || !engine.binary) return false;
+    if (engine.agent) return true;
+    return Array.isArray(engine.modes) && engine.modes.includes('agent');
+  >>>
+
+fn name=buildFalsifierPrompt params="opts:{ claim:string; gate?:string }" returns=string export=true
+  doc "Build the tool-enabled falsifier prompt. Unlike the tool-LESS nero prompt, it grants full sandbox tool access and DEMANDS a self-asserting, re-runnable counterexample (exit non-zero iff the bug is present) so the verdict can be mechanically verified rather than trusted. Pure — exported for testing."
+  handler <<<
+    const lines: string[] = [];
+    lines.push('You are a falsification critic with FULL tool access to this repository — a disposable sandbox copy. You may read any file and run any shell command.');
+    lines.push('');
+    lines.push('A build agent claims its work is complete:');
+    lines.push(`CLAIM: ${opts.claim.trim()}`);
+    if (opts.gate && opts.gate.trim()) {
+      lines.push('');
+      lines.push(`The project's acceptance gate (what "passing" means) is: ${opts.gate.trim()}`);
+    }
+    lines.push('');
+    lines.push('Your job: try to BREAK the claim. Inspect the ACTUAL code and RUN commands to find a concrete case where behavior is wrong, or where the gate is gameable (passes despite broken behavior). Do NOT speculate — verify every failure by actually running it first.');
+    lines.push('');
+    lines.push('If — and ONLY if — you reproduce a real failure, end your reply with EXACTLY these three lines:');
+    lines.push('COUNTEREXAMPLE: <one shell command that EXITS NON-ZERO if and only if the bug is present — write it as a self-checking assertion (wrap the check in `test`, `grep -q`, a one-line `python -c "assert ..."`, or chain `&&`/`||`). It will be re-run VERBATIM in a clean copy of this repo; if it exits zero, your counterexample is REJECTED and the claim is treated as not-yet-broken.>');
+    lines.push('OBSERVED: <the wrong output or behavior you actually saw>');
+    lines.push('VERDICT: FLAWED');
+    lines.push('');
+    lines.push('If you tried and could NOT break it, end with exactly:');
+    lines.push('VERDICT: SOUND');
+    return lines.join('\n');
+  >>>
+
+fn name=parseFalsifierOutput params="text:string" returns="{ counterexample: string | null; observed: string | null; verdict: 'flawed' | 'proceed-with-caution' | 'sound' | 'unknown' }" export=true
+  doc "Parse a done-falsifier reply: the LAST COUNTEREXAMPLE: line (the runnable command), the LAST OBSERVED: line, and the verdict (via parseNeroVerdict — last VERDICT: marker wins). Tolerant of casing + surrounding whitespace. Pure — exported for testing."
+  handler <<<
+    const ceMatches = [...text.matchAll(/^[ \t]*COUNTEREXAMPLE:[ \t]*(.+?)[ \t]*$/gim)];
+    const obMatches = [...text.matchAll(/^[ \t]*OBSERVED:[ \t]*(.+?)[ \t]*$/gim)];
+    const ce = ceMatches.length ? ceMatches[ceMatches.length - 1][1].trim() : '';
+    const ob = obMatches.length ? obMatches[obMatches.length - 1][1].trim() : '';
+    return { counterexample: ce.length ? ce : null, observed: ob.length ? ob : null, verdict: parseNeroVerdict(text) };
+  >>>
+
+fn name=runDoneFalsifier async=true params="opts:{ claim:string; gate?:string; cwd:string; engines:string[]; registry:EngineRegistry; adapter:EngineAdapter; timeout:number; outputDir:string; ratings?:RatingRecord; signal?:AbortSignal; sandbox?:SandboxOps }" returns="Promise<FalsifierResult>" export=true
+  doc "The L4/L5 done-oracle: an EVIDENCE-BASED, mechanically-verified falsifier. (1) Pick the top-rated AGENT-CAPABLE critic from the advisor pool via the same critique->tribunal->global cascade nero uses, skipping API-only engines that can't read code/run commands (advisory fallback if none). (2) Clone the live working tree into a throwaway sandbox. (3) Dispatch the critic in AGENT mode against the sandbox to find a runnable counterexample. (4) MECHANICALLY re-run the proposed COUNTEREXAMPLE in the sandbox — `falsified` is true ONLY when the verdict is FLAWED with a counterexample AND the re-run reproduces a failure (non-zero exit). An opinion with no reproducible command NEVER blocks. The full attack text is returned as advisory for the human merge gate. SECURITY: auto-exec runs ONLY inside the disposable sandbox, never the live tree; time-bounded + abort-aware. (FOLLOW-UP: command allowlist; non-APFS sandbox strategy; separate critic timeout/budget.) Sandbox + exec injected (SandboxOps) for unit-testing."
+  handler <<<
+    const advisory = (over: Partial<FalsifierResult>): FalsifierResult => ({ falsified: false, counterexample: null, observed: null, attackText: '', critic: '', advisoryOnly: true, note: '', ...over });
+    if (opts.signal?.aborted) return advisory({ note: 'aborted before falsification' });
+    if (!opts.engines || opts.engines.length === 0) return advisory({ note: 'no advisor pool — falsification skipped' });
+    const dispatchAgent = opts.adapter.dispatchAgent;
+    if (!dispatchAgent) return advisory({ note: 'adapter has no agent-dispatch path — falsification skipped' });
+
+    // Pick the top-rated AGENT-CAPABLE critic via the same critique->tribunal->global
+    // cascade nero uses, then take the first one that can actually run tools. Seed
+    // lineage only for the real on-disk store (NOT when ratings are injected in a test).
+    if (!opts.ratings) seedNewEnginesFromRegistry(opts.registry);
+    const ratings = opts.ratings ?? getRatings();
+    const ranked = rankNeroCritics(opts.engines, ratings);
+    let critic = '';
+    let criticEngine: any = null;
+    for (const r of ranked) {
+      try {
+        const eng = opts.registry.get(r.engineId);
+        if (isAgentCapableEngine(eng)) { critic = r.engineId; criticEngine = eng; break; }
+      } catch { /* stale/unknown id — skip */ }
+    }
+    if (!critic) return advisory({ note: 'no agent-capable critic in the advisor pool (API-only engines cannot read code) — falsification skipped; surfacing to the human gate' });
+
+    // Default sandbox ops: APFS clonefile (instant CoW) with a plain-copy fallback;
+    // sh -c for the mechanical re-run; rm -rf for teardown. Injected in tests.
+    const sandbox: SandboxOps = opts.sandbox ?? {
+      clone: async (src, dest, signal) => {
+        const cloned = await spawnWithTimeout({ command: 'cp', args: ['-Rc', src, dest], cwd: dirname(dest), timeout: 180_000, signal });
+        if (cloned.exitCode === 0) return true;
+        const copied = await spawnWithTimeout({ command: 'cp', args: ['-R', src, dest], cwd: dirname(dest), timeout: 600_000, signal });
+        return copied.exitCode === 0;
+      },
+      exec: async (cmd, cwd, timeout, signal) => {
+        const r = await spawnWithTimeout({ command: 'sh', args: ['-c', cmd], cwd, timeout, signal });
+        return { exitCode: r.exitCode, stdout: String(r.stdout ?? ''), stderr: String(r.stderr ?? ''), timedOut: r.timedOut === true };
+      },
+      remove: async (dir) => { await spawnWithTimeout({ command: 'rm', args: ['-rf', dir], cwd: dirname(dir), timeout: 60_000 }); },
+    };
+
+    const sandboxDir = join(opts.outputDir, `sandbox-${Date.now()}`);
+    let cloned = false;
+    try {
+      cloned = await sandbox.clone(opts.cwd, sandboxDir, opts.signal);
+      if (!cloned) return advisory({ critic, note: `sandbox clone of ${opts.cwd} failed — falsification skipped` });
+      if (opts.signal?.aborted) return advisory({ critic, note: 'aborted after sandbox clone' });
+
+      const prompt = buildFalsifierPrompt({ claim: opts.claim, gate: opts.gate });
+      const sysPrompt = 'You are an adversarial falsification critic working inside a disposable sandbox copy of a repository. Use your tools to read code and run commands; verify any failure by executing it before concluding.';
+      let attackText = '';
+      try {
+        const res = await dispatchAgent({
+          engine: criticEngine, prompt, systemPrompt: sysPrompt, cwd: sandboxDir,
+          mode: 'agent', timeout: opts.timeout, outputDir: opts.outputDir, signal: opts.signal,
+        });
+        attackText = String(res?.stdout ?? '').trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+        const dispatchOk = (res?.exitCode ?? 1) === 0 && res?.timedOut !== true;
+        if (!dispatchOk || attackText.length === 0) {
+          return advisory({ critic, attackText, note: res?.timedOut ? 'critic timed out — falsification inconclusive' : 'critic produced no usable output — falsification inconclusive' });
+        }
+      } catch (err) {
+        if (opts.signal?.aborted || (err as any)?.name === 'AbortError') return advisory({ critic, note: 'aborted during critic dispatch' });
+        return advisory({ critic, note: `critic dispatch failed: ${err instanceof Error ? err.message : String(err)} — falsification inconclusive` });
+      }
+
+      const parsed = parseFalsifierOutput(attackText);
+      // No FLAWED verdict or no runnable counterexample -> never block. Surface as advisory-not-blocking.
+      if (parsed.verdict !== 'flawed' || !parsed.counterexample) {
+        return { falsified: false, counterexample: parsed.counterexample, observed: parsed.observed, attackText, critic, advisoryOnly: false, note: parsed.verdict === 'sound' ? 'critic could not break the claim (SOUND)' : 'critic gave no reproducible counterexample — not blocking' };
+      }
+
+      // MECHANICAL VERIFICATION (the anti-false-positive core): re-run the proposed
+      // counterexample in the sandbox. Block ONLY if it actually reproduces a failure
+      // (non-zero exit). A timeout/abort is inconclusive -> do NOT block.
+      if (opts.signal?.aborted) return { falsified: false, counterexample: parsed.counterexample, observed: parsed.observed, attackText, critic, advisoryOnly: false, note: 'aborted before mechanical verification — not blocking' };
+      const rerun = await sandbox.exec(parsed.counterexample, sandboxDir, opts.timeout, opts.signal);
+      const reproduced = rerun.timedOut !== true && rerun.exitCode !== 0;
+      return {
+        falsified: reproduced,
+        counterexample: parsed.counterexample,
+        observed: parsed.observed,
+        attackText,
+        critic,
+        advisoryOnly: false,
+        note: reproduced
+          ? `counterexample reproduced a failure (exit ${rerun.exitCode}) in the sandbox`
+          : (rerun.timedOut ? 'counterexample re-run timed out — inconclusive, not blocking' : 'counterexample did NOT reproduce (exit 0) — rejected, not blocking'),
+      };
+    } finally {
+      if (cloned) { try { await sandbox.remove(sandboxDir); } catch { /* best-effort teardown */ } }
+    }
+  >>>
+
+fn name=runDoneOracle async=true params="opts:{ claim: string; diff: string; gate?: string; gateOk: boolean; oracleTampered: boolean; engines: string[]; registry: EngineRegistry; adapter: EngineAdapter; timeout: number; outputDir: string; cwd: string; ratings?: RatingRecord; signal?: AbortSignal; sandbox?: SandboxOps }" returns="Promise<{ passed: boolean; reason: string; attackText: string; counterexample: string | null; observed: string | null; critic: string; advisoryOnly: boolean }>"
+  doc "Run the conquer done-oracle for a completion claim: L1 acceptance-drift (any EXISTING — non-new — test file modified in the diff is a weakening), then the L4/L5 EVIDENCE-BASED falsifier (a tool-enabled agent critic tries to reproduce a runnable counterexample in a throwaway sandbox; blocks ONLY on a mechanically-verified failure — never on a bare opinion), then the pure doneOracleDecision. gateOk + oracleTampered are computed by the caller in the worktree. The falsifier's attack text + counterexample are returned for the human merge gate whether or not they blocked."
   handler <<<
     const changed = parseChangedLines(opts.diff);
     const newSet = new Set(newFilesInDiff(opts.diff));
     const weakenedTests = Object.keys(changed).some((f) => isTestFile(f) && !newSet.has(f));
 
-    let neroFalsified = false;
+    let falsifier: FalsifierResult = { falsified: false, counterexample: null, observed: null, attackText: '', critic: '', advisoryOnly: true, note: '' };
     if (!opts.signal?.aborted && opts.engines.length > 0) {
-      const consult = await dispatchConsult({
-        mode: 'nero',
-        question: `A build agent claims this work is complete. Try to REFUTE the claim by finding a concrete, runnable counterexample in the actual codebase — a command, input, or path that breaks it. Default to FLAWED if you find one. Claim: ${opts.claim}`,
-        engines: opts.engines, registry: opts.registry, adapter: opts.adapter,
-        timeout: opts.timeout, outputDir: opts.outputDir, cwd: opts.cwd, signal: opts.signal,
+      falsifier = await runDoneFalsifier({
+        claim: opts.claim, gate: opts.gate, cwd: opts.cwd, engines: opts.engines,
+        registry: opts.registry, adapter: opts.adapter, timeout: opts.timeout,
+        outputDir: opts.outputDir, ratings: opts.ratings, signal: opts.signal, sandbox: opts.sandbox,
       });
-      neroFalsified = consult.flawed;
     }
 
-    return doneOracleDecision({ gateOk: opts.gateOk, oracleTampered: opts.oracleTampered, weakenedTests, claim: opts.claim, neroFalsified });
+    const decision = doneOracleDecision({ gateOk: opts.gateOk, oracleTampered: opts.oracleTampered, weakenedTests, claim: opts.claim, neroFalsified: falsifier.falsified });
+    return { ...decision, attackText: falsifier.attackText, counterexample: falsifier.counterexample, observed: falsifier.observed, critic: falsifier.critic, advisoryOnly: falsifier.advisoryOnly };
   >>>
 
 fn name=runConquer async=true params="opts:ConquerOptions" returns="Promise<ConquerResult>" export=true
@@ -269,6 +433,9 @@ fn name=runConquer async=true params="opts:ConquerOptions" returns="Promise<Conq
     let done = false;
     let lastClaim = '';
     let doneReason = '';
+    let lastAttackText = '';
+    let lastCounterexample = '';
+    let lastObserved = '';
     let stopReason: 'done' | 'cap-turns' | 'cap-time' | 'aborted' | 'builder-failed' = 'cap-turns';
 
     const emit = (n: number, action: 'build' | 'consult' | 'done-check' | 'stop', detail: string): void => {
@@ -305,14 +472,21 @@ fn name=runConquer async=true params="opts:ConquerOptions" returns="Promise<Conq
         lastClaim = sig.claim;
         const ev = await opts.evaluateDone(sig.claim);
         const verdict = await runDoneOracle({
-          claim: sig.claim, diff: ev.diff, gateOk: ev.gateOk, oracleTampered: ev.oracleTampered,
+          claim: sig.claim, diff: ev.diff, gate: opts.gate, gateOk: ev.gateOk, oracleTampered: ev.oracleTampered,
           engines: opts.advisorEngines, registry: opts.registry, adapter: opts.adapter,
           timeout: opts.timeout, outputDir: opts.outputDir, cwd, signal: opts.signal,
         });
         doneReason = verdict.reason;
+        lastAttackText = verdict.attackText;
+        lastCounterexample = verdict.counterexample ?? '';
+        lastObserved = verdict.observed ?? '';
         emit(state.turn, 'done-check', verdict.reason);
         if (verdict.passed) { done = true; stopReason = 'done'; break; }
-        prompt = `${out}\n\n[Cesar] Not done yet — ${verdict.reason}. Fix it and continue; re-emit CONQUER_DONE when the gate is green.`;
+        // Feed the verified counterexample (if any) back so the builder can target the exact failure.
+        const ce = verdict.counterexample
+          ? ` A falsifier reproduced a failure: \`${verdict.counterexample}\`${verdict.observed ? ` → observed: ${verdict.observed}` : ''}.`
+          : '';
+        prompt = `${out}\n\n[Cesar] Not done yet — ${verdict.reason}.${ce} Fix it and continue; re-emit CONQUER_DONE when the gate is green.`;
         continue;
       }
 
@@ -336,5 +510,6 @@ fn name=runConquer async=true params="opts:ConquerOptions" returns="Promise<Conq
     return {
       ok: done, task: opts.task, turnsUsed: state.turn, consultsRun: state.consults,
       done, stopReason, lastClaim, doneReason, transcript, outputDir: opts.outputDir,
+      attackText: lastAttackText, counterexample: lastCounterexample, observed: lastObserved,
     };
   >>>

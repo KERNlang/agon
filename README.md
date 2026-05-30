@@ -303,7 +303,7 @@ agon conquer "..." --push                           # on success, commit + push 
 - **A layered done-oracle, not a self-claim.** On `CONQUER_DONE: <claim>` the cheap deterministic layers run first — the `--gate` command (L0), a diff acceptance-drift check that blocks weakened/rewritten existing tests (L1), and an empty-claim guard (L2). Only when those pass does the **evidence-based falsifier** run (L4/L5): a _tool-enabled_ critic clones the working tree into a throwaway sandbox, reads the real code and runs commands to hunt a counterexample, then Cesar **mechanically re-runs** that counterexample in the sandbox and blocks "done" _only_ when it actually reproduces a failure — never on a bare opinion or confidence score. The adversary's findings are surfaced to your merge gate whether or not they blocked. A red gate, a weakened/tampered test, or a _verified_ counterexample blocks "done."
 - **Stops at a human merge gate.** conquer never auto-merges to main. By default it leaves the builder's changes in the working tree for you to review; `--push` commits + pushes the branch so you merge the PR. The done-oracle is irreducible for open-ended work, so the human merge gate is load-bearing — it holds the original product intent no automated layer can reconstruct.
 
-_(Roadmap: interactive `/conquer` in the REPL, per-session git-worktree isolation, frozen-oracle hash, and `agon call conquer` for external CLIs.)_
+_(Roadmap: per-session git-worktree isolation, a frozen-oracle hash, and OS-level sandbox/network isolation for the falsifier's auto-exec. Interactive `/conquer` in the REPL and `agon call conquer` for external CLIs have shipped.)_
 
 ## Interactive REPL
 

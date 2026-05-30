@@ -10,6 +10,33 @@ import {
 } from 'node:child_process';
 import { createInterface, type Interface as Readline } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve, delimiter as PATH_DELIM } from 'node:path';
+import { existsSync } from 'node:fs';
+
+// Locate the bundled Python package root (<pkg>/py, containing kern_engines/)
+// by walking UP from this module's on-disk location. We resolve from
+// import.meta.url — NOT cwd, NOT a global pip install — so
+// `python3 -m kern_engines.cli.daemon` resolves identically in this repo, in a
+// git worktree, and when @agon/kern-engines is npm-installed into node_modules,
+// for ANY dispatch cwd. The only runtime prerequisite is python3 on PATH (the
+// daemon is stdlib-only). We WALK rather than use a fixed relative path because
+// the bundler (tsup) may emit the running code into dist/chunk-*.js (one level
+// up from dist/cli/), so a hardcoded "../../py" is fragile — the walk finds the
+// real py/ root regardless of how the JS was chunked.
+function findPythonRoot(fromUrl: string): string {
+  let dir = dirname(fileURLToPath(fromUrl));
+  for (let i = 0; i < 8; i++) {
+    const cand = resolve(dir, 'py');
+    if (existsSync(resolve(cand, 'kern_engines', '__init__.py'))) return cand;
+    const parent = dirname(dir);
+    if (parent === dir) break; // reached filesystem root
+    dir = parent;
+  }
+  // Fallback: the canonical <pkg>/{dist,py} layout, assuming dist/cli/<file>.
+  return resolve(dirname(fileURLToPath(fromUrl)), '..', '..', 'py');
+}
+const PYTHON_ROOT = findPythonRoot(import.meta.url);
 
 export class PtySessionError extends Error {
   readonly kind: 'spawn' | 'protocol' | 'timeout' | 'engine';
@@ -117,9 +144,14 @@ export class PtyCliSession {
 
     let child: ChildProcessWithoutNullStreams;
     try {
-      const env = opts.env
-        ? { ...process.env, ...opts.env } as Record<string, string>
-        : process.env as Record<string, string>;
+      // Clone (never mutate process.env) and prepend our bundled Python root to
+      // PYTHONPATH so `-m kern_engines.cli.daemon` resolves regardless of cwd or
+      // whether the user pip-installed anything. Prepend (not replace) so a
+      // caller's PYTHONPATH still applies as a fallback.
+      const env: Record<string, string> = { ...process.env, ...(opts.env ?? {}) } as Record<string, string>;
+      env.PYTHONPATH = env.PYTHONPATH
+        ? `${PYTHON_ROOT}${PATH_DELIM}${env.PYTHONPATH}`
+        : PYTHON_ROOT;
       child = spawnProcess(py, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: opts.cwd ?? process.cwd(),

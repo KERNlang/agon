@@ -270,7 +270,7 @@ export function doneOracleDecision(i: DoneOracleInput): { passed: boolean; reaso
 // @kern-source: conquer:248
 export interface SandboxOps {
   clone: (src: string, dest: string, signal?: AbortSignal) => Promise<boolean>;
-  exec: (cmd: string, cwd: string, timeout: number, signal?: AbortSignal) => Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }>;
+  exec: (cmd: string, cwd: string, timeoutMs: number, signal?: AbortSignal) => Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }>;
   remove: (dir: string) => Promise<void>;
 }
 
@@ -335,9 +335,29 @@ export function parseFalsifierOutput(text: string): { counterexample: string | n
 }
 
 /**
- * The L4/L5 done-oracle: an EVIDENCE-BASED, mechanically-verified falsifier. (1) Pick the top-rated AGENT-CAPABLE critic from the advisor pool via the same critique->tribunal->global cascade nero uses, skipping API-only engines that can't read code/run commands (advisory fallback if none). (2) Clone the live working tree into a throwaway sandbox. (3) Dispatch the critic in AGENT mode against the sandbox to find a runnable counterexample. (4) MECHANICALLY re-run the proposed COUNTEREXAMPLE in the sandbox — `falsified` is true ONLY when the verdict is FLAWED with a counterexample AND the re-run reproduces a failure (non-zero exit). An opinion with no reproducible command NEVER blocks. The full attack text is returned as advisory for the human merge gate. SECURITY: auto-exec runs ONLY inside the disposable sandbox, never the live tree; time-bounded + abort-aware. (FOLLOW-UP: command allowlist; non-APFS sandbox strategy; separate critic timeout/budget.) Sandbox + exec injected (SandboxOps) for unit-testing.
+ * Defence-in-depth gate on the LLM-proposed counterexample before AUTO-EXECUTING it (codex/minimax review, blocking). Even inside the CoW sandbox, `sh -c` would otherwise let a confused/hallucinating critic escape to the wider filesystem or network. Rejects the catastrophic patterns a legitimate self-asserting behavioural check NEVER needs — privilege escalation, recursive force-deletes, fork bombs, device/disk clobber, host control, network/exfil tools, recursive perm changes, remote git mutation, and write-redirects into absolute system dirs. A rejected counterexample is NOT executed → treated as advisory (surfaced to the human), erring safe. Pairs with HOME/TMPDIR confinement + the CoW sandbox + the gate-green precondition. Returns true = safe to run. Pure — exported for testing. (FOLLOW-UP: real OS/container confinement — sandbox-exec/bwrap with denied network — for untrusted tasks; this denylist + env-confinement is the v1 floor.)
  */
 // @kern-source: conquer:308
+export function isSafeCounterexample(cmd: string): boolean {
+  const c = cmd.toLowerCase();
+  const danger: RegExp[] = [
+    /\bsudo\b|\bdoas\b|\bsu\s+-/,                              // privilege escalation
+    /\brm\s+-[a-z]*r[a-z]*f\b|\brm\s+-[a-z]*f[a-z]*r\b/,        // recursive force delete
+    /:\s*\(\s*\)\s*\{/,                                         // fork bomb :(){
+    /\bmkfs\b|\bdd\b[^|&;]*\bof=|>\s*\/dev\//,                  // disk / device clobber
+    /\b(shutdown|reboot|halt|poweroff|killall)\b/,             // host control
+    /\b(curl|wget|nc|ncat|telnet|ssh|scp|sftp)\b/,             // network / exfil tools
+    /\bchmod\s+-[a-z]*r\b|\bchown\s+-[a-z]*r\b/,               // recursive perm change
+    /\bgit\s+push\b/,                                           // remote mutation
+    />>?\s*\/(etc|usr|bin|sbin|var|system|library|opt)\b/,     // write-redirect to abs system dirs
+  ];
+  return !danger.some((re) => re.test(c));
+}
+
+/**
+ * The L4/L5 done-oracle: an EVIDENCE-BASED, mechanically-verified falsifier. (1) Pick the top-rated AGENT-CAPABLE critic from the advisor pool via the same critique->tribunal->global cascade nero uses, skipping API-only engines that can't read code/run commands (advisory fallback if none). (2) Clone the live working tree into a throwaway CoW sandbox. (3) Dispatch the critic in AGENT mode against the sandbox to find a runnable counterexample. (4) MECHANICALLY re-run the proposed COUNTEREXAMPLE in the sandbox — `falsified` is true ONLY when the verdict is FLAWED with a counterexample, the command passes the isSafeCounterexample auto-exec gate, AND the re-run reproduces a failure (non-zero exit). An opinion with no reproducible command NEVER blocks. The full attack text is returned as advisory for the human merge gate. SECURITY: auto-exec runs ONLY inside the disposable sandbox with HOME/TMPDIR confined to it, never the live tree; the command is denylist-screened; time-bounded + abort-aware; ANY unexpected error fails SAFE to advisory (never blocks, never crashes the conquer loop). (FOLLOW-UP: real OS/container confinement with denied network for untrusted tasks; non-APFS sandbox strategy.) Sandbox + exec injected (SandboxOps) for unit-testing.
+ */
+// @kern-source: conquer:326
 export async function runDoneFalsifier(opts: { claim:string; gate?:string; cwd:string; engines:string[]; registry:EngineRegistry; adapter:EngineAdapter; timeout:number; outputDir:string; ratings?:RatingRecord; signal?:AbortSignal; sandbox?:SandboxOps }): Promise<FalsifierResult> {
   const advisory = (over: Partial<FalsifierResult>): FalsifierResult => ({ falsified: false, counterexample: null, observed: null, attackText: '', critic: '', advisoryOnly: true, note: '', ...over });
   if (opts.signal?.aborted) return advisory({ note: 'aborted before falsification' });
@@ -362,7 +382,10 @@ export async function runDoneFalsifier(opts: { claim:string; gate?:string; cwd:s
   if (!critic) return advisory({ note: 'no agent-capable critic in the advisor pool (API-only engines cannot read code) — falsification skipped; surfacing to the human gate' });
 
   // Default sandbox ops: APFS clonefile (instant CoW) with a plain-copy fallback;
-  // sh -c for the mechanical re-run; rm -rf for teardown. Injected in tests.
+  // sh -c for the mechanical re-run; rm -rf for teardown. Injected in tests. The
+  // exec CONFINES HOME/TMPDIR/XDG to the sandbox so a `~`-relative command can't
+  // reach the real home dir (defence-in-depth with isSafeCounterexample). timeoutMs
+  // is MILLISECONDS (spawnWithTimeout's unit) — the caller converts from seconds.
   const sandbox: SandboxOps = opts.sandbox ?? {
     clone: async (src, dest, signal) => {
       const cloned = await spawnWithTimeout({ command: 'cp', args: ['-Rc', src, dest], cwd: dirname(dest), timeout: 180_000, signal });
@@ -370,14 +393,15 @@ export async function runDoneFalsifier(opts: { claim:string; gate?:string; cwd:s
       const copied = await spawnWithTimeout({ command: 'cp', args: ['-R', src, dest], cwd: dirname(dest), timeout: 600_000, signal });
       return copied.exitCode === 0;
     },
-    exec: async (cmd, cwd, timeout, signal) => {
-      const r = await spawnWithTimeout({ command: 'sh', args: ['-c', cmd], cwd, timeout, signal });
+    exec: async (cmd, cwd, timeoutMs, signal) => {
+      const r = await spawnWithTimeout({ command: 'sh', args: ['-c', cmd], cwd, timeout: timeoutMs, signal, env: { HOME: cwd, TMPDIR: cwd, XDG_CONFIG_HOME: cwd, XDG_CACHE_HOME: cwd } });
       return { exitCode: r.exitCode, stdout: String(r.stdout ?? ''), stderr: String(r.stderr ?? ''), timedOut: r.timedOut === true };
     },
     remove: async (dir) => { await spawnWithTimeout({ command: 'rm', args: ['-rf', dir], cwd: dirname(dir), timeout: 60_000 }); },
   };
 
-  const sandboxDir = join(opts.outputDir, `sandbox-${Date.now()}`);
+  // Unique-per-run sandbox dir (random suffix avoids a same-millisecond collision).
+  const sandboxDir = join(opts.outputDir, `sandbox-${Date.now()}-${Math.floor(Math.random() * 1e9).toString(36)}`);
   let cloned = false;
   try {
     cloned = await sandbox.clone(opts.cwd, sandboxDir, opts.signal);
@@ -408,11 +432,21 @@ export async function runDoneFalsifier(opts: { claim:string; gate?:string; cwd:s
       return { falsified: false, counterexample: parsed.counterexample, observed: parsed.observed, attackText, critic, advisoryOnly: false, note: parsed.verdict === 'sound' ? 'critic could not break the claim (SOUND)' : 'critic gave no reproducible counterexample — not blocking' };
     }
 
+    // AUTO-EXEC SAFETY GATE: refuse to mechanically run a catastrophic/escaping
+    // command. A rejected counterexample is surfaced to the human but NEVER executed
+    // and never blocks (cannot be mechanically verified) — erring safe.
+    if (!isSafeCounterexample(parsed.counterexample)) {
+      return { falsified: false, counterexample: parsed.counterexample, observed: parsed.observed, attackText, critic, advisoryOnly: true, note: 'counterexample rejected by the auto-exec safety gate (destructive/escaping command) — not run; surfaced to the human gate' };
+    }
+
     // MECHANICAL VERIFICATION (the anti-false-positive core): re-run the proposed
-    // counterexample in the sandbox. Block ONLY if it actually reproduces a failure
-    // (non-zero exit). A timeout/abort is inconclusive -> do NOT block.
+    // counterexample in the confined sandbox. Block ONLY if it actually reproduces a
+    // failure (non-zero exit). A timeout/abort is inconclusive -> do NOT block. The
+    // re-run gets its OWN bounded timeout (opts.timeout is SECONDS; spawn wants ms),
+    // capped at 5 min — separate from the full critic-dispatch budget.
     if (opts.signal?.aborted) return { falsified: false, counterexample: parsed.counterexample, observed: parsed.observed, attackText, critic, advisoryOnly: false, note: 'aborted before mechanical verification — not blocking' };
-    const rerun = await sandbox.exec(parsed.counterexample, sandboxDir, opts.timeout, opts.signal);
+    const rerunTimeoutMs = Math.min(Math.max(opts.timeout, 1), 300) * 1000;
+    const rerun = await sandbox.exec(parsed.counterexample, sandboxDir, rerunTimeoutMs, opts.signal);
     const reproduced = rerun.timedOut !== true && rerun.exitCode !== 0;
     return {
       falsified: reproduced,
@@ -425,19 +459,31 @@ export async function runDoneFalsifier(opts: { claim:string; gate?:string; cwd:s
         ? `counterexample reproduced a failure (exit ${rerun.exitCode}) in the sandbox`
         : (rerun.timedOut ? 'counterexample re-run timed out — inconclusive, not blocking' : 'counterexample did NOT reproduce (exit 0) — rejected, not blocking'),
     };
+  } catch (err) {
+    // FAIL SAFE: any unexpected error (clone/exec throw, etc.) must never crash the
+    // conquer loop nor block 'done' on a non-result — degrade to advisory.
+    if (opts.signal?.aborted || (err as any)?.name === 'AbortError') return advisory({ critic, note: 'aborted during falsification' });
+    return advisory({ critic, note: `falsifier errored: ${err instanceof Error ? err.message : String(err)} — degraded to advisory (not blocking)` });
   } finally {
     if (cloned) { try { await sandbox.remove(sandboxDir); } catch { /* best-effort teardown */ } }
   }
 }
 
 /**
- * Run the conquer done-oracle for a completion claim: L1 acceptance-drift (any EXISTING — non-new — test file modified in the diff is a weakening), then the L4/L5 EVIDENCE-BASED falsifier (a tool-enabled agent critic tries to reproduce a runnable counterexample in a throwaway sandbox; blocks ONLY on a mechanically-verified failure — never on a bare opinion), then the pure doneOracleDecision. gateOk + oracleTampered are computed by the caller in the worktree. The falsifier's attack text + counterexample are returned for the human merge gate whether or not they blocked.
+ * Run the conquer done-oracle for a completion claim. CHEAP DETERMINISTIC LAYERS FIRST (L0/L1/L2): a tampered oracle, weakened existing tests, a red gate, or an empty claim each block immediately — WITHOUT cloning the repo or dispatching an agent (so a premature CONQUER_DONE never burns a full falsifier run). Only when those pass does the L4/L5 EVIDENCE-BASED falsifier run (a tool-enabled agent critic tries to reproduce a runnable counterexample in a throwaway sandbox; blocks ONLY on a mechanically-verified failure — never on a bare opinion). gateOk + oracleTampered are computed by the caller in the worktree. Returns `falsified` (was the block a verified reproduction?) plus the falsifier's attack text + counterexample for the human merge gate, whether or not they blocked.
  */
-// @kern-source: conquer:402
-export async function runDoneOracle(opts: { claim: string; diff: string; gate?: string; gateOk: boolean; oracleTampered: boolean; engines: string[]; registry: EngineRegistry; adapter: EngineAdapter; timeout: number; outputDir: string; cwd: string; ratings?: RatingRecord; signal?: AbortSignal; sandbox?: SandboxOps }): Promise<{ passed: boolean; reason: string; attackText: string; counterexample: string | null; observed: string | null; critic: string; advisoryOnly: boolean }> {
+// @kern-source: conquer:439
+export async function runDoneOracle(opts: { claim: string; diff: string; gate?: string; gateOk: boolean; oracleTampered: boolean; engines: string[]; registry: EngineRegistry; adapter: EngineAdapter; timeout: number; outputDir: string; cwd: string; ratings?: RatingRecord; signal?: AbortSignal; sandbox?: SandboxOps }): Promise<{ passed: boolean; reason: string; falsified: boolean; attackText: string; counterexample: string | null; observed: string | null; critic: string; advisoryOnly: boolean }> {
   const changed = parseChangedLines(opts.diff);
   const newSet = new Set(newFilesInDiff(opts.diff));
   const weakenedTests = Object.keys(changed).some((f) => isTestFile(f) && !newSet.has(f));
+
+  // L0/L1/L2 first (cheap, deterministic). If the claim is already doomed, skip the
+  // expensive falsifier entirely — its outcome can't change the verdict.
+  const pre = doneOracleDecision({ gateOk: opts.gateOk, oracleTampered: opts.oracleTampered, weakenedTests, claim: opts.claim, neroFalsified: false });
+  if (!pre.passed) {
+    return { ...pre, falsified: false, attackText: '', counterexample: null, observed: null, critic: '', advisoryOnly: false };
+  }
 
   let falsifier: FalsifierResult = { falsified: false, counterexample: null, observed: null, attackText: '', critic: '', advisoryOnly: true, note: '' };
   if (!opts.signal?.aborted && opts.engines.length > 0) {
@@ -449,13 +495,13 @@ export async function runDoneOracle(opts: { claim: string; diff: string; gate?: 
   }
 
   const decision = doneOracleDecision({ gateOk: opts.gateOk, oracleTampered: opts.oracleTampered, weakenedTests, claim: opts.claim, neroFalsified: falsifier.falsified });
-  return { ...decision, attackText: falsifier.attackText, counterexample: falsifier.counterexample, observed: falsifier.observed, critic: falsifier.critic, advisoryOnly: falsifier.advisoryOnly };
+  return { ...decision, falsified: falsifier.falsified, attackText: falsifier.attackText, counterexample: falsifier.counterexample, observed: falsifier.observed, critic: falsifier.critic, advisoryOnly: falsifier.advisoryOnly };
 }
 
 /**
  * The supervised-autonomous build loop. Drives the builder engine in agent mode turn-by-turn; on a CONQUER_ASK fork, classifies it and convenes the cheapest sufficient consult (nero→tribunal→brainstorm→council), feeding back a compact verdict; on a CONQUER_DONE claim, runs the done-oracle via the injected evaluateDone seam (the caller computes diff/gate/oracle in the worktree). Stops on done, a turn/wall-clock cap, abort, or builder failure. Auto-approve + worktree isolation + the human merge gate live in the CLI surface. Composes the injected adapter + the agon mode runners; no environment ops here (kept testable).
  */
-// @kern-source: conquer:422
+// @kern-source: conquer:466
 export async function runConquer(opts: ConquerOptions): Promise<ConquerResult> {
   const cwd = opts.cwd ?? resolveWorkingDir();
   const caps = opts.caps ?? { maxTurns: 40, maxWallClockMs: 0 };
@@ -517,8 +563,10 @@ export async function runConquer(opts: ConquerOptions): Promise<ConquerResult> {
       lastObserved = verdict.observed ?? '';
       emit(state.turn, 'done-check', verdict.reason);
       if (verdict.passed) { done = true; stopReason = 'done'; break; }
-      // Feed the verified counterexample (if any) back so the builder can target the exact failure.
-      const ce = verdict.counterexample
+      // Feed back the VERIFIED counterexample (only when the re-run actually
+      // reproduced — falsified) so the builder targets the exact failure. A rejected/
+      // advisory counterexample is left for the human gate, not pitched as reproduced.
+      const ce = verdict.falsified && verdict.counterexample
         ? ` A falsifier reproduced a failure: \`${verdict.counterexample}\`${verdict.observed ? ` → observed: ${verdict.observed}` : ''}.`
         : '';
       prompt = `${out}\n\n[Cesar] Not done yet — ${verdict.reason}.${ce} Fix it and continue; re-emit CONQUER_DONE when the gate is green.`;

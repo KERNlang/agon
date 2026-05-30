@@ -65,7 +65,7 @@ export {
   pickEscalationMode, classifyStuck, shouldEscalate, shouldAutoApprove, summarizeConsultForBuilder,
   capBreached, parseBuilderSignals, classifyAsk, buildConquerSystemPrompt,
   dispatchConsult, doneOracleDecision, runDoneOracle, runConquer,
-  isAgentCapableEngine, buildFalsifierPrompt, parseFalsifierOutput, runDoneFalsifier,
+  isAgentCapableEngine, buildFalsifierPrompt, parseFalsifierOutput, isSafeCounterexample, runDoneFalsifier,
   ESCAPING_OPS, DONE_SENTINEL, ASK_SENTINEL,
 } from './conquer.js';
 export type { StuckSignals, ConquerCaps, ConquerState, ConquerTurn, ConquerOptions, ConquerResult, DoneOracleInput, SandboxOps, FalsifierResult } from './conquer.js';

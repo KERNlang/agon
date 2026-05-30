@@ -60,7 +60,6 @@ export const conquerCommand: any = defineCommand({
       return;
     }
 
-    const known = new Set(registry.listIds());
     const activeIds = registry.activeIds(config as any);
     const active = filterDefaultOrchestrationEngines(activeIds);
     const builder = (typeof args.builder === 'string' && args.builder.trim())

@@ -99,6 +99,7 @@ Pick by the **shape** of the problem, not the topic:
 - Need to think a problem through before acting → `think`
 - Need your own decision attacked before you commit → `nero`
 - Need the whole panel on a high-stakes, hard-to-reverse call → `council`
+- Need a whole open-ended thing built unattended, away from the desk → `conquer`
 
 **forge vs. speculate vs. synthesis** — all three run multiple engines, but they pick the winner differently:
 - **forge** *scores* every candidate against the test and applies the best.

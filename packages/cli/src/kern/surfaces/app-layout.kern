@@ -1,0 +1,273 @@
+// ── Layout estimation — row budgets, chrome sizing ──────────────────
+import from="./app-display-utils.js" names="stringDisplayWidth"
+import from="./app-tool-detail.js" names="toolPreviewWindow"
+import from="../blocks/engine-helpers.js" names="parsePatchPreview"
+import from="../blocks/markdown.js" names="cleanEngineOutput"
+import from="../../generated/blocks/rendering.js" names="contentWidth"
+import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
+import from="../../handlers/types.js" names="OutputEvent" types=true
+
+module name=AppLayout
+  fn name=estimateVisibleBlockBudget params="rows:number, mode:string, overlayReservedRows:number" returns=number
+    handler lang="kern"
+      comment raw="// Chat mode keeps 7 rows for the composer/status chrome at minimum:"
+      comment raw="// margin + bordered composer (3) + Cesar strip + two-line status bar."
+      comment raw="// Using 6 makes the startup dashboard overflow by one line."
+      let name=reservedRows value="(mode === 'chat' ? 7 : 8) + Math.max(0, overlayReservedRows)"
+      return value="Math.max(1, rows - reservedRows)"
+
+  fn name=estimateWrappedRowCount params="text:string, wrapWidth:number" returns=number export=true
+    handler lang="kern"
+      let name=safeWidth value="Math.max(1, wrapWidth)"
+      let name=lines value="String(text ?? '').split('\\n')"
+      let name=rowCount kind=let value="0"
+      each name=line in="lines"
+        assign target="rowCount" op="+=" value="Math.max(1, Math.ceil(stringDisplayWidth(line) / safeWidth))"
+      return value="Math.max(1, rowCount)"
+
+  fn name=estimateQuestionReservedRows params="questionState:any, termWidth:number" returns=number export=true
+    doc "Reserve extra transcript rows when the bottom composer is showing a multi-line question or permission card, so short terminals do not clip the actionable keys."
+    handler <<<
+      if (!questionState) return 0;
+      const safeWidth = Math.max(24, termWidth - 12);
+      const prompt = String(questionState.prompt ?? '').trim();
+      const promptRows = estimateWrappedRowCount(prompt, safeWidth);
+      const hasChoices = Array.isArray(questionState.choices) && questionState.choices.length > 0;
+      if (questionState.kind === 'permission') {
+        const command = String(questionState.command ?? '').trim();
+        const summary = String(questionState.reason ?? questionState.description ?? '').trim();
+        const commandIsLong = command.includes('\n') || command.length > safeWidth;
+        const summaryIsLong = summary.length > safeWidth;
+        return commandIsLong || summaryIsLong ? 4 : 3;
+      }
+      if (hasChoices) {
+        const fmtChoiceKey = (choice: any, idx: number) => {
+          const key = String(choice?.key ?? '').toUpperCase();
+          if (/^[1-9]$/.test(key)) return key;
+          return idx < 9 ? `${key}/${idx + 1}` : key;
+        };
+        const inlineChoiceWidth = questionState.choices.reduce((sum: number, choice: any, index: number) => {
+          const label = String(choice?.label ?? '').trim();
+          return sum + stringDisplayWidth(`[${fmtChoiceKey(choice, index)}] ${label}`.trim()) + (index > 0 ? 2 : 0);
+        }, 0);
+        if (questionState.choices.length <= 3 && inlineChoiceWidth <= safeWidth) {
+          return promptRows + 1;
+        }
+        const choiceRows = questionState.choices.reduce((sum: number, choice: any, index: number) => {
+          const label = String(choice?.label ?? '').trim();
+          return sum + estimateWrappedRowCount(`[${fmtChoiceKey(choice, index)}] ${label}`.trim(), safeWidth);
+        }, 0);
+        return promptRows + Math.max(1, choiceRows);
+      }
+      return promptRows + 1;
+    >>>
+
+  fn name=estimateBottomChromeExtraRows params="mode:string, questionState:any, termWidth:number, pendingImageCount:number, inputQueueCount:number, hasLiveSpinner:boolean" returns=number export=true
+    doc "Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and chat spinner rows."
+    handler lang="kern"
+      let name=extraRows kind=let value="0"
+      if cond="pendingImageCount > 0"
+        assign target="extraRows" op="+=" value="1"
+      if cond="inputQueueCount > 0"
+        assign target="extraRows" op="+=" value="1"
+      if cond="mode === 'chat' && hasLiveSpinner && !questionState"
+        assign target="extraRows" op="+=" value="1"
+      assign target="extraRows" op="+=" value="estimateQuestionReservedRows(questionState, termWidth)"
+      return value="extraRows"
+
+  fn name=estimatePinnedLiveRows params="mode:string, hasStream:boolean, hasProgress:boolean, agentCount:number, toolStreamCount?:number" returns=number
+    handler lang="kern"
+      let name=streamRows value="hasStream ? (mode === 'chat' ? 3 : 6) : 0"
+      let name=progressRows value="hasProgress ? (mode === 'chat' ? 3 : 5) : 0"
+      let name=agentRows value="agentCount > 0 ? Math.min(18, agentCount * 7) : 0"
+      let name=toolRows value="toolStreamCount && toolStreamCount > 0 ? Math.min(10, 1 + toolStreamCount * 2) : 0"
+      return value="streamRows + progressRows + agentRows + toolRows"
+
+  fn name=estimateWrappedRows params="text:string, width:number" returns=number
+    handler <<<
+      const safeWidth = Math.max(1, width);
+      if (!text) return 0;
+      return text.split('\n').reduce((total: number, rawLine: string) => {
+        const line = rawLine.replace(/\u001b\[[0-9;]*m/g, '').replace(/\t/g, '    ');
+        return total + Math.max(1, Math.ceil(Math.max(1, line.length) / safeWidth));
+      }, 0);
+    >>>
+
+  fn name=estimateToolCallRows params="event:any, toolOutputExpanded:boolean, codeWidth:number" returns=number
+    handler lang="kern"
+      if cond="!event || event.type !== 'tool-call'"
+        return value="0"
+      if cond="!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')"
+        return value="0"
+      comment raw="// Tool call row estimation depends on parseToolCallPayload from app-tool-detail"
+      comment raw="// We inline the key extraction to avoid a circular dependency."
+      let name=rawInput value="String(event?.input ?? '')"
+      let name=parsed type="Record<string, unknown>" kind=let value="{}"
+      try
+        if cond="rawInput.trim().startsWith('{')"
+          assign target="parsed" value="JSON.parse(rawInput)"
+        catch name=e
+          assign target="parsed" value="{}"
+      let name=toolKey value="String(event?.tool ?? '').toLowerCase()"
+      let name=collapsed value="!toolOutputExpanded"
+      if cond="collapsed && !['edit', 'write', 'update', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)"
+        return value="1"
+      if cond="toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash'"
+        let name=cmd value="(parsed.command as string) || rawInput || ''"
+        let name=cmdLineCount value="cmd ? cmd.split('\\n').length : 0"
+        let name=rows kind=let value="1"
+        if cond="cmdLineCount > 0"
+          let name=overflowRow value="cmdLineCount > 3 ? 1 : 0"
+          let name=cmdRows value="collapsed ? Math.min(3, cmdLineCount) + overflowRow + 1 : cmdLineCount + 1"
+          assign target="rows" op="+=" value="cmdRows"
+        if cond="event.output && event.status !== 'running'"
+          let name=outputLineCount value="event.output.split('\\n').length"
+          if cond="!collapsed"
+            return value="rows + 1 + outputLineCount"
+          let name=maxHead value="outputLineCount > 80 ? 30 : 50"
+          let name=tailCount value="5"
+          let name=showTail value="outputLineCount > maxHead + tailCount"
+          assign target="rows" op="+=" value="1 + Math.min(outputLineCount, maxHead)"
+          if cond="showTail"
+            assign target="rows" op="+=" value="1 + tailCount"
+        return value="rows"
+      if cond="toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit'"
+        let name=oldStr value="(parsed.old_string as string) || (parsed.oldString as string) || ''"
+        let name=newStr value="(parsed.new_string as string) || (parsed.newString as string) || ''"
+        let name=oldLines value="oldStr ? oldStr.split('\\n') : []"
+        let name=newLines value="newStr ? newStr.split('\\n') : []"
+        let name=oldWindow value="toolPreviewWindow(oldLines.length, !collapsed)"
+        let name=newWindow value="toolPreviewWindow(newLines.length, !collapsed)"
+        return value="1 + oldWindow.head + oldWindow.tail + (oldWindow.skipped > 0 ? 1 : 0) + newWindow.head + newWindow.tail + (newWindow.skipped > 0 ? 1 : 0)"
+      if cond="toolKey === 'write' || toolKey === 'agonwrite'"
+        let name=content value="(parsed.content as string) || ''"
+        let name=lines value="content ? content.split('\\n') : []"
+        let name=window value="toolPreviewWindow(lines.length, !collapsed)"
+        return value="1 + window.head + window.tail + (window.skipped > 0 ? 1 : 0)"
+      if cond="toolKey === 'applypatch' || toolKey === 'apply_patch'"
+        let name=patch value="parsePatchPreview(rawInput, parsed)"
+        let name=window value="toolPreviewWindow(patch.lines.length, !collapsed)"
+        return value="1 + window.head + window.tail + (window.skipped > 0 ? 1 : 0)"
+      if cond="toolKey === 'read'"
+        if cond="collapsed"
+          return value="1"
+        let name=lineCount value="event.output ? String(event.output).split('\\n').length : 0"
+        return value="1 + lineCount"
+      if cond="toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find'"
+        if cond="collapsed"
+          return value="1"
+        let name=lineCount value="event.output ? String(event.output).split('\\n').filter((line: string) => line.trim()).length : 0"
+        return value="1 + lineCount"
+      let name=rows kind=let value="1"
+      if cond="rawInput"
+        assign target="rows" op="+=" value="Math.min(3, estimateWrappedRows(rawInput, codeWidth))"
+      if cond="event.output && event.status === 'done'"
+        assign target="rows" op="+=" value="1 + Math.min(6, estimateWrappedRows(event.output, codeWidth))"
+      return value="rows"
+
+  fn name=estimateOutputEventRows params="event:OutputEvent, mode:string, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number
+    handler <<<
+      const proseWidth = contentWidth(4);
+      const chatWidth = contentWidth(2);
+      const engineWidth = contentWidth(8);
+      const codeWidth = contentWidth(10);
+
+      switch (event.type) {
+        case 'text':
+          return Math.max(1, estimateWrappedRows(event.content, proseWidth));
+        case 'user-message':
+          return Math.max(1, estimateWrappedRows(event.content, proseWidth));
+        case 'engine-block':
+          return mode === 'chat'
+            ? 2 + estimateWrappedRows(cleanEngineOutput(event.content), chatWidth)
+            : 4 + estimateWrappedRows(cleanEngineOutput(event.content), engineWidth);
+        case 'separator':
+          return 1;
+        case 'header':
+          return 2;
+        case 'success':
+        case 'warning':
+        case 'info':
+          return Math.max(1, estimateWrappedRows(event.message, proseWidth));
+        case 'error': {
+          const errLines = event.message.split('\n');
+          if (errLines.length <= 1) return 1;
+          return Math.min(7, errLines.length + 1);
+        }
+        case 'permission-ask': {
+          const commandRows = Math.min(6, String((event as any).command ?? '').split('\n').length);
+          const descriptionRows = (event as any).description ? 2 : 0;
+          return 6 + commandRows + descriptionRows;
+        }
+        case 'thinking-chunk':
+          if (thinkingExpanded === false) return 0;
+          return Math.max(1, String(event.chunk ?? '').split('\n').filter((line: string) => line.trim()).length);
+        case 'streaming-chunk': {
+          const chunkText = String(event.chunk ?? '');
+          const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
+          if (isThinking && thinkingExpanded === false) return 0;
+          return Math.max(1, estimateWrappedRows(chunkText, proseWidth));
+        }
+        case 'kern-draft':
+          return 4 + estimateWrappedRows(cleanEngineOutput(event.content), engineWidth);
+        case 'debate-round':
+          return 4 + estimateWrappedRows(cleanEngineOutput(event.argument), engineWidth);
+        case 'verdict':
+          return Math.max(1, estimateWrappedRows(cleanEngineOutput(event.summary), proseWidth));
+        case 'scoreboard':
+          return 3 + event.metrics.length + (event.winner ? 1 : 0);
+        case 'plan':
+          return 4 + event.plan.steps.length + (event.plan.state === 'draft' ? 1 : 0);
+        case 'plan-list':
+          return Math.max(1, event.plans.length);
+        case 'plan-proposal':
+          return Math.max(4, estimateWrappedRows(String((event as any).markdown ?? ''), proseWidth));
+        case 'plan-execution':
+          return 6;
+        case 'table':
+          return 2 + event.rows.length;
+        case 'tool-call':
+          return estimateToolCallRows(event as any, toolOutputExpanded, codeWidth);
+        case 'response-meta':
+          return 1;
+        case 'cesar-recap': {
+          const commandRows = Math.min(5, Array.isArray((event as any).commands) ? (event as any).commands.length : 0);
+          const fileRows = Array.isArray((event as any).files) && (event as any).files.length > 0 ? 1 : 0;
+          const checkpointRows = Array.isArray((event as any).checkpoints) && (event as any).checkpoints.length > 0 ? 1 : 0;
+          const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
+          const diffRows = diffFiles.reduce((total: number, file: any) => total + 1 + Math.min(6, Array.isArray(file.lines) ? file.lines.length : 0) + (Number(file.omitted ?? 0) > 0 ? 1 : 0), 0);
+          const warningRows = Math.min(3, Array.isArray((event as any).warnings) ? (event as any).warnings.length : 0);
+          const reasoningRows = (event as any).confidenceReasoning ? 1 : 0;
+          return 3 + commandRows + fileRows + checkpointRows + diffRows + warningRows + reasoningRows;
+        }
+        case 'file-changes':
+          return 1 + (((event as any).files as any[])?.length ?? 0);
+        case 'dashboard':
+          return 17;
+        case 'agent-step-start':
+        case 'agent-step-end':
+        case 'agent-turn-summary':
+        case 'agent-budget-warning':
+        case 'engine-switch':
+        case 'shadow-active':
+        case 'agent-routing':
+        case 'agent-team-start':
+        case 'agent-team-complete':
+          return 1;
+        case 'spinner-start':
+        case 'spinner-stop':
+        case 'spinner-update':
+        case 'progress-update':
+        case 'progress-clear':
+        case 'confidence-update':
+        case 'streaming-end':
+        case 'clear':
+        case 'question':
+        case 'patch-review':
+          return 0;
+        default:
+          return 1;
+      }
+    >>>
+
+  fn name=estimateDisplayItemRows params="item:OutputBlock, mode:string, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number expr={{ return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded); }}

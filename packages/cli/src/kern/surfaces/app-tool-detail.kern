@@ -1,0 +1,362 @@
+// ── Tool detail viewer, preview, payload parsing ────────────────────
+import from="../blocks/output-format.js" names="ENGINE_COLORS,shortToolPath,formatConfidenceToolLabel"
+import from="../signals/icons.js" names="icons"
+import from="../blocks/markdown.js" names="truncateCodeLine"
+import from="../blocks/engine-helpers.js" names="extractPatchText,parsePatchPreview"
+import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
+import from="../../generated/blocks/rendering.js" names="contentWidth,engineColor"
+import from="./app-rendering.js" names="buildToolCallRows"
+
+module name=AppToolDetail
+  fn name=isMutatingToolCall params="event:any" returns=boolean
+    handler lang="kern"
+      if cond="!event || event.type !== 'tool-call'"
+        return value="false"
+      let name=toolKey value="String(event.tool ?? '').toLowerCase()"
+      if cond="['edit', 'write', 'update', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)"
+        return value="true"
+      if cond="['read', 'grep', 'search', 'glob', 'find', 'bash', 'run', 'agonbash', 'reportconfidence', 'quicknero'].includes(toolKey)"
+        return value="false"
+      if cond="typeof event.input !== 'string' || !event.input.trim().startsWith('{')"
+        return value="false"
+      try
+        let name=parsed value="JSON.parse(event.input)"
+        return value="!!(parsed.content || parsed.new_string || parsed.newString || parsed.old_string || parsed.oldString || (parsed.path && (parsed.content || parsed.new_string || parsed.newString || parsed.old_string || parsed.oldString)))"
+        catch name=e
+          return value="false"
+
+  fn name=parseToolCallPayload params="event:any" returns=any confidence=0.85
+    handler lang="kern"
+      let name=rawInput value="String(event?.input ?? '')"
+      let name=parsed type="Record<string, unknown>" kind=let value="{}"
+      try
+        if cond="rawInput.trim().startsWith('{')"
+          assign target="parsed" value="JSON.parse(rawInput)"
+        catch name=e
+          assign target="parsed" value="{}"
+      return value="{ rawInput, parsed, toolKey: String(event?.tool ?? '').toLowerCase(), }"
+
+  fn name=toolPreviewWindow params="lineCount:number, expanded:boolean" returns=any
+    handler lang="kern"
+      if cond="lineCount <= 0"
+        return value="{ head: 0, tail: 0, skipped: 0 }"
+      if cond="expanded"
+        return value="{ head: lineCount, tail: 0, skipped: 0 }"
+      let name=headLimit value="expanded ? 10 : 3"
+      let name=tailLimit value="expanded && lineCount > 18 ? 4 : 0"
+      let name=showTail value="tailLimit > 0 && lineCount > headLimit + tailLimit"
+      let name=head value="expanded ? Math.min(lineCount, showTail ? headLimit : lineCount) : Math.min(lineCount, headLimit)"
+      let name=tail value="showTail ? tailLimit : 0"
+      return value="{ head, tail, skipped: Math.max(0, lineCount - head - tail), }"
+
+  fn name=toolCallSupportsDetailView params="event:any" returns=boolean
+    handler lang="kern"
+      if cond="!event || event.type !== 'tool-call'"
+        return value="false"
+      destructure kind=const source="parseToolCallPayload(event)"
+        binding name=rawInput
+        binding name=parsed
+        binding name=toolKey
+      if cond="['edit', 'update', 'write', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)"
+        return value="true"
+      let name=outputText value="String(event.output ?? '')"
+      let name=outputLines value="outputText ? outputText.split('\\n').length : 0"
+      if cond="toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash'"
+        let name=command value="String((parsed.command as string) || rawInput || '')"
+        return value="command.split('\\n').length > 3 || outputLines > 12 || outputText.length > 500"
+      if cond="toolKey === 'read'"
+        return value="outputLines > 12 || outputText.length > 500"
+      if cond="toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find'"
+        return value="outputLines > 10 || outputText.length > 400"
+      return value="rawInput.length > 160 || outputText.length > 400"
+
+  fn name=detailViewerSupportsEvent params="event:any" returns=boolean
+    handler lang="kern"
+      if cond="!event"
+        return value="false"
+      if cond="event.type === 'permission-ask'"
+        let name=command value="String(event.command ?? '')"
+        return value="command.split('\\n').length > 4 || command.length > 180"
+      return value="toolCallSupportsDetailView(event)"
+
+  fn name=toolDetailViewportRows params="termHeight:number" returns=number expr={{ return Math.max(8, Math.min(18, termHeight - 14)); }}
+
+  fn name=findLatestToolDetailEvent params="blocks:OutputBlock[]" returns=any
+    handler <<<
+      for (let index = blocks.length - 1; index >= 0; index -= 1) {
+        const event = blocks[index]?.event as any;
+        // Tool-calls are bundled into tool-call-group blocks once finalized.
+        // Dig into the group to find the latest individual tool event so
+        // Ctrl+O (openLatestToolDetail) still works on grouped history.
+        if (event?.type === 'tool-call-group' && Array.isArray(event.blocks)) {
+          for (let g = event.blocks.length - 1; g >= 0; g -= 1) {
+            const inner = event.blocks[g]?.event;
+            if (detailViewerSupportsEvent(inner)) return inner;
+          }
+          continue;
+        }
+        if (!detailViewerSupportsEvent(event)) continue;
+        return event;
+      }
+      return null;
+    >>>
+
+  fn name=findLatestToolEvent params="blocks:OutputBlock[]" returns=any
+    handler <<<
+      for (let index = blocks.length - 1; index >= 0; index -= 1) {
+        const event = blocks[index]?.event as any;
+        if (event?.type === 'tool-call-group' && Array.isArray(event.blocks)) {
+          for (let g = event.blocks.length - 1; g >= 0; g -= 1) {
+            const inner = event.blocks[g]?.event;
+            if (inner?.type === 'tool-call') return inner;
+          }
+          continue;
+        }
+        if (event?.type === 'tool-call') return event;
+      }
+      return null;
+    >>>
+
+  fn name=findLatestFailedToolEvent params="blocks:OutputBlock[]" returns=any
+    handler <<<
+      for (let index = blocks.length - 1; index >= 0; index -= 1) {
+        const event = blocks[index]?.event as any;
+        if (event?.type === 'tool-call-group' && Array.isArray(event.blocks)) {
+          for (let g = event.blocks.length - 1; g >= 0; g -= 1) {
+            const inner = event.blocks[g]?.event;
+            if (inner?.type === 'tool-call' && inner.status === 'error') return inner;
+          }
+          continue;
+        }
+        if (event?.type === 'tool-call' && event.status === 'error') return event;
+      }
+      return null;
+    >>>
+
+  fn name=buildFailedToolRetryDraft params="event:any" returns=string
+    handler <<<
+      if (!event) return '';
+      const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+      if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
+        const command = String((parsed.command as string) || rawInput || '').trim();
+        if (command) return `/run ${command}`;
+      }
+      const toolName = String(event.tool ?? 'tool');
+      const payload = rawInput || (event.input ? String(event.input) : '');
+      const error = String(event.output ?? '').trim();
+      const suffix = error ? `\n\nPrevious error:\n${error}` : '';
+      return `retry the failed ${toolName} call with corrected input:\n${payload}${suffix}`;
+    >>>
+
+  fn name=buildToolDetailView params="event:any" returns=any
+    handler <<<
+      if (!event) {
+        return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };
+      }
+
+      const ic = icons();
+      const accentColor = engineColor(event.engineId ?? '') || '#a78bfa';
+      const codeWidth = contentWidth(12);
+      const rows: any[] = [];
+      const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 1) => {
+        rows.push({ key: `tool-detail-${suffix}`, kind: 'segments', paddingLeft, segments });
+      };
+      const pushSyntaxLines = (suffix: string, lines: string[], prefixText = '    ') => {
+        lines.forEach((line: string, index: number) => {
+          rows.push({
+            key: `tool-detail-${suffix}-${index}`,
+            kind: 'syntax',
+            paddingLeft: 1,
+            prefixText,
+            prefixDimColor: true,
+            text: line,
+            maxWidth: codeWidth,
+          });
+        });
+      };
+      const pushAnsiLines = (suffix: string, lines: string[], color = '') => {
+        lines.forEach((line: string, index: number) => {
+          if (color) {
+            pushSegmentsRow(`${suffix}-${index}`, [
+              { text: '    ', dimColor: true },
+              { text: truncateCodeLine(line, codeWidth), color },
+            ]);
+            return;
+          }
+          rows.push({
+            key: `tool-detail-${suffix}-${index}`,
+            kind: 'ansi',
+            paddingLeft: 1,
+            prefixText: '    ',
+            prefixDimColor: true,
+            text: line,
+            maxWidth: codeWidth,
+            fallbackDim: true,
+          });
+        });
+      };
+
+      if (event.type === 'permission-ask') {
+        const command = String(event.command ?? '');
+        const commandLines = command ? command.split('\n') : [];
+        const description = String(event.description ?? '').trim();
+        const reason = String(event.reason ?? '').trim();
+        const previewEvent = {
+          type: 'tool-call',
+          engineId: 'cesar',
+          tool: event.tool,
+          input: command,
+          status: 'running',
+        } as any;
+        if (description) pushSegmentsRow('permission-description', [{ text: description, dimColor: true }]);
+        if (reason) pushSegmentsRow('permission-reason', [{ text: reason, color: '#fbbf24' }]);
+        if (commandLines.length > 0) {
+          pushSegmentsRow('permission-command-label', [{ text: 'Command', color: '#f59e0b', bold: true }]);
+          commandLines.forEach((line: string, index: number) => {
+            rows.push({
+              key: `tool-detail-permission-${index}`,
+              kind: 'syntax',
+              paddingLeft: 1,
+              prefixText: index === 0 ? '    $ ' : '      ',
+              prefixDimColor: true,
+              text: line,
+              maxWidth: codeWidth,
+            });
+          });
+        }
+        if (isMutatingToolCall(previewEvent)) {
+          pushSegmentsRow('permission-preview-label', [{ text: 'Preview', color: '#22d3ee', bold: true }]);
+          rows.push(...buildToolCallRows('tool-detail-permission-preview', previewEvent, false));
+        }
+        return {
+          title: `${String(event.tool ?? 'Command')} approval`,
+          subtitle: `${commandLines.length || 1} command line${commandLines.length === 1 ? '' : 's'}`,
+          accentColor: '#fbbf24',
+          rows,
+        };
+      }
+
+      const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+      const outputLines = String(event.output ?? '').split('\n').filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1);
+      const defaultLabel = (() => {
+        if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') return `${ic.bash} Bash`;
+        if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') return `${ic.edit} Update`;
+        if (toolKey === 'write' || toolKey === 'agonwrite') return `${ic.write} Write`;
+        if (toolKey === 'applypatch' || toolKey === 'apply_patch') return `${ic.edit} Patch`;
+        if (toolKey === 'read') return `${ic.read} Read`;
+        if (toolKey === 'grep' || toolKey === 'search') return `${ic.search} Search`;
+        if (toolKey === 'glob' || toolKey === 'find') return `${ic.find} Find`;
+        return `${ic.tool} ${event.tool ?? 'Tool'}`;
+      })();
+      let title = defaultLabel;
+      const subtitleParts: string[] = [];
+      if (event.engineId) subtitleParts.push(String(event.engineId));
+      if (event.status) subtitleParts.push(String(event.status));
+
+      if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
+        const command = String((parsed.command as string) || rawInput || '');
+        const desc = String((parsed.description as string) || '').trim();
+        const commandLines = command ? command.split('\n') : [];
+        title = `${defaultLabel}${desc ? ` · ${truncateCodeLine(desc, 48)}` : commandLines[0] ? ` · ${truncateCodeLine(commandLines[0], 48)}` : ''}`;
+        subtitleParts.push(`${commandLines.length || 1} command line${commandLines.length === 1 ? '' : 's'}`);
+        if (outputLines.length > 0) subtitleParts.push(`${outputLines.length} output line${outputLines.length === 1 ? '' : 's'}`);
+        if (desc) pushSegmentsRow('bash-desc', [{ text: desc, dimColor: true }]);
+        if (commandLines.length > 0) {
+          pushSegmentsRow('bash-command-label', [{ text: 'Command', color: '#f59e0b', bold: true }]);
+          commandLines.forEach((line: string, index: number) => {
+            rows.push({
+              key: `tool-detail-bash-command-${index}`,
+              kind: 'syntax',
+              paddingLeft: 1,
+              prefixText: index === 0 ? '    $ ' : '      ',
+              prefixDimColor: true,
+              text: line,
+              maxWidth: codeWidth,
+            });
+          });
+        }
+        if (outputLines.length > 0) {
+          pushSegmentsRow('bash-output-label', [{ text: 'Output', color: event.status === 'error' ? '#ef4444' : '#9ca3af', bold: true }]);
+          pushAnsiLines('bash-output', outputLines, event.status === 'error' ? '#ef4444' : '');
+        }
+      } else if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') {
+        const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+        const oldLines = String((parsed.old_string as string) || (parsed.oldString as string) || '').split('\n');
+        const newLines = String((parsed.new_string as string) || (parsed.newString as string) || '').split('\n');
+        title = `${defaultLabel}${filePath ? ` · ${shortToolPath(filePath)}` : ''}`;
+        subtitleParts.push(`-${oldLines.length} +${newLines.length} lines`);
+        pushSegmentsRow('edit-summary', [
+          { text: `-${oldLines.length}`, color: '#ef4444' },
+          { text: ' ', dimColor: true },
+          { text: `+${newLines.length}`, color: '#4ade80' },
+          { text: ' lines', dimColor: true },
+        ]);
+        oldLines.filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1).forEach((line: string, index: number) => {
+          rows.push({ key: `tool-detail-edit-old-${index}`, kind: 'diff', paddingLeft: 1, text: `-${line}`, maxWidth: codeWidth });
+        });
+        newLines.filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1).forEach((line: string, index: number) => {
+          rows.push({ key: `tool-detail-edit-new-${index}`, kind: 'diff', paddingLeft: 1, text: `+${line}`, maxWidth: codeWidth });
+        });
+      } else if (toolKey === 'write' || toolKey === 'agonwrite') {
+        const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+        const lines = String((parsed.content as string) || '').split('\n');
+        title = `${defaultLabel}${filePath ? ` · ${shortToolPath(filePath)}` : ''}`;
+        subtitleParts.push(`+${lines.length} lines`);
+        pushSegmentsRow('write-summary', [
+          { text: `+${lines.length}`, color: '#4ade80' },
+          { text: ' lines', dimColor: true },
+        ]);
+        lines.filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1).forEach((line: string, index: number) => {
+          rows.push({ key: `tool-detail-write-${index}`, kind: 'diff', paddingLeft: 1, text: `+${line}`, maxWidth: codeWidth });
+        });
+      } else if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
+        const patch = parsePatchPreview(rawInput, parsed);
+        title = `${defaultLabel}${patch.files.length > 0 ? ` · ${patch.files.slice(0, 2).map((filePath: string) => shortToolPath(filePath)).join(', ')}` : ''}`;
+        subtitleParts.push(`${patch.files.length || 1} file${patch.files.length === 1 ? '' : 's'} · -${patch.deletions} +${patch.additions} lines`);
+        if (patch.files.length > 0) {
+          pushSegmentsRow('patch-files', [{ text: patch.files.map((filePath: string) => shortToolPath(filePath)).join(', '), color: '#a78bfa' }]);
+        }
+        if (patch.lines.length > 0) {
+          patch.lines.forEach((line: string, index: number) => {
+            rows.push({ key: `tool-detail-patch-${index}`, kind: 'diff', paddingLeft: 1, text: line, maxWidth: codeWidth });
+          });
+        } else if (rawInput) {
+          pushSyntaxLines('patch-raw', rawInput.split('\n'));
+        }
+      } else if (toolKey === 'read') {
+        const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+        title = `${defaultLabel}${filePath ? ` · ${shortToolPath(filePath)}` : ''}`;
+        if (outputLines.length > 0) subtitleParts.push(`${outputLines.length} lines`);
+        pushSyntaxLines('read', outputLines);
+      } else if (toolKey === 'grep' || toolKey === 'search') {
+        const pattern = String((parsed.pattern as string) || rawInput || '');
+        const path = String((parsed.path as string) || '');
+        title = `${defaultLabel}${pattern ? ` · ${truncateCodeLine(pattern, 42)}` : ''}`;
+        if (path) subtitleParts.push(shortToolPath(path));
+        if (outputLines.length > 0) subtitleParts.push(`${outputLines.length} matches`);
+        pushAnsiLines('search', outputLines);
+      } else if (toolKey === 'glob' || toolKey === 'find') {
+        const pattern = String((parsed.pattern as string) || rawInput || '');
+        title = `${defaultLabel}${pattern ? ` · ${truncateCodeLine(pattern, 42)}` : ''}`;
+        if (outputLines.length > 0) subtitleParts.push(`${outputLines.length} files`);
+        pushSyntaxLines('find', outputLines);
+      } else {
+        const inputLines = rawInput ? rawInput.split('\n') : [];
+        title = defaultLabel;
+        if (inputLines.length > 0) {
+          pushSegmentsRow('generic-input-label', [{ text: 'Input', color: '#9ca3af', bold: true }]);
+          pushSyntaxLines('generic-input', inputLines);
+        }
+        if (outputLines.length > 0) {
+          pushSegmentsRow('generic-output-label', [{ text: 'Output', color: '#9ca3af', bold: true }]);
+          pushSyntaxLines('generic-output', outputLines);
+        }
+      }
+
+      return {
+        title,
+        subtitle: subtitleParts.join(' · '),
+        accentColor,
+        rows,
+      };
+    >>>

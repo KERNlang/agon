@@ -1,0 +1,75 @@
+// ── Terminal mode, file rail, replay snapshot ───────────────────────
+import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
+import from="@agon/core" names="EngineRegistry,loadConfig"
+import from="./app-display-utils.js" names="clampNumber"
+import from="./app-layout.js" names="estimateVisibleBlockBudget,estimateBottomChromeExtraRows,estimatePinnedLiveRows"
+import from="./app-blocks.js" names="nativeTranscriptBlocksForStatic,nativeArchiveBlockCount"
+import from="../../generated/blocks/rendering.js" names="withContentWidthOverride"
+import from="./app-rendering.js" names="buildTranscriptRows"
+import from="./app-blocks.js" names="historyBlocksForTranscript"
+import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
+
+module name=AppTerminal
+  fn name=createInitialRegistry returns=EngineRegistry
+    handler lang="kern"
+      let name=reg value="new EngineRegistry()"
+      do value="reg.load(resolveBuiltinEnginesDir())"
+      return value="reg"
+
+  fn name=drainStdinBuffer returns=void
+    handler <<<
+      if (!process.stdin.isTTY || typeof process.stdin.read !== 'function') return;
+      let chunk: string | Buffer | null;
+      do {
+        chunk = process.stdin.read();
+      } while (chunk !== null);
+    >>>
+
+  fn name=normalizeTerminalMode params="value:any" returns="'native'|'fullscreen'" export=true expr={{ return value === 'fullscreen' ? 'fullscreen' : 'native'; }}
+
+  fn name=fileRailWidthForTerminal params="termWidth:number, expanded:boolean" returns=number export=true
+    handler lang="kern"
+      let name=safeWidth value="Math.max(40, Math.floor(Number(termWidth) || 100))"
+      if cond="expanded"
+        return value="Math.max(36, Math.min(84, Math.floor(safeWidth * 0.35)))"
+      return value="Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)))"
+
+  fn name=fileRailMaxRowsForTerminal params="termHeight:number, terminalMode:string, expanded:boolean" returns=number export=true
+    handler lang="kern"
+      let name=safeHeight value="Math.max(8, Math.floor(Number(termHeight) || 24))"
+      if cond="terminalMode === 'native'"
+        if cond="expanded"
+          return value="Math.max(8, Math.min(36, safeHeight - 4))"
+        return value="Math.max(5, Math.min(14, safeHeight - 8))"
+      if cond="expanded"
+        return value="Math.max(12, safeHeight - 4)"
+      return value="Math.max(6, Math.min(12, 10))"
+
+  fn name=buildTerminalReplaySnapshot params="blocks:OutputBlock[], opts:any" returns="{terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number}" export=true
+    doc "Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY."
+    handler lang="kern"
+      let name=terminalMode value="normalizeTerminalMode(opts?.terminalMode)"
+      let name=mode value="String(opts?.mode ?? 'chat')"
+      let name=termWidth value="Math.max(40, Math.floor(Number(opts?.termWidth) || 100))"
+      let name=termHeight value="Math.max(8, Math.floor(Number(opts?.termHeight) || 24))"
+      let name=toolOutputExpanded value="opts?.toolOutputExpanded !== false"
+      let name=thinkingExpanded value="opts?.thinkingExpanded !== false"
+      let name=questionState value="opts?.questionState ?? null"
+      let name=pendingImageCount value="Math.max(0, Math.floor(Number(opts?.pendingImageCount) || 0))"
+      let name=inputQueueCount value="Math.max(0, Math.floor(Number(opts?.inputQueueCount) || 0))"
+      let name=hasLiveSpinner value="!!opts?.hasLiveSpinner"
+      let name=hasStream value="!!opts?.hasStream"
+      let name=hasProgress value="!!opts?.hasProgress"
+      let name=agentCount value="Math.max(0, Math.floor(Number(opts?.agentCount) || 0))"
+      let name=bottomChromeExtraRows value="estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner)"
+      let name=pinnedLiveRows value="estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount, Math.max(0, Math.floor(Number(opts?.toolStreamCount) || 0)))"
+      let name=visibleBudget value="estimateVisibleBlockBudget(termHeight, mode, bottomChromeExtraRows + pinnedLiveRows)"
+      let name=transcriptBlocks value="terminalMode === 'native' ? nativeTranscriptBlocksForStatic(blocks) : historyBlocksForTranscript(blocks)"
+      let name=staticBlockCount value="terminalMode === 'native' ? nativeArchiveBlockCount(transcriptBlocks, mode, visibleBudget, toolOutputExpanded, thinkingExpanded) : 0"
+      let name=liveBlocks value="terminalMode === 'native' ? transcriptBlocks.slice(staticBlockCount) : transcriptBlocks"
+      let name=transcriptRowCount value="withContentWidthOverride(termWidth, () => buildTranscriptRows(liveBlocks, mode, toolOutputExpanded, thinkingExpanded).length)"
+      let name=fileRailOpen value="!!opts?.fileRailOpen"
+      let name=fileRailExpanded value="!!opts?.fileRailExpanded"
+      let name=fileRailWidth value="fileRailOpen ? fileRailWidthForTerminal(termWidth, fileRailExpanded) : 0"
+      let name=fileRailRows value="fileRailOpen ? fileRailMaxRowsForTerminal(termHeight, terminalMode, fileRailExpanded) : 0"
+      return value="{ terminalMode, mode, termWidth, termHeight, visibleBudget, transcriptRowCount, staticBlockCount, liveBlockCount: liveBlocks.length, fileRailWidth, fileRailRows, headerRows: 1, lowerChromeRows: (mode === 'chat' ? 7 : 8) + bottomChromeExtraRows, }"

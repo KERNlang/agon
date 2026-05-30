@@ -17,6 +17,12 @@ dev = ["pytest>=7.0"]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
+# The Python package lives under py/ (py/kern_engines/...) so it sits as a
+# sibling of the built JS (dist/). The TS shell sets PYTHONPATH to <pkg>/py
+# from its own location, so `python3 -m kern_engines.cli.daemon` resolves
+# identically in this repo AND when @agon/kern-engines is npm-installed into
+# node_modules — no cwd dependence, no pip required for end users. `pip install
+# -e .` still works for Python-only dev via this package-dir.
 [tool.setuptools]
 packages = ["kern_engines", "kern_engines.cli"]
-package-dir = {"kern_engines" = ".", "kern_engines.cli" = "cli"}
+package-dir = {"" = "py"}

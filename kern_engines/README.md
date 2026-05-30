@@ -44,21 +44,37 @@ AI-Buddies, agon, kern-sight, and codex-calling-claude flows all depend on this 
 ```
 kern_engines/
 ├── README.md
-├── package.json            # @agon/kern-engines  (npm workspace)
-├── pyproject.toml          # kern-engines        (Python package)
+├── package.json            # @agon/kern-engines  (npm workspace; ships dist/ + py/)
+├── pyproject.toml          # kern-engines        (Python package; package-dir = py/)
 ├── tsconfig.json
 ├── tsup.config.ts
-├── __init__.py
 ├── index.ts                # TS barrel
-└── cli/
-    ├── __init__.py
-    ├── pty_session.py      # generic PtyTuiSession + EngineConfig
-    ├── configs.py          # per-engine EngineConfig instances + REGISTRY
-    ├── daemon.py           # stdio JSON-NDJSON daemon
-    ├── claude.py           # back-compat ClaudeCliSession alias
-    ├── session.ts          # generic TS PtyCliSession (spawns daemon)
-    └── claude.ts           # ClaudeCliSession TS shim
+├── cli/
+│   ├── session.ts          # generic TS PtyCliSession (spawns the daemon)
+│   └── claude.ts           # ClaudeCliSession TS shim
+└── py/                     # Python twin — sibling of built dist/ (see PYTHONPATH note)
+    ├── kern_engines/
+    │   ├── __init__.py
+    │   └── cli/
+    │       ├── __init__.py
+    │       ├── pty_session.py   # generic PtyTuiSession + EngineConfig
+    │       ├── configs.py       # per-engine EngineConfig instances + REGISTRY
+    │       ├── daemon.py        # stdio JSON-NDJSON daemon
+    │       ├── claude.py        # back-compat ClaudeCliSession alias
+    │       └── model_probe.py   # live /model list probe
+    └── tests/              # pytest cover (not shipped)
 ```
+
+### How the daemon is found (any install method, no pip)
+
+The TS shell (`cli/session.ts`) sets `PYTHONPATH` to the `py/` root by **walking
+up from its own `import.meta.url`** until it finds `py/kern_engines/__init__.py`.
+Because the built JS (`dist/`) and the Python (`py/`) ship as siblings under the
+package root, `python3 -m kern_engines.cli.daemon` resolves identically whether
+agon runs from this repo, a git worktree, or a global `npm i -g` install in
+`node_modules/@agon/kern-engines/` — for **any** dispatch cwd, with **no pip
+install** required. The only runtime prerequisite is `python3` on PATH (the
+daemon is stdlib-only). `pip install -e .` still works for Python-only dev.
 
 ## Public surface
 
@@ -144,7 +160,7 @@ If `kern_engines` is missing or `python3` isn't on PATH, the helper returns `{ u
 
 When (not if) another vendor pushes their CLI off subscription-friendly billing, adding pty support is two files:
 
-1. **`kern_engines/cli/configs.py`** — define an `EngineConfig`:
+1. **`kern_engines/py/kern_engines/cli/configs.py`** — define an `EngineConfig`:
 
     ```python
     CODEX = EngineConfig(

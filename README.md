@@ -1,7 +1,13 @@
 # Agon AI
 
-![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
-![License](https://img.shields.io/badge/license-MIT-blue)
+<p align="center">
+  <img src="assets/agon-hero.svg" alt="Agon — Any AI can join. They compete. You ship." width="820">
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/node-%3E%3D22-brightgreen" alt="Node.js >= 22">
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT">
+</p>
 
 **The competitive multi-AI orchestration CLI.**
 
@@ -26,6 +32,11 @@ Agon AI pits the world's best AI engines against each other to solve your softwa
 ---
 
 ## What is Agon?
+
+<p align="center">
+  <img src="assets/agon-splash.svg" alt="The Agon REPL on launch — engine roster and example prompts mapped to modes." width="860">
+</p>
+<p align="center"><sub>The <code>agon</code> REPL on launch — your roster, and plain prompts routed to the right mode.</sub></p>
 
 Agon AI fundamentally changes how developers interact with AI coding assistants. Instead of relying on a single model and hoping for the best, Agon introduces **competitive orchestration**. You describe the task once, and Agon dispatches it to multiple models simultaneously. They race to implement the solution, and you review and apply the best outcome. 
 

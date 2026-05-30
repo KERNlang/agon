@@ -1,0 +1,1114 @@
+// ── Transcript row rendering — markdown, tool calls, full transcript ─
+import from="../blocks/output-format.js" names="ENGINE_COLORS,shortToolPath,isCesarTelemetryLine,formatConfidenceToolLabel"
+import from="../signals/icons.js" names="icons"
+import from="../blocks/markdown.js" names="cleanEngineOutput,parseMarkdownBlocks,truncateCodeLine"
+import from="../blocks/engine-helpers.js" names="parsePatchPreview"
+import from="../../generated/blocks/rendering.js" names="contentWidth,color256toHex,engineColor,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES"
+import from="../../generated/blocks/engine.js" names="LOGO_LINES,VERSION,KERN_VERSION,BRAND"
+import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
+import from="../blocks/rich-text.js" names="parseProseToRichLines"
+import from="./app-display-utils.js" names="stringDisplayWidth"
+import from="./app-selection.js" names="normalizeTextSelection"
+import from="./app-layout.js" names="estimateOutputEventRows"
+import from="./app-blocks.js" names="isToolCallLikeBlock,coalesceToolCallBlocks"
+import from="./app-tool-detail.js" names="isMutatingToolCall,parseToolCallPayload,toolPreviewWindow"
+
+module name=AppRendering
+  fn name=buildExecutionRailStats params="blocks:OutputBlock[],files:any[],queueCount:number" returns=any export=true
+    doc "Count visible tool activity, touched files, and queued messages for the live execution rail."
+    handler <<<
+      let toolCount = 0;
+      let failedToolCount = 0;
+      let runningToolCount = 0;
+      let mutationCount = 0;
+      const visit = (event: any) => {
+        if (!event || event.type !== 'tool-call') return;
+        toolCount += 1;
+        if (event.status === 'error') failedToolCount += 1;
+        if (event.status === 'running') runningToolCount += 1;
+        if (isMutatingToolCall(event)) mutationCount += 1;
+      };
+      for (const block of blocks ?? []) {
+        const event = (block as any)?.event;
+        if (event?.type === 'tool-call-group' && Array.isArray(event.blocks)) {
+          for (const child of event.blocks) visit(child?.event);
+        } else {
+          visit(event);
+        }
+      }
+      const touchedFiles = Array.isArray(files) ? files : [];
+      const changedFileCount = touchedFiles.filter((file: any) => String(file?.status ?? '') !== 'read').length;
+      return {
+        toolCount,
+        failedToolCount,
+        runningToolCount,
+        mutationCount,
+        fileCount: touchedFiles.length,
+        changedFileCount,
+        queueCount: Math.max(0, Math.floor(Number(queueCount) || 0)),
+      };
+    >>>
+  fn name=parseMarkdownToRows params="baseKey:string, text:string, wrapWidth:number, paddingLeft:number, borderColor:string" returns="any[]"
+    handler <<<
+      const rows: any[] = [];
+      const cleaned = String(text ?? '').trim();
+      if (!cleaned) return rows;
+
+      const codeWidth = contentWidth(8);
+      const segments = parseMarkdownBlocks(cleaned);
+      let rowIndex = 0;
+
+      for (const segment of segments as any[]) {
+        if (segment.type === 'prose') {
+          const richLines = parseProseToRichLines(segment.text ?? '', wrapWidth);
+          for (const richLine of richLines) {
+            rows.push({
+              key: `${baseKey}-rich-${rowIndex++}`,
+              kind: 'rich',
+              paddingLeft,
+              richLine,
+              borderColor,
+            });
+          }
+          continue;
+        }
+
+        if (segment.type === 'code') {
+          const codeLines = String(segment.code ?? '').split('\n');
+          const shownLines = codeLines.slice(0, MAX_CODE_LINES);
+          const overflow = codeLines.length - shownLines.length;
+          const isDiff = segment.language === 'diff' || codeLines.some((line: string) => /^[+\-@]/.test(line));
+
+          rows.push({
+            key: `${baseKey}-code-meta-${rowIndex++}`,
+            kind: 'segments',
+            paddingLeft,
+            borderColor,
+            segments: [
+              { text: CODE_RAIL, color: CODE_RAIL_COLOR },
+              { text: ' ' },
+              { text: segment.language || 'code', dimColor: true },
+              segment.index !== undefined ? { text: ` [${segment.index}]`, color: '#585858' } : null,
+            ].filter(Boolean),
+          });
+
+          shownLines.forEach((line: string, index: number) => {
+            rows.push({
+              key: `${baseKey}-code-${rowIndex++}-${index}`,
+              kind: isDiff ? 'diff' : 'syntax',
+              paddingLeft,
+              borderColor,
+              prefixText: `${CODE_RAIL} `,
+              prefixColor: CODE_RAIL_COLOR,
+              text: line,
+              maxWidth: codeWidth,
+            });
+          });
+
+          if (overflow > 0) {
+            rows.push({
+              key: `${baseKey}-code-overflow-${rowIndex++}`,
+              kind: 'segments',
+              paddingLeft,
+              borderColor,
+              segments: [
+                { text: CODE_RAIL, color: CODE_RAIL_COLOR },
+                { text: ' ' },
+                { text: `… ${overflow} more lines`, dimColor: true },
+              ],
+            });
+          }
+          continue;
+        }
+
+        if (segment.type === 'table') {
+          const headers = (segment.headers ?? []) as string[];
+          const tableRows = (segment.rows ?? []) as string[][];
+          const headerLine = headers.join(' │ ');
+          const ruleWidth = Math.max(12, Math.min(wrapWidth, headerLine.length));
+
+          rows.push({
+            key: `${baseKey}-table-head-${rowIndex++}`,
+            kind: 'segments',
+            paddingLeft,
+            borderColor,
+            segments: [{ text: headerLine, bold: true }],
+          });
+          rows.push({
+            key: `${baseKey}-table-rule-${rowIndex++}`,
+            kind: 'segments',
+            paddingLeft,
+            borderColor,
+            segments: [{ text: '─'.repeat(ruleWidth), dimColor: true }],
+          });
+          tableRows.forEach((tableRow: string[], index: number) => {
+            rows.push({
+              key: `${baseKey}-table-row-${rowIndex++}-${index}`,
+              kind: 'segments',
+              paddingLeft,
+              borderColor,
+              segments: [{ text: tableRow.join(' │ ') }],
+            });
+          });
+        }
+      }
+
+      return rows;
+    >>>
+
+  fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:boolean" returns="any[]"
+    handler <<<
+      if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
+
+      const rows: any[] = [];
+      const ic = icons();
+      const toolColor = event.status === 'error' ? '#ef4444' : event.status === 'done' ? '#4ade80' : '#fbbf24';
+      const icon = event.status === 'error' ? ic.fail : event.status === 'done' ? ic.success : '⟳';
+      const eColor = engineColor(event.engineId ?? '');
+      const codeWidth = contentWidth(10);
+      const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+      const collapsed = !toolOutputExpanded;
+      const collapsedHint: any[] = [];
+      const changeOpenHint: any[] = [];
+      if (event.status === 'error') {
+        collapsedHint.push({ text: ' · Ctrl+Y retry', color: '#fbbf24' });
+      }
+      const nestSegment = { text: ' ⏿ ', color: eColor };
+      const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 2) => {
+        rows.push({ key: `${baseKey}-${suffix}`, kind: 'segments', paddingLeft, segments });
+      };
+      const pushOpenHintRow = (suffix: string, text: string) => {
+        pushSegmentsRow(suffix, [
+          { text, dimColor: true },
+        ]);
+      };
+      const pushDiffPreview = (suffix: string, lines: string[], sign: string, expanded: boolean, label: string) => {
+        if (!lines.length) return;
+        const window = toolPreviewWindow(lines.length, expanded);
+        const headLines = lines.slice(0, window.head);
+        const tailLines = window.tail > 0 ? lines.slice(-window.tail) : [];
+        headLines.forEach((line: string, index: number) => {
+          rows.push({
+            key: `${baseKey}-${suffix}-head-${index}`,
+            kind: 'diff',
+            paddingLeft: 2,
+            text: `${sign}${line}`,
+            maxWidth: codeWidth,
+          });
+        });
+        if (window.skipped > 0) {
+          pushOpenHintRow(`${suffix}-skip`, `    … ${window.skipped} more ${label} lines`);
+        }
+        tailLines.forEach((line: string, index: number) => {
+          rows.push({
+            key: `${baseKey}-${suffix}-tail-${index}`,
+            kind: 'diff',
+            paddingLeft: 2,
+            text: `${sign}${line}`,
+            maxWidth: codeWidth,
+          });
+        });
+      };
+
+      if (toolKey === 'reportconfidence') {
+        pushSegmentsRow('confidence', [
+          { text: `▹ ${formatConfidenceToolLabel(parsed, rawInput)}`, color: '#a8a8a8', italic: true },
+        ]);
+        return rows;
+      }
+
+      const pushRetryHintIfNeeded = (suffix: string) => {
+        if (event.status !== 'error') return;
+        pushOpenHintRow(suffix, '    Ctrl+Y drafts this failed tool into the composer so you can edit and retry.');
+      };
+
+      if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
+        const cmd = String((parsed.command as string) || rawInput || '');
+        const desc = parsed.description as string | undefined;
+        if (collapsed) {
+          const outputLines = event.output ? String(event.output).split('\n').length : 0;
+          const previewSource = desc || cmd.split('\n')[0] || '';
+          const preview = previewSource.length > 60 ? `${previewSource.slice(0, 59)}…` : previewSource;
+          pushSegmentsRow('bash-collapsed', [
+            nestSegment,
+            { text: `${icon} Bash`, color: toolColor, bold: true },
+            preview ? { text: desc ? ' · ' : ' $ ', dimColor: true } : null,
+            preview ? { text: preview, dimColor: true } : null,
+            outputLines > 0 && event.status !== 'running' ? { text: ` → ${outputLines} lines`, dimColor: true } : null,
+            ...collapsedHint,
+          ].filter(Boolean));
+          return rows;
+        }
+
+        pushSegmentsRow('bash-head', [
+          nestSegment,
+          { text: `${icon} Bash`, color: toolColor, bold: true },
+          desc ? { text: ` · ${desc}`, dimColor: true } : null,
+        ].filter(Boolean));
+        pushRetryHintIfNeeded('bash-retry');
+
+        const cmdLines = cmd ? cmd.split('\n') : [];
+        const shownCmdLines = toolOutputExpanded ? cmdLines : cmdLines.slice(0, 3);
+        shownCmdLines.forEach((line: string, index: number) => {
+          pushSegmentsRow(`bash-cmd-${index}`, [
+            { text: `    ${index === 0 ? '$ ' : '  '}`, dimColor: true },
+            { text: truncateCodeLine(line, codeWidth) },
+          ]);
+        });
+        if (!toolOutputExpanded && cmdLines.length > 3) {
+          pushSegmentsRow('bash-cmd-more', [{ text: '      …', dimColor: true }]);
+        }
+
+        if (event.output && event.status !== 'running') {
+          const outputLines = String(event.output).split('\n');
+          const maxHead = outputLines.length > 80 ? 30 : 50;
+          const tailCount = 5;
+          const showTail = !toolOutputExpanded && outputLines.length > maxHead + tailCount;
+          const headLines = toolOutputExpanded ? outputLines : outputLines.slice(0, showTail ? maxHead : outputLines.length);
+          const tailLines = showTail ? outputLines.slice(-tailCount) : [];
+          const skipped = outputLines.length - headLines.length - tailLines.length;
+
+          pushSegmentsRow('bash-output-gap', [{ text: ' ', dimColor: true }]);
+          headLines.forEach((line: string, index: number) => {
+            if (event.status === 'error') {
+              pushSegmentsRow(`bash-err-${index}`, [
+                { text: '    ', dimColor: true },
+                { text: truncateCodeLine(line, codeWidth), color: '#ef4444' },
+              ]);
+              return;
+            }
+            rows.push({
+              key: `${baseKey}-bash-out-${index}`,
+              kind: 'ansi',
+              paddingLeft: 2,
+              prefixText: '    ',
+              prefixDimColor: true,
+              text: line,
+              maxWidth: codeWidth,
+              fallbackDim: true,
+            });
+          });
+          if (!toolOutputExpanded && skipped > 0) {
+            pushOpenHintRow('bash-skip', `    … ${skipped} more lines …`);
+          }
+          tailLines.forEach((line: string, index: number) => {
+            if (event.status === 'error') {
+              pushSegmentsRow(`bash-tail-err-${index}`, [
+                { text: '    ', dimColor: true },
+                { text: truncateCodeLine(line, codeWidth), color: '#ef4444' },
+              ]);
+              return;
+            }
+            rows.push({
+              key: `${baseKey}-bash-tail-${index}`,
+              kind: 'ansi',
+              paddingLeft: 2,
+              prefixText: '    ',
+              prefixDimColor: true,
+              text: line,
+              maxWidth: codeWidth,
+              fallbackDim: true,
+            });
+          });
+        }
+        return rows;
+      }
+
+      if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') {
+        const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+        const oldStr = String((parsed.old_string as string) || (parsed.oldString as string) || '');
+        const newStr = String((parsed.new_string as string) || (parsed.newString as string) || '');
+        const shortPath = filePath ? shortToolPath(filePath) : '';
+        const oldLines = oldStr ? oldStr.split('\n') : [];
+        const newLines = newStr ? newStr.split('\n') : [];
+
+        pushSegmentsRow('edit-head', [
+          nestSegment,
+          { text: `${icon} ${ic.edit} Update`, color: toolColor, bold: true },
+          shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+          { text: ' · ', dimColor: true },
+          { text: `-${oldLines.length}`, color: '#ef4444' },
+          { text: ' ', dimColor: true },
+          { text: `+${newLines.length}`, color: '#4ade80' },
+          { text: ' lines', dimColor: true },
+          ...changeOpenHint,
+          ...collapsedHint,
+        ].filter(Boolean));
+        pushDiffPreview('edit-old', oldLines, '-', !collapsed, 'removed');
+        pushDiffPreview('edit-new', newLines, '+', !collapsed, 'added');
+        return rows;
+      }
+
+      if (toolKey === 'write' || toolKey === 'agonwrite') {
+        const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+        const content = String((parsed.content as string) || '');
+        const shortPath = filePath ? shortToolPath(filePath) : '';
+        const lines = content ? content.split('\n') : [];
+
+        pushSegmentsRow('write-head', [
+          nestSegment,
+          { text: `${icon} ${ic.write} Write`, color: toolColor, bold: true },
+          shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+          lines.length > 0 ? { text: ' · ', dimColor: true } : null,
+          lines.length > 0 ? { text: `+${lines.length}`, color: '#4ade80' } : null,
+          lines.length > 0 ? { text: ' lines', dimColor: true } : null,
+          ...changeOpenHint,
+          ...collapsedHint,
+        ].filter(Boolean));
+        pushDiffPreview('write', lines, '+', !collapsed, 'added');
+        return rows;
+      }
+
+      if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
+        const patch = parsePatchPreview(rawInput, parsed);
+        const fileSummary = patch.files.length > 0
+          ? ` (${patch.files.slice(0, 2).map((filePath: string) => shortToolPath(filePath)).join(', ')}${patch.files.length > 2 ? ', …' : ''})`
+          : '';
+
+        pushSegmentsRow('patch-head', [
+          nestSegment,
+          { text: `${icon} ${ic.edit} Patch`, color: toolColor, bold: true },
+          fileSummary ? { text: fileSummary, color: '#a78bfa' } : null,
+          { text: ' · ', dimColor: true },
+          { text: `-${patch.deletions}`, color: '#ef4444' },
+          { text: ' ', dimColor: true },
+          { text: `+${patch.additions}`, color: '#4ade80' },
+          { text: ' lines', dimColor: true },
+          ...changeOpenHint,
+          ...collapsedHint,
+        ].filter(Boolean));
+        pushDiffPreview('patch', patch.lines, '', !collapsed, 'changed');
+        return rows;
+      }
+
+      if (toolKey === 'read') {
+        const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+        const shortPath = filePath ? shortToolPath(filePath) : '';
+        const lineCount = event.output ? String(event.output).split('\n').length : 0;
+        if (collapsed) {
+          pushSegmentsRow('read-collapsed', [
+            nestSegment,
+            { text: `${icon} ${ic.read} Read`, color: toolColor, bold: true },
+            shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+            lineCount > 0 && event.status === 'done' ? { text: ` ${lineCount} lines`, dimColor: true } : null,
+            ...collapsedHint,
+          ].filter(Boolean));
+          return rows;
+        }
+
+        pushSegmentsRow('read-head', [
+          nestSegment,
+          { text: `${icon} ${ic.read} Read`, color: toolColor, bold: true },
+          shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+          lineCount > 0 && event.status === 'done' ? { text: ` · ${lineCount} lines`, dimColor: true } : null,
+        ].filter(Boolean));
+
+        if (event.output && event.status !== 'running') {
+          const outputLines = String(event.output).split('\n');
+          const shownLines = outputLines;
+          shownLines.forEach((line: string, index: number) => {
+            rows.push({
+              key: `${baseKey}-read-${index}`,
+              kind: 'syntax',
+              paddingLeft: 2,
+              prefixText: '    ',
+              prefixDimColor: true,
+              text: line,
+              maxWidth: codeWidth,
+            });
+          });
+          if (outputLines.length > shownLines.length) {
+            pushOpenHintRow('read-more', `    … ${outputLines.length - shownLines.length} more lines`);
+          }
+        }
+        return rows;
+      }
+
+      if (toolKey === 'grep' || toolKey === 'search') {
+        const pattern = String((parsed.pattern as string) || rawInput || '');
+        const path = String((parsed.path as string) || '');
+        const shortPath = path ? shortToolPath(path) : '';
+        const matchCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
+        if (collapsed) {
+          pushSegmentsRow('search-collapsed', [
+            nestSegment,
+            { text: `${icon} ${ic.search} Search`, color: toolColor, bold: true },
+            pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
+            matchCount > 0 && event.status === 'done' ? { text: ` → ${matchCount} matches`, dimColor: true } : null,
+            ...collapsedHint,
+          ].filter(Boolean));
+          return rows;
+        }
+
+        pushSegmentsRow('search-head', [
+          nestSegment,
+          { text: `${icon} ${ic.search} Search`, color: toolColor, bold: true },
+          pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
+          shortPath ? { text: ` in ${shortPath}`, dimColor: true } : null,
+          matchCount > 0 && event.status === 'done' ? { text: ` → ${matchCount} matches`, dimColor: true } : null,
+        ].filter(Boolean));
+
+        if (event.output && event.status !== 'running') {
+          const matchLines = String(event.output).split('\n').filter((line: string) => line.trim());
+          const shownLines = matchLines;
+          shownLines.forEach((line: string, index: number) => {
+            rows.push({
+              key: `${baseKey}-search-${index}`,
+              kind: 'ansi',
+              paddingLeft: 2,
+              prefixText: '    ',
+              prefixDimColor: true,
+              text: line,
+              maxWidth: codeWidth,
+              fallbackDim: true,
+            });
+          });
+          if (matchLines.length > shownLines.length) {
+            pushOpenHintRow('search-more', `    … ${matchLines.length - shownLines.length} more matches`);
+          }
+        }
+        return rows;
+      }
+
+      if (toolKey === 'glob' || toolKey === 'find') {
+        const pattern = String((parsed.pattern as string) || rawInput || '');
+        const fileCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
+        if (collapsed) {
+          pushSegmentsRow('find-collapsed', [
+            nestSegment,
+            { text: `${icon} ${ic.find} Find`, color: toolColor, bold: true },
+            pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
+            fileCount > 0 && event.status === 'done' ? { text: ` → ${fileCount} files`, dimColor: true } : null,
+            ...collapsedHint,
+          ].filter(Boolean));
+          return rows;
+        }
+
+        pushSegmentsRow('find-head', [
+          nestSegment,
+          { text: `${icon} ${ic.find} Find`, color: toolColor, bold: true },
+          pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
+          fileCount > 0 && event.status === 'done' ? { text: ` → ${fileCount} files`, dimColor: true } : null,
+        ].filter(Boolean));
+
+        if (event.output && event.status !== 'running') {
+          const files = String(event.output).split('\n').filter((line: string) => line.trim());
+          const shownFiles = files;
+          shownFiles.forEach((file: string, index: number) => {
+            pushSegmentsRow(`find-file-${index}`, [{ text: `    ${truncateCodeLine(file, codeWidth)}`, dimColor: true }]);
+          });
+          if (files.length > shownFiles.length) {
+            pushOpenHintRow('find-more', `    … ${files.length - shownFiles.length} more files`);
+          }
+        }
+        return rows;
+      }
+
+      const label = (() => {
+        if (event.tool === 'Read') return `${ic.read} Read`;
+        if (event.tool === 'Edit') return `${ic.edit} Edit`;
+        if (event.tool === 'Write') return `${ic.write} Write`;
+        if (event.tool === 'Bash') return `${ic.bash} Bash`;
+        if (event.tool === 'Grep') return `${ic.search} Search`;
+        if (event.tool === 'Glob') return `${ic.find} Find`;
+        return `${ic.tool} ${event.tool}`;
+      })();
+      const inputPreview = rawInput.length > 80 ? `${rawInput.slice(0, 79)}…` : rawInput;
+      const outLines = event.output ? String(event.output).split('\n').length : 0;
+
+      pushSegmentsRow('generic', [
+        nestSegment,
+        { text: `${icon} ${label}`, color: toolColor, bold: true },
+        inputPreview ? { text: ` ${inputPreview}`, dimColor: true } : null,
+        outLines > 0 && event.status === 'done' ? { text: ` → ${outLines} lines`, dimColor: true } : null,
+        ...(collapsed ? collapsedHint : []),
+      ].filter(Boolean));
+
+      return rows;
+    >>>
+
+  fn name=buildCollapsedToolGroupRows params="baseKey:string, events:any[]" returns="any[]"
+    handler <<<
+      if (!events || events.length === 0) return [];
+
+      const rows: any[] = [];
+      const counts = new Map<string, number>();
+      const changedFiles: string[] = [];
+      const changeEvents: any[] = [];
+      let confidenceLabel = '';
+      let errors = 0;
+      let running = 0;
+
+      const labelFor = (event: any) => {
+        const toolKey = String(event.tool ?? '').toLowerCase();
+        if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') return 'Bash';
+        if (toolKey === 'read') return 'Read';
+        if (toolKey === 'grep' || toolKey === 'search') return 'Search';
+        if (toolKey === 'glob' || toolKey === 'find') return 'Find';
+        if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') return 'Update';
+        if (toolKey === 'write' || toolKey === 'agonwrite') return 'Write';
+        if (toolKey === 'applypatch' || toolKey === 'apply_patch') return 'Patch';
+        if (toolKey === 'reportconfidence') return 'Confidence';
+        if (toolKey === 'quicknero') return 'QuickNero';
+        return String(event.tool ?? 'Tool');
+      };
+
+      for (const event of events) {
+        const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+        if (event.status === 'error') errors += 1;
+        if (event.status === 'running') running += 1;
+        if (toolKey === 'reportconfidence') {
+          confidenceLabel = formatConfidenceToolLabel(parsed, rawInput);
+          continue;
+        }
+        const label = labelFor(event);
+        counts.set(label, (counts.get(label) ?? 0) + 1);
+        if (isMutatingToolCall(event)) {
+          changeEvents.push(event);
+          const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+          if (filePath) {
+            const shortPath = shortToolPath(filePath);
+            if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
+          }
+          if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
+            for (const patchFile of parsePatchPreview(rawInput, parsed).files) {
+              const shortPath = shortToolPath(patchFile);
+              if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
+            }
+          }
+        }
+      }
+
+      const countSummary = Array.from(counts.entries())
+        .map(([label, count]) => `${label}${count > 1 ? `×${count}` : ''}`)
+        .join(' · ');
+      const statusSummary = errors > 0
+        ? ` · ${errors} error${errors === 1 ? '' : 's'}`
+        : running > 0 ? ' · running' : '';
+      const changedSummary = changedFiles.length > 0
+        ? ` · changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', …' : ''}`
+        : '';
+
+      if (confidenceLabel) {
+        rows.push({
+          key: `${baseKey}-confidence`,
+          kind: 'segments',
+          paddingLeft: 2,
+          segments: [
+            { text: `▹ ${confidenceLabel}`, color: '#a8a8a8', italic: true },
+          ],
+        });
+      }
+
+      rows.push({
+        key: `${baseKey}-tool-group-head`,
+        kind: 'segments',
+        paddingLeft: 4,
+        segments: [
+          { text: `${events.length} tool calls`, dimColor: true },
+          countSummary ? { text: ' · ', dimColor: true } : null,
+          countSummary ? { text: countSummary, dimColor: true } : null,
+          statusSummary ? { text: statusSummary, dimColor: true } : null,
+          changedSummary ? { text: changedSummary, dimColor: true } : null,
+          { text: '  ' },
+          { text: 'Ctrl+E', color: '#f59e0b' },
+        ].filter(Boolean),
+      });
+
+      changeEvents.forEach((event: any, index: number) => {
+        rows.push(...buildToolCallRows(`${baseKey}-change-${index}`, event, false));
+      });
+
+      return rows;
+    >>>
+
+  fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns="any[]"
+    handler <<<
+      const rows: any[] = [];
+      const proseWidth = contentWidth(4);
+      const chatWidth = contentWidth(2);
+      const engineWidth = contentWidth(8);
+      const pushSpacer = (key: string) => {
+        rows.push({ key, kind: 'spacer' });
+      };
+      const pushSegmentsRow = (key: string, paddingLeft: number, segments: any[], borderColor = '') => {
+        rows.push({ key, kind: 'segments', paddingLeft, segments, borderColor });
+      };
+      const pushRichText = (baseKey: string, text: string, paddingLeft: number, wrapWidth: number, borderColor = '') => {
+        const richLines = parseProseToRichLines(String(text ?? ''), wrapWidth);
+        richLines.forEach((richLine: any, index: number) => {
+          rows.push({
+            key: `${baseKey}-rich-${index}`,
+            kind: 'rich',
+            paddingLeft,
+            richLine,
+            borderColor,
+          });
+        });
+      };
+
+      let skippedUntil = -1;
+      blocks.forEach((block: OutputBlock, blockIndex: number) => {
+        if (blockIndex < skippedUntil) return;
+        const event = block.event as any;
+        const baseKey = `block-${block.id}`;
+
+        if (!toolOutputExpanded && event.type === 'tool-call') {
+          const groupedEvents = [event];
+          let nextIndex = blockIndex + 1;
+          while (nextIndex < blocks.length) {
+            const nextEvent = blocks[nextIndex].event as any;
+            if (nextEvent.type !== 'tool-call') break;
+            groupedEvents.push(nextEvent);
+            nextIndex += 1;
+          }
+
+          if (groupedEvents.length > 1) {
+            rows.push(...buildCollapsedToolGroupRows(baseKey, groupedEvents));
+            skippedUntil = nextIndex;
+            return;
+          }
+        }
+
+        switch (event.type) {
+          case 'text':
+            pushRichText(baseKey, event.content, 2, proseWidth);
+            return;
+          case 'user-message':
+            if (rows.length > 0) pushSpacer(`${baseKey}-gap`);
+            pushSegmentsRow(`${baseKey}-user`, 1, [
+              { text: '❯ ', color: '#f97316', bold: true },
+              { text: event.content, bold: true },
+            ]);
+            return;
+          case 'engine-block': {
+            const cleaned = cleanEngineOutput(event.content);
+            if (!cleaned.trim()) return;
+            const accentColor = color256toHex(event.color ?? (ENGINE_COLORS[event.engineId] ?? 124));
+            if (rows.length > 0) pushSpacer(`${baseKey}-gap`);
+            if (mode === 'chat') {
+              pushSegmentsRow(`${baseKey}-chat-head`, 1, [{ text: `${icons().dotOn} ${event.engineId}`, color: accentColor, bold: true }]);
+              pushSpacer(`${baseKey}-chat-space`);
+              rows.push(...parseMarkdownToRows(baseKey, cleaned, chatWidth, 1, ''));
+              return;
+            }
+            pushSegmentsRow(`${baseKey}-engine-head`, 2, [
+              { text: '┌── ', color: accentColor },
+              { text: event.engineId, color: accentColor, bold: true },
+            ]);
+            pushSegmentsRow(`${baseKey}-engine-rule`, 2, [{ text: '│', color: accentColor }]);
+            rows.push(...parseMarkdownToRows(baseKey, cleaned, engineWidth, 2, accentColor));
+            pushSegmentsRow(`${baseKey}-engine-foot`, 2, [{ text: '└──', color: accentColor }]);
+            return;
+          }
+          case 'separator':
+            pushSpacer(`${baseKey}-separator`);
+            return;
+          case 'header':
+            pushSpacer(`${baseKey}-header-gap`);
+            pushSegmentsRow(`${baseKey}-header`, 0, [
+              { text: '  ', dimColor: true },
+              { text: `${icons().header} ${event.title}`, color: 'cyan', bold: true },
+            ]);
+            return;
+          case 'success':
+            pushSegmentsRow(`${baseKey}-success`, 0, [
+              { text: '  ' },
+              { text: icons().success, color: '#4ade80' },
+              { text: ` ${event.message}` },
+            ]);
+            return;
+          case 'warning':
+            pushSegmentsRow(`${baseKey}-warning`, 0, [
+              { text: '  ' },
+              { text: icons().warning, color: '#fbbf24' },
+              { text: ` ${event.message}` },
+            ]);
+            return;
+          case 'info':
+            pushSegmentsRow(`${baseKey}-info`, 0, [{
+              text: `  ${event.message}`,
+              dimColor: true,
+              italic: isCesarTelemetryLine(String(event.message ?? '')),
+              color: isCesarTelemetryLine(String(event.message ?? '')) ? '#8b8b8b' : undefined,
+            }]);
+            return;
+          case 'error': {
+            const errLines = String(event.message ?? '').split('\n');
+            const firstLine = errLines[0] || 'Error';
+            pushSegmentsRow(`${baseKey}-error-main`, 0, [
+              { text: '  ' },
+              { text: icons().fail, color: '#ef4444' },
+              { text: ` ${firstLine}`, color: '#ef4444' },
+            ]);
+            errLines.slice(1, 5).forEach((line: string, index: number) => {
+              pushSegmentsRow(`${baseKey}-error-${index}`, 0, [{ text: `    ${line.trim()}`, dimColor: true }]);
+            });
+            if (errLines.length > 5) {
+              pushSegmentsRow(`${baseKey}-error-more`, 0, [{ text: `    … ${errLines.length - 5} more lines`, dimColor: true }]);
+            }
+            return;
+          }
+          case 'permission-ask': {
+            const preview = truncateCodeLine(String(event.command ?? '').split('\n')[0] ?? '', contentWidth(26));
+            const previewEvent = {
+              type: 'tool-call',
+              engineId: 'cesar',
+              tool: event.tool,
+              input: String(event.command ?? ''),
+              status: 'running',
+            } as any;
+            pushSegmentsRow(`${baseKey}-perm-head`, 1, [
+              { text: icons().warning, color: '#fbbf24' },
+              { text: ` ${event.tool} approval requested`, color: '#fbbf24', bold: true },
+            ]);
+            pushSegmentsRow(`${baseKey}-perm-actions`, 1, [
+              { text: '  [Y] Yes', color: '#4ade80', bold: true },
+              { text: '  ', dimColor: true },
+              { text: '[N] No', color: '#ef4444', bold: true },
+              { text: '  ', dimColor: true },
+              { text: '[A] Always', color: '#60a5fa', bold: true },
+            ].filter(Boolean));
+            pushSegmentsRow(`${baseKey}-perm-cmd`, 1, preview
+              ? [
+                  { text: '  $ ', dimColor: true },
+                  { text: preview, dimColor: true },
+                ]
+              : [{ text: '  respond below', dimColor: true }]);
+            if (isMutatingToolCall(previewEvent)) {
+              rows.push(...buildToolCallRows(`${baseKey}-perm-diff`, previewEvent, false));
+            }
+            return;
+          }
+          case 'thinking-chunk': {
+            if (thinkingExpanded === false) return;
+            const lines = String(event.chunk ?? '').split('\n').filter((line: string) => line.trim());
+            lines.forEach((line: string, index: number) => {
+              pushSegmentsRow(`${baseKey}-thinking-${index}`, 2, [{ text: `▹ ${line}`, color: '#a8a8a8', italic: true }]);
+            });
+            return;
+          }
+          case 'streaming-chunk': {
+            const chunkText = String(event.chunk ?? '');
+            const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
+            if (isThinking && thinkingExpanded === false) return;
+            pushSegmentsRow(`${baseKey}-stream`, 2, [{ text: chunkText, dimColor: isThinking, italic: isThinking }]);
+            return;
+          }
+          case 'kern-draft': {
+            const borderColor = engineColor(event.engineId);
+            if (rows.length > 0) pushSpacer(`${baseKey}-gap`);
+            pushSegmentsRow(`${baseKey}-draft-head`, 2, [
+              { text: '┌── ', color: borderColor },
+              { text: event.engineId, color: borderColor, bold: true },
+              event.critique ? { text: ` ${event.critique}`, color: 'green' } : null,
+            ].filter(Boolean));
+            pushSegmentsRow(`${baseKey}-draft-rule`, 2, [{ text: '│', color: borderColor }]);
+            rows.push(...parseMarkdownToRows(baseKey, cleanEngineOutput(event.content), engineWidth, 2, borderColor));
+            pushSegmentsRow(`${baseKey}-draft-foot`, 2, [{ text: '└──', color: borderColor }]);
+            return;
+          }
+          case 'debate-round': {
+            const borderColor = engineColor(event.engineId);
+            if (rows.length > 0) pushSpacer(`${baseKey}-gap`);
+            pushSegmentsRow(`${baseKey}-debate-head`, 2, [
+              { text: '┌── ', color: borderColor },
+              { text: event.engineId, color: borderColor, bold: true },
+              { text: ` (${event.position})`, dimColor: true },
+            ]);
+            pushSegmentsRow(`${baseKey}-debate-rule`, 2, [{ text: '│', color: borderColor }]);
+            rows.push(...parseMarkdownToRows(baseKey, cleanEngineOutput(event.argument), engineWidth, 2, borderColor));
+            pushSegmentsRow(`${baseKey}-debate-foot`, 2, [{ text: '└──', color: borderColor }]);
+            return;
+          }
+          case 'verdict':
+            pushRichText(baseKey, cleanEngineOutput(event.summary), 2, proseWidth);
+            return;
+          case 'scoreboard':
+            pushSegmentsRow(`${baseKey}-score-title`, 2, [{ text: event.title, bold: true }]);
+            if (event.winner) pushSegmentsRow(`${baseKey}-score-winner`, 2, [{ text: `★ Winner: ${event.winner}`, color: 'green', bold: true }]);
+            pushSegmentsRow(`${baseKey}-score-rule`, 2, [{ text: '─'.repeat(46), dimColor: true }]);
+            (event.metrics ?? []).forEach((metric: any, index: number) => {
+              pushSegmentsRow(`${baseKey}-score-${index}`, 2, [{ text: `${metric.label}: ${metric.values.join(' │ ')}` }]);
+            });
+            return;
+          case 'plan':
+            pushSegmentsRow(`${baseKey}-plan-id`, 2, [{ text: `▸ Plan: ${event.plan.id.slice(0, 12)}`, color: 'cyan', bold: true }]);
+            pushSegmentsRow(`${baseKey}-plan-state`, 2, [{ text: `State: ${event.plan.state}` }]);
+            pushSegmentsRow(`${baseKey}-plan-task`, 2, [{ text: `Task: ${event.plan.action.task}` }]);
+            pushSegmentsRow(`${baseKey}-plan-rule`, 2, [{ text: '─'.repeat(46), dimColor: true }]);
+            (event.plan.steps ?? []).forEach((step: any, index: number) => {
+              const state = step.result?.state ?? 'pending';
+              const icon = state === 'completed' ? icons().success : state === 'failed' ? icons().fail : state === 'running' ? icons().dotOn : icons().dotOff;
+              const color = state === 'completed' ? 'green' : state === 'failed' ? 'red' : state === 'running' ? 'yellow' : undefined;
+              pushSegmentsRow(`${baseKey}-plan-step-${index}`, 2, [
+                { text: icon, color },
+                { text: ` ${step.label}` },
+              ]);
+            });
+            if (event.plan.state === 'draft') {
+              pushSegmentsRow(`${baseKey}-plan-draft`, 2, [{ text: 'Awaiting approval — Y accept  N cancel', dimColor: true }]);
+            }
+            return;
+          case 'plan-list':
+            (event.plans ?? []).forEach((plan: any, index: number) => {
+              pushSegmentsRow(`${baseKey}-plan-list-${index}`, 2, [{ text: `${plan.id.slice(0, 12)}  ${plan.state}  ${plan.action.task}` }]);
+            });
+            return;
+          case 'plan-proposal':
+            pushRichText(baseKey, String(event.markdown ?? ''), 2, proseWidth);
+            return;
+          case 'plan-execution':
+            pushSegmentsRow(`${baseKey}-plan-exec`, 2, [{ text: `Executing plan ${event.plan?.id?.slice?.(0, 12) ?? ''}`, bold: true }]);
+            pushSegmentsRow(`${baseKey}-plan-exec-state`, 2, [{ text: `State: ${event.plan?.state ?? 'running'}`, dimColor: true }]);
+            return;
+          case 'table': {
+            pushSegmentsRow(`${baseKey}-table-head`, 2, [{ text: (event.headers ?? []).join(' │ '), bold: true }]);
+            pushSegmentsRow(`${baseKey}-table-rule`, 2, [{ text: '─'.repeat(Math.max(12, (event.headers ?? []).join(' │ ').length)), dimColor: true }]);
+            (event.rows ?? []).forEach((row: string[], index: number) => {
+              pushSegmentsRow(`${baseKey}-table-row-${index}`, 2, [{ text: row.join(' │ ') }]);
+            });
+            return;
+          }
+          case 'tool-call':
+            rows.push(...buildToolCallRows(baseKey, event, toolOutputExpanded));
+            return;
+          case 'tool-call-group': {
+            const groupBlocks = Array.isArray((event as any).blocks) ? (event as any).blocks : [];
+            // Expanded: unpack every inner tool call so Ctrl+E reveals full
+            // output. Collapsed (default): one compact summary row, matching
+            // the Static-era ToolCallGroup renderer — preserves the bundling
+            // that output.kern emits (codex review P3).
+            if (toolOutputExpanded) {
+              groupBlocks.forEach((child: any, index: number) => {
+                const childEvent = child?.event;
+                if (childEvent && childEvent.type === 'tool-call') {
+                  rows.push(...buildToolCallRows(`${baseKey}-g-${index}`, childEvent, toolOutputExpanded));
+                }
+              });
+              return;
+            }
+            const groupedEvents: any[] = [];
+            const appendGroup = (blocksToAppend: any[]) => {
+              blocksToAppend.forEach((child: any) => {
+                const childEvent = child?.event;
+                if (childEvent && childEvent.type === 'tool-call') groupedEvents.push(childEvent);
+              });
+            };
+            appendGroup(groupBlocks);
+            let nextIndex = blockIndex + 1;
+            while (nextIndex < blocks.length) {
+              const nextEvent = blocks[nextIndex].event as any;
+              if (nextEvent?.type === 'tool-call-group') {
+                appendGroup(Array.isArray(nextEvent.blocks) ? nextEvent.blocks : []);
+                nextIndex += 1;
+                continue;
+              }
+              if (nextEvent?.type === 'tool-call') {
+                groupedEvents.push(nextEvent);
+                nextIndex += 1;
+                continue;
+              }
+              break;
+            }
+            rows.push(...buildCollapsedToolGroupRows(baseKey, groupedEvents));
+            skippedUntil = nextIndex;
+            return;
+          }
+          case 'response-meta': {
+            const totalTokens = (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
+            const parts = [
+              event.engineId,
+              `${(event.elapsed / 1000).toFixed(1)}s`,
+              totalTokens > 0 ? `${totalTokens} tok` : '',
+              event.cost ? `$${event.cost.toFixed(4)}` : '',
+            ].filter(Boolean);
+            pushSegmentsRow(`${baseKey}-meta`, 2, [{ text: parts.join(' · '), dimColor: true }]);
+            return;
+          }
+          case 'cesar-recap': {
+            const files = Array.isArray((event as any).files) ? (event as any).files : [];
+            const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
+            const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
+            const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
+            const checkpoints = Array.isArray((event as any).checkpoints) ? (event as any).checkpoints : [];
+            const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
+            const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
+            const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
+            const failedTools = Number((event as any).failedTools ?? 0);
+            const statusIcon = failedTools > 0 ? icons().warning : icons().success;
+            const statusColor = failedTools > 0 ? '#fbbf24' : '#4ade80';
+            const toolLine = toolSummary.length > 0
+              ? `${(event as any).toolCount ?? toolSummary.length} tools: ${toolSummary.slice(0, 8).join(', ')}${toolSummary.length > 8 ? ', ...' : ''}`
+              : `${(event as any).toolCount ?? 0} tools`;
+            const fileGlyph = (status: string) => status === 'edited' ? 'M' : status === 'created' ? '+' : 'r';
+            pushSegmentsRow(`${baseKey}-recap-head`, 1, [{ text: '◆ Cesar recap', color: '#f97316', bold: true }]);
+            pushSegmentsRow(`${baseKey}-recap-outcome`, 1, [
+              { text: statusIcon, color: statusColor },
+              { text: ` ${(event as any).outcome ?? 'Completed'}` },
+              { text: ` · ${(event as any).mode ?? 'self'}`, dimColor: true },
+              confidence ? { text: ` · ${confidence}`, dimColor: true } : null,
+              seconds ? { text: ` · ${seconds}`, dimColor: true } : null,
+            ].filter(Boolean));
+            pushSegmentsRow(`${baseKey}-recap-tools`, 1, [{ text: `  ${toolLine}${failedTools > 0 ? ` · ${failedTools} failed` : ''}`, dimColor: true }]);
+            if ((event as any).confidenceReasoning) {
+              pushSegmentsRow(`${baseKey}-recap-why`, 1, [{ text: `  why: ${(event as any).confidenceReasoning}`, italic: true, color: '#a8a8a8' }]);
+            }
+            commands.slice(0, 5).forEach((cmd: any, index: number) => {
+              const failed = String(cmd.status).toLowerCase() === 'error';
+              pushSegmentsRow(`${baseKey}-recap-cmd-${index}`, 1, [
+                { text: `  ${failed ? icons().fail : icons().success}`, color: failed ? '#ef4444' : '#4ade80' },
+                { text: ` ${cmd.label}` },
+                { text: ` · ${cmd.command}`, dimColor: true },
+              ]);
+            });
+            if (files.length > 0) {
+              pushSegmentsRow(`${baseKey}-recap-files`, 1, [{
+                text: `  files: ${files.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}${files.length > 5 ? `, +${files.length - 5} more` : ''}`,
+                dimColor: true,
+              }]);
+            }
+            if (checkpoints.length > 0) {
+              pushSegmentsRow(`${baseKey}-recap-checkpoint`, 1, [{
+                text: `  checkpoint: ${checkpoints[0].id}${checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''} · /undo ${checkpoints[0].id} reverts checkpoint`,
+                color: '#22d3ee',
+              }]);
+            }
+            diffFiles.slice(0, 4).forEach((file: any, index: number) => {
+              pushSegmentsRow(`${baseKey}-recap-diff-${index}`, 1, [
+                { text: `  Δ ${file.relPath ?? file.path}`, color: '#22d3ee' },
+                { text: ` +${Number(file.additions ?? 0)} -${Number(file.deletions ?? 0)}`, dimColor: true },
+              ]);
+              const lines = Array.isArray(file.lines) ? file.lines : [];
+              lines.slice(0, 6).forEach((line: string, lineIndex: number) => {
+                const color = line.startsWith('+') ? '#4ade80' : line.startsWith('-') ? '#ef4444' : '#fbbf24';
+                pushSegmentsRow(`${baseKey}-recap-diff-${index}-${lineIndex}`, 1, [{
+                  text: `    ${line}`,
+                  color,
+                  dimColor: line.startsWith('@@'),
+                }]);
+              });
+              if (Number(file.omitted ?? 0) > 0) {
+                pushSegmentsRow(`${baseKey}-recap-diff-${index}-more`, 1, [{
+                  text: `    … ${Number(file.omitted)} more diff lines`,
+                  dimColor: true,
+                }]);
+              }
+            });
+            warnings.slice(0, 3).forEach((warning: string, index: number) => {
+              pushSegmentsRow(`${baseKey}-recap-warning-${index}`, 1, [
+                { text: `  ${icons().warning}`, color: '#fbbf24' },
+                { text: ` ${warning}`, color: '#fbbf24' },
+              ]);
+            });
+            return;
+          }
+          case 'file-changes':
+            pushSegmentsRow(`${baseKey}-files-head`, 2, [{ text: 'Files changed', bold: true }]);
+            (event.files ?? []).forEach((file: any, index: number) => {
+              const shortPath = String(file.path ?? '').replace(`${process.cwd()}/`, '');
+              pushSegmentsRow(`${baseKey}-file-${index}`, 2, [{
+                text: `${file.status === 'created' ? icons().dotOn : file.status === 'deleted' ? '⊖' : icons().success} ${shortPath} +${file.additions} -${file.deletions}`,
+                color: file.status === 'created' ? '#22d3ee' : file.status === 'deleted' ? '#ef4444' : '#4ade80',
+              }]);
+            });
+            return;
+          case 'dashboard':
+            LOGO_LINES.forEach((line: string, index: number) => {
+              rows.push({
+                key: `${baseKey}-logo-${index}`,
+                kind: 'gradient',
+                paddingLeft: 1,
+                text: line,
+                colors: BRAND,
+              });
+            });
+            pushSpacer(`${baseKey}-dash-gap-1`);
+            pushSegmentsRow(`${baseKey}-dash-tag`, 0, [{ text: '     Any AI can join. They compete. You ship.', color: '#d4a041', italic: true }]);
+            pushSegmentsRow(`${baseKey}-dash-version`, 0, [
+              { text: `     v${VERSION}  ·  Powered by `, dimColor: true },
+              { text: 'KERNlang.dev', color: '#fbbf24', bold: true },
+              { text: KERN_VERSION ? ` (KERN ${KERN_VERSION})` : '', dimColor: true },
+            ]);
+            pushSegmentsRow(`${baseKey}-dash-engines`, 0, [
+              { text: '  Engines: ', color: '#f97316' },
+              ...((event.enabled ?? []) as string[]).flatMap((engineId: string, index: number, list: string[]) => ([
+                { text: engineId, color: engineColor(engineId), bold: true },
+                index < list.length - 1 ? { text: ' ', dimColor: true } : null,
+              ].filter(Boolean))),
+            ].filter(Boolean));
+            if (event.eloTop) {
+              pushSegmentsRow(`${baseKey}-dash-elo`, 0, [
+                { text: '  ' },
+                { text: '♛ ', color: '#fbbf24' },
+                { text: event.eloTop.id, color: engineColor(event.eloTop.id), bold: true },
+                { text: ` ${event.eloTop.rating} ELO`, dimColor: true },
+              ]);
+            }
+            [
+              { prompt: '"explain the auth flow"', target: 'chat', color: '#fbbf24' },
+              { prompt: '"codex how would you do this?"', target: 'codex', color: '#60a5fa' },
+              { prompt: '"fix login bug, test with npm test"', target: 'forge', color: '#f97316' },
+              { prompt: '"should we use REST or GraphQL?"', target: 'tribunal', color: '#a78bfa' },
+            ].forEach((example: any, index: number) => pushSegmentsRow(`${baseKey}-dash-example-${index}`, 0, [
+              { text: '  ', dimColor: true },
+              { text: example.prompt, dimColor: true, italic: true },
+              { text: '  →  ', dimColor: true },
+              { text: example.target, color: example.color },
+            ]));
+            pushSpacer(`${baseKey}-dash-gap-4`);
+            pushSegmentsRow(`${baseKey}-dash-help`, 0, [
+              { text: '  Just talk, or type ', dimColor: true },
+              { text: '/', color: '#f97316' },
+              { text: ' for commands. ', dimColor: true },
+              { text: 'Tab', color: '#f97316' },
+              { text: ' plan · ', dimColor: true },
+              { text: 'Ctrl+A', color: '#f97316' },
+              { text: ' auto', dimColor: true },
+            ]);
+            return;
+          case 'agent-step-start':
+            pushSegmentsRow(`${baseKey}-agent-start`, 2, [{ text: `${event.engineId} turn ${event.turnIndex + 1} started`, dimColor: true }]);
+            return;
+          case 'agent-step-end':
+            pushSegmentsRow(`${baseKey}-agent-end`, 2, [{ text: `${event.engineId} ${event.outcome} · ${event.toolCalls} tools · ${event.tokensUsed} tok`, dimColor: true }]);
+            return;
+          case 'agent-turn-summary':
+            pushSegmentsRow(`${baseKey}-agent-summary`, 2, [{ text: `${event.engineId} summary · ${event.turnsRemaining} turns left · ${event.cumulativeTokens} tok`, dimColor: true }]);
+            return;
+          case 'agent-budget-warning':
+            pushSegmentsRow(`${baseKey}-agent-budget`, 2, [{ text: `${event.engineId} ${event.kind} budget warning · ${event.remaining} remaining`, color: '#fbbf24' }]);
+            return;
+          case 'engine-switch':
+            pushSegmentsRow(`${baseKey}-engine-switch`, 2, [{ text: `Engine switch: ${event.from ?? 'auto'} → ${event.to}`, dimColor: true }]);
+            return;
+          case 'shadow-active':
+            pushSegmentsRow(`${baseKey}-shadow`, 2, [{ text: `Shadow active: ${event.shadowEngineId} behind ${event.foregroundEngineId}`, dimColor: true }]);
+            return;
+          case 'agent-routing':
+            pushSegmentsRow(`${baseKey}-routing`, 2, [{ text: `Routing: ${event.mode} · ${event.engines.join(', ')}`, dimColor: true }]);
+            return;
+          case 'agent-team-start':
+            pushSegmentsRow(`${baseKey}-team-start`, 2, [{ text: `Team ${event.teamId}: ${event.engineIds.join(', ')} · ${event.taskKind}`, dimColor: true }]);
+            return;
+          case 'agent-team-complete':
+            pushSegmentsRow(`${baseKey}-team-complete`, 2, [{ text: `Team ${event.teamId} complete · winner ${event.winner ?? 'none'} · $${event.teamCostUsd.toFixed(2)}`, dimColor: true }]);
+            return;
+          case 'spinner-start':
+          case 'spinner-stop':
+          case 'spinner-update':
+          case 'progress-update':
+          case 'progress-clear':
+          case 'confidence-update':
+          case 'streaming-end':
+          case 'clear':
+          case 'question':
+          case 'patch-review':
+            return;
+          default:
+            pushSegmentsRow(`${baseKey}-fallback`, 2, [{ text: `[${event.type}]`, dimColor: true }]);
+        }
+      });
+
+      return rows;
+    >>>

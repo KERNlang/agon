@@ -1,0 +1,30 @@
+// ── Composer history & persistence ──────────────────────────────────
+import from="node:path" names="join"
+import from="node:fs" names="readFileSync,writeFileSync"
+import from="@agon/core" names="ensureAgonHome,getAgonHome"
+
+module name=AppComposer
+  const name=COMPOSER_HISTORY_LIMIT type=number value=200
+
+  fn name=composerHistoryPath params="" returns=string expr={{ return join(getAgonHome(), 'composer-history.json'); }}
+
+  fn name=loadComposerInputHistory params="" returns="string[]"
+    handler lang="kern"
+      try
+        let name=parsed value="JSON.parse(readFileSync(composerHistoryPath(), 'utf-8'))"
+        if cond="!Array.isArray(parsed)"
+          return value="[]"
+        return value="parsed .filter((entry: any) => typeof entry === 'string' && entry.trim().length > 0) .slice(-COMPOSER_HISTORY_LIMIT)"
+        catch name=e
+          return value="[]"
+
+  fn name=saveComposerInputHistory params="history:string[]" returns=void
+    handler <<<
+      try {
+        ensureAgonHome();
+        const entries = Array.isArray(history) ? history.slice(-COMPOSER_HISTORY_LIMIT) : [];
+        writeFileSync(composerHistoryPath(), JSON.stringify(entries, null, 2) + '\n', 'utf-8');
+      } catch {
+        // History is convenience state; never block the REPL on disk errors.
+      }
+    >>>

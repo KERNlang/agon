@@ -1,0 +1,55 @@
+// ── Display utilities — widths, clamping, scrolling ─────────────────
+module name=AppDisplayUtils
+  fn name=maxScrollOffsetForRowCount params="rowCount:number, rowBudget:number" returns=number expr={{ return Math.max(0, rowCount - Math.max(1, rowBudget)); }}
+
+  fn name=nextWheelAnimationStep params="pending:number" returns="{step:number,remaining:number}" export=true
+    handler lang="kern"
+      if cond="!Number.isFinite(pending) || pending === 0"
+        return value="{ step: 0, remaining: 0 }"
+      let name=direction value="pending > 0 ? 1 : -1"
+      let name=magnitude value="Math.abs(pending)"
+      let name=stepSize value="magnitude >= 16 ? 6 : magnitude >= 10 ? 5 : magnitude >= 6 ? 4 : magnitude >= 3 ? 2 : 1"
+      let name=step value="direction * Math.min(stepSize, magnitude)"
+      return value="{ step, remaining: pending - step }"
+
+  fn name=clampNumber params="value:number, min:number, max:number" returns=number expr={{ return Math.min(max, Math.max(min, value)); }}
+
+  fn name=charDisplayWidth params="char:string" returns=number
+    handler lang="kern"
+      if cond="!char"
+        return value="0"
+      let name=codePoint value="char.codePointAt(0) ?? 0"
+      if cond="codePoint === 0"
+        return value="0"
+      if cond="codePoint < 32 || (codePoint >= 0x7f && codePoint < 0xa0)"
+        return value="0"
+      if cond="(codePoint >= 0x0300 && codePoint <= 0x036f) || (codePoint >= 0x1ab0 && codePoint <= 0x1aff) || (codePoint >= 0x1dc0 && codePoint <= 0x1dff) || (codePoint >= 0x20d0 && codePoint <= 0x20ff) || (codePoint >= 0xfe20 && codePoint <= 0xfe2f)"
+        return value="0"
+      if cond="codePoint === 0x2329 || codePoint === 0x232a || (codePoint >= 0x1100 && codePoint <= 0x115f) || (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f) || (codePoint >= 0xac00 && codePoint <= 0xd7a3) || (codePoint >= 0xf900 && codePoint <= 0xfaff) || (codePoint >= 0xfe10 && codePoint <= 0xfe19) || (codePoint >= 0xfe30 && codePoint <= 0xfe6f) || (codePoint >= 0xff00 && codePoint <= 0xff60) || (codePoint >= 0xffe0 && codePoint <= 0xffe6) || (codePoint >= 0x1f300 && codePoint <= 0x1f64f) || (codePoint >= 0x1f900 && codePoint <= 0x1f9ff) || (codePoint >= 0x20000 && codePoint <= 0x3fffd)"
+        return value="2"
+      return value="1"
+
+  fn name=stringDisplayWidth params="text:string" returns=number export=true
+    handler lang="kern"
+      let name=width kind=let value="0"
+      each name=char in="Array.from(String(text ?? ''))"
+        assign target="width" op="+=" value="charDisplayWidth(char)"
+      return value="width"
+
+  fn name=displayColumnToStringIndex params="text:string, targetColumn:number" returns=number export=true
+    handler lang="kern"
+      let name=value value="String(text ?? '')"
+      if cond="!Number.isFinite(targetColumn) || targetColumn <= 0"
+        return value="0"
+      let name=displayColumn kind=let value="0"
+      let name=stringIndex kind=let value="0"
+      each name=char in="Array.from(value)"
+        let name=width value="charDisplayWidth(char)"
+        let name=nextDisplayColumn value="displayColumn + width"
+        if cond="targetColumn < nextDisplayColumn"
+          return value="stringIndex"
+        assign target="stringIndex" op="+=" value="char.length"
+        if cond="targetColumn === nextDisplayColumn"
+          return value="stringIndex"
+        assign target="displayColumn" value="nextDisplayColumn"
+      return value="value.length"

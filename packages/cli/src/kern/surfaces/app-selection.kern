@@ -1,0 +1,109 @@
+// ── Text selection & transcript coordinate conversion ───────────────
+import from="./app-display-utils.js" names="charDisplayWidth,stringDisplayWidth,displayColumnToStringIndex,clampNumber"
+
+module name=AppSelection
+  fn name=normalizeRowSelection params="anchor:number|null, focus:number|null" returns="{start:number,end:number}|null"
+    handler lang="kern"
+      if cond="anchor === null || focus === null"
+        return value="null"
+      return value="{ start: Math.min(anchor, focus), end: Math.max(anchor, focus) }"
+
+  fn name=normalizeTextSelection params="anchorRow:number|null, anchorCol:number|null, focusRow:number|null, focusCol:number|null" returns="{startRow:number,startCol:number,endRow:number,endCol:number}|null"
+    handler lang="kern"
+      if cond="anchorRow === null || anchorCol === null || focusRow === null || focusCol === null"
+        return value="null"
+      if cond="anchorRow < focusRow"
+        return value="{ startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol }"
+      if cond="anchorRow > focusRow"
+        return value="{ startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol }"
+      if cond="anchorCol <= focusCol"
+        return value="{ startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol }"
+      return value="{ startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol }"
+
+  fn name=richLineToPlainText params="line:any" returns=string
+    handler lang="kern"
+      if cond="!line"
+        return value="''"
+      if cond="line.kind === 'blank'"
+        return value="''"
+      if cond="line.kind === 'hr'"
+        return value="'─'.repeat(40)"
+      let name=spanText value="Array.isArray(line.spans) ? line.spans.map((span: any) => `${span.text ?? ''}${span?.style?.linkUrl ? ` (${span.style.linkUrl})` : ''}`).join('') : ''"
+      let name=indent value="line.indent > 0 ? '  '.repeat(line.indent) : ''"
+      if cond="line.kind === 'h1'"
+        fmt return=true template="${indent}# ${spanText}"
+      if cond="line.kind === 'h2'"
+        fmt return=true template="${indent}## ${spanText}"
+      if cond="line.kind === 'h3'"
+        fmt return=true template="${indent}### ${spanText}"
+      if cond="line.kind === 'blockquote'"
+        fmt return=true template="${indent}| ${spanText}"
+      let name=marker value="line.marker ?? ''"
+      let name=listIndent value="(line.kind === 'bullet' || line.kind === 'ordered') && !indent ? ' ' : ''"
+      fmt return=true template="${indent}${listIndent}${marker}${spanText}"
+
+  fn name=transcriptRowToPlainText params="row:any" returns=string
+    handler lang="kern"
+      if cond="!row"
+        return value="''"
+      if cond="row.kind === 'spacer'"
+        return value="''"
+      if cond="row.kind === 'gradient'"
+        return value="String(row.text ?? '')"
+      if cond="row.kind === 'rich'"
+        return value="richLineToPlainText(row.richLine)"
+      if cond="row.kind === 'segments'"
+        return value="Array.isArray(row.segments) ? row.segments.map((segment: any) => segment?.text ?? '').join('') : ''"
+      let name=prefix value="String(row.prefixText ?? '')"
+      let name=text value="String(row.text ?? '')"
+      fmt return=true template="${prefix}${text}"
+
+  fn name=transcriptRowTextStartColumn params="row:any" returns=number
+    handler lang="kern"
+      let name=paddingLeft value="Math.max(0, Number(row?.paddingLeft ?? 0))"
+      let name=borderColumns value="row?.borderColor ? 2 : 0"
+      return value="paddingLeft + borderColumns + 2"
+
+  fn name=resolveTranscriptColumnFromMouse params="mouseX:number, row:any" returns=number
+    handler lang="kern"
+      let name=text value="transcriptRowToPlainText(row)"
+      let name=startColumn value="transcriptRowTextStartColumn(row)"
+      if cond="!Number.isFinite(mouseX) || !text"
+        return value="0"
+      let name=targetColumn value="clampNumber(mouseX - startColumn, 0, stringDisplayWidth(text))"
+      return value="displayColumnToStringIndex(text, targetColumn)"
+
+  fn name=transcriptRowsToPlainText params="rows:any[], anchorRow:number|null, anchorCol:number|null, focusRow:number|null, focusCol:number|null" returns=string export=true
+    handler <<<
+      const range = normalizeTextSelection(anchorRow, anchorCol, focusRow, focusCol);
+      if (!range) return '';
+      const lines: string[] = [];
+      for (let rowIndex = range.startRow; rowIndex <= range.endRow; rowIndex += 1) {
+        const row = rows[rowIndex];
+        const text = transcriptRowToPlainText(row);
+        if (rowIndex === range.startRow && rowIndex === range.endRow) {
+          lines.push(text.slice(range.startCol, range.endCol));
+          continue;
+        }
+        if (rowIndex === range.startRow) {
+          lines.push(text.slice(range.startCol));
+          continue;
+        }
+        if (rowIndex === range.endRow) {
+          lines.push(text.slice(0, range.endCol));
+          continue;
+        }
+        lines.push(text);
+      }
+      return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
+    >>>
+
+  fn name=resolveTranscriptRowFromMouse params="mouseY:number, viewportTopLine:number, firstVisibleRow:number, visibleRowCount:number" returns="number|null"
+    handler lang="kern"
+      if cond="visibleRowCount <= 0"
+        return value="null"
+      let name=offset value="mouseY - viewportTopLine"
+      if cond="!Number.isFinite(offset)"
+        return value="null"
+      let name=clamped value="clampNumber(offset, 0, visibleRowCount - 1)"
+      return value="firstVisibleRow + clamped"

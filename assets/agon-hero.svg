@@ -107,7 +107,7 @@
     <text x="80" y="5" font-family="'SF Mono',monospace" font-size="12" font-weight="700" fill="#ef4444">ELO rated</text>
 
     <rect x="160" y="-14" width="100" height="28" rx="14" fill="#1c1505" stroke="#3d2e08" stroke-width="1"/>
-    <text x="210" y="5" font-family="'SF Mono',monospace" font-size="12" font-weight="700" fill="#fbbf24">v2.0</text>
+    <text x="210" y="5" font-family="'SF Mono',monospace" font-size="12" font-weight="700" fill="#fbbf24">v0.1.0</text>
   </g>
 
   <!-- Bottom accent -->

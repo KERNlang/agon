@@ -1,0 +1,124 @@
+// ── Engine vitals & telemetry probing ───────────────────────────────
+import from="node:os" names="totalmem,cpus"
+import from="node:child_process" names="spawnSync"
+import from="@agon/core" names="EngineRegistry"
+import from="../cesar/telemetry.js" names="EngineVitals" types=true
+import from="@agon/core" names="PersistentSession" types=true
+
+module name=AppTelemetry
+  const name=_telemetryResourceSample type=any value={{ ({ lastCpu: null, lastAt: 0 }) }}
+
+  fn name=sampleLocalResourceVitals returns="{cpuPercent:number,memPercent:number}" export=false
+    handler <<<
+      const now = Date.now();
+      const current = process.cpuUsage();
+      const prev = _telemetryResourceSample.lastCpu;
+      const prevAt = Number(_telemetryResourceSample.lastAt ?? 0);
+      _telemetryResourceSample.lastCpu = current;
+      _telemetryResourceSample.lastAt = now;
+      let cpuPercent = 0;
+      if (prev && prevAt > 0 && now > prevAt) {
+        const deltaMicros = Math.max(0, (current.user - prev.user) + (current.system - prev.system));
+        const elapsedMicros = (now - prevAt) * 1000;
+        const coreCount = Math.max(1, cpus().length);
+        cpuPercent = Math.max(0, Math.min(100, (deltaMicros / (elapsedMicros * coreCount)) * 100));
+      }
+      const memPercent = Math.max(0, Math.min(100, (process.memoryUsage().rss / Math.max(1, totalmem())) * 100));
+      return { cpuPercent, memPercent };
+    >>>
+
+  fn name=sampleEngineProcessVitals params="engine:any,exactPid?:number|null" returns="{cpuPercent?:number,memPercent?:number,processCount?:number,taskDetail?:string}" export=false
+    handler <<<
+      const pid = Number(exactPid ?? 0);
+      if (Number.isFinite(pid) && pid > 0) {
+        try {
+          const result = spawnSync('ps', ['-p', String(pid), '-o', 'pid=,pcpu=,pmem=,comm=,args='], { encoding: 'utf-8', timeout: 700 });
+          if (result.status !== 0 || !result.stdout.trim()) return {};
+          const line = String(result.stdout).split('\n').find((entry: string) => entry.trim());
+          if (!line) return {};
+          const parts = line.trim().split(/\s+/);
+          return {
+            cpuPercent: Math.max(0, Math.min(100, Number(parts[1]) || 0)),
+            memPercent: Math.max(0, Math.min(100, Number(parts[2]) || 0)),
+            processCount: 1,
+            taskDetail: `pid ${pid}`,
+          };
+        } catch {
+          return {};
+        }
+      }
+      const binary = String(engine?.binary ?? '').trim();
+      if (!binary) return {};
+      try {
+        const result = spawnSync('ps', ['-axo', 'pid=,pcpu=,pmem=,comm=,args='], { encoding: 'utf-8', timeout: 700 });
+        if (result.status !== 0 || !result.stdout) return {};
+        const binaryName = binary.split('/').pop() || binary;
+        const lines = String(result.stdout).split('\n').filter((line: string) => {
+          const text = line.trim();
+          if (!text) return false;
+          if (!text.includes(binaryName) && !text.includes(binary)) return false;
+          if (text.includes('ps -axo') || text.includes('rg ') || text.includes('grep ')) return false;
+          return true;
+        });
+        let cpuPercent = 0;
+        let memPercent = 0;
+        for (const line of lines) {
+          const parts = line.trim().split(/\s+/);
+          cpuPercent += Number(parts[1]) || 0;
+          memPercent += Number(parts[2]) || 0;
+        }
+        if (lines.length === 0) return {};
+        return {
+          cpuPercent: Math.max(0, Math.min(100, cpuPercent)),
+          memPercent: Math.max(0, Math.min(100, memPercent)),
+          processCount: lines.length,
+          taskDetail: `${lines.length} process${lines.length === 1 ? '' : 'es'}`,
+        };
+      } catch {
+        return {};
+      }
+    >>>
+
+  fn name=probeEngineVitals async=true params="registry:any,engineId:string,session?:PersistentSession|null,activePids?:Map<string,number>" returns="Promise<Partial<EngineVitals>>"
+    handler <<<
+      const started = Date.now();
+      const localResources = sampleLocalResourceVitals();
+      const mockTarget = String(process.env.AGON_MOCK_STALL_ENGINE ?? '').trim();
+      if (mockTarget && (mockTarget === '*' || mockTarget === engineId)) {
+        const stallMs = Number(process.env.AGON_MOCK_STALL_MS ?? 35000);
+        await new Promise((resolve) => setTimeout(resolve, Number.isFinite(stallMs) ? stallMs : 35000));
+      }
+      const engine = registry.get(engineId);
+      const exactPid = activePids?.get(engineId) ?? (session && session.engineId === engineId ? session.pid : null);
+      const processResources = sampleEngineProcessVitals(engine, exactPid);
+      const hasBinary = engine.binary ? registry.findBinary(engine) !== null : false;
+      const hasApiKey = !!(engine.api && process.env[engine.api.apiKeyEnv]);
+      const available = hasBinary || hasApiKey || (!engine.binary && !engine.api);
+      let network: 'healthy'|'degraded'|'unreachable' = available ? 'healthy' : 'unreachable';
+      let latencyMs = Date.now() - started;
+
+      if (engine.api && hasApiKey && typeof fetch === 'function') {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 1200);
+        try {
+          const res = await fetch(engine.api.baseUrl, { method: 'HEAD', signal: controller.signal } as any);
+          latencyMs = Date.now() - started;
+          network = res.status >= 500 ? 'degraded' : 'healthy';
+        } catch {
+          latencyMs = Date.now() - started;
+          network = 'degraded';
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+
+      return {
+        state: available ? 'idle' as any : 'offline' as any,
+        latencyMs,
+        network,
+        cpuPercent: processResources.cpuPercent ?? localResources.cpuPercent,
+        memPercent: processResources.memPercent ?? localResources.memPercent,
+        task: available ? (hasBinary ? 'cli ready' : hasApiKey ? 'api reachable' : 'ready') : 'missing binary/API key',
+        taskDetail: processResources.taskDetail ?? (hasBinary ? 'cli process not active' : undefined),
+      };
+    >>>

@@ -38,5 +38,6 @@ export { handleReview, handleReviewMany } from './review.js';
 export { runAgentMode, runAgentTeam } from '../generated/handlers/agent.js';
 export { handleThink } from '../generated/handlers/think.js';
 export { handleCouncil } from '../generated/handlers/council.js';
+export { handleConquer } from '../generated/handlers/conquer.js';
 export { handleSynthesis } from '../generated/handlers/synthesis.js';
 export { handleNeroChallenge } from '../generated/handlers/nero-challenge.js';

@@ -32,7 +32,7 @@
 
   <!-- Tagline + version -->
   <text x="450" y="216" text-anchor="middle" font-family="'Inter','Segoe UI',system-ui,sans-serif" font-size="16" font-style="italic" fill="#d4a041">Any AI can join. They compete. You ship.</text>
-  <text x="450" y="240" text-anchor="middle" font-family="'SF Mono','Fira Code',monospace" font-size="12" fill="#8a8f98">v0.1.0  ·  Powered by <tspan fill="#c9d1d9" font-weight="700">KERNlang.dev</tspan> (KERN 3.5.5)</text>
+  <text x="450" y="240" text-anchor="middle" font-family="'SF Mono','Fira Code',monospace" font-size="12" fill="#8a8f98">v0.1.0  ·  Powered by <tspan fill="#c9d1d9" font-weight="700">KERNlang.dev</tspan> (KERN 3.5.6)</text>
 
   <!-- Engine roster -->
   <text x="30" y="284" font-family="'SF Mono','Fira Code',monospace" font-size="9">

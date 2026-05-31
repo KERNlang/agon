@@ -26,6 +26,25 @@ describe('safe text input helpers', () => {
     });
   });
 
+  it('splices a large paste at the cursor in a single op (fast path)', () => {
+    // The fast-path must produce the SAME result the char-by-char loop would,
+    // just without the O(n^2) re-slice per character (the "paste sometimes
+    // works" bug). Cursor sits mid-string so we exercise prefix+insert+suffix.
+    const paste = 'x'.repeat(5000);
+    const result = applyInlineInputEdits('AB', 1, paste);
+    expect(result.value).toBe(`A${paste}B`);
+    expect(result.cursorOffset).toBe(1 + paste.length);
+    expect(result.cursorWidth).toBe(paste.length);
+  });
+
+  it('fast path matches char-by-char for multi-line paste', () => {
+    const paste = 'line1\nline2\nline3';
+    const result = applyInlineInputEdits('[]', 1, paste);
+    expect(result.value).toBe(`[${paste}]`);
+    expect(result.cursorOffset).toBe(1 + paste.length);
+    expect(result.cursorWidth).toBe(paste.length);
+  });
+
   it('moves to the previous word boundary', () => {
     expect(findWordBoundaryLeft('hello brave new world', 15)).toBe(12);
     expect(findWordBoundaryLeft('hello, brave', 7)).toBe(5);

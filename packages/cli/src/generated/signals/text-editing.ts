@@ -77,6 +77,23 @@ export function deleteWordBackward(value: string, cursorOffset: number): {value:
 
 // @kern-source: text-editing:71
 export function applyInlineInputEdits(value: string, cursorOffset: number, input: string): {value:string;cursorOffset:number;cursorWidth:number} {
+  // Fast path: a paste/insert with no backspace control chars is the common
+  // case. Splice it in ONCE instead of char-by-char — the old loop did an
+  // O(n) slice+concat per character, i.e. O(n^2) for the whole insert, which
+  // on a large paste blocks the event loop long enough that incoming stdin
+  // chunks get coalesced/dropped (the "paste works sometimes" bug). The
+  // single-splice result is identical: nextCursorOffset advances by the full
+  // code-unit length, and cursorWidth mirrors insertedChars>1.
+  const hasBackspace = input.includes('\x7f') || input.includes('\b') || input.includes('\x08');
+  if (!hasBackspace) {
+    const spliced = value.slice(0, cursorOffset) + input + value.slice(cursorOffset, value.length);
+    return {
+      value: spliced,
+      cursorOffset: cursorOffset + input.length,
+      cursorWidth: input.length > 1 ? input.length : 0,
+    };
+  }
+
   let nextValue = value;
   let nextCursorOffset = cursorOffset;
   let insertedChars = 0;
@@ -107,7 +124,7 @@ export function applyInlineInputEdits(value: string, cursorOffset: number, input
   };
 }
 
-// @kern-source: text-editing:103
+// @kern-source: text-editing:120
 export function syncControlledInputCursor(previousState: {cursorOffset:number;cursorWidth:number}, value: string, opts: {focus:boolean;showCursor:boolean;lastCommittedValue:string}): {cursorOffset:number;cursorWidth:number} {
   if (!opts.focus || !opts.showCursor) {
     return previousState;

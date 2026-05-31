@@ -389,6 +389,13 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // demoted into the freshly-cleared scrollback by a later turn.
       _pinnedPlan.event = null;
       _pendingToolCalls.length = 0;
+      // Reset the plan-step flag. If a plan is interrupted or /clear'd
+      // mid-step, the PlanStep 'done'/'error' event never arrives, so without
+      // this the flag stays stuck true — and every later tool call (even in a
+      // new turn) flushes immediately instead of using the 500ms debounce
+      // group, silently breaking tool-call grouping for the rest of the
+      // session (agon-review #3, blocking 1.00 cross-engine consensus).
+      _planStepActive.on = false;
       actions.setReviewEvent(null);
       codeBlockBuffer.clear();
       _thinkingBuffer.engineId = '';
@@ -456,6 +463,19 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // execution event as the permanent record.
       _pinnedPlan.event = null;
       actions.setPendingPlanProposal(null);
+      // When the plan reaches a terminal state, make sure the plan-step
+      // bracket flag can't leak. A Ctrl-C interrupt mid-step ends the plan
+      // 'paused' WITHOUT emitting a terminal PlanStep 'done'/'error'
+      // tool-call (interrupt dispatches a 'warning', not a 'clear'), so
+      // without this the flag stays stuck true and every later tool call
+      // bypasses the 500ms debounce group for the rest of the session
+      // (agon-review #3, interrupt path). Mirrors the isTerminal check in
+      // plan-execution.kern::onPlanUpdate. Guarded on terminal state so a
+      // mid-execution update can't reset the bracket while a step is live.
+      const _planState = (event as any).plan?.state;
+      if (_planState === 'done' || _planState === 'paused' || _planState === 'cancelled') {
+        _planStepActive.on = false;
+      }
       actions.addBlock(event);
       return;
     }

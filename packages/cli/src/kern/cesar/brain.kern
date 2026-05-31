@@ -1925,6 +1925,26 @@ ${reviewFollowup.prompt}`;
         }
       }
 
+      // ── Heavy-turn tool-budget heads-up ──
+      // A regular Cesar turn has no per-turn tool ceiling (only the per-send
+      // MAX_TOOL_TURNS and the 5× auto-continuation cap), so a turn can quietly
+      // burn hundreds of tool calls — e.g. the 567-calls/412-reads turn from the
+      // friction report — with zero signal that it ran away. Warn ONCE at
+      // end-of-turn when the count is implausibly high, and call out a
+      // read-dominated turn specifically (lots of Reads + few edits usually
+      // means thrashing/searching, not progress). Advisory only — never blocks.
+      const _turnToolCount = _toolsUsed.length;
+      if (_turnToolCount >= 60) {
+        const _readCount = _toolsUsed.filter((t: string) => t === 'Read').length;
+        const _readHeavy = _readCount >= 40 && _readCount > _turnToolCount * 0.6;
+        dispatch({
+          type: 'warning',
+          message: _readHeavy
+            ? `Cesar used ${_turnToolCount} tool calls this turn (${_readCount} reads) — read-heavy, may be searching in circles. Consider /compact or a more specific instruction.`
+            : `Cesar used ${_turnToolCount} tool calls this turn — unusually high. If it felt stuck, /compact to shrink context or re-prompt more specifically.`,
+        });
+      }
+
       // ── Display final response (skip if already displayed via streaming or tool loop) ──
       if (!streaming && response && !ranToolLoop && !wasStreamed) {
         dispatch({ type: 'spinner-stop' });

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { RUNS_DIR } from '@agon/core';
 
 // @kern-source: reliability:5
-export type CesarReliabilityLabel = 'unknown' | 'tool-capable' | 'watch' | 'advisory-only';
+export type CesarReliabilityLabel = 'calibrating' | 'tool-capable' | 'watch' | 'advisory-only';
 
 // @kern-source: reliability:7
 export interface CesarToolReliability {
@@ -88,7 +88,7 @@ export function isToolHeavyCesarRecord(record: any): boolean {
 
 // @kern-source: reliability:77
 export function emptyCesarToolReliability(engineId?: string, backend?: string): CesarToolReliability {
-  return { engineId: String(engineId ?? 'all'), backend: String(backend ?? 'all'), turns: 0, toolTurns: 0, toolTurnRate: 0, toolHeavyTurns: 0, toolHeavyToolTurns: 0, toolHeavyToolRate: 0, avgTools: 0, nativeToolCalls: 0, mcpToolCalls: 0, xmlToolCalls: 0, narratedToolStalls: 0, stallRate: 0, autoToolExecutions: 0, confidenceToolTurns: 0, confidenceToolRate: 0, topTools: '-', label: 'unknown', reason: 'No Cesar decision records yet.' };
+  return { engineId: String(engineId ?? 'all'), backend: String(backend ?? 'all'), turns: 0, toolTurns: 0, toolTurnRate: 0, toolHeavyTurns: 0, toolHeavyToolTurns: 0, toolHeavyToolRate: 0, avgTools: 0, nativeToolCalls: 0, mcpToolCalls: 0, xmlToolCalls: 0, narratedToolStalls: 0, stallRate: 0, autoToolExecutions: 0, confidenceToolTurns: 0, confidenceToolRate: 0, topTools: '-', label: 'calibrating', reason: 'No Cesar decision records yet.' };
 }
 
 /**
@@ -162,7 +162,7 @@ export function summarizeCesarToolReliability(records: any[], engineId?: string,
     .map(([name, count]) => `${name}:${count}`)
     .join(', ') || '-';
 
-  let label: CesarReliabilityLabel = 'unknown';
+  let label: CesarReliabilityLabel = 'calibrating';
   let reason = 'Need at least 3 logged Cesar turns before judging tool reliability.';
   if (turns >= 3) {
     if (
@@ -183,7 +183,7 @@ export function summarizeCesarToolReliability(records: any[], engineId?: string,
       label = 'tool-capable';
       reason = `Observed tool use on ${toolTurns}/${turns} turns with ${narratedToolStalls} narrated stalls.`;
     } else {
-      label = 'unknown';
+      label = 'calibrating';
       reason = 'Enough turns exist, but none were tool-heavy enough to judge direct tool use.';
     }
   }
@@ -247,7 +247,7 @@ export function formatCesarReliabilityLine(summary: CesarToolReliability): strin
   if (!summary || summary.turns <= 0) {
     const engine = summary?.engineId ?? 'all';
     const backend = summary?.backend ?? 'all';
-    return `${engine}/${backend}: unknown - no logged turns yet`;
+    return `${engine}/${backend}: calibrating - no logged turns yet`;
   }
   const toolPct = Math.round(summary.toolTurnRate * 100);
   const heavy = (summary.toolHeavyTurns > 0) ? `, tool-heavy ${summary.toolHeavyToolTurns}/${summary.toolHeavyTurns}` : '';

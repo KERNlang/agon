@@ -470,14 +470,16 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // scrollback history (Claude-style) so the next turn's output is
       // the bottom-most content instead of being buried under the plan.
       // committed=true tells PlanProposalView to drop the approval prompt.
-      // The markdown status line is freshened from awaiting_approval to a
-      // neutral 'archived' — we cannot assert approval here (a chat-route
-      // response is not necessarily an approval), so the historical record
-      // stays honest rather than claiming the plan was approved.
+      // The markdown status line is freshened from awaiting_approval to
+      // 'superseded' — the user moved on without approving, so the proposal
+      // was abandoned/replaced, NOT run-then-archived. 'archived' wrongly
+      // implied the plan had executed; 'superseded' keeps the record honest
+      // (we cannot assert approval here — a chat-route reply is not an
+      // approval, and a real /approve takes the plan-execution path instead).
       const pinned = _pinnedPlan.event;
       if (pinned) {
         const freshMarkdown = typeof pinned.markdown === 'string'
-          ? pinned.markdown.replace(/Status:\s*awaiting_approval/gi, 'Status: archived')
+          ? pinned.markdown.replace(/Status:\s*awaiting_approval/gi, 'Status: superseded')
           : pinned.markdown;
         actions.addBlock({ ...pinned, markdown: freshMarkdown, committed: true });
         _pinnedPlan.event = null;

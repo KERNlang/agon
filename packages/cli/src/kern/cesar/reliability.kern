@@ -2,7 +2,7 @@ import from="node:fs" names="existsSync,readFileSync,statSync,openSync,readSync,
 import from="node:path" names="join"
 import from="@agon/core" names="RUNS_DIR"
 
-type name=CesarReliabilityLabel values="unknown|tool-capable|watch|advisory-only"
+type name=CesarReliabilityLabel values="calibrating|tool-capable|watch|advisory-only"
 
 interface name=CesarToolReliability
   field name=engineId type=string
@@ -76,7 +76,7 @@ fn name=isToolHeavyCesarRecord params="record:any" returns=boolean export=true
 
 fn name=emptyCesarToolReliability params="engineId?:string,backend?:string" returns=CesarToolReliability export=true
   handler lang="kern"
-    return value="{ engineId: String(engineId ?? 'all'), backend: String(backend ?? 'all'), turns: 0, toolTurns: 0, toolTurnRate: 0, toolHeavyTurns: 0, toolHeavyToolTurns: 0, toolHeavyToolRate: 0, avgTools: 0, nativeToolCalls: 0, mcpToolCalls: 0, xmlToolCalls: 0, narratedToolStalls: 0, stallRate: 0, autoToolExecutions: 0, confidenceToolTurns: 0, confidenceToolRate: 0, topTools: '-', label: 'unknown', reason: 'No Cesar decision records yet.', }"
+    return value="{ engineId: String(engineId ?? 'all'), backend: String(backend ?? 'all'), turns: 0, toolTurns: 0, toolTurnRate: 0, toolHeavyTurns: 0, toolHeavyToolTurns: 0, toolHeavyToolRate: 0, avgTools: 0, nativeToolCalls: 0, mcpToolCalls: 0, xmlToolCalls: 0, narratedToolStalls: 0, stallRate: 0, autoToolExecutions: 0, confidenceToolTurns: 0, confidenceToolRate: 0, topTools: '-', label: 'calibrating', reason: 'No Cesar decision records yet.', }"
 
 fn name=summarizeCesarToolReliability params="records:any[], engineId?:string, backend?:string" returns=CesarToolReliability export=true
   doc "Summarize observed Cesar tool reliability for one engine/backend from decision records."
@@ -147,7 +147,7 @@ fn name=summarizeCesarToolReliability params="records:any[], engineId?:string, b
       .map(([name, count]) => `${name}:${count}`)
       .join(', ') || '-';
 
-    let label: CesarReliabilityLabel = 'unknown';
+    let label: CesarReliabilityLabel = 'calibrating';
     let reason = 'Need at least 3 logged Cesar turns before judging tool reliability.';
     if (turns >= 3) {
       if (
@@ -168,7 +168,7 @@ fn name=summarizeCesarToolReliability params="records:any[], engineId?:string, b
         label = 'tool-capable';
         reason = `Observed tool use on ${toolTurns}/${turns} turns with ${narratedToolStalls} narrated stalls.`;
       } else {
-        label = 'unknown';
+        label = 'calibrating';
         reason = 'Enough turns exist, but none were tool-heavy enough to judge direct tool use.';
       }
     }
@@ -226,7 +226,7 @@ fn name=formatCesarReliabilityLine params="summary:CesarToolReliability" returns
     if cond="!summary || summary.turns <= 0"
       let name=engine value="summary?.engineId ?? 'all'"
       let name=backend value="summary?.backend ?? 'all'"
-      fmt return=true template="${engine}/${backend}: unknown - no logged turns yet"
+      fmt return=true template="${engine}/${backend}: calibrating - no logged turns yet"
     let name=toolPct value="Math.round(summary.toolTurnRate * 100)"
     let name=heavy value="summary.toolHeavyTurns > 0 ? `, tool-heavy ${summary.toolHeavyToolTurns}/${summary.toolHeavyTurns}` : ''"
     fmt return=true template="${summary.engineId}/${summary.backend}: ${summary.label} (${summary.toolTurns}/${summary.turns} tool turns, ${toolPct}%${heavy}, stalls ${summary.narratedToolStalls}) - ${summary.reason}"

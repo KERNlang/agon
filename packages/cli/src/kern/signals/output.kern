@@ -108,6 +108,14 @@ const name=_liveToolStreams type="Record<string,any>" value={{ {} as Record<stri
 // history. Mutable field on a const object follows the _pendingFlushTimer idiom.
 const name=_pinnedPlan type="{ event: any }" value={{ ({ event: null }) as { event: any } }}
 
+// True while an approved plan STEP is executing (set by the PlanStep tool-call
+// 'running' event, cleared on 'done'/'error'). During a step, leaf tool calls
+// (Bash/Read/Edit) are flushed LIVE on completion instead of buffered into the
+// 500ms debounced group — otherwise a step's bash commands sit invisibly in the
+// buffer and only commit when the step ends, which reads as "bash ran but was
+// never rendered" (the plan-execution friction report, complaint #2).
+const name=_planStepActive type="{ on: boolean }" value={{ ({ on: false }) as { on: boolean } }}
+
 fn name=toolCallKey params="event:any" returns=string export=false
   handler lang="kern"
     return value="[ String(event?.engineId ?? ''), String(event?.tool ?? ''), String(event?.input ?? ''), ].join('\\u0000')"
@@ -352,6 +360,13 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         // demoted into the freshly-cleared scrollback by a later turn.
         _pinnedPlan.event = null;
         _pendingToolCalls.length = 0;
+        // Reset the plan-step flag. If a plan is interrupted or /clear'd
+        // mid-step, the PlanStep 'done'/'error' event never arrives, so without
+        // this the flag stays stuck true — and every later tool call (even in a
+        // new turn) flushes immediately instead of using the 500ms debounce
+        // group, silently breaking tool-call grouping for the rest of the
+        // session (agon-review #3, blocking 1.00 cross-engine consensus).
+        _planStepActive.on = false;
         actions.setReviewEvent(null);
         codeBlockBuffer.clear();
         _thinkingBuffer.engineId = '';
@@ -419,6 +434,19 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         // execution event as the permanent record.
         _pinnedPlan.event = null;
         actions.setPendingPlanProposal(null);
+        // When the plan reaches a terminal state, make sure the plan-step
+        // bracket flag can't leak. A Ctrl-C interrupt mid-step ends the plan
+        // 'paused' WITHOUT emitting a terminal PlanStep 'done'/'error'
+        // tool-call (interrupt dispatches a 'warning', not a 'clear'), so
+        // without this the flag stays stuck true and every later tool call
+        // bypasses the 500ms debounce group for the rest of the session
+        // (agon-review #3, interrupt path). Mirrors the isTerminal check in
+        // plan-execution.kern::onPlanUpdate. Guarded on terminal state so a
+        // mid-execution update can't reset the bracket while a step is live.
+        const _planState = (event as any).plan?.state;
+        if (_planState === 'done' || _planState === 'paused' || _planState === 'cancelled') {
+          _planStepActive.on = false;
+        }
         actions.addBlock(event);
         return;
       }
@@ -436,14 +464,16 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         // scrollback history (Claude-style) so the next turn's output is
         // the bottom-most content instead of being buried under the plan.
         // committed=true tells PlanProposalView to drop the approval prompt.
-        // The markdown status line is freshened from awaiting_approval to a
-        // neutral 'archived' — we cannot assert approval here (a chat-route
-        // response is not necessarily an approval), so the historical record
-        // stays honest rather than claiming the plan was approved.
+        // The markdown status line is freshened from awaiting_approval to
+        // 'superseded' — the user moved on without approving, so the proposal
+        // was abandoned/replaced, NOT run-then-archived. 'archived' wrongly
+        // implied the plan had executed; 'superseded' keeps the record honest
+        // (we cannot assert approval here — a chat-route reply is not an
+        // approval, and a real /approve takes the plan-execution path instead).
         const pinned = _pinnedPlan.event;
         if (pinned) {
           const freshMarkdown = typeof pinned.markdown === 'string'
-            ? pinned.markdown.replace(/Status:\s*awaiting_approval/gi, 'Status: archived')
+            ? pinned.markdown.replace(/Status:\s*awaiting_approval/gi, 'Status: superseded')
             : pinned.markdown;
           actions.addBlock({ ...pinned, markdown: freshMarkdown, committed: true });
           _pinnedPlan.event = null;
@@ -693,6 +723,14 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         // visible while auto mode is busy. Fast tools usually emit running
         // then done before the debounce fires; replace that pending running
         // entry with the final event so the transcript does not double-count.
+        // Bracket plan-step execution: the PlanStep marker's running event opens
+        // a step, its done/error closes it. While a step is open, leaf tool calls
+        // render LIVE (see below) so each bash/read/edit is visible as the step
+        // runs, instead of sitting in the debounced buffer until the step ends
+        // ("bash ran but was never rendered", friction report complaint #2).
+        if (te.tool === 'PlanStep') {
+          _planStepActive.on = te.status === 'running';
+        }
         const key = toolCallKey(te);
         if (te.status === 'done' || te.status === 'error') {
           for (let i = _pendingToolCalls.length - 1; i >= 0; i--) {
@@ -702,7 +740,12 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
             }
           }
           _pendingToolCalls.push(event);
-          schedulePendingFlush(actions);
+          // During an active plan step, commit each leaf tool call the moment it
+          // completes (the running entry was just coalesced out above, so it
+          // renders exactly once) instead of waiting on the debounce. The
+          // PlanStep markers themselves also flush here, preserving order.
+          if (_planStepActive.on || te.tool === 'PlanStep') flushPendingToolCalls(actions);
+          else schedulePendingFlush(actions);
         } else if (te.status === 'running') {
           _pendingToolCalls.push(event);
           schedulePendingFlush(actions);

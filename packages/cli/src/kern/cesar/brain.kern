@@ -1933,10 +1933,15 @@ ${reviewFollowup.prompt}`;
       // end-of-turn when the count is implausibly high, and call out a
       // read-dominated turn specifically (lots of Reads + few edits usually
       // means thrashing/searching, not progress). Advisory only — never blocks.
+      // Threshold 100, not 60: a genuinely complex auto-mode task can legitimately
+      // make 60-80 tool calls, and an advisory that fires on normal heavy work
+      // just trains the user to ignore it (agon-review #5, conf 0.75). 100 still
+      // catches a true runaway (the report case was 567 calls / 412 reads) while
+      // staying quiet on legitimate complex turns.
       const _turnToolCount = _toolsUsed.length;
-      if (_turnToolCount >= 60) {
+      if (_turnToolCount >= 100) {
         const _readCount = _toolsUsed.filter((t: string) => t === 'Read').length;
-        const _readHeavy = _readCount >= 40 && _readCount > _turnToolCount * 0.6;
+        const _readHeavy = _readCount >= 60 && _readCount > _turnToolCount * 0.6;
         dispatch({
           type: 'warning',
           message: _readHeavy

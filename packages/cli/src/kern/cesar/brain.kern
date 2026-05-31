@@ -69,6 +69,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
     const _toolsUsed: string[] = [];
     const _toolUseKeys = new Set<string>();
     let _toolEventCount = 0;
+    let _readToolEventCount = 0;
     let _toolCallTurns = 0;
     let _nativeToolCalls = 0;
     let _mcpToolCalls = 0;
@@ -1943,15 +1944,19 @@ ${reviewFollowup.prompt}`;
       // just trains the user to ignore it (agon-review #5, conf 0.75). 100 still
       // catches a true runaway (the report case was 567 calls / 412 reads) while
       // staying quiet on legitimate complex turns.
-      const _turnToolCount = _toolsUsed.length;
-      if (_turnToolCount >= 100) {
-        const _readCount = _toolsUsed.filter((t: string) => t === 'Read').length;
-        const _readHeavy = _readCount >= 60 && _readCount > _turnToolCount * 0.6;
+      // Count total tool EVENTS, not _toolsUsed.length — the latter is deduped by
+      // source:tool:input in recordToolUse, so a runaway turn that re-reads the
+      // same files in a loop (the motivating 567-calls/412-reads case) collapses
+      // to a tiny unique count and would never trip the warning (agon-review #5,
+      // multiple engines @0.95). Read-heavy uses the read-EVENT count too.
+      const _turnToolEvents = _toolEventCount;
+      if (_turnToolEvents >= 100) {
+        const _readHeavy = _readToolEventCount >= 60 && _readToolEventCount > _turnToolEvents * 0.6;
         dispatch({
           type: 'warning',
           message: _readHeavy
-            ? `Cesar used ${_turnToolCount} tool calls this turn (${_readCount} reads) — read-heavy, may be searching in circles. Consider /compact or a more specific instruction.`
-            : `Cesar used ${_turnToolCount} tool calls this turn — unusually high. If it felt stuck, /compact to shrink context or re-prompt more specifically.`,
+            ? `Cesar made ${_turnToolEvents} tool calls this turn (${_readToolEventCount} reads) — read-heavy, may be searching in circles. Consider /compact or a more specific instruction.`
+            : `Cesar made ${_turnToolEvents} tool calls this turn — unusually high. If it felt stuck, /compact to shrink context or re-prompt more specifically.`,
         });
       }
 

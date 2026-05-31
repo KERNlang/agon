@@ -98,6 +98,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       const _toolsUsed: string[] = [];
       const _toolUseKeys = new Set<string>();
       let _toolEventCount = 0;
+      let _readToolEventCount = 0;
       let _toolCallTurns = 0;
       let _nativeToolCalls = 0;
       let _mcpToolCalls = 0;
@@ -120,6 +121,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         const normalizedSource = source === 'eager' ? 'xml' : source === 'auto' ? 'native' : source;
         const key = `${normalizedSource}:${toolName}:${String(input ?? '').slice(0, 500)}`;
         _toolEventCount++;
+        // Count read EVENTS (not unique reads) so the heavy-turn heads-up can spot
+        // a turn that re-reads the same files in circles — the deduped _toolsUsed
+        // would collapse those to one entry. Case-insensitive + common aliases.
+        const _ln = toolName.toLowerCase();
+        if (_ln === 'read' || _ln === 'read_file' || _ln === 'view_file' || _ln === 'cat') _readToolEventCount++;
         if (!_toolUseKeys.has(key)) {
           _toolUseKeys.add(key);
           _toolsUsed.push(toolName);
@@ -1952,6 +1958,35 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _finalClosure });
             response = response + '\n\n' + _finalClosure;
           }
+        }
+
+        // ── Heavy-turn tool-budget heads-up ──
+        // A regular Cesar turn has no per-turn tool ceiling (only the per-send
+        // MAX_TOOL_TURNS and the 5× auto-continuation cap), so a turn can quietly
+        // burn hundreds of tool calls — e.g. the 567-calls/412-reads turn from the
+        // friction report — with zero signal that it ran away. Warn ONCE at
+        // end-of-turn when the count is implausibly high, and call out a
+        // read-dominated turn specifically (lots of Reads + few edits usually
+        // means thrashing/searching, not progress). Advisory only — never blocks.
+        // Threshold 100, not 60: a genuinely complex auto-mode task can legitimately
+        // make 60-80 tool calls, and an advisory that fires on normal heavy work
+        // just trains the user to ignore it (agon-review #5, conf 0.75). 100 still
+        // catches a true runaway (the report case was 567 calls / 412 reads) while
+        // staying quiet on legitimate complex turns.
+        // Count total tool EVENTS, not _toolsUsed.length — the latter is deduped by
+        // source:tool:input in recordToolUse, so a runaway turn that re-reads the
+        // same files in a loop (the motivating 567-calls/412-reads case) collapses
+        // to a tiny unique count and would never trip the warning (agon-review #5,
+        // multiple engines @0.95). Read-heavy uses the read-EVENT count too.
+        const _turnToolEvents = _toolEventCount;
+        if (_turnToolEvents >= 100) {
+          const _readHeavy = _readToolEventCount >= 60 && _readToolEventCount > _turnToolEvents * 0.6;
+          dispatch({
+            type: 'warning',
+            message: _readHeavy
+              ? `Cesar made ${_turnToolEvents} tool calls this turn (${_readToolEventCount} reads) — read-heavy, may be searching in circles. Consider /compact or a more specific instruction.`
+              : `Cesar made ${_turnToolEvents} tool calls this turn — unusually high. If it felt stuck, /compact to shrink context or re-prompt more specifically.`,
+          });
         }
 
         // ── Display final response (skip if already displayed via streaming or tool loop) ──

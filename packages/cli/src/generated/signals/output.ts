@@ -129,7 +129,10 @@ export const _liveToolStreams: Record<string,any> = {} as Record<string, any>;
 // @kern-source: output:109
 export const _pinnedPlan: { event: any } = ({ event: null }) as { event: any };
 
-// @kern-source: output:111
+// @kern-source: output:117
+export const _planStepActive: { on: boolean } = ({ on: false }) as { on: boolean };
+
+// @kern-source: output:119
 function toolCallKey(event: any): string {
   return [String(event?.engineId ?? ''), String(event?.tool ?? ''), String(event?.input ?? '')].join('\x00');
 }
@@ -137,7 +140,7 @@ function toolCallKey(event: any): string {
 /**
  * Emit any buffered tool-call events as a single tool-call-group block.
  */
-// @kern-source: output:115
+// @kern-source: output:123
 export function flushPendingToolCalls(actions: OutputActions): void {
   if (_pendingFlushTimer.timer) {
     clearTimeout(_pendingFlushTimer.timer);
@@ -152,7 +155,7 @@ export function flushPendingToolCalls(actions: OutputActions): void {
 /**
  * Debounce-flush pending tool-calls after a quiet period — covers turns that end on a tool-call without any trailing event.
  */
-// @kern-source: output:128
+// @kern-source: output:136
 export function schedulePendingFlush(actions: OutputActions): void {
   _pendingFlushTimer.actions = actions;
   if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
@@ -165,7 +168,7 @@ export function schedulePendingFlush(actions: OutputActions): void {
 /**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
-// @kern-source: output:139
+// @kern-source: output:147
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
@@ -185,7 +188,7 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
-// @kern-source: output:156
+// @kern-source: output:164
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -245,7 +248,7 @@ function _showNextPermission(actions: OutputActions): void {
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
-// @kern-source: output:213
+// @kern-source: output:221
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
@@ -386,6 +389,13 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // demoted into the freshly-cleared scrollback by a later turn.
       _pinnedPlan.event = null;
       _pendingToolCalls.length = 0;
+      // Reset the plan-step flag. If a plan is interrupted or /clear'd
+      // mid-step, the PlanStep 'done'/'error' event never arrives, so without
+      // this the flag stays stuck true — and every later tool call (even in a
+      // new turn) flushes immediately instead of using the 500ms debounce
+      // group, silently breaking tool-call grouping for the rest of the
+      // session (agon-review #3, blocking 1.00 cross-engine consensus).
+      _planStepActive.on = false;
       actions.setReviewEvent(null);
       codeBlockBuffer.clear();
       _thinkingBuffer.engineId = '';
@@ -453,6 +463,19 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // execution event as the permanent record.
       _pinnedPlan.event = null;
       actions.setPendingPlanProposal(null);
+      // When the plan reaches a terminal state, make sure the plan-step
+      // bracket flag can't leak. A Ctrl-C interrupt mid-step ends the plan
+      // 'paused' WITHOUT emitting a terminal PlanStep 'done'/'error'
+      // tool-call (interrupt dispatches a 'warning', not a 'clear'), so
+      // without this the flag stays stuck true and every later tool call
+      // bypasses the 500ms debounce group for the rest of the session
+      // (agon-review #3, interrupt path). Mirrors the isTerminal check in
+      // plan-execution.kern::onPlanUpdate. Guarded on terminal state so a
+      // mid-execution update can't reset the bracket while a step is live.
+      const _planState = (event as any).plan?.state;
+      if (_planState === 'done' || _planState === 'paused' || _planState === 'cancelled') {
+        _planStepActive.on = false;
+      }
       actions.addBlock(event);
       return;
     }
@@ -470,14 +493,16 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // scrollback history (Claude-style) so the next turn's output is
       // the bottom-most content instead of being buried under the plan.
       // committed=true tells PlanProposalView to drop the approval prompt.
-      // The markdown status line is freshened from awaiting_approval to a
-      // neutral 'archived' — we cannot assert approval here (a chat-route
-      // response is not necessarily an approval), so the historical record
-      // stays honest rather than claiming the plan was approved.
+      // The markdown status line is freshened from awaiting_approval to
+      // 'superseded' — the user moved on without approving, so the proposal
+      // was abandoned/replaced, NOT run-then-archived. 'archived' wrongly
+      // implied the plan had executed; 'superseded' keeps the record honest
+      // (we cannot assert approval here — a chat-route reply is not an
+      // approval, and a real /approve takes the plan-execution path instead).
       const pinned = _pinnedPlan.event;
       if (pinned) {
         const freshMarkdown = typeof pinned.markdown === 'string'
-          ? pinned.markdown.replace(/Status:\s*awaiting_approval/gi, 'Status: archived')
+          ? pinned.markdown.replace(/Status:\s*awaiting_approval/gi, 'Status: superseded')
           : pinned.markdown;
         actions.addBlock({ ...pinned, markdown: freshMarkdown, committed: true });
         _pinnedPlan.event = null;
@@ -727,6 +752,14 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // visible while auto mode is busy. Fast tools usually emit running
       // then done before the debounce fires; replace that pending running
       // entry with the final event so the transcript does not double-count.
+      // Bracket plan-step execution: the PlanStep marker's running event opens
+      // a step, its done/error closes it. While a step is open, leaf tool calls
+      // render LIVE (see below) so each bash/read/edit is visible as the step
+      // runs, instead of sitting in the debounced buffer until the step ends
+      // ("bash ran but was never rendered", friction report complaint #2).
+      if (te.tool === 'PlanStep') {
+        _planStepActive.on = te.status === 'running';
+      }
       const key = toolCallKey(te);
       if (te.status === 'done' || te.status === 'error') {
         for (let i = _pendingToolCalls.length - 1; i >= 0; i--) {
@@ -736,7 +769,12 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
           }
         }
         _pendingToolCalls.push(event);
-        schedulePendingFlush(actions);
+        // During an active plan step, commit each leaf tool call the moment it
+        // completes (the running entry was just coalesced out above, so it
+        // renders exactly once) instead of waiting on the debounce. The
+        // PlanStep markers themselves also flush here, preserving order.
+        if (_planStepActive.on || te.tool === 'PlanStep') flushPendingToolCalls(actions);
+        else schedulePendingFlush(actions);
       } else if (te.status === 'running') {
         _pendingToolCalls.push(event);
         schedulePendingFlush(actions);

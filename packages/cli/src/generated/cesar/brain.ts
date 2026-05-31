@@ -120,6 +120,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         const normalizedSource = source === 'eager' ? 'xml' : source === 'auto' ? 'native' : source;
         const key = `${normalizedSource}:${toolName}:${String(input ?? '').slice(0, 500)}`;
         _toolEventCount++;
+        // Count read EVENTS (not unique reads) so the heavy-turn heads-up can spot
+        // a turn that re-reads the same files in circles — the deduped _toolsUsed
+        // would collapse those to one entry. Case-insensitive + common aliases.
+        const _ln = toolName.toLowerCase();
+        if (_ln === 'read' || _ln === 'read_file' || _ln === 'view_file' || _ln === 'cat') _readToolEventCount++;
         if (!_toolUseKeys.has(key)) {
           _toolUseKeys.add(key);
           _toolsUsed.push(toolName);

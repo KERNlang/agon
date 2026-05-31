@@ -4,7 +4,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 
 import { join, dirname } from 'node:path';
 
-import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan, cancelCesarPlan, exitCesarPlan } from '@agon/core';
+import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan, cancelCesarPlan, exitCesarPlan, spawnWithTimeout } from '@agon/core';
 
 import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@agon/core';
 
@@ -275,6 +275,19 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const startTime = Date.now();
       const before = snapshotTokens();
       const task = buildContext(step, context);
+      // A finished Cesar turn is NOT proof the work is correct. If the step
+      // declares a verifyCmd, run it and gate success on its real exit code —
+      // this is what stops an engine reporting "done/all green" when the gate
+      // is actually red (the 88ba7aa4 false-green class).
+      const runVerifyGate = async (): Promise<{ ok: true } | { ok: false, error: string }> => {
+        if (!step.verifyCmd) return { ok: true };
+        const v = await spawnWithTimeout({ command: 'bash', args: ['-lc', step.verifyCmd], cwd, timeout: 600000, signal });
+        if (v.timedOut || v.exitCode !== 0) {
+          const tail = `${v.stdout ?? ''}\n${v.stderr ?? ''}`.trim().split('\n').slice(-20).join('\n');
+          return { ok: false, error: `verify failed (exit ${v.exitCode ?? '?'}${v.timedOut ? ', timed out' : ''}): ${step.verifyCmd}\n${tail}` };
+        }
+        return { ok: true };
+      };
       try {
         // Claude-style auto mode: a Cesar self-step must run through the
         // same live tool loop as a normal Cesar turn so the user sees each
@@ -309,13 +322,23 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
             return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: captured.join('\n').trim(), error: 'cancelled' } };
           }
           const output = captured.join('\n').trim() || `Cesar completed step ${step.id}.`;
+          if (step.verifyCmd) stepDispatch({ type: 'info', message: `Verifying step ${step.id}: ${step.verifyCmd}` } as any);
+          const verified = await runVerifyGate();
+          const afterVerify = snapshotTokens();
+          if (!verified.ok) {
+            return { result: { status: 'failure', actualTokens: afterVerify.tokens - before.tokens, actualCostUsd: afterVerify.cost - before.cost, durationMs: Date.now() - startTime, output, error: verified.error } };
+          }
           return {
-            result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output },
+            result: { status: 'success', actualTokens: afterVerify.tokens - before.tokens, actualCostUsd: afterVerify.cost - before.cost, durationMs: Date.now() - startTime, output },
             contextExport: output.slice(0, 500),
           };
         }
         const result = await runDelegate({ engineId, task: `Analyze and respond:\n${task}`, registry: ctx.registry, adapter: ctx.adapter, timeout: 180, outputDir: join(outputDir, step.id), signal });
+        const verifiedDelegate = await runVerifyGate();
         const after = snapshotTokens();
+        if (!verifiedDelegate.ok) {
+          return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.response, error: verifiedDelegate.error } };
+        }
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.response },
           contextExport: result.response.slice(0, 500),

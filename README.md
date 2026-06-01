@@ -13,6 +13,10 @@
 
 Agon AI pits the world's best AI engines against each other to solve your software engineering problems. Multiple AI engines compete in isolated git worktrees on the exact same task, the best solution wins and is applied automatically, and ELO ratings continuously track each model's performance over time. 
 
+```bash
+npm install -g @kernlang/agon
+```
+
 ---
 
 ## Table of Contents
@@ -55,9 +59,29 @@ Agon isn't just about competition; it's a unified platform for AI collaboration.
 
 ## Installation
 
+### Install from npm (recommended)
+
 ```bash
-# 1. Clone the repository
-git clone https://github.com/KERNlang/agon.git
+npm install -g @kernlang/agon
+```
+
+That's it — one command, no clone, no build. It pulls the engine substrate
+(`@kernlang/agon-engines`) and the semantic sidecars (`@kernlang/agon-dedup`)
+in automatically. Then run `agon` in any git repository to start the
+interactive REPL.
+
+```bash
+# (Optional) Install the Python deps to unlock the semantic features
+# (semantic history search, tree-sitter fitness, dedup, task classifier).
+# The .py sidecars ship with the package; this just installs their libs.
+python3 -m pip install --user fastembed numpy tree-sitter tree-sitter-python tree-sitter-typescript tree-sitter-javascript tree-sitter-json
+```
+
+### Install from source (contributors)
+
+```bash
+# 1. Clone the repository (with the kern_engines submodule)
+git clone --recurse-submodules https://github.com/KERNlang/agon.git
 cd agon
 
 # 2. Install dependencies (compiles KERN → TypeScript → JS)
@@ -69,6 +93,10 @@ npm run install:cli
 # 4. (Optional) Install Python sidecars for semantic features
 python3 -m pip install --user -r packages/dedup/requirements.txt
 ```
+
+> **Note:** `kern_engines` is a git submodule. A plain `git clone` leaves it
+> empty — use `--recurse-submodules` (above), or run
+> `git submodule update --init --recursive` if you already cloned.
 
 Once installed, run `agon` in any git repository to start the interactive REPL. Run `agon doctor` to verify every engine, the worktree path, and the Python sidecars resolve.
 

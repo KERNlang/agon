@@ -1380,13 +1380,11 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
           setModelPickerEntries(buildModelEntries(reg));
           setModelPickerLoading(false);
         }).catch((err: any) => {
-          setModelPickerOpen(false);
+          // models.dev failed — keep the picker OPEN so the user can still pick
+          // this engine's CLI/local models (available via buildCliGroupsImmediate)
+          // instead of bouncing back to the engine picker empty-handed.
           setModelPickerLoading(false);
-          setModelPickerTargetEngine(null);
-          setModelPickerInitialFilter('');
-          setModelPickerTitle('Select model');
-          setEnginePickerOpen(true);
-          dispatch({ type: 'error', message: `Failed to fetch models: ${err.message}` } as any);
+          dispatch({ type: 'error', message: `models.dev registry unavailable (CLI engines still selectable): ${err.message}` } as any);
         });
       });
     >>>

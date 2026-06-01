@@ -177,9 +177,11 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
           cb.setModelPickerEntries(buildModelEntries(reg));
           cb.setModelPickerLoading(false);
         }).catch((err: any) => {
-          cb.setModelPickerOpen(false);
+          // models.dev failed — but the CLI tab still lists local engines, so
+          // keep the picker OPEN (just stop the API spinner) instead of locking
+          // the user out of offline/local model selection.
           cb.setModelPickerLoading(false);
-          cb.dispatch({ type: 'error', message: `Failed to fetch models: ${err.message}` } as any);
+          cb.dispatch({ type: 'error', message: `models.dev registry unavailable (CLI engines still selectable): ${err.message}` } as any);
         });
       });
       break;

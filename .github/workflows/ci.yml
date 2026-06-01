@@ -17,6 +17,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          # kern_engines is a PRIVATE submodule (KERNlang/kern-engines). The default
+          # GITHUB_TOKEN can't read another private repo, so authenticate the submodule
+          # fetch with a read-only deploy key stored as the KERN_ENGINES_DEPLOY_KEY secret.
+          # See .github/SUBMODULE_CI_SETUP.md for how to provision it.
+          ssh-key: ${{ secrets.KERN_ENGINES_DEPLOY_KEY }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6

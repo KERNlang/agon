@@ -18,6 +18,7 @@ CLI:  python3 -m kern_engines.cli.model_probe <binary> [slash_command]
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import pty
@@ -63,14 +64,19 @@ def _read_until_idle(fd: int, idle_ms: int, cap_ms: int) -> bytes:
                 chunk = os.read(fd, 65536)
             except OSError:
                 break
-            if chunk:
-                buf.extend(chunk)
-                last = now
+            if not chunk:
+                # EOF — child exited (e.g. a binary that crashes on launch). The
+                # fd stays select-ready forever, so without this break we'd spin
+                # at 100% CPU until cap_ms (the idle check never fires while the
+                # buffer is empty).
+                break
+            buf.extend(chunk)
+            last = now
     return bytes(buf)
 
 
 def _read_until_picker_parsed(fd: int, binary: str, idle_ms: int, cap_ms: int,
-                              grace_ms: int = 400) -> bytes:
+                              grace_ms: int = 600) -> bytes:
     """Accumulate pty output until the engine's /model picker actually parses
     into >=1 model (then a short grace so the full list finishes painting), or
     ``cap_ms`` total elapses — whichever comes first.
@@ -80,17 +86,26 @@ def _read_until_picker_parsed(fd: int, binary: str, idle_ms: int, cap_ms: int,
     what made claude's probe intermittently return zero models (the read
     returned mid-transition, before the picker painted) → the picker fell back
     to a stale static list. We re-parse the growing buffer each tick and only
-    stop once a model row is recognised. ``idle_ms`` is unused for the
-    not-yet-parsed case (we wait out ``cap_ms``); kept for signature parity.
+    stop once a model row is recognised. ``idle_ms`` drives the early-out when
+    output arrives but never parses (failure), so a broken engine doesn't hang
+    until ``cap_ms``.
     """
     buf = bytearray()
     start = time.monotonic()
+    last_data = start
     parsed_at: float | None = None
+    # Once output has arrived but no picker parses for this long, treat the probe
+    # as failed and stop early rather than waiting out cap_ms (a 12s hang per
+    # broken engine). Generous vs the autocomplete→picker gap (<1s), so a
+    # slow-painting picker is never cut short.
+    fail_idle_ms = max(idle_ms * 3, 3000)
     while True:
         now = time.monotonic()
         if (now - start) * 1000 >= cap_ms:
             break
         if parsed_at is not None and (now - parsed_at) * 1000 >= grace_ms:
+            break
+        if parsed_at is None and buf and (now - last_data) * 1000 >= fail_idle_ms:
             break
         rdy, _, _ = select.select([fd], [], [], 0.05)
         if rdy:
@@ -98,18 +113,18 @@ def _read_until_picker_parsed(fd: int, binary: str, idle_ms: int, cap_ms: int,
                 chunk = os.read(fd, 65536)
             except OSError:
                 break
-            if chunk:
-                buf.extend(chunk)
+            if not chunk:
+                # Empty read = EOF: the child exited / pty closed. select keeps
+                # reporting the fd ready, so without this break we'd busy-spin at
+                # 100% CPU until cap_ms.
+                break
+            buf.extend(chunk)
+            last_data = now
         if parsed_at is None and buf:
-            # Best-effort parse of the partial buffer: an incomplete screen
-            # (half-painted picker, truncated ANSI) is expected to raise here —
-            # we deliberately swallow it and keep reading until a full picker
-            # parses or cap_ms elapses. Never fatal; the buffer is still returned.
-            try:
-                if parse_picker(binary, strip_ansi_bytes(bytes(buf)))["models"]:
-                    parsed_at = time.monotonic()
-            except Exception:
-                pass
+            # strip_ansi_bytes decodes errors="replace" and parse_picker is pure
+            # regex → a partial screen yields {"models": []}, never an exception.
+            if parse_picker(binary, strip_ansi_bytes(bytes(buf)))["models"]:
+                parsed_at = time.monotonic()
     return bytes(buf)
 
 
@@ -310,29 +325,25 @@ def probe_models(binary: str, slash_command: str = "/model",
         # _read_until_picker_parsed) — the gap is what dropped claude's models.
         picker = _read_until_picker_parsed(fd, binary, picker_idle_ms, picker_cap_ms)
         parsed = parse_picker(binary, strip_ansi_bytes(picker))
-        # Cancel the picker without changing the selection, then quit.
-        try:
+        # Cancel the picker without changing the selection, then quit. A dead
+        # pty makes the writes moot — we kill the process below regardless.
+        with contextlib.suppress(OSError):
             os.write(fd, b"\x1b")
             time.sleep(0.15)
             os.write(fd, b"\x1b")
-        except OSError:
-            # Child already exited / pty closed — the ESC cancel is moot and we
-            # kill the process in `finally` regardless. Nothing to recover.
-            pass
         return parsed
     finally:
-        try:
+        # ProcessLookupError == already gone, which is the goal; suppress it.
+        with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGTERM)
             time.sleep(0.2)
             os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            # Process already gone — that's the desired end state, not an error.
-            pass
-        try:
+        with contextlib.suppress(OSError):
             os.close(fd)
-        except OSError:
-            # fd already closed by the child's exit — nothing left to release.
-            pass
+
+
+def _on_alarm(signum, frame):
+    raise TimeoutError("model_probe hard timeout")
 
 
 def main(argv: list[str]) -> int:
@@ -341,13 +352,19 @@ def main(argv: list[str]) -> int:
         return 0
     binary = argv[0]
     slash = argv[1] if len(argv) > 1 else "/model"
-    # Hard ceiling so a hung TUI can never wedge the caller.
+    # Hard ceiling so a hung TUI can never wedge the caller. SIGALRM's *default*
+    # action terminates the process (printing nothing) — install a handler that
+    # raises so the timeout surfaces as the error JSON below, then cancel it on
+    # the success path so a stray alarm can't fire later.
+    signal.signal(signal.SIGALRM, _on_alarm)
     signal.alarm(35)
     try:
         result = probe_models(binary, slash)
-    except BaseException as e:  # incl. SIGALRM
+    except BaseException as e:  # incl. the TimeoutError from _on_alarm
         print(json.dumps({"error": f"{type(e).__name__}: {e}"}))
         return 0
+    finally:
+        signal.alarm(0)
     print(json.dumps(result))
     return 0
 

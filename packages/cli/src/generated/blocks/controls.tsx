@@ -506,11 +506,15 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
     }
   });
 
-  if (loading) {
+  // Only the API tab waits on the models.dev fetch. The CLI tab's groups are
+  // available immediately (buildCliGroupsImmediate) with per-engine probe
+  // spinners, so let it render through the global loading state \u2014 otherwise
+  // this skeleton hides the whole feature until the API registry resolves.
+  if (loading && activeTab !== 'cli') {
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
         <Text bold color="magenta">{panelTitle}</Text>
-        <Text dimColor>{'Fetching models.dev registry\u2026'}</Text>
+        <Text dimColor>{'Fetching models.dev registry\u2026 (\u2192 CLI for local engines)'}</Text>
         <Box flexDirection="column" marginTop={1}>
           <Text dimColor>{'\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 '}<Text color="#555">{'provider/model-name'}</Text></Text>
           <Text dimColor>{'\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 '}<Text color="#444">{'provider/another-model'}</Text></Text>
@@ -677,7 +681,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   );
 }
 
-// @kern-source: controls:668
+// @kern-source: controls:672
 export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
   const eColor = engineColor(event.winnerId);
   const codeWidth = contentWidth(10);
@@ -716,7 +720,7 @@ export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(
   );
 }
 
-// @kern-source: controls:710
+// @kern-source: controls:714
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines:string[]; currentCesar:string; onSelect:(engineId: string) => void; onCancel:() => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

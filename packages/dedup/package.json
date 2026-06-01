@@ -25,5 +25,6 @@
     "url": "git+https://github.com/KERNlang/agon.git",
     "directory": "packages/dedup"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "author": "KERNlang"
 }

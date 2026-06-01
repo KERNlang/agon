@@ -134,12 +134,26 @@ fn name=dispatchSessionInfoIntent async=true params="intent:any, input:string, c
         cb.setModelPickerTitle?.('Select model');
         cb.setModelPickerLoading(true);
         cb.setModelPickerOpen(true);
-        import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroupsAsync }) => {
-          // Load CLI models async from models.dev (with fallback)
-          buildCliModelGroupsAsync().then((cliGroups: any) => {
-            cb.setModelPickerCliGroups?.(cliGroups);
-          });
-          // Load API models async
+        import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliGroupsImmediate, refreshCliGroup }) => {
+          // CLI engines: render cached/static models instantly (each installed
+          // probe-capable engine flagged loading), then probe each engine's live
+          // /model list in the background and swap its group in as it resolves —
+          // no global wait, and a slow/broken probe only spins its own row.
+          let cliGroups = buildCliGroupsImmediate();
+          cb.setModelPickerCliGroups?.(cliGroups);
+          for (const g of cliGroups) {
+            if (!g.loading) continue;
+            const clearLoading = () => {
+              cliGroups = cliGroups.map((x: any) => x.engineId === g.engineId ? { ...x, loading: false } : x);
+              cb.setModelPickerCliGroups?.([...cliGroups]);
+            };
+            refreshCliGroup(g.engineId).then((fresh: any) => {
+              if (!fresh) { clearLoading(); return; }
+              cliGroups = cliGroups.map((x: any) => x.engineId === fresh.engineId ? fresh : x);
+              cb.setModelPickerCliGroups?.([...cliGroups]);
+            }).catch(clearLoading);
+          }
+          // API models (models.dev) — independent; clears the global loading state.
           fetchModelsRegistry().then((reg: any) => {
             cb.setModelPickerEntries(buildModelEntries(reg));
             cb.setModelPickerLoading(false);

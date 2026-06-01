@@ -30,6 +30,7 @@ interface name=CliProviderGroup
   field name=version type="string|null"
   field name=models type="CliModelEntry[]"
   field name=effortLevels type="string[]" optional=true doc="Reasoning-effort levels this engine accepts (claude/codex). Empty/absent = engine has no effort dimension (e.g. agy bakes it into model tiers)."
+  field name=loading type=boolean optional=true doc="True while this engine's live /model probe is still in flight (cold cache). The picker shows the static/stale models meanwhile plus a 'refreshing…' marker, then swaps in live models when refreshCliGroup resolves."
 
 // ── Engine binary → models.dev provider mapping ──
 // This is the only static config needed: which CLI binary maps to which API provider.
@@ -95,7 +96,14 @@ fn name=resolveModelProbeScript returns="string|null"
       // into the (source) cli/ dir where model_probe.py lives.
       const anchor = req.resolve('@agon/kern-engines/cli/claude.js'); // …/kern_engines/dist/cli/claude.js
       const candidates = [
-        join(anchor, '..', '..', '..', 'cli', 'model_probe.py'), // dist/cli → root/cli
+        // Canonical: the package ships the probe at py/kern_engines/cli/ (see
+        // kern_engines package.json `files`), so from dist/cli/claude.js walk up
+        // to the package root, then into py/. This is the path that actually
+        // exists — the dist/cli & root/cli guesses below never matched, so the
+        // probe silently never ran and every engine fell back to its static list.
+        join(anchor, '..', '..', '..', 'py', 'kern_engines', 'cli', 'model_probe.py'), // dist/cli → root → py/kern_engines/cli
+        join(anchor, '..', '..', 'py', 'kern_engines', 'cli', 'model_probe.py'),        // (alt layout: cli/claude.js → root)
+        join(anchor, '..', '..', '..', 'cli', 'model_probe.py'),
         join(anchor, '..', '..', 'cli', 'model_probe.py'),
         join(anchor, '..', 'model_probe.py'),
       ];
@@ -276,4 +284,46 @@ fn name=buildCliModelGroupsAsync async=true returns="Promise<CliProviderGroup[]>
       groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, effortLevels: eng.effortLevels ?? [] });
     }
     return groups;
+  >>>
+
+fn name=buildCliGroupsImmediate returns="CliProviderGroup[]" export=true
+  doc "Synchronous, instant CLI groups for the /models picker to render right away: cached probe → static FALLBACK per engine. Marks `loading: true` on installed, probe-capable engines whose live /model probe isn't cached yet, so the picker can show a 'refreshing…' indicator while refreshCliGroup runs per engine in the background. No subprocess spawns — never blocks the picker open."
+  handler <<<
+    const groups: CliProviderGroup[] = [];
+    for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
+      const binaryPath = findBinary(eng.engineBinary);
+      const installed = binaryPath !== null;
+      const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
+      const displayName = ENGINE_DISPLAY_NAMES[eng.engineId] ?? (eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1));
+      const probed = readProbedCliModels(eng.engineId);
+      const probeCapable = Array.isArray(eng.listCmd) && eng.listCmd.length > 0;
+      const loading = installed && probeCapable && !(probed && probed.length > 0);
+      const models: CliModelEntry[] = (probed && probed.length > 0)
+        ? probed.map((m) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }))
+        : (FALLBACK_MODELS[key] ?? []).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+      groups.push({ providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, effortLevels: eng.effortLevels ?? [], loading });
+    }
+    return groups;
+  >>>
+
+fn name=refreshCliGroup async=true params="engineId:string" returns="Promise<CliProviderGroup|null>" export=true
+  doc "Probe a SINGLE engine's live /model list and return its rebuilt group (loading: false), for the picker to merge in as each probe resolves independently. Returns null for an unknown/uninstalled/non-probe-capable engine (nothing to refresh). Falls back to FALLBACK on probe failure — never throws."
+  handler <<<
+    const entry = Object.entries(ENGINE_PROVIDER_MAP).find(([, e]) => e.engineId === engineId);
+    if (!entry) return null;
+    const [key, eng] = entry;
+    const binaryPath = findBinary(eng.engineBinary);
+    const installed = binaryPath !== null;
+    const probeCapable = Array.isArray(eng.listCmd) && eng.listCmd.length > 0;
+    if (!installed || !probeCapable) return null;
+    const displayName = ENGINE_DISPLAY_NAMES[eng.engineId] ?? (eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1));
+    const version = getBinaryVersion(eng.engineBinary, eng.versionCmd);
+    try {
+      await refreshProbedCliModels(eng.engineId, binaryPath, eng.listCmd);
+    } catch { /* keep going — fall back below */ }
+    const probed = readProbedCliModels(eng.engineId);
+    const models: CliModelEntry[] = (probed && probed.length > 0)
+      ? probed.map((m) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, toolCall: true, reasoning: true }))
+      : (FALLBACK_MODELS[key] ?? []).map((m: any) => Object.assign({}, { id: m.id, name: m.name, providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, contextWindow: m.contextWindow, toolCall: m.toolCall, reasoning: m.reasoning }));
+    return { providerId: eng.providerId, providerName: displayName, engineId: eng.engineId, engineBinary: eng.engineBinary, installed, version, models, effortLevels: eng.effortLevels ?? [], loading: false };
   >>>

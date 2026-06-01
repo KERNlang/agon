@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@kernlang/agon-core": "*",
-    "@kernlang/protocol": "~3.5.6"
+    "@kernlang/protocol": "~3.5.7"
   },
   "optionalDependencies": {}
 }

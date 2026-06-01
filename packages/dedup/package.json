@@ -6,7 +6,8 @@
   "files": [
     "*.py",
     "requirements.txt",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "publishConfig": {
     "access": "public"
@@ -25,5 +26,6 @@
     "url": "git+https://github.com/KERNlang/agon.git",
     "directory": "packages/dedup"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "author": "KERNlang"
 }

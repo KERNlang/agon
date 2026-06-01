@@ -20,6 +20,7 @@
     "kern:review": "node scripts/run-kern-review.mjs",
     "kern:test": "node scripts/run-kern-test.mjs",
     "kern-gaps": "node scripts/run-kern-gaps.mjs",
+    "rebuild": "npm run kern:compile && npm run build",
     "build": "npm run build:cli && npm run build:types",
     "build:types": "tsc -b --force",
     "build:cli": "node scripts/run-agon-script.mjs build:cli:workspaces",

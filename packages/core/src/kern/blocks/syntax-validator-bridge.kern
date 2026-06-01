@@ -1,4 +1,4 @@
-// Spawns @agon/dedup's tree-sitter syntax validator. Parses files in
+// Spawns @kernlang/agon-dedup's tree-sitter syntax validator. Parses files in
 // any of TypeScript / TSX / JavaScript / JSX / Python / JSON and reports
 // per-file parse errors. Returns null on any failure so callers degrade
 // gracefully (no validation > misleading validation).

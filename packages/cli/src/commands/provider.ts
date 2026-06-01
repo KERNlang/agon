@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { header, success, fail, info, table, bold, green, red, dim, yellow } from '../output.js';
-import { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef, getAuthKey, setAuthKey, loadAllAuthKeys, listStoredProviders } from '@agon/core';
-import type { ModelEntry } from '@agon/core';
+import { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef, getAuthKey, setAuthKey, loadAllAuthKeys, listStoredProviders } from '@kernlang/agon-core';
+import type { ModelEntry } from '@kernlang/agon-core';
 
 function enginesDir() {
   return join(homedir(), '.agon', 'engines');
@@ -291,7 +291,7 @@ export const providerCommand = defineCommand({
           fail(`No stored credentials matching "${providerQuery}"`);
           break;
         }
-        const { removeAuthKey: removeKey } = await import('@agon/core');
+        const { removeAuthKey: removeKey } = await import('@kernlang/agon-core');
         removeKey(match.envVar);
         delete process.env[match.envVar];
         success(`Removed credentials for ${match.provider ?? match.envVar}`);

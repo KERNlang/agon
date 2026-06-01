@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentStepResult } from '../../packages/core/src/generated/cesar/agent-session.js';
 
-// Mock @agon/core so the handler's AgentSession is a stub we control.
+// Mock @kernlang/agon-core so the handler's AgentSession is a stub we control.
 // This isolates the test to handler composition logic — Phase 1's AgentSession
 // internals have their own tests in agent-session.test.ts.
 //
@@ -13,8 +13,8 @@ const mockState = {
   lastStep: null as { prompt: string; opts: { onEvent?: (e: unknown) => void } } | null,
 };
 
-vi.mock('@agon/core', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@agon/core')>();
+vi.mock('@kernlang/agon-core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@kernlang/agon-core')>();
 
   class MockAgentSession {
     private _state: 'idle'|'running'|'completed'|'cancelled'|'failed' = 'idle';

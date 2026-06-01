@@ -4,11 +4,11 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir, loadConfig } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir, loadConfig } from '@kernlang/agon-core';
 
-import { runTeamTribunal } from '@agon/forge';
+import { runTeamTribunal } from '@kernlang/agon-forge';
 
-import type { TribunalMode } from '@agon/forge';
+import type { TribunalMode } from '@kernlang/agon-forge';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 

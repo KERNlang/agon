@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ImageAttachment,DispatchResult" types=true
-import from="@agon/core" names="RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig,sessionContext,resolveWorkingDir,loadOrCreateActiveThread,createStreamBridge,formatChatContextForPrompt"
+import from="@kernlang/agon-core" names="ImageAttachment,DispatchResult" types=true
+import from="@kernlang/agon-core" names="RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig,sessionContext,resolveWorkingDir,loadOrCreateActiveThread,createStreamBridge,formatChatContextForPrompt"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="../cesar/brain-helpers.js" names="yieldToInk"

@@ -1,10 +1,10 @@
-import from="@agon/core" names="classifyTask,getRatings,getEngineProfile,rankByTaskClass,resolveWorkingDir,gitChangedFiles,currentBranch,loadOrCreateActiveThread"
-import from="@agon/core" names="TaskClass,EngineRole" types=true
+import from="@kernlang/agon-core" names="classifyTask,getRatings,getEngineProfile,rankByTaskClass,resolveWorkingDir,gitChangedFiles,currentBranch,loadOrCreateActiveThread"
+import from="@kernlang/agon-core" names="TaskClass,EngineRole" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./reliability.js" names="readCesarToolReliability,formatCesarReliabilityLine,shouldDowngradeCesarToolWork"
 import from="./mode-rationale.js" names="buildModeRationale,formatModeRationale"
-import from="@agon/core" names="planCostEstimator" types=false
-import from="@agon/core" names="CostEstimate,AgonConfig" types=true
+import from="@kernlang/agon-core" names="planCostEstimator" types=false
+import from="@kernlang/agon-core" names="CostEstimate,AgonConfig" types=true
 
 type name=CesarUncertaintyFamily values="none|challenge|tradeoff|open|fuzzy|specialist|implementation|review"
 type name=CesarEscalationHint values="self|self-nero|delegate|tribunal|brainstorm|campfire|forge|review"

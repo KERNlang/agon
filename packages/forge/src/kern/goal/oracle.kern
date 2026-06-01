@@ -8,7 +8,7 @@
 import from="node:fs" names="existsSync,readFileSync,writeFileSync,mkdirSync,copyFileSync"
 import from="node:path" names="join,basename,dirname"
 import from="node:crypto" names="createHash"
-import from="@agon/core" names="agonPath,ensureAgonHome,spawnWithTimeout,worktreeCreate,worktreeRemoveBestEffort"
+import from="@kernlang/agon-core" names="agonPath,ensureAgonHome,spawnWithTimeout,worktreeCreate,worktreeRemoveBestEffort"
 import from="./paths.js" names="assertSafeGoalId,resolveWithin"
 
 interface name=FrozenOracle export=true

@@ -2,9 +2,9 @@
 
 import { join } from 'node:path';
 
-import { loadPlan, listPlans, approvePlan, startPlan, cancelPlan, resetStepForRetry, savePlan, preflightApply, applyPatchToTree, RUNS_DIR, resolveWorkingDir } from '@agon/core';
+import { loadPlan, listPlans, approvePlan, startPlan, cancelPlan, resetStepForRetry, savePlan, preflightApply, applyPatchToTree, RUNS_DIR, resolveWorkingDir } from '@kernlang/agon-core';
 
-import type { Plan } from '@agon/core';
+import type { Plan } from '@kernlang/agon-core';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 

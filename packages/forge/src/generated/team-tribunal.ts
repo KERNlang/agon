@@ -2,13 +2,13 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { EngineAdapter, ForgeEvent, TaskClass } from '@agon/core';
+import type { EngineAdapter, ForgeEvent, TaskClass } from '@kernlang/agon-core';
 
-import type { TeamSpec, TeamFormat, TeamComposeMode, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@agon/core';
+import type { TeamSpec, TeamFormat, TeamComposeMode, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, classifyTask, createSidechainLogger, composeTeams, makeFormat } from '@agon/core';
+import { EngineRegistry, loadConfig, classifyTask, createSidechainLogger, composeTeams, makeFormat } from '@kernlang/agon-core';
 
-import { updateTeamElo } from '@agon/core';
+import { updateTeamElo } from '@kernlang/agon-core';
 
 import type { TribunalMode } from './tribunal-modes.js';
 

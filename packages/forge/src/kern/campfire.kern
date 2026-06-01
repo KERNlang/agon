@@ -1,5 +1,5 @@
-import from="@agon/core" names="EngineRegistry,EngineAdapter" types=true
-import from="@agon/core" names="resolveWorkingDir"
+import from="@kernlang/agon-core" names="EngineRegistry,EngineAdapter" types=true
+import from="@kernlang/agon-core" names="resolveWorkingDir"
 
 interface name=CampfireResult export=true
   field name=topic type=string

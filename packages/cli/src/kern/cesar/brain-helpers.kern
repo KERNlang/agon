@@ -2,7 +2,7 @@
 // Standalone utilities extracted from brain.kern for modularity.
 // Pure functions + small helpers — no session/streaming state.
 
-import from="@agon/core" names="ToolCallResult" types=true
+import from="@kernlang/agon-core" names="ToolCallResult" types=true
 import from="../../handlers/types.js" names="HandlerContext,PendingDelegation" types=true
 
 // Yield a macrotask so Ink can paint — await Promise.resolve() is NOT enough

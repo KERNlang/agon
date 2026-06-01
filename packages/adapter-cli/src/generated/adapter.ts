@@ -4,9 +4,9 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 
 import { join, dirname } from 'node:path';
 
-import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@agon/core';
+import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@kernlang/agon-core';
 
-import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, sessionContext, resolveWorkingDir, engineHealth, classifyDispatchFailure } from '@agon/core';
+import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, sessionContext, resolveWorkingDir, engineHealth, classifyDispatchFailure } from '@kernlang/agon-core';
 
 import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth, shouldUseCompanionForAgent, shouldUseClaudePty, runClaudePtyDispatch, runClaudePtyStreamDispatch, resolveClaudePtyExtraArgs, computeEngineIsolation } from './adapter-helpers.js';
 

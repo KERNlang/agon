@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,readOnlyDiff,diffLineCount,diffFileCount,buildCritiquePrompt,spawnWithTimeout,resolveWorkingDir,formatChatContextForPrompt"
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,readOnlyDiff,diffLineCount,diffFileCount,buildCritiquePrompt,spawnWithTimeout,resolveWorkingDir,formatChatContextForPrompt"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./agent.js" names="buildAgentApprovalCallback"

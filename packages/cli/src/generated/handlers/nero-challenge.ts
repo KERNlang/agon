@@ -4,9 +4,9 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, tracker, appendMessage, resolveWorkingDir } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, tracker, appendMessage, resolveWorkingDir } from '@kernlang/agon-core';
 
-import { runNero } from '@agon/forge';
+import { runNero } from '@kernlang/agon-forge';
 
 import { sessionResultStore } from '../models/session-results.js';
 

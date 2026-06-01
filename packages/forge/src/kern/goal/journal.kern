@@ -5,7 +5,7 @@
 
 import from="node:fs" names="existsSync,readFileSync,writeFileSync,mkdirSync,renameSync"
 import from="node:path" names="dirname"
-import from="@agon/core" names="agonPath,ensureAgonHome"
+import from="@kernlang/agon-core" names="agonPath,ensureAgonHome"
 import from="./paths.js" names="assertSafeGoalId"
 import from="./types.js" names="JournalState,GoalSpec,GoalTask,AttemptRecord,GoalEvent" types=true
 

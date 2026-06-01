@@ -1,6 +1,6 @@
 import from="node:fs" names="existsSync,readFileSync,statSync,openSync,readSync,closeSync"
 import from="node:path" names="join"
-import from="@agon/core" names="RUNS_DIR"
+import from="@kernlang/agon-core" names="RUNS_DIR"
 
 type name=CesarReliabilityLabel values="calibrating|tool-capable|watch|advisory-only"
 

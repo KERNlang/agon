@@ -6,7 +6,7 @@ import { Box, Text } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
-import type { AgentPhase } from '@agon/core';
+import type { AgentPhase } from '@kernlang/agon-core';
 
 // @kern-source: agent:81
 const AgentProgressView = React.memo(function AgentProgressView({ engineId, turnIndex, phase, userPrompt, toolCalls, lastTool, lastToolStatus, tokensUsed, elapsedMs, turnsRemaining, maxTurns, tokensRemaining, maxTokens, error }: { engineId:string; turnIndex:number; phase:'idle'|'running'|'awaiting_approval'|'completed'|'failed'|'cancelled'; userPrompt?:string; toolCalls:number; lastTool?:string; lastToolStatus?:'running'|'ok'|'error'|'rejected'; tokensUsed:number; elapsedMs:number; turnsRemaining:number; maxTurns:number; tokensRemaining?:number|null; maxTokens?:number|null; error?:string }) {

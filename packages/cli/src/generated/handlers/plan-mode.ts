@@ -4,11 +4,11 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 
 import { join, dirname } from 'node:path';
 
-import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan, cancelCesarPlan, exitCesarPlan, spawnWithTimeout } from '@agon/core';
+import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan, cancelCesarPlan, exitCesarPlan, spawnWithTimeout } from '@kernlang/agon-core';
 
-import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@agon/core';
+import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@kernlang/agon-core';
 
-import { runForge, runBrainstorm, runTribunal, runCampfire, runDelegate } from '@agon/forge';
+import { runForge, runBrainstorm, runTribunal, runCampfire, runDelegate } from '@kernlang/agon-forge';
 
 import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
 

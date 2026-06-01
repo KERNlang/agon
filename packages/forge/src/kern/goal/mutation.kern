@@ -12,7 +12,7 @@
 // parked correct contracts on unkillable equivalent mutants.
 
 import from="node:fs" names="writeFileSync"
-import from="@agon/core" names="spawnWithTimeout"
+import from="@kernlang/agon-core" names="spawnWithTimeout"
 import from="./paths.js" names="resolveWithin"
 
 interface name=Mutant export=true

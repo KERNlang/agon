@@ -4,7 +4,7 @@
 
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,appendFileSync,existsSync,readFileSync"
-import from="@agon/core" names="RUNS_DIR,resolveWorkingDir,currentBranch,gitChangedFiles"
+import from="@kernlang/agon-core" names="RUNS_DIR,resolveWorkingDir,currentBranch,gitChangedFiles"
 
 type name=CheckpointPhase values="pre-dispatch|post-dispatch|post-judgment|user-pause"
 

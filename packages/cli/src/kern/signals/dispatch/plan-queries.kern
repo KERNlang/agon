@@ -1,7 +1,7 @@
 // ── Dispatch plan queries — Cesar plan predicates + state reads ──
 import from="node:path" names="join"
-import from="@agon/core" names="listCesarPlans,executePlan"
-import from="@agon/core" names="CesarPlan" types=true
+import from="@kernlang/agon-core" names="listCesarPlans,executePlan"
+import from="@kernlang/agon-core" names="CesarPlan" types=true
 import from="../../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="../dispatch.js" names="DispatchCallbacks" types=true
 

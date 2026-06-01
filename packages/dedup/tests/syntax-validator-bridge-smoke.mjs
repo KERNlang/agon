@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Integration test for the @agon/core bridge — exercises the path
+// Integration test for the @kernlang/agon-core bridge — exercises the path
 // resolution, env-var disable switch, language detection, and JSON-field
 // mapping that the per-sidecar smoke test doesn't touch.
 
 import {
   validateSyntax,
   detectLanguageFromPath,
-} from '@agon/core';
+} from '@kernlang/agon-core';
 
 let failed = 0;
 function check(name, cond) {

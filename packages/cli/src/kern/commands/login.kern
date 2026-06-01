@@ -2,9 +2,9 @@ import from="citty" names="defineCommand"
 import from="node:child_process" names="spawnSync"
 import from="node:fs" names="mkdirSync,existsSync,chmodSync"
 import from="node:path" names="join,basename"
-import from="@agon/core" names="EngineRegistry,agonPath"
+import from="@kernlang/agon-core" names="EngineRegistry,agonPath"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
-import from="@agon/core" names="EngineDefinition" types=true
+import from="@kernlang/agon-core" names="EngineDefinition" types=true
 import from="../blocks/output-format.js" names="header,info,success,fail,warn,dim,bold,cyan"
 
 interface name=EngineLoginPlan export=true

@@ -1,5 +1,5 @@
 // ── Dispatch utils — leaf helpers (recovery status, turn counting, session clear) ──
-import from="@agon/core" names="clearConversation,clearSessionState,resolveWorkingDir"
+import from="@kernlang/agon-core" names="clearConversation,clearSessionState,resolveWorkingDir"
 import from="../../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="../dispatch.js" names="DispatchCallbacks" types=true
 

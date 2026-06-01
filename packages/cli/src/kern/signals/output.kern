@@ -5,7 +5,7 @@
 import from="../../handlers/types.js" names="OutputEvent,EngineProgress" types=true
 import from="../blocks/markdown.js" names="parseMarkdownBlocks,cleanEngineOutput"
 import from="../../code-buffer.js" names="codeBlockBuffer"
-import from="@agon/core" names="loadConfig,configSet"
+import from="@kernlang/agon-core" names="loadConfig,configSet"
 import from="./todos.js" names="Todo" types=true
 import from="./todos.js" names="setTodos,updateTodoState,clearTodos"
 

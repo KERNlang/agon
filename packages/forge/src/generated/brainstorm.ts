@@ -2,9 +2,9 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { EngineAdapter, BrainstormBid, BrainstormResult, BrainstormGroup, ScoutBid } from '@agon/core';
+import type { EngineAdapter, BrainstormBid, BrainstormResult, BrainstormGroup, ScoutBid } from '@kernlang/agon-core';
 
-import { EngineRegistry, buildBrainstormPrompt, getRatings, loadConfig, createSidechainLogger, updateGlickoRanked, classifyTask, seedNewEnginesFromRegistry } from '@agon/core';
+import { EngineRegistry, buildBrainstormPrompt, getRatings, loadConfig, createSidechainLogger, updateGlickoRanked, classifyTask, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
 
 import { buildKernDraftPrompt, parseKernDraft, buildKernRankPrompt } from '@kernlang/protocol';
 

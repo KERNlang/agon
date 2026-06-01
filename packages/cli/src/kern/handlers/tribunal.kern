@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage,resolveWorkingDir"
-import from="@agon/forge" names="runTribunal"
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage,resolveWorkingDir"
+import from="@kernlang/agon-forge" names="runTribunal"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
 import from="../cesar/scoreboard.js" names="createScoreboard,scoreboardStartEngine,scoreboardFinishEngine,scoreboardFailEngine,renderScoreboard"

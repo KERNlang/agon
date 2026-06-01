@@ -1,6 +1,6 @@
 import from="citty" names="defineCommand"
-import from="@agon/core" names="getRatings,advisorScore"
-import from="@agon/core" names="GlickoRating" types=true
+import from="@kernlang/agon-core" names="getRatings,advisorScore"
+import from="@kernlang/agon-core" names="GlickoRating" types=true
 import from="../blocks/output-format.js" names="header,table,bold,dim,info"
 
 const name=leaderboardCommand type="ReturnType<typeof defineCommand>"

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { formatSessionResults, formatChatTranscript } from '../../packages/cli/src/generated/blocks/results-formatter.js';
-import type { SessionResult, ChatSession } from '@agon/core';
+import type { SessionResult, ChatSession } from '@kernlang/agon-core';
 
 describe('formatSessionResults', () => {
   it('returns empty-state message when no results', () => {

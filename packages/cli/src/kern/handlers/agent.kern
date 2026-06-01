@@ -14,8 +14,8 @@
 // user messages is deferred — when it's needed, wrap the body below
 // in a while-loop keyed on AgentState.phase.
 
-import from="@agon/core" names="AgentSession,AgentTeam,createAgentState,beginTurn,completeTurn,cancelAgent,completeAgent,failAgent,checkBudget,isTerminal,resolveWorkingDir,determineWinner,scoreAgentTeamResult,estimatedTokensToCost,worktreeChangedDiff,worktreeChangedShortstat,spawnWithTimeout,RUNS_DIR,runAgentTeamSynthesis,runAgentInvestigateSynthesis,runPostSynthesisFitnessCheck,detectSynthesisInsightMention,loadOrCreateActiveThread,createStreamBridge,isReadOnlyCommand,engineHealth,classifyDispatchFailure"
-import from="@agon/core" names="AgentBudget,AgentState,AgentStepResult,AgentEvent,AgentTeamConfig,AgentTeamMemberConfig,AgentTeamResult,EngineDefinition,EngineResult,AgentSynthesisLoser" types=true
+import from="@kernlang/agon-core" names="AgentSession,AgentTeam,createAgentState,beginTurn,completeTurn,cancelAgent,completeAgent,failAgent,checkBudget,isTerminal,resolveWorkingDir,determineWinner,scoreAgentTeamResult,estimatedTokensToCost,worktreeChangedDiff,worktreeChangedShortstat,spawnWithTimeout,RUNS_DIR,runAgentTeamSynthesis,runAgentInvestigateSynthesis,runPostSynthesisFitnessCheck,detectSynthesisInsightMention,loadOrCreateActiveThread,createStreamBridge,isReadOnlyCommand,engineHealth,classifyDispatchFailure"
+import from="@kernlang/agon-core" names="AgentBudget,AgentState,AgentStepResult,AgentEvent,AgentTeamConfig,AgentTeamMemberConfig,AgentTeamResult,EngineDefinition,EngineResult,AgentSynthesisLoser" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="node:fs" names="writeFileSync,mkdirSync,existsSync"
 import from="node:path" names="join"
@@ -210,7 +210,7 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
 
     // Optional ContextThread continuity. Disabled by default so new Agon
     // processes do not preload stale prior /agent runs.
-    let agentThread: import('@agon/core').ContextThread | undefined;
+    let agentThread: import('@kernlang/agon-core').ContextThread | undefined;
     if ((ctx.config as any).sessionContinuity === true) {
       try {
         agentThread = loadOrCreateActiveThread(cwd, opts?.systemPrompt);
@@ -610,7 +610,7 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
 
     // Optional ContextThread continuity — shared across all team members only
     // when the user opts into cross-session memory.
-    let teamThread: import('@agon/core').ContextThread | undefined;
+    let teamThread: import('@kernlang/agon-core').ContextThread | undefined;
     if ((ctx.config as any).sessionContinuity === true) {
       try {
         teamThread = loadOrCreateActiveThread(cwd, opts?.systemPrompt);

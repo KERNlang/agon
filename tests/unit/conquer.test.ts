@@ -26,8 +26,8 @@ import {
   type ConquerCaps,
   type DoneOracleInput,
   type SandboxOps,
-} from '@agon/forge';
-import type { RatingRecord } from '@agon/core';
+} from '@kernlang/agon-forge';
+import type { RatingRecord } from '@kernlang/agon-core';
 import { tmpdir } from 'node:os';
 
 // Empty injected ratings → rankNeroCritics' cascade finds no rated engine and falls

@@ -9,7 +9,7 @@
 
 import from="citty" names="defineCommand"
 import from="node:child_process" names="execFileSync"
-import from="@agon/core" names="ensureAgonHome,repoRoot,createSessionWorktree,listSessionWorktrees,removeSessionWorktree,pruneSessionWorktrees,rehydrateSessionWorktree"
+import from="@kernlang/agon-core" names="ensureAgonHome,repoRoot,createSessionWorktree,listSessionWorktrees,removeSessionWorktree,pruneSessionWorktrees,rehydrateSessionWorktree"
 import from="../blocks/output-format.js" names="header,success,fail,warn,info,table,bold,dim"
 
 const name=worktreeCommand type="any"

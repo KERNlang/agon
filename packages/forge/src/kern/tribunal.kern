@@ -1,6 +1,6 @@
 import from="node:crypto" names="randomUUID"
-import from="@agon/core" names="EngineAdapter,EngineDefinition,ForgeEvent,DispatchResult" types=true
-import from="@agon/core" names="EngineRegistry,buildTribunalPrompt,createSidechainLogger,updateGlickoRanked,classifyTask,loadConfig,seedNewEnginesFromRegistry"
+import from="@kernlang/agon-core" names="EngineAdapter,EngineDefinition,ForgeEvent,DispatchResult" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,buildTribunalPrompt,createSidechainLogger,updateGlickoRanked,classifyTask,loadConfig,seedNewEnginesFromRegistry"
 import from="./tribunal-modes.js" names="TribunalMode,TribunalModeConfig" types=true
 import from="./tribunal-modes.js" names="getModeConfig,buildModePrompt,buildModeSummaryPrompt"
 

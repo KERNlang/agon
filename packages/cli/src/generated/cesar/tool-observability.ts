@@ -4,7 +4,7 @@ import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { RUNS_DIR } from '@agon/core';
+import { RUNS_DIR } from '@kernlang/agon-core';
 
 // @kern-source: tool-observability:11
 export interface CesarApprovalLedgerRecord {

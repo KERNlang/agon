@@ -1,8 +1,8 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage,resolveWorkingDir,loadConfig"
-import from="@agon/forge" names="runTeamTribunal"
-import from="@agon/forge" names="TribunalMode" types=true
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage,resolveWorkingDir,loadConfig"
+import from="@kernlang/agon-forge" names="runTeamTribunal"
+import from="@kernlang/agon-forge" names="TribunalMode" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 

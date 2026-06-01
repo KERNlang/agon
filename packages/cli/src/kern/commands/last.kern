@@ -13,7 +13,7 @@
 // Exit codes: 0 when a path is printed; 1 when no matching run is found.
 
 import from="citty" names="defineCommand"
-import from="@agon/core" names="findLatestRunDir,ensureAgonHome"
+import from="@kernlang/agon-core" names="findLatestRunDir,ensureAgonHome"
 import from="node:fs" names="readFileSync,existsSync"
 import from="node:path" names="join"
 

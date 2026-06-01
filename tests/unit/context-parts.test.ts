@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildStageContext, renderStageContext } from '@agon/core';
+import { buildStageContext, renderStageContext } from '@kernlang/agon-core';
 
 describe('buildStageContext', () => {
   const baseOpts = {

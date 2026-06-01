@@ -2,7 +2,7 @@
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
-import { EngineRegistry, loadConfig } from '@agon/core';
+import { EngineRegistry, loadConfig } from '@kernlang/agon-core';
 
 import { clampNumber } from './app-display-utils.js';
 

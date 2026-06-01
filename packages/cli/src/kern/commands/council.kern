@@ -7,11 +7,11 @@
 // or rejected. Scales to the engine count; refuses below 2.
 
 import from="citty" names="defineCommand"
-import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,writeRunStatus,printRunSummary"
-import from="@agon/core" names="RunStatus,RunStatusEngine" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,writeRunStatus,printRunSummary"
+import from="@kernlang/agon-core" names="RunStatus,RunStatusEngine" types=true
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
-import from="@agon/adapter-cli" names="createCliAdapter"
-import from="@agon/forge" names="runCouncil,joinProblemInput"
+import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
+import from="@kernlang/agon-forge" names="runCouncil,joinProblemInput"
 import from="../blocks/output-format.js" names="header,info,bold,dim"
 import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
 

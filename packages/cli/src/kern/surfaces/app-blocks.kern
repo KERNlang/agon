@@ -1,8 +1,8 @@
 // ── Block management — archive, dedupe, coalescing ──────────────────
 import from="node:fs" names="readdirSync"
-import from="@agon/core" names="loadConfig,getRatings,getActiveWorkspace,RUNS_DIR"
+import from="@kernlang/agon-core" names="loadConfig,getRatings,getActiveWorkspace,RUNS_DIR"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
-import from="@agon/core" names="EngineRegistry"
+import from="@kernlang/agon-core" names="EngineRegistry"
 import from="../blocks/markdown.js" names="cleanEngineOutput"
 import from="../signals/block-archive.js" names="appendBlockWithCap"
 import from="../../generated/blocks/engine.js" names="OutputBlock" types=true

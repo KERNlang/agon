@@ -1,9 +1,9 @@
 import from="node:path" names="join"
 import from="node:fs" names="existsSync,mkdirSync,readFileSync"
 import from="node:child_process" names="execFileSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,scanProjectContext,getActiveWorkspace,snapshotWorkspace,tracker,resolveWorkingDir,loadOrCreateActiveThread,applyPatchWithUndo,acquireApplyLock,releaseApplyLock,headChanged,branchChanged,headSha,currentBranch"
-import from="@agon/core" names="Plan,PlanStepInput,ApprovalLevel" types=true
-import from="@agon/forge" names="runForge"
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,scanProjectContext,getActiveWorkspace,snapshotWorkspace,tracker,resolveWorkingDir,loadOrCreateActiveThread,applyPatchWithUndo,acquireApplyLock,releaseApplyLock,headChanged,branchChanged,headSha,currentBranch"
+import from="@kernlang/agon-core" names="Plan,PlanStepInput,ApprovalLevel" types=true
+import from="@kernlang/agon-forge" names="runForge"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
 import from="../../handlers/cesar-brain.js" names="cesarJudgeForge,cesarConvergeForge,cesarReviewForgeOutcome"

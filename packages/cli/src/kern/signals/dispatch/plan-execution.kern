@@ -1,9 +1,9 @@
 // ── Dispatch plan execution — approve/resume/execute/finalize lifecycle ──
 import from="node:path" names="join"
 import from="node:fs" names="writeFileSync"
-import from="@agon/core" names="resolveWorkingDir,loadConfig,gitChangedFiles"
-import from="@agon/core" names="approveCesarPlan,saveCesarPlan,executePlan,formatCesarPlanMarkdown,planCostEstimator"
-import from="@agon/core" names="CesarPlan,CesarPlanStep,CesarStepResult,StepExecutor" types=true
+import from="@kernlang/agon-core" names="resolveWorkingDir,loadConfig,gitChangedFiles"
+import from="@kernlang/agon-core" names="approveCesarPlan,saveCesarPlan,executePlan,formatCesarPlanMarkdown,planCostEstimator"
+import from="@kernlang/agon-core" names="CesarPlan,CesarPlanStep,CesarStepResult,StepExecutor" types=true
 import from="../../handlers/plan-mode.js" names="buildStepExecutors"
 import from="../../cesar/auto-approve-policy.js" names="applyAutoApprovePolicy"
 import from="../../../handlers/types.js" names="Dispatch" types=true

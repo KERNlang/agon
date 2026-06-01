@@ -4,11 +4,11 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, resolveWorkingDir, spawnWithTimeout } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, resolveWorkingDir, spawnWithTimeout } from '@kernlang/agon-core';
 
-import { runConquer } from '@agon/forge';
+import { runConquer } from '@kernlang/agon-forge';
 
-import type { ConquerTurn } from '@agon/forge';
+import type { ConquerTurn } from '@kernlang/agon-forge';
 
 import { recordRun, formatRunSummary } from '../../telemetry/index.js';
 

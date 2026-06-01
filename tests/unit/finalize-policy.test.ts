@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { defaultFinalizeOnScoreForTask } from '@agon/core';
+import { defaultFinalizeOnScoreForTask } from '@kernlang/agon-core';
 
 describe('defaultFinalizeOnScoreForTask', () => {
   it('returns 75 for docs tasks', () => {

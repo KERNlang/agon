@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { StreamParser, parseStreamChunk } from '@agon/core';
+import { StreamParser, parseStreamChunk } from '@kernlang/agon-core';
 
 describe('StreamParser', () => {
   describe('feed — single complete lines', () => {

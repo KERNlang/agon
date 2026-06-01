@@ -1,5 +1,5 @@
-import from="@agon/core" names="EngineDefinition,EngineMode,EngineModeConfig,ImageAttachment,EngineIsolationPlan" types=true
-import from="@agon/core" names="EngineNotFoundError,loadConfig,engineHealth,classifyDispatchFailure,resolveIsolationMode,planEngineIsolation,agonPath"
+import from="@kernlang/agon-core" names="EngineDefinition,EngineMode,EngineModeConfig,ImageAttachment,EngineIsolationPlan" types=true
+import from="@kernlang/agon-core" names="EngineNotFoundError,loadConfig,engineHealth,classifyDispatchFailure,resolveIsolationMode,planEngineIsolation,agonPath"
 import from="node:fs" names="statSync,mkdirSync,existsSync,copyFileSync,chmodSync,unlinkSync"
 import from="node:path" names="join,dirname,basename"
 import from="node:os" names="homedir"
@@ -330,13 +330,13 @@ fn name=composeClaudePtyPrompt params="prompt:string, systemPrompt?:string" retu
   >>>
 
 fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string, env?:Record<string,string>, extraArgv?:string[]" returns="Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}>" async=true
-  doc "Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @agon/kern-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt; extraArgv (model/effort launch flags) is forwarded to the engine exec. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check."
+  doc "Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @kernlang/agon-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt; extraArgv (model/effort launch flags) is forwarded to the engine exec. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check."
   handler <<<
     const start = Date.now();
     try {
       let mod: any;
       try {
-        mod = await import('@agon/kern-engines/cli/claude.js' as any);
+        mod = await import('@kernlang/agon-engines/cli/claude.js' as any);
       } catch (e) {
         return {
           exitCode: 1,
@@ -421,7 +421,7 @@ fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, sig
     try {
       let mod: any;
       try {
-        mod = await import('@agon/kern-engines/cli/claude.js' as any);
+        mod = await import('@kernlang/agon-engines/cli/claude.js' as any);
       } catch (e) {
         return {
           exitCode: 1,

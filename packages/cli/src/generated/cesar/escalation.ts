@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { RUNS_DIR, resolveWorkingDir, tracker, appendMessage, classifyTask, rankByTaskClass, getRatings, pickTopRatedEngine } from '@agon/core';
+import { RUNS_DIR, resolveWorkingDir, tracker, appendMessage, classifyTask, rankByTaskClass, getRatings, pickTopRatedEngine } from '@kernlang/agon-core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 

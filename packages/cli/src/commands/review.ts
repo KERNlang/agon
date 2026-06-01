@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import {
   EngineRegistry, ensureAgonHome, loadConfig,
   createRunDir, writeRunStatus, printRunSummary,
-} from '@agon/core';
-import type { RunStatusEngine } from '@agon/core';
-import { createCliAdapter } from '@agon/adapter-cli';
+} from '@kernlang/agon-core';
+import type { RunStatusEngine } from '@kernlang/agon-core';
+import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import { resolveReviewTarget, runReviewCore, selectReviewEngine, extractReviewFindings } from '../generated/handlers/review.js';
 import { buildConsensus } from '../generated/blocks/consensus.js';

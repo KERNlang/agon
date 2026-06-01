@@ -30,7 +30,7 @@ import { worktreeCommand } from './commands/worktree.js';
 import { loginCommand } from './commands/login.js';
 import { startRepl } from './repl.js';
 import { runOnboarding } from './onboarding.js';
-import { loadConfig, loadAllAuthKeys, configSet } from '@agon/core';
+import { loadConfig, loadAllAuthKeys, configSet } from '@kernlang/agon-core';
 
 // Load stored API keys from ~/.agon/auth.json into process.env at startup
 loadAllAuthKeys();

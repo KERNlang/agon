@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Integration smoke — exercises the compiled `classifyTask` from @agon/core
+// Integration smoke — exercises the compiled `classifyTask` from @kernlang/agon-core
 // to verify the regex → Python escalation chain works end-to-end.
 
 import { classifyTask } from '/Users/nicolascukas/KERN/Agon-AI/packages/core/dist/generated/blocks/task-classifier.js';

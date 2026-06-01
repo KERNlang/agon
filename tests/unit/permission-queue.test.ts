@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock @agon/core before importing app-output (which imports loadConfig/configSet)
+// Mock @kernlang/agon-core before importing app-output (which imports loadConfig/configSet)
 // vi.mock is hoisted — cannot reference outer variables in factory, so use vi.hoisted
 const { loadConfigMock, configSetMock } = vi.hoisted(() => ({
   loadConfigMock: vi.fn().mockReturnValue({}),
   configSetMock: vi.fn(),
 }));
 
-vi.mock('@agon/core', async () => {
-  const actual = await vi.importActual<Record<string, unknown>>('@agon/core');
+vi.mock('@kernlang/agon-core', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@kernlang/agon-core');
   return { ...actual, loadConfig: loadConfigMock, configSet: configSetMock };
 });
 

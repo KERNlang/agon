@@ -4,15 +4,15 @@ import { randomUUID } from 'node:crypto';
 
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 
-import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric, EngineResult } from '@agon/core';
+import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric, EngineResult } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, extractPatchFilePatterns, tracker, engineHealth, seedNewEnginesFromRegistry } from '@agon/core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, extractPatchFilePatterns, tracker, engineHealth, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
 
 import { healthCheckEngines, HEALTH_CHECK_DEFAULT_PROMPT } from './health-check.js';
 
 import { runBaseline, runStage1, runStage2, resolveForgeMode, resolveForgeRequireDiff, resolveForgeAcceptReviewOutput } from './stages.js';
 
-import { determineWinner } from '@agon/core';
+import { determineWinner } from '@kernlang/agon-core';
 
 import { runSynthesis } from './synthesis.js';
 

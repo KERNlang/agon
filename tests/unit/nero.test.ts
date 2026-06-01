@@ -3,9 +3,9 @@
 // author exclusion) and the pure prompt/verdict/confidence helpers. No paid
 // engine dispatch needed.
 import { describe, it, expect } from 'vitest';
-import { rankEnginesByRating, pickTopRatedEngine, seedSuccessorRating, seedEnginesFromLineage } from '@agon/core';
-import type { GlickoRating, RatingRecord } from '@agon/core';
-import { buildNeroPrompt, parseNeroVerdict, parseNeroConfidence, runNero, rankNeroCritics } from '@agon/forge';
+import { rankEnginesByRating, pickTopRatedEngine, seedSuccessorRating, seedEnginesFromLineage } from '@kernlang/agon-core';
+import type { GlickoRating, RatingRecord } from '@kernlang/agon-core';
+import { buildNeroPrompt, parseNeroVerdict, parseNeroConfidence, runNero, rankNeroCritics } from '@kernlang/agon-forge';
 
 const rating = (mu: number, phi = 50): GlickoRating => ({
   mu,

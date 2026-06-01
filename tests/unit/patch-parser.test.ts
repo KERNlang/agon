@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsePatch, patchSummary, invertPatch } from '@agon/core';
+import { parsePatch, patchSummary, invertPatch } from '@kernlang/agon-core';
 
 const SINGLE_FILE_PATCH = `diff --git a/src/auth.ts b/src/auth.ts
 index abc1234..def5678 100644

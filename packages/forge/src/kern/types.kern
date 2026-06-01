@@ -1,4 +1,4 @@
-import from="@agon/core" names="EngineResult,ForgeEvent,Critique,DispatchMetric" types=true
+import from="@kernlang/agon-core" names="EngineResult,ForgeEvent,Critique,DispatchMetric" types=true
 
 interface name=StageResult
   field name=engineResults type="Map<string, EngineResult>"

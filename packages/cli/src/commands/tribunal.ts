@@ -2,12 +2,12 @@ import { defineCommand } from 'citty';
 import {
   EngineRegistry, ensureAgonHome, loadConfig,
   createRunDir, writeRunStatus, printRunSummary,
-} from '@agon/core';
+} from '@kernlang/agon-core';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
-import type { ForgeEvent, RunStatusEngine } from '@agon/core';
-import { createCliAdapter } from '@agon/adapter-cli';
-import { isTribunalMode, runTribunal } from '@agon/forge';
-import type { TribunalMode } from '@agon/forge';
+import type { ForgeEvent, RunStatusEngine } from '@kernlang/agon-core';
+import { createCliAdapter } from '@kernlang/agon-adapter-cli';
+import { isTribunalMode, runTribunal } from '@kernlang/agon-forge';
+import type { TribunalMode } from '@kernlang/agon-forge';
 import { header, fail, info, warn, bold, dim, red } from '../output.js';
 import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 

@@ -6,9 +6,9 @@ import { join } from 'node:path';
 
 import { mkdirSync, rmSync } from 'node:fs';
 
-import { EngineRegistry, engineHealth, classifyDispatchFailure, Semaphore } from '@agon/core';
+import { EngineRegistry, engineHealth, classifyDispatchFailure, Semaphore } from '@kernlang/agon-core';
 
-import type { EngineAdapter } from '@agon/core';
+import type { EngineAdapter } from '@kernlang/agon-core';
 
 /**
  * Set this env var (to any non-empty value) to skip the forge pre-flight health check globally. Used in tests to avoid having every mock adapter answer a 'say ok' probe; production users opt out via forgeHealthCheckEnabled=false or --no-health-check.

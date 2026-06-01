@@ -1,8 +1,8 @@
 import from="node:crypto" names="randomUUID"
 import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join"
-import from="@agon/core" names="EngineAdapter,EngineResult,ForgeEvent,BreakerArtifact,GauntletResult,TaskClass" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,worktreeCreate,worktreeRemoveBestEffort,worktreeDiff,repoRoot,spawnWithTimeout,createSidechainLogger"
+import from="@kernlang/agon-core" names="EngineAdapter,EngineResult,ForgeEvent,BreakerArtifact,GauntletResult,TaskClass" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,worktreeCreate,worktreeRemoveBestEffort,worktreeDiff,repoRoot,spawnWithTimeout,createSidechainLogger"
 import from="./fitness.js" names="runFitness"
 
 fn name=buildBreakerPrompt params="task:string, winnerDiff:string, engineId:string" returns=string

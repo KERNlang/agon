@@ -10,11 +10,11 @@ import { mkdirSync } from 'node:fs';
 
 import { fileURLToPath } from 'node:url';
 
-import type { PersistentSession, PersistentSessionConfig } from '@agon/core';
+import type { PersistentSession, PersistentSessionConfig } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand } from '@kernlang/agon-core';
 
-import type { ToolContext, ToolCallResult } from '@agon/core';
+import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
 import type { HandlerContext } from '../../handlers/types.js';
 

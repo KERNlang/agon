@@ -1,4 +1,4 @@
-import from="@agon/core" names="copyToClipboard"
+import from="@kernlang/agon-core" names="copyToClipboard"
 import from="../../code-buffer.js" names="codeBlockBuffer"
 import from="../../handlers/types.js" names="Dispatch" types=true
 

@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="readFileSync,writeFileSync"
-import from="@agon/core" names="ForgeManifest,ForgeJudgment,ConvergenceEntry" types=true
-import from="@agon/core" names="RUNS_DIR,classifyTask,extractPatchFilePatterns,recordForgeJudgment"
+import from="@kernlang/agon-core" names="ForgeManifest,ForgeJudgment,ConvergenceEntry" types=true
+import from="@kernlang/agon-core" names="RUNS_DIR,classifyTask,extractPatchFilePatterns,recordForgeJudgment"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./confidence.js" names="parseConfidence,confidenceBadge"

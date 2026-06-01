@@ -1,5 +1,5 @@
-import from="@agon/core" names="EngineRegistry,EngineAdapter,DispatchResult" types=true
-import from="@agon/core" names="resolveWorkingDir"
+import from="@kernlang/agon-core" names="EngineRegistry,EngineAdapter,DispatchResult" types=true
+import from="@kernlang/agon-core" names="resolveWorkingDir"
 
 interface name=DelegateResult export=true
   field name=engineId type=string

@@ -2,7 +2,7 @@
 // Interfaces stay DEFINED here so verbatimModuleSyntax never emits a runtime
 // re-export of an erased type; submodules type-import them back.
 
-import from="@agon/core" names="ImageAttachment,ChatSession" types=true
+import from="@kernlang/agon-core" names="ImageAttachment,ChatSession" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 interface name=DispatchCallbacks

@@ -3,7 +3,7 @@ import from="node:path" names="join"
 import from="../intent.js" names="FITNESS_PATTERN"
 import from="../../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="../../../handlers/index.js" names="handleBrainstorm"
-import from="@agon/core" names="loadOrCreateActiveThread"
+import from="@kernlang/agon-core" names="loadOrCreateActiveThread"
 import from="../dispatch.js" names="DispatchCallbacks" types=true
 
 // Orchestration actions Cesar can auto-fire. Each one still emits an

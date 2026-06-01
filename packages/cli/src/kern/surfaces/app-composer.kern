@@ -1,7 +1,7 @@
 // ── Composer history & persistence ──────────────────────────────────
 import from="node:path" names="join"
 import from="node:fs" names="readFileSync,writeFileSync"
-import from="@agon/core" names="ensureAgonHome,getAgonHome"
+import from="@kernlang/agon-core" names="ensureAgonHome,getAgonHome"
 
 module name=AppComposer
   const name=COMPOSER_HISTORY_LIMIT type=number value=200

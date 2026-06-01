@@ -4,13 +4,13 @@ import { randomUUID } from 'node:crypto';
 
 import { mkdirSync, writeFileSync, renameSync } from 'node:fs';
 
-import type { ForgeOptions, EngineAdapter, EngineResult, ForgeEvent, TaskClass } from '@agon/core';
+import type { ForgeOptions, EngineAdapter, EngineResult, ForgeEvent, TaskClass } from '@kernlang/agon-core';
 
-import type { TeamSpec, TeamFormat, TeamComposeMode, TeamMember, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@agon/core';
+import type { TeamSpec, TeamFormat, TeamComposeMode, TeamMember, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeCreate, worktreeRemoveBestEffort, classifyTask, createSidechainLogger, composeTeams, makeFormat, computeContributionWeights, spawnWithTimeout } from '@agon/core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeCreate, worktreeRemoveBestEffort, classifyTask, createSidechainLogger, composeTeams, makeFormat, computeContributionWeights, spawnWithTimeout } from '@kernlang/agon-core';
 
-import { updateTeamElo } from '@agon/core';
+import { updateTeamElo } from '@kernlang/agon-core';
 
 import { runFitness } from './fitness.js';
 

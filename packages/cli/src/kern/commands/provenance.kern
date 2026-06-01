@@ -6,8 +6,8 @@
 import from="citty" names="defineCommand"
 import from="node:fs" names="readdirSync,readFileSync,writeFileSync"
 import from="node:path" names="join"
-import from="@agon/core" names="RUNS_DIR,ensureAgonHome,buildForgeProvenance,renderProvenanceMarkdown,renderProvenanceJson"
-import from="@agon/core" names="ForgeManifest" types=true
+import from="@kernlang/agon-core" names="RUNS_DIR,ensureAgonHome,buildForgeProvenance,renderProvenanceMarkdown,renderProvenanceJson"
+import from="@kernlang/agon-core" names="ForgeManifest" types=true
 import from="../blocks/output-format.js" names="info,bold"
 
 const name=provenanceCommand type=any

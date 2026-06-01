@@ -5,8 +5,8 @@ import { join } from 'node:path';
 // Import the internal extraction function via the generated module
 // Since _extractMcpServers is not exported, we test through discoverMcpServers behavior
 // and test the wire format conversion directly
-import { mcpServersToWireFormat } from '@agon/core';
-import type { McpServerConfig } from '@agon/core';
+import { mcpServersToWireFormat } from '@kernlang/agon-core';
+import type { McpServerConfig } from '@kernlang/agon-core';
 
 describe('MCP Discovery', () => {
   describe('mcpServersToWireFormat', () => {
@@ -52,14 +52,14 @@ describe('MCP Discovery', () => {
     });
 
     it('returns empty array when no config files exist', async () => {
-      const { discoverMcpServers } = await import('@agon/core');
+      const { discoverMcpServers } = await import('@kernlang/agon-core');
       const servers = discoverMcpServers(testDir);
       // May find global ~/.claude configs — just verify it doesn't throw
       expect(Array.isArray(servers)).toBe(true);
     });
 
     it('reads Claude Code mcpServers format from .agon.json', async () => {
-      const { discoverMcpServers } = await import('@agon/core');
+      const { discoverMcpServers } = await import('@kernlang/agon-core');
       writeFileSync(join(testDir, '.agon.json'), JSON.stringify({
         mcpServers: {
           github: { command: 'npx', args: ['-y', '@mcp/github'] },
@@ -78,7 +78,7 @@ describe('MCP Discovery', () => {
     });
 
     it('reads from .vscode/mcp.json', async () => {
-      const { discoverMcpServers } = await import('@agon/core');
+      const { discoverMcpServers } = await import('@kernlang/agon-core');
       mkdirSync(join(testDir, '.vscode'), { recursive: true });
       writeFileSync(join(testDir, '.vscode', 'mcp.json'), JSON.stringify({
         mcpServers: {
@@ -91,7 +91,7 @@ describe('MCP Discovery', () => {
     });
 
     it('project-level overrides global by name', async () => {
-      const { discoverMcpServers } = await import('@agon/core');
+      const { discoverMcpServers } = await import('@kernlang/agon-core');
       // .agon.json has github with custom args (from previous test)
       // Any global github server should be overridden
       const servers = discoverMcpServers(testDir);
@@ -103,14 +103,14 @@ describe('MCP Discovery', () => {
 
   describe('mcpDiscoveryFingerprint', () => {
     it('returns consistent fingerprint for same state', async () => {
-      const { mcpDiscoveryFingerprint } = await import('@agon/core');
+      const { mcpDiscoveryFingerprint } = await import('@kernlang/agon-core');
       const fp1 = mcpDiscoveryFingerprint('/tmp');
       const fp2 = mcpDiscoveryFingerprint('/tmp');
       expect(fp1).toBe(fp2);
     });
 
     it('returns different fingerprint for different cwd', async () => {
-      const { mcpDiscoveryFingerprint } = await import('@agon/core');
+      const { mcpDiscoveryFingerprint } = await import('@kernlang/agon-core');
       const fp1 = mcpDiscoveryFingerprint('/tmp');
       const fp2 = mcpDiscoveryFingerprint('/');
       // May or may not differ depending on whether config files exist at /

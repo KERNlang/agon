@@ -1,8 +1,8 @@
 import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
-import from="@agon/core" names="createCesarPlan,formatCesarPlanMarkdown,planCostEstimator,resolveWorkingDir,RUNS_DIR,tracker,readPatchFromPath,applyPatchToTree,cesarPlanMarkdownPath,saveCesarPlan,cancelCesarPlan,exitCesarPlan,spawnWithTimeout"
-import from="@agon/core" names="CesarPlan,CesarPlanStep,CesarStepResult,StepExecutor" types=true
-import from="@agon/forge" names="runForge,runBrainstorm,runTribunal,runCampfire,runDelegate"
+import from="@kernlang/agon-core" names="createCesarPlan,formatCesarPlanMarkdown,planCostEstimator,resolveWorkingDir,RUNS_DIR,tracker,readPatchFromPath,applyPatchToTree,cesarPlanMarkdownPath,saveCesarPlan,cancelCesarPlan,exitCesarPlan,spawnWithTimeout"
+import from="@kernlang/agon-core" names="CesarPlan,CesarPlanStep,CesarStepResult,StepExecutor" types=true
+import from="@kernlang/agon-forge" names="runForge,runBrainstorm,runTribunal,runCampfire,runDelegate"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
 import from="./review.js" names="runReviewCore,resolveReviewTarget,selectReviewEngine"
 import from="./agent.js" names="runAgentMode,runAgentTeam"

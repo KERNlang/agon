@@ -10,7 +10,7 @@ import {
   deleteThread,
   projectHash16,
   projectSha8,
-} from '@agon/core';
+} from '@kernlang/agon-core';
 import { agonHomePath, cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 // Use unique per-test project paths so tests never collide in ~/.agon/threads.

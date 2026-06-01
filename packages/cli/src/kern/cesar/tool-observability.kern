@@ -6,7 +6,7 @@
 
 import from="node:fs" names="appendFileSync,mkdirSync,existsSync,readFileSync"
 import from="node:path" names="join"
-import from="@agon/core" names="RUNS_DIR"
+import from="@kernlang/agon-core" names="RUNS_DIR"
 
 interface name=CesarApprovalLedgerRecord export=true
   field name=turnId type=string optional=true

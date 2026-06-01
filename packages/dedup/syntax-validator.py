@@ -6,7 +6,7 @@ Why Python: tree-sitter has mature grammar packages on PyPI with prebuilt
 wheels (tree-sitter-python, tree-sitter-typescript, tree-sitter-javascript).
 TypeScript has its own tree-sitter bindings via node-tree-sitter, but they
 require native module compilation at install time and add a heavyweight
-dependency to @agon/core for a workflow that runs after patch-apply (not
+dependency to @kernlang/agon-core for a workflow that runs after patch-apply (not
 per keystroke).
 
 The current forge `validate` mode in packages/forge/src/generated/stages.ts

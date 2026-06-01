@@ -17,7 +17,7 @@ import {
   loadConversation,
   clearConversation,
   stripEngineArtifacts,
-} from '@agon/core';
+} from '@kernlang/agon-core';
 
 // Use a unique engine ID per test run to avoid cross-test pollution
 const TEST_ENGINE = `test-engine-${Date.now()}`;

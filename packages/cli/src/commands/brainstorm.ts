@@ -2,11 +2,11 @@ import { defineCommand } from 'citty';
 import {
   EngineRegistry, ensureAgonHome, loadConfig,
   createRunDir, writeRunStatus, printRunSummary,
-} from '@agon/core';
+} from '@kernlang/agon-core';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
-import type { BrainstormBid } from '@agon/core';
-import { createCliAdapter } from '@agon/adapter-cli';
-import { runBrainstorm } from '@agon/forge';
+import type { BrainstormBid } from '@kernlang/agon-core';
+import { createCliAdapter } from '@kernlang/agon-adapter-cli';
+import { runBrainstorm } from '@kernlang/agon-forge';
 import { header, info, table, bold, green } from '../output.js';
 import { icons } from '../icons.js';
 import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';

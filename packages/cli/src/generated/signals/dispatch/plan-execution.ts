@@ -4,11 +4,11 @@ import { join } from 'node:path';
 
 import { writeFileSync } from 'node:fs';
 
-import { resolveWorkingDir, loadConfig, gitChangedFiles } from '@agon/core';
+import { resolveWorkingDir, loadConfig, gitChangedFiles } from '@kernlang/agon-core';
 
-import { approveCesarPlan, saveCesarPlan, executePlan, formatCesarPlanMarkdown, planCostEstimator } from '@agon/core';
+import { approveCesarPlan, saveCesarPlan, executePlan, formatCesarPlanMarkdown, planCostEstimator } from '@kernlang/agon-core';
 
-import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@agon/core';
+import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@kernlang/agon-core';
 
 import { buildStepExecutors } from '../../handlers/plan-mode.js';
 

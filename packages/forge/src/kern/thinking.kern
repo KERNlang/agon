@@ -27,8 +27,8 @@
 // rotation, true multi-roundtrip tree search (we do single-dispatch self-scoring).
 
 import from="node:fs" names="existsSync"
-import from="@agon/core" names="EngineAdapter" types=true
-import from="@agon/core" names="EngineRegistry"
+import from="@kernlang/agon-core" names="EngineAdapter" types=true
+import from="@kernlang/agon-core" names="EngineRegistry"
 
 // ── ThinkChain: the reasoning method as an explicit state machine ───
 // `machine` compiles to a state-union type + guard-checked pure transition

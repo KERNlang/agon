@@ -1,11 +1,11 @@
 import { defineCommand } from 'citty';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
-import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
+import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@kernlang/agon-core';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
-import type { ForgeEvent, TeamEvent } from '@agon/core';
-import { createCliAdapter } from '@agon/adapter-cli';
-import { runTeamBrainstorm } from '@agon/forge';
+import type { ForgeEvent, TeamEvent } from '@kernlang/agon-core';
+import { createCliAdapter } from '@kernlang/agon-adapter-cli';
+import { runTeamBrainstorm } from '@kernlang/agon-forge';
 import { header, success, info, table, green, bold, dim } from '../output.js';
 import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 

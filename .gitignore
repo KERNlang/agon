@@ -35,3 +35,6 @@ kern_engines/*.egg-info/
 # Antigravity CLI (agy) local working dir
 .antigravitycli/
 GO-LIVE-PLAN.local.md
+
+# Stray repo-root generated/ — kern:compile must only emit into packages/*/src/generated/
+/generated/

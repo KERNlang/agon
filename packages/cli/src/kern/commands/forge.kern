@@ -1,10 +1,10 @@
 import from="citty" names="defineCommand"
 import from="node:fs" names="readFileSync"
-import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,writeRunStatus,printRunSummary,writeProvenanceReport"
-import from="@agon/core" names="EngineResult" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,writeRunStatus,printRunSummary,writeProvenanceReport"
+import from="@kernlang/agon-core" names="EngineResult" types=true
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
-import from="@agon/adapter-cli" names="createCliAdapter"
-import from="@agon/forge" names="runForge"
+import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
+import from="@kernlang/agon-forge" names="runForge"
 import from="../handlers/review.js" names="runReviewCore"
 import from="../blocks/output-format.js" names="header,success,fail,warn,info,table,green,red,yellow,bold,cyan"
 import from="../signals/icons.js" names="icons"

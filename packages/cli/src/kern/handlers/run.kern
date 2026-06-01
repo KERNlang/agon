@@ -1,4 +1,4 @@
-import from="@agon/core" names="spawnWithTimeout"
+import from="@kernlang/agon-core" names="spawnWithTimeout"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 const name=RUN_DANGEROUS type="readonly string[]" value={{ ['rm -rf /', 'dd if=', 'mkfs', '> /dev/', 'chmod 777', 'curl | sh', 'wget | sh'] }}

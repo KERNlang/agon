@@ -1,5 +1,5 @@
-import from="@agon/core" names="EngineAdapter,ForgeEvent" types=true
-import from="@agon/core" names="EngineRegistry,resolveWorkingDir,classifyTask"
+import from="@kernlang/agon-core" names="EngineAdapter,ForgeEvent" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,resolveWorkingDir,classifyTask"
 
 interface name=SynthesisDraft
   field name=engineId type=string

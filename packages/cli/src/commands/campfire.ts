@@ -2,10 +2,10 @@ import { defineCommand } from 'citty';
 import {
   EngineRegistry, ensureAgonHome, loadConfig,
   createRunDir, writeRunStatus, printRunSummary,
-} from '@agon/core';
+} from '@kernlang/agon-core';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
-import { createCliAdapter } from '@agon/adapter-cli';
-import { runCampfire } from '@agon/forge';
+import { createCliAdapter } from '@kernlang/agon-adapter-cli';
+import { runCampfire } from '@kernlang/agon-forge';
 import { header, info, bold, dim } from '../output.js';
 import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 

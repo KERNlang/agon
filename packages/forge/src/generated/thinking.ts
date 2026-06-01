@@ -4,9 +4,9 @@
 
 import { existsSync } from 'node:fs';
 
-import type { EngineAdapter } from '@agon/core';
+import type { EngineAdapter } from '@kernlang/agon-core';
 
-import { EngineRegistry } from '@agon/core';
+import { EngineRegistry } from '@kernlang/agon-core';
 
 export type ThinkChainState = 'idle' | 'thinking' | 'critiquing' | 'revising' | 'complete' | 'aborted';
 

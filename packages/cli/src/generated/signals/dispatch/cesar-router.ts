@@ -4,11 +4,11 @@ import { join } from 'node:path';
 
 import { mkdirSync, appendFileSync } from 'node:fs';
 
-import { resolveWorkingDir, configSet, RUNS_DIR, spawnWithTimeout } from '@agon/core';
+import { resolveWorkingDir, configSet, RUNS_DIR, spawnWithTimeout } from '@kernlang/agon-core';
 
-import type { ImageAttachment } from '@agon/core';
+import type { ImageAttachment } from '@kernlang/agon-core';
 
-import type { CesarPlan } from '@agon/core';
+import type { CesarPlan } from '@kernlang/agon-core';
 
 import type { Dispatch, HandlerContext } from '../../../handlers/types.js';
 
@@ -26,7 +26,7 @@ import { handleTeamBrainstorm } from '../../handlers/team-brainstorm.js';
 
 import { handleCesarBrain, parseSuggestion } from '../../../handlers/cesar-brain.js';
 
-import { appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, formatChatContextForPrompt } from '@agon/core';
+import { appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, formatChatContextForPrompt } from '@kernlang/agon-core';
 
 import { handlePipeline } from '../../handlers/pipeline.js';
 
@@ -739,7 +739,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
     const cesarEngine = cesarEngineDef ?? cb.ctx.registry.get(cesarId);
     const { join } = await import('node:path');
     const { mkdirSync } = await import('node:fs');
-    const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@agon/core');
+    const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@kernlang/agon-core');
     const outDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
     mkdirSync(outDir, { recursive: true });
     if (!_silentMode) cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('retry', cesarId, `log: ${outDir}`) });
@@ -910,7 +910,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
   const actingPrompt = `You are stepping in as acting Cesar (lead AI) for Agon AI because ${cesarId} is temporarily unavailable. You have full authority to answer, delegate, and lead.\n\n${historyContext ? `## RECENT CONVERSATION\n${historyContext}\n\n` : ''}## USER MESSAGE\n${input}`;
 
   try {
-    const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@agon/core');
+    const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@kernlang/agon-core');
     const { join } = await import('node:path');
     const { mkdirSync } = await import('node:fs');
     const actingEngine = cb.ctx.registry.get(actingCesar);

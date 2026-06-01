@@ -1,4 +1,4 @@
-import from="@agon/core" names="EngineRegistry,EventBus,engineHealth"
+import from="@kernlang/agon-core" names="EngineRegistry,EventBus,engineHealth"
 import from="../cesar/telemetry.js" names="computeOverallHealth,createEngineVitals,markEngineStalled,updateEngineVitals"
 import from="../cesar/telemetry.js" names="EngineVitals,EngineVitalState,TelemetrySnapshot" types=true
 import from="node:os" names="totalmem"

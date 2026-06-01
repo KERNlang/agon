@@ -1,6 +1,6 @@
 export { CliAdapter } from './adapter.js';
 
-import type { EngineRegistry } from '@agon/core';
+import type { EngineRegistry } from '@kernlang/agon-core';
 import { CliAdapter } from './adapter.js';
 
 /**

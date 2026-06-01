@@ -6,7 +6,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { tracker } from '@agon/core';
+import { tracker } from '@kernlang/agon-core';
 
 // ── Types ──────────────────────────────────────────────────────────────
 

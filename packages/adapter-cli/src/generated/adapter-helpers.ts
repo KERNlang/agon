@@ -2,9 +2,9 @@
 
 // @kern-source: adapter-helpers:416
 
-import type { EngineDefinition, EngineMode, EngineModeConfig, ImageAttachment, EngineIsolationPlan } from '@agon/core';
+import type { EngineDefinition, EngineMode, EngineModeConfig, ImageAttachment, EngineIsolationPlan } from '@kernlang/agon-core';
 
-import { EngineNotFoundError, loadConfig, engineHealth, classifyDispatchFailure, resolveIsolationMode, planEngineIsolation, agonPath } from '@agon/core';
+import { EngineNotFoundError, loadConfig, engineHealth, classifyDispatchFailure, resolveIsolationMode, planEngineIsolation, agonPath } from '@kernlang/agon-core';
 
 import { statSync, mkdirSync, existsSync, copyFileSync, chmodSync, unlinkSync } from 'node:fs';
 
@@ -373,7 +373,7 @@ export function composeClaudePtyPrompt(prompt: string, systemPrompt?: string): s
 }
 
 /**
- * Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @agon/kern-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt; extraArgv (model/effort launch flags) is forwarded to the engine exec. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check.
+ * Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @kernlang/agon-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt; extraArgv (model/effort launch flags) is forwarded to the engine exec. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check.
  */
 // @kern-source: adapter-helpers:332
 export async function runClaudePtyDispatch(prompt: string, timeoutSec: number, signal?: AbortSignal, mode?: 'exec'|'agent', cwd?: string, systemPrompt?: string, env?: Record<string,string>, extraArgv?: string[]): Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}> {
@@ -381,7 +381,7 @@ export async function runClaudePtyDispatch(prompt: string, timeoutSec: number, s
   try {
     let mod: any;
     try {
-      mod = await import('@agon/kern-engines/cli/claude.js' as any);
+      mod = await import('@kernlang/agon-engines/cli/claude.js' as any);
     } catch (e) {
       return {
         exitCode: 1,
@@ -467,7 +467,7 @@ export async function* runClaudePtyStreamDispatch(prompt: string, timeoutSec: nu
   try {
     let mod: any;
     try {
-      mod = await import('@agon/kern-engines/cli/claude.js' as any);
+      mod = await import('@kernlang/agon-engines/cli/claude.js' as any);
     } catch (e) {
       return {
         exitCode: 1,

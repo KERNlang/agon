@@ -1,4 +1,4 @@
-import from="@agon/core" names="EngineRegistry,EngineAdapter,Plan,AgonConfig,ChatSession,PersistentSession,CesarMemory,EventBus,ToolRegistry" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,EngineAdapter,Plan,AgonConfig,ChatSession,PersistentSession,CesarMemory,EventBus,ToolRegistry" types=true
 import from="../cesar/telemetry.js" names="EngineVitals" types=true
 
 interface name=EngineProgress

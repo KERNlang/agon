@@ -1,8 +1,8 @@
 // ── App Context Builder ──────────────────────────────────────────────
 // Builds the HandlerContext object from app state. Pure function, no JSX.
 
-import from="@agon/core" names="loadConfig"
-import from="@agon/core" names="EngineRegistry,AgonConfig,EngineAdapter,Plan,ChatSession,PersistentSession,CesarMemory" types=true
+import from="@kernlang/agon-core" names="loadConfig"
+import from="@kernlang/agon-core" names="EngineRegistry,AgonConfig,EngineAdapter,Plan,ChatSession,PersistentSession,CesarMemory" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 
 fn name=buildHandlerContext params="registry:EngineRegistry, adapter:EngineAdapter, activeEngines:()=>string[], chatSession:ChatSession, askQuestion:(prompt:string)=>Promise<string>, cesarSession:PersistentSession|null, currentPlan:Plan|null, setCurrentPlan:(plan:Plan|null)=>void, setActiveAbort:(abort:AbortController|null)=>void, setCesarSession:(session:PersistentSession|null)=>void, explorationMode:boolean, setExplorationMode:(mode:boolean)=>void, neroMode:boolean, setNeroMode:(mode:boolean)=>void, cesarMemory:CesarMemory" returns=HandlerContext

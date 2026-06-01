@@ -1,8 +1,8 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,appendFileSync,existsSync,readFileSync,unlinkSync,readdirSync,writeFileSync"
-import from="@agon/core" names="ImageAttachment,PersistentSession,ForgeManifest,ForgeJudgment" types=true
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,appendUserTurnIfAbsent,buildHistoryPrimedPrompt,tracker,resolveWorkingDir,ToolRegistry,getProjectFileStateCache,parseToolCalls,formatToolResults,runToolLoop,classifyTask,loadConfig,configSet,createStreamBridge,engineHealth"
-import from="@agon/core" names="ToolContext,ToolCallResult" types=true
+import from="@kernlang/agon-core" names="ImageAttachment,PersistentSession,ForgeManifest,ForgeJudgment" types=true
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,appendMessage,appendUserTurnIfAbsent,buildHistoryPrimedPrompt,tracker,resolveWorkingDir,ToolRegistry,getProjectFileStateCache,parseToolCalls,formatToolResults,runToolLoop,classifyTask,loadConfig,configSet,createStreamBridge,engineHealth"
+import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,PendingDelegation,CesarTurnOutcome" types=true
 import from="./confidence.js" names="CONFIDENCE_TIERS,parseConfidence,confidenceBadge"

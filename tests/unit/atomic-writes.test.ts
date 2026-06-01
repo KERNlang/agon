@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { saveSessionState, loadSessionState, clearSessionState, saveToolResultToDisk } from '@agon/core';
+import { saveSessionState, loadSessionState, clearSessionState, saveToolResultToDisk } from '@kernlang/agon-core';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 const TEST_ENGINE = `test-atomic-${Date.now()}`;

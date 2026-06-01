@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseToolCalls } from '@agon/core';
+import { parseToolCalls } from '@kernlang/agon-core';
 
 describe('tool call repair: repairJsonArgs via parseToolCalls', () => {
   it('parses valid JSON arguments normally', () => {

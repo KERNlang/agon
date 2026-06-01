@@ -4,7 +4,7 @@
 
 import from="node:fs" names="appendFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
-import from="@agon/core" names="RUNS_DIR"
+import from="@kernlang/agon-core" names="RUNS_DIR"
 import from="../blocks/engine.js" names="OutputBlock" types=true
 
 const name=MAX_LIVE_BLOCKS type=number value=500

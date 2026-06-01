@@ -1,7 +1,7 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync,existsSync"
 import from="node:path" names="dirname"
-import from="@agon/core" names="BreakerArtifact,CorpusEntry,GapPattern,TaskClass" types=true
-import from="@agon/core" names="CORPUS_PATH,SKILLS_DIR"
+import from="@kernlang/agon-core" names="BreakerArtifact,CorpusEntry,GapPattern,TaskClass" types=true
+import from="@kernlang/agon-core" names="CORPUS_PATH,SKILLS_DIR"
 
 interface name=CorpusRecord
   field name=entries type="CorpusEntry[]"

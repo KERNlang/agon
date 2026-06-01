@@ -6,5 +6,5 @@ export default defineConfig({
   dts: false,
   sourcemap: true,
   clean: true,
-  external: ['@agon/core'],
+  external: ['@kernlang/agon-core'],
 });

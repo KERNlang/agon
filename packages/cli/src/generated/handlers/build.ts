@@ -4,9 +4,9 @@ import { join } from 'node:path';
 
 import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, getActiveWorkspace, snapshotWorkspace, formatChatContextForPrompt } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, getActiveWorkspace, snapshotWorkspace, formatChatContextForPrompt } from '@kernlang/agon-core';
 
-import type { Plan, PlanStepInput, ApprovalLevel } from '@agon/core';
+import type { Plan, PlanStepInput, ApprovalLevel } from '@kernlang/agon-core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 

@@ -2,7 +2,7 @@
 
 import { join } from 'node:path';
 
-import { resolveWorkingDir, spawnWithTimeout } from '@agon/core';
+import { resolveWorkingDir, spawnWithTimeout } from '@kernlang/agon-core';
 
 import type { Dispatch } from '../../../handlers/types.js';
 
@@ -20,9 +20,9 @@ import { handlePipeline } from '../../handlers/pipeline.js';
 
 import { shouldUseAgentTeam } from '../../cesar/routing.js';
 
-import { createSpeculator, loadOrCreateActiveThread } from '@agon/core';
+import { createSpeculator, loadOrCreateActiveThread } from '@kernlang/agon-core';
 
-import type { SpeculatorMemberConfig } from '@agon/core';
+import type { SpeculatorMemberConfig } from '@kernlang/agon-core';
 
 import type { DispatchCallbacks, DispatchResult } from '../dispatch.js';
 

@@ -1,7 +1,7 @@
 // ── Dispatch dispatchSkillsUiIntent — extracted intent-router cases (verbatim) ──
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,existsSync"
-import from="@agon/core" names="resolveWorkingDir,findSkill,renderSkillPrompt,startChatSession,currentBranch,getAgonHome"
+import from="@kernlang/agon-core" names="resolveWorkingDir,findSkill,renderSkillPrompt,startChatSession,currentBranch,getAgonHome"
 import from="../../../handlers/types.js" names="Dispatch" types=true
 import from="../../../handlers/index.js" names="handleChat"
 import from="../dispatch.js" names="DispatchCallbacks,DispatchResult" types=true

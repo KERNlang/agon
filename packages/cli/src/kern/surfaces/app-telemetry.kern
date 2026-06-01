@@ -1,9 +1,9 @@
 // ── Engine vitals & telemetry probing ───────────────────────────────
 import from="node:os" names="totalmem,cpus"
 import from="node:child_process" names="spawnSync"
-import from="@agon/core" names="EngineRegistry"
+import from="@kernlang/agon-core" names="EngineRegistry"
 import from="../cesar/telemetry.js" names="EngineVitals" types=true
-import from="@agon/core" names="PersistentSession" types=true
+import from="@kernlang/agon-core" names="PersistentSession" types=true
 
 module name=AppTelemetry
   const name=_telemetryResourceSample type=any value={{ ({ lastCpu: null, lastAt: 0 }) }}

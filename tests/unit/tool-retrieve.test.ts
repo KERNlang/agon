@@ -3,8 +3,8 @@ import {
   createRetrieveResultTool,
   saveToolResultToDisk,
   clearSessionState,
-} from '@agon/core';
-import type { ToolContext } from '@agon/core';
+} from '@kernlang/agon-core';
+import type { ToolContext } from '@kernlang/agon-core';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 const TEST_ENGINE = `retrieve-test-${Date.now()}`;

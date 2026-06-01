@@ -4,8 +4,8 @@
 
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,tracker,appendMessage,resolveWorkingDir"
-import from="@agon/forge" names="runThinkChain,isThinkStrategy"
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,tracker,appendMessage,resolveWorkingDir"
+import from="@kernlang/agon-forge" names="runThinkChain,isThinkStrategy"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../../telemetry/index.js" names="recordRun,formatRunSummary"

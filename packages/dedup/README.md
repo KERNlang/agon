@@ -1,4 +1,4 @@
-# @agon/dedup
+# @kernlang/agon-dedup
 
 Brainstorm dedup sidecar — collapses near-duplicate engine drafts so you don't read the same idea three times.
 

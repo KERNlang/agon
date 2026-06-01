@@ -86,7 +86,7 @@ fn name=readProbedCliModels params="engineId:string, ttlMs?:number" returns="Pro
   >>>
 
 fn name=resolveModelProbeScript returns="string|null"
-  doc "Locate kern_engines/cli/model_probe.py via the @agon/kern-engines package (hoisted to root node_modules). The probe self-bootstraps its package path, so the absolute file path is all the caller needs — no PYTHONPATH."
+  doc "Locate kern_engines/cli/model_probe.py via the @kernlang/agon-engines package (hoisted to root node_modules). The probe self-bootstraps its package path, so the absolute file path is all the caller needs — no PYTHONPATH."
   handler <<<
     try {
       const req = createRequire(import.meta.url);
@@ -94,7 +94,7 @@ fn name=resolveModelProbeScript returns="string|null"
       // `require` condition, but "./cli/claude.js" is a plain-string export
       // (condition-agnostic). Anchor on it, then walk to the package root and
       // into the (source) cli/ dir where model_probe.py lives.
-      const anchor = req.resolve('@agon/kern-engines/cli/claude.js'); // …/kern_engines/dist/cli/claude.js
+      const anchor = req.resolve('@kernlang/agon-engines/cli/claude.js'); // …/kern_engines/dist/cli/claude.js
       const candidates = [
         // Canonical: the package ships the probe at py/kern_engines/cli/ (see
         // kern_engines package.json `files`), so from dist/cli/claude.js walk up
@@ -148,7 +148,7 @@ fn name=refreshProbedCliModels async=true params="engineId:string, binary:string
       let models: ProbedModel[] = [];
       if (first.startsWith('__pty:')) {
         const script = resolveModelProbeScript();
-        if (!script) { dbg('model_probe.py not found — check @agon/kern-engines layout'); return false; }
+        if (!script) { dbg('model_probe.py not found — check @kernlang/agon-engines layout'); return false; }
         const slash = first.slice('__pty:'.length) || '/model';
         const result = await spawnWithTimeout({
           command: pythonBin ?? 'python3',

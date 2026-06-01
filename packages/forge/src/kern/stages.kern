@@ -1,6 +1,6 @@
 import from="node:path" names="join"
-import from="@agon/core" names="EngineAdapter,EngineResult,ForgeOptions,AgonConfig,DispatchMetric,StageContext" types=true
-import from="@agon/core" names="EngineRegistry,worktreeCreate,worktreeRemoveBestEffort,repoRoot,worktreeDiff,estimateTokens,estimateCost,buildStageContext,renderStageContext"
+import from="@kernlang/agon-core" names="EngineAdapter,EngineResult,ForgeOptions,AgonConfig,DispatchMetric,StageContext" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,worktreeCreate,worktreeRemoveBestEffort,repoRoot,worktreeDiff,estimateTokens,estimateCost,buildStageContext,renderStageContext"
 import from="./fitness.js" names="runFitness"
 import from="../types.js" names="StageResult,ForgeEventCallback,WorktreeEntry" types=true
 
@@ -656,6 +656,6 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
     return { engineResults: allResults, accepted: false, winner: null, metrics };
   >>>
 
-// determineWinner moved to @agon/core packages/core/src/kern/cesar/synthesis-utils.kern
+// determineWinner moved to @kernlang/agon-core packages/core/src/kern/cesar/synthesis-utils.kern
 // in Phase 3 so AgentTeam and forge share the same canonical scoring path.
-// forge.kern now imports it directly from @agon/core.
+// forge.kern now imports it directly from @kernlang/agon-core.

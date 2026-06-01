@@ -14,7 +14,7 @@
 //
 // This is a pure recommendation function. Callers compose it into the
 // onResult callback passed to runForge — see commands/forge.ts for the
-// canonical "score && pass" gate. Lives in @agon/core (not @agon/forge)
+// canonical "score && pass" gate. Lives in @kernlang/agon-core (not @kernlang/agon-forge)
 // so the MCP server and forge can both import the canonical version
 // without pulling forge's heavyweight deps into the MCP bundle.
 

@@ -9,11 +9,11 @@ const savePlanMock = vi.fn();
 const createPlanMock = vi.fn();
 const dispatchAgentMock = vi.fn();
 
-vi.mock('@agon/forge', () => ({
+vi.mock('@kernlang/agon-forge', () => ({
   runForge: (...args: any[]) => runForgeMock(...args),
 }));
 
-vi.mock('@agon/core', async () => ({
+vi.mock('@kernlang/agon-core', async () => ({
   ensureAgonHome: vi.fn(),
   RUNS_DIR: '/tmp/agon-runs',
   appendMessage: vi.fn(),

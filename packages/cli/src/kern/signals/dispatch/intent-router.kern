@@ -1,5 +1,5 @@
 // ── Dispatch intent router — preamble + chain to domain sub-dispatchers ──
-import from="@agon/core" names="resolveWorkingDir,buildExtensionContext"
+import from="@kernlang/agon-core" names="resolveWorkingDir,buildExtensionContext"
 import from="../../../handlers/types.js" names="Dispatch" types=true
 import from="../dispatch.js" names="DispatchCallbacks,DispatchResult" types=true
 import from="./plan-queries.js" names="findResumableCesarPlan,shouldApprovePendingCesarPlanInput,isCesarPlanResumeInput,isCesarPlanStatusInput,formatCesarPlanRuntimeStatus"

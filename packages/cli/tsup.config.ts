@@ -19,13 +19,13 @@ export default defineConfig({
   dts: false,
   sourcemap: true,
   clean: true,
-  // @agon/core, @agon/forge, @agon/adapter-cli are INLINED (pure JS) so a bare
-  // `npm i -g @agon/cli` is self-contained — they are deliberately NOT external.
-  // @agon/kern-engines + @agon/dedup stay external: both are loaded at RUNTIME
+  // @kernlang/agon-core, @kernlang/agon-forge, @kernlang/agon-adapter-cli are INLINED (pure JS) so a bare
+  // `npm i -g @kernlang/agon` is self-contained — they are deliberately NOT external.
+  // @kernlang/agon-engines + @kernlang/agon-dedup stay external: both are loaded at RUNTIME
   // (dynamic import / require.resolve of spawned .py twins) and published as
   // their own packages, so esbuild must not try to bundle them.
   external: [
-    '@agon/kern-engines', '@agon/dedup',
+    '@kernlang/agon-engines', '@kernlang/agon-dedup',
     '@huggingface/transformers', 'onnxruntime-node',
     'ink', 'react', 'ink-text-input', 'ink-spinner', 'ink-select-input',
     'chalk', 'supports-color',

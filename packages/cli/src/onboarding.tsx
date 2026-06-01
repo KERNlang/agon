@@ -5,10 +5,10 @@ import {
   EngineRegistry,
   ensureAgonHome,
   configSet,
-} from '@agon/core';
+} from '@kernlang/agon-core';
 import { resolveBuiltinEnginesDir } from './generated/lib/engines-dir.js';
-import { createCliAdapter } from '@agon/adapter-cli';
-import type { EngineAdapter } from '@agon/core';
+import { createCliAdapter } from '@kernlang/agon-adapter-cli';
+import type { EngineAdapter } from '@kernlang/agon-core';
 import { ENGINE_COLORS } from './output.js';
 import { icons } from './icons.js';
 

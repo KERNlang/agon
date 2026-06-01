@@ -2,10 +2,10 @@
 // Each team brainstorms internally, synthesizes one proposal, teams compete on quality
 
 import from="node:crypto" names="randomUUID"
-import from="@agon/core" names="EngineAdapter,BrainstormBid,ForgeEvent,TaskClass" types=true
-import from="@agon/core" names="TeamSpec,TeamFormat,TeamComposeMode,TeamRoundTrace,TeamSubmission,TeamScoreCard,TeamMatchResult,TeamEvent" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,classifyTask,createSidechainLogger,composeTeams,makeFormat"
-import from="@agon/core" names="updateTeamElo"
+import from="@kernlang/agon-core" names="EngineAdapter,BrainstormBid,ForgeEvent,TaskClass" types=true
+import from="@kernlang/agon-core" names="TeamSpec,TeamFormat,TeamComposeMode,TeamRoundTrace,TeamSubmission,TeamScoreCard,TeamMatchResult,TeamEvent" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,classifyTask,createSidechainLogger,composeTeams,makeFormat"
+import from="@kernlang/agon-core" names="updateTeamElo"
 import from="@kernlang/protocol" names="buildKernDraftPrompt,parseKernDraft"
 import from="@kernlang/protocol" names="KernDraft" types=true
 import from="./brainstorm.js" names="calibrateConfidence,qualityScore"

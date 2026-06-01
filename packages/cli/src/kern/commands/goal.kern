@@ -3,7 +3,7 @@
 // unattended: per task, forge implements in a throwaway worktree, the diff is
 // witnessed + mutation-witnessed, the frozen gate runs once, an ensemble
 // review gates the commit, then one commit lands on the goal branch. The loop
-// itself lives in @agon/forge (runGoalController); this command wires the real
+// itself lives in @kernlang/agon-forge (runGoalController); this command wires the real
 // engines (forge = IMPLEMENT, runReviewCore = REVIEW), loads the queue, and
 // owns push safety (P0 never auto-pushes — it stops at the goal branch).
 // See AGON-GOAL-DESIGN.md.
@@ -11,10 +11,10 @@
 import from="citty" names="defineCommand"
 import from="node:fs" names="readFileSync,readdirSync,existsSync,statSync,writeFileSync"
 import from="node:path" names="resolve"
-import from="@agon/core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,applyPatch,spawnWithTimeout,estimateCost"
+import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,applyPatch,spawnWithTimeout,estimateCost"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
-import from="@agon/adapter-cli" names="createCliAdapter"
-import from="@agon/forge" names="runForge,runDelegate,runGoalController,runSupervisor,loadJournal,summarizeGoal,goalDir,isTestFile,parseChangedLines,pickImplementWinner,chooseImplementRoster,runThinkChain,buildOracleCheatPrompt"
+import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
+import from="@kernlang/agon-forge" names="runForge,runDelegate,runGoalController,runSupervisor,loadJournal,summarizeGoal,goalDir,isTestFile,parseChangedLines,pickImplementWinner,chooseImplementRoster,runThinkChain,buildOracleCheatPrompt"
 import from="../cesar/routing.js" names="deriveRoutingHints"
 import from="../handlers/review.js" names="runReviewCore,extractReviewFindings"
 import from="../blocks/consensus.js" names="buildConsensus"

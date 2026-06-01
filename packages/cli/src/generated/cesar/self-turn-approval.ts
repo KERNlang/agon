@@ -4,7 +4,7 @@ import { existsSync, statSync, readFileSync } from 'node:fs';
 
 import { resolve, relative, isAbsolute, basename } from 'node:path';
 
-import type { ToolContext } from '@agon/core';
+import type { ToolContext } from '@kernlang/agon-core';
 
 // @kern-source: self-turn-approval:10
 function canonicalToolName(tool: string): string {

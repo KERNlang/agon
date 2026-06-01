@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { isPathUnderCwd, checkFileReadPermission, checkFileWritePermission } from '@agon/core';
-import type { ToolContext } from '@agon/core';
+import { isPathUnderCwd, checkFileReadPermission, checkFileWritePermission } from '@kernlang/agon-core';
+import type { ToolContext } from '@kernlang/agon-core';
 
 function makeCtx(overrides?: Partial<ToolContext>): ToolContext {
   return {

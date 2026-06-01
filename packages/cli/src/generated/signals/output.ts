@@ -6,7 +6,7 @@ import { parseMarkdownBlocks, cleanEngineOutput } from '../blocks/markdown.js';
 
 import { codeBlockBuffer } from '../../code-buffer.js';
 
-import { loadConfig, configSet } from '@agon/core';
+import { loadConfig, configSet } from '@kernlang/agon-core';
 
 import type { Todo } from './todos.js';
 

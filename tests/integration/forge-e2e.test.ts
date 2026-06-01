@@ -108,7 +108,7 @@ describe('Forge E2E', () => {
     writeFileSync(join(repoDir, '.gitignore'), 'node_modules/\npackages/*/dist/\n');
     mkdirSync(agonPackageDir, { recursive: true });
     writeFileSync(join(agonPackageDir, 'package.json'), JSON.stringify({
-      name: '@agon/core',
+      name: '@kernlang/agon-core',
       version: '0.0.0-test',
       exports: { '.': './dist/index.js' },
     }) + '\n');

@@ -8,7 +8,7 @@ import type { Dispatch, HandlerContext } from '../../../handlers/types.js';
 
 import { handleBrainstorm } from '../../../handlers/index.js';
 
-import { loadOrCreateActiveThread } from '@agon/core';
+import { loadOrCreateActiveThread } from '@kernlang/agon-core';
 
 import type { DispatchCallbacks } from '../dispatch.js';
 

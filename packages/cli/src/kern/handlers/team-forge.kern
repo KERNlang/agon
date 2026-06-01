@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,readFileSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage,resolveWorkingDir,loadConfig"
-import from="@agon/forge" names="runTeamForge"
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage,resolveWorkingDir,loadConfig"
+import from="@kernlang/agon-forge" names="runTeamForge"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 

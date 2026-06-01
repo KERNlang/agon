@@ -1,7 +1,7 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync"
 import from="node:path" names="join"
-import from="@agon/core" names="ForgeManifest" types=true
-import from="@agon/core" names="RUNS_DIR"
+import from="@kernlang/agon-core" names="ForgeManifest" types=true
+import from="@kernlang/agon-core" names="RUNS_DIR"
 
 fn name=writeManifest params="manifest:ForgeManifest" returns="string"
   doc "Atomic manifest write. Writing to .tmp then renameSync avoids leaving a half-written manifest.json if the process is killed (SIGINT) mid-write — a real risk because forge writes the manifest incrementally on every engine settle."

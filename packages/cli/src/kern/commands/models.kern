@@ -1,7 +1,7 @@
 import from="citty" names="defineCommand"
 import from="node:path" names="join"
-import from="@agon/core" names="EngineRegistry,loadConfig,configSet"
-import from="@agon/core" names="AgonConfig" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,configSet"
+import from="@kernlang/agon-core" names="AgonConfig" types=true
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="../blocks/output-format.js" names="header,success,fail,info,table,green,red,dim"
 

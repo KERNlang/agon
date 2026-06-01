@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { ToolRegistry, executeToolCall, FileStateCache, createReadTool, createGrepTool, createGlobTool } from '@agon/core';
-import type { ToolContext, ToolCall, ToolHandler } from '@agon/core';
+import { ToolRegistry, executeToolCall, FileStateCache, createReadTool, createGrepTool, createGlobTool } from '@kernlang/agon-core';
+import type { ToolContext, ToolCall, ToolHandler } from '@kernlang/agon-core';
 import { join } from 'node:path';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

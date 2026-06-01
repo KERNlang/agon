@@ -6,9 +6,9 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import type { EngineAdapter, EngineResult, ForgeEvent, BreakerArtifact, GauntletResult, TaskClass } from '@agon/core';
+import type { EngineAdapter, EngineResult, ForgeEvent, BreakerArtifact, GauntletResult, TaskClass } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, worktreeCreate, worktreeRemoveBestEffort, worktreeDiff, repoRoot, spawnWithTimeout, createSidechainLogger } from '@agon/core';
+import { EngineRegistry, loadConfig, worktreeCreate, worktreeRemoveBestEffort, worktreeDiff, repoRoot, spawnWithTimeout, createSidechainLogger } from '@kernlang/agon-core';
 
 import { runFitness } from './fitness.js';
 

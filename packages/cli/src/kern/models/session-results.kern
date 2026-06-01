@@ -1,4 +1,4 @@
-import from="@agon/core" names="SessionResult" types=true
+import from="@kernlang/agon-core" names="SessionResult" types=true
 
 service name=SessionResultStore
   field name=results type="SessionResult[]" default="[]"

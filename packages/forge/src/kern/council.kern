@@ -24,8 +24,8 @@
 // (with a loud uncertainty warning); below 2 the council refuses.
 
 import from="node:crypto" names="randomUUID"
-import from="@agon/core" names="EngineAdapter,ForgeEvent,DispatchResult,RatingRecord" types=true
-import from="@agon/core" names="EngineRegistry,getRatings,pickTopRatedEngine,rankEnginesByRating,resolveWorkingDir,seedNewEnginesFromRegistry,createSidechainLogger,classifyTask,updateGlickoRanked,loadConfig"
+import from="@kernlang/agon-core" names="EngineAdapter,ForgeEvent,DispatchResult,RatingRecord" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,getRatings,pickTopRatedEngine,rankEnginesByRating,resolveWorkingDir,seedNewEnginesFromRegistry,createSidechainLogger,classifyTask,updateGlickoRanked,loadConfig"
 
 const name=DEFAULT_COUNCIL_ROLES type="readonly string[]" value={{ ['Contrarian', 'First-Principles', 'Red-Team', 'Outsider', 'Expansionist'] as const }}
   doc "Advisor roles in PRIORITY order — when engines are scarce the lowest-priority roles drop first, so a 2-advisor council is Contrarian + First-Principles. Expansionist (upside-max) is last because high-stakes decisions are usually sunk by missed risk, not missed upside."

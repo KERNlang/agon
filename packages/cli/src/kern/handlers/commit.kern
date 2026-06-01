@@ -1,5 +1,5 @@
 import from="node:child_process" names="execSync,execFileSync"
-import from="@agon/core" names="loadConfig,resolveWorkingDir,configGet"
+import from="@kernlang/agon-core" names="loadConfig,resolveWorkingDir,configGet"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 fn name=gitExec params="cmd:string, cwd:string" returns=string export=false

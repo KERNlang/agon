@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 
-import { resolveWorkingDir, findSkill, renderSkillPrompt, startChatSession, currentBranch, getAgonHome } from '@agon/core';
+import { resolveWorkingDir, findSkill, renderSkillPrompt, startChatSession, currentBranch, getAgonHome } from '@kernlang/agon-core';
 
 import type { Dispatch } from '../../../handlers/types.js';
 

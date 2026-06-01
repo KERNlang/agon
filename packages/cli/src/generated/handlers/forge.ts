@@ -6,11 +6,11 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 
 import { execFileSync } from 'node:child_process';
 
-import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, tracker, resolveWorkingDir, loadOrCreateActiveThread, applyPatchWithUndo, acquireApplyLock, releaseApplyLock, headChanged, branchChanged, headSha, currentBranch } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, tracker, resolveWorkingDir, loadOrCreateActiveThread, applyPatchWithUndo, acquireApplyLock, releaseApplyLock, headChanged, branchChanged, headSha, currentBranch } from '@kernlang/agon-core';
 
-import type { Plan, PlanStepInput, ApprovalLevel } from '@agon/core';
+import type { Plan, PlanStepInput, ApprovalLevel } from '@kernlang/agon-core';
 
-import { runForge } from '@agon/forge';
+import { runForge } from '@kernlang/agon-forge';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 

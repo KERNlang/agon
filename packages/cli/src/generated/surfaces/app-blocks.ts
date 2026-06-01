@@ -2,11 +2,11 @@
 
 import { readdirSync } from 'node:fs';
 
-import { loadConfig, getRatings, getActiveWorkspace, RUNS_DIR } from '@agon/core';
+import { loadConfig, getRatings, getActiveWorkspace, RUNS_DIR } from '@kernlang/agon-core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
-import { EngineRegistry } from '@agon/core';
+import { EngineRegistry } from '@kernlang/agon-core';
 
 import { cleanEngineOutput } from '../blocks/markdown.js';
 

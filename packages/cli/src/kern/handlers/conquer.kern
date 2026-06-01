@@ -7,9 +7,9 @@
 
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,resolveWorkingDir,spawnWithTimeout"
-import from="@agon/forge" names="runConquer"
-import from="@agon/forge" names="ConquerTurn" types=true
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,appendMessage,resolveWorkingDir,spawnWithTimeout"
+import from="@kernlang/agon-forge" names="runConquer"
+import from="@kernlang/agon-forge" names="ConquerTurn" types=true
 import from="../../telemetry/index.js" names="recordRun,formatRunSummary"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"

@@ -11,8 +11,8 @@ import {
   validateChain,
   joinProblemInput,
   selectBranch,
-} from '@agon/forge';
-import type { ThoughtNode } from '@agon/forge';
+} from '@kernlang/agon-forge';
+import type { ThoughtNode } from '@kernlang/agon-forge';
 
 const node = (over: Partial<ThoughtNode>): ThoughtNode => ({
   thoughtNumber: 1,

@@ -1,9 +1,9 @@
 import from="citty" names="defineCommand"
 import from="node:path" names="join"
-import from="@agon/core" names="EngineRegistry,getEngineGlickoRating,loadConfig,configSet"
-import from="@agon/core" names="AgonConfig" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,getEngineGlickoRating,loadConfig,configSet"
+import from="@kernlang/agon-core" names="AgonConfig" types=true
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
-import from="@agon/adapter-cli" names="createCliAdapter"
+import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
 import from="../blocks/output-format.js" names="header,success,fail,info,table,bold,green,red,dim"
 
 const name=engineCommand type="any"

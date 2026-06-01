@@ -9,8 +9,8 @@
 
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,tracker,appendMessage,resolveWorkingDir"
-import from="@agon/forge" names="runNero"
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,tracker,appendMessage,resolveWorkingDir"
+import from="@kernlang/agon-forge" names="runNero"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../../telemetry/index.js" names="recordRun,formatRunSummary"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true

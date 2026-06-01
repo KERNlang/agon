@@ -4,9 +4,9 @@ import { readdirSync, readFileSync, existsSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession } from '@kernlang/agon-core';
 
-import type { AgonConfig, ForgeManifest } from '@agon/core';
+import type { AgonConfig, ForgeManifest } from '@kernlang/agon-core';
 
 import type { Intent } from '../signals/intent.js';
 
@@ -14,7 +14,7 @@ import { icons } from '../signals/icons.js';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
-import { EngineRegistry } from '@agon/core';
+import { EngineRegistry } from '@kernlang/agon-core';
 
 import { deriveRoutingHints, buildRoutingContext } from '../cesar/routing.js';
 

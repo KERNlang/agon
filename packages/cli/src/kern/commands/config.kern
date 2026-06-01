@@ -1,6 +1,6 @@
 import from="citty" names="defineCommand"
-import from="@agon/core" names="loadConfig,configSet,DEFAULT_CONFIG,ensureAgonHome"
-import from="@agon/core" names="AgonConfig" types=true
+import from="@kernlang/agon-core" names="loadConfig,configSet,DEFAULT_CONFIG,ensureAgonHome"
+import from="@kernlang/agon-core" names="AgonConfig" types=true
 import from="../blocks/output-format.js" names="header,info,table,bold,success,fail"
 
 const name=configCommand type="ReturnType<typeof defineCommand>"

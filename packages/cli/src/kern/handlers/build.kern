@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,readFileSync,existsSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,scanProjectContext,resolveWorkingDir,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,getActiveWorkspace,snapshotWorkspace,formatChatContextForPrompt"
-import from="@agon/core" names="Plan,PlanStepInput,ApprovalLevel" types=true
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,scanProjectContext,resolveWorkingDir,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,getActiveWorkspace,snapshotWorkspace,formatChatContextForPrompt"
+import from="@kernlang/agon-core" names="Plan,PlanStepInput,ApprovalLevel" types=true
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./agent.js" names="buildAgentApprovalCallback"

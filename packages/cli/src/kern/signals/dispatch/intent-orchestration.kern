@@ -1,6 +1,6 @@
 // ── Dispatch dispatchOrchestrationIntent — extracted intent-router cases (verbatim) ──
 import from="node:path" names="join"
-import from="@agon/core" names="resolveWorkingDir,spawnWithTimeout"
+import from="@kernlang/agon-core" names="resolveWorkingDir,spawnWithTimeout"
 import from="../../../handlers/types.js" names="Dispatch" types=true
 import from="../../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../../handlers/index.js" names="handleForge,handleBrainstorm,handleCampfire,handleTribunal,handleThink,handleCouncil,handleSynthesis,handleNeroChallenge,handleConquer,handleBuild,handleReviewMany,runAgentMode,runAgentTeam"
@@ -9,8 +9,8 @@ import from="../../handlers/team-forge.js" names="handleTeamForge"
 import from="../../handlers/team-brainstorm.js" names="handleTeamBrainstorm"
 import from="../../handlers/pipeline.js" names="handlePipeline"
 import from="../../cesar/routing.js" names="shouldUseAgentTeam"
-import from="@agon/core" names="createSpeculator,loadOrCreateActiveThread"
-import from="@agon/core" names="SpeculatorMemberConfig" types=true
+import from="@kernlang/agon-core" names="createSpeculator,loadOrCreateActiveThread"
+import from="@kernlang/agon-core" names="SpeculatorMemberConfig" types=true
 import from="../dispatch.js" names="DispatchCallbacks,DispatchResult" types=true
 import from="./utils.js" names="countTrackedUserTurns"
 import from="./delegation.js" names="withThreadOutcome,buildBrainstormContinuationMessage,collectRecentEngineContext"

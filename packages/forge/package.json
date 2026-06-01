@@ -1,5 +1,5 @@
 {
-  "name": "@agon/forge",
+  "name": "@kernlang/agon-forge",
   "version": "0.1.0",
   "type": "module",
   "exports": {
@@ -20,7 +20,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agon/core": "*",
+    "@kernlang/agon-core": "*",
     "@kernlang/protocol": "~3.5.6"
   },
   "optionalDependencies": {}

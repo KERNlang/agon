@@ -4,11 +4,11 @@ import { totalmem, cpus } from 'node:os';
 
 import { spawnSync } from 'node:child_process';
 
-import { EngineRegistry } from '@agon/core';
+import { EngineRegistry } from '@kernlang/agon-core';
 
 import type { EngineVitals } from '../cesar/telemetry.js';
 
-import type { PersistentSession } from '@agon/core';
+import type { PersistentSession } from '@kernlang/agon-core';
 
 // ── Module: AppTelemetry ──
 

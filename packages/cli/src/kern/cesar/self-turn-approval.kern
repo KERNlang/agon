@@ -5,7 +5,7 @@
 
 import from="node:fs" names="existsSync,statSync,readFileSync"
 import from="node:path" names="resolve,relative,isAbsolute,basename"
-import from="@agon/core" names="ToolContext" types=true
+import from="@kernlang/agon-core" names="ToolContext" types=true
 
 fn name=canonicalToolName params="tool:string" returns=string export=false
   handler lang="kern"

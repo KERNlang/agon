@@ -2,7 +2,7 @@
 // Randomly suppresses heartbeats to simulate engine stalls.  Configurable
 // stallProbability (0-1) and stallDurationMs.  Used by telemetry-fallback.test.ts.
 
-import from="@agon/core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
+import from="@kernlang/agon-core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
 
 interface name=MockStallEngineOptions export=true
   field name=stallProbability type=number doc="0-1 chance of stalling on any dispatch"

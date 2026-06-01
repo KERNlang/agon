@@ -1,6 +1,6 @@
 // ── Dispatch dispatchMetaIntent — extracted intent-router cases (verbatim) ──
 import from="node:path" names="join"
-import from="@agon/core" names="resolveWorkingDir,undoPatch,listSnapshots,revertSnapshot,resumeChatSession,configSet,clearConversation"
+import from="@kernlang/agon-core" names="resolveWorkingDir,undoPatch,listSnapshots,revertSnapshot,resumeChatSession,configSet,clearConversation"
 import from="../../../handlers/types.js" names="Dispatch" types=true
 import from="../icons.js" names="icons"
 import from="../../../handlers/index.js" names="handleForge,handleChat,handleBrainstorm,handleTribunal"

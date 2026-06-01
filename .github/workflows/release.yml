@@ -50,7 +50,7 @@ jobs:
         run: npm run test
 
       # Publish in dependency order: kern-engines + dedup (runtime deps of the
-      # CLI, carry the Python twins) BEFORE @agon/cli (the bundle that lists
+      # CLI, carry the Python twins) BEFORE @kernlang/agon (the bundle that lists
       # them as deps). `npm run release` chains the three release:* scripts.
       - name: Publish to npm
         run: npm run release

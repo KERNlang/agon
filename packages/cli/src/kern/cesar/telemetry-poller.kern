@@ -8,7 +8,7 @@
 // out to the engine's CLI, hit its API, or read a heartbeat file. The
 // poller just orchestrates timing, state, and propagation.
 
-import from="@agon/core" names="EngineRegistry"
+import from="@kernlang/agon-core" names="EngineRegistry"
 import from="./telemetry.js" names="STALL_THRESHOLD_MS,markEngineStalled,updateEngineVitals"
 import from="./telemetry.js" names="EngineVitals,EngineVitalState" types=true
 

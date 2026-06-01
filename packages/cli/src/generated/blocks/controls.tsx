@@ -16,11 +16,11 @@ import { ENGINE_COLORS } from './output-format.js';
 
 import { icons } from '../signals/icons.js';
 
-import { setAuthKey, getAuthKey, loadConfig, configSet } from '@agon/core';
+import { setAuthKey, getAuthKey, loadConfig, configSet } from '@kernlang/agon-core';
 
-import type { CliModelEntry, CliProviderGroup } from '@agon/core';
+import type { CliModelEntry, CliProviderGroup } from '@kernlang/agon-core';
 
-import { buildCliModelGroups } from '@agon/core';
+import { buildCliModelGroups } from '@kernlang/agon-core';
 
 // @kern-source: controls:17
 export interface ReviewEvent {

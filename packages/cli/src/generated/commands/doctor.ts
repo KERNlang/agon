@@ -12,13 +12,13 @@ import { join, dirname, basename } from 'node:path';
 
 import { fileURLToPath } from 'node:url';
 
-import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, resolveDedupSidecar, agonPath } from '@agon/core';
+import { EngineRegistry, loadConfig, resolveWorkingDir, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, resolveDedupSidecar, agonPath } from '@kernlang/agon-core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
-import type { EngineDefinition } from '@agon/core';
+import type { EngineDefinition } from '@kernlang/agon-core';
 
-import { createCliAdapter } from '@agon/adapter-cli';
+import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
 import { runReviewCore, selectReviewEngine } from '../handlers/review.js';
 
@@ -205,7 +205,7 @@ export function diagnoseDedupPython(): PythonDoctorResult {
   const probe = 'import fastembed, numpy, tree_sitter, tree_sitter_python, tree_sitter_typescript, tree_sitter_javascript, tree_sitter_json';
 
   // Pick a real path for the install command. requirements.txt ships in
-  // @agon/dedup so we resolve it the same way as the .py files — works in
+  // @kernlang/agon-dedup so we resolve it the same way as the .py files — works in
   // both the monorepo and a published install. Falls back to the
   // package-name form if resolution somehow fails.
   const requirementsPath = resolveDedupSidecar('requirements.txt');
@@ -242,15 +242,15 @@ export function diagnoseDedupPython(): PythonDoctorResult {
     if (missing.length === EXPECTED_SIDECARS.length) {
       return {
         status: 'fail',
-        detail: '@agon/dedup not found in node_modules — Python sidecars unreachable',
-        installCommand: 'reinstall @agon/cli (or its workspace) — the dedup package should land automatically',
+        detail: '@kernlang/agon-dedup not found in node_modules — Python sidecars unreachable',
+        installCommand: 'reinstall @kernlang/agon (or its workspace) — the dedup package should land automatically',
       };
     }
     if (missing.length > 0) {
       return {
         status: 'fail',
-        detail: `@agon/dedup is partial — missing sidecar(s): ${missing.join(', ')}`,
-        installCommand: 'reinstall @agon/dedup — the published tarball should include all four .py files',
+        detail: `@kernlang/agon-dedup is partial — missing sidecar(s): ${missing.join(', ')}`,
+        installCommand: 'reinstall @kernlang/agon-dedup — the published tarball should include all four .py files',
       };
     }
     const sample = resolveDedupSidecar('history-search.py');

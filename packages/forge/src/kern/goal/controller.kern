@@ -6,13 +6,13 @@
 // tests, gate-once, ensemble review, park breakers — is wired here per the
 // red-team's "safe iff" (AGON-GOAL-DESIGN.md rails 1–9).
 //
-// IMPLEMENT and REVIEW are injected, not imported: review lives in @agon/cli
-// which depends on @agon/forge, so importing it here would cycle. Injection
+// IMPLEMENT and REVIEW are injected, not imported: review lives in @kernlang/agon
+// which depends on @kernlang/agon-forge, so importing it here would cycle. Injection
 // also keeps this loop unit-testable with fake engines.
 
 import from="node:fs" names="existsSync,readFileSync,writeFileSync,mkdirSync"
 import from="node:path" names="join"
-import from="@agon/core" names="ensureAgonHome,spawnWithTimeout,worktreeCreate,worktreeRemoveBestEffort,worktreeChangedDiff"
+import from="@kernlang/agon-core" names="ensureAgonHome,spawnWithTimeout,worktreeCreate,worktreeRemoveBestEffort,worktreeChangedDiff"
 import from="./paths.js" names="assertSafeGoalId,resolveWithin"
 import from="./journal.js" names="createJournal,loadJournal,saveJournal,addTasks,requeueInflightTasks,nextTask,markStatus,recordAttempt,remainingCount,isDone,logEvent,goalDir"
 import from="./oracle.js" names="snapshotOracle,witnessTest,witnessVerifyCommand"

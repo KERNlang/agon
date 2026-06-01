@@ -6,7 +6,7 @@ import { join, resolve, sep } from 'node:path';
 
 import { mkdirSync, readFileSync, statSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir, rankByTaskClass } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir, rankByTaskClass } from '@kernlang/agon-core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
@@ -14,7 +14,7 @@ import { buildConsensus } from '../blocks/consensus.js';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
-import type { DispatchResult } from '@agon/core';
+import type { DispatchResult } from '@kernlang/agon-core';
 
 import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 

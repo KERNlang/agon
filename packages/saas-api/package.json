@@ -1,5 +1,5 @@
 {
-  "name": "@agon/saas-api",
+  "name": "@kernlang/agon-saas-api",
   "version": "0.1.0",
   "private": true,
   "type": "module",

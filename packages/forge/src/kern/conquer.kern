@@ -23,8 +23,8 @@
 // NOTE: budget-in-USD caps await a cost-bearing DispatchResult (today it carries
 // token usage, not price), so caps enforce turns + wall-clock; spend is best-effort.
 
-import from="@agon/core" names="EngineAdapter,EngineRegistry,RatingRecord" types=true
-import from="@agon/core" names="resolveWorkingDir,getRatings,seedNewEnginesFromRegistry,spawnWithTimeout"
+import from="@kernlang/agon-core" names="EngineAdapter,EngineRegistry,RatingRecord" types=true
+import from="@kernlang/agon-core" names="resolveWorkingDir,getRatings,seedNewEnginesFromRegistry,spawnWithTimeout"
 import from="./nero.js" names="runNero,rankNeroCritics,parseNeroVerdict"
 import from="./tribunal.js" names="runTribunal"
 import from="./brainstorm.js" names="runBrainstorm"

@@ -1,0 +1,58 @@
+name: Release
+
+# Tag-triggered npm publish. Push a version tag (e.g. v0.1.1) to publish all
+# three packages in dependency order. The FIRST release (v0.1.0) is done by
+# hand; this automates every release after that. Requires an NPM_TOKEN repo
+# secret (Settings → Secrets → Actions) with publish rights to the @agon scope.
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # kern_engines is a public submodule (KERNlang/kern-engines) over HTTPS,
+          # so the default GITHUB_TOKEN checks it out with no extra credentials.
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          # Writes the registry + auth placeholder used by NODE_AUTH_TOKEN below.
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile KERN sources
+        run: npm run kern:compile
+
+      # Gate the release on the same checks CI runs — never publish a red tree.
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm run test
+
+      # Publish in dependency order: kern-engines + dedup (runtime deps of the
+      # CLI, carry the Python twins) BEFORE @agon/cli (the bundle that lists
+      # them as deps). `npm run release` chains the three release:* scripts.
+      - name: Publish to npm
+        run: npm run release
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

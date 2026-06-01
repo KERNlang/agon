@@ -134,6 +134,11 @@ fn name=parsePlainModelList params="stdout:string" returns="ProbedModel[]" expor
 fn name=refreshProbedCliModels async=true params="engineId:string, binary:string, listCmd?:string[], pythonBin?:string" returns="Promise<boolean>" export=true
   doc "Probe an engine's live model list and cache it. Two modes by the first listCmd token: '__pty:<slash>' drives the interactive TUI via the python pty probe (agy/codex/claude); anything else runs `binary <listCmd...>` as a plain non-interactive subcommand and parses stdout (opencode `models`). Best-effort: returns false (caller keeps static/models.dev) on any failure/timeout/empty. The pty path is slow (~5-8s, spawns the TUI) — call behind a loading state."
   handler <<<
+    // Probe failures fall back silently by design — but a silent fallback is
+    // exactly what hid the "probe never ran" bug (resolveModelProbeScript
+    // returned null for everyone). Set AGON_DEBUG_PROBE=1 to see why an engine
+    // fell back instead of showing live models.
+    const dbg = (msg: string) => { if (process.env.AGON_DEBUG_PROBE) console.error(`[agon probe:${engineId}] ${msg}`); };
     // Fresh cache → skip the (slow) re-probe. Lets buildCliModelGroupsAsync call
     // this for every engine on each /models open cheaply once the cache is warm.
     if (readProbedCliModels(engineId)) return true;
@@ -143,7 +148,7 @@ fn name=refreshProbedCliModels async=true params="engineId:string, binary:string
       let models: ProbedModel[] = [];
       if (first.startsWith('__pty:')) {
         const script = resolveModelProbeScript();
-        if (!script) return false;
+        if (!script) { dbg('model_probe.py not found — check @agon/kern-engines layout'); return false; }
         const slash = first.slice('__pty:'.length) || '/model';
         const result = await spawnWithTimeout({
           command: pythonBin ?? 'python3',
@@ -151,8 +156,10 @@ fn name=refreshProbedCliModels async=true params="engineId:string, binary:string
           cwd: process.cwd(),
           timeout: 45000,
         });
-        if (result.timedOut || !result.stdout.trim()) return false;
+        if (result.timedOut) { dbg('pty probe timed out (45s)'); return false; }
+        if (!result.stdout.trim()) { dbg('pty probe produced no output'); return false; }
         const parsed = JSON.parse(result.stdout.trim());
+        if (parsed?.error) dbg(`probe reported: ${parsed.error}`);
         models = Array.isArray(parsed?.models) ? parsed.models : [];
       } else {
         const result = await spawnWithTimeout({
@@ -161,15 +168,16 @@ fn name=refreshProbedCliModels async=true params="engineId:string, binary:string
           cwd: process.cwd(),
           timeout: 20000,
         });
-        if (result.timedOut || !result.stdout.trim()) return false;
+        if (result.timedOut || !result.stdout.trim()) { dbg('list subcommand timed out or empty'); return false; }
         models = parsePlainModelList(result.stdout);
       }
-      if (models.length === 0) return false;
+      if (models.length === 0) { dbg('parsed zero models — picker format may have changed'); return false; }
       const dir = getCacheDir();
       mkdirSync(dir, { recursive: true });
       writeFileSync(probedModelsCacheFile(engineId), JSON.stringify({ ts: Date.now(), engineId, models }));
       return true;
-    } catch {
+    } catch (e: any) {
+      dbg(`probe threw: ${e?.message ?? e}`);
       return false;
     }
   >>>

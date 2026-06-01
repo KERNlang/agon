@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
+import Spinner from 'ink-spinner';
+
 import { SLASH_COMMANDS } from '../signals/intent.js';
 
 import { getSlashMatches, movePickerCursor } from '../signals/app-input.js';
@@ -20,14 +22,14 @@ import type { CliModelEntry, CliProviderGroup } from '@agon/core';
 
 import { buildCliModelGroups } from '@agon/core';
 
-// @kern-source: controls:16
+// @kern-source: controls:17
 export interface ReviewEvent {
   winnerId: string;
   patchPath: string;
   patchContent: string;
 }
 
-// @kern-source: controls:238
+// @kern-source: controls:239
 export interface ModelPickerEntry {
   providerId: string;
   providerName: string;
@@ -42,7 +44,7 @@ export interface ModelPickerEntry {
   effort?: string|null;
 }
 
-// @kern-source: controls:23
+// @kern-source: controls:24
 export function SlashPicker({ commands, onSelect, onCancel }: { commands:typeof SLASH_COMMANDS; onSelect:(cmd: string) => void; onCancel:() => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -119,7 +121,7 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands:typeof 
   );
 }
 
-// @kern-source: controls:98
+// @kern-source: controls:99
 export function EnginePicker({ available, initialSelected, userEngines, modelOverrides, onConfirm, onCancel, onRemove, onSetModel, onBrowseModel }: { available:string[]; initialSelected:string[]; userEngines:Set<string>; modelOverrides:Record<string,string>; onConfirm:(selected: string[]) => void; onCancel:() => void; onRemove:(engineId: string) => void; onSetModel:(engineId: string, model: string | null) => void; onBrowseModel:(engineId: string) => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -258,7 +260,7 @@ export function EnginePicker({ available, initialSelected, userEngines, modelOve
   );
 }
 
-// @kern-source: controls:251
+// @kern-source: controls:252
 export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilter, title, cliGroups, activeEngineIds, onToggleCliEngine, engineEfforts }: { entries:ModelPickerEntry[]; onSelect:(entry: ModelPickerEntry) => void; onCancel:() => void; loading?:boolean; initialFilter?:string; title?:string; cliGroups?:CliProviderGroup[]; activeEngineIds?:string[]; onToggleCliEngine?:(engineId:string, active:boolean) => void; engineEfforts?:Record<string,string> }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -616,6 +618,9 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
                           <Text color={group.installed ? (isActive ? 'green' : 'red') : 'gray'}>
                             {group.installed ? (isActive ? 'active' : 'inactive') : 'missing'}
                           </Text>
+                          {group.loading && (
+                            <Text color="yellow">{'  '}<Spinner type="dots" />{' probing live models…'}</Text>
+                          )}
                         </Box>
                       )}
                       <Box>
@@ -672,7 +677,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   );
 }
 
-// @kern-source: controls:664
+// @kern-source: controls:668
 export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
   const eColor = engineColor(event.winnerId);
   const codeWidth = contentWidth(10);
@@ -711,7 +716,7 @@ export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(
   );
 }
 
-// @kern-source: controls:706
+// @kern-source: controls:710
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines:string[]; currentCesar:string; onSelect:(engineId: string) => void; onCancel:() => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

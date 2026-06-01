@@ -2,11 +2,43 @@
   "name": "@kernlang/agon",
   "version": "0.1.0",
   "type": "module",
+  "description": "The competitive multi-AI orchestration CLI. Engines compete in isolated git worktrees on the same task, the best test-passing solution is applied, and Glicko-2 ratings track each model over time. Modes: forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, goal, conquer.",
+  "keywords": [
+    "ai",
+    "cli",
+    "llm",
+    "orchestration",
+    "multi-agent",
+    "agent",
+    "claude",
+    "codex",
+    "gemini",
+    "code-generation",
+    "forge",
+    "tribunal",
+    "agon",
+    "kernlang"
+  ],
+  "homepage": "https://github.com/KERNlang/agon#readme",
+  "bugs": {
+    "url": "https://github.com/KERNlang/agon/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KERNlang/agon.git",
+    "directory": "packages/cli"
+  },
+  "author": "KERNlang",
+  "license": "MIT",
   "bin": {
     "agon": "./dist/index.js"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "publishConfig": {
     "access": "public"
@@ -22,8 +54,8 @@
     "@kernlang/agon-dedup": "^0.1.0",
     "@ai-sdk/anthropic": "^3.0.67",
     "@ai-sdk/openai-compatible": "^2.0.40",
-    "@kernlang/protocol": "~3.5.6",
-    "@kernlang/terminal": "~3.5.6",
+    "@kernlang/protocol": "~3.5.7",
+    "@kernlang/terminal": "~3.5.7",
     "ai": "^6.0.149",
     "citty": "^0.1.6",
     "ink": "^7.0.1",

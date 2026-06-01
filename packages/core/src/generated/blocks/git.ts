@@ -163,38 +163,20 @@ export function linkWorktreeNodeModules(repoDir: string, worktreePath: string): 
     const rootTarget = join(worktreePath, 'node_modules');
 
     if (existsSync(rootSource)) {
-      mkdirSync(rootTarget, { recursive: true });
-      const entries = readdirSync(rootSource, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.name === '@agon') continue;
-        // Root entries (incl. external scope dirs like @types) are symlinked
-        // WHOLESALE — preserving the original contract. pnpm's per-package
-        // re-pointing happens in the per-package overlay below, not here.
-        try {
-          symlinkNodeModuleEntry(join(rootSource, entry.name), join(rootTarget, entry.name));
-        } catch (err) {
-          warn(err);
-        }
-      }
-
-      // Preserve the explicit @agon fast path (root-hoisted workspace scope).
-      const agonSource = join(rootSource, '@agon');
-      if (existsSync(agonSource)) {
-        const agonTarget = join(rootTarget, '@agon');
-        mkdirSync(agonTarget, { recursive: true });
-        const agonEntries = readdirSync(agonSource, { withFileTypes: true });
-        for (const entry of agonEntries) {
-          try {
-            const worktreePackage = join(worktreePackages, entry.name);
-            const packageSource = existsSync(worktreePackage)
-              ? worktreePackage
-              : sourceForNodeModuleEntry(join(agonSource, entry.name));
-            symlinkNodeModuleEntry(packageSource, join(agonTarget, entry.name));
-          } catch (err) {
-            warn(err);
-          }
-        }
-      }
+      // Recurse EVERY root entry through the generic linker. Scope dirs
+      // (@scope) are walked one level so each scoped package is linked
+      // individually; sourceForNodeModuleEntry re-points only the symlinks
+      // that resolve into repo/packages (the workspace packages) at the
+      // worktree copy, leaving real external deps pointing at the source
+      // install. This replaces a former @agon-only fast path: the workspace
+      // scope is now @kernlang, which is MIXED — it holds both workspace
+      // packages (@kernlang/agon-*) and external compiler deps
+      // (@kernlang/cli, @kernlang/core, ...), so a wholesale scope symlink
+      // would wrongly resolve candidate packages back to the source repo.
+      // The generic path also fixes the node_modules-name vs packages-dir
+      // mismatch (node_modules/@kernlang/agon-core ↔ packages/core): it maps
+      // via realpath, not by assuming the entry name equals the package dir.
+      linkEntries(rootSource, rootTarget);
     }
 
     // 2. Per-package node_modules overlay (pnpm non-hoisted layout): each
@@ -221,7 +203,7 @@ export function linkWorktreeNodeModules(repoDir: string, worktreePath: string): 
 /**
  * Git worktrees omit ignored package dist artifacts, but workspace package exports point at dist. Copy existing root artifacts into the candidate worktree so fitness commands can resolve local workspace packages without forcing every forge candidate to rebuild first.
  */
-// @kern-source: git:202
+// @kern-source: git:184
 export function hydrateWorktreeBuildArtifacts(repoDir: string, worktreePath: string): void {
   const sourcePackages = join(repoDir, 'packages');
   const targetPackages = join(worktreePath, 'packages');
@@ -241,7 +223,7 @@ export function hydrateWorktreeBuildArtifacts(repoDir: string, worktreePath: str
   }
 }
 
-// @kern-source: git:223
+// @kern-source: git:205
 export function worktreeCreate(repoDir: string, worktreePath: string, sha: string): string {
   worktreePrune(repoDir);
   try {
@@ -259,7 +241,7 @@ export function worktreeCreate(repoDir: string, worktreePath: string, sha: strin
 /**
  * Resolve the PER-CHECKOUT git-dir (never the shared common-dir): the main checkout -> <repo>/.git, a linked worktree -> <repo>/.git/worktrees/<name>. Keying an advisory lock here makes sessions sharing ONE checkout contend (same dir) while separate worktrees stay independent (distinct dirs).
  */
-// @kern-source: git:238
+// @kern-source: git:220
 export function absoluteGitDir(cwd: string): string {
   return git(['rev-parse', '--absolute-git-dir'], cwd);
 }
@@ -267,7 +249,7 @@ export function absoluteGitDir(cwd: string): string {
 /**
  * True if refs/heads/<branch> already exists in repoDir.
  */
-// @kern-source: git:244
+// @kern-source: git:226
 export function branchExists(repoDir: string, branch: string): boolean {
   try {
     git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], repoDir);
@@ -280,7 +262,7 @@ export function branchExists(repoDir: string, branch: string): boolean {
 /**
  * Add a git worktree checked out on a NAMED branch — unlike worktreeCreate, which detaches for throwaway forge candidates. Prefers git's DWIM (an existing local branch, or a tracking branch when <branch> resolves on exactly one remote); only when that fails is a fresh branch created off base/HEAD. When link is not false, overlay node_modules + dist so the worktree is immediately buildable.
  */
-// @kern-source: git:255
+// @kern-source: git:237
 export function worktreeAddOnBranch(repoDir: string, worktreePath: string, branch: string, base?: string, link?: boolean): string {
   worktreePrune(repoDir);
   // Guard the empty string: '' ?? 'HEAD' is '', which git rejects as a start-point.
@@ -309,7 +291,7 @@ export function worktreeAddOnBranch(repoDir: string, worktreePath: string, branc
 /**
  * Strict worktree removal: one retry, then throws WorktreeError. Use when cleanup failure must be visible to the caller (e.g. AgentTeam where leaked worktrees collide on subsequent runs).
  */
-// @kern-source: git:282
+// @kern-source: git:264
 export function worktreeRemove(repoDir: string, worktreePath: string): void {
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -328,7 +310,7 @@ export function worktreeRemove(repoDir: string, worktreePath: string): void {
 /**
  * Best-effort worktree removal: idempotent (silent if already gone), logs warning on real failure, never throws. For finally-block cleanup paths where the caller is already in an error path or doesn't need to know about cleanup failures.
  */
-// @kern-source: git:299
+// @kern-source: git:281
 export function worktreeRemoveBestEffort(repoDir: string, worktreePath: string): void {
   // Skip silently if the worktree directory is already gone — git worktree remove
   // on a missing path errors with 'is not a working tree' and floods cleanup logs
@@ -348,7 +330,7 @@ export function worktreeRemoveBestEffort(repoDir: string, worktreePath: string):
 /**
  * Janitor: scan .agon/agent-worktrees/<runId>/ and remove any directories whose mtime is older than threshold. Called at startup of every team run to clean up after cancelled/crashed runs that left worktrees behind.
  */
-// @kern-source: git:317
+// @kern-source: git:299
 export function worktreePruneAll(repoDir: string, olderThanMs: number): void {
   const baseDir = join(repoDir, '.agon', 'agent-worktrees');
   if (!existsSync(baseDir)) return;
@@ -378,7 +360,7 @@ export function worktreePruneAll(repoDir: string, olderThanMs: number): void {
 /**
  * Return the unified diff of all changes in a worktree against the base SHA, INCLUDING untracked files but EXCLUDING anything in .gitignore (node_modules, dist, .agon, etc.). Used by Phase 3 scoring to compute per-member diffs without the buggy worktreeDiff approach (which does git add -A and would stage node_modules).
  */
-// @kern-source: git:345
+// @kern-source: git:327
 export function worktreeChangedDiff(cwd: string, baseSha: string): string {
   try {
     // Diff tracked changes against baseSha
@@ -413,7 +395,7 @@ export function worktreeChangedDiff(cwd: string, baseSha: string): string {
 /**
  * Return shortstat numbers (file count, total lines changed) for a worktree against base SHA, including untracked files. Used by Phase 3 scoring without the node_modules-explosion bug of worktreeDiff. Untracked files are counted via direct filesystem read since they're not in the git index.
  */
-// @kern-source: git:378
+// @kern-source: git:360
 export function worktreeChangedShortstat(cwd: string, baseSha: string): {filesChanged:number,linesChanged:number} {
   let filesChanged = 0;
   let linesChanged = 0;
@@ -478,7 +460,7 @@ export function worktreeChangedShortstat(cwd: string, baseSha: string): {filesCh
 /**
  * Capture the working tree (modifications to TRACKED files only) as a stash-like commit SHA WITHOUT modifying the working tree. Returns the stash SHA, or HEAD SHA if the tree is clean. Used by AgentTeam to give parallel agents a worktree base that includes the user's in-progress edits to tracked files, so synthesized patches apply cleanly against the user's actual current state. KNOWN LIMITATION: untracked files (new files the user just created locally but hasn't `git add`-ed) are NOT in the snapshot — git stash create silently ignores -u. Agents will not see those files. Logs a warning when untracked files are present so the user knows.
  */
-// @kern-source: git:441
+// @kern-source: git:423
 export function stashSnapshot(cwd: string): string {
   try {
     // git stash create captures TRACKED modifications as a commit object
@@ -509,7 +491,7 @@ export function stashSnapshot(cwd: string): string {
 /**
  * Check if cwd exists AND is a git working tree (so 'git diff --cached' won't silently fall back to --no-index mode and reject the flag).
  */
-// @kern-source: git:470
+// @kern-source: git:452
 function isWorktreeOrRepo(cwd: string): boolean {
   if (!existsSync(cwd)) {
     return false;
@@ -528,7 +510,7 @@ function isWorktreeOrRepo(cwd: string): boolean {
   }
 }
 
-// @kern-source: git:486
+// @kern-source: git:468
 export function worktreeDiff(cwd: string): string {
   if (!isWorktreeOrRepo(cwd)) return '';
   try {
@@ -540,7 +522,7 @@ export function worktreeDiff(cwd: string): string {
   }
 }
 
-// @kern-source: git:498
+// @kern-source: git:480
 export function readOnlyDiff(cwd: string): string {
   if (!isWorktreeOrRepo(cwd)) return '';
   try {
@@ -553,7 +535,7 @@ export function readOnlyDiff(cwd: string): string {
   }
 }
 
-// @kern-source: git:511
+// @kern-source: git:493
 export function diffLineCount(diff: string): number {
   let count = 0;
   for (const line of diff.split('\n')) {
@@ -563,7 +545,7 @@ export function diffLineCount(diff: string): number {
   return count;
 }
 
-// @kern-source: git:521
+// @kern-source: git:503
 export function diffFileCount(cwd: string): number {
   if (!isWorktreeOrRepo(cwd)) return 0;
   try {
@@ -575,7 +557,7 @@ export function diffFileCount(cwd: string): number {
   }
 }
 
-// @kern-source: git:533
+// @kern-source: git:515
 export function applyPatch(cwd: string, patchContent: string): void {
   if (!patchContent.trim()) {
     return;
@@ -588,7 +570,7 @@ export function applyPatch(cwd: string, patchContent: string): void {
   }
 }
 
-// @kern-source: git:543
+// @kern-source: git:525
 export function currentBranch(cwd: string): string {
   try {
     return git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
@@ -597,7 +579,7 @@ export function currentBranch(cwd: string): string {
   }
 }
 
-// @kern-source: git:550
+// @kern-source: git:532
 export function isDirty(cwd: string): boolean {
   try {
     return git(['status', '--porcelain'], cwd).length > 0;
@@ -606,7 +588,7 @@ export function isDirty(cwd: string): boolean {
   }
 }
 
-// @kern-source: git:557
+// @kern-source: git:539
 export function recentCommits(cwd: string, count?: number): string {
   try {
     return git(['log', '--oneline', `-${count ?? 10}`], cwd);
@@ -618,7 +600,7 @@ export function recentCommits(cwd: string, count?: number): string {
 /**
  * Read-only: git status --short. Never mutates the working tree.
  */
-// @kern-source: git:564
+// @kern-source: git:546
 export function gitStatusShort(cwd: string): string {
   try {
     return git(['status', '--short'], cwd);
@@ -630,7 +612,7 @@ export function gitStatusShort(cwd: string): string {
 /**
  * Read-only: git diff --stat for unstaged changes. No git add.
  */
-// @kern-source: git:572
+// @kern-source: git:554
 export function gitDiffStat(cwd: string): string {
   try {
     return git(['diff', '--stat'], cwd);
@@ -642,7 +624,7 @@ export function gitDiffStat(cwd: string): string {
 /**
  * Read-only: list of changed file paths (unstaged + staged). No git add.
  */
-// @kern-source: git:580
+// @kern-source: git:562
 export function gitChangedFiles(cwd: string): string[] {
   try {
     const unstaged = git(['diff', '--name-only'], cwd);
@@ -657,7 +639,7 @@ export function gitChangedFiles(cwd: string): string[] {
 /**
  * Read-only: truncated git diff (unstaged). Caps output. No git add.
  */
-// @kern-source: git:591
+// @kern-source: git:573
 export function gitTruncatedDiff(cwd: string, maxLines?: number): string {
   try {
     const diff = git(['diff'], cwd);

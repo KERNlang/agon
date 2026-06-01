@@ -21,6 +21,13 @@ for pkg in dedup core adapter-cli forge mcp cli; do
   npm pack --workspace "packages/$pkg" --pack-destination "$WORK" 2>&1 | tail -1
 done
 
+# @kernlang/agon-engines lives in the kern_engines submodule (its own repo),
+# not packages/* — pack it explicitly so the clean-room install resolves it
+# from the LOCAL tarball instead of reaching out to the registry. It must be
+# built first (its dist/ carries the TS twin the CLI dynamic-imports).
+echo "Packing kern_engines (@kernlang/agon-engines)..."
+( cd "$REPO/kern_engines" && npm install --no-audit --no-fund >/dev/null 2>&1 && npm run build >/dev/null 2>&1 && npm pack --pack-destination "$WORK" 2>&1 | tail -1 )
+
 cd "$WORK"
 echo ""
 echo "=== Tarballs ==="
@@ -42,7 +49,8 @@ cat > package.json <<EOF
     "@kernlang/agon-core": "file:$WORK/kernlang-agon-core-0.1.0.tgz",
     "@kernlang/agon-adapter-cli": "file:$WORK/kernlang-agon-adapter-cli-0.1.0.tgz",
     "@kernlang/agon-forge": "file:$WORK/kernlang-agon-forge-0.1.0.tgz",
-    "@kernlang/agon-mcp": "file:$WORK/kernlang-agon-mcp-0.1.0.tgz"
+    "@kernlang/agon-mcp": "file:$WORK/kernlang-agon-mcp-0.1.0.tgz",
+    "@kernlang/agon-engines": "file:$WORK/kernlang-agon-engines-0.1.0.tgz"
   }
 }
 EOF

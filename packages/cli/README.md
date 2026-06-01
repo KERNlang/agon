@@ -33,6 +33,7 @@ Pick by the **shape** of the problem:
 | A problem decomposed before you act | `agon think` |
 | Your own decision pressure-tested | `agon nero` |
 | Code built competitively against a test | `agon forge` |
+| A narrow target optimized to a discriminating oracle | `agon goal` |
 | A whole feature built unattended → human merge gate | `agon conquer` |
 
 Run `agon <mode> --help` for options, or just `agon` to drive everything from the interactive REPL.

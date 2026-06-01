@@ -101,6 +101,10 @@ def _read_until_picker_parsed(fd: int, binary: str, idle_ms: int, cap_ms: int,
             if chunk:
                 buf.extend(chunk)
         if parsed_at is None and buf:
+            # Best-effort parse of the partial buffer: an incomplete screen
+            # (half-painted picker, truncated ANSI) is expected to raise here —
+            # we deliberately swallow it and keep reading until a full picker
+            # parses or cap_ms elapses. Never fatal; the buffer is still returned.
             try:
                 if parse_picker(binary, strip_ansi_bytes(bytes(buf)))["models"]:
                     parsed_at = time.monotonic()
@@ -312,6 +316,8 @@ def probe_models(binary: str, slash_command: str = "/model",
             time.sleep(0.15)
             os.write(fd, b"\x1b")
         except OSError:
+            # Child already exited / pty closed — the ESC cancel is moot and we
+            # kill the process in `finally` regardless. Nothing to recover.
             pass
         return parsed
     finally:
@@ -320,10 +326,12 @@ def probe_models(binary: str, slash_command: str = "/model",
             time.sleep(0.2)
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
+            # Process already gone — that's the desired end state, not an error.
             pass
         try:
             os.close(fd)
         except OSError:
+            # fd already closed by the child's exit — nothing left to release.
             pass
 
 

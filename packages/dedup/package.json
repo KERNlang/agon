@@ -8,6 +8,9 @@
     "requirements.txt",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "install:python": "python3 -m pip install --user -r requirements.txt",
     "test:sidecar": "node tests/smoke.mjs",

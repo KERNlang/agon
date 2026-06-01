@@ -34,3 +34,4 @@ kern_engines/*.egg-info/
 
 # Antigravity CLI (agy) local working dir
 .antigravitycli/
+GO-LIVE-PLAN.local.md

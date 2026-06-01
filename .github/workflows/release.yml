@@ -3,7 +3,7 @@ name: Release
 # Tag-triggered npm publish. Push a version tag (e.g. v0.1.1) to publish all
 # three packages in dependency order. The FIRST release (v0.1.0) is done by
 # hand; this automates every release after that. Requires an NPM_TOKEN repo
-# secret (Settings → Secrets → Actions) with publish rights to the @agon scope.
+# secret (Settings → Secrets → Actions) with publish rights to the @kernlang scope.
 on:
   push:
     tags:

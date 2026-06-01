@@ -16,6 +16,9 @@
     "code-generation",
     "forge",
     "tribunal",
+    "synthesis",
+    "council",
+    "conquer",
     "agon",
     "kernlang"
   ],
@@ -38,7 +41,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "publishConfig": {
     "access": "public"

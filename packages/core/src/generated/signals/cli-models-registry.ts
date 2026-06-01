@@ -143,6 +143,11 @@ function parsePlainModelList(stdout: string): ProbedModel[] {
  */
 // @kern-source: cli-models-registry:134
 export async function refreshProbedCliModels(engineId: string, binary: string, listCmd?: string[], pythonBin?: string): Promise<boolean> {
+  // Probe failures fall back silently by design — but a silent fallback is
+  // exactly what hid the "probe never ran" bug (resolveModelProbeScript
+  // returned null for everyone). Set AGON_DEBUG_PROBE=1 to see why an engine
+  // fell back instead of showing live models.
+  const dbg = (msg: string) => { if (process.env.AGON_DEBUG_PROBE) console.error(`[agon probe:${engineId}] ${msg}`); };
   // Fresh cache → skip the (slow) re-probe. Lets buildCliModelGroupsAsync call
   // this for every engine on each /models open cheaply once the cache is warm.
   if (readProbedCliModels(engineId)) return true;
@@ -152,7 +157,7 @@ export async function refreshProbedCliModels(engineId: string, binary: string, l
     let models: ProbedModel[] = [];
     if (first.startsWith('__pty:')) {
       const script = resolveModelProbeScript();
-      if (!script) return false;
+      if (!script) { dbg('model_probe.py not found — check @agon/kern-engines layout'); return false; }
       const slash = first.slice('__pty:'.length) || '/model';
       const result = await spawnWithTimeout({
         command: pythonBin ?? 'python3',
@@ -160,8 +165,10 @@ export async function refreshProbedCliModels(engineId: string, binary: string, l
         cwd: process.cwd(),
         timeout: 45000,
       });
-      if (result.timedOut || !result.stdout.trim()) return false;
+      if (result.timedOut) { dbg('pty probe timed out (45s)'); return false; }
+      if (!result.stdout.trim()) { dbg('pty probe produced no output'); return false; }
       const parsed = JSON.parse(result.stdout.trim());
+      if (parsed?.error) dbg(`probe reported: ${parsed.error}`);
       models = Array.isArray(parsed?.models) ? parsed.models : [];
     } else {
       const result = await spawnWithTimeout({
@@ -170,20 +177,21 @@ export async function refreshProbedCliModels(engineId: string, binary: string, l
         cwd: process.cwd(),
         timeout: 20000,
       });
-      if (result.timedOut || !result.stdout.trim()) return false;
+      if (result.timedOut || !result.stdout.trim()) { dbg('list subcommand timed out or empty'); return false; }
       models = parsePlainModelList(result.stdout);
     }
-    if (models.length === 0) return false;
+    if (models.length === 0) { dbg('parsed zero models — picker format may have changed'); return false; }
     const dir = getCacheDir();
     mkdirSync(dir, { recursive: true });
     writeFileSync(probedModelsCacheFile(engineId), JSON.stringify({ ts: Date.now(), engineId, models }));
     return true;
-  } catch {
+  } catch (e: any) {
+    dbg(`probe threw: ${e?.message ?? e}`);
     return false;
   }
 }
 
-// @kern-source: cli-models-registry:179
+// @kern-source: cli-models-registry:187
 export async function fetchCliModelsRegistry(): Promise<Record<string, any> | null> {
   const cacheDir = getCacheDir();
   const cacheFile = join(cacheDir, 'models-dev.json');
@@ -221,7 +229,7 @@ export async function fetchCliModelsRegistry(): Promise<Record<string, any> | nu
   }
 }
 
-// @kern-source: cli-models-registry:217
+// @kern-source: cli-models-registry:225
 export function findBinary(binary: string): string|null {
   try {
     const result = execSync(`which ${binary}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -241,7 +249,7 @@ export function findBinary(binary: string): string|null {
   return null;
 }
 
-// @kern-source: cli-models-registry:232
+// @kern-source: cli-models-registry:240
 export function getBinaryVersion(binary: string, versionCmd: string[]): string|null {
   if (!versionCmd.length) {
     return null;
@@ -257,7 +265,7 @@ export function getBinaryVersion(binary: string, versionCmd: string[]): string|n
 /**
  * Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync.
  */
-// @kern-source: cli-models-registry:242
+// @kern-source: cli-models-registry:250
 export function buildCliModelGroups(): CliProviderGroup[] {
   const groups: CliProviderGroup[] = [];
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
@@ -276,7 +284,7 @@ export function buildCliModelGroups(): CliProviderGroup[] {
 /**
  * Build CLI provider groups showing each engine's REAL models: its live /model probe (cached; refreshed here in parallel for installed probe-capable engines, cheap once warm) when available, else the small static FALLBACK. Deliberately does NOT use the models.dev catalog — that's the API view (buildModelEntries). Keeps the CLI picker to what the CLI actually offers, and stays correct if a probe breaks (falls back to FALLBACK, never a 150-model dump).
  */
-// @kern-source: cli-models-registry:257
+// @kern-source: cli-models-registry:265
 export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
   // Phase 1: refresh probes for installed, probe-capable engines in parallel.
   // refreshProbedCliModels short-circuits on a fresh cache, so this is cheap
@@ -310,7 +318,7 @@ export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
 /**
  * Synchronous, instant CLI groups for the /models picker to render right away: cached probe → static FALLBACK per engine. Marks `loading: true` on installed, probe-capable engines whose live /model probe isn't cached yet, so the picker can show a 'refreshing…' indicator while refreshCliGroup runs per engine in the background. No subprocess spawns — never blocks the picker open.
  */
-// @kern-source: cli-models-registry:289
+// @kern-source: cli-models-registry:297
 export function buildCliGroupsImmediate(): CliProviderGroup[] {
   const groups: CliProviderGroup[] = [];
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
@@ -332,7 +340,7 @@ export function buildCliGroupsImmediate(): CliProviderGroup[] {
 /**
  * Probe a SINGLE engine's live /model list and return its rebuilt group (loading: false), for the picker to merge in as each probe resolves independently. Returns null for an unknown/uninstalled/non-probe-capable engine (nothing to refresh). Falls back to FALLBACK on probe failure — never throws.
  */
-// @kern-source: cli-models-registry:309
+// @kern-source: cli-models-registry:317
 export async function refreshCliGroup(engineId: string): Promise<CliProviderGroup|null> {
   const entry = Object.entries(ENGINE_PROVIDER_MAP).find(([, e]) => e.engineId === engineId);
   if (!entry) return null;

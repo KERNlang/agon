@@ -1339,13 +1339,11 @@ export function App() {
         setModelPickerEntries(buildModelEntries(reg));
         setModelPickerLoading(false);
       }).catch((err: any) => {
-        setModelPickerOpen(false);
+        // models.dev failed — keep the picker OPEN so the user can still pick
+        // this engine's CLI/local models (available via buildCliGroupsImmediate)
+        // instead of bouncing back to the engine picker empty-handed.
         setModelPickerLoading(false);
-        setModelPickerTargetEngine(null);
-        setModelPickerInitialFilter('');
-        setModelPickerTitle('Select model');
-        setEnginePickerOpen(true);
-        dispatch({ type: 'error', message: `Failed to fetch models: ${err.message}` } as any);
+        dispatch({ type: 'error', message: `models.dev registry unavailable (CLI engines still selectable): ${err.message}` } as any);
       });
     });
   }, [registry,dispatch]);
@@ -2483,7 +2481,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:90
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2173
+// @kern-source: app:2171
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

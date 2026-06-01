@@ -18,6 +18,7 @@ CLI:  python3 -m kern_engines.cli.model_probe <binary> [slash_command]
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import pty
@@ -101,15 +102,11 @@ def _read_until_picker_parsed(fd: int, binary: str, idle_ms: int, cap_ms: int,
             if chunk:
                 buf.extend(chunk)
         if parsed_at is None and buf:
-            # Best-effort parse of the partial buffer: an incomplete screen
-            # (half-painted picker, truncated ANSI) is expected to raise here —
-            # we deliberately swallow it and keep reading until a full picker
-            # parses or cap_ms elapses. Never fatal; the buffer is still returned.
-            try:
-                if parse_picker(binary, strip_ansi_bytes(bytes(buf)))["models"]:
-                    parsed_at = time.monotonic()
-            except Exception:
-                pass
+            # strip_ansi_bytes decodes errors="replace" and parse_picker is pure
+            # regex over the string → a partial screen yields {"models": []}, not
+            # an exception. We just keep reading until it parses or cap_ms elapses.
+            if parse_picker(binary, strip_ansi_bytes(bytes(buf)))["models"]:
+                parsed_at = time.monotonic()
     return bytes(buf)
 
 
@@ -310,29 +307,21 @@ def probe_models(binary: str, slash_command: str = "/model",
         # _read_until_picker_parsed) — the gap is what dropped claude's models.
         picker = _read_until_picker_parsed(fd, binary, picker_idle_ms, picker_cap_ms)
         parsed = parse_picker(binary, strip_ansi_bytes(picker))
-        # Cancel the picker without changing the selection, then quit.
-        try:
+        # Cancel the picker without changing the selection, then quit. A dead
+        # pty makes the writes moot — we kill the process below regardless.
+        with contextlib.suppress(OSError):
             os.write(fd, b"\x1b")
             time.sleep(0.15)
             os.write(fd, b"\x1b")
-        except OSError:
-            # Child already exited / pty closed — the ESC cancel is moot and we
-            # kill the process in `finally` regardless. Nothing to recover.
-            pass
         return parsed
     finally:
-        try:
+        # ProcessLookupError == already gone, which is the goal; suppress it.
+        with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGTERM)
             time.sleep(0.2)
             os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            # Process already gone — that's the desired end state, not an error.
-            pass
-        try:
+        with contextlib.suppress(OSError):
             os.close(fd)
-        except OSError:
-            # fd already closed by the child's exit — nothing left to release.
-            pass
 
 
 def main(argv: list[str]) -> int:

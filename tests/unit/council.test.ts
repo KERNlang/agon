@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { GlickoRating, RatingRecord } from '@agon/core';
+import type { GlickoRating, RatingRecord } from '@kernlang/agon-core';
 import {
   DEFAULT_COUNCIL_ROLES,
   roleGuidance,
@@ -18,7 +18,7 @@ import {
   buildChairmanPrompt,
   parseCouncilConfidence,
   runCouncil,
-} from '@agon/forge';
+} from '@kernlang/agon-forge';
 
 const rating = (mu: number, phi = 50): GlickoRating => ({
   mu,

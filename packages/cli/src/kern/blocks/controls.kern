@@ -8,9 +8,9 @@ import from="../signals/app-input.js" names="getSlashMatches,movePickerCursor"
 import from="./rendering.js" names="contentWidth,engineColor,color256toHex,DiffLine,CODE_RAIL,CODE_RAIL_COLOR"
 import from="./output-format.js" names="ENGINE_COLORS"
 import from="../signals/icons.js" names="icons"
-import from="@agon/core" names="setAuthKey,getAuthKey,loadConfig,configSet"
-import from="@agon/core" names="CliModelEntry,CliProviderGroup" types=true
-import from="@agon/core" names="buildCliModelGroups"
+import from="@kernlang/agon-core" names="setAuthKey,getAuthKey,loadConfig,configSet"
+import from="@kernlang/agon-core" names="CliModelEntry,CliProviderGroup" types=true
+import from="@kernlang/agon-core" names="buildCliModelGroups"
 
 // ── Interface: ReviewEvent ──────────────────────────────────────────
 

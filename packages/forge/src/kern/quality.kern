@@ -1,5 +1,5 @@
-import from="@agon/core" names="spawnWithTimeout,validateSyntax,detectLanguageFromPath"
-import from="@agon/core" names="SyntaxValidatorInput" types=true
+import from="@kernlang/agon-core" names="spawnWithTimeout,validateSyntax,detectLanguageFromPath"
+import from="@kernlang/agon-core" names="SyntaxValidatorInput" types=true
 import from="node:fs" names="readFileSync,existsSync,statSync"
 import from="node:path" names="join"
 import from="node:child_process" names="execFileSync"

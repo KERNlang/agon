@@ -2,9 +2,9 @@
 
 import { spawn } from 'node:child_process';
 
-import type { BrainstormGroup } from '@agon/core';
+import type { BrainstormGroup } from '@kernlang/agon-core';
 
-import { resolveDedupSidecar } from '@agon/core';
+import { resolveDedupSidecar } from '@kernlang/agon-core';
 
 /**
  * Cluster paraphrased drafts via the Python embedding sidecar. Returns null on any failure — caller should fall back to no-dedup.

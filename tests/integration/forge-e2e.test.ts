@@ -101,14 +101,20 @@ describe('Forge E2E', () => {
   it('links dependencies into external worktrees while preserving workspace packages', async () => {
     const repoDir = createRepo('worktree-node-modules');
     const worktreePath = join(tmpdir(), `agon-forge-worktree-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    const kernModuleDir = join(repoDir, 'node_modules', '@kernlang', 'core');
-    const agonScopeDir = join(repoDir, 'node_modules', '@agon');
-    const agonPackageDir = join(repoDir, 'packages', 'core');
+    // The workspace scope is @kernlang, which is MIXED: it holds both workspace
+    // packages (@kernlang/agon-core → packages/core) AND external compiler deps
+    // (@kernlang/core, an installed dep that must keep pointing at the source).
+    // The overlay must re-point ONLY the workspace package at the worktree copy
+    // while leaving the external sibling resolving to the source install — so we
+    // assert per-package, not a wholesale @kernlang scope symlink.
+    const kernScopeDir = join(repoDir, 'node_modules', '@kernlang');
+    const kernExternalDir = join(kernScopeDir, 'core');           // external dep
+    const agonPackageDir = join(repoDir, 'packages', 'core');     // workspace pkg source
 
     writeFileSync(join(repoDir, '.gitignore'), 'node_modules/\npackages/*/dist/\n');
     mkdirSync(agonPackageDir, { recursive: true });
     writeFileSync(join(agonPackageDir, 'package.json'), JSON.stringify({
-      name: '@agon/core',
+      name: '@kernlang/agon-core',
       version: '0.0.0-test',
       exports: { '.': './dist/index.js' },
     }) + '\n');
@@ -117,10 +123,16 @@ describe('Forge E2E', () => {
     git(repoDir, ['commit', '-m', 'ignore node modules']);
     mkdirSync(join(agonPackageDir, 'dist'), { recursive: true });
     writeFileSync(join(agonPackageDir, 'dist', 'index.js'), 'export const hydrated = true;\n');
-    mkdirSync(kernModuleDir, { recursive: true });
-    writeFileSync(join(kernModuleDir, 'package.json'), JSON.stringify({ name: '@kernlang/core', version: '0.0.0-test' }) + '\n');
-    mkdirSync(agonScopeDir, { recursive: true });
-    symlinkSync('../../packages/core', join(agonScopeDir, 'core'), 'dir');
+    // External @kernlang/core: a real directory (NOT a workspace symlink) — must
+    // stay pointing at the source install in the worktree overlay.
+    mkdirSync(kernExternalDir, { recursive: true });
+    writeFileSync(join(kernExternalDir, 'package.json'), JSON.stringify({ name: '@kernlang/core', version: '0.0.0-test' }) + '\n');
+    // Workspace package @kernlang/agon-core: a symlink into packages/core, the
+    // way an npm-workspace install hoists it. The overlay must re-point this at
+    // the worktree's packages/core so the gate sees candidate edits.
+    mkdirSync(join(kernScopeDir, 'agon-core'), { recursive: false });
+    rmSync(join(kernScopeDir, 'agon-core'), { recursive: true, force: true });
+    symlinkSync('../../packages/core', join(kernScopeDir, 'agon-core'), 'dir');
 
     try {
       vi.resetModules();
@@ -129,12 +141,19 @@ describe('Forge E2E', () => {
 
       const linkedNodeModules = join(worktreePath, 'node_modules');
       const linkedKernScope = join(linkedNodeModules, '@kernlang');
-      const linkedAgonCore = join(linkedNodeModules, '@agon', 'core');
+      const linkedExternal = join(linkedKernScope, 'core');         // external → source
+      const linkedAgonCore = join(linkedKernScope, 'agon-core');    // workspace → worktree
       const hydratedDist = join(worktreePath, 'packages', 'core', 'dist', 'index.js');
       expect(existsSync(linkedNodeModules)).toBe(true);
       expect(lstatSync(linkedNodeModules).isDirectory()).toBe(true);
-      expect(lstatSync(linkedKernScope).isSymbolicLink()).toBe(true);
-      expect(readlinkSync(linkedKernScope)).toBe(join(repoDir, 'node_modules', '@kernlang'));
+      // The @kernlang scope is recursed per-package (a real dir), NOT a wholesale
+      // symlink, so each sibling can be pointed independently.
+      expect(lstatSync(linkedKernScope).isDirectory()).toBe(true);
+      expect(lstatSync(linkedKernScope).isSymbolicLink()).toBe(false);
+      // External dep keeps resolving to the source install.
+      expect(lstatSync(linkedExternal).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(linkedExternal)).toBe(kernExternalDir);
+      // Workspace package is re-pointed at the worktree copy (candidate edits).
       expect(lstatSync(linkedAgonCore).isSymbolicLink()).toBe(true);
       expect(readlinkSync(linkedAgonCore)).toBe(join(worktreePath, 'packages', 'core'));
       expect(existsSync(hydratedDist)).toBe(true);

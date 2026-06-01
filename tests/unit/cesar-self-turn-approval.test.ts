@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtempSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ToolContext } from '@agon/core';
+import type { ToolContext } from '@kernlang/agon-core';
 import { applyCesarSelfTurnApproval, approvalArgsFromCommand } from '../../packages/cli/src/generated/cesar/self-turn-approval.js';
 
 function makeCtx(cwd: string, filePath: string, content: string, timestamp?: number): ToolContext {

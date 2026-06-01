@@ -2,11 +2,11 @@
 
 import { tmpdir } from 'node:os';
 
-import type { RoutingDecision, ScoutBid } from '@agon/core';
+import type { RoutingDecision, ScoutBid } from '@kernlang/agon-core';
 
-import { EngineRegistry, resolveWorkingDir, gitChangedFiles } from '@agon/core';
+import { EngineRegistry, resolveWorkingDir, gitChangedFiles } from '@kernlang/agon-core';
 
-import { runScout } from '@agon/forge';
+import { runScout } from '@kernlang/agon-forge';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 

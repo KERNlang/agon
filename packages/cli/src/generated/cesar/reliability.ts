@@ -4,7 +4,7 @@ import { existsSync, readFileSync, statSync, openSync, readSync, closeSync } fro
 
 import { join } from 'node:path';
 
-import { RUNS_DIR } from '@agon/core';
+import { RUNS_DIR } from '@kernlang/agon-core';
 
 // @kern-source: reliability:5
 export type CesarReliabilityLabel = 'calibrating' | 'tool-capable' | 'watch' | 'advisory-only';

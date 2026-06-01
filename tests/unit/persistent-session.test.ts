@@ -264,7 +264,7 @@ describe('persistent session streaming dedupe', () => {
   it('starts clean by default even when persisted continuity exists', async () => {
     const testHome = setupTestAgonHome('persistent-session-continuity-default-off');
     try {
-      const { saveSessionState, saveConversation, clearSessionState, clearConversation } = await import('@agon/core');
+      const { saveSessionState, saveConversation, clearSessionState, clearConversation } = await import('@kernlang/agon-core');
       const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
 
       saveSessionState('gemini', {
@@ -304,7 +304,7 @@ describe('persistent session streaming dedupe', () => {
   it('prefers newer workspace conversation continuity over stale per-engine state when enabled', async () => {
     const testHome = setupTestAgonHome('persistent-session-continuity');
     try {
-      const { saveSessionState, saveConversation, clearSessionState, clearConversation } = await import('@agon/core');
+      const { saveSessionState, saveConversation, clearSessionState, clearConversation } = await import('@kernlang/agon-core');
       const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
 
       saveSessionState('gemini', {

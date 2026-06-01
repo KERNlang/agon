@@ -4,11 +4,11 @@
 import from="node:child_process" names="execFileSync"
 import from="node:path" names="join,resolve,sep"
 import from="node:fs" names="mkdirSync,readFileSync,statSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,scanProjectContext,resolveWorkingDir,rankByTaskClass"
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,scanProjectContext,resolveWorkingDir,rankByTaskClass"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../blocks/consensus.js" names="buildConsensus"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
-import from="@agon/core" names="DispatchResult" types=true
+import from="@kernlang/agon-core" names="DispatchResult" types=true
 import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
 import from="../blocks/engine-helpers.js" names="stripReasoning,stripTuiChrome"
 

@@ -1,10 +1,10 @@
 // ── Dispatch dispatchSessionInfoIntent — extracted intent-router cases (verbatim) ──
 import from="node:path" names="join"
-import from="@agon/core" names="resolveWorkingDir,buildImageAttachment,sessionContext"
+import from="@kernlang/agon-core" names="resolveWorkingDir,buildImageAttachment,sessionContext"
 import from="../../handlers/chat.js" names="invalidateCwdCache"
-import from="@agon/core" names="ImageAttachment" types=true
-import from="@agon/core" names="loadCesarPlan"
-import from="@agon/core" names="CesarPlan" types=true
+import from="@kernlang/agon-core" names="ImageAttachment" types=true
+import from="@kernlang/agon-core" names="loadCesarPlan"
+import from="@kernlang/agon-core" names="CesarPlan" types=true
 import from="../../../handlers/types.js" names="Dispatch" types=true
 import from="../../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../../handlers/index.js" names="handleLeaderboard,handleCesarReport,handleCesarHints,handleHistory,handleEngines,handleDiscover,handleConfig,handleUse,handleCesar,handleTokens,handleWorkspace,handleChats,handlePlanShow,handlePlansList,handleApprove,handleRetry,handleCancel,handleApplyPatch,handleCp,handleCommit,handleFlowReport,handleFlowAnalysis,handleRun"
@@ -134,7 +134,7 @@ fn name=dispatchSessionInfoIntent async=true params="intent:any, input:string, c
         cb.setModelPickerTitle?.('Select model');
         cb.setModelPickerLoading(true);
         cb.setModelPickerOpen(true);
-        import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliGroupsImmediate, refreshCliGroup }) => {
+        import('@kernlang/agon-core').then(({ fetchModelsRegistry, buildModelEntries, buildCliGroupsImmediate, refreshCliGroup }) => {
           // CLI engines: render cached/static models instantly (each installed
           // probe-capable engine flagged loading), then probe each engine's live
           // /model list in the background and swap its group in as it resolves —
@@ -184,7 +184,7 @@ fn name=dispatchSessionInfoIntent async=true params="intent:any, input:string, c
       case 'plan': await handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
       case 'plan-task': {
         // Enter plan mode — Cesar thinks and proposes a plan
-        const { createCesarPlan } = await import('@agon/core');
+        const { createCesarPlan } = await import('@kernlang/agon-core');
         const cesarPlan = createCesarPlan(intent.task, []);
         cb.setActivePlan(cesarPlan);
         if (!cb.ctx.cesar) {

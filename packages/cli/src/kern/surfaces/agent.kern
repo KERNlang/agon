@@ -15,7 +15,7 @@
 import from="react" default="React"
 import from="ink" names="Box,Text"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
-import from="@agon/core" names="AgentPhase" types=true
+import from="@kernlang/agon-core" names="AgentPhase" types=true
 
 // ── Helpers ────────────────────────────────────────────────────────
 

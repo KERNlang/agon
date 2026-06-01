@@ -4,10 +4,10 @@
 
 import from="node:crypto" names="randomUUID"
 import from="node:fs" names="mkdirSync,writeFileSync,renameSync"
-import from="@agon/core" names="ForgeOptions,EngineAdapter,EngineResult,ForgeEvent,TaskClass" types=true
-import from="@agon/core" names="TeamSpec,TeamFormat,TeamComposeMode,TeamMember,TeamRoundTrace,TeamSubmission,TeamScoreCard,TeamMatchResult,TeamEvent" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeCreate,worktreeRemoveBestEffort,classifyTask,createSidechainLogger,composeTeams,makeFormat,computeContributionWeights,spawnWithTimeout"
-import from="@agon/core" names="updateTeamElo"
+import from="@kernlang/agon-core" names="ForgeOptions,EngineAdapter,EngineResult,ForgeEvent,TaskClass" types=true
+import from="@kernlang/agon-core" names="TeamSpec,TeamFormat,TeamComposeMode,TeamMember,TeamRoundTrace,TeamSubmission,TeamScoreCard,TeamMatchResult,TeamEvent" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeCreate,worktreeRemoveBestEffort,classifyTask,createSidechainLogger,composeTeams,makeFormat,computeContributionWeights,spawnWithTimeout"
+import from="@kernlang/agon-core" names="updateTeamElo"
 import from="./fitness.js" names="runFitness"
 import from="../types.js" names="WorktreeEntry" types=true
 

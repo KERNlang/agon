@@ -1,4 +1,4 @@
-// Spawns @agon/dedup's Python history-search sidecar to rank items by
+// Spawns @kernlang/agon-dedup's Python history-search sidecar to rank items by
 // semantic similarity to a query. Returns null on any failure so callers
 // degrade gracefully to chronological / substring fallback.
 

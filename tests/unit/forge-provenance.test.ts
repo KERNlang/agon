@@ -9,8 +9,8 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { writeProvenanceReport } from '@agon/core';
-import type { ForgeManifest } from '@agon/core';
+import { writeProvenanceReport } from '@kernlang/agon-core';
+import type { ForgeManifest } from '@kernlang/agon-core';
 
 const fixture: ForgeManifest = {
   forgeId: 'test-forge-provenance-1',

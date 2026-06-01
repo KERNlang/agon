@@ -1,5 +1,5 @@
-import from="@agon/core" names="pasteStore"
-import from="@agon/core" names="PasteStoreResult" types=true
+import from="@kernlang/agon-core" names="pasteStore"
+import from="@kernlang/agon-core" names="PasteStoreResult" types=true
 
 union name=PasteResult discriminant=type
   variant name=stored

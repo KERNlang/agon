@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { readFileSync, writeFileSync } from 'node:fs';
 
-import { ensureAgonHome, getAgonHome } from '@agon/core';
+import { ensureAgonHome, getAgonHome } from '@kernlang/agon-core';
 
 // ── Module: AppComposer ──
 

@@ -1,5 +1,5 @@
 {
-  "name": "@agon/mcp",
+  "name": "@kernlang/agon-mcp",
   "version": "0.1.0",
   "type": "module",
   "bin": {
@@ -17,6 +17,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agon/core": "*"
+    "@kernlang/agon-core": "*"
   }
 }

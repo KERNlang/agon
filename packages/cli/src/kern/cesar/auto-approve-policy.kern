@@ -10,8 +10,8 @@
 // Tribunal-hardened: delegate/self are MUTATING because they call
 // runDelegate on tool-enabled engines that can write files.
 
-import from="@agon/core" names="CesarPlan,AgonConfig" types=true
-import from="@agon/core" names="planCostEstimator"
+import from="@kernlang/agon-core" names="CesarPlan,AgonConfig" types=true
+import from="@kernlang/agon-core" names="planCostEstimator"
 
 interface name=AutoApproveDecision export=true
   field name=approve type=boolean

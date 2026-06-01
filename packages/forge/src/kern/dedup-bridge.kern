@@ -1,10 +1,10 @@
-// Spawns @agon/dedup's Python sidecar to cluster near-duplicate brainstorm
+// Spawns @kernlang/agon-dedup's Python sidecar to cluster near-duplicate brainstorm
 // drafts. Returns null on any failure (sidecar missing, Python missing,
 // fastembed not installed, malformed output) so callers degrade silently.
 
 import from="node:child_process" names="spawn"
-import from="@agon/core" names="BrainstormGroup" types=true
-import from="@agon/core" names="resolveDedupSidecar"
+import from="@kernlang/agon-core" names="BrainstormGroup" types=true
+import from="@kernlang/agon-core" names="resolveDedupSidecar"
 
 fn name=dedupBrainstormDrafts async=true params="drafts:{engineId:string, text:string}[]" returns="Promise<BrainstormGroup[] | null>"
   doc "Cluster paraphrased drafts via the Python embedding sidecar. Returns null on any failure — caller should fall back to no-dedup."

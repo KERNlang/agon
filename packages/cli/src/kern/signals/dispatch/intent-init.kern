@@ -1,7 +1,7 @@
 // ── Dispatch dispatchInitIntent — extracted intent-router cases (verbatim) ──
 import from="node:path" names="join,basename"
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,existsSync"
-import from="@agon/core" names="resolveWorkingDir,getAgonHome"
+import from="@kernlang/agon-core" names="resolveWorkingDir,getAgonHome"
 import from="../../../handlers/types.js" names="Dispatch" types=true
 import from="../dispatch.js" names="DispatchCallbacks,DispatchResult" types=true
 import from="./utils.js" names="emitPostDispatch"

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseToolCalls, formatToolResult, formatToolResults, toolCallsToApiFormat } from '@agon/core';
+import { parseToolCalls, formatToolResult, formatToolResults, toolCallsToApiFormat } from '@kernlang/agon-core';
 
 describe('tool-parser', () => {
   describe('parseToolCalls', () => {

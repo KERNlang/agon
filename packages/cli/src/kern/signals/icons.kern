@@ -1,4 +1,4 @@
-import from="@agon/core" names="loadConfig"
+import from="@kernlang/agon-core" names="loadConfig"
 
 interface name=IconSet
   field name=read type=string

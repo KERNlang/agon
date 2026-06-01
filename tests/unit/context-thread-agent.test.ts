@@ -20,7 +20,7 @@ import {
   deleteThread,
   projectHash16,
   listThreadsForProject,
-} from '@agon/core';
+} from '@kernlang/agon-core';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';

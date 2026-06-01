@@ -4,9 +4,9 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir } from '@kernlang/agon-core';
 
-import { runCampfire } from '@agon/forge';
+import { runCampfire } from '@kernlang/agon-forge';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 

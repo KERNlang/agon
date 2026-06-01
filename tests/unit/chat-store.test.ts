@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { startChatSession, appendMessage, loadChatSession, resumeChatSession, listChatSessions, updateChatSummary, formatChatHistoryForPrompt, formatChatContextForPrompt, buildHistoryPrimedPrompt } from '@agon/core';
+import { startChatSession, appendMessage, loadChatSession, resumeChatSession, listChatSessions, updateChatSummary, formatChatHistoryForPrompt, formatChatContextForPrompt, buildHistoryPrimedPrompt } from '@kernlang/agon-core';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 describe('chat-store', () => {

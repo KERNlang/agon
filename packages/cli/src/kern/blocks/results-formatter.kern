@@ -1,4 +1,4 @@
-import from="@agon/core" names="SessionResult,BrainstormResultData,CampfireResultData,TribunalResultData,ForgeResultData,ThinkResultData,CouncilResultData,SynthesisResultData,NeroResultData,ChatSession" types=true
+import from="@kernlang/agon-core" names="SessionResult,BrainstormResultData,CampfireResultData,TribunalResultData,ForgeResultData,ThinkResultData,CouncilResultData,SynthesisResultData,NeroResultData,ChatSession" types=true
 
 const name=BOLD type=string value={{ '\x1b[1m' }}
 

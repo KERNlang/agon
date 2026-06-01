@@ -5,12 +5,12 @@
     "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
-      "@agon/core": ["packages/core/src/index.ts"],
-      "@agon/forge": ["packages/forge/src/index.ts"],
-      "@agon/adapter-cli": ["packages/adapter-cli/src/index.ts"],
-      "@agon/mcp": ["packages/mcp/src/index.ts"],
-      "@agon/kern-engines": ["kern_engines/index.ts"],
-      "@agon/kern-engines/cli/claude": ["kern_engines/cli/claude.ts"]
+      "@kernlang/agon-core": ["packages/core/src/index.ts"],
+      "@kernlang/agon-forge": ["packages/forge/src/index.ts"],
+      "@kernlang/agon-adapter-cli": ["packages/adapter-cli/src/index.ts"],
+      "@kernlang/agon-mcp": ["packages/mcp/src/index.ts"],
+      "@kernlang/agon-engines": ["kern_engines/index.ts"],
+      "@kernlang/agon-engines/cli/claude": ["kern_engines/cli/claude.ts"]
     },
     "declaration": true,
     "declarationMap": true,

@@ -1,7 +1,7 @@
 import from="node:fs" names="existsSync,writeFileSync"
 import from="node:path" names="join"
-import from="@agon/core" names="FitnessResult,EngineResult" types=true
-import from="@agon/core" names="spawnWithTimeout,worktreeDiff,diffLineCount,diffFileCount,computeScore"
+import from="@kernlang/agon-core" names="FitnessResult,EngineResult" types=true
+import from="@kernlang/agon-core" names="spawnWithTimeout,worktreeDiff,diffLineCount,diffFileCount,computeScore"
 import from="./quality.js" names="runLint,runStyleCheck,runSyntaxCheck"
 
 fn name=normalizeFitnessCommandForShell params="command:string" returns=string export=true

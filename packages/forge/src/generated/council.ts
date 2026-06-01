@@ -2,9 +2,9 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { EngineAdapter, ForgeEvent, DispatchResult, RatingRecord } from '@agon/core';
+import type { EngineAdapter, ForgeEvent, DispatchResult, RatingRecord } from '@kernlang/agon-core';
 
-import { EngineRegistry, getRatings, pickTopRatedEngine, rankEnginesByRating, resolveWorkingDir, seedNewEnginesFromRegistry, createSidechainLogger, classifyTask, updateGlickoRanked, loadConfig } from '@agon/core';
+import { EngineRegistry, getRatings, pickTopRatedEngine, rankEnginesByRating, resolveWorkingDir, seedNewEnginesFromRegistry, createSidechainLogger, classifyTask, updateGlickoRanked, loadConfig } from '@kernlang/agon-core';
 
 /**
  * Advisor roles in PRIORITY order — when engines are scarce the lowest-priority roles drop first, so a 2-advisor council is Contrarian + First-Principles. Expansionist (upside-max) is last because high-stakes decisions are usually sunk by missed risk, not missed upside.

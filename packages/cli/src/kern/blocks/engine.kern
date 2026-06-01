@@ -51,11 +51,11 @@ fn name=resolvePackageVersion params="resolveSpecifier:string|null, wantName:str
 
 // Both versions are read from the installed package.json at runtime so the banner
 // auto-updates on `npm` upgrades instead of drifting behind a frozen literal.
-// VERSION = this CLI (@agon/cli); KERN_VERSION = the @kernlang/* toolchain the
+// VERSION = this CLI (@kernlang/agon); KERN_VERSION = the @kernlang/* toolchain the
 // runtime actually loads (@kernlang/terminal, whose package.json is exports-locked
 // so we resolve it via its exported /runtime entry and walk up to package.json).
 // The literals are last-resort fallbacks if resolution fails.
-const name=VERSION type=string value={{ resolvePackageVersion(null, '@agon/cli', '0.1.0') }}
+const name=VERSION type=string value={{ resolvePackageVersion(null, '@kernlang/agon', '0.1.0') }}
 
 const name=KERN_VERSION type=string value={{ resolvePackageVersion('@kernlang/terminal/runtime', '@kernlang/terminal', '3.5.5') }}
 

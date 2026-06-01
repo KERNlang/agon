@@ -1,5 +1,5 @@
-import from="@agon/core" names="logFlow,readFlows,analyzeFlows,FRICTION_TAGS,tracker"
-import from="@agon/core" names="FlowRecord,FlowFeedback,FlowTelemetry,FlowModeMeta,FlowAnalysis" types=true
+import from="@kernlang/agon-core" names="logFlow,readFlows,analyzeFlows,FRICTION_TAGS,tracker"
+import from="@kernlang/agon-core" names="FlowRecord,FlowFeedback,FlowTelemetry,FlowModeMeta,FlowAnalysis" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 fn name=buildTelemetry params="ctx:HandlerContext, startTime:number" returns=FlowTelemetry export=false

@@ -12,8 +12,8 @@
 import from="node:os" names="tmpdir"
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,rmSync"
-import from="@agon/core" names="EngineRegistry,engineHealth,classifyDispatchFailure,Semaphore"
-import from="@agon/core" names="EngineAdapter" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,engineHealth,classifyDispatchFailure,Semaphore"
+import from="@kernlang/agon-core" names="EngineAdapter" types=true
 
 const name=HEALTH_CHECK_DISABLE_ENV type=string value="AGON_DISABLE_FORGE_HEALTH_CHECK"
   doc "Set this env var (to any non-empty value) to skip the forge pre-flight health check globally. Used in tests to avoid having every mock adapter answer a 'say ok' probe; production users opt out via forgeHealthCheckEnabled=false or --no-health-check."

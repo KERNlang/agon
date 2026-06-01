@@ -2,15 +2,15 @@
 
 import { join } from 'node:path';
 
-import { resolveWorkingDir, buildImageAttachment, sessionContext } from '@agon/core';
+import { resolveWorkingDir, buildImageAttachment, sessionContext } from '@kernlang/agon-core';
 
 import { invalidateCwdCache } from '../../handlers/chat.js';
 
-import type { ImageAttachment } from '@agon/core';
+import type { ImageAttachment } from '@kernlang/agon-core';
 
-import { loadCesarPlan } from '@agon/core';
+import { loadCesarPlan } from '@kernlang/agon-core';
 
-import type { CesarPlan } from '@agon/core';
+import type { CesarPlan } from '@kernlang/agon-core';
 
 import type { Dispatch } from '../../../handlers/types.js';
 
@@ -153,7 +153,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
       cb.setModelPickerTitle?.('Select model');
       cb.setModelPickerLoading(true);
       cb.setModelPickerOpen(true);
-      import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliGroupsImmediate, refreshCliGroup }) => {
+      import('@kernlang/agon-core').then(({ fetchModelsRegistry, buildModelEntries, buildCliGroupsImmediate, refreshCliGroup }) => {
         // CLI engines: render cached/static models instantly (each installed
         // probe-capable engine flagged loading), then probe each engine's live
         // /model list in the background and swap its group in as it resolves —
@@ -203,7 +203,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
     case 'plan': await handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
     case 'plan-task': {
       // Enter plan mode — Cesar thinks and proposes a plan
-      const { createCesarPlan } = await import('@agon/core');
+      const { createCesarPlan } = await import('@kernlang/agon-core');
       const cesarPlan = createCesarPlan(intent.task, []);
       cb.setActivePlan(cesarPlan);
       if (!cb.ctx.cesar) {

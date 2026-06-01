@@ -1,5 +1,5 @@
-import from="@agon/core" names="ToolRegistry,getProjectFileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createGoalTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createExitPlanModeTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,createTodoWriteTool,executeToolCall,resolveWorkingDir"
-import from="@agon/core" names="ToolContext,ToolCallResult" types=true
+import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createGoalTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createExitPlanModeTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,createTodoWriteTool,executeToolCall,resolveWorkingDir"
+import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 fn name=createCesarToolRegistry params="engineId?:string" returns="ToolRegistry"

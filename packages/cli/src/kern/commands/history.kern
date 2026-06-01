@@ -1,8 +1,8 @@
 import from="citty" names="defineCommand"
 import from="node:fs" names="readdirSync,readFileSync"
 import from="node:path" names="join"
-import from="@agon/core" names="RUNS_DIR,ensureAgonHome,searchHistorySemantic"
-import from="@agon/core" names="ForgeManifest,HistorySearchItem" types=true
+import from="@kernlang/agon-core" names="RUNS_DIR,ensureAgonHome,searchHistorySemantic"
+import from="@kernlang/agon-core" names="ForgeManifest,HistorySearchItem" types=true
 import from="../blocks/output-format.js" names="header,info,table,bold,green,red,dim"
 import from="../signals/icons.js" names="icons"
 

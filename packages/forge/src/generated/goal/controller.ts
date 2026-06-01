@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { ensureAgonHome, spawnWithTimeout, worktreeCreate, worktreeRemoveBestEffort, worktreeChangedDiff } from '@agon/core';
+import { ensureAgonHome, spawnWithTimeout, worktreeCreate, worktreeRemoveBestEffort, worktreeChangedDiff } from '@kernlang/agon-core';
 
 import { assertSafeGoalId, resolveWithin } from './paths.js';
 

@@ -11,8 +11,8 @@
 // engine has any rating yet. The author being challenged is excluded from the
 // pool so Nero never grades its own homework.
 
-import from="@agon/core" names="EngineAdapter,RatingRecord" types=true
-import from="@agon/core" names="EngineRegistry,getRatings,pickTopRatedEngine,resolveWorkingDir,seedNewEnginesFromRegistry"
+import from="@kernlang/agon-core" names="EngineAdapter,RatingRecord" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,getRatings,pickTopRatedEngine,resolveWorkingDir,seedNewEnginesFromRegistry"
 
 interface name=NeroOptions
   field name=decision type=string

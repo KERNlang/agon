@@ -3,10 +3,10 @@
 // Teams clash across rounds, judge evaluates final arguments
 
 import from="node:crypto" names="randomUUID"
-import from="@agon/core" names="EngineAdapter,ForgeEvent,TaskClass" types=true
-import from="@agon/core" names="TeamSpec,TeamFormat,TeamComposeMode,TeamRoundTrace,TeamSubmission,TeamScoreCard,TeamMatchResult,TeamEvent" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,classifyTask,createSidechainLogger,composeTeams,makeFormat"
-import from="@agon/core" names="updateTeamElo"
+import from="@kernlang/agon-core" names="EngineAdapter,ForgeEvent,TaskClass" types=true
+import from="@kernlang/agon-core" names="TeamSpec,TeamFormat,TeamComposeMode,TeamRoundTrace,TeamSubmission,TeamScoreCard,TeamMatchResult,TeamEvent" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,classifyTask,createSidechainLogger,composeTeams,makeFormat"
+import from="@kernlang/agon-core" names="updateTeamElo"
 import from="./tribunal-modes.js" names="TribunalMode" types=true
 import from="./tribunal-modes.js" names="getModeConfig"
 

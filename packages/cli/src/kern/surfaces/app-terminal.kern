@@ -1,6 +1,6 @@
 // ── Terminal mode, file rail, replay snapshot ───────────────────────
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
-import from="@agon/core" names="EngineRegistry,loadConfig"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig"
 import from="./app-display-utils.js" names="clampNumber"
 import from="./app-layout.js" names="estimateVisibleBlockBudget,estimateBottomChromeExtraRows,estimatePinnedLiveRows"
 import from="./app-blocks.js" names="nativeTranscriptBlocksForStatic,nativeArchiveBlockCount"

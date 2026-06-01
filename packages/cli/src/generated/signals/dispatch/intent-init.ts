@@ -4,7 +4,7 @@ import { join, basename } from 'node:path';
 
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 
-import { resolveWorkingDir, getAgonHome } from '@agon/core';
+import { resolveWorkingDir, getAgonHome } from '@kernlang/agon-core';
 
 import type { Dispatch } from '../../../handlers/types.js';
 

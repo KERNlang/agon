@@ -2,8 +2,8 @@
 // the warn/strict gate decision. The orchestration (running an adversarial forge
 // per task) lives in the goal CLI command and is exercised end-to-end there.
 import { describe, it, expect } from 'vitest';
-import { buildOracleCheatPrompt, oracleGateDecision } from '@agon/forge';
-import type { OracleHole } from '@agon/forge';
+import { buildOracleCheatPrompt, oracleGateDecision } from '@kernlang/agon-forge';
+import type { OracleHole } from '@kernlang/agon-forge';
 
 describe('buildOracleCheatPrompt', () => {
   it('embeds the gap + verify and demands a degenerate cheat, not a real impl', () => {

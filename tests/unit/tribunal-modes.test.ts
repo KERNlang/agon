@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getModeConfig, buildModePrompt, buildModeSummaryPrompt, isTribunalMode, TRIBUNAL_MODES } from '@agon/forge';
+import { getModeConfig, buildModePrompt, buildModeSummaryPrompt, isTribunalMode, TRIBUNAL_MODES } from '@kernlang/agon-forge';
 import { detectIntent } from '../../packages/cli/src/generated/signals/intent.js';
 
 describe('tribunal-modes', () => {

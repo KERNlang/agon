@@ -2,9 +2,9 @@
 
 import { join } from 'node:path';
 
-import type { EngineAdapter, EngineResult, ForgeOptions, AgonConfig, DispatchMetric, StageContext } from '@agon/core';
+import type { EngineAdapter, EngineResult, ForgeOptions, AgonConfig, DispatchMetric, StageContext } from '@kernlang/agon-core';
 
-import { EngineRegistry, worktreeCreate, worktreeRemoveBestEffort, repoRoot, worktreeDiff, estimateTokens, estimateCost, buildStageContext, renderStageContext } from '@agon/core';
+import { EngineRegistry, worktreeCreate, worktreeRemoveBestEffort, repoRoot, worktreeDiff, estimateTokens, estimateCost, buildStageContext, renderStageContext } from '@kernlang/agon-core';
 
 import { runFitness } from './fitness.js';
 

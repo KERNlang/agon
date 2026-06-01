@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scanProjectContext, isKernProject, gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff } from '@agon/core';
+import { scanProjectContext, isKernProject, gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff } from '@kernlang/agon-core';
 import { join } from 'node:path';
 
 const REPO_ROOT = join(import.meta.dirname, '../..');

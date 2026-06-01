@@ -1,5 +1,5 @@
 {
-  "name": "@agon/adapter-cli",
+  "name": "@kernlang/agon-adapter-cli",
   "version": "0.1.0",
   "type": "module",
   "exports": {
@@ -20,8 +20,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agon/core": "*",
-    "@agon/kern-engines": "*"
+    "@kernlang/agon-core": "*",
+    "@kernlang/agon-engines": "*"
   },
   "optionalDependencies": {}
 }

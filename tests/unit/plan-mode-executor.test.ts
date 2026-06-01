@@ -11,7 +11,7 @@ vi.mock('../../packages/cli/src/generated/cesar/brain.js', () => ({
   handleCesarBrain: handleCesarBrainMock,
 }));
 
-vi.mock('@agon/forge', () => ({
+vi.mock('@kernlang/agon-forge', () => ({
   runForge: runForgeMock,
   runBrainstorm: vi.fn(),
   runTribunal: vi.fn(),

@@ -2,7 +2,7 @@
 // Handles patch review actions (apply, edit, reject, copy). Pure function.
 
 import from="node:child_process" names="spawnSync"
-import from="@agon/core" names="parsePatch,patchSummary,applyPatchWithUndo,copyToClipboard,resolveWorkingDir"
+import from="@kernlang/agon-core" names="parsePatch,patchSummary,applyPatchWithUndo,copyToClipboard,resolveWorkingDir"
 import from="../../handlers/types.js" names="Dispatch" types=true
 
 interface name=ReviewAction

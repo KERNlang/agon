@@ -1,7 +1,7 @@
 {
-  "name": "@agon/dedup",
+  "name": "@kernlang/agon-dedup",
   "version": "0.1.0",
-  "description": "Python sidecars for Agon AI — semantic embeddings (fastembed/MiniLM) and tree-sitter syntax validation. Bridged from KERN via stdin/stdout JSON. Ships .py files that the @agon/core bridges spawn at runtime.",
+  "description": "Python sidecars for Agon AI — semantic embeddings (fastembed/MiniLM) and tree-sitter syntax validation. Bridged from KERN via stdin/stdout JSON. Ships .py files that the @kernlang/agon-core bridges spawn at runtime.",
   "type": "module",
   "files": [
     "*.py",

@@ -6,13 +6,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { runSyntaxCheck } from '../../packages/forge/src/quality.js';
 
-// Mock the @agon/core bridge so these tests don't need the tree-sitter
+// Mock the @kernlang/agon-core bridge so these tests don't need the tree-sitter
 // Python sidecar installed on the runner. The mock mimics the real
 // language detection + a small fake validator that catches the specific
 // invalid inputs the tests use (broken-TS missing-rhs, broken-Python
 // indentation). Real-sidecar behavior is covered by the dedup smoke
 // tests, which fail loudly when tree-sitter isn't installed.
-vi.mock('@agon/core', async (importOriginal) => {
+vi.mock('@kernlang/agon-core', async (importOriginal) => {
   const orig = (await importOriginal()) as Record<string, unknown>;
   const detect = (p: string): string => {
     if (p.endsWith('.ts') || p.endsWith('.cts') || p.endsWith('.mts')) return 'typescript';

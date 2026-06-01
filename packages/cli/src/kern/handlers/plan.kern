@@ -1,6 +1,6 @@
 import from="node:path" names="join"
-import from="@agon/core" names="loadPlan,listPlans,approvePlan,startPlan,cancelPlan,resetStepForRetry,savePlan,preflightApply,applyPatchToTree,RUNS_DIR,resolveWorkingDir"
-import from="@agon/core" names="Plan" types=true
+import from="@kernlang/agon-core" names="loadPlan,listPlans,approvePlan,startPlan,cancelPlan,resetStepForRetry,savePlan,preflightApply,applyPatchToTree,RUNS_DIR,resolveWorkingDir"
+import from="@kernlang/agon-core" names="Plan" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 fn name=handlePlanShow params="dispatch:Dispatch, ctx:HandlerContext, planId?:string" returns="Promise<void>" async=true

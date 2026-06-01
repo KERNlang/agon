@@ -1,4 +1,4 @@
-# @agon/saas-api
+# @kernlang/agon-saas-api
 
 KERN→FastAPI proof-of-concept. **Internal-only, no auth, not the SaaS launch.** This package exists to validate `@kernlang/python` against Agon's KERN dialect and to give the SaaS roadmap a real testbed.
 
@@ -37,7 +37,7 @@ As of kern v3.5.1 this passes — all five Phase 0 gaps below are closed upstrea
 
 Synthesized from the 6-engine brainstorm + recheck (Codex / Claude / Gemini / Kimi / Minimax / Z.AI).
 
-### Phase 1 — `Job` DU in `@agon/core`
+### Phase 1 — `Job` DU in `@kernlang/agon-core`
 
 Subprocess-spawning CLI engines do not survive a stateless HTTP request model. Forge runs are minutes long; brainstorms with the full 6-engine roster take 8-12 min. Before any real handler is wired, introduce a `Job` discriminated union in `packages/core/src/kern/models/job.kern`:
 

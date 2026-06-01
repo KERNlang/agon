@@ -6,9 +6,9 @@ import { readdirSync, readFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { RUNS_DIR, ensureAgonHome, searchHistorySemantic } from '@agon/core';
+import { RUNS_DIR, ensureAgonHome, searchHistorySemantic } from '@kernlang/agon-core';
 
-import type { ForgeManifest, HistorySearchItem } from '@agon/core';
+import type { ForgeManifest, HistorySearchItem } from '@kernlang/agon-core';
 
 import { header, info, table, bold, green, red, dim } from '../blocks/output-format.js';
 

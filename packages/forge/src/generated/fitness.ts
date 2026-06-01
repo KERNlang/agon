@@ -4,9 +4,9 @@ import { existsSync, writeFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import type { FitnessResult, EngineResult } from '@agon/core';
+import type { FitnessResult, EngineResult } from '@kernlang/agon-core';
 
-import { spawnWithTimeout, worktreeDiff, diffLineCount, diffFileCount, computeScore } from '@agon/core';
+import { spawnWithTimeout, worktreeDiff, diffLineCount, diffFileCount, computeScore } from '@kernlang/agon-core';
 
 import { runLint, runStyleCheck, runSyntaxCheck } from './quality.js';
 

@@ -6,21 +6,21 @@ import { Box, Static, Text, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@kernlang/agon-core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
-import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
+import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@kernlang/agon-core';
 
 import type { EngineProgress } from '../../handlers/types.js';
 
-import { createCliAdapter } from '@agon/adapter-cli';
+import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
-import type { EngineAdapter } from '@agon/core';
+import type { EngineAdapter } from '@kernlang/agon-core';
 
 import { detectIntent, SLASH_COMMANDS } from '../signals/intent.js';
 
-import { CommandRegistry, registerBuiltinCommands, initExtensions, EventBus, bridgeShellHooks } from '@agon/core';
+import { CommandRegistry, registerBuiltinCommands, initExtensions, EventBus, bridgeShellHooks } from '@kernlang/agon-core';
 
 import { JobManager } from '../signals/job-manager.js';
 
@@ -120,7 +120,7 @@ import { sessionResultStore } from '../models/session-results.js';
 
 import { formatSessionResults, formatChatTranscript } from '../blocks/results-formatter.js';
 
-import { loadSkills } from '@agon/core';
+import { loadSkills } from '@kernlang/agon-core';
 
 import { isTerminalFocusReport } from '../../input-utils.js';
 
@@ -1316,7 +1316,7 @@ export function App() {
 
     setModelPickerCliGroups([]);
 
-    import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliGroupsImmediate, refreshCliGroup }) => {
+    import('@kernlang/agon-core').then(({ fetchModelsRegistry, buildModelEntries, buildCliGroupsImmediate, refreshCliGroup }) => {
       // Show each CLI engine's cached/static models instantly (installed
       // probe-capable engines flagged loading), then probe each engine's live
       // /model list in the background and swap its group in as it resolves —

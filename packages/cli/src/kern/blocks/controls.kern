@@ -2,6 +2,7 @@
 
 import from="react" names="useState,useMemo,useEffect"
 import from="ink" names="Box,Text,useInput"
+import from="ink-spinner" default="Spinner"
 import from="../signals/intent.js" names="SLASH_COMMANDS"
 import from="../signals/app-input.js" names="getSlashMatches,movePickerCursor"
 import from="./rendering.js" names="contentWidth,engineColor,color256toHex,DiffLine,CODE_RAIL,CODE_RAIL_COLOR"
@@ -603,6 +604,9 @@ screen name=ModelPicker target=ink
                               <Text color={group.installed ? (isActive ? 'green' : 'red') : 'gray'}>
                                 {group.installed ? (isActive ? 'active' : 'inactive') : 'missing'}
                               </Text>
+                              {group.loading && (
+                                <Text color="yellow">{'  '}<Spinner type="dots" />{' probing live models…'}</Text>
+                              )}
                             </Box>
                           )}
                           <Box>

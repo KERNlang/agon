@@ -69,6 +69,50 @@ def _read_until_idle(fd: int, idle_ms: int, cap_ms: int) -> bytes:
     return bytes(buf)
 
 
+def _read_until_picker_parsed(fd: int, binary: str, idle_ms: int, cap_ms: int,
+                              grace_ms: int = 400) -> bytes:
+    """Accumulate pty output until the engine's /model picker actually parses
+    into >=1 model (then a short grace so the full list finishes painting), or
+    ``cap_ms`` total elapses — whichever comes first.
+
+    Unlike ``_read_until_idle`` this never bails on the quiet gap between the
+    slash-command autocomplete closing and the picker rendering. That gap is
+    what made claude's probe intermittently return zero models (the read
+    returned mid-transition, before the picker painted) → the picker fell back
+    to a stale static list. We re-parse the growing buffer each tick and only
+    stop once a model row is recognised. ``idle_ms`` is unused for the
+    not-yet-parsed case (we wait out ``cap_ms``); kept for signature parity.
+    """
+    buf = bytearray()
+    start = time.monotonic()
+    parsed_at: float | None = None
+    while True:
+        now = time.monotonic()
+        if (now - start) * 1000 >= cap_ms:
+            break
+        if parsed_at is not None and (now - parsed_at) * 1000 >= grace_ms:
+            break
+        rdy, _, _ = select.select([fd], [], [], 0.05)
+        if rdy:
+            try:
+                chunk = os.read(fd, 65536)
+            except OSError:
+                break
+            if chunk:
+                buf.extend(chunk)
+        if parsed_at is None and buf:
+            # Best-effort parse of the partial buffer: an incomplete screen
+            # (half-painted picker, truncated ANSI) is expected to raise here —
+            # we deliberately swallow it and keep reading until a full picker
+            # parses or cap_ms elapses. Never fatal; the buffer is still returned.
+            try:
+                if parse_picker(binary, strip_ansi_bytes(bytes(buf)))["models"]:
+                    parsed_at = time.monotonic()
+            except Exception:
+                pass
+    return bytes(buf)
+
+
 def slugify_model_name(name: str) -> str:
     """Map an agy picker display name to its model id.
 
@@ -237,8 +281,8 @@ def parse_picker(binary: str, stripped: str) -> dict:
 
 
 def probe_models(binary: str, slash_command: str = "/model",
-                 boot_idle_ms: int = 1500, boot_cap_ms: int = 15000,
-                 picker_idle_ms: int = 1200, picker_cap_ms: int = 9000) -> dict:
+                 boot_idle_ms: int = 2200, boot_cap_ms: int = 15000,
+                 picker_idle_ms: int = 1200, picker_cap_ms: int = 12000) -> dict:
     """Spawn ``binary`` under a pty, open its model picker, scrape + parse it."""
     pid, fd = pty.fork()
     if pid == 0:
@@ -257,9 +301,14 @@ def probe_models(binary: str, slash_command: str = "/model",
 
         _read_until_idle(fd, boot_idle_ms, boot_cap_ms)  # let the TUI boot
         os.write(fd, slash_command.encode("utf-8"))
-        time.sleep(0.4)
+        # Let the slash-command autocomplete settle before Enter — claude opens
+        # a command-autocomplete dropdown on "/model" and a too-eager Enter
+        # lands before it resolves, so the picker never opens.
+        time.sleep(0.8)
         os.write(fd, b"\r")
-        picker = _read_until_idle(fd, picker_idle_ms, picker_cap_ms)
+        # Read until the picker actually parses, not the first quiet gap (see
+        # _read_until_picker_parsed) — the gap is what dropped claude's models.
+        picker = _read_until_picker_parsed(fd, binary, picker_idle_ms, picker_cap_ms)
         parsed = parse_picker(binary, strip_ansi_bytes(picker))
         # Cancel the picker without changing the selection, then quit.
         try:
@@ -267,6 +316,8 @@ def probe_models(binary: str, slash_command: str = "/model",
             time.sleep(0.15)
             os.write(fd, b"\x1b")
         except OSError:
+            # Child already exited / pty closed — the ESC cancel is moot and we
+            # kill the process in `finally` regardless. Nothing to recover.
             pass
         return parsed
     finally:
@@ -275,10 +326,12 @@ def probe_models(binary: str, slash_command: str = "/model",
             time.sleep(0.2)
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
+            # Process already gone — that's the desired end state, not an error.
             pass
         try:
             os.close(fd)
         except OSError:
+            # fd already closed by the child's exit — nothing left to release.
             pass
 
 

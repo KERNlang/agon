@@ -1316,13 +1316,25 @@ export function App() {
 
     setModelPickerCliGroups([]);
 
-    import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroupsAsync }) => {
-      // buildCliModelGroupsAsync self-probes each engine's live /model list
-      // (cached, parallel) and shows the REAL CLI models — not the models.dev
-      // catalog (that's the API view below).
-      buildCliModelGroupsAsync().then((cliGroups: any) => {
-        setModelPickerCliGroups(cliGroups);
-      });
+    import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliGroupsImmediate, refreshCliGroup }) => {
+      // Show each CLI engine's cached/static models instantly (installed
+      // probe-capable engines flagged loading), then probe each engine's live
+      // /model list in the background and swap its group in as it resolves —
+      // a slow/broken probe only spins its own row, never blocks the picker.
+      let cliGroups = buildCliGroupsImmediate();
+      setModelPickerCliGroups(cliGroups);
+      for (const g of cliGroups) {
+        if (!g.loading) continue;
+        const clearLoading = () => {
+          cliGroups = cliGroups.map((x: any) => x.engineId === g.engineId ? { ...x, loading: false } : x);
+          setModelPickerCliGroups([...cliGroups]);
+        };
+        refreshCliGroup(g.engineId).then((fresh: any) => {
+          if (!fresh) { clearLoading(); return; }
+          cliGroups = cliGroups.map((x: any) => x.engineId === fresh.engineId ? fresh : x);
+          setModelPickerCliGroups([...cliGroups]);
+        }).catch(clearLoading);
+      }
       fetchModelsRegistry().then((reg: any) => {
         setModelPickerEntries(buildModelEntries(reg));
         setModelPickerLoading(false);
@@ -2471,7 +2483,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:90
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2161
+// @kern-source: app:2173
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -28,7 +28,8 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write  # commit the version bump back to main
+  contents: write       # push the version-sync branch
+  pull-requests: write  # open the sync PR (main is branch-protected)
 
 jobs:
   publish:
@@ -85,17 +86,24 @@ jobs:
       # detached tag), so the push always fast-forwards even if main advanced
       # after the tag was cut. Publishing already succeeded above, so this bump is
       # best-effort (continue-on-error) and never fails or blocks the release.
-      - name: Sync version bump to main
+      # main is branch-protected, so the bot can't push the version bump directly.
+      # Instead push it to a per-version branch and open a PR via the REST API
+      # (no gh CLI). Merge it to keep main's package.json versions in sync with
+      # what was published. Best-effort — never fails or blocks the release.
+      - name: Sync version bump to main (PR)
         continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          BRANCH="release/sync-v${VERSION}"
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main
-          git checkout -B main origin/main
+          git checkout -B "${BRANCH}" origin/main
           npm run release:set-version -- "${VERSION}"
           npm run kern:compile
-          # Commit every lockstep-bumped tracked file in the agon family.
+          # Stage every lockstep-bumped tracked file in the agon family.
           git add \
             packages/core/package.json \
             packages/forge/package.json \
@@ -108,8 +116,15 @@ jobs:
             packages/cli/src/kern/blocks/engine.kern \
             packages/cli/src/generated/blocks/engine.tsx
           if git diff --cached --quiet; then
-            echo "No version change to commit (main already at ${VERSION})."
-          else
-            git commit -m "chore(release): @kernlang/agon ${VERSION} (lockstep) [skip ci]"
-            git push origin HEAD:main
+            echo "main already at ${VERSION}; nothing to sync."
+            exit 0
           fi
+          git commit -m "chore(release): @kernlang/agon ${VERSION} (lockstep) [skip ci]"
+          git push -f origin "${BRANCH}"
+          # Open the sync PR (idempotent — a 422 'already exists' is fine).
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls" \
+            -d "$(printf '{"title":"chore(release): sync version to %s","head":"%s","base":"main","body":"Automated lockstep version sync after publishing %s. Safe to merge."}' "${VERSION}" "${BRANCH}" "${VERSION}")" \
+            || echo "PR create returned non-zero (likely already open) — continuing."

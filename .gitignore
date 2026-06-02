@@ -6,6 +6,11 @@ dist-tsc/
 coverage/
 docs/
 .design-docs-local/
+# Local-only design/agent docs — kept on disk, never tracked (purged from history 2026-06-02)
+CLAUDE.md
+AGON-GOAL-DESIGN.md
+.provenance-tasks/
+scripts/guard/engine-pool-rfc.md
 .agon/
 .agon.local.json
 .kern-dev.local.json

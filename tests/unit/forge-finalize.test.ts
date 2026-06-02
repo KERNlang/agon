@@ -94,8 +94,6 @@ describe('caller-driven forge finalize', () => {
     };
 
     const callbacks: string[] = [];
-    const started = Date.now();
-    let finalizeRequestedAt = 0;
     const manifest = await runForge(
       {
         task: 'write fast.txt',
@@ -106,7 +104,6 @@ describe('caller-driven forge finalize', () => {
         onResult: (engineId: string) => {
           callbacks.push(engineId);
           if (callbacks.length === 1) {
-            finalizeRequestedAt = Date.now();
             return 'finalize';
           }
           return undefined;
@@ -115,11 +112,12 @@ describe('caller-driven forge finalize', () => {
       makeRegistry(),
       adapter as any,
     );
-    const elapsedMs = Date.now() - started;
-    const finalizeElapsedMs = Date.now() - finalizeRequestedAt;
-
-    expect(elapsedMs).toBeLessThan(5_000);
-    expect(finalizeElapsedMs).toBeLessThan(2_000);
+    // No absolute wall-clock assertion: the abort behavior is proven
+    // structurally below (slow.dispatchStdout carries the abort marker, so the
+    // 60s slow engine did NOT run to completion), and the 30s testTimeout
+    // already fails the test if runForge ever blocks on the slow engine.
+    // The previous <5000ms / <2000ms bounds only added CI-load flakiness
+    // (observed 22s elapsed on a saturated box) without testing new behavior.
     expect(callbacks[0]).toBe('fast');
     expect(manifest.winner).toBe('fast');
     expect(manifest.results.fast).toMatchObject({ engineId: 'fast', pass: true });

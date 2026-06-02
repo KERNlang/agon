@@ -17,6 +17,7 @@ union name=OutputEvent discriminant=type
     field name=engineId type=string
     field name=color type=number
     field name=content type=string
+    field name=actingNote type=string optional=true
   variant name=streaming-chunk
     field name=engineId type=string
     field name=chunk type=string
@@ -293,6 +294,7 @@ interface name=CesarTurnOutcome
   field name=pr type=boolean optional=true
   field name=maxHours type=number optional=true
   field name=budget type=number optional=true
+  field name=deterministicFailure type=boolean optional=true
 
 interface name=CesarState
   field name=busy type=boolean

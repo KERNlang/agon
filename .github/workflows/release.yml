@@ -1,9 +1,19 @@
 name: Release
 
-# Tag-triggered npm publish. Push a version tag (e.g. v0.1.1) to publish all
-# three packages in dependency order. The FIRST release (v0.1.0) is done by
-# hand; this automates every release after that. Requires an NPM_TOKEN repo
-# secret (Settings → Secrets → Actions) with publish rights to the @kernlang scope.
+# Tag-driven release. Create a GitHub Release (or push a tag) named vX.Y.Z and
+# this workflow stamps that version into @kernlang/agon, gates, publishes, and
+# commits the version bump back to main — so the `agon` banner (which reads
+# @kernlang/agon's package.json version at runtime) shows the released tag with
+# no local steps.
+#
+# The tag drives ONLY the CLI (product) version. @kernlang/agon-engines and
+# @kernlang/agon-dedup keep their own independent versions and are republished
+# only when THEIR version changes (publish-if-new.mjs skips already-published
+# versions), so a CLI-only release never fails on "cannot publish over existing
+# version".
+#
+# Requires an NPM_TOKEN repo secret (Settings → Secrets → Actions) with publish
+# rights to the @kernlang scope.
 on:
   push:
     tags:
@@ -12,6 +22,9 @@ on:
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
+
+permissions:
+  contents: write  # commit the version bump back to main
 
 jobs:
   publish:
@@ -24,6 +37,10 @@ jobs:
           # kern_engines is a public submodule (KERNlang/kern-engines) over HTTPS,
           # so the default GITHUB_TOKEN checks it out with no extra credentials.
           submodules: recursive
+          # Default checkout = the EXACT commit the tag points to. Build & publish
+          # from the tag so npm artifacts always match the release tag, never a
+          # moved main HEAD. Full history is needed for the sync-to-main step below.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -39,6 +56,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Stamp the tag version into @kernlang/agon (packages/cli) + the banner
+      # fallback literal. This is the only version the tag drives.
+      - name: Set version from tag
+        run: npm run release:set-version -- "${GITHUB_REF_NAME}"
+
       - name: Compile KERN sources
         run: npm run kern:compile
 
@@ -49,10 +71,33 @@ jobs:
       - name: Run tests
         run: npm run test
 
-      # Publish in dependency order: kern-engines + dedup (runtime deps of the
-      # CLI, carry the Python twins) BEFORE @kernlang/agon (the bundle that lists
-      # them as deps). `npm run release` chains the three release:* scripts.
+      # Publish in dependency order: engines + dedup (runtime deps that carry the
+      # Python twins) BEFORE @kernlang/agon. publish-if-new.mjs skips any package
+      # whose version is already on npm, so unchanged substrates are no-ops.
       - name: Publish to npm
         run: npm run release
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Sync the released version into main as a follow-up commit so the repo and
+      # npm never drift. Re-stamped on a FRESH checkout of latest main (not the
+      # detached tag), so the push always fast-forwards even if main advanced
+      # after the tag was cut. Publishing already succeeded above, so this bump is
+      # best-effort (continue-on-error) and never fails or blocks the release.
+      - name: Sync version bump to main
+        continue-on-error: true
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+          npm run release:set-version -- "${VERSION}"
+          npm run kern:compile
+          git add packages/cli/package.json packages/cli/src/kern/blocks/engine.kern packages/cli/src/generated/blocks/engine.tsx
+          if git diff --cached --quiet; then
+            echo "No version change to commit (main already at ${VERSION})."
+          else
+            git commit -m "chore(release): @kernlang/agon ${VERSION} [skip ci]"
+            git push origin HEAD:main
+          fi

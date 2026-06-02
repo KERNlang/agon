@@ -37,9 +37,10 @@ jobs:
           # kern_engines is a public submodule (KERNlang/kern-engines) over HTTPS,
           # so the default GITHUB_TOKEN checks it out with no extra credentials.
           submodules: recursive
-          # Need full history + a writable token to push the bump commit to main.
+          # Default checkout = the EXACT commit the tag points to. Build & publish
+          # from the tag so npm artifacts always match the release tag, never a
+          # moved main HEAD. Full history is needed for the sync-to-main step below.
           fetch-depth: 0
-          ref: main
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -78,16 +79,24 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # Commit the version bump (+ regenerated banner) back to main so the repo
-      # and npm never drift. Only the CLI version + its generated banner change.
-      - name: Commit version bump to main
+      # Sync the released version into main as a follow-up commit so the repo and
+      # npm never drift. Re-stamped on a FRESH checkout of latest main (not the
+      # detached tag), so the push always fast-forwards even if main advanced
+      # after the tag was cut. Publishing already succeeded above, so this bump is
+      # best-effort (continue-on-error) and never fails or blocks the release.
+      - name: Sync version bump to main
+        continue-on-error: true
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+          npm run release:set-version -- "${VERSION}"
+          npm run kern:compile
           git add packages/cli/package.json packages/cli/src/kern/blocks/engine.kern packages/cli/src/generated/blocks/engine.tsx
           if git diff --cached --quiet; then
-            echo "No version change to commit (already at ${VERSION})."
+            echo "No version change to commit (main already at ${VERSION})."
           else
             git commit -m "chore(release): @kernlang/agon ${VERSION} [skip ci]"
             git push origin HEAD:main

@@ -56,6 +56,17 @@ if (published.includes(version)) {
   process.exit(0);
 }
 
+// A prerelease tag (v1.2.3-beta.1) must NOT become the default `latest` install
+// target. Publish prereleases under the `next` dist-tag unless the caller already
+// passed an explicit --tag.
+const isPrerelease = version.includes('-');
+const hasExplicitTag = extraArgs.some((a) => a === '--tag' || a.startsWith('--tag='));
+const publishArgs = ['publish', ...extraArgs];
+if (isPrerelease && !hasExplicitTag) {
+  publishArgs.push('--tag', 'next');
+  console.log(`note: ${version} is a prerelease — publishing under dist-tag 'next' (not latest)`);
+}
+
 console.log(`publish: ${name}@${version} (new)`);
-execFileSync('npm', ['publish', ...extraArgs], { cwd: pkgDir, stdio: 'inherit' });
+execFileSync('npm', publishArgs, { cwd: pkgDir, stdio: 'inherit' });
 console.log(`published: ${name}@${version}`);

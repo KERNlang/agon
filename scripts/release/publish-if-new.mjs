@@ -6,7 +6,7 @@
 //
 // Usage: node scripts/release/publish-if-new.mjs <publish-cwd> [extra npm args...]
 //   <publish-cwd> = directory containing the package.json to publish
-//                   (e.g. packages/cli, packages/dedup, kern_engines).
+//                   (e.g. packages/cli, packages/dedup).
 //   Reads name+version from that package.json, queries `npm view <name>
 //   versions`, and runs `npm publish` there only when the version is absent.
 //

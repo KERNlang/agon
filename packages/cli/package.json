@@ -54,8 +54,8 @@
     "kern:compile": "node ../../scripts/run-kern-compile.mjs src/kern/ src/generated/ --target=auto --recursive"
   },
   "dependencies": {
-    "@kernlang/agon-engines": "^0.1.0",
-    "@kernlang/agon-dedup": "^0.1.0",
+    "@kernlang/agon-engines": "^0.1.1",
+    "@kernlang/agon-dedup": "^0.1.1",
     "@ai-sdk/anthropic": "^3.0.67",
     "@ai-sdk/openai-compatible": "^2.0.40",
     "@kernlang/protocol": "~3.5.7",

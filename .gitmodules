@@ -1,3 +1,0 @@
-[submodule "kern_engines"]
-	path = kern_engines
-	url = https://github.com/KERNlang/kern-engines.git

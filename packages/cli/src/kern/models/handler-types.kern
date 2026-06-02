@@ -17,6 +17,7 @@ union name=OutputEvent discriminant=type
     field name=engineId type=string
     field name=color type=number
     field name=content type=string
+    doc "Honest fallback label: the engine that ACTUALLY produced this content when it differs from the attributed engineId (silent acting-Cesar swap, when the configured engine was unavailable). Rendered as a dim '(acting: X)' suffix after the header."
     field name=actingNote type=string optional=true
   variant name=streaming-chunk
     field name=engineId type=string

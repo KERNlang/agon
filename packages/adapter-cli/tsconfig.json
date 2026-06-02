@@ -7,7 +7,6 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../core" },
-    { "path": "../../kern_engines" }
+    { "path": "../core" }
   ]
 }

@@ -1,16 +1,20 @@
 name: Release
 
-# Tag-driven release. Create a GitHub Release (or push a tag) named vX.Y.Z and
-# this workflow stamps that version into @kernlang/agon, gates, publishes, and
-# commits the version bump back to main — so the `agon` banner (which reads
-# @kernlang/agon's package.json version at runtime) shows the released tag with
-# no local steps.
+# Tag-driven LOCKSTEP release. Create a GitHub Release (or push a tag) named
+# vX.Y.Z and this workflow stamps that one version into the WHOLE
+# @kernlang/agon-* family — every workspace package's version + internal dep
+# ranges, the citty meta (agon --version), and the banner fallback — then gates,
+# publishes, and commits the bump back to main. No manual per-package bump.
 #
-# The tag drives ONLY the CLI (product) version. @kernlang/agon-engines and
-# @kernlang/agon-dedup keep their own independent versions and are republished
-# only when THEIR version changes (publish-if-new.mjs skips already-published
-# versions), so a CLI-only release never fails on "cannot publish over existing
-# version".
+# The tag drives the version of the agon family; @kernlang/agon-dedup moves with
+# it and is republished at the tag version. publish-if-new.mjs skips any version
+# already on npm, so a re-run of the same tag is a safe no-op, not a hard failure.
+# Only the consumed packages are published (@kernlang/agon + -dedup);
+# core/forge/adapter-cli are inlined into the CLI bundle and need no npm release.
+#
+# @kernlang/agon-engines is NOT part of this release — it's an independent, shared
+# package that self-publishes from its own repo (KERNlang/kern-engines); agon only
+# depends on a published version of it.
 #
 # Requires an NPM_TOKEN repo secret (Settings → Secrets → Actions) with publish
 # rights to the @kernlang scope.
@@ -34,9 +38,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          # kern_engines is a public submodule (KERNlang/kern-engines) over HTTPS,
-          # so the default GITHUB_TOKEN checks it out with no extra credentials.
-          submodules: recursive
           # Default checkout = the EXACT commit the tag points to. Build & publish
           # from the tag so npm artifacts always match the release tag, never a
           # moved main HEAD. Full history is needed for the sync-to-main step below.
@@ -56,8 +57,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Stamp the tag version into @kernlang/agon (packages/cli) + the banner
-      # fallback literal. This is the only version the tag drives.
+      # Stamp the tag version into the whole @kernlang/agon-* family (every
+      # workspace package + internal dep ranges + the two version literals).
       - name: Set version from tag
         run: npm run release:set-version -- "${GITHUB_REF_NAME}"
 
@@ -71,9 +72,9 @@ jobs:
       - name: Run tests
         run: npm run test
 
-      # Publish in dependency order: engines + dedup (runtime deps that carry the
-      # Python twins) BEFORE @kernlang/agon. publish-if-new.mjs skips any package
-      # whose version is already on npm, so unchanged substrates are no-ops.
+      # Publish dedup (runtime Python-twin dep) BEFORE @kernlang/agon.
+      # publish-if-new.mjs skips any package whose version is already on npm, so
+      # an unchanged substrate is a no-op.
       - name: Publish to npm
         run: npm run release
         env:
@@ -94,10 +95,21 @@ jobs:
           git checkout -B main origin/main
           npm run release:set-version -- "${VERSION}"
           npm run kern:compile
-          git add packages/cli/package.json packages/cli/src/kern/blocks/engine.kern packages/cli/src/generated/blocks/engine.tsx
+          # Commit every lockstep-bumped tracked file in the agon family.
+          git add \
+            packages/core/package.json \
+            packages/forge/package.json \
+            packages/adapter-cli/package.json \
+            packages/cli/package.json \
+            packages/mcp/package.json \
+            packages/saas-api/package.json \
+            packages/dedup/package.json \
+            packages/cli/src/index.ts \
+            packages/cli/src/kern/blocks/engine.kern \
+            packages/cli/src/generated/blocks/engine.tsx
           if git diff --cached --quiet; then
             echo "No version change to commit (main already at ${VERSION})."
           else
-            git commit -m "chore(release): @kernlang/agon ${VERSION} [skip ci]"
+            git commit -m "chore(release): @kernlang/agon ${VERSION} (lockstep) [skip ci]"
             git push origin HEAD:main
           fi

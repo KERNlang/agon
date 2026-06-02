@@ -9,8 +9,7 @@
     "packages/cli",
     "packages/mcp",
     "packages/saas-api",
-    "packages/dedup",
-    "kern_engines"
+    "packages/dedup"
   ],
   "scripts": {
     "postinstall": "node scripts/postinstall.mjs",
@@ -27,10 +26,9 @@
     "build:cli:workspaces": "npm run build -w packages/core && npm run build -w packages/forge && npm run build -w packages/adapter-cli && npm run build -w packages/cli",
     "install:cli": "npm run build:cli && cd packages/cli && npm link",
     "release:set-version": "node scripts/release/set-version.mjs",
-    "release:engines": "cd kern_engines && npm install && npm run build && node ../scripts/release/publish-if-new.mjs .",
     "release:dedup": "node scripts/release/publish-if-new.mjs packages/dedup",
     "release:cli": "npm run build:cli && node scripts/release/publish-if-new.mjs packages/cli",
-    "release": "npm run release:engines && npm run release:dedup && npm run release:cli",
+    "release": "npm run release:dedup && npm run release:cli",
     "typecheck": "tsc -b",
     "test": "npm run kern:test && npm run test:ts",
     "test:ts": "node scripts/run-node22.mjs vitest run",
@@ -47,7 +45,6 @@
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^3.2.4",
     "patch-package": "^8.0.1",
-    "postinstall-postinstall": "^2.1.0",
     "tsup": "^8.4.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

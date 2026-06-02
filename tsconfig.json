@@ -5,7 +5,6 @@
     { "path": "packages/adapter-cli" },
     { "path": "packages/forge" },
     { "path": "packages/cli" },
-    { "path": "packages/mcp" },
-    { "path": "kern_engines" }
+    { "path": "packages/mcp" }
   ]
 }

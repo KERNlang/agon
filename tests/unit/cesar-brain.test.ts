@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall } from '../../packages/cli/src/handlers/cesar-brain.js';
-import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, detectMutationIntentStall } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 
 describe('Cesar Brain', () => {
@@ -31,6 +31,34 @@ describe('Cesar Brain', () => {
 
     it('does not flag normal answers', () => {
       expect(detectNarratedToolStall('The tools are wired, but Kimi may be weak at native tool calls.')).toBe(false);
+    });
+  });
+
+  describe('detectMutationIntentStall (false read-only hand-back)', () => {
+    it('flags "I am read-only" narration with intent to apply a change', () => {
+      expect(detectMutationIntentStall('This session is read-only, so I cannot apply the edit — paste it into your terminal.')).toBe(true);
+      expect(detectMutationIntentStall("I can't write from here; the patch is ready to paste.")).toBe(true);
+    });
+
+    it('flags delegate-the-write-to-an-agent escape hatches', () => {
+      expect(detectMutationIntentStall('I have no Edit tool, but I can spawn an agent to apply the change.')).toBe(true);
+      expect(detectMutationIntentStall('Edit is not enabled in this context, so I will dispatch an agent to make the edits.')).toBe(true);
+    });
+
+    it('flags "you run it / git apply" hand-backs that intend a write', () => {
+      expect(detectMutationIntentStall('The full patch is below — git apply it and run the tests.')).toBe(true);
+    });
+
+    it('does NOT flag a real write being performed (no hand-back)', () => {
+      expect(detectMutationIntentStall('I edited brain.kern and the change is applied; tests pass.')).toBe(false);
+    });
+
+    it('does NOT flag a normal answer that merely discusses read-only behavior', () => {
+      expect(detectMutationIntentStall('The investigation phase is read-only by design; that is expected and correct.')).toBe(false);
+    });
+
+    it('does NOT flag a legitimate clarifying question with no write intent', () => {
+      expect(detectMutationIntentStall('Should I use approach A or approach B for the router?')).toBe(false);
     });
   });
 

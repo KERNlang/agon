@@ -51,6 +51,19 @@ fn name=detectNarratedToolStall params="text:string" returns=boolean export=true
     let name=STALL_RE value="/\\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|now (?:let me|i'll)|continu(?:e|ing)|keep (?:reading|investigating|looking)|next[,.]?\\s*(?:i|let)|before (?:i can|proceeding|implementing|deciding))\\b/i"
     return value="FAKE_GATE_RE.test(tail) || READ_INTENT_RE.test(tail) || SEARCH_INTENT_RE.test(tail) || DIR_INTENT_RE.test(tail) || STALL_RE.test(tail)"
 
+fn name=detectMutationIntentStall params="text:string" returns=boolean export=true
+  doc "Detect a 'false read-only hand-back': the orchestrator narrated intent to change files (apply/edit/the patch) AND claimed it cannot write / offered to delegate the write to an agent / asked the user to paste-or-apply it — WITHOUT emitting a mutating tool call. That is the stall that leaves Cesar's Phase-1 mutation un-deferred, so the execution-phase unlock never fires and the turn dead-ends. The caller uses this to force the unlock so Cesar writes directly instead of narrating a wall."
+  handler <<<
+    const body = String(text ?? '').trim();
+    if (!body) return false;
+    // Intent: the turn is about applying a concrete change to files.
+    const MUTATION_INTENT_RE = /\b(?:edit|write|apply|patch|implement|insert|replace|land it|commit it|the (?:change|fix|diff|patch|edit)|make the (?:edit|change)s?|ready to (?:paste|apply))\b/i;
+    // False hand-back: claims it cannot write, or routes AROUND writing instead of
+    // just doing it (delegate-to-agent / paste-it-yourself / run-it-yourself).
+    const HANDBACK_RE = /\b(?:read-?only|can'?t (?:write|edit|apply|mutate|touch)|no (?:write|edit|bash) tool|(?:edit|write|bash)(?: tool)?(?: is)? (?:not enabled|disabled|not wired|not available|unavailable)|not (?:enabled|wired|reachable) in this (?:context|session|turn)|spawn (?:an? )?agent|dispatch (?:an? )?agent|paste (?:it|this|the\b)|apply (?:it|this)\b|git apply|you (?:can )?(?:run|apply|paste)|in your terminal|hand you the (?:patch|diff|commands?)|copy[- ]?paste)\b/i;
+    return MUTATION_INTENT_RE.test(body) && HANDBACK_RE.test(body);
+  >>>
+
 fn name=eagerFailedToolNames params="results:ToolCallResult[]" returns="string[]" export=true
   doc "Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed."
   handler lang="kern"

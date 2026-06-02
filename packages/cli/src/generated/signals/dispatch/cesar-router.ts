@@ -672,7 +672,7 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
  * Last-resort Cesar recovery when the brain returned no usable response: api-backend silent same-engine retry, non-api session rebuild + retry, fresh one-shot dispatch (with suggestion parsing), then cross-engine acting-Cesar. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. crashDel is passed ONLY to preserve the pre-existing coupling where a pending delegation s engines seed a fresh fallback pipeline suggestion (behavior preserved verbatim; latent coupling flagged for a follow-up, per nero Ch.3).
  */
 // @kern-source: cesar-router:614
-export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks, crashDel: any): Promise<boolean> {
+export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks, crashDel: any, priorDeterministic: boolean): Promise<boolean> {
   // Cesar truly didn't respond — try fresh CLI dispatch
   const cesarConfig = cb.ctx.config;
   const cesarId = (cesarConfig as any).cesarEngine ?? 'claude';
@@ -689,8 +689,11 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
   // jumped straight to acting-Cesar, which made transient mid-tool failures
   // (engine drops the stream after a Read/Edit) feel like Cesar froze.
   // Try one silent same-engine retry first so the user perceives a hiccup-
-  // free continuation instead of a fallback.
-  if (usingApiBackend) {
+  // free continuation instead of a fallback. SKIP it when the prior failure
+  // was a deterministic 4xx/auth error: re-running the same engine with the
+  // same config just re-hits the identical 404 (the duplicate error the user
+  // sees), so go straight to acting-Cesar instead. Transient drops still retry.
+  if (usingApiBackend && !priorDeterministic) {
     try {
       const retried = await handleCesarBrain(input, cb.dispatch, cb.ctx, []);
       const retriedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
@@ -933,7 +936,12 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
       // drop the [acting-cesar] tag from the chat history. The actual
       // dispatched engine is still recorded in the run output dir.
       const attributedEngineId = _silentMode ? cesarId : actingCesar;
-      cb.dispatch({ type: 'engine-block', engineId: attributedEngineId, color: 208, content: actingText });
+      // Stay honest even in single-persona (silent) mode: keep the configured
+      // Cesar engine as the header for continuity, but note which engine
+      // actually produced the answer so it never looks like the configured
+      // engine responded when it was down (the dead-engine mislabel bug).
+      const actingNote = _silentMode && actingCesar !== cesarId ? `acting: ${actingCesar}` : undefined;
+      cb.dispatch({ type: 'engine-block', engineId: attributedEngineId, color: 208, content: actingText, actingNote });
       appendUserTurnIfAbsent(cb.ctx.chatSession, input);
       appendMessage(cb.ctx.chatSession, {
         role: 'engine',
@@ -952,9 +960,13 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
 /**
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
-// @kern-source: cesar-router:893
+// @kern-source: cesar-router:901
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
+  // Hoisted out of the try so the fallback ladder below can see whether the
+  // brain's failure was a deterministic config/auth error (skip the pointless
+  // same-engine retry) vs a transient drop (retry is worth it).
+  let priorDeterministic = false;
   try {
     const routingHints = deriveRoutingHints(input, cb.ctx);
     const recapStartedFiles = listFiles();
@@ -964,6 +976,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       cb.dispatch(event);
     };
     const result = await handleCesarBrain(input, cesarDispatch as any, cb.ctx, images);
+    priorDeterministic = result.deterministicFailure === true;
     const emitRecap = () => {
       const recapEvent = buildCesarTurnRecapEvent(recapCapture, result, recapStartedFiles, listFiles());
       const changedFiles = Array.isArray((recapEvent as any).files)
@@ -1050,5 +1063,5 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
     if (cb.ctx.cesar) cb.ctx.cesar.pendingDelegation = null;
     if (await handleRecoveredDelegation(crashDel, input, cb)) return true;
   }
-  return runCesarBrainFallback(input, cb, crashDel);
+  return runCesarBrainFallback(input, cb, crashDel, priorDeterministic);
 }

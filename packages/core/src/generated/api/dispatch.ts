@@ -501,7 +501,15 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
         }
         case 'error': {
           clearTimeout(timer);
-          return { exitCode: 1, stdout, stderr: `Stream error: ${String((part as any).error)}`, durationMs: Date.now() - startTime, timedOut: false };
+          const errStr = String((part as any).error);
+          // A 404/not-found before any output is almost always a wrong baseUrl
+          // path or a wire-format mismatch (e.g. format='anthropic' on a host
+          // whose Anthropic endpoint isn't at /v1/messages — MiniMax, etc.).
+          // Surface the actionable hint inline so the user sees the fix rather
+          // than a bare 404. (Same hint the idle-timeout + catch paths use.)
+          const routingShaped = stdout.length === 0 && /\b404\b|not found|no such (?:route|endpoint)/i.test(errStr);
+          const hint = routingShaped ? formatMismatchHint(config) : null;
+          return { exitCode: 1, stdout, stderr: hint ? `Stream error: ${errStr}\n${hint}` : `Stream error: ${errStr}`, durationMs: Date.now() - startTime, timedOut: false };
         }
       }
     }

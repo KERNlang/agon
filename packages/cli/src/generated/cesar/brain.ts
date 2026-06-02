@@ -746,12 +746,19 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 break; // Exit stream loop, process whatever we have
               }
               dispatch({ type: 'spinner-stop' });
-              const errBody = (chunk.content ?? '').toString().slice(0, 200) || 'unknown stream error';
-              dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) stream error before any output: ${errBody}. Try again or switch engine with /engine.` });
+              const _errFull = (chunk.content ?? '').toString();
+              const errBody = _errFull.slice(0, 200) || 'unknown stream error';
+              // Deterministic config/auth failures (4xx) won't be fixed by retrying
+              // the SAME engine with the SAME config — signal the fallback ladder to
+              // skip its silent same-engine retry (which just re-hits the identical
+              // 404) and go straight to acting-Cesar. Transient stream drops
+              // (timeouts, 5xx, resets) are NOT matched here, so their retry stays.
+              const _deterministic = /\b(?:400|401|403|404)\b|not found|unauthorized|invalid api key|authentication|no such (?:route|endpoint)/i.test(_errFull);
+              dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) stream error before any output: ${errBody}.${_deterministic ? ' Looks like an engine config/auth issue — check the engine with /engines.' : ' Try again or switch engine with /engine.'}` });
               clearInterval(heartbeat);
               processMcpSideChannel();
               if (mcpWatcherInterval) clearInterval(mcpWatcherInterval);
-              return { delegated: false, responded: false, decisionReason: 'pre-stream-error' };
+              return { delegated: false, responded: false, decisionReason: 'pre-stream-error', deterministicFailure: _deterministic };
             }
 
             if (chunk.type === 'done') break;

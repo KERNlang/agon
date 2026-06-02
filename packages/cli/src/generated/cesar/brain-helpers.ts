@@ -56,9 +56,24 @@ export function detectNarratedToolStall(text: string): boolean {
 }
 
 /**
- * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
+ * Detect a 'false read-only hand-back': the orchestrator narrated intent to change files (apply/edit/the patch) AND claimed it cannot write / offered to delegate the write to an agent / asked the user to paste-or-apply it — WITHOUT emitting a mutating tool call. That is the stall that leaves Cesar's Phase-1 mutation un-deferred, so the execution-phase unlock never fires and the turn dead-ends. The caller uses this to force the unlock so Cesar writes directly instead of narrating a wall.
  */
 // @kern-source: brain-helpers:54
+export function detectMutationIntentStall(text: string): boolean {
+  const body = String(text ?? '').trim();
+  if (!body) return false;
+  // Intent: the turn is about applying a concrete change to files.
+  const MUTATION_INTENT_RE = /\b(?:edit|write|apply|patch|implement|insert|replace|land it|commit it|the (?:change|fix|diff|patch|edit)|make the (?:edit|change)s?|ready to (?:paste|apply))\b/i;
+  // False hand-back: claims it cannot write, or routes AROUND writing instead of
+  // just doing it (delegate-to-agent / paste-it-yourself / run-it-yourself).
+  const HANDBACK_RE = /\b(?:read-?only|can'?t (?:write|edit|apply|mutate|touch)|no (?:write|edit|bash) tool|(?:edit|write|bash)(?: tool)?(?: is)? (?:not enabled|disabled|not wired|not available|unavailable)|not (?:enabled|wired|reachable) in this (?:context|session|turn)|spawn (?:an? )?agent|dispatch (?:an? )?agent|paste (?:it|this|the\b)|apply (?:it|this)\b|git apply|you (?:can )?(?:run|apply|paste)|in your terminal|hand you the (?:patch|diff|commands?)|copy[- ]?paste)\b/i;
+  return MUTATION_INTENT_RE.test(body) && HANDBACK_RE.test(body);
+}
+
+/**
+ * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
+ */
+// @kern-source: brain-helpers:67
 export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
   const names: string[] = [];
   for (const result of results ?? []) {
@@ -76,7 +91,7 @@ export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
 /**
  * Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch.
  */
-// @kern-source: brain-helpers:66
+// @kern-source: brain-helpers:79
 export function shouldRunEagerRepairTool(toolName: string, meta: any, failedToolNames: string[], usedToolNames: string[]): boolean {
   const name = String(toolName ?? '').trim();
   if (!name) return false;
@@ -91,7 +106,7 @@ export function shouldRunEagerRepairTool(toolName: string, meta: any, failedTool
 /**
  * Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet.
  */
-// @kern-source: brain-helpers:79
+// @kern-source: brain-helpers:92
 export function shouldStopAfterXmlToolCall(toolName: string): boolean {
   const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan', 'ExitPlanMode']);
   return HANDOFF_TOOLS.has(String(toolName ?? ''));
@@ -100,7 +115,7 @@ export function shouldStopAfterXmlToolCall(toolName: string): boolean {
 /**
  * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
  */
-// @kern-source: brain-helpers:85
+// @kern-source: brain-helpers:98
 export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
   const trimmed = input.trim();
   const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
@@ -121,7 +136,7 @@ export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): {
   return { matched: true, prompt: prompt };
 }
 
-// @kern-source: brain-helpers:104
+// @kern-source: brain-helpers:117
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;

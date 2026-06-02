@@ -32,7 +32,7 @@ import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
 
 import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline } from './tool-observability.js';
 
-import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, isUserDirectedQuestion, detectNarratedToolStall, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
+import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, isUserDirectedQuestion, detectNarratedToolStall, detectMutationIntentStall, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
 
 // @kern-source: brain:19
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
@@ -1465,12 +1465,34 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
 
         // ── Execution phase: unlock mutating tools (only if a mutation was actually deferred) ──
         const investigationResponse = response; // Preserve for chat history
+        // Mutation-intent stall recovery: if the engine NARRATED intent to change
+        // files but never emitted a mutating tool call, the Phase-1 gate deferred
+        // nothing, so the execution unlock below would be skipped and the turn
+        // dead-ends ("I'm read-only — paste it / I'll spawn an agent"). Treat that
+        // narrated stall as a deferred mutation so the SAME tested unlock+re-run
+        // fires and the engine gets a real write-enabled turn. Excludes plan mode
+        // (where the engine SHOULD propose, not write) and pure-chat turns (no
+        // investigation happened), and never overrides an actual delegation.
+        let mutationStallForced = false;
+        if (!mutationDeferred && !inPlanMode && !ctx.cesar!.pendingDelegation
+            && (hadToolActivity || ranToolLoop) && session.alive && !abort.signal.aborted
+            && detectMutationIntentStall(response)) {
+          mutationDeferred = true;
+          mutationStallForced = true;
+          dispatch({ type: 'warning', message: 'Cesar described a write but called no tool — unlocking execution and pushing it to apply directly.' });
+        }
         if (mutationDeferred && toolRegistry && session.alive && !abort.signal.aborted) {
           toolCtx.readOnlyMode = false;
           // Ask engine to continue with execution now that tools are unlocked
           dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
           let execResponse = '';
-          const execGen = session.send({ message: 'Investigation complete. You may now use write, edit, and bash tools to execute your plan. Proceed.', signal: abort.signal });
+          // When the unlock was forced by a narrated stall (not a real deferral),
+          // the engine believes it "can't write" — a plain "proceed" won't dislodge
+          // that. Correct the false belief explicitly and forbid the escape hatches.
+          const _execNudge = mutationStallForced
+            ? 'You HAVE Edit, Write, and Bash tools and you are NOT read-only. The investigation gate only DEFERS the first mutating call; calling Edit/Write/Bash is what unlocks execution — and it is unlocked now. Apply the change directly this turn with Edit/Write/Bash. Do NOT say you lack write tools, do NOT delegate to an Agent to do the writing, and do NOT ask the user to paste or apply it themselves.'
+            : 'Investigation complete. You may now use write, edit, and bash tools to execute your plan. Proceed.';
+          const execGen = session.send({ message: _execNudge, signal: abort.signal });
           for await (const chunk of execGen) {
             if (chunk.type === 'text') execResponse += chunk.content;
             if (chunk.type === 'done' || chunk.type === 'error') break;

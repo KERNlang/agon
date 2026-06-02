@@ -86,7 +86,7 @@ export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]
 }
 
 // @kern-source: engine:115
-const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }: { engineId:string; color:number; content:string }) {
+const EngineBlock = React.memo(function EngineBlock({ engineId, color, content, actingNote }: { engineId:string; color:number; content:string; actingNote?:string }) {
   const wrapWidth = contentWidth(8);
   const cleaned = cleanEngineOutput(content);
   const hexColor = color256toHex(color);
@@ -94,7 +94,7 @@ const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }
   if (!cleaned.trim()) {
     return (
       <Box flexDirection="column" marginY={0} paddingLeft={2}>
-        <Text color={hexColor}>{'\u250c\u2500\u2500 '}<Text bold>{engineId}</Text></Text>
+        <Text color={hexColor}>{'\u250c\u2500\u2500 '}<Text bold>{engineId}</Text>{actingNote ? <Text dimColor>{' ('}{actingNote}{')'}</Text> : null}</Text>
         <Text color={hexColor}>{'\u2502 '}<Text dimColor>{'(no response)'}</Text></Text>
         <Text color={hexColor}>{'\u2514\u2500\u2500'}</Text>
       </Box>
@@ -105,7 +105,7 @@ const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }
 
   return (
     <Box flexDirection="column" marginY={1} paddingLeft={2}>
-      <Text color={hexColor}>{'\u250c\u2500\u2500 '}<Text bold color={hexColor}>{engineId}</Text></Text>
+      <Text color={hexColor}>{'\u250c\u2500\u2500 '}<Text bold color={hexColor}>{engineId}</Text>{actingNote ? <Text dimColor>{' ('}{actingNote}{')'}</Text> : null}</Text>
       <Text color={hexColor}>{'\u2502'}</Text>
       <RenderedSegments segments={segments} borderColor={hexColor} wrapWidth={wrapWidth} />
       <Text color={hexColor}>{'\u2514\u2500\u2500'}</Text>
@@ -114,8 +114,8 @@ const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }
 });
 export { EngineBlock };
 
-// @kern-source: engine:149
-const ConversationalResponse = React.memo(function ConversationalResponse({ engineId, content }: { engineId:string; content:string }) {
+// @kern-source: engine:150
+const ConversationalResponse = React.memo(function ConversationalResponse({ engineId, content, actingNote }: { engineId:string; content:string; actingNote?:string }) {
   const wrapWidth = contentWidth(2);
   const cleaned = cleanEngineOutput(content);
   if (!cleaned.trim()) return null;
@@ -123,7 +123,7 @@ const ConversationalResponse = React.memo(function ConversationalResponse({ engi
   const accentColor = color256toHex(ENGINE_COLORS[engineId] ?? 124);
   return (
     <Box flexDirection="column" marginTop={1} marginBottom={0} paddingLeft={1}>
-      <Text><Text color={accentColor} bold>{icons().dotOn + ' '}{engineId}</Text></Text>
+      <Text><Text color={accentColor} bold>{icons().dotOn + ' '}{engineId}</Text>{actingNote ? <Text dimColor>{' ('}{actingNote}{')'}</Text> : null}</Text>
       <Text>{' '}</Text>
       <RenderedSegments segments={segments} borderColor={''} wrapWidth={wrapWidth} />
     </Box>
@@ -131,7 +131,7 @@ const ConversationalResponse = React.memo(function ConversationalResponse({ engi
 });
 export { ConversationalResponse };
 
-// @kern-source: engine:170
+// @kern-source: engine:172
 const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:OutputEvent & { type: 'cesar-recap' } }) {
   const files = Array.isArray((event as any).files) ? (event as any).files : [];
   const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
@@ -233,7 +233,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
 });
 export { CesarRecapBlock };
 
-// @kern-source: engine:275
+// @kern-source: engine:277
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -301,7 +301,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-// @kern-source: engine:347
+// @kern-source: engine:349
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -325,7 +325,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:376
+// @kern-source: engine:378
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -344,8 +344,8 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       </Box>
     );
     case 'engine-block': return mode === 'chat'
-      ? <ConversationalResponse engineId={event.engineId} content={event.content} />
-      : <EngineBlock engineId={event.engineId} color={event.color} content={event.content} />;
+      ? <ConversationalResponse engineId={event.engineId} content={event.content} actingNote={event.actingNote} />
+      : <EngineBlock engineId={event.engineId} color={event.color} content={event.content} actingNote={event.actingNote} />;
     case 'separator': return <Text>{' '}</Text>;
     case 'header': return <Box flexDirection="column"><Text>{' '}</Text><Text bold color="cyan">{'  ' + icons().header + ' '}{event.title}</Text></Box>;
     case 'success': return <Text>{'  '}<Text color="#4ade80">{icons().success}</Text>{' '}{event.message}</Text>;
@@ -936,7 +936,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:993
+// @kern-source: engine:995
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -1037,7 +1037,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1100
+// @kern-source: engine:1102
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1063,7 +1063,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1129
+// @kern-source: engine:1131
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (

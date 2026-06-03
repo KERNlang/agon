@@ -611,19 +611,31 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       }
     }
 
-    // R1 enforcement: block all non-read tools until confidence is reported.
+    // R1 enforcement: require a confidence report before any tool that MUTATES
+    // or SPENDS — file writes (Edit/Write), MUTATING shell commands, and
+    // orchestration dispatches (which cost real engine time/money; this repo's
+    // policy makes confidence the investigate-before-dispatch gate). What
+    // changed: read-only INVESTIGATION is now exempt — Read/Grep/Glob/Delegate
+    // AND read-only Bash (status, ls, npm test) — so Cesar can investigate
+    // freely without a confidence call first (the real "feels blocked" friction).
+    // Mutating Bash stays gated: in auto-approve/conquer modes it never hits the
+    // permission UI, so the confidence signal is the only checkpoint on
+    // rm/reset/force-push. (Nero FLAWED-check 2026-06-03 caught that gating only
+    // Edit/Write would free destructive Bash and exempt low-confidence spend.)
     // BREAKER: a model that never calls ReportConfidence would loop forever
     // here. After CONFIDENCE_BLOCK_LIMIT blocked attempts this turn we auto-pass
     // (confidence stays unreported) and let the tool through — the gate is a
     // nudge, not a safety boundary (writes still hit the permission UI), so
     // breaking the loop beats trapping the turn. Counter resets each turn.
-    const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
-    if (!ctx.cesar!.confidenceSatisfied && !READ_TOOLS.has(name)) {
+    const CONFIDENCE_INVESTIGATION_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
+    const _isInvestigation = CONFIDENCE_INVESTIGATION_TOOLS.has(name)
+      || (name === 'Bash' && isReadOnlyCommand(String((args as any).command ?? '')));
+    if (!ctx.cesar!.confidenceSatisfied && !_isInvestigation) {
       const blocks = (ctx.cesar!.confidenceBlockCount ?? 0) + 1;
       ctx.cesar!.confidenceBlockCount = blocks;
       if (blocks <= CONFIDENCE_BLOCK_LIMIT) {
         ctx.cesar!.blockedOnConfidence = { name, args };
-        return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. After ReportConfidence succeeds, retry the SAME ${name} call immediately with the same arguments. Read/Grep/Glob are allowed for investigation.`;
+        return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. After ReportConfidence succeeds, retry the SAME ${name} call immediately with the same arguments. Read/Grep/Glob and read-only Bash are allowed for investigation.`;
       }
       // Breaker tripped — stop blocking and let the tool run this turn.
       ctx.cesar!.confidenceSatisfied = true;
@@ -680,7 +692,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:648
+// @kern-source: session:660
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -863,7 +875,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:832
+// @kern-source: session:844
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -897,7 +909,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:866
+// @kern-source: session:878
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -921,7 +933,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:890
+// @kern-source: session:902
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -933,7 +945,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:897
+// @kern-source: session:909
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -953,7 +965,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:915
+// @kern-source: session:927
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -978,7 +990,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:941
+// @kern-source: session:953
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

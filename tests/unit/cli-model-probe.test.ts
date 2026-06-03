@@ -5,6 +5,8 @@ import { setupTestAgonHome, cleanupTestAgonHome } from '../helpers/agon-home.js'
 import {
   readProbedCliModels,
   buildCliModelGroups,
+  getBinaryVersionAsync,
+  refreshCliGroupVersion,
 } from '../../packages/core/src/cli-models-registry.js';
 
 function writeProbeCache(home: string, engineId: string, models: any[]): string {
@@ -111,5 +113,41 @@ describe('CLI live-model probe cache', () => {
     // Static fallback has the bare names, not the agy CLI effort tiers.
     expect(names).toContain('Gemini 3.5 Flash');
     expect(names).not.toContain('Gemini 3.5 Flash (High)');
+  });
+});
+
+// The picker's instant first paint depends on these resolving versions OFF the
+// main thread (no execSync). `node` is guaranteed present under the test runner,
+// so we use it as a stand-in binary for deterministic spawn behaviour.
+describe('CLI binary version (async, non-blocking)', () => {
+  const NODE = process.execPath;
+
+  it('returns null for an empty version command without spawning', async () => {
+    expect(await getBinaryVersionAsync('vtest-empty', NODE, [])).toBeNull();
+  });
+
+  it('resolves a real version string for a working binary', async () => {
+    const v = await getBinaryVersionAsync('vtest-ok', NODE, ['--version']);
+    expect(v).toMatch(/^v\d+\.\d+/); // e.g. "v24.2.0"
+  });
+
+  it('memoizes by engineId — a cache hit ignores a later (broken) command', async () => {
+    const v1 = await getBinaryVersionAsync('vtest-cache', NODE, ['--version']);
+    expect(v1).toMatch(/^v\d+\./);
+    // Second call with a command that would FAIL must still return the cached
+    // value, proving the cache short-circuits before any spawn.
+    const v2 = await getBinaryVersionAsync('vtest-cache', NODE, ['-e', 'process.exit(1)']);
+    expect(v2).toBe(v1);
+  });
+
+  it('returns null on a nonzero exit even when the command wrote to stdout', async () => {
+    // Guards the execSync→spawnWithTimeout migration: spawnWithTimeout RESOLVES
+    // on failure, so without the exitCode check this would cache "9.9.9".
+    const v = await getBinaryVersionAsync('vtest-exit', NODE, ['-e', 'process.stdout.write("9.9.9"); process.exit(1)']);
+    expect(v).toBeNull();
+  });
+
+  it('refreshCliGroupVersion returns null for an unknown engine', async () => {
+    expect(await refreshCliGroupVersion('no-such-engine-xyz')).toBeNull();
   });
 });

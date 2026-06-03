@@ -1316,7 +1316,7 @@ export function App() {
 
     setModelPickerCliGroups([]);
 
-    import('@kernlang/agon-core').then(({ fetchModelsRegistry, buildModelEntries, buildCliGroupsImmediate, refreshCliGroup }) => {
+    import('@kernlang/agon-core').then(({ fetchModelsRegistry, buildModelEntries, buildCliGroupsImmediate, refreshCliGroup, refreshCliGroupVersion }) => {
       // Show each CLI engine's cached/static models instantly (installed
       // probe-capable engines flagged loading), then probe each engine's live
       // /model list in the background and swap its group in as it resolves —
@@ -1334,6 +1334,18 @@ export function App() {
           cliGroups = cliGroups.map((x: any) => x.engineId === fresh.engineId ? fresh : x);
           setModelPickerCliGroups([...cliGroups]);
         }).catch(clearLoading);
+      }
+      // buildCliGroupsImmediate no longer shells out for versions (instant
+      // paint); fill each non-probe-loading installed engine's version off the
+      // main thread, mirroring the /models intent path. Skip loading rows
+      // (refreshCliGroup returns their version) and already-cached versions.
+      for (const g of cliGroups) {
+        if (!g.installed || g.loading || g.version) continue;
+        refreshCliGroupVersion(g.engineId).then((v: any) => {
+          if (!v) return;
+          cliGroups = cliGroups.map((x: any) => x.engineId === g.engineId ? { ...x, version: v } : x);
+          setModelPickerCliGroups([...cliGroups]);
+        }).catch(() => {});
       }
       fetchModelsRegistry().then((reg: any) => {
         setModelPickerEntries(buildModelEntries(reg));
@@ -2481,7 +2493,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:90
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2171
+// @kern-source: app:2183
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

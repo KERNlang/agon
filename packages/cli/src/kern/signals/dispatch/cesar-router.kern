@@ -446,6 +446,28 @@ You still own the overall task. Integrate the forged slice with the rest of the 
             }, cb.ctx));
             return true;
           }
+          case 'conquer': {
+            const _cqTask = (result.task ?? '').trim();
+            if (!_cqTask) { cb.dispatch({ type: 'warning', message: 'Conquer: missing task — nothing to run.' }); return false; }
+            const _cqGate = typeof result.gate === 'string' ? result.gate.trim() : '';
+            if (!_cqGate) { cb.dispatch({ type: 'warning', message: 'Conquer: missing --gate (the done-spec). Tell Cesar the test/verify command that proves the build is done.' }); return false; }
+            const _cqBuilder = typeof result.builder === 'string' ? result.builder.trim() : '';
+            const _cqArgs: string[] = ['conquer', _cqTask, '--gate', _cqGate];
+            if (_cqBuilder) _cqArgs.push('--builder', _cqBuilder);
+            if (Array.isArray(result.engines) && result.engines.length > 0) _cqArgs.push('-e', (result.engines as string[]).join(','));
+            if (typeof result.maxTurns === 'number' && result.maxTurns > 0) _cqArgs.push('--max-turns', String(result.maxTurns));
+            const _cqCmd = `agon ${_cqArgs.map((part) => JSON.stringify(part)).join(' ')}`;
+            const _cqCwd = resolveWorkingDir();
+            cb.dispatch({ type: 'info', message: 'Cesar → conquer' });
+            cb.runAsJob('conquer', label, withThreadOutcome(_cqCwd, 'conquer', label, async () => {
+              cb.dispatch({ type: 'info', message: `conquer: launched in the background — \`${_cqCmd}\`. Track with /jobs or /focus. Stops at a human merge gate — nothing auto-merges.` });
+              const res = await spawnWithTimeout({ command: 'agon', args: _cqArgs, cwd: _cqCwd, timeout: 24 * 60 * 60 * 1000 });
+              const tail = (res.stdout || '').slice(-4000);
+              if (tail.trim()) cb.dispatch({ type: 'text', content: tail });
+              if (res.exitCode !== 0) throw new Error((res.stderr || `agon conquer exited ${res.exitCode}`).slice(-1000));
+            }, cb.ctx));
+            return true;
+          }
           case 'review':
             cb.dispatch({ type: 'info', message: `Cesar → review${hardened ? ' (hardened)' : ''}` });
             {

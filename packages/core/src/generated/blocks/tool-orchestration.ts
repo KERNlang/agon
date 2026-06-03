@@ -432,9 +432,43 @@ export function createGoalTool(): ToolHandler {
 }
 
 /**
- * Signal tool — delegates to the build → parallel review → fix loop.
+ * Signal tool — delegates to the supervised-autonomous conquer controller (agon conquer). Cesar drives a pluggable external builder CLI as the user, unattended, until an open-ended build is done, then STOPS at a mandatory human merge gate (never auto-merges).
  */
 // @kern-source: tool-orchestration:418
+export function createConquerTool(): ToolHandler {
+  const definition: ToolDefinition = {
+    name: 'Conquer',
+    description: 'Delegate to the supervised-autonomous conquer controller — Cesar drives an external builder CLI (--builder codex|claude|agy, default codex) as the user, unattended, until an OPEN-ENDED build is done, then STOPS at a human merge gate (changes left in the tree or pushed to a branch; NEVER auto-merged). The gate command IS the done-spec — make it discriminating. Fire ONLY when the user explicitly asks to conquer / build unattended; it is a long multi-hour run. After calling, STOP and wait — runs in the background; track with /jobs or /focus.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task: { type: 'string', description: 'Open-ended build task to drive to completion (seeds the run + branch).' },
+        gate: { type: 'string', description: 'The done-spec: a discriminating test/verify command that proves the build is complete (e.g. "pnpm test"). Required — frozen at start.' },
+        builder: { type: 'string', description: 'External builder CLI Cesar drives as the user: codex | claude | agy. Default codex.' },
+        engines: { type: 'array', items: { type: 'string' }, description: 'Optional consult roster for fork escalations (nero/tribunal/council). Omit for active roster.' },
+        maxTurns: { type: 'number', description: 'Optional cap on builder turns (0/omit = controller default).' },
+      },
+      required: ['task', 'gate'],
+    },
+    maxResultSizeChars: 500,
+    isReadOnly: false,
+    isConcurrencySafe: false,
+  };
+  const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+    if (!input.task || typeof input.task !== 'string' || !(input.task as string).trim()) return 'Missing required parameter: task';
+    if (!input.gate || typeof input.gate !== 'string' || !(input.gate as string).trim()) return 'Missing required parameter: gate (the done-spec test/verify command). Ask the user for the command that proves the build is done.';
+    if (input.engines !== undefined && !Array.isArray(input.engines)) return 'engines must be an array of engine IDs (string[])';
+    return null;
+  };
+  const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => { return { behavior: 'allow' }; };
+  const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => { return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' }; };
+  return { definition, validate, checkPermission, execute };
+}
+
+/**
+ * Signal tool — delegates to the build → parallel review → fix loop.
+ */
+// @kern-source: tool-orchestration:450
 export function createPipelineTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Pipeline',

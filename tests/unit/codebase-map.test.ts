@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { extractSymbols, collectSourceFiles, buildCodebaseMap, clearCodebaseMapCache } from '../../packages/core/src/generated/blocks/codebase-map.js';
+import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
 
 describe('codebase-map — extractSymbols', () => {
   it('pulls KERN node declarations', () => {
@@ -30,6 +32,21 @@ describe('codebase-map — extractSymbols', () => {
 });
 
 describe('codebase-map — buildCodebaseMap', () => {
+  let testHome: string;
+  beforeEach(() => { testHome = setupTestAgonHome('codebase-map'); });
+  afterEach(() => { cleanupTestAgonHome(testHome); });
+
+  function cacheFileFor(root: string): string {
+    const key = createHash('sha1').update(root).digest('hex').slice(0, 16);
+    return agonHomePath('cache', 'codebase-map', `${key}.json`);
+  }
+
+  function seedCache(root: string, payload: { sig: string; brief: string; builtAt: number }): void {
+    const file = cacheFileFor(root);
+    mkdirSync(join(file, '..'), { recursive: true });
+    writeFileSync(file, JSON.stringify(payload));
+  }
+
   function fixture(): string {
     const root = mkdtempSync(join(tmpdir(), 'agon-map-'));
     mkdirSync(join(root, 'packages/core/src'), { recursive: true });
@@ -69,5 +86,85 @@ describe('codebase-map — buildCodebaseMap', () => {
     const files = collectSourceFiles(root);
     expect(files.some((f) => f.endsWith('widget.kern'))).toBe(true);
     expect(files.some((f) => f.includes('node_modules'))).toBe(false);
+  });
+
+  it('writes a disk cache (sig + brief + builtAt) on build', () => {
+    const root = fixture();
+    clearCodebaseMapCache(root);
+    buildCodebaseMap(root);
+    const raw = JSON.parse(readFileSync(cacheFileFor(root), 'utf-8'));
+    expect(typeof raw.sig).toBe('string');
+    expect(typeof raw.builtAt).toBe('number');
+    expect(raw.brief).toContain('CODEBASE BRIEF');
+    // Non-git temp dir, no lockfile → 'nogit:0'.
+    expect(raw.sig).toBe('nogit:0');
+  });
+
+  it('serves a valid disk cache instead of rebuilding (cold memo)', () => {
+    const root = fixture();
+    seedCache(root, { sig: 'nogit:0', brief: 'sentinel-DISK-HIT', builtAt: Date.now() });
+    const brief = buildCodebaseMap(root);
+    expect(brief).toBe('sentinel-DISK-HIT'); // came from disk, not a fresh walk
+    expect(brief).not.toContain('widget.kern');
+  });
+
+  it('invalidates the disk cache when the signature changes', () => {
+    const root = fixture();
+    seedCache(root, { sig: 'STALE-SIG', brief: 'OLD STALE BRIEF', builtAt: Date.now() });
+    const brief = buildCodebaseMap(root);
+    expect(brief).toContain('widget.kern'); // rebuilt
+    expect(brief).not.toContain('OLD STALE BRIEF');
+    const rewritten = JSON.parse(readFileSync(cacheFileFor(root), 'utf-8'));
+    expect(rewritten.sig).toBe('nogit:0'); // refreshed with the current signature
+  });
+
+  it('ignores a disk cache past its TTL', () => {
+    const root = fixture();
+    const sevenHoursAgo = Date.now() - 7 * 60 * 60 * 1000; // TTL is 6h
+    seedCache(root, { sig: 'nogit:0', brief: 'EXPIRED BRIEF', builtAt: sevenHoursAgo });
+    const brief = buildCodebaseMap(root);
+    expect(brief).not.toContain('EXPIRED BRIEF');
+    expect(brief).toContain('widget.kern'); // rebuilt despite a matching signature
+  });
+
+  it('a custom maxChars bypasses the cache (never reads a seeded brief)', () => {
+    const root = fixture();
+    seedCache(root, { sig: 'nogit:0', brief: 'sentinel-DISK-HIT', builtAt: Date.now() });
+    const brief = buildCodebaseMap(root, 4000);
+    expect(brief).not.toBe('sentinel-DISK-HIT');
+    expect(brief).toContain('widget.kern');
+  });
+
+  it('lists .kern sources before hand-TS facades within a group', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-map-heur-'));
+    mkdirSync(join(root, 'packages/cli/src/blocks'), { recursive: true });
+    mkdirSync(join(root, 'packages/cli/src/kern'), { recursive: true });
+    // 'blocks/aaa.ts' sorts alphabetically before 'kern/zzz.kern'; the heuristic
+    // must still surface the .kern source first.
+    writeFileSync(join(root, 'packages/cli/src/blocks/aaa.ts'), 'export const aaaFacade = 1;');
+    writeFileSync(join(root, 'packages/cli/src/kern/zzz.kern'), 'fn name=zzzSource returns=void');
+    clearCodebaseMapCache(root);
+    const brief = buildCodebaseMap(root);
+    const kernAt = brief.indexOf('zzz.kern');
+    const facadeAt = brief.indexOf('aaa.ts');
+    expect(kernAt).toBeGreaterThanOrEqual(0);
+    expect(facadeAt).toBeGreaterThanOrEqual(0);
+    expect(kernAt).toBeLessThan(facadeAt);
+  });
+
+  it('gives every package a fair share so a huge group cannot starve the rest', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agon-map-fair-'));
+    mkdirSync(join(root, 'packages/big/src/kern'), { recursive: true });
+    mkdirSync(join(root, 'packages/small/src/kern'), { recursive: true });
+    for (let i = 0; i < 15; i++) {
+      writeFileSync(join(root, `packages/big/src/kern/f${String(i).padStart(2, '0')}.kern`), `fn name=symBig${i} returns=void`);
+    }
+    writeFileSync(join(root, 'packages/small/src/kern/only.kern'), 'fn name=symSmall returns=void');
+    // A tight cap: under the old flat-12-per-group logic, packages/big would
+    // consume the whole budget and packages/small would never be reached.
+    const brief = buildCodebaseMap(root, 600);
+    expect(brief).toContain('### packages/big');
+    expect(brief).toContain('### packages/small'); // the starved group still appears
+    expect(brief).toContain('only.kern');
   });
 });

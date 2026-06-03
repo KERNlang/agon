@@ -1,11 +1,16 @@
 // Codebase Map / "Project Atlas" — a compact, cheap-to-build index of WHERE
 // code lives, injected into Cesar's per-turn context so it stops re-grepping to
 // locate things. Built from a filesystem walk + regex symbol extraction (no
-// compiler pass). v1 memoizes in-process per cwd; a disk cache with
-// git/lockfile invalidation is a planned follow-on. See
+// compiler pass). Two-layer cache: an in-process memo per cwd (session-level)
+// backed by a disk cache at ~/.agon/cache/codebase-map/<key>.json, invalidated
+// when git HEAD or a lockfile changes — plus a TTL backstop so uncommitted
+// working-tree edits can't serve a stale brief forever. See
 // [[project-cesar-harness-rework]].
-import from="node:fs" names="readFileSync,readdirSync,statSync"
+import from="node:fs" names="readFileSync,readdirSync,statSync,writeFileSync,mkdirSync,existsSync,rmSync"
 import from="node:path" names="join,relative"
+import from="node:crypto" names="createHash"
+import from="../signals/config.js" names="agonPath"
+import from="./git.js" names="headSha"
 
 // Directories that never carry useful "where things live" signal for the brief.
 const name=MAP_IGNORE_DIRS type="Set<string>" value={{ new Set(['node_modules', '.git', 'dist', 'dist-tsc', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'venv', 'coverage', '.kern-gaps', '.agon', '.claude', 'worktrees', 'build', 'out', '.idea', '.vscode']) }}
@@ -18,10 +23,17 @@ const name=MAP_MAX_FILES_WALKED type=number value={{ 6000 }}
 const name=MAP_MAX_FILES_READ type=number value={{ 600 }}
 const name=MAP_MAX_FILE_BYTES type=number value={{ 262144 }}
 
-// In-process memo: keyed by cwd. The Map binding is const; its contents mutate.
-// Avoids rebuilding the atlas on every turn within one session. Disk cache +
-// git-invalidation is the planned 1a.2 follow-on.
+// In-process memo (L1): keyed by cwd, holds the brief for the session and is
+// backed by the disk cache (L2). The Map binding is const; its contents mutate.
 const name=MAP_MEMO type="Map<string,string>" value={{ new Map() }}
+
+// Lockfiles whose mtime is folded into the cache signature so the disk cache
+// invalidates when dependencies change. First match wins.
+const name=MAP_LOCKFILES type="string[]" value={{ ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb'] }}
+
+// TTL backstop so uncommitted working-tree edits (which move neither git HEAD
+// nor a lockfile) can't serve a stale disk cache forever. 6h.
+const name=MAP_CACHE_TTL_MS type=number value={{ 6 * 60 * 60 * 1000 }}
 
 fn name=mapSourceExt params="path:string" returns="string|null" export=false
   doc "Return the indexed source extension of a path, or null if it is not an indexed source file."
@@ -93,14 +105,54 @@ fn name=topLevelGroup params="relPath:string" returns=string export=false
     return '(root)';
   >>>
 
-fn name=buildCodebaseMap params="cwd:string, maxChars?:number" returns=string export=true
-  doc "Build the compact CODEBASE BRIEF for cwd: a where-things-live index grouped by package/dir, listing source files with their top symbols and noting .kern->generated mirroring. Cheap (fs walk + regex), memoized in-process per cwd. Returns '' if nothing indexable. Cap defaults to ~3500 chars."
+fn name=mapCacheDir returns=string export=false expr={{ return agonPath('cache', 'codebase-map'); }}
+  doc "Directory holding per-project codebase-brief disk caches. Honors AGON_HOME."
+
+fn name=mapCacheKey params="cwd:string" returns=string export=false expr={{ return createHash('sha1').update(cwd).digest('hex').slice(0, 16); }}
+  doc "Stable short filename key for a project root."
+
+fn name=mapCacheFile params="cwd:string" returns=string export=false expr={{ return join(mapCacheDir(), `${mapCacheKey(cwd)}.json`); }}
+
+fn name=mapCacheSignature params="cwd:string" returns=string export=false
+  doc "Cheap invalidation signature: git HEAD SHA + newest lockfile mtime ('nogit'/'0' when absent). Spawns git once per session, behind the L1 memo."
   handler <<<
-    const memo = MAP_MEMO.get(cwd);
-    if (memo !== undefined) return memo;
-    const cap = maxChars ?? 3500;
+    let head = 'nogit';
+    try { head = headSha(cwd); } catch { /* not a git repo */ }
+    let lockMtime = '0';
+    for (const lf of MAP_LOCKFILES) {
+      try { lockMtime = String(Math.round(statSync(join(cwd, lf)).mtimeMs)); break; }
+      catch { /* lockfile absent */ }
+    }
+    return `${head}:${lockMtime}`;
+  >>>
+
+fn name=readMapDiskCache params="cwd:string, sig:string" returns="string|null" export=false
+  doc "Return the cached brief if the disk cache exists, matches the signature, and is within TTL; else null. Never throws."
+  handler <<<
+    try {
+      const path = mapCacheFile(cwd);
+      if (!existsSync(path)) return null;
+      const raw = JSON.parse(readFileSync(path, 'utf-8')) as { sig?: string; brief?: string; builtAt?: number };
+      if (raw.sig !== sig) return null;
+      if (typeof raw.builtAt === 'number' && Date.now() - raw.builtAt > MAP_CACHE_TTL_MS) return null;
+      return typeof raw.brief === 'string' ? raw.brief : null;
+    } catch { return null; }
+  >>>
+
+fn name=writeMapDiskCache params="cwd:string, sig:string, brief:string" returns=void export=false
+  doc "Persist the brief + signature to the disk cache. Best-effort; never throws."
+  handler <<<
+    try {
+      mkdirSync(mapCacheDir(), { recursive: true });
+      writeFileSync(mapCacheFile(cwd), JSON.stringify({ sig, brief, builtAt: Date.now() }));
+    } catch { /* cache write is best-effort */ }
+  >>>
+
+fn name=composeBrief params="cwd:string, cap:number" returns=string export=false
+  doc "Build the CODEBASE BRIEF for cwd capped at `cap` chars. Pure (no caching) — the cacheable core of buildCodebaseMap."
+  handler <<<
     const files = collectSourceFiles(cwd);
-    if (files.length === 0) { MAP_MEMO.set(cwd, ''); return ''; }
+    if (files.length === 0) return '';
 
     // Identify generated files + .kern sources so we can note the mirror once,
     // and exclude generated .ts from the per-file symbol listing (it duplicates
@@ -126,15 +178,33 @@ fn name=buildCodebaseMap params="cwd:string, maxChars?:number" returns=string ex
     }
 
     const groupNames = Array.from(groups.keys()).sort();
+    // Breadth before depth: give each group a fair slice of the budget so a huge
+    // package (e.g. packages/cli) can't consume the whole brief and starve the
+    // others. Small groups under-spend their slice, leaving global slack; the
+    // hard `cap` below still bounds the total.
+    const perGroupBudget = Math.max(300, Math.floor(cap / Math.max(1, groupNames.length)));
     for (const g of groupNames) {
       if (lines.join('\n').length > cap) break;
       const groupFiles = (groups.get(g) ?? []).filter((f: string) => !f.includes('/generated/'));
       if (groupFiles.length === 0) continue;
+      // Surface .kern sources first: they're the editable truth, whereas the
+      // hand-TS files are mostly thin re-export facades. Without this, plain
+      // alphabetical order shows facades (src/blocks, src/commands) and cuts off
+      // the src/kern/* sources before the per-group budget reaches them.
+      groupFiles.sort((a: string, b: string) => {
+        const ak = a.endsWith('.kern') ? 0 : 1;
+        const bk = b.endsWith('.kern') ? 0 : 1;
+        if (ak !== bk) return ak - bk;
+        return a < b ? -1 : a > b ? 1 : 0;
+      });
+      const groupStart = lines.join('\n').length;
       lines.push(`\n### ${g} (${groupFiles.length} files)`);
-      // List up to 12 files per group with their top symbols, reading files
-      // until the global read cap is hit.
+      // List up to 12 files per group with their top symbols, stopping early once
+      // this group has used its fair share (but always showing at least one).
+      let shown = 0;
       for (const f of groupFiles.slice(0, 12)) {
         if (lines.join('\n').length > cap) break;
+        if (shown > 0 && lines.join('\n').length - groupStart > perGroupBudget) break;
         let syms: string[] = [];
         if (filesRead < MAP_MAX_FILES_READ) {
           try {
@@ -146,20 +216,41 @@ fn name=buildCodebaseMap params="cwd:string, maxChars?:number" returns=string ex
           } catch { /* unreadable — list the path without symbols */ }
         }
         lines.push(syms.length > 0 ? `- ${f}: ${syms.join(', ')}` : `- ${f}`);
+        shown++;
       }
-      const extra = groupFiles.length - 12;
+      const extra = groupFiles.length - shown;
       if (extra > 0) lines.push(`  (+${extra} more files in ${g})`);
     }
 
     let brief = lines.join('\n');
     if (brief.length > cap) brief = brief.slice(0, cap) + '\n... (brief truncated)';
+    return brief;
+  >>>
+
+fn name=buildCodebaseMap params="cwd:string, maxChars?:number" returns=string export=true
+  doc "Build the compact CODEBASE BRIEF for cwd: a where-things-live index grouped by package/dir, listing source files with their top symbols and noting .kern->generated mirroring. Cheap (fs walk + regex). Two-layer cached: an in-process memo (session) backed by a disk cache invalidated on git HEAD / lockfile change (default cap only); a custom maxChars bypasses both caches. Returns '' if nothing indexable. Cap defaults to ~3500 chars."
+  handler <<<
+    // A custom cap is a one-off (e.g. tests) — compose fresh, bypass both caches.
+    if (maxChars !== undefined) return composeBrief(cwd, maxChars);
+    const cached = MAP_MEMO.get(cwd);
+    if (cached !== undefined) return cached;
+    const sig = mapCacheSignature(cwd);
+    const fromDisk = readMapDiskCache(cwd, sig);
+    if (fromDisk !== null) { MAP_MEMO.set(cwd, fromDisk); return fromDisk; }
+    const brief = composeBrief(cwd, 3500);
+    writeMapDiskCache(cwd, sig, brief);
     MAP_MEMO.set(cwd, brief);
     return brief;
   >>>
 
 fn name=clearCodebaseMapCache params="cwd?:string" returns=void export=true
-  doc "Drop the in-process atlas memo (one cwd, or all). Call when the working tree changes enough that the brief is stale; the disk-cache follow-on will make this automatic."
+  doc "Drop the codebase atlas caches — both the in-process memo and the disk cache — for one cwd, or all. git HEAD / lockfile changes invalidate the disk cache automatically; call this to force a rebuild."
   handler <<<
-    if (cwd) MAP_MEMO.delete(cwd);
-    else MAP_MEMO.clear();
+    if (cwd) {
+      MAP_MEMO.delete(cwd);
+      try { rmSync(mapCacheFile(cwd), { force: true }); } catch { /* best-effort */ }
+    } else {
+      MAP_MEMO.clear();
+      try { rmSync(mapCacheDir(), { recursive: true, force: true }); } catch { /* best-effort */ }
+    }
   >>>

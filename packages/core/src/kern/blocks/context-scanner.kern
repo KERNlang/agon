@@ -4,6 +4,20 @@ import from="./git.js" names="currentBranch,gitStatusShort,gitChangedFiles,gitTr
 
 type name=ContextFormat values="plain|kern"
 
+const name=PROJECT_BRIEF_FILES value={{ [".agon/project.md", "AGON.md", "AGENT.md", "CLAUDE.md", "CODEX.md"] }}
+
+fn name=projectBriefCap params="file:string" returns=number export=false expr={{ return (file === ".agon/project.md" || file === "AGON.md") ? 4000 : 2000; }}
+  doc "Larger budget for dedicated Agon briefs (.agon/project.md, AGON.md); generic agent files stay tight."
+
+fn name=hasProjectBrief params="cwd:string" returns=boolean export=true
+  doc "True if cwd has any recognized project-brief file. Drives the one-time 'no project brief found' nudge."
+  handler <<<
+    for (const file of PROJECT_BRIEF_FILES) {
+      try { if (existsSync(join(cwd, file))) return true; } catch { /* ignore */ }
+    }
+    return false;
+  >>>
+
 fn name=isKernProject params="cwd:string" returns=boolean
   handler <<<
     if (existsSync(join(cwd, 'kern.config.ts'))) return true;
@@ -131,16 +145,17 @@ fn name=scanProjectContext params="cwd:string,extraContext?:string,format?:Conte
       }
     }
 
-    // Project instructions — cascade: first match wins (AGON.md > AGENT.md > CLAUDE.md > CODEX.md)
-    const instructionFiles = ["AGON.md", "AGENT.md", "CLAUDE.md", "CODEX.md"];
-    for (const file of instructionFiles) {
+    // Project instructions — cascade: first match wins.
+    // Dedicated Agon briefs (.agon/project.md, AGON.md) outrank generic agent files
+    // and get a larger budget; generic compatibility files stay tight.
+    for (const file of PROJECT_BRIEF_FILES) {
       try {
         const path = join(cwd, file);
         if (existsSync(path)) {
           const content = readFileSync(path, "utf-8").trim();
           if (content) {
-            // Cap at 2000 chars to stay within budget
-            const capped = content.length > 2000 ? content.slice(0, 2000) + "\n... (truncated)" : content;
+            const cap = projectBriefCap(file);
+            const capped = content.length > cap ? content.slice(0, cap) + `\n... (truncated at ${cap} chars)` : content;
             sections.push(`Project instructions (${file}):\n${capped}`);
             break; // first match wins — stop looking
           }

@@ -12,7 +12,7 @@ import from="../signals/output.js" names="getSessionAllowList"
 import from="./routing.js" names="buildRoutingContext"
 import from="./brain-helpers.js" names="extractDelegation"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval,approvalArgsFromCommand"
-import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline"
+import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence"
 
 const name=CESAR_SYSTEM_PROMPT type=string
   handler <<<
@@ -577,6 +577,14 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
           ctx.cesar!.reportedConfidenceReasoning = reasoning || undefined;
           ctx.cesar!.confidenceSatisfied = true;
           ctx.cesar!.confidenceBlockCount = 0;
+          // #7 calibration ledger (data-only): persist the snapshot for later analysis.
+          recordCesarConfidence({
+            sessionId: String(ctx.chatSession?.id ?? 'unknown-session'),
+            turnId: ctx.cesar!.turnId,
+            engineId: ctx.cesarSession?.engineId ?? (config as any)?.cesarEngine,
+            value,
+            reasoning: reasoning || undefined,
+          });
           const blocked = ctx.cesar!.blockedOnConfidence;
           ctx.cesar!.blockedOnConfidence = null;
           if (blocked) {

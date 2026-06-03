@@ -30,7 +30,7 @@ import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCe
 
 import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
 
-import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline } from './tool-observability.js';
+import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
 
 import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, isUserDirectedQuestion, detectNarratedToolStall, detectMutationIntentStall, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
 
@@ -1070,6 +1070,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     ctx.cesar!.reportedConfidence = value;
                     ctx.cesar!.reportedConfidenceReasoning = reasoning || undefined;
                     ctx.cesar!.confidenceSatisfied = true;
+                    // #7 calibration ledger (data-only): MCP/companion-engine path.
+                    recordCesarConfidence({
+                      sessionId: String(ctx.chatSession?.id ?? 'unknown-session'),
+                      turnId: ctx.cesar!.turnId ?? _turnId,
+                      engineId: cesarEngineId,
+                      value,
+                      reasoning: reasoning || undefined,
+                    });
                     parsedConfidence = value;
                     dispatch({ type: 'info', message: confidenceBadge(value) + ` Cesar (via MCP)` });
                     dispatch({ type: 'confidence-update', value });

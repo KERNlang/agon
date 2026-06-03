@@ -13,7 +13,7 @@ import from="./escalation.js" names="fireQuickNero,fireNero,fireAdvisor,handleSe
 import from="./routing.js" names="buildRoutingContext,deriveRoutingHints,shouldSpeculate"
 import from="./reliability.js" names="readCesarToolReliability,formatCesarReliabilityLine,shouldDowngradeCesarToolWork,buildWhatHappenedSummary"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval"
-import from="./tool-observability.js" names="createCesarTurnId,recordCesarApprovalDecision,recordCesarToolTimeline"
+import from="./tool-observability.js" names="createCesarTurnId,recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence"
 import from="./brain-helpers.js" names="yieldToInk,splitBeforeToolMarkup,XML_TOOL_MARKUP_HOLD_CHARS,isUserDirectedQuestion,detectNarratedToolStall,detectMutationIntentStall,eagerFailedToolNames,shouldRunEagerRepairTool,shouldStopAfterXmlToolCall,buildReviewFollowupPrompt,extractDelegation"
 
 fn name=commitTurnAndDelegate async=true params="pendingDel:PendingDelegation, input:string, response:string, cesarEngineId:string, streaming:boolean, dispatch:Dispatch, ctx:HandlerContext, telemetry?:Record<string,unknown>" returns="Promise<CesarTurnOutcome>"
@@ -1041,6 +1041,14 @@ ${reviewFollowup.prompt}`;
                   ctx.cesar!.reportedConfidence = value;
                   ctx.cesar!.reportedConfidenceReasoning = reasoning || undefined;
                   ctx.cesar!.confidenceSatisfied = true;
+                  // #7 calibration ledger (data-only): MCP/companion-engine path.
+                  recordCesarConfidence({
+                    sessionId: String(ctx.chatSession?.id ?? 'unknown-session'),
+                    turnId: ctx.cesar!.turnId ?? _turnId,
+                    engineId: cesarEngineId,
+                    value,
+                    reasoning: reasoning || undefined,
+                  });
                   parsedConfidence = value;
                   dispatch({ type: 'info', message: confidenceBadge(value) + ` Cesar (via MCP)` });
                   dispatch({ type: 'confidence-update', value });

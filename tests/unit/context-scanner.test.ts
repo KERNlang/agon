@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { scanProjectContext, isKernProject, gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff } from '@kernlang/agon-core';
+import { scanProjectContext, isKernProject, hasProjectBrief, gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff } from '@kernlang/agon-core';
 import { join } from 'node:path';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 const REPO_ROOT = join(import.meta.dirname, '../..');
 
@@ -63,6 +65,63 @@ describe('context-scanner', () => {
       expect(ctx).toContain('Project:');
       // Should still return something, just without git info
       expect(ctx.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('project-brief cascade (#6)', () => {
+    function tmpRepo(): string {
+      return mkdtempSync(join(tmpdir(), 'agon-brief-'));
+    }
+
+    it('prefers .agon/project.md over AGON.md (first match wins)', () => {
+      const root = tmpRepo();
+      mkdirSync(join(root, '.agon'), { recursive: true });
+      writeFileSync(join(root, '.agon/project.md'), 'SENTINEL_DOTAGON_PROJECT');
+      writeFileSync(join(root, 'AGON.md'), 'SENTINEL_PLAIN_AGON');
+      const ctx = scanProjectContext(root);
+      expect(ctx).toContain('Project instructions (.agon/project.md)');
+      expect(ctx).toContain('SENTINEL_DOTAGON_PROJECT');
+      expect(ctx).not.toContain('SENTINEL_PLAIN_AGON');
+    });
+
+    it('gives a dedicated brief (AGON.md) a 4000-char budget — content past 2000 survives', () => {
+      const root = tmpRepo();
+      // ~2600 chars: would be cut mid-brief under the old flat 2000 cap, fits under 4000.
+      const body = 'HEAD_MARK' + 'x'.repeat(2600) + 'TAIL_MARK_PAST_2000';
+      writeFileSync(join(root, 'AGON.md'), body);
+      const ctx = scanProjectContext(root);
+      expect(ctx).toContain('TAIL_MARK_PAST_2000'); // survives the raised cap
+      expect(ctx).not.toContain('truncated at 2000 chars'); // not cut at the old cap
+      expect(ctx).not.toContain('truncated at 4000 chars'); // under 4000, no truncation at all
+    });
+
+    it('keeps generic agent files (CLAUDE.md) on the tight 2000-char budget', () => {
+      const root = tmpRepo();
+      const body = 'CLAUDE_HEAD' + 'y'.repeat(2600) + 'CLAUDE_TAIL_PAST_2000';
+      writeFileSync(join(root, 'CLAUDE.md'), body);
+      const ctx = scanProjectContext(root);
+      expect(ctx).toContain('truncated at 2000 chars');
+      expect(ctx).not.toContain('CLAUDE_TAIL_PAST_2000'); // cut at 2000
+    });
+  });
+
+  describe('hasProjectBrief (#6 nudge signal)', () => {
+    it('is true when a recognized brief exists', () => {
+      const root = mkdtempSync(join(tmpdir(), 'agon-hasbrief-'));
+      writeFileSync(join(root, 'AGON.md'), '# brief');
+      expect(hasProjectBrief(root)).toBe(true);
+    });
+
+    it('is true for a nested .agon/project.md', () => {
+      const root = mkdtempSync(join(tmpdir(), 'agon-hasbrief-'));
+      mkdirSync(join(root, '.agon'), { recursive: true });
+      writeFileSync(join(root, '.agon/project.md'), '# brief');
+      expect(hasProjectBrief(root)).toBe(true);
+    });
+
+    it('is false when no brief file exists', () => {
+      const root = mkdtempSync(join(tmpdir(), 'agon-nobrief-'));
+      expect(hasProjectBrief(root)).toBe(false);
     });
   });
 

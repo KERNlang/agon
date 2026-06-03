@@ -6,7 +6,7 @@
 
 import from="node:fs" names="appendFileSync,mkdirSync,existsSync,readFileSync"
 import from="node:path" names="join"
-import from="@kernlang/agon-core" names="RUNS_DIR"
+import from="@kernlang/agon-core" names="RUNS_DIR,agonPath"
 
 interface name=CesarApprovalLedgerRecord export=true
   field name=turnId type=string optional=true
@@ -40,6 +40,15 @@ interface name=CesarHarnessReplayResult export=true
   field name=errorCount type=number
   field name=rendered type=string
   field name=turns type="Array<Record<string,unknown>>"
+
+interface name=CesarConfidenceRecord export=true
+  field name=sessionId type=string
+  field name=turnId type=string optional=true
+  field name=engineId type=string optional=true
+  field name=mode type=string optional=true
+  field name=value type=number
+  field name=reasoning type=string optional=true
+  field name=toolsUsedCount type=number optional=true
 
 fn name=createCesarTurnId returns=string export=true expr={{ return `cesar-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }}
   doc "Create a short stable-enough id for joining per-turn tool timeline and approval ledger records."
@@ -148,6 +157,27 @@ fn name=recordCesarToolTimeline params="record:CesarToolTimelineRecord,runsDir?:
           : undefined,
         summary: record.summary,
       }, runsDir);
+    } catch { /* observability must never block tools */ }
+  >>>
+
+fn name=recordCesarConfidence params="record:CesarConfidenceRecord" returns=void export=true
+  doc "Append one reported-confidence snapshot to ~/.agon/calibration/<sessionId>.jsonl (data-only — no scoring, no outcome judgment). Best-effort: failures are swallowed by callers."
+  handler <<<
+    try {
+      // sessionId becomes a filename component — reject anything that could escape the dir.
+      const sessionId = typeof record.sessionId === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(record.sessionId) && record.sessionId !== '..'
+        ? record.sessionId
+        : 'unknown-session';
+      appendCesarJsonl(`${sessionId}.jsonl`, {
+        kind: 'confidence',
+        sessionId,
+        turnId: record.turnId,
+        engineId: record.engineId,
+        mode: record.mode,
+        value: record.value,
+        reasoning: record.reasoning,
+        toolsUsedCount: record.toolsUsedCount,
+      }, agonPath('calibration'));
     } catch { /* observability must never block tools */ }
   >>>
 

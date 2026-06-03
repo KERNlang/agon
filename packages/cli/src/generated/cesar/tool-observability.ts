@@ -4,7 +4,7 @@ import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { RUNS_DIR } from '@kernlang/agon-core';
+import { RUNS_DIR, agonPath } from '@kernlang/agon-core';
 
 // @kern-source: tool-observability:11
 export interface CesarApprovalLedgerRecord {
@@ -45,20 +45,31 @@ export interface CesarHarnessReplayResult {
   turns: Array<Record<string,unknown>>;
 }
 
+// @kern-source: tool-observability:44
+export interface CesarConfidenceRecord {
+  sessionId: string;
+  turnId?: string;
+  engineId?: string;
+  mode?: string;
+  value: number;
+  reasoning?: string;
+  toolsUsedCount?: number;
+}
+
 /**
  * Create a short stable-enough id for joining per-turn tool timeline and approval ledger records.
  */
-// @kern-source: tool-observability:44
+// @kern-source: tool-observability:53
 export function createCesarTurnId(): string {
   return `cesar-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// @kern-source: tool-observability:47
+// @kern-source: tool-observability:56
 function looksSensitiveString(value: string): boolean {
   return /(?:secret|token|password|credential|api[_-]?key|private[_-]?key)\s*[:=]/i.test(value) || /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value) || /\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9_]{16,}|AKIA[0-9A-Z]{16})\b/.test(value);
 }
 
-// @kern-source: tool-observability:51
+// @kern-source: tool-observability:60
 function summarizeCommandString(value: string): Record<string,unknown> {
   const raw = String(value ?? '').trim();
   const first = raw.split(/\s+/)[0] ?? '';
@@ -67,7 +78,7 @@ function summarizeCommandString(value: string): Record<string,unknown> {
   return { commandBase: base, chars: raw.length, redactedPreview: true, sensitive: sensitive || undefined };
 }
 
-// @kern-source: tool-observability:59
+// @kern-source: tool-observability:68
 function summarizeValue(key: string, value: unknown): unknown {
   const lower = key.toLowerCase();
   if (/(secret|token|password|credential|api[_-]?key|private[_-]?key|content|old_string|new_string)/i.test(lower)) {
@@ -100,7 +111,7 @@ function summarizeValue(key: string, value: unknown): unknown {
 /**
  * Summarize tool input/output payloads for logs without storing full file contents or large blobs.
  */
-// @kern-source: tool-observability:80
+// @kern-source: tool-observability:89
 export function summarizeToolPayload(payload: Record<string,unknown>|string|undefined): Record<string,unknown>|undefined {
   if (payload === undefined) return undefined;
   if (typeof payload === 'string') {
@@ -123,7 +134,7 @@ export function summarizeToolPayload(payload: Record<string,unknown>|string|unde
   return out;
 }
 
-// @kern-source: tool-observability:104
+// @kern-source: tool-observability:113
 function appendCesarJsonl(fileName: string, record: Record<string,unknown>, runsDir?: string): void {
   const dir = runsDir ?? RUNS_DIR;
   mkdirSync(dir, { recursive: true });
@@ -133,7 +144,7 @@ function appendCesarJsonl(fileName: string, record: Record<string,unknown>, runs
 /**
  * Append one permission decision to the persistent Cesar approval ledger. Best-effort: failures are swallowed by callers.
  */
-// @kern-source: tool-observability:110
+// @kern-source: tool-observability:119
 export function recordCesarApprovalDecision(record: CesarApprovalLedgerRecord, runsDir?: string): void {
   try {
     const argsSummary = summarizeToolPayload(record.args);
@@ -156,7 +167,7 @@ export function recordCesarApprovalDecision(record: CesarApprovalLedgerRecord, r
 /**
  * Append one compact per-turn tool timeline event. Best-effort and payload-summarized.
  */
-// @kern-source: tool-observability:131
+// @kern-source: tool-observability:140
 export function recordCesarToolTimeline(record: CesarToolTimelineRecord, runsDir?: string): void {
   try {
     appendCesarJsonl('cesar-tool-timeline.jsonl', {
@@ -178,7 +189,30 @@ export function recordCesarToolTimeline(record: CesarToolTimelineRecord, runsDir
   } catch { /* observability must never block tools */ }
 }
 
-// @kern-source: tool-observability:154
+/**
+ * Append one reported-confidence snapshot to ~/.agon/calibration/<sessionId>.jsonl (data-only — no scoring, no outcome judgment). Best-effort: failures are swallowed by callers.
+ */
+// @kern-source: tool-observability:163
+export function recordCesarConfidence(record: CesarConfidenceRecord): void {
+  try {
+    // sessionId becomes a filename component — reject anything that could escape the dir.
+    const sessionId = typeof record.sessionId === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(record.sessionId) && record.sessionId !== '..'
+      ? record.sessionId
+      : 'unknown-session';
+    appendCesarJsonl(`${sessionId}.jsonl`, {
+      kind: 'confidence',
+      sessionId,
+      turnId: record.turnId,
+      engineId: record.engineId,
+      mode: record.mode,
+      value: record.value,
+      reasoning: record.reasoning,
+      toolsUsedCount: record.toolsUsedCount,
+    }, agonPath('calibration'));
+  } catch { /* observability must never block tools */ }
+}
+
+// @kern-source: tool-observability:184
 function readJsonlRecords(filePath: string): Array<Record<string,unknown>> {
   if (!existsSync(filePath)) {
     return [];
@@ -202,7 +236,7 @@ function readJsonlRecords(filePath: string): Array<Record<string,unknown>> {
   return out;
 }
 
-// @kern-source: tool-observability:172
+// @kern-source: tool-observability:202
 function eventTimeMs(record: Record<string,unknown>): number {
   const ts = (typeof record.ts === 'string') ? Date.parse(record.ts) : NaN;
   return Number.isFinite(ts) ? ts : 0;
@@ -211,7 +245,7 @@ function eventTimeMs(record: Record<string,unknown>): number {
 /**
  * Replay the compact Cesar approval ledger and tool timeline into a readable per-turn summary. This is the CLI/UI surface for post-mortem harness debugging.
  */
-// @kern-source: tool-observability:177
+// @kern-source: tool-observability:207
 export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,limit?:number}): CesarHarnessReplayResult {
   const dir = opts?.runsDir ?? RUNS_DIR;
   const limitRaw = Number(opts?.limit ?? 5);

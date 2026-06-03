@@ -1,13 +1,15 @@
-import { describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   createCesarTurnId,
   recordCesarApprovalDecision,
   recordCesarToolTimeline,
+  recordCesarConfidence,
   replayCesarHarnessLogs,
 } from '../../packages/cli/src/generated/cesar/tool-observability.js';
+import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
 
 describe('Cesar tool observability', () => {
   it('records approval decisions without full edit contents', () => {
@@ -127,5 +129,42 @@ describe('Cesar tool observability', () => {
     expect(replay.rendered).toContain('Turn turn-replay-1');
     expect(replay.rendered).toContain('tools: Read');
     expect(replay.rendered).toContain('approval: Edit approved via cesar-self-turn');
+  });
+
+  describe('confidence ledger (#7, data-only)', () => {
+    let home: string;
+    beforeEach(() => { home = setupTestAgonHome('confidence-ledger'); });
+    afterEach(() => { cleanupTestAgonHome(home); });
+
+    it('appends a per-session confidence snapshot with ts and minimal fields', () => {
+      recordCesarConfidence({
+        sessionId: 'sess-abc',
+        turnId: 'turn-7',
+        engineId: 'claude',
+        value: 88,
+        reasoning: 'pattern is clear',
+        toolsUsedCount: 3,
+      });
+      const file = agonHomePath('calibration', 'sess-abc.jsonl');
+      const record = JSON.parse(readFileSync(file, 'utf-8').trim());
+      expect(record.kind).toBe('confidence');
+      expect(record.sessionId).toBe('sess-abc');
+      expect(record.turnId).toBe('turn-7');
+      expect(record.engineId).toBe('claude');
+      expect(record.value).toBe(88);
+      expect(record.reasoning).toBe('pattern is clear');
+      expect(record.toolsUsedCount).toBe(3);
+      expect(typeof record.ts).toBe('string'); // ISO timestamp added by the writer
+      expect(Number.isNaN(Date.parse(record.ts))).toBe(false);
+    });
+
+    it('sanitizes a path-traversal sessionId into a safe file name', () => {
+      recordCesarConfidence({ sessionId: '../../etc/evil', value: 50 });
+      // The slashes are rejected → falls back to a single safe file in the calibration dir.
+      expect(existsSync(agonHomePath('calibration', 'unknown-session.jsonl'))).toBe(true);
+      const record = JSON.parse(readFileSync(agonHomePath('calibration', 'unknown-session.jsonl'), 'utf-8').trim());
+      expect(record.sessionId).toBe('unknown-session');
+      expect(record.value).toBe(50);
+    });
   });
 });

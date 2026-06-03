@@ -2068,14 +2068,17 @@ ${reviewFollowup.prompt}`;
           const full = m[3].trim();
           _forkOptions.push({ key, label: full.length > 60 ? full.slice(0, 59) + '…' : full, full });
         }
-        const isForkQuestion = /\?\s*$/.test(lastLine) && _forkOptions.length >= 2 && _forkOptions.length <= 6;
-        // On a pure chat answer (fast-answer) there is no pending ACTION to
-        // confirm, so a trailing question is conversational ("...do you want to
-        // dig into the arena?") — not "shall I proceed?". The confirmation regex
-        // is loose (it matches "want"), so without this guard a chatty engine's
-        // follow-up question pops a spurious Yes/No/type-it prompt on a plain chat
-        // turn. Only offer the confirmation prompt off the chat fast-path.
-        const asksConfirmation = !answerFastPath && !ranToolLoop && /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
+        // Only offer end-of-turn PICK prompts (fork / confirm) on ACTION turns —
+        // never when the user is just chatting. A chat/answer turn that ends in a
+        // question is conversational ("...do you want to dig into the arena?", or a
+        // numbered list of options closed by "which one?") — the user wants to TYPE
+        // a free reply, not be boxed into buttons. Gate on the routing FLOW (chat /
+        // answer), not just the short fast-path, so LONG chat turns stay free too.
+        // Buttons still fire on action flows (quick-fix / forge / plan / review …),
+        // where a fork or a "shall I proceed?" is a real decision to pick.
+        const _isChatTurn = routingHints.intakeKind === 'chat' || routingHints.recommendedFlow === 'answer';
+        const isForkQuestion = !_isChatTurn && /\?\s*$/.test(lastLine) && _forkOptions.length >= 2 && _forkOptions.length <= 6;
+        const asksConfirmation = !_isChatTurn && !ranToolLoop && /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
         if (isForkQuestion) {
           const _forkColors = ['#4ade80', '#22d3ee', '#fbbf24', '#a78bfa', '#f97316', '#ef4444'];
           // Auto-append an "own idea" choice so the user is never boxed into the

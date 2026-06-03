@@ -222,6 +222,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       ctx.cesar!.confidenceSatisfied = false;
       ctx.cesar!.blockedOnConfidence = null;
       ctx.cesar!.confidenceBlockCount = 0;
+      ctx.cesar!.searchToolCount = 0;
+      ctx.cesar!.searchNudged = false;
       ctx.cesar!.turnId = _turnId;
       ctx.cesar!.planDispatch = dispatch;
       const _brainStartMs = Date.now();

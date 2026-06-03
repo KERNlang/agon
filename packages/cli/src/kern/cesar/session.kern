@@ -335,6 +335,8 @@ const name=CESAR_SNAPSHOT_MSG_CHAR_CAP type=number value=4000 doc="Max chars per
 
 const name=CONFIDENCE_BLOCK_LIMIT type=number value=2 doc="Breaker for the ReportConfidence gate. After this many blocked tool attempts in a turn without a ReportConfidence call, auto-pass and let the tool through. The gate is a nudge (writes still hit the permission UI), so a non-compliant model must never be trapped looping on the block."
 
+const name=SEARCH_NUDGE_THRESHOLD type=number value=40 doc="After this many successful Read/Grep/Glob calls in one turn, append a one-time advisory to the tool result pointing Cesar at the injected CODEBASE BRIEF instead of searching further. Steers behavior mid-turn; the existing >=100 heads-up is end-of-turn + user-facing. Counter resets each turn (brain.kern turn start)."
+
 fn name=capSnapshotMessageContent params="content:string" returns="string"
   doc "Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it."
   handler <<<
@@ -388,6 +390,7 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
     const toolResultCache = new Map<string, string>();
     const nativeToolErrorRetries = new Map<string, number>();
     const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
+    const SEARCH_NUDGE_TOOLS = new Set(['Read', 'Grep', 'Glob']);
     const explorationMode = ctx.explorationMode ?? false;
     const sharedToolCtx: ToolContext = {
       cwd,
@@ -652,6 +655,18 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       } else if (['Edit', 'Write', 'Bash'].includes(name)) {
         toolResultCache.clear();
         ctx.cesar!.blockedOnConfidence = null;
+      }
+      // Search-volume nudge: once per turn, after many read/search calls, remind
+      // Cesar to lean on the injected CODEBASE BRIEF rather than grep in circles.
+      // Rides the tool result like the [BLOCKED]/[RETRYABLE] notes above —
+      // advisory only. Counts successful calls; resets each turn (brain.kern).
+      if (result.result.ok && SEARCH_NUDGE_TOOLS.has(name)) {
+        const searches = (ctx.cesar!.searchToolCount ?? 0) + 1;
+        ctx.cesar!.searchToolCount = searches;
+        if (searches >= SEARCH_NUDGE_THRESHOLD && !ctx.cesar!.searchNudged) {
+          ctx.cesar!.searchNudged = true;
+          output = `${output}\n\n[NOTE] ${searches} read/search calls this turn. A CODEBASE BRIEF mapping where things live (files + top symbols per package) is in your system prompt — consult it to locate code instead of searching more. If something isn't listed, narrow the query rather than broadening it.`;
+        }
       }
       return output;
     };

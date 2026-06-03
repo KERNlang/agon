@@ -73,6 +73,13 @@ export type {
 export { savePlan, loadPlan, listPlans, deletePlan } from './plan-store.js';
 export { wordWrap } from './text.js';
 export {
+  installKernStackTraceMapper,
+  mapKernStackTrace,
+  resolveKernSourceLocation,
+  uninstallKernStackTraceMapper,
+} from './generated/blocks/stack-trace.js';
+export type { KernSourceLocation } from './generated/blocks/stack-trace.js';
+export {
   formatSpinnerFrame, formatEngineBlock, formatStatusLine,
   clearLinesSequence, cursorUpSequence, clearLineSequence,
 } from './output-manager.js';

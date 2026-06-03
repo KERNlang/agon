@@ -6,7 +6,7 @@
 // when git HEAD or a lockfile changes — plus a TTL backstop so uncommitted
 // working-tree edits can't serve a stale brief forever. See
 // [[project-cesar-harness-rework]].
-import from="node:fs" names="readFileSync,readdirSync,statSync,writeFileSync,mkdirSync,existsSync,rmSync"
+import from="node:fs" names="readFileSync,readdirSync,statSync,lstatSync,writeFileSync,mkdirSync,existsSync,rmSync"
 import from="node:path" names="join,relative"
 import from="node:crypto" names="createHash"
 import from="../signals/config.js" names="agonPath"
@@ -23,9 +23,13 @@ const name=MAP_MAX_FILES_WALKED type=number value={{ 6000 }}
 const name=MAP_MAX_FILES_READ type=number value={{ 600 }}
 const name=MAP_MAX_FILE_BYTES type=number value={{ 262144 }}
 
-// In-process memo (L1): keyed by cwd, holds the brief for the session and is
-// backed by the disk cache (L2). The Map binding is const; its contents mutate.
-const name=MAP_MEMO type="Map<string,string>" value={{ new Map() }}
+// In-process memo (L1): keyed by cwd, holds the brief + the signature it was
+// built for, and is backed by the disk cache (L2). Storing the signature lets a
+// warm memo hit re-validate against the CURRENT signature, so a mid-session
+// commit / branch-switch / lockfile change refreshes the brief instead of
+// serving a stale one for the whole process. The Map binding is const; its
+// contents mutate.
+const name=MAP_MEMO type="Map<string,{sig:string,brief:string}>" value={{ new Map() }}
 
 // Lockfiles whose mtime is folded into the cache signature so the disk cache
 // invalidates when dependencies change. First match wins.
@@ -56,9 +60,13 @@ fn name=collectSourceFiles params="root:string" returns="string[]" export=true
       for (const entry of entries) {
         if (entry.startsWith('.DS_')) continue;
         const full = join(dir, entry);
-        let isDir = false;
-        try { isDir = statSync(full).isDirectory(); } catch { continue; }
-        if (isDir) {
+        // lstat (not stat) so we DON'T follow symlinks: a directory symlink can
+        // form a cycle (infinite walk — the file cap only bounds files FOUND,
+        // not dirs visited) or point outside the repo. Skip symlinks entirely.
+        let st: ReturnType<typeof lstatSync>;
+        try { st = lstatSync(full); } catch { continue; }
+        if (st.isSymbolicLink()) continue;
+        if (st.isDirectory()) {
           if (!MAP_IGNORE_DIRS.has(entry)) stack.push(full);
           continue;
         }
@@ -172,19 +180,27 @@ fn name=composeBrief params="cwd:string, cap:number" returns=string export=false
 
     let filesRead = 0;
     const lines: string[] = [];
-    lines.push('## CODEBASE BRIEF (where things live — prefer this over searching)');
+    // Track the running length incrementally instead of re-joining `lines` on
+    // every iteration (that was O(n²) over up to MAP_MAX_FILES_READ files). The
+    // +1 per line counts the joining newline; it over-counts the budget by one
+    // line, which is harmless for the cap/per-group comparisons (deltas stay
+    // exact) — the final slice below bounds the real string length.
+    let totalLen = 0;
+    const addLine = (s: string) => { lines.push(s); totalLen += s.length + 1; };
+    addLine('## CODEBASE BRIEF (where things live — prefer this over searching)');
     if (kernCount > 0 && generatedCount > 0) {
-      lines.push(`KERN project: ${kernCount} .kern sources compile to generated/ TS mirrors — EDIT THE .kern, not generated/.`);
+      addLine(`KERN project: ${kernCount} .kern sources compile to generated/ TS mirrors — EDIT THE .kern, not generated/.`);
     }
 
     const groupNames = Array.from(groups.keys()).sort();
     // Breadth before depth: give each group a fair slice of the budget so a huge
     // package (e.g. packages/cli) can't consume the whole brief and starve the
     // others. Small groups under-spend their slice, leaving global slack; the
-    // hard `cap` below still bounds the total.
-    const perGroupBudget = Math.max(300, Math.floor(cap / Math.max(1, groupNames.length)));
+    // hard `cap` below still bounds the total. Clamp to `cap` so a tiny custom
+    // cap (< 300) can't hand one group more than the whole budget.
+    const perGroupBudget = Math.min(cap, Math.max(300, Math.floor(cap / Math.max(1, groupNames.length))));
     for (const g of groupNames) {
-      if (lines.join('\n').length > cap) break;
+      if (totalLen > cap) break;
       const groupFiles = (groups.get(g) ?? []).filter((f: string) => !f.includes('/generated/'));
       if (groupFiles.length === 0) continue;
       // Surface .kern sources first: they're the editable truth, whereas the
@@ -197,14 +213,14 @@ fn name=composeBrief params="cwd:string, cap:number" returns=string export=false
         if (ak !== bk) return ak - bk;
         return a < b ? -1 : a > b ? 1 : 0;
       });
-      const groupStart = lines.join('\n').length;
-      lines.push(`\n### ${g} (${groupFiles.length} files)`);
+      const groupStart = totalLen;
+      addLine(`\n### ${g} (${groupFiles.length} files)`);
       // List up to 12 files per group with their top symbols, stopping early once
       // this group has used its fair share (but always showing at least one).
       let shown = 0;
       for (const f of groupFiles.slice(0, 12)) {
-        if (lines.join('\n').length > cap) break;
-        if (shown > 0 && lines.join('\n').length - groupStart > perGroupBudget) break;
+        if (totalLen > cap) break;
+        if (shown > 0 && totalLen - groupStart > perGroupBudget) break;
         let syms: string[] = [];
         if (filesRead < MAP_MAX_FILES_READ) {
           try {
@@ -215,11 +231,11 @@ fn name=composeBrief params="cwd:string, cap:number" returns=string export=false
             }
           } catch { /* unreadable — list the path without symbols */ }
         }
-        lines.push(syms.length > 0 ? `- ${f}: ${syms.join(', ')}` : `- ${f}`);
+        addLine(syms.length > 0 ? `- ${f}: ${syms.join(', ')}` : `- ${f}`);
         shown++;
       }
       const extra = groupFiles.length - shown;
-      if (extra > 0) lines.push(`  (+${extra} more files in ${g})`);
+      if (extra > 0) addLine(`  (+${extra} more files in ${g})`);
     }
 
     let brief = lines.join('\n');
@@ -231,15 +247,19 @@ fn name=buildCodebaseMap params="cwd:string, maxChars?:number" returns=string ex
   doc "Build the compact CODEBASE BRIEF for cwd: a where-things-live index grouped by package/dir, listing source files with their top symbols and noting .kern->generated mirroring. Cheap (fs walk + regex). Two-layer cached: an in-process memo (session) backed by a disk cache invalidated on git HEAD / lockfile change (default cap only); a custom maxChars bypasses both caches. Returns '' if nothing indexable. Cap defaults to ~3500 chars."
   handler <<<
     // A custom cap is a one-off (e.g. tests) — compose fresh, bypass both caches.
-    if (maxChars !== undefined) return composeBrief(cwd, maxChars);
-    const cached = MAP_MEMO.get(cwd);
-    if (cached !== undefined) return cached;
+    if (maxChars !== undefined) return composeBrief(cwd, Math.max(1, maxChars));
+    // Compute the signature first and validate BOTH cache layers against it, so a
+    // warm memo can't serve a brief from a stale HEAD/lockfile (the L1 memo used
+    // to return on a cwd hit before checking the signature — three reviewers
+    // flagged that it contradicted the stated git-HEAD invalidation).
     const sig = mapCacheSignature(cwd);
+    const cached = MAP_MEMO.get(cwd);
+    if (cached !== undefined && cached.sig === sig) return cached.brief;
     const fromDisk = readMapDiskCache(cwd, sig);
-    if (fromDisk !== null) { MAP_MEMO.set(cwd, fromDisk); return fromDisk; }
+    if (fromDisk !== null) { MAP_MEMO.set(cwd, { sig, brief: fromDisk }); return fromDisk; }
     const brief = composeBrief(cwd, 3500);
     writeMapDiskCache(cwd, sig, brief);
-    MAP_MEMO.set(cwd, brief);
+    MAP_MEMO.set(cwd, { sig, brief });
     return brief;
   >>>
 

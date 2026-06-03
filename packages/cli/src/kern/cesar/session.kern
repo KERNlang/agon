@@ -180,7 +180,12 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export
     try {
       const codebaseBrief = buildCodebaseMap(cesarCwd);
       if (codebaseBrief) systemParts.push(codebaseBrief);
-    } catch { /* atlas is best-effort — never block prompt assembly */ }
+    } catch (err) {
+      // Best-effort — never block prompt assembly — but surface it: buildCodebaseMap
+      // catches its own fs errors and returns '', so reaching here means an
+      // unexpected bug, not just a missing/odd repo. Don't swallow it silently.
+      console.warn(`[agon] codebase atlas skipped: ${err instanceof Error ? err.message : String(err)}`);
+    }
     // Engine list is now in ROUTING CONTEXT (per-turn), but keep a basic list for fallback
     systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
     if (ctx.explorationMode) {
@@ -665,7 +670,7 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         ctx.cesar!.searchToolCount = searches;
         if (searches >= SEARCH_NUDGE_THRESHOLD && !ctx.cesar!.searchNudged) {
           ctx.cesar!.searchNudged = true;
-          output = `${output}\n\n[NOTE] ${searches} read/search calls this turn. A CODEBASE BRIEF mapping where things live (files + top symbols per package) is in your system prompt — consult it to locate code instead of searching more. If something isn't listed, narrow the query rather than broadening it.`;
+          output = `${output ?? ''}\n\n[NOTE] ${searches} read/search calls this turn. A CODEBASE BRIEF mapping where things live (files + top symbols per package) is in your system prompt — consult it to locate code instead of searching more. If something isn't listed, narrow the query rather than broadening it.`;
         }
       }
       return output;

@@ -118,6 +118,20 @@ describe('codebase-map — buildCodebaseMap', () => {
     expect(rewritten.sig).toBe('nogit:0'); // refreshed with the current signature
   });
 
+  it('refreshes a warm in-process memo when the signature changes mid-session', () => {
+    const root = fixture();
+    clearCodebaseMapCache(root);
+    const brief1 = buildCodebaseMap(root); // warms L1 memo at sig 'nogit:0'
+    expect(brief1).not.toContain('brandNewSym');
+    // A new source file appears AND the signature changes (a lockfile is added,
+    // bumping the lockfile-mtime component). The warm memo must NOT keep serving
+    // the stale brief — under the old cwd-only memo it would.
+    writeFileSync(join(root, 'packages/core/src/newthing.kern'), 'fn name=brandNewSym returns=void');
+    writeFileSync(join(root, 'package-lock.json'), '{}');
+    const brief2 = buildCodebaseMap(root);
+    expect(brief2).toContain('brandNewSym'); // rebuilt against the new signature
+  });
+
   it('ignores a disk cache past its TTL', () => {
     const root = fixture();
     const sevenHoursAgo = Date.now() - 7 * 60 * 60 * 1000; // TTL is 6h

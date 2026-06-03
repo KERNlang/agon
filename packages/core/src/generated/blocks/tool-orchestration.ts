@@ -457,7 +457,9 @@ export function createConquerTool(): ToolHandler {
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.task || typeof input.task !== 'string' || !(input.task as string).trim()) return 'Missing required parameter: task';
     if (!input.gate || typeof input.gate !== 'string' || !(input.gate as string).trim()) return 'Missing required parameter: gate (the done-spec test/verify command). Ask the user for the command that proves the build is done.';
-    if (input.engines !== undefined && !Array.isArray(input.engines)) return 'engines must be an array of engine IDs (string[])';
+    // Validate element TYPES, not just array-ness: the router joins engines into
+    // a -e CLI flag, so a malformed [{}] would become "[object Object]" (codex review).
+    if (input.engines !== undefined && (!Array.isArray(input.engines) || !(input.engines as unknown[]).every((e) => typeof e === 'string' && (e as string).trim().length > 0))) return 'engines must be an array of non-empty engine ID strings';
     return null;
   };
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => { return { behavior: 'allow' }; };
@@ -468,7 +470,7 @@ export function createConquerTool(): ToolHandler {
 /**
  * Signal tool — delegates to the build → parallel review → fix loop.
  */
-// @kern-source: tool-orchestration:450
+// @kern-source: tool-orchestration:452
 export function createPipelineTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Pipeline',

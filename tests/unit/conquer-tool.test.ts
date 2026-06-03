@@ -12,7 +12,10 @@ describe('Conquer tool', () => {
     expect(t.validate({ gate: 'pnpm test' }, {} as any)).toMatch(/task/i); // missing task
     expect(t.validate({ task: 'build X' }, {} as any)).toMatch(/gate/i); // missing gate (the done-spec)
     expect(t.validate({ task: 'build X', gate: 'pnpm test' }, {} as any)).toBeNull();
-    expect(t.validate({ task: 'build X', gate: 'pnpm test', engines: 'nope' }, {} as any)).toMatch(/engines/i);
+    expect(t.validate({ task: 'build X', gate: 'pnpm test', engines: 'nope' }, {} as any)).toMatch(/engines/i); // not an array
+    expect(t.validate({ task: 'build X', gate: 'pnpm test', engines: [{}] }, {} as any)).toMatch(/engines/i); // non-string element
+    expect(t.validate({ task: 'build X', gate: 'pnpm test', engines: ['codex', ''] }, {} as any)).toMatch(/engines/i); // empty element
+    expect(t.validate({ task: 'build X', gate: 'pnpm test', engines: ['codex', 'claude'] }, {} as any)).toBeNull();
   });
 
   it('extractDelegation maps a Conquer tool call to action=conquer, threading builder', () => {

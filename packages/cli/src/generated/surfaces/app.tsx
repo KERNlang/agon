@@ -6,7 +6,7 @@ import { Box, Static, Text, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@kernlang/agon-core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
@@ -2319,22 +2319,38 @@ export function App() {
             return;
           }
           setModelPickerOpen(false);
-          const def = modelEntryToEngineDef(entry);
-          const dir = join(getAgonHome(), 'engines');
-          mkdirSync(dir, { recursive: true });
-          writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');
-          registry.register(def as any);
-          const nextSelected = Array.from(new Set([...(sessionEngines ?? registry.activeIds(config as any)), def.id]));
-          const cfg = loadConfig() as any;
-          const hidden = new Set(cfg.hiddenEngines ?? []);
-          hidden.delete(def.id);
-          setSessionEngines(nextSelected);
-          configSet('engineActivationMode' as any, 'explicit' as any);
-          configSet('forgeEnabledEngines', nextSelected as any);
-          configSet('hiddenEngines', [...hidden] as any);
-          setRegistryVersion((v: number) => v + 1);
-          setConfigVersion((v: number) => v + 1);
-          dispatch({ type: 'success', message: `Added: ${entry.providerName} \u2014 ${entry.modelName}` } as any);
+          void (async () => {
+            const def = modelEntryToEngineDef(entry);
+            const dir = join(getAgonHome(), 'engines');
+            mkdirSync(dir, { recursive: true });
+            writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');
+            registry.register(def as any);
+            // Prompt for the API key inline when it isn't already available
+            // (explicit env export OR a key previously saved in the auth store).
+            // setAuthKey persists it AND injects process.env so dispatch sees it
+            // immediately \u2014 no shell export needed.
+            const envVar = def.api?.apiKeyEnv as string | undefined;
+            if (envVar && !getAuthKey(envVar)) {
+              const key = await askQuestion(`Paste ${envVar} for ${entry.providerName} (Enter to skip):`);
+              if (key && key.trim()) {
+                setAuthKey(envVar, key.trim(), entry.providerName);
+                dispatch({ type: 'success', message: `Saved ${envVar} to auth store` } as any);
+              } else {
+                dispatch({ type: 'info', message: `No key saved \u2014 set ${envVar} before using ${entry.modelName}.` } as any);
+              }
+            }
+            const nextSelected = Array.from(new Set([...(sessionEngines ?? registry.activeIds(config as any)), def.id]));
+            const cfg = loadConfig() as any;
+            const hidden = new Set(cfg.hiddenEngines ?? []);
+            hidden.delete(def.id);
+            setSessionEngines(nextSelected);
+            configSet('engineActivationMode' as any, 'explicit' as any);
+            configSet('forgeEnabledEngines', nextSelected as any);
+            configSet('hiddenEngines', [...hidden] as any);
+            setRegistryVersion((v: number) => v + 1);
+            setConfigVersion((v: number) => v + 1);
+            dispatch({ type: 'success', message: `Added: ${entry.providerName} \u2014 ${entry.modelName}` } as any);
+          })();
         }}
         onCancel={() => {
           const hadTarget = !!modelPickerTargetEngine;
@@ -2493,7 +2509,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:90
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2183
+// @kern-source: app:2199
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

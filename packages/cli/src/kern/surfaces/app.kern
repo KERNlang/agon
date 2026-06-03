@@ -1940,6 +1940,12 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
             onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('engineActivationMode' as any, 'explicit' as any); configSet('forgeEnabledEngines', selected); setConfigVersion((v: number) => v + 1); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
             onCancel={() => setEnginePickerOpen(false)}
             onRemove={(engineId: string) => {
+              // Capture the engine's API-key env BEFORE unregistering so we can
+              // detect a now-orphaned key. Refcount is DERIVED live from the
+              // remaining registered engines (ground truth) — never a stored count
+              // that can drift when engine files are edited by hand.
+              let _keyEnv: string | undefined;
+              try { _keyEnv = (registry.get(engineId) as any)?.api?.apiKeyEnv; } catch (_e) { /* not registered */ }
               const engPath = join(getAgonHome(), 'engines', `${engineId}.json`);
               try { unlinkSync(engPath); } catch (_e) {}
               const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
@@ -1957,6 +1963,19 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
               setRegistryVersion((v: number) => v + 1);
               setSessionEngines((prev: string[]|null) => prev ? prev.filter((id: string) => id !== engineId) : null);
               dispatch({ type: 'success', message: `Removed from Agon: ${engineId}. Restore with /engines restore ${engineId}.` } as any);
+              // Refcount clean-delete: if NO remaining engine (builtin or user) uses
+              // this key's env var, the saved key is now orphaned. We do NOT prompt
+              // here — this runs inside the EnginePicker's own input handler and the
+              // picker stays open for multi-remove, so an askQuestion prompt would
+              // fight the picker for keystrokes (Enter would confirm-and-close it).
+              // Surface the one-command cleanup instead; /provider key clear runs
+              // cleanly outside the picker.
+              if (_keyEnv && getAuthKey(_keyEnv)) {
+                const stillUsed = registry.list().some((e: any) => e?.api?.apiKeyEnv === _keyEnv);
+                if (!stillUsed) {
+                  dispatch({ type: 'info', message: `${_keyEnv} is no longer used by any engine — clear the saved key with /provider key clear ${_keyEnv}.` } as any);
+                }
+              }
             }}
             onSetModel={(engineId: string, model: string | null) => {
               const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
@@ -2038,6 +2057,16 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
                     dispatch({ type: 'success', message: `Saved ${envVar} to auth store` } as any);
                   } else {
                     dispatch({ type: 'info', message: `No key saved \u2014 set ${envVar} before using ${entry.modelName}.` } as any);
+                  }
+                } else if (envVar) {
+                  // Key already saved for this env var \u2014 offer to replace it inline.
+                  // Re-adding the engine is the natural "change my key" path (the
+                  // key is shared by env-var name across engines, so this updates
+                  // every engine that points at ${envVar} at once).
+                  const repl = await askQuestion(`${envVar} is already set. Paste a new key to replace it, or Enter to keep:`);
+                  if (repl && repl.trim()) {
+                    setAuthKey(envVar, repl.trim(), entry.providerName);
+                    dispatch({ type: 'success', message: `Replaced ${envVar} in auth store` } as any);
                   }
                 }
                 const nextSelected = Array.from(new Set([...(sessionEngines ?? registry.activeIds(config as any)), def.id]));

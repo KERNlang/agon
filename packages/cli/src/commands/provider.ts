@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { header, success, fail, info, table, bold, green, red, dim, yellow } from '../output.js';
-import { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef, getAuthKey, setAuthKey, loadAllAuthKeys, listStoredProviders } from '@kernlang/agon-core';
+import { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef, getAuthKey, setAuthKey, removeAuthKey, loadAllAuthKeys, listStoredProviders } from '@kernlang/agon-core';
 import type { ModelEntry } from '@kernlang/agon-core';
 
 function enginesDir() {
@@ -125,12 +125,12 @@ async function interactiveAdd() {
 export const providerCommand = defineCommand({
   meta: {
     name: 'provider',
-    description: 'Add, remove, or list API providers',
+    description: 'Add, remove, or list API providers; connect/disconnect and manage API keys',
   },
   args: {
     action: {
       type: 'positional',
-      description: 'Action: add | remove | list | browse',
+      description: 'Action: add | remove | list | browse | login | logout | key',
       required: true,
     },
   },
@@ -291,11 +291,64 @@ export const providerCommand = defineCommand({
           fail(`No stored credentials matching "${providerQuery}"`);
           break;
         }
-        const { removeAuthKey: removeKey } = await import('@kernlang/agon-core');
-        removeKey(match.envVar);
-        delete process.env[match.envVar];
+        removeAuthKey(match.envVar);
+        delete (process.env as Record<string, string | undefined>)[match.envVar];
         success(`Removed credentials for ${match.provider ?? match.envVar}`);
         break;
+      }
+
+      case 'key': {
+        // Scriptable key management: agon provider key set <ENV> [value] | clear <ENV> | list
+        // Keys are stored by env-var name and shared across every engine pointing at
+        // that env var, so `set` changes the key for all of them at once.
+        loadAllAuthKeys();
+        const sub = (extra[0] ?? '').toLowerCase();
+        if (sub === '' || sub === 'list') {
+          const stored = listStoredProviders();
+          header('Saved API keys');
+          if (stored.length === 0) {
+            info('No saved keys. Add one with: agon provider key set <ENV_VAR>');
+            break;
+          }
+          table(['Env var', 'Provider'], stored.map((s) => [green(s.envVar), s.provider ?? dim('—')]));
+          break;
+        }
+        const envVar = extra[1];
+        if (!envVar || !/^[A-Za-z0-9_]+$/.test(envVar)) {
+          fail('Usage: agon provider key set <ENV_VAR> | clear <ENV_VAR> | list');
+          process.exit(1);
+        }
+        if (sub === 'clear' || sub === 'remove' || sub === 'rm') {
+          // Existence check against the STORE only — getAuthKey() also returns
+          // shell-exported vars, so using it here would falsely report success and
+          // clobber a live env-only key that was never saved.
+          const inStore = listStoredProviders().some((s) => s.envVar === envVar);
+          if (!inStore) {
+            info(`${envVar} is not saved in the auth store${process.env[envVar] ? ' (it is set via your shell environment — unset it there).' : '.'}`);
+            break;
+          }
+          removeAuthKey(envVar);
+          delete (process.env as Record<string, string | undefined>)[envVar];
+          success(`Cleared ${envVar} from ~/.agon/auth.json`);
+          break;
+        }
+        if (sub === 'set') {
+          // Prefer the prompt form — passing the key as an argv token leaks it into
+          // shell history and process listings. The inline value still works for
+          // automation but is intentionally not advertised.
+          let value = extra.slice(2).join(' ');
+          if (!value) value = await prompt(`Enter value for ${envVar}: `);
+          if (!value) {
+            fail('No value provided.');
+            process.exit(1);
+          }
+          const existed = listStoredProviders().some((s) => s.envVar === envVar);
+          setAuthKey(envVar, value, undefined);
+          success(`${existed ? 'Replaced' : 'Saved'} ${envVar} in ~/.agon/auth.json`);
+          break;
+        }
+        fail('Usage: agon provider key set <ENV_VAR> | clear <ENV_VAR> | list');
+        process.exit(1);
       }
 
       case 'browse': {
@@ -360,9 +413,11 @@ export const providerCommand = defineCommand({
           info('No providers connected yet.');
         }
         console.log('');
-        info('agon provider add     — add model from registry');
-        info('agon provider login   — connect a provider');
-        info('agon provider logout  — disconnect a provider');
+        info('agon provider add        — add model from registry');
+        info('agon provider login      — connect a provider (set/overwrite its key)');
+        info('agon provider logout     — disconnect a provider (remove its key)');
+        info('agon provider key set    — set/replace a key: key set <ENV_VAR> <value>');
+        info('agon provider key clear  — remove a saved key: key clear <ENV_VAR>');
         break;
       }
     }

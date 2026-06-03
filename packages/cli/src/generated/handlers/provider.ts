@@ -6,16 +6,38 @@ import { join, resolve } from 'node:path';
 
 import { homedir } from 'node:os';
 
+import { setAuthKey, removeAuthKey, listStoredProviders } from '@kernlang/agon-core';
+
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
-// @kern-source: provider:6
+// @kern-source: provider:7
+export interface ProviderKeyCmd {
+  sub: 'set'|'clear'|'list'|'help';
+  envVar?: string;
+  value?: string;
+}
+
+/**
+ * Parse the tail of '/provider key …'. 'set <ENV> [value]' → {sub:set,envVar,value}; 'clear|remove|rm <ENV>' → {sub:clear,envVar}; 'list' (or empty) → {sub:list}; anything else → {sub:help}. Pure — unit-tested in tests/unit/provider-key.test.ts.
+ */
+// @kern-source: provider:12
+export function parseProviderKeyArgs(args: string): ProviderKeyCmd {
+  const parts = String(args ?? '').trim().split(/\s+/).filter(Boolean);
+  const sub = (parts[0] ?? '').toLowerCase();
+  if (sub === '' || sub === 'list') return { sub: 'list' };
+  if (sub === 'set') return { sub: 'set', envVar: parts[1], value: parts.slice(2).join(' ') || undefined };
+  if (sub === 'clear' || sub === 'remove' || sub === 'rm') return { sub: 'clear', envVar: parts[1] };
+  return { sub: 'help' };
+}
+
+// @kern-source: provider:23
 function enginesDir(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'engines');
 }
 
-// @kern-source: provider:13
+// @kern-source: provider:30
 export async function handleProviderAdd(dispatch: Dispatch, ctx: HandlerContext, args: string): Promise<void> {
   // Parse: /provider add <id> <baseUrl> <apiKeyEnv> <model>
   const parts = args.trim().split(/\s+/);
@@ -64,7 +86,7 @@ export async function handleProviderAdd(dispatch: Dispatch, ctx: HandlerContext,
   dispatch({ type: 'info', message: `Use: /use ${id}` });
 }
 
-// @kern-source: provider:62
+// @kern-source: provider:79
 export function handleProviderRemove(dispatch: Dispatch, ctx: HandlerContext, id: string): void {
   if (!id) {
     dispatch({ type: 'error', message: 'Usage: /provider remove <id>' });
@@ -83,7 +105,7 @@ export function handleProviderRemove(dispatch: Dispatch, ctx: HandlerContext, id
   dispatch({ type: 'success', message: `Removed provider: ${id}` });
 }
 
-// @kern-source: provider:77
+// @kern-source: provider:94
 export function handleProviderList(dispatch: Dispatch): void {
   const dir = enginesDir();
   if (!existsSync(dir)) {
@@ -114,11 +136,59 @@ export function handleProviderList(dispatch: Dispatch): void {
   dispatch({ type: 'info', message: 'Add: /provider add <id> <baseUrl> <API_KEY_ENV> <model>' });
 }
 
-// @kern-source: provider:108
+/**
+ * Manage saved API keys from the REPL: /provider key set <ENV> <value> | clear <ENV> | list. Keys are stored by env-var name in ~/.agon/auth.json and shared by every engine pointing at that env var, so 'set' changes the key for all of them at once.
+ */
+// @kern-source: provider:125
+export function handleProviderKey(args: string, dispatch: Dispatch): void {
+  const cmd = parseProviderKeyArgs(args);
+  if (cmd.sub === 'help') {
+    dispatch({ type: 'info', message: 'Usage: /provider key set <ENV_VAR> <value> | clear <ENV_VAR> | list' });
+    dispatch({ type: 'info', message: 'Change a key: /provider key set MINIMAX_API_KEY <new-value>' });
+    return;
+  }
+  if (cmd.sub === 'list') {
+    const stored = listStoredProviders();
+    if (!stored.length) { dispatch({ type: 'info', message: 'No saved keys. Add one with /provider key set <ENV_VAR> <value>' }); return; }
+    dispatch({ type: 'header', title: 'Saved API keys' });
+    dispatch({ type: 'table', headers: ['Env var', 'Provider'], rows: stored.map((s) => [s.envVar, s.provider ?? '—']) });
+    return;
+  }
+  const envVar = cmd.envVar;
+  if (!envVar || !/^[A-Za-z0-9_]+$/.test(envVar)) {
+    dispatch({ type: 'error', message: `Invalid env var name${envVar ? `: ${envVar}` : ''}. Example: MINIMAX_API_KEY` });
+    return;
+  }
+  if (cmd.sub === 'clear') {
+    // Existence check against the STORE only — getAuthKey() also returns
+    // shell-exported vars, so using it here would falsely report success and
+    // clobber a live env-only key that was never saved.
+    const inStore = listStoredProviders().some((s) => s.envVar === envVar);
+    if (!inStore) {
+      dispatch({ type: 'info', message: `${envVar} is not saved in the auth store${process.env[envVar] ? ' (it is set via your shell environment).' : '.'}` });
+      return;
+    }
+    removeAuthKey(envVar);
+    delete (process.env as Record<string, string | undefined>)[envVar];
+    dispatch({ type: 'success', message: `Cleared ${envVar} from the auth store.` });
+    return;
+  }
+  // set
+  if (!cmd.value) {
+    dispatch({ type: 'error', message: `Usage: /provider key set ${envVar} <value>` });
+    return;
+  }
+  const existed = listStoredProviders().some((s) => s.envVar === envVar);
+  setAuthKey(envVar, cmd.value, undefined);
+  dispatch({ type: 'success', message: `${existed ? 'Replaced' : 'Saved'} ${envVar} in the auth store.` });
+}
+
+// @kern-source: provider:170
 export async function handleProvider(action: string, args: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   switch (action) {
     case 'add': return handleProviderAdd(dispatch, ctx, args);
     case 'remove': handleProviderRemove(dispatch, ctx, args.trim()); return;
+    case 'key': handleProviderKey(args, dispatch); return;
     case 'list':
     default: handleProviderList(dispatch); return;
   }

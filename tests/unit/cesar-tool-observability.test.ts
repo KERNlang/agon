@@ -167,6 +167,12 @@ describe('Cesar tool observability', () => {
       expect(diag).toContain('… (truncated)');
       expect(diag.length).toBeLessThan(700);
     });
+
+    it('coerces a non-string error defensively (no crash)', () => {
+      const diag = buildToolErrorDiagnostic('Edit', { file_path: 'x' }, (new Error('boom')) as unknown as string);
+      expect(diag).toContain('Tool Edit failed');
+      expect(diag).toContain('boom'); // String(Error) → "Error: boom"
+    });
   });
 
   describe('confidence ledger (#7, data-only)', () => {

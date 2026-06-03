@@ -121,9 +121,10 @@ fn name=buildToolErrorDiagnostic params="name:string, args:Record<string,unknown
         inputSnippet = s.length > 800 ? s.slice(0, 800) + '… (truncated)' : s;
       }
     } catch { inputSnippet = '(input could not be inspected)'; }
-    // Cap the raw error too — a tool's validation message can echo the offending
-    // blob back, which would bypass the snippet redaction this function exists for.
-    const rawErr = error ?? 'Tool execution failed';
+    // Length-cap the error too (a tool's validation message can echo a large blob
+    // back). Coerce defensively: callers are typed string|undefined, but a JS-interop
+    // caller could pass an Error object, where .length/.slice would misbehave.
+    const rawErr = typeof error === 'string' ? error : String(error ?? 'Tool execution failed');
     const errMsg = rawErr.length > 500 ? rawErr.slice(0, 500) + '… (truncated)' : rawErr;
     return `Tool ${name} failed.\nInput (redacted): ${inputSnippet}\nError: ${errMsg}`;
   >>>

@@ -6,6 +6,9 @@ type name=ContextFormat values="plain|kern"
 
 const name=PROJECT_BRIEF_FILES value={{ [".agon/project.md", "AGON.md", "AGENT.md", "CLAUDE.md", "CODEX.md"] }}
 
+const name=MAX_PROJECT_BRIEF_BYTES type=number value={{ 512 * 1024 }}
+  doc "Upper bound for reading a brief file into memory in hasProjectBrief — a file bigger than this is clearly non-empty, so count it without a full read."
+
 fn name=projectBriefCap params="file:string" returns=number export=false expr={{ return (file === ".agon/project.md" || file === "AGON.md") ? 4000 : 2000; }}
   doc "Larger budget for dedicated Agon briefs (.agon/project.md, AGON.md); generic agent files stay tight."
 
@@ -18,7 +21,11 @@ fn name=hasProjectBrief params="cwd:string" returns=boolean export=true
         // stat first: skip zero-length files and avoid reading a directory or an
         // accidentally-huge file just to test for non-whitespace content.
         const st = existsSync(path) ? statSync(path) : null;
-        if (st && st.isFile() && st.size > 0 && readFileSync(path, "utf-8").trim().length > 0) return true;
+        if (st && st.isFile() && st.size > 0) {
+          // An oversized file is clearly non-empty — count it without reading it all.
+          if (st.size > MAX_PROJECT_BRIEF_BYTES) return true;
+          if (readFileSync(path, "utf-8").trim().length > 0) return true;
+        }
       } catch { /* ignore unreadable paths / directories */ }
     }
     return false;

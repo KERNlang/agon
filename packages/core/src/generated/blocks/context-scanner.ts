@@ -13,9 +13,15 @@ export type ContextFormat = 'plain' | 'kern';
 export const PROJECT_BRIEF_FILES = [".agon/project.md", "AGON.md", "AGENT.md", "CLAUDE.md", "CODEX.md"];
 
 /**
- * Larger budget for dedicated Agon briefs (.agon/project.md, AGON.md); generic agent files stay tight.
+ * Upper bound for reading a brief file into memory in hasProjectBrief — a file bigger than this is clearly non-empty, so count it without a full read.
  */
 // @kern-source: context-scanner:9
+export const MAX_PROJECT_BRIEF_BYTES: number = 512 * 1024;
+
+/**
+ * Larger budget for dedicated Agon briefs (.agon/project.md, AGON.md); generic agent files stay tight.
+ */
+// @kern-source: context-scanner:12
 function projectBriefCap(file: string): number {
   return (file === ".agon/project.md" || file === "AGON.md") ? 4000 : 2000;
 }
@@ -23,7 +29,7 @@ function projectBriefCap(file: string): number {
 /**
  * True if cwd has a recognized project-brief file with non-empty content. Mirrors the cascade in scanProjectContext so the no-brief nudge agrees with what actually gets injected — an empty AGON.md/.agon/project.md is NOT a usable brief.
  */
-// @kern-source: context-scanner:12
+// @kern-source: context-scanner:15
 export function hasProjectBrief(cwd: string): boolean {
   for (const file of PROJECT_BRIEF_FILES) {
     try {
@@ -31,13 +37,17 @@ export function hasProjectBrief(cwd: string): boolean {
       // stat first: skip zero-length files and avoid reading a directory or an
       // accidentally-huge file just to test for non-whitespace content.
       const st = existsSync(path) ? statSync(path) : null;
-      if (st && st.isFile() && st.size > 0 && readFileSync(path, "utf-8").trim().length > 0) return true;
+      if (st && st.isFile() && st.size > 0) {
+        // An oversized file is clearly non-empty — count it without reading it all.
+        if (st.size > MAX_PROJECT_BRIEF_BYTES) return true;
+        if (readFileSync(path, "utf-8").trim().length > 0) return true;
+      }
     } catch { /* ignore unreadable paths / directories */ }
   }
   return false;
 }
 
-// @kern-source: context-scanner:27
+// @kern-source: context-scanner:34
 export function isKernProject(cwd: string): boolean {
   if (existsSync(join(cwd, 'kern.config.ts'))) return true;
   try {
@@ -65,7 +75,7 @@ export function isKernProject(cwd: string): boolean {
 /**
  * Read-only file tree, 2 levels deep, excluding noise directories.
  */
-// @kern-source: context-scanner:52
+// @kern-source: context-scanner:59
 function buildFileTree(cwd: string, maxDepth?: number): string {
   const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage', '.kern-gaps', '.kern']);
   const depth = maxDepth ?? 2;
@@ -99,7 +109,7 @@ function buildFileTree(cwd: string, maxDepth?: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: context-scanner:87
+// @kern-source: context-scanner:94
 function detectProjectType(cwd: string): string {
   const markers: string[] = [];
   try {
@@ -119,7 +129,7 @@ function detectProjectType(cwd: string): string {
   return markers.join(', ') || 'unknown';
 }
 
-// @kern-source: context-scanner:107
+// @kern-source: context-scanner:114
 export function scanProjectContext(cwd: string, extraContext?: string, format?: ContextFormat): string {
   const MAX_CHARS = 6000;
   const sections: string[] = [];

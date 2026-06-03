@@ -102,9 +102,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       // brief. Quiet warning event only — never injected into the prompt or history.
       try {
         const _sid = String(ctx.chatSession?.id ?? '');
-        if (_sid && !_noBriefNudged.has(_sid) && !hasProjectBrief(_turnCwd)) {
+        if (_sid && !_noBriefNudged.has(_sid)) {
+          // Mark first: race-safe, and we check the brief only once per session (not
+          // every turn). Cap the set so a long-lived process can't grow it unbounded.
+          if (_noBriefNudged.size > 5000) _noBriefNudged.clear();
           _noBriefNudged.add(_sid);
-          dispatch({ type: 'warning', message: 'No project brief found in this repo. Create AGON.md or .agon/project.md so Cesar has project context from turn 1.' } as any);
+          if (!hasProjectBrief(_turnCwd)) {
+            dispatch({ type: 'warning', message: 'No project brief found in this repo. Create AGON.md or .agon/project.md so Cesar has project context from turn 1.' });
+          }
         }
       } catch { /* nudge is best-effort — never block a turn */ }
       const _toolsUsed: string[] = [];

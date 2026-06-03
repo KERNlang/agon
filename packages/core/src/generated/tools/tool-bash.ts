@@ -37,9 +37,8 @@ export function extractBaseCommand(command: string): string {
 export function guiUnavailableHint(command: string, stderr: string): string|null {
   const cmd = (command ?? '').trim();
   const launchesGui = /(^|\s)electron(\s|$)/i.test(cmd)
-    || /(^|\s)pnpm\s+studio(\s|$)/i.test(cmd)
-    || /(^|\s)npm\s+run\s+(studio|gui)(\s|$)/i.test(cmd);
-  const displayFailure = /(DISPLAY\s+not\s+set|cannot\s+open\s+display|no\s+display|Missing X server)/i.test(stderr ?? '');
+    || /(^|\s)(pnpm|npm|yarn|bun)\s+(run\s+)?(studio|gui)(\s|$)/i.test(cmd);
+  const displayFailure = /(DISPLAY\s+not\s+set|cannot\s+open\s+display|Missing X server)/i.test(stderr ?? '');
   if (!launchesGui && !displayFailure) return null;
   return 'This looks like a GUI/desktop app, which cannot run in this headless shell. Use a headless equivalent (a build/test/CLI script, or a --headless flag), or run the GUI on your own machine.';
 }
@@ -47,7 +46,7 @@ export function guiUnavailableHint(command: string, stderr: string): string|null
 /**
  * Factory: creates the Bash tool handler for shell command execution.
  */
-// @kern-source: tool-bash:37
+// @kern-source: tool-bash:36
 export function createBashTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Bash',

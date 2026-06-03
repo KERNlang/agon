@@ -155,6 +155,8 @@ export interface CesarState {
   confidenceSatisfied: boolean;
   blockedOnConfidence: { name:string; args:Record<string,unknown> } | null;
   confidenceBlockCount?: number;
+  searchToolCount?: number;
+  searchNudged?: boolean;
   quickNeroRequested?: boolean;
   autoNero: boolean;
   advisorPending: boolean;
@@ -168,7 +170,7 @@ export interface CesarState {
   autoModeQueued?: boolean;
 }
 
-// @kern-source: handler-types:325
+// @kern-source: handler-types:327
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

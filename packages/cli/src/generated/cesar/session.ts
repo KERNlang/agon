@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { PersistentSession, PersistentSessionConfig } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -190,6 +190,18 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
 
       const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
       if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
+      // Codebase atlas: a compact "where things live" index so Cesar locates code
+      // from context instead of re-grepping every turn. Cheap + memoized per cwd.
+      // The brief already carries its own `## CODEBASE BRIEF` header.
+      try {
+        const codebaseBrief = buildCodebaseMap(cesarCwd);
+        if (codebaseBrief) systemParts.push(codebaseBrief);
+      } catch (err) {
+        // Best-effort — never block prompt assembly — but surface it: buildCodebaseMap
+        // catches its own fs errors and returns '', so reaching here means an
+        // unexpected bug, not just a missing/odd repo. Don't swallow it silently.
+        console.warn(`[agon] codebase atlas skipped: ${err instanceof Error ? err.message : String(err)}`);
+      }
       // Engine list is now in ROUTING CONTEXT (per-turn), but keep a basic list for fallback
       systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
       if (ctx.explorationMode) {
@@ -340,16 +352,19 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:327
+// @kern-source: session:339
 export const CESAR_SNAPSHOT_MSG_CHAR_CAP: number = 4000;
 
-// @kern-source: session:329
+// @kern-source: session:341
 export const CONFIDENCE_BLOCK_LIMIT: number = 2;
+
+// @kern-source: session:343
+export const SEARCH_NUDGE_THRESHOLD: number = 40;
 
 /**
  * Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it.
  */
-// @kern-source: session:331
+// @kern-source: session:345
 export function capSnapshotMessageContent(content: string): string {
   if (content.length <= CESAR_SNAPSHOT_MSG_CHAR_CAP) return content;
   return `${content.slice(0, CESAR_SNAPSHOT_MSG_CHAR_CAP)}\n… [${content.length - CESAR_SNAPSHOT_MSG_CHAR_CAP} chars truncated for Cesar context]`;
@@ -358,7 +373,7 @@ export function capSnapshotMessageContent(content: string): string {
 /**
  * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched.
  */
-// @kern-source: session:338
+// @kern-source: session:352
 export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const directHistory = session?.getMessageHistory?.() ?? [];
   if (directHistory.length > 0) {
@@ -391,7 +406,7 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
 /**
  * Persist the active Cesar conversation before the session is discarded.
  */
-// @kern-source: session:363
+// @kern-source: session:377
 export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
   if (!session) return;
   const snapshot = buildCesarConversationSnapshot(session, chatSession);
@@ -406,13 +421,14 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
-// @kern-source: session:376
+// @kern-source: session:390
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
   const toolResultCache = new Map<string, string>();
   const nativeToolErrorRetries = new Map<string, number>();
   const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
+  const SEARCH_NUDGE_TOOLS = new Set(['Read', 'Grep', 'Glob']);
   const explorationMode = ctx.explorationMode ?? false;
   const sharedToolCtx: ToolContext = {
     cwd,
@@ -604,19 +620,31 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       }
     }
 
-    // R1 enforcement: block all non-read tools until confidence is reported.
+    // R1 enforcement: require a confidence report before any tool that MUTATES
+    // or SPENDS — file writes (Edit/Write), MUTATING shell commands, and
+    // orchestration dispatches (which cost real engine time/money; this repo's
+    // policy makes confidence the investigate-before-dispatch gate). What
+    // changed: read-only INVESTIGATION is now exempt — Read/Grep/Glob/Delegate
+    // AND read-only Bash (status, ls, npm test) — so Cesar can investigate
+    // freely without a confidence call first (the real "feels blocked" friction).
+    // Mutating Bash stays gated: in auto-approve/conquer modes it never hits the
+    // permission UI, so the confidence signal is the only checkpoint on
+    // rm/reset/force-push. (Nero FLAWED-check 2026-06-03 caught that gating only
+    // Edit/Write would free destructive Bash and exempt low-confidence spend.)
     // BREAKER: a model that never calls ReportConfidence would loop forever
     // here. After CONFIDENCE_BLOCK_LIMIT blocked attempts this turn we auto-pass
     // (confidence stays unreported) and let the tool through — the gate is a
     // nudge, not a safety boundary (writes still hit the permission UI), so
     // breaking the loop beats trapping the turn. Counter resets each turn.
-    const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
-    if (!ctx.cesar!.confidenceSatisfied && !READ_TOOLS.has(name)) {
+    const CONFIDENCE_INVESTIGATION_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
+    const _isInvestigation = CONFIDENCE_INVESTIGATION_TOOLS.has(name)
+      || (name === 'Bash' && isReadOnlyCommand(String((args as any).command ?? '')));
+    if (!ctx.cesar!.confidenceSatisfied && !_isInvestigation) {
       const blocks = (ctx.cesar!.confidenceBlockCount ?? 0) + 1;
       ctx.cesar!.confidenceBlockCount = blocks;
       if (blocks <= CONFIDENCE_BLOCK_LIMIT) {
         ctx.cesar!.blockedOnConfidence = { name, args };
-        return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. After ReportConfidence succeeds, retry the SAME ${name} call immediately with the same arguments. Read/Grep/Glob are allowed for investigation.`;
+        return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. After ReportConfidence succeeds, retry the SAME ${name} call immediately with the same arguments. Read/Grep/Glob and read-only Bash are allowed for investigation.`;
       }
       // Breaker tripped — stop blocking and let the tool run this turn.
       ctx.cesar!.confidenceSatisfied = true;
@@ -666,6 +694,18 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       toolResultCache.clear();
       ctx.cesar!.blockedOnConfidence = null;
     }
+    // Search-volume nudge: once per turn, after many read/search calls, remind
+    // Cesar to lean on the injected CODEBASE BRIEF rather than grep in circles.
+    // Rides the tool result like the [BLOCKED]/[RETRYABLE] notes above —
+    // advisory only. Counts successful calls; resets each turn (brain.kern).
+    if (result.result.ok && SEARCH_NUDGE_TOOLS.has(name)) {
+      const searches = (ctx.cesar!.searchToolCount ?? 0) + 1;
+      ctx.cesar!.searchToolCount = searches;
+      if (searches >= SEARCH_NUDGE_THRESHOLD && !ctx.cesar!.searchNudged) {
+        ctx.cesar!.searchNudged = true;
+        output = `${output ?? ''}\n\n[NOTE] ${searches} read/search calls this turn. A CODEBASE BRIEF mapping where things live (files + top symbols per package) is in your system prompt — consult it to locate code instead of searching more. If something isn't listed, narrow the query rather than broadening it.`;
+      }
+    }
     return output;
   };
 }
@@ -673,7 +713,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:641
+// @kern-source: session:680
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -856,7 +896,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:825
+// @kern-source: session:864
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -890,7 +930,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:859
+// @kern-source: session:898
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -914,7 +954,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:883
+// @kern-source: session:922
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -926,7 +966,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:890
+// @kern-source: session:929
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -946,7 +986,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:908
+// @kern-source: session:947
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -971,7 +1011,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:934
+// @kern-source: session:973
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

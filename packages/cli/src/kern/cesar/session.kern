@@ -4,7 +4,7 @@ import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="node:url" names="fileURLToPath"
 import from="@kernlang/agon-core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./tools.js" names="createCesarToolRegistry"
@@ -174,6 +174,18 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export
 
     const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
     if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
+    // Codebase atlas: a compact "where things live" index so Cesar locates code
+    // from context instead of re-grepping every turn. Cheap + memoized per cwd.
+    // The brief already carries its own `## CODEBASE BRIEF` header.
+    try {
+      const codebaseBrief = buildCodebaseMap(cesarCwd);
+      if (codebaseBrief) systemParts.push(codebaseBrief);
+    } catch (err) {
+      // Best-effort — never block prompt assembly — but surface it: buildCodebaseMap
+      // catches its own fs errors and returns '', so reaching here means an
+      // unexpected bug, not just a missing/odd repo. Don't swallow it silently.
+      console.warn(`[agon] codebase atlas skipped: ${err instanceof Error ? err.message : String(err)}`);
+    }
     // Engine list is now in ROUTING CONTEXT (per-turn), but keep a basic list for fallback
     systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
     if (ctx.explorationMode) {
@@ -328,6 +340,8 @@ const name=CESAR_SNAPSHOT_MSG_CHAR_CAP type=number value=4000 doc="Max chars per
 
 const name=CONFIDENCE_BLOCK_LIMIT type=number value=2 doc="Breaker for the ReportConfidence gate. After this many blocked tool attempts in a turn without a ReportConfidence call, auto-pass and let the tool through. The gate is a nudge (writes still hit the permission UI), so a non-compliant model must never be trapped looping on the block."
 
+const name=SEARCH_NUDGE_THRESHOLD type=number value=40 doc="After this many successful Read/Grep/Glob calls in one turn, append a one-time advisory to the tool result pointing Cesar at the injected CODEBASE BRIEF instead of searching further. Steers behavior mid-turn; the existing >=100 heads-up is end-of-turn + user-facing. Counter resets each turn (brain.kern turn start)."
+
 fn name=capSnapshotMessageContent params="content:string" returns="string"
   doc "Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it."
   handler <<<
@@ -381,6 +395,7 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
     const toolResultCache = new Map<string, string>();
     const nativeToolErrorRetries = new Map<string, number>();
     const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
+    const SEARCH_NUDGE_TOOLS = new Set(['Read', 'Grep', 'Glob']);
     const explorationMode = ctx.explorationMode ?? false;
     const sharedToolCtx: ToolContext = {
       cwd,
@@ -572,19 +587,31 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         }
       }
 
-      // R1 enforcement: block all non-read tools until confidence is reported.
+      // R1 enforcement: require a confidence report before any tool that MUTATES
+      // or SPENDS — file writes (Edit/Write), MUTATING shell commands, and
+      // orchestration dispatches (which cost real engine time/money; this repo's
+      // policy makes confidence the investigate-before-dispatch gate). What
+      // changed: read-only INVESTIGATION is now exempt — Read/Grep/Glob/Delegate
+      // AND read-only Bash (status, ls, npm test) — so Cesar can investigate
+      // freely without a confidence call first (the real "feels blocked" friction).
+      // Mutating Bash stays gated: in auto-approve/conquer modes it never hits the
+      // permission UI, so the confidence signal is the only checkpoint on
+      // rm/reset/force-push. (Nero FLAWED-check 2026-06-03 caught that gating only
+      // Edit/Write would free destructive Bash and exempt low-confidence spend.)
       // BREAKER: a model that never calls ReportConfidence would loop forever
       // here. After CONFIDENCE_BLOCK_LIMIT blocked attempts this turn we auto-pass
       // (confidence stays unreported) and let the tool through — the gate is a
       // nudge, not a safety boundary (writes still hit the permission UI), so
       // breaking the loop beats trapping the turn. Counter resets each turn.
-      const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
-      if (!ctx.cesar!.confidenceSatisfied && !READ_TOOLS.has(name)) {
+      const CONFIDENCE_INVESTIGATION_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
+      const _isInvestigation = CONFIDENCE_INVESTIGATION_TOOLS.has(name)
+        || (name === 'Bash' && isReadOnlyCommand(String((args as any).command ?? '')));
+      if (!ctx.cesar!.confidenceSatisfied && !_isInvestigation) {
         const blocks = (ctx.cesar!.confidenceBlockCount ?? 0) + 1;
         ctx.cesar!.confidenceBlockCount = blocks;
         if (blocks <= CONFIDENCE_BLOCK_LIMIT) {
           ctx.cesar!.blockedOnConfidence = { name, args };
-          return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. After ReportConfidence succeeds, retry the SAME ${name} call immediately with the same arguments. Read/Grep/Glob are allowed for investigation.`;
+          return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. After ReportConfidence succeeds, retry the SAME ${name} call immediately with the same arguments. Read/Grep/Glob and read-only Bash are allowed for investigation.`;
         }
         // Breaker tripped — stop blocking and let the tool run this turn.
         ctx.cesar!.confidenceSatisfied = true;
@@ -633,6 +660,18 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       } else if (['Edit', 'Write', 'Bash'].includes(name)) {
         toolResultCache.clear();
         ctx.cesar!.blockedOnConfidence = null;
+      }
+      // Search-volume nudge: once per turn, after many read/search calls, remind
+      // Cesar to lean on the injected CODEBASE BRIEF rather than grep in circles.
+      // Rides the tool result like the [BLOCKED]/[RETRYABLE] notes above —
+      // advisory only. Counts successful calls; resets each turn (brain.kern).
+      if (result.result.ok && SEARCH_NUDGE_TOOLS.has(name)) {
+        const searches = (ctx.cesar!.searchToolCount ?? 0) + 1;
+        ctx.cesar!.searchToolCount = searches;
+        if (searches >= SEARCH_NUDGE_THRESHOLD && !ctx.cesar!.searchNudged) {
+          ctx.cesar!.searchNudged = true;
+          output = `${output ?? ''}\n\n[NOTE] ${searches} read/search calls this turn. A CODEBASE BRIEF mapping where things live (files + top symbols per package) is in your system prompt — consult it to locate code instead of searching more. If something isn't listed, narrow the query rather than broadening it.`;
+        }
       }
       return output;
     };

@@ -240,6 +240,75 @@ describe('cesar MCP session config', () => {
     expect(cesar.confidenceSatisfied).toBe(true);
   });
 
+  it('confidence gate exempts read-only Bash but still gates mutating Bash + Edit', async () => {
+    const registry = new ToolRegistry();
+    const bashTool: ToolHandler = {
+      definition: {
+        name: 'Bash',
+        description: 'test bash',
+        inputSchema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
+        maxResultSizeChars: 1000,
+        isReadOnly: false,
+        isConcurrencySafe: false,
+      },
+      validate: () => null,
+      checkPermission: () => ({ behavior: 'allow' }),
+      execute: async () => ({ ok: true, content: 'ran' }),
+    };
+    registry.register(bashTool);
+
+    const cesar: any = { confidenceSatisfied: false, blockedOnConfidence: null, confidenceBlockCount: 0 };
+    const onToolCall = buildOnToolCall({ cesar, explorationMode: false } as any, registry, {});
+
+    // read-only Bash investigates freely — NOT confidence-blocked
+    const ro = await onToolCall?.('Bash', { command: 'ls -la' }, 'c1');
+    expect(String(ro)).not.toContain('Report confidence first');
+
+    // mutating Bash still requires confidence first (it never hits the permission
+    // UI in auto-approve/conquer modes, so the confidence signal is the checkpoint)
+    const mut = await onToolCall?.('Bash', { command: 'rm -rf /tmp/agon-test-foo' }, 'c2');
+    expect(String(mut)).toContain('Report confidence first');
+
+    // Edit still gated
+    const edit = await onToolCall?.('Edit', { file_path: 'x.ts', old_string: 'a', new_string: 'b' }, 'c3');
+    expect(String(edit)).toContain('Report confidence first');
+  });
+
+  it('appends a codebase-brief nudge once after many read/search calls in a turn', async () => {
+    const registry = new ToolRegistry();
+    const readTool: ToolHandler = {
+      definition: {
+        name: 'Read',
+        description: 'test read',
+        inputSchema: { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'] },
+        maxResultSizeChars: 1000,
+        isReadOnly: true,
+        isConcurrencySafe: true,
+      },
+      validate: () => null,
+      checkPermission: () => ({ behavior: 'allow' }),
+      execute: async () => ({ ok: true, content: 'file body' }),
+    };
+    registry.register(readTool);
+
+    const cesar: any = { confidenceSatisfied: true };
+    const onToolCall = buildOnToolCall({ cesar, explorationMode: false } as any, registry, {});
+
+    let last = '';
+    for (let i = 1; i <= 41; i++) {
+      last = String(await onToolCall?.('Read', { file_path: `f${i}.ts` }, `c${i}`));
+      if (i < 40) expect(last).not.toContain('CODEBASE BRIEF'); // not yet
+      if (i === 40) {
+        expect(last).toContain('[NOTE]');
+        expect(last).toContain('CODEBASE BRIEF');
+        expect(last).toContain('40 read/search calls');
+      }
+      if (i === 41) expect(last).not.toContain('CODEBASE BRIEF'); // once per turn only
+    }
+    expect(cesar.searchToolCount).toBe(41);
+    expect(cesar.searchNudged).toBe(true);
+  });
+
   it('creates and displays ProposePlan calls when a plan dispatch is available', async () => {
     const home = makeTempDir('propose-plan');
     const previousHome = process.env.AGON_HOME;

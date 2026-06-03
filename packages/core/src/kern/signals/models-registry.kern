@@ -202,8 +202,13 @@ fn name=searchModels params="entries:ModelEntry[], query:string" returns="ModelE
     return scored.map((s) => s.entry);
   >>>
 
-fn name=normalizeBaseUrl params="url:string" returns=string
+fn name=normalizeBaseUrl params="url:string, format:'openai'|'anthropic'" returns=string
   handler <<<
+    // The /anthropic proxy-prefix strip is ONLY valid for openai-format dispatch.
+    // (Legacy: agon's apiDispatch was openai-only, so every models.dev URL was
+    // coerced to the openai path.) For anthropic format, /anthropic/v1 IS the
+    // correct base — stripping it makes @ai-sdk/anthropic POST /v1/messages → 404.
+    if (format === 'anthropic') return url;
     // Strip /anthropic/ only when it's the first path segment (proxy prefix)
     try {
       const parsed = new URL(url);
@@ -219,5 +224,5 @@ fn name=normalizeBaseUrl params="url:string" returns=string
 
 fn name=modelEntryToEngineDef params="entry:ModelEntry" returns="Record<string, any>"
   handler lang="kern"
-    return value="{ schemaVersion: 3, id: `${entry.providerId}-${entry.modelId}`.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase(), displayName: `${entry.providerName} — ${entry.modelName}`, isLocal: false, tier: 'user', timeout: 180, exec: { args: [] }, review: { args: [] }, api: { baseUrl: normalizeBaseUrl(entry.baseUrl), apiKeyEnv: entry.apiKeyEnv, model: entry.modelId, maxTokens: Math.min(entry.contextWindow ? Math.floor(entry.contextWindow / 4) : 4096, 16384), format: entry.format ?? 'openai', }, }"
+    return value="{ schemaVersion: 3, id: `${entry.providerId}-${entry.modelId}`.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase(), displayName: `${entry.providerName} — ${entry.modelName}`, isLocal: false, tier: 'user', timeout: 180, exec: { args: [] }, review: { args: [] }, api: { baseUrl: normalizeBaseUrl(entry.baseUrl, entry.format ?? 'openai'), apiKeyEnv: entry.apiKeyEnv, model: entry.modelId, maxTokens: Math.min(entry.contextWindow ? Math.floor(entry.contextWindow / 4) : 4096, 16384), format: entry.format ?? 'openai', }, }"
 

@@ -222,7 +222,12 @@ export function searchModels(entries: ModelEntry[], query: string): ModelEntry[]
 }
 
 // @kern-source: models-registry:205
-export function normalizeBaseUrl(url: string): string {
+export function normalizeBaseUrl(url: string, format: 'openai'|'anthropic'): string {
+  // The /anthropic proxy-prefix strip is ONLY valid for openai-format dispatch.
+  // (Legacy: agon's apiDispatch was openai-only, so every models.dev URL was
+  // coerced to the openai path.) For anthropic format, /anthropic/v1 IS the
+  // correct base — stripping it makes @ai-sdk/anthropic POST /v1/messages → 404.
+  if (format === 'anthropic') return url;
   // Strip /anthropic/ only when it's the first path segment (proxy prefix)
   try {
     const parsed = new URL(url);
@@ -236,7 +241,7 @@ export function normalizeBaseUrl(url: string): string {
   }
 }
 
-// @kern-source: models-registry:220
+// @kern-source: models-registry:225
 export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
-  return { schemaVersion: 3, id: `${entry.providerId}-${entry.modelId}`.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase(), displayName: `${entry.providerName} — ${entry.modelName}`, isLocal: false, tier: 'user', timeout: 180, exec: { args: [] }, review: { args: [] }, api: { baseUrl: normalizeBaseUrl(entry.baseUrl), apiKeyEnv: entry.apiKeyEnv, model: entry.modelId, maxTokens: Math.min(entry.contextWindow ? Math.floor(entry.contextWindow / 4) : 4096, 16384), format: entry.format ?? 'openai' } };
+  return { schemaVersion: 3, id: `${entry.providerId}-${entry.modelId}`.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase(), displayName: `${entry.providerName} — ${entry.modelName}`, isLocal: false, tier: 'user', timeout: 180, exec: { args: [] }, review: { args: [] }, api: { baseUrl: normalizeBaseUrl(entry.baseUrl, entry.format ?? 'openai'), apiKeyEnv: entry.apiKeyEnv, model: entry.modelId, maxTokens: Math.min(entry.contextWindow ? Math.floor(entry.contextWindow / 4) : 4096, 16384), format: entry.format ?? 'openai' } };
 }

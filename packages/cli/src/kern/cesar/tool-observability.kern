@@ -45,10 +45,8 @@ interface name=CesarConfidenceRecord export=true
   field name=sessionId type=string
   field name=turnId type=string optional=true
   field name=engineId type=string optional=true
-  field name=mode type=string optional=true
   field name=value type=number
   field name=reasoning type=string optional=true
-  field name=toolsUsedCount type=number optional=true
 
 fn name=createCesarTurnId returns=string export=true expr={{ return `cesar-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }}
   doc "Create a short stable-enough id for joining per-turn tool timeline and approval ledger records."
@@ -110,6 +108,18 @@ fn name=summarizeToolPayload params="payload:Record<string,unknown>|string|undef
     return out;
   >>>
 
+fn name=buildToolErrorDiagnostic params="name:string, args:Record<string,unknown>|string|undefined, error:string|undefined" returns=string export=true
+  doc "Format a failed tool result into a Cesar-facing diagnostic: tool name + a redacted, length-capped input snippet + the error. Reuses summarizeToolPayload so secrets/large blobs never land in the snippet."
+  handler <<<
+    let inputSnippet: string;
+    try {
+      const safe = summarizeToolPayload(args);
+      const s = JSON.stringify(safe);
+      inputSnippet = s.length > 800 ? s.slice(0, 800) + '… (truncated)' : s;
+    } catch { inputSnippet = '(input could not be inspected)'; }
+    return `Tool ${name} failed.\nInput (redacted): ${inputSnippet}\nError: ${error ?? 'Tool execution failed'}`;
+  >>>
+
 fn name=appendCesarJsonl params="fileName:string,record:Record<string,unknown>,runsDir?:string" returns=void export=false
   handler lang="kern"
     let name=dir value="runsDir ?? RUNS_DIR"
@@ -164,19 +174,31 @@ fn name=recordCesarConfidence params="record:CesarConfidenceRecord" returns=void
   doc "Append one reported-confidence snapshot to ~/.agon/calibration/<sessionId>.jsonl (data-only — no scoring, no outcome judgment). Best-effort: failures are swallowed by callers."
   handler <<<
     try {
-      // sessionId becomes a filename component — reject anything that could escape the dir.
-      const sessionId = typeof record.sessionId === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(record.sessionId) && record.sessionId !== '..'
+      // sessionId becomes a filename component — reject anything that could escape the
+      // dir (slashes) or produce a hidden/odd file ('.' / '..').
+      const sessionId = typeof record.sessionId === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(record.sessionId) && record.sessionId !== '..' && record.sessionId !== '.'
         ? record.sessionId
         : 'unknown-session';
+      // Validate the confidence value — drop NaN/Infinity/out-of-range so the ledger
+      // never records a nonsensical number (JSON.stringify turns NaN/Infinity into null).
+      const value = Number.isFinite(record.value) && record.value >= 0 && record.value <= 100
+        ? record.value
+        : null;
+      if (value === null) return;
+      // Redact + cap the free-text reasoning before it lands on disk — it can echo
+      // pasted file/command/credential content, like the other observability paths.
+      let reasoning = typeof record.reasoning === 'string' ? record.reasoning.replace(/\s+/g, ' ').trim() : undefined;
+      if (reasoning) {
+        if (looksSensitiveString(reasoning)) reasoning = '[redacted]';
+        else if (reasoning.length > 500) reasoning = reasoning.slice(0, 500) + '… (truncated)';
+      }
       appendCesarJsonl(`${sessionId}.jsonl`, {
         kind: 'confidence',
         sessionId,
         turnId: record.turnId,
         engineId: record.engineId,
-        mode: record.mode,
-        value: record.value,
-        reasoning: record.reasoning,
-        toolsUsedCount: record.toolsUsedCount,
+        value,
+        reasoning,
       }, agonPath('calibration'));
     } catch { /* observability must never block tools */ }
   >>>

@@ -10,10 +10,13 @@ fn name=projectBriefCap params="file:string" returns=number export=false expr={{
   doc "Larger budget for dedicated Agon briefs (.agon/project.md, AGON.md); generic agent files stay tight."
 
 fn name=hasProjectBrief params="cwd:string" returns=boolean export=true
-  doc "True if cwd has any recognized project-brief file. Drives the one-time 'no project brief found' nudge."
+  doc "True if cwd has a recognized project-brief file with non-empty content. Mirrors the cascade in scanProjectContext so the no-brief nudge agrees with what actually gets injected — an empty AGON.md/.agon/project.md is NOT a usable brief."
   handler <<<
     for (const file of PROJECT_BRIEF_FILES) {
-      try { if (existsSync(join(cwd, file))) return true; } catch { /* ignore */ }
+      try {
+        const path = join(cwd, file);
+        if (existsSync(path) && readFileSync(path, "utf-8").trim().length > 0) return true;
+      } catch { /* ignore unreadable paths / directories */ }
     }
     return false;
   >>>

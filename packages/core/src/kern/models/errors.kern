@@ -4,7 +4,8 @@ error name=EngineNotFoundError extends=AgonError
   field name=engineId type=string
   field name=installHint type=string optional=true
   handler lang="kern"
-    let name=hint value="installHint ? `. Install: ${installHint}` : ''"
+    let name=MODES value="['forge','brainstorm','tribunal','campfire','council','synthesis','conquer','goal','agent','pipeline','review','nero','think']"
+    let name=hint value="MODES.includes(engineId) ? `. \"${engineId}\" is an Agon mode (a command), not an engine — run /${engineId} instead. Engines are backends like codex, claude, or agy.` : (installHint ? `. Install: ${installHint}` : '')"
     do value="super(`Engine \"${engineId}\" not found${hint}`)"
     assign target="this.name" value="'EngineNotFoundError'"
 

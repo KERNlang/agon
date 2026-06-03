@@ -12,7 +12,7 @@ import from="../signals/output.js" names="getSessionAllowList"
 import from="./routing.js" names="buildRoutingContext"
 import from="./brain-helpers.js" names="extractDelegation"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval,approvalArgsFromCommand"
-import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence"
+import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence,buildToolErrorDiagnostic"
 
 const name=CESAR_SYSTEM_PROMPT type=string
   handler <<<
@@ -188,7 +188,7 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export
       console.warn(`[agon] codebase atlas skipped: ${err instanceof Error ? err.message : String(err)}`);
     }
     // Engine list is now in ROUTING CONTEXT (per-turn), but keep a basic list for fallback
-    systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
+    systemParts.push(`## AVAILABLE ENGINES\n${engineList}\n\nMODES vs ENGINES: the names above are ENGINES — runnable backends you delegate to (codex, claude, agy, …). MODES are commands/workflows you invoke: Forge, Brainstorm, Tribunal, Council, Goal, Conquer, Agent, Pipeline, Review, Nero. A mode runs ON engines — never treat a mode name (e.g. "conquer") as an engine id.`);
     if (ctx.explorationMode) {
       systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
     }
@@ -652,13 +652,17 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       );
       let output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
       if (!result.result.ok) {
+        // #1 error surfacing: include the tool name + a redacted input snippet so
+        // Cesar can see WHAT input was rejected and self-correct, instead of a bare
+        // validation/provider string with no offending input.
+        const diag = buildToolErrorDiagnostic(name, args as Record<string, unknown>, result.result.error);
         const retryKey = `${name}:${JSON.stringify(args)}`;
         const used = nativeToolErrorRetries.get(retryKey) ?? 0;
         if (used <= 0) {
           nativeToolErrorRetries.set(retryKey, 1);
-          output = `[RETRYABLE_TOOL_ERROR] ${output}\nRetry this ${name} call once with corrected input. Do not narrate before retrying.`;
+          output = `[RETRYABLE_TOOL_ERROR] ${diag}\nRetry this ${name} call ONCE with corrected input that matches the tool's schema. Do not narrate before retrying.`;
         } else {
-          output = `[TOOL_ERROR_FINAL] ${output}\nRepair retry already used for this exact ${name} input in this turn. Stop retrying this call and explain the blocker.`;
+          output = `[TOOL_ERROR_FINAL] ${diag}\nRepair retry already used for this exact ${name} input in this turn. Stop retrying this call and explain the blocker.`;
         }
       } else {
         nativeToolErrorRetries.delete(`${name}:${JSON.stringify(args)}`);

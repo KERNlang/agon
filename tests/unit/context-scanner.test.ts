@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { scanProjectContext, isKernProject, hasProjectBrief, gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff } from '@kernlang/agon-core';
 import { join } from 'node:path';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 const REPO_ROOT = join(import.meta.dirname, '../..');
@@ -69,9 +69,13 @@ describe('context-scanner', () => {
   });
 
   describe('project-brief cascade (#6)', () => {
+    const dirs: string[] = [];
     function tmpRepo(): string {
-      return mkdtempSync(join(tmpdir(), 'agon-brief-'));
+      const d = mkdtempSync(join(tmpdir(), 'agon-brief-'));
+      dirs.push(d);
+      return d;
     }
+    afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); });
 
     it('prefers .agon/project.md over AGON.md (first match wins)', () => {
       const root = tmpRepo();
@@ -106,21 +110,35 @@ describe('context-scanner', () => {
   });
 
   describe('hasProjectBrief (#6 nudge signal)', () => {
+    const dirs: string[] = [];
+    function tmpRepo(prefix: string): string {
+      const d = mkdtempSync(join(tmpdir(), prefix));
+      dirs.push(d);
+      return d;
+    }
+    afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); });
+
     it('is true when a recognized brief exists', () => {
-      const root = mkdtempSync(join(tmpdir(), 'agon-hasbrief-'));
+      const root = tmpRepo('agon-hasbrief-');
       writeFileSync(join(root, 'AGON.md'), '# brief');
       expect(hasProjectBrief(root)).toBe(true);
     });
 
     it('is true for a nested .agon/project.md', () => {
-      const root = mkdtempSync(join(tmpdir(), 'agon-hasbrief-'));
+      const root = tmpRepo('agon-hasbrief-');
       mkdirSync(join(root, '.agon'), { recursive: true });
       writeFileSync(join(root, '.agon/project.md'), '# brief');
       expect(hasProjectBrief(root)).toBe(true);
     });
 
     it('is false when no brief file exists', () => {
-      const root = mkdtempSync(join(tmpdir(), 'agon-nobrief-'));
+      const root = tmpRepo('agon-nobrief-');
+      expect(hasProjectBrief(root)).toBe(false);
+    });
+
+    it('is false when the only brief file is empty (mirrors the scanner)', () => {
+      const root = tmpRepo('agon-emptybrief-');
+      writeFileSync(join(root, 'AGON.md'), '   \n  ');
       expect(hasProjectBrief(root)).toBe(false);
     });
   });

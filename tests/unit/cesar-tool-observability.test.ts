@@ -7,6 +7,7 @@ import {
   recordCesarApprovalDecision,
   recordCesarToolTimeline,
   recordCesarConfidence,
+  buildToolErrorDiagnostic,
   replayCesarHarnessLogs,
 } from '../../packages/cli/src/generated/cesar/tool-observability.js';
 import { setupTestAgonHome, cleanupTestAgonHome, agonHomePath } from '../helpers/agon-home.js';
@@ -131,6 +132,31 @@ describe('Cesar tool observability', () => {
     expect(replay.rendered).toContain('approval: Edit approved via cesar-self-turn');
   });
 
+  describe('buildToolErrorDiagnostic (#1 error surfacing)', () => {
+    it('includes the tool name, a redacted input snippet, and the error', () => {
+      const diag = buildToolErrorDiagnostic('Edit', { file_path: '/x.ts', old_string: 'const secret = 1', new_string: 'const secret = 2' }, 'invalid input');
+      expect(diag).toContain('Tool Edit failed');
+      expect(diag).toContain('Input (redacted):');
+      expect(diag).toContain('/x.ts'); // non-sensitive key survives
+      expect(diag).toContain('invalid input'); // the underlying error
+      expect(diag).not.toContain('const secret = 1'); // old_string redacted by summarizeToolPayload
+    });
+
+    it('caps a very large input snippet', () => {
+      const many: Record<string, unknown> = {};
+      for (let i = 0; i < 60; i++) many['field_number_' + i] = 'value_' + i;
+      const diag = buildToolErrorDiagnostic('Write', many, 'too big');
+      expect(diag).toContain('… (truncated)');
+      expect(diag.length).toBeLessThan(1100);
+    });
+
+    it('falls back gracefully when the error is undefined', () => {
+      const diag = buildToolErrorDiagnostic('Bash', { command: 'ls' }, undefined);
+      expect(diag).toContain('Tool Bash failed');
+      expect(diag).toContain('Tool execution failed');
+    });
+  });
+
   describe('confidence ledger (#7, data-only)', () => {
     let home: string;
     beforeEach(() => { home = setupTestAgonHome('confidence-ledger'); });
@@ -143,7 +169,6 @@ describe('Cesar tool observability', () => {
         engineId: 'claude',
         value: 88,
         reasoning: 'pattern is clear',
-        toolsUsedCount: 3,
       });
       const file = agonHomePath('calibration', 'sess-abc.jsonl');
       const record = JSON.parse(readFileSync(file, 'utf-8').trim());
@@ -153,15 +178,34 @@ describe('Cesar tool observability', () => {
       expect(record.engineId).toBe('claude');
       expect(record.value).toBe(88);
       expect(record.reasoning).toBe('pattern is clear');
-      expect(record.toolsUsedCount).toBe(3);
       expect(typeof record.ts).toBe('string'); // ISO timestamp added by the writer
       expect(Number.isNaN(Date.parse(record.ts))).toBe(false);
     });
 
-    it('sanitizes a path-traversal sessionId into a safe file name', () => {
+    it('drops a snapshot with a non-finite or out-of-range value', () => {
+      recordCesarConfidence({ sessionId: 'sess-bad-num', value: NaN });
+      recordCesarConfidence({ sessionId: 'sess-oor', value: 150 });
+      expect(existsSync(agonHomePath('calibration', 'sess-bad-num.jsonl'))).toBe(false);
+      expect(existsSync(agonHomePath('calibration', 'sess-oor.jsonl'))).toBe(false);
+    });
+
+    it('redacts sensitive reasoning and caps very long reasoning', () => {
+      recordCesarConfidence({ sessionId: 'sess-secret', value: 70, reasoning: 'api_key=sk-abcdef0123456789abcd found in config' });
+      const secret = JSON.parse(readFileSync(agonHomePath('calibration', 'sess-secret.jsonl'), 'utf-8').trim());
+      expect(secret.reasoning).toBe('[redacted]');
+
+      recordCesarConfidence({ sessionId: 'sess-long', value: 70, reasoning: 'z'.repeat(900) });
+      const long = JSON.parse(readFileSync(agonHomePath('calibration', 'sess-long.jsonl'), 'utf-8').trim());
+      expect(long.reasoning.length).toBeLessThanOrEqual(520);
+      expect(long.reasoning.endsWith('… (truncated)')).toBe(true);
+    });
+
+    it('sanitizes a path-traversal sessionId into a safe file name and never escapes the dir', () => {
       recordCesarConfidence({ sessionId: '../../etc/evil', value: 50 });
       // The slashes are rejected → falls back to a single safe file in the calibration dir.
       expect(existsSync(agonHomePath('calibration', 'unknown-session.jsonl'))).toBe(true);
+      // And nothing escaped to the traversal target.
+      expect(existsSync(agonHomePath('..', '..', 'etc', 'evil.jsonl'))).toBe(false);
       const record = JSON.parse(readFileSync(agonHomePath('calibration', 'unknown-session.jsonl'), 'utf-8').trim());
       expect(record.sessionId).toBe('unknown-session');
       expect(record.value).toBe(50);

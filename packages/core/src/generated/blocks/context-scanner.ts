@@ -21,17 +21,20 @@ function projectBriefCap(file: string): number {
 }
 
 /**
- * True if cwd has any recognized project-brief file. Drives the one-time 'no project brief found' nudge.
+ * True if cwd has a recognized project-brief file with non-empty content. Mirrors the cascade in scanProjectContext so the no-brief nudge agrees with what actually gets injected — an empty AGON.md/.agon/project.md is NOT a usable brief.
  */
 // @kern-source: context-scanner:12
 export function hasProjectBrief(cwd: string): boolean {
   for (const file of PROJECT_BRIEF_FILES) {
-    try { if (existsSync(join(cwd, file))) return true; } catch { /* ignore */ }
+    try {
+      const path = join(cwd, file);
+      if (existsSync(path) && readFileSync(path, "utf-8").trim().length > 0) return true;
+    } catch { /* ignore unreadable paths / directories */ }
   }
   return false;
 }
 
-// @kern-source: context-scanner:21
+// @kern-source: context-scanner:24
 export function isKernProject(cwd: string): boolean {
   if (existsSync(join(cwd, 'kern.config.ts'))) return true;
   try {
@@ -59,7 +62,7 @@ export function isKernProject(cwd: string): boolean {
 /**
  * Read-only file tree, 2 levels deep, excluding noise directories.
  */
-// @kern-source: context-scanner:46
+// @kern-source: context-scanner:49
 function buildFileTree(cwd: string, maxDepth?: number): string {
   const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage', '.kern-gaps', '.kern']);
   const depth = maxDepth ?? 2;
@@ -93,7 +96,7 @@ function buildFileTree(cwd: string, maxDepth?: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: context-scanner:81
+// @kern-source: context-scanner:84
 function detectProjectType(cwd: string): string {
   const markers: string[] = [];
   try {
@@ -113,7 +116,7 @@ function detectProjectType(cwd: string): string {
   return markers.join(', ') || 'unknown';
 }
 
-// @kern-source: context-scanner:101
+// @kern-source: context-scanner:104
 export function scanProjectContext(cwd: string, extraContext?: string, format?: ContextFormat): string {
   const MAX_CHARS = 6000;
   const sections: string[] = [];

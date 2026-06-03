@@ -28,7 +28,7 @@ import { extractDelegation } from './brain-helpers.js';
 
 import { applyCesarSelfTurnApproval, approvalArgsFromCommand } from './self-turn-approval.js';
 
-import { recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
+import { recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence, buildToolErrorDiagnostic } from './tool-observability.js';
 
 // @kern-source: session:17
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator.
@@ -204,7 +204,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
         console.warn(`[agon] codebase atlas skipped: ${err instanceof Error ? err.message : String(err)}`);
       }
       // Engine list is now in ROUTING CONTEXT (per-turn), but keep a basic list for fallback
-      systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
+      systemParts.push(`## AVAILABLE ENGINES\n${engineList}\n\nMODES vs ENGINES: the names above are ENGINES — runnable backends you delegate to (codex, claude, agy, …). MODES are commands/workflows you invoke: Forge, Brainstorm, Tribunal, Council, Goal, Conquer, Agent, Pipeline, Review, Nero. A mode runs ON engines — never treat a mode name (e.g. "conquer") as an engine id.`);
       if (ctx.explorationMode) {
         systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
       }
@@ -685,13 +685,17 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     );
     let output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
     if (!result.result.ok) {
+      // #1 error surfacing: include the tool name + a redacted input snippet so
+      // Cesar can see WHAT input was rejected and self-correct, instead of a bare
+      // validation/provider string with no offending input.
+      const diag = buildToolErrorDiagnostic(name, args as Record<string, unknown>, result.result.error);
       const retryKey = `${name}:${JSON.stringify(args)}`;
       const used = nativeToolErrorRetries.get(retryKey) ?? 0;
       if (used <= 0) {
         nativeToolErrorRetries.set(retryKey, 1);
-        output = `[RETRYABLE_TOOL_ERROR] ${output}\nRetry this ${name} call once with corrected input. Do not narrate before retrying.`;
+        output = `[RETRYABLE_TOOL_ERROR] ${diag}\nRetry this ${name} call ONCE with corrected input that matches the tool's schema. Do not narrate before retrying.`;
       } else {
-        output = `[TOOL_ERROR_FINAL] ${output}\nRepair retry already used for this exact ${name} input in this turn. Stop retrying this call and explain the blocker.`;
+        output = `[TOOL_ERROR_FINAL] ${diag}\nRepair retry already used for this exact ${name} input in this turn. Stop retrying this call and explain the blocker.`;
       }
     } else {
       nativeToolErrorRetries.delete(`${name}:${JSON.stringify(args)}`);
@@ -722,7 +726,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:689
+// @kern-source: session:693
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -905,7 +909,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:873
+// @kern-source: session:877
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -939,7 +943,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:907
+// @kern-source: session:911
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -963,7 +967,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:931
+// @kern-source: session:935
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -975,7 +979,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:938
+// @kern-source: session:942
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -995,7 +999,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:956
+// @kern-source: session:960
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1020,7 +1024,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:982
+// @kern-source: session:986
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

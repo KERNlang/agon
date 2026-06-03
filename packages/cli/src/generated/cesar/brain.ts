@@ -2098,7 +2098,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             _forkOptions.push({ key, label: full.length > 60 ? full.slice(0, 59) + '…' : full, full });
           }
           const isForkQuestion = /\?\s*$/.test(lastLine) && _forkOptions.length >= 2 && _forkOptions.length <= 6;
-          const asksConfirmation = !ranToolLoop && /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
+          // On a pure chat answer (fast-answer) there is no pending ACTION to
+          // confirm, so a trailing question is conversational ("...do you want to
+          // dig into the arena?") — not "shall I proceed?". The confirmation regex
+          // is loose (it matches "want"), so without this guard a chatty engine's
+          // follow-up question pops a spurious Yes/No/type-it prompt on a plain chat
+          // turn. Only offer the confirmation prompt off the chat fast-path.
+          const asksConfirmation = !answerFastPath && !ranToolLoop && /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
           if (isForkQuestion) {
             const _forkColors = ['#4ade80', '#22d3ee', '#fbbf24', '#a78bfa', '#f97316', '#ef4444'];
             // Auto-append an "own idea" choice so the user is never boxed into the

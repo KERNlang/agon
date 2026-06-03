@@ -15,7 +15,10 @@ fn name=hasProjectBrief params="cwd:string" returns=boolean export=true
     for (const file of PROJECT_BRIEF_FILES) {
       try {
         const path = join(cwd, file);
-        if (existsSync(path) && readFileSync(path, "utf-8").trim().length > 0) return true;
+        // stat first: skip zero-length files and avoid reading a directory or an
+        // accidentally-huge file just to test for non-whitespace content.
+        const st = existsSync(path) ? statSync(path) : null;
+        if (st && st.isFile() && st.size > 0 && readFileSync(path, "utf-8").trim().length > 0) return true;
       } catch { /* ignore unreadable paths / directories */ }
     }
     return false;

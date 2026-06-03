@@ -28,13 +28,16 @@ export function hasProjectBrief(cwd: string): boolean {
   for (const file of PROJECT_BRIEF_FILES) {
     try {
       const path = join(cwd, file);
-      if (existsSync(path) && readFileSync(path, "utf-8").trim().length > 0) return true;
+      // stat first: skip zero-length files and avoid reading a directory or an
+      // accidentally-huge file just to test for non-whitespace content.
+      const st = existsSync(path) ? statSync(path) : null;
+      if (st && st.isFile() && st.size > 0 && readFileSync(path, "utf-8").trim().length > 0) return true;
     } catch { /* ignore unreadable paths / directories */ }
   }
   return false;
 }
 
-// @kern-source: context-scanner:24
+// @kern-source: context-scanner:27
 export function isKernProject(cwd: string): boolean {
   if (existsSync(join(cwd, 'kern.config.ts'))) return true;
   try {
@@ -62,7 +65,7 @@ export function isKernProject(cwd: string): boolean {
 /**
  * Read-only file tree, 2 levels deep, excluding noise directories.
  */
-// @kern-source: context-scanner:49
+// @kern-source: context-scanner:52
 function buildFileTree(cwd: string, maxDepth?: number): string {
   const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage', '.kern-gaps', '.kern']);
   const depth = maxDepth ?? 2;
@@ -96,7 +99,7 @@ function buildFileTree(cwd: string, maxDepth?: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: context-scanner:84
+// @kern-source: context-scanner:87
 function detectProjectType(cwd: string): string {
   const markers: string[] = [];
   try {
@@ -116,7 +119,7 @@ function detectProjectType(cwd: string): string {
   return markers.join(', ') || 'unknown';
 }
 
-// @kern-source: context-scanner:104
+// @kern-source: context-scanner:107
 export function scanProjectContext(cwd: string, extraContext?: string, format?: ContextFormat): string {
   const MAX_CHARS = 6000;
   const sections: string[] = [];

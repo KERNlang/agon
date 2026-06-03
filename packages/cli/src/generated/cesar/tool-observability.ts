@@ -140,13 +140,21 @@ export function buildToolErrorDiagnostic(name: string, args: Record<string,unkno
   let inputSnippet: string;
   try {
     const safe = summarizeToolPayload(args);
-    const s = JSON.stringify(safe);
-    inputSnippet = s.length > 800 ? s.slice(0, 800) + '… (truncated)' : s;
+    if (safe === undefined) {
+      inputSnippet = '(no input)';
+    } else {
+      const s = JSON.stringify(safe);
+      inputSnippet = s.length > 800 ? s.slice(0, 800) + '… (truncated)' : s;
+    }
   } catch { inputSnippet = '(input could not be inspected)'; }
-  return `Tool ${name} failed.\nInput (redacted): ${inputSnippet}\nError: ${error ?? 'Tool execution failed'}`;
+  // Cap the raw error too — a tool's validation message can echo the offending
+  // blob back, which would bypass the snippet redaction this function exists for.
+  const rawErr = error ?? 'Tool execution failed';
+  const errMsg = rawErr.length > 500 ? rawErr.slice(0, 500) + '… (truncated)' : rawErr;
+  return `Tool ${name} failed.\nInput (redacted): ${inputSnippet}\nError: ${errMsg}`;
 }
 
-// @kern-source: tool-observability:123
+// @kern-source: tool-observability:131
 function appendCesarJsonl(fileName: string, record: Record<string,unknown>, runsDir?: string): void {
   const dir = runsDir ?? RUNS_DIR;
   mkdirSync(dir, { recursive: true });
@@ -156,7 +164,7 @@ function appendCesarJsonl(fileName: string, record: Record<string,unknown>, runs
 /**
  * Append one permission decision to the persistent Cesar approval ledger. Best-effort: failures are swallowed by callers.
  */
-// @kern-source: tool-observability:129
+// @kern-source: tool-observability:137
 export function recordCesarApprovalDecision(record: CesarApprovalLedgerRecord, runsDir?: string): void {
   try {
     const argsSummary = summarizeToolPayload(record.args);
@@ -179,7 +187,7 @@ export function recordCesarApprovalDecision(record: CesarApprovalLedgerRecord, r
 /**
  * Append one compact per-turn tool timeline event. Best-effort and payload-summarized.
  */
-// @kern-source: tool-observability:150
+// @kern-source: tool-observability:158
 export function recordCesarToolTimeline(record: CesarToolTimelineRecord, runsDir?: string): void {
   try {
     appendCesarJsonl('cesar-tool-timeline.jsonl', {
@@ -204,12 +212,12 @@ export function recordCesarToolTimeline(record: CesarToolTimelineRecord, runsDir
 /**
  * Append one reported-confidence snapshot to ~/.agon/calibration/<sessionId>.jsonl (data-only — no scoring, no outcome judgment). Best-effort: failures are swallowed by callers.
  */
-// @kern-source: tool-observability:173
+// @kern-source: tool-observability:181
 export function recordCesarConfidence(record: CesarConfidenceRecord): void {
   try {
     // sessionId becomes a filename component — reject anything that could escape the
-    // dir (slashes) or produce a hidden/odd file ('.' / '..').
-    const sessionId = typeof record.sessionId === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(record.sessionId) && record.sessionId !== '..' && record.sessionId !== '.'
+    // dir (slashes), produce a hidden/odd file (leading '.'), or '.'/'..'.
+    const sessionId = typeof record.sessionId === 'string' && /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/.test(record.sessionId)
       ? record.sessionId
       : 'unknown-session';
     // Validate the confidence value — drop NaN/Infinity/out-of-range so the ledger
@@ -236,7 +244,7 @@ export function recordCesarConfidence(record: CesarConfidenceRecord): void {
   } catch { /* observability must never block tools */ }
 }
 
-// @kern-source: tool-observability:206
+// @kern-source: tool-observability:214
 function readJsonlRecords(filePath: string): Array<Record<string,unknown>> {
   if (!existsSync(filePath)) {
     return [];
@@ -260,7 +268,7 @@ function readJsonlRecords(filePath: string): Array<Record<string,unknown>> {
   return out;
 }
 
-// @kern-source: tool-observability:224
+// @kern-source: tool-observability:232
 function eventTimeMs(record: Record<string,unknown>): number {
   const ts = (typeof record.ts === 'string') ? Date.parse(record.ts) : NaN;
   return Number.isFinite(ts) ? ts : 0;
@@ -269,7 +277,7 @@ function eventTimeMs(record: Record<string,unknown>): number {
 /**
  * Replay the compact Cesar approval ledger and tool timeline into a readable per-turn summary. This is the CLI/UI surface for post-mortem harness debugging.
  */
-// @kern-source: tool-observability:229
+// @kern-source: tool-observability:237
 export function replayCesarHarnessLogs(opts?: {runsDir?:string,turnId?:string,limit?:number}): CesarHarnessReplayResult {
   const dir = opts?.runsDir ?? RUNS_DIR;
   const limitRaw = Number(opts?.limit ?? 5);

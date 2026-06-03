@@ -155,6 +155,18 @@ describe('Cesar tool observability', () => {
       expect(diag).toContain('Tool Bash failed');
       expect(diag).toContain('Tool execution failed');
     });
+
+    it('reports "(no input)" when args is undefined (not an inspection failure)', () => {
+      const diag = buildToolErrorDiagnostic('Read', undefined, 'boom');
+      expect(diag).toContain('Input (redacted): (no input)');
+      expect(diag).not.toContain('could not be inspected');
+    });
+
+    it('caps a very long error string', () => {
+      const diag = buildToolErrorDiagnostic('Bash', { command: 'x' }, 'E'.repeat(900));
+      expect(diag).toContain('… (truncated)');
+      expect(diag.length).toBeLessThan(700);
+    });
   });
 
   describe('confidence ledger (#7, data-only)', () => {

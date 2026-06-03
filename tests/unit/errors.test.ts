@@ -10,6 +10,15 @@ describe('EngineNotFoundError (mode vs engine, #2)', () => {
     expect(e.engineId).toBe('conquer');
   });
 
+  it('recognizes mode names case-insensitively (title-case / upper-case)', () => {
+    for (const id of ['Conquer', 'GOAL', 'Forge']) {
+      const e = new EngineNotFoundError(id);
+      expect(e.message).toContain('is an Agon mode');
+      expect(e.message).toContain('/' + id.toLowerCase()); // hint uses the normalized command
+      expect(e.message).toContain(`"${id}" not found`); // original casing preserved in the main text
+    }
+  });
+
   it('does not add a mode hint for a genuine unknown engine', () => {
     const e = new EngineNotFoundError('totally-unknown-engine');
     expect(e.message).toContain('"totally-unknown-engine" not found');

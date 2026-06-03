@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@kernlang/agon-core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, hasProjectBrief } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -90,11 +90,23 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
 }
 
 // @kern-source: brain:63
+export const _noBriefNudged: Set<string> = new Set<string>();
+
+// @kern-source: brain:65
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
       const _turnId = createCesarTurnId();
       const _turnCwd = resolveWorkingDir();
+      // #6b: one-time-per-session nudge when the working dir has no usable project
+      // brief. Quiet warning event only — never injected into the prompt or history.
+      try {
+        const _sid = String(ctx.chatSession?.id ?? '');
+        if (_sid && !_noBriefNudged.has(_sid) && !hasProjectBrief(_turnCwd)) {
+          _noBriefNudged.add(_sid);
+          dispatch({ type: 'warning', message: 'No project brief found in this repo. Create AGON.md or .agon/project.md so Cesar has project context from turn 1.' } as any);
+        }
+      } catch { /* nudge is best-effort — never block a turn */ }
       const _toolsUsed: string[] = [];
       const _toolUseKeys = new Set<string>();
       let _toolEventCount = 0;

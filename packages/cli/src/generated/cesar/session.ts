@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { PersistentSession, PersistentSessionConfig } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -204,7 +204,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
         console.warn(`[agon] codebase atlas skipped: ${err instanceof Error ? err.message : String(err)}`);
       }
       // Engine list is now in ROUTING CONTEXT (per-turn), but keep a basic list for fallback
-      systemParts.push(`## AVAILABLE ENGINES\n${engineList}\n\nMODES vs ENGINES: the names above are ENGINES — runnable backends you delegate to (codex, claude, agy, …). MODES are commands/workflows you invoke: Forge, Brainstorm, Tribunal, Council, Goal, Conquer, Agent, Pipeline, Review, Nero. A mode runs ON engines — never treat a mode name (e.g. "conquer") as an engine id.`);
+      systemParts.push(`## AVAILABLE ENGINES\n${engineList}\n\nMODES vs ENGINES: the names above are ENGINES — runnable backends you delegate to (codex, claude, agy, …). MODES are commands/workflows you invoke (run /<name>): ${AGON_MODE_NAMES.join(', ')}. A mode runs ON engines — never treat a mode name (e.g. "conquer") as an engine id.`);
       if (ctx.explorationMode) {
         systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
       }

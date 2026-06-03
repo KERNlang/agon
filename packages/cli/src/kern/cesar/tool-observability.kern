@@ -114,10 +114,18 @@ fn name=buildToolErrorDiagnostic params="name:string, args:Record<string,unknown
     let inputSnippet: string;
     try {
       const safe = summarizeToolPayload(args);
-      const s = JSON.stringify(safe);
-      inputSnippet = s.length > 800 ? s.slice(0, 800) + '… (truncated)' : s;
+      if (safe === undefined) {
+        inputSnippet = '(no input)';
+      } else {
+        const s = JSON.stringify(safe);
+        inputSnippet = s.length > 800 ? s.slice(0, 800) + '… (truncated)' : s;
+      }
     } catch { inputSnippet = '(input could not be inspected)'; }
-    return `Tool ${name} failed.\nInput (redacted): ${inputSnippet}\nError: ${error ?? 'Tool execution failed'}`;
+    // Cap the raw error too — a tool's validation message can echo the offending
+    // blob back, which would bypass the snippet redaction this function exists for.
+    const rawErr = error ?? 'Tool execution failed';
+    const errMsg = rawErr.length > 500 ? rawErr.slice(0, 500) + '… (truncated)' : rawErr;
+    return `Tool ${name} failed.\nInput (redacted): ${inputSnippet}\nError: ${errMsg}`;
   >>>
 
 fn name=appendCesarJsonl params="fileName:string,record:Record<string,unknown>,runsDir?:string" returns=void export=false
@@ -175,8 +183,8 @@ fn name=recordCesarConfidence params="record:CesarConfidenceRecord" returns=void
   handler <<<
     try {
       // sessionId becomes a filename component — reject anything that could escape the
-      // dir (slashes) or produce a hidden/odd file ('.' / '..').
-      const sessionId = typeof record.sessionId === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(record.sessionId) && record.sessionId !== '..' && record.sessionId !== '.'
+      // dir (slashes), produce a hidden/odd file (leading '.'), or '.'/'..'.
+      const sessionId = typeof record.sessionId === 'string' && /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/.test(record.sessionId)
         ? record.sessionId
         : 'unknown-session';
       // Validate the confidence value — drop NaN/Infinity/out-of-range so the ledger

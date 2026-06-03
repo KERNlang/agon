@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,appendFileSync,existsSync,readFileSync,unlinkSync,readdirSync,writeFileSync"
 import from="@kernlang/agon-core" names="ImageAttachment,PersistentSession,ForgeManifest,ForgeJudgment" types=true
-import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,appendMessage,appendUserTurnIfAbsent,buildHistoryPrimedPrompt,tracker,resolveWorkingDir,ToolRegistry,getProjectFileStateCache,parseToolCalls,formatToolResults,runToolLoop,classifyTask,loadConfig,configSet,createStreamBridge,engineHealth"
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,appendMessage,appendUserTurnIfAbsent,buildHistoryPrimedPrompt,tracker,resolveWorkingDir,ToolRegistry,getProjectFileStateCache,parseToolCalls,formatToolResults,runToolLoop,classifyTask,loadConfig,configSet,createStreamBridge,engineHealth,hasProjectBrief"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,PendingDelegation,CesarTurnOutcome" types=true
@@ -60,12 +60,23 @@ fn name=commitTurnAndSuggest async=true params="suggestion:{action:string, rest?
       return value="{ mode: finalAction as any, delegated: true, responded: true, action: finalAction, task: input, reasoning, decisionReason: 'suggestion-marker', hardened: delResult.hardened ?? suggestion.hardened, tribunalMode: delResult.tribunalMode ?? suggestion.tribunalMode, team: delResult.team ?? suggestion.team, ...(telemetry ?? {}) }"
     return value="{ delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...(telemetry ?? {}) }"
 
+const name=_noBriefNudged type="Set<string>" value={{ new Set<string>() }}
+
 fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx:HandlerContext, images?:ImageAttachment[]" returns="Promise<CesarTurnOutcome>"
   handler <<<
     const abort = new AbortController();
     const _turnStart = Date.now();
     const _turnId = createCesarTurnId();
     const _turnCwd = resolveWorkingDir();
+    // #6b: one-time-per-session nudge when the working dir has no usable project
+    // brief. Quiet warning event only — never injected into the prompt or history.
+    try {
+      const _sid = String(ctx.chatSession?.id ?? '');
+      if (_sid && !_noBriefNudged.has(_sid) && !hasProjectBrief(_turnCwd)) {
+        _noBriefNudged.add(_sid);
+        dispatch({ type: 'warning', message: 'No project brief found in this repo. Create AGON.md or .agon/project.md so Cesar has project context from turn 1.' } as any);
+      }
+    } catch { /* nudge is best-effort — never block a turn */ }
     const _toolsUsed: string[] = [];
     const _toolUseKeys = new Set<string>();
     let _toolEventCount = 0;

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 3,
+  "id": "minimax-coding-plan-minimax-m3",
+  "displayName": "MiniMax Coding Plan (minimax.io) — MiniMax-M3",
+  "isLocal": false,
+  "tier": "builtin",
+  "timeout": 180,
+
+  "exec": {
+    "args": []
+  },
+  "review": {
+    "args": []
+  },
+
+  "api": {
+    "baseUrl": "https://api.minimax.io/v1",
+    "apiKeyEnv": "MINIMAX_API_KEY",
+    "model": "MiniMax-M3",
+    "maxTokens": 16384,
+    "format": "openai"
+  },
+
+  "env": {
+    "MINIMAX_API_KEY": { "required": true }
+  }
+}

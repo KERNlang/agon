@@ -153,7 +153,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
       cb.setModelPickerTitle?.('Select model');
       cb.setModelPickerLoading(true);
       cb.setModelPickerOpen(true);
-      import('@kernlang/agon-core').then(({ fetchModelsRegistry, buildModelEntries, buildCliGroupsImmediate, refreshCliGroup }) => {
+      import('@kernlang/agon-core').then(({ fetchModelsRegistry, buildModelEntries, buildCliGroupsImmediate, refreshCliGroup, refreshCliGroupVersion }) => {
         // CLI engines: render cached/static models instantly (each installed
         // probe-capable engine flagged loading), then probe each engine's live
         // /model list in the background and swap its group in as it resolves —
@@ -171,6 +171,19 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
             cliGroups = cliGroups.map((x: any) => x.engineId === fresh.engineId ? fresh : x);
             cb.setModelPickerCliGroups?.([...cliGroups]);
           }).catch(clearLoading);
+        }
+        // Versions resolve off the main thread too (buildCliGroupsImmediate no
+        // longer shells out per engine — that was the picker's open latency), so
+        // first paint is instant; swap each engine's version into its header as
+        // it resolves. Skip rows the probe loop already owns (refreshCliGroup
+        // returns their version) and any version already in the session cache.
+        for (const g of cliGroups) {
+          if (!g.installed || g.loading || g.version) continue;
+          refreshCliGroupVersion(g.engineId).then((v: any) => {
+            if (!v) return;
+            cliGroups = cliGroups.map((x: any) => x.engineId === g.engineId ? { ...x, version: v } : x);
+            cb.setModelPickerCliGroups?.([...cliGroups]);
+          }).catch(() => {});
         }
         // API models (models.dev) — independent; clears the global loading state.
         fetchModelsRegistry().then((reg: any) => {

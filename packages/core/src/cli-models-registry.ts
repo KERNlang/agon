@@ -3,7 +3,7 @@
 
 // Re-export types and functions from generated file
 export type { CliModelEntry, CliProviderGroup, ProbedModel } from './generated/signals/cli-models-registry.js';
-export { buildCliModelGroups, buildCliModelGroupsAsync, buildCliGroupsImmediate, refreshCliGroup, findBinary, getBinaryVersion, readProbedCliModels, refreshProbedCliModels } from './generated/signals/cli-models-registry.js';
+export { buildCliModelGroups, buildCliModelGroupsAsync, buildCliGroupsImmediate, refreshCliGroup, refreshCliGroupVersion, getBinaryVersionAsync, findBinary, getBinaryVersion, readProbedCliModels, refreshProbedCliModels } from './generated/signals/cli-models-registry.js';
 
 import { buildCliModelGroups as _buildSync, buildCliModelGroupsAsync as _buildAsync } from './generated/signals/cli-models-registry.js';
 import type { CliProviderGroup } from './generated/signals/cli-models-registry.js';

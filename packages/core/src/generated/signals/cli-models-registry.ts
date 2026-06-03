@@ -262,10 +262,48 @@ export function getBinaryVersion(binary: string, versionCmd: string[]): string|n
   }
 }
 
+// @kern-source: cli-models-registry:257
+export const VERSION_CACHE: Map<string, string> = new Map();
+
+/**
+ * Resolve `binary --version` WITHOUT blocking the event loop (unlike the sync getBinaryVersion/execSync). Memoized per session by engineId. Best-effort: returns null on empty/timeout/failure/no version command.
+ */
+// @kern-source: cli-models-registry:259
+export async function getBinaryVersionAsync(engineId: string, binary: string, versionCmd: string[]): Promise<string|null> {
+  if (!versionCmd.length) return null;
+  const cached = VERSION_CACHE.get(engineId);
+  if (cached) return cached;
+  try {
+    const result = await spawnWithTimeout({ command: binary, args: versionCmd, cwd: process.cwd(), timeout: 5000 });
+    // Mirror the old execSync path, which threw (→ null) on a nonzero exit:
+    // spawnWithTimeout RESOLVES on failure, so a failing `--version` that still
+    // printed to stdout must not be cached as the engine's version.
+    if (result.timedOut || result.exitCode !== 0) return null;
+    const v = (result.stdout ?? '').trim() || null;
+    if (v) VERSION_CACHE.set(engineId, v);
+    return v;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve a single installed engine's version off the main thread, for the /models picker to swap into its group header after the instant first paint. null when the engine is unknown, not installed, or has no version command.
+ */
+// @kern-source: cli-models-registry:279
+export async function refreshCliGroupVersion(engineId: string): Promise<string|null> {
+  const entry = Object.entries(ENGINE_PROVIDER_MAP).find(([, e]) => e.engineId === engineId);
+  if (!entry) return null;
+  const [, eng] = entry;
+  const binaryPath = findBinary(eng.engineBinary);
+  if (!binaryPath) return null;
+  return getBinaryVersionAsync(eng.engineId, binaryPath, eng.versionCmd);
+}
+
 /**
  * Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync.
  */
-// @kern-source: cli-models-registry:250
+// @kern-source: cli-models-registry:290
 export function buildCliModelGroups(): CliProviderGroup[] {
   const groups: CliProviderGroup[] = [];
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
@@ -284,7 +322,7 @@ export function buildCliModelGroups(): CliProviderGroup[] {
 /**
  * Build CLI provider groups showing each engine's REAL models: its live /model probe (cached; refreshed here in parallel for installed probe-capable engines, cheap once warm) when available, else the small static FALLBACK. Deliberately does NOT use the models.dev catalog — that's the API view (buildModelEntries). Keeps the CLI picker to what the CLI actually offers, and stays correct if a probe breaks (falls back to FALLBACK, never a 150-model dump).
  */
-// @kern-source: cli-models-registry:265
+// @kern-source: cli-models-registry:305
 export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
   // Phase 1: refresh probes for installed, probe-capable engines in parallel.
   // refreshProbedCliModels short-circuits on a fresh cache, so this is cheap
@@ -304,7 +342,7 @@ export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
     const binaryPath = findBinary(eng.engineBinary);
     const installed = binaryPath !== null;
-    const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
+    const version = installed ? await getBinaryVersionAsync(eng.engineId, binaryPath as string, eng.versionCmd) : null;
     const displayName = ENGINE_DISPLAY_NAMES[eng.engineId] ?? (eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1));
     const probed = readProbedCliModels(eng.engineId);
     const models: CliModelEntry[] = (probed && probed.length > 0)
@@ -318,13 +356,13 @@ export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
 /**
  * Synchronous, instant CLI groups for the /models picker to render right away: cached probe → static FALLBACK per engine. Marks `loading: true` on installed, probe-capable engines whose live /model probe isn't cached yet, so the picker can show a 'refreshing…' indicator while refreshCliGroup runs per engine in the background. No subprocess spawns — never blocks the picker open.
  */
-// @kern-source: cli-models-registry:297
+// @kern-source: cli-models-registry:337
 export function buildCliGroupsImmediate(): CliProviderGroup[] {
   const groups: CliProviderGroup[] = [];
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
     const binaryPath = findBinary(eng.engineBinary);
     const installed = binaryPath !== null;
-    const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
+    const version = installed ? (VERSION_CACHE.get(eng.engineId) ?? null) : null;
     const displayName = ENGINE_DISPLAY_NAMES[eng.engineId] ?? (eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1));
     const probed = readProbedCliModels(eng.engineId);
     const probeCapable = Array.isArray(eng.listCmd) && eng.listCmd.length > 0;
@@ -340,7 +378,7 @@ export function buildCliGroupsImmediate(): CliProviderGroup[] {
 /**
  * Probe a SINGLE engine's live /model list and return its rebuilt group (loading: false), for the picker to merge in as each probe resolves independently. Returns null for an unknown/uninstalled/non-probe-capable engine (nothing to refresh). Falls back to FALLBACK on probe failure — never throws.
  */
-// @kern-source: cli-models-registry:317
+// @kern-source: cli-models-registry:357
 export async function refreshCliGroup(engineId: string): Promise<CliProviderGroup|null> {
   const entry = Object.entries(ENGINE_PROVIDER_MAP).find(([, e]) => e.engineId === engineId);
   if (!entry) return null;
@@ -350,7 +388,7 @@ export async function refreshCliGroup(engineId: string): Promise<CliProviderGrou
   const probeCapable = Array.isArray(eng.listCmd) && eng.listCmd.length > 0;
   if (!installed || !probeCapable) return null;
   const displayName = ENGINE_DISPLAY_NAMES[eng.engineId] ?? (eng.engineId.charAt(0).toUpperCase() + eng.engineId.slice(1));
-  const version = getBinaryVersion(eng.engineBinary, eng.versionCmd);
+  const version = await getBinaryVersionAsync(eng.engineId, binaryPath, eng.versionCmd);
   try {
     await refreshProbedCliModels(eng.engineId, binaryPath, eng.listCmd);
   } catch { /* keep going — fall back below */ }

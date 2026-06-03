@@ -58,18 +58,12 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
           <Text dimColor>{'Plan moved to history.'}</Text>
         ) : (
           <Box>
-            <Text color="#fbbf24" bold>{'Awaiting approval: '}</Text>
-            <Text dimColor>{'press '}</Text>
-            <Text color="#4ade80" bold>{'Y'}</Text>
-            <Text dimColor>{' to approve, '}</Text>
-            <Text color="#ef4444" bold>{'N'}</Text>
-            <Text dimColor>{' to reject (or type '}</Text>
-            <Text color="#4ade80" bold>{'go'}</Text>
-            <Text dimColor>{' / '}</Text>
-            <Text color="#4ade80" bold>{'/approve'}</Text>
-            <Text dimColor>{' / '}</Text>
-            <Text color="#ef4444" bold>{'/cancel'}</Text>
-            <Text dimColor>{').'}</Text>
+            <Text color="#fbbf24" bold>{'Awaiting approval   '}</Text>
+            <Text backgroundColor="#166534" color="#ffffff" bold>{' Y '}</Text>
+            <Text color="#4ade80">{' Approve & run    '}</Text>
+            <Text backgroundColor="#7f1d1d" color="#ffffff" bold>{' N '}</Text>
+            <Text color="#ef4444">{' Reject    '}</Text>
+            <Text dimColor>{'✎ type to change it  ·  /approve · /cancel'}</Text>
           </Box>
         )}
       </Box>
@@ -194,16 +188,12 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
         <Text dimColor>{'Plan moved to history.'}</Text>
       ) : (
         <Box>
-          <Text color="#fbbf24" bold>{'Awaiting approval: '}</Text>
-          <Text dimColor>{'type '}</Text>
-          <Text color="#4ade80" bold>{'go'}</Text>
-          <Text dimColor>{', '}</Text>
-          <Text color="#4ade80" bold>{'yes'}</Text>
-          <Text dimColor>{', or '}</Text>
-          <Text color="#4ade80" bold>{'/approve'}</Text>
-          <Text dimColor>{' to execute. Type '}</Text>
-          <Text color="#ef4444" bold>{'/cancel'}</Text>
-          <Text dimColor>{' to reject.'}</Text>
+          <Text color="#fbbf24" bold>{'Awaiting approval   '}</Text>
+          <Text backgroundColor="#166534" color="#ffffff" bold>{' Y '}</Text>
+          <Text color="#4ade80">{' Approve & run    '}</Text>
+          <Text backgroundColor="#7f1d1d" color="#ffffff" bold>{' N '}</Text>
+          <Text color="#ef4444">{' Reject    '}</Text>
+          <Text dimColor>{'✎ type to change it  ·  /approve · /cancel'}</Text>
         </Box>
       )}
     </Box>
@@ -211,7 +201,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
 });
 export { PlanProposalView };
 
-// @kern-source: plan-view:233
+// @kern-source: plan-view:223
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');

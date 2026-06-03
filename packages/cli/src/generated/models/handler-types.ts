@@ -90,6 +90,7 @@ export interface PendingDelegation {
   maxTurns?: number;
   queue?: string;
   gate?: string;
+  builder?: string;
   push?: boolean;
   pr?: boolean;
   maxHours?: number;
@@ -110,10 +111,10 @@ export interface PendingDelegation {
   createdAt: number;
 }
 
-// @kern-source: handler-types:272
-export type CesarLiveMode = 'self' | 'self-nero' | 'delegate' | 'forge' | 'forge-slice' | 'team-forge' | 'brainstorm' | 'team-brainstorm' | 'campfire' | 'tribunal' | 'team-tribunal' | 'pipeline' | 'goal' | 'review' | 'agent' | 'team-agent' | 'plan';
+// @kern-source: handler-types:273
+export type CesarLiveMode = 'self' | 'self-nero' | 'delegate' | 'forge' | 'forge-slice' | 'team-forge' | 'brainstorm' | 'team-brainstorm' | 'campfire' | 'tribunal' | 'team-tribunal' | 'pipeline' | 'goal' | 'conquer' | 'review' | 'agent' | 'team-agent' | 'plan';
 
-// @kern-source: handler-types:274
+// @kern-source: handler-types:275
 export interface CesarTurnOutcome {
   mode?: CesarLiveMode;
   delegated: boolean;
@@ -134,6 +135,7 @@ export interface CesarTurnOutcome {
   maxTurns?: number;
   queue?: string;
   gate?: string;
+  builder?: string;
   push?: boolean;
   pr?: boolean;
   maxHours?: number;
@@ -141,7 +143,7 @@ export interface CesarTurnOutcome {
   deterministicFailure?: boolean;
 }
 
-// @kern-source: handler-types:300
+// @kern-source: handler-types:302
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -170,7 +172,7 @@ export interface CesarState {
   autoModeQueued?: boolean;
 }
 
-// @kern-source: handler-types:327
+// @kern-source: handler-types:329
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

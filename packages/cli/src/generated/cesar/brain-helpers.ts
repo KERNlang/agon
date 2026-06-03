@@ -170,6 +170,7 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
     maxTurns: typeof argsRecord.maxTurns === 'number' ? (argsRecord.maxTurns as number) : undefined,
     queue: typeof argsRecord.queue === 'string' ? (argsRecord.queue as string) : undefined,
     gate: typeof argsRecord.gate === 'string' ? (argsRecord.gate as string) : undefined,
+    builder: typeof argsRecord.builder === 'string' ? (argsRecord.builder as string) : undefined,
     push: (argsRecord.push as boolean) ?? undefined,
     pr: (argsRecord.pr as boolean) ?? undefined,
     maxHours: typeof argsRecord.maxHours === 'number' ? (argsRecord.maxHours as number) : undefined,

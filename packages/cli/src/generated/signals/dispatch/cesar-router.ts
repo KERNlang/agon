@@ -501,6 +501,28 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
               }, cb.ctx));
               return true;
             }
+            case 'conquer': {
+              const _cqTask = (result.task ?? '').trim();
+              if (!_cqTask) { cb.dispatch({ type: 'warning', message: 'Conquer: missing task — nothing to run.' }); return false; }
+              const _cqGate = typeof result.gate === 'string' ? result.gate.trim() : '';
+              if (!_cqGate) { cb.dispatch({ type: 'warning', message: 'Conquer: missing --gate (the done-spec). Tell Cesar the test/verify command that proves the build is done.' }); return false; }
+              const _cqBuilder = typeof result.builder === 'string' ? result.builder.trim() : '';
+              const _cqArgs: string[] = ['conquer', _cqTask, '--gate', _cqGate];
+              if (_cqBuilder) _cqArgs.push('--builder', _cqBuilder);
+              if (Array.isArray(result.engines) && result.engines.length > 0) _cqArgs.push('-e', (result.engines as string[]).join(','));
+              if (typeof result.maxTurns === 'number' && result.maxTurns > 0) _cqArgs.push('--max-turns', String(result.maxTurns));
+              const _cqCmd = `agon ${_cqArgs.map((part) => JSON.stringify(part)).join(' ')}`;
+              const _cqCwd = resolveWorkingDir();
+              cb.dispatch({ type: 'info', message: 'Cesar → conquer' });
+              cb.runAsJob('conquer', label, withThreadOutcome(_cqCwd, 'conquer', label, async () => {
+                cb.dispatch({ type: 'info', message: `conquer: launched in the background — \`${_cqCmd}\`. Track with /jobs or /focus. Stops at a human merge gate — nothing auto-merges.` });
+                const res = await spawnWithTimeout({ command: 'agon', args: _cqArgs, cwd: _cqCwd, timeout: 24 * 60 * 60 * 1000 });
+                const tail = (res.stdout || '').slice(-4000);
+                if (tail.trim()) cb.dispatch({ type: 'text', content: tail });
+                if (res.exitCode !== 0) throw new Error((res.stderr || `agon conquer exited ${res.exitCode}`).slice(-1000));
+              }, cb.ctx));
+              return true;
+            }
             case 'review':
               cb.dispatch({ type: 'info', message: `Cesar → review${hardened ? ' (hardened)' : ''}` });
               {
@@ -573,7 +595,7 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
 /**
  * Confirm + run a delegation recovered from a crashed Cesar session: TTL stale-check, askQuestion confirm, then the recovered-action switch. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. The caller has already nulled cb.ctx.cesar.pendingDelegation. Returns true if a recovery job was dispatched; false on stale/declined/unmatched so the caller falls through to the brain fallback.
  */
-// @kern-source: cesar-router:518
+// @kern-source: cesar-router:540
 export async function handleRecoveredDelegation(crashDel: any, input: string, cb: DispatchCallbacks): Promise<boolean> {
   if (!crashDel) return false;
     // TTL: discard stale delegations older than 60 seconds
@@ -671,7 +693,7 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
 /**
  * Last-resort Cesar recovery when the brain returned no usable response: api-backend silent same-engine retry, non-api session rebuild + retry, fresh one-shot dispatch (with suggestion parsing), then cross-engine acting-Cesar. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. crashDel is passed ONLY to preserve the pre-existing coupling where a pending delegation s engines seed a fresh fallback pipeline suggestion (behavior preserved verbatim; latent coupling flagged for a follow-up, per nero Ch.3).
  */
-// @kern-source: cesar-router:614
+// @kern-source: cesar-router:636
 export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks, crashDel: any, priorDeterministic: boolean): Promise<boolean> {
   // Cesar truly didn't respond — try fresh CLI dispatch
   const cesarConfig = cb.ctx.config;
@@ -960,7 +982,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
 /**
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
-// @kern-source: cesar-router:901
+// @kern-source: cesar-router:923
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   // Hoisted out of the try so the fallback ladder below can see whether the

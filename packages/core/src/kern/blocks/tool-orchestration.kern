@@ -415,6 +415,40 @@ fn name=createGoalTool returns=ToolHandler
     return { definition, validate, checkPermission, execute };
   >>>
 
+fn name=createConquerTool returns=ToolHandler
+  doc "Signal tool — delegates to the supervised-autonomous conquer controller (agon conquer). Cesar drives a pluggable external builder CLI as the user, unattended, until an open-ended build is done, then STOPS at a mandatory human merge gate (never auto-merges)."
+  handler <<<
+    const definition: ToolDefinition = {
+      name: 'Conquer',
+      description: 'Delegate to the supervised-autonomous conquer controller — Cesar drives an external builder CLI (--builder codex|claude|agy, default codex) as the user, unattended, until an OPEN-ENDED build is done, then STOPS at a human merge gate (changes left in the tree or pushed to a branch; NEVER auto-merged). The gate command IS the done-spec — make it discriminating. Fire ONLY when the user explicitly asks to conquer / build unattended; it is a long multi-hour run. After calling, STOP and wait — runs in the background; track with /jobs or /focus.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task: { type: 'string', description: 'Open-ended build task to drive to completion (seeds the run + branch).' },
+          gate: { type: 'string', description: 'The done-spec: a discriminating test/verify command that proves the build is complete (e.g. "pnpm test"). Required — frozen at start.' },
+          builder: { type: 'string', description: 'External builder CLI Cesar drives as the user: codex | claude | agy. Default codex.' },
+          engines: { type: 'array', items: { type: 'string' }, description: 'Optional consult roster for fork escalations (nero/tribunal/council). Omit for active roster.' },
+          maxTurns: { type: 'number', description: 'Optional cap on builder turns (0/omit = controller default).' },
+        },
+        required: ['task', 'gate'],
+      },
+      maxResultSizeChars: 500,
+      isReadOnly: false,
+      isConcurrencySafe: false,
+    };
+    const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+      if (!input.task || typeof input.task !== 'string' || !(input.task as string).trim()) return 'Missing required parameter: task';
+      if (!input.gate || typeof input.gate !== 'string' || !(input.gate as string).trim()) return 'Missing required parameter: gate (the done-spec test/verify command). Ask the user for the command that proves the build is done.';
+      // Validate element TYPES, not just array-ness: the router joins engines into
+      // a -e CLI flag, so a malformed [{}] would become "[object Object]" (codex review).
+      if (input.engines !== undefined && (!Array.isArray(input.engines) || !(input.engines as unknown[]).every((e) => typeof e === 'string' && (e as string).trim().length > 0))) return 'engines must be an array of non-empty engine ID strings';
+      return null;
+    };
+    const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => { return { behavior: 'allow' }; };
+    const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => { return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' }; };
+    return { definition, validate, checkPermission, execute };
+  >>>
+
 fn name=createPipelineTool returns=ToolHandler
   doc "Signal tool — delegates to the build → parallel review → fix loop."
   handler <<<

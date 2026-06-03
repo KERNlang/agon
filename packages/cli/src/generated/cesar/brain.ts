@@ -56,7 +56,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
     const action = pendingDel.team ? `team-${finalAction}` : finalAction;
     const mode = (finalAction === 'forge' && pendingDel.scope === 'slice' && !(delResult.team ?? pendingDel.team)) ? 'forge-slice' : action;
     const reasoning = delResult.userContext ? `${pendingDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : pendingDel.reasoning;
-    return { mode: mode as any, delegated: true, responded: true, action: action, task: pendingDel.task, reasoning: reasoning, decisionReason: 'tool-delegation', scope: pendingDel.scope, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns, queue: pendingDel.queue, gate: pendingDel.gate, push: pendingDel.push, pr: pendingDel.pr, maxHours: pendingDel.maxHours, budget: pendingDel.budget, ...telemetry ?? {} };
+    return { mode: mode as any, delegated: true, responded: true, action: action, task: pendingDel.task, reasoning: reasoning, decisionReason: 'tool-delegation', scope: pendingDel.scope, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns, queue: pendingDel.queue, gate: pendingDel.gate, builder: pendingDel.builder, push: pendingDel.push, pr: pendingDel.pr, maxHours: pendingDel.maxHours, budget: pendingDel.budget, ...telemetry ?? {} };
   }
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
@@ -419,7 +419,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         const fastPathMode = simpleEditFastPath ? 'edit' : (answerFastPath ? 'answer' : '');
         const fastPathBaseBudget = simpleEditFastPath ? 5 : 3;
         const fastPathMaxBudget = simpleEditFastPath ? 8 : 4;
-        const FAST_PATH_BLOCKED_TOOLS = ['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'Delegate', 'ProposePlan', 'QuickNero'];
+        const FAST_PATH_BLOCKED_TOOLS = ['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer', 'Delegate', 'ProposePlan', 'QuickNero'];
         if (cesarFastPath && !restoreFastPathMode) {
           const hadPreviousFastPathMode = Object.prototype.hasOwnProperty.call(ctx.cesar as any, 'fastPathMode');
           const previousFastPathMode = (ctx.cesar as any).fastPathMode;
@@ -679,7 +679,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
               const toolName = chunk.content || 'tool';
               const toolStatus = (meta.status as string) ?? 'running';
-              const STREAM_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal']);
+              const STREAM_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer']);
               hadToolActivity = true;
               recordToolUse(toolName, ctx.cesar!.hasNativeTools ? 'native' : 'eager', toolInput, toolStatus);
               dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
@@ -1253,7 +1253,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   // Intercept orchestration signal tools — set _pendingDelegation.
                   // 'Agent' is in the set so Cesar can spawn autonomous parallel agents
                   // from a chat turn without requiring the user to type /agent (PFB-1, RT-1).
-                  const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal']);
+                  const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer']);
                   if (LOOP_ORCH.has(name)) {
                     if (cesarFastPath) {
                       return;
@@ -1714,7 +1714,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // pipeline so XML-tool engines (Kimi/Z.AI) actually execute, not just plan.
         // Source: campfire 2026-05-19 + multi-engine review (codex/gemini/...).
         const _AUTO_CONT_WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-        const _AUTO_CONT_LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal']);
+        const _AUTO_CONT_LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer']);
         // Continue-intent words signal multi-step work in progress; if present alongside
         // a write tool, treat as still-going rather than done. Catches gemini-review #4.
         const _AUTO_CONT_CONTINUE_RE = /\b(?:now i'?ll|next i'?ll|still need|let me also|i'?ll also|then i'?ll|next step|next up)\b/i;
@@ -2105,14 +2105,17 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             const full = m[3].trim();
             _forkOptions.push({ key, label: full.length > 60 ? full.slice(0, 59) + '…' : full, full });
           }
-          const isForkQuestion = /\?\s*$/.test(lastLine) && _forkOptions.length >= 2 && _forkOptions.length <= 6;
-          // On a pure chat answer (fast-answer) there is no pending ACTION to
-          // confirm, so a trailing question is conversational ("...do you want to
-          // dig into the arena?") — not "shall I proceed?". The confirmation regex
-          // is loose (it matches "want"), so without this guard a chatty engine's
-          // follow-up question pops a spurious Yes/No/type-it prompt on a plain chat
-          // turn. Only offer the confirmation prompt off the chat fast-path.
-          const asksConfirmation = !answerFastPath && !ranToolLoop && /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
+          // Only offer end-of-turn PICK prompts (fork / confirm) on ACTION turns —
+          // never when the user is just chatting. A chat/answer turn that ends in a
+          // question is conversational ("...do you want to dig into the arena?", or a
+          // numbered list of options closed by "which one?") — the user wants to TYPE
+          // a free reply, not be boxed into buttons. Gate on the routing FLOW (chat /
+          // answer), not just the short fast-path, so LONG chat turns stay free too.
+          // Buttons still fire on action flows (quick-fix / forge / plan / review …),
+          // where a fork or a "shall I proceed?" is a real decision to pick.
+          const _isChatTurn = routingHints.intakeKind === 'chat' || routingHints.recommendedFlow === 'answer';
+          const isForkQuestion = !_isChatTurn && /\?\s*$/.test(lastLine) && _forkOptions.length >= 2 && _forkOptions.length <= 6;
+          const asksConfirmation = !_isChatTurn && !ranToolLoop && /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
           if (isForkQuestion) {
             const _forkColors = ['#4ade80', '#22d3ee', '#fbbf24', '#a78bfa', '#f97316', '#ef4444'];
             // Auto-append an "own idea" choice so the user is never boxed into the

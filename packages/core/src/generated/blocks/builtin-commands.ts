@@ -68,7 +68,8 @@ export function registerBuiltinCommands(registry: CommandRegistry): void {
     { name: 'explore',   desc: '                        — toggle exploration mode (read-only)', category: 'session' },
     { name: 'nero',      desc: '                        — toggle Nero mode (adversarial)', category: 'session' },
     { name: 'btw',       desc: '<question>               — ask something while engines work', category: 'session' },
-    { name: 'clear',     desc: '                        — reset session', category: 'session', aliases: ['clean'] },
+    { name: 'compact',   desc: '                        — shrink Cesar context without clearing transcript', category: 'session' },
+    { name: 'clear',     desc: '                        — reset session (saves chat, clears brain)', category: 'session', aliases: ['clean'] },
 
     // Utility
     { name: 'worktree',     desc: 'new|list|rm|prune|rehydrate <branch> — isolated per-session git worktrees', category: 'utility', aliases: ['wt'] },

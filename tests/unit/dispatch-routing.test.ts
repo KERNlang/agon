@@ -1,9 +1,9 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { clearConversation, loadConversation, loadSessionState, saveConversation, saveSessionState } from '@kernlang/agon-core';
-import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, clearPersistedSessionContext, collectRecentEngineContext, extractExecutionSpec, failedPlanStepIsFallbackRetryable, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, handleProposedCesarPlan, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, normalizeCesarActingFallbackMode, preparePlanFallbackRetry, runDelegatedJobThenContinue, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, clearPersistedSessionContext, collectRecentEngineContext, dispatchIntent, extractExecutionSpec, failedPlanStepIsFallbackRetryable, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, handleProposedCesarPlan, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, normalizeCesarActingFallbackMode, preparePlanFallbackRetry, runDelegatedJobThenContinue, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -325,6 +325,235 @@ describe('Dispatch routing helpers', () => {
       expect(loadSessionState('gemini')).toBeNull();
       expect(loadSessionState('kimi')).toBeNull();
       expect(loadSessionState('qwen')).toBeNull();
+    } finally {
+      try { clearConversation(); } catch {}
+      if (previousHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousHome;
+      rmSync(testHome, { recursive: true, force: true });
+    }
+  });
+
+  it('can clear per-engine session context while preserving workspace conversation', () => {
+    const previousHome = process.env.AGON_HOME;
+    const testHome = mkdtempSync(join(tmpdir(), 'agon-compact-context-'));
+    process.env.AGON_HOME = testHome;
+    try {
+      saveConversation([{ role: 'user', content: 'keep workspace conversation' }], 'claude');
+      saveSessionState('claude', { messageHistory: [{ role: 'user', content: 'old claude context' }], confidence: null });
+      saveSessionState('gemini', { messageHistory: [{ role: 'user', content: 'old gemini context' }], confidence: null });
+
+      const cleared = clearPersistedSessionContext({
+        config: { cesarEngine: 'claude', forgeEnabledEngines: ['gemini'] },
+        activeEngines: () => ['gemini'],
+        registry: { availableIds: () => ['claude', 'gemini'] },
+      } as any, { clearConversation: false });
+
+      expect(cleared).toEqual(['claude', 'gemini']);
+      expect(loadConversation()?.messageHistory[0]?.content).toBe('keep workspace conversation');
+      expect(loadSessionState('claude')).toBeNull();
+      expect(loadSessionState('gemini')).toBeNull();
+    } finally {
+      try { clearConversation(); } catch {}
+      if (previousHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousHome;
+      rmSync(testHome, { recursive: true, force: true });
+    }
+  });
+
+  it('/compact summarizes older chat and rebuilds Cesar without clearing the transcript', async () => {
+    const previousHome = process.env.AGON_HOME;
+    const testHome = mkdtempSync(join(tmpdir(), 'agon-compact-dispatch-'));
+    process.env.AGON_HOME = testHome;
+    try {
+      saveConversation([{ role: 'user', content: 'persist this transcript snapshot' }], 'claude');
+      saveSessionState('codex', { messageHistory: [{ role: 'user', content: 'old codex context' }], confidence: null });
+      saveSessionState('claude', { messageHistory: [{ role: 'user', content: 'old claude context' }], confidence: null });
+      const messages = Array.from({ length: 14 }, (_, i) => ({
+        role: i % 2 === 0 ? 'user' : 'engine',
+        engineId: i % 2 === 0 ? undefined : 'claude',
+        content: `message ${i}`,
+        timestamp: new Date().toISOString(),
+      }));
+      const close = vi.fn(() => { throw new Error('close exploded'); });
+      let cb: any;
+      const setCesarSession = vi.fn((session) => { cb.ctx.cesarSession = session; });
+      const clearSession = vi.fn();
+      cb = {
+        dispatch: vi.fn(),
+        ctx: {
+          chatSession: { id: 'chat-test', startedAt: new Date().toISOString(), messages },
+          config: { cesarEngine: 'codex' },
+          cesarSession: { engineId: 'claude', close },
+          setCesarSession,
+          cesarMemory: { clearSession },
+          activeEngines: () => [],
+          registry: { availableIds: () => ['claude'] },
+        },
+        commandRegistry: null,
+        eventBus: { emit: vi.fn().mockResolvedValue(undefined) },
+        runAsJob: vi.fn(),
+        setMode: vi.fn(),
+        setPendingImages: vi.fn(),
+        setChatSession: vi.fn(),
+        exit: vi.fn(),
+        allImages: [],
+        allSlashCommands: [],
+        dynamicSkills: [],
+        loadedExtensions: [],
+        mode: 'chat',
+      };
+
+      const result = await dispatchIntent({ type: 'compact' }, '/compact', cb);
+
+      expect(result).toEqual({ handled: true, ranAsJob: false });
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(setCesarSession).toHaveBeenCalledWith(null);
+      expect(clearSession).toHaveBeenCalledTimes(1);
+      expect(cb.setMode).toHaveBeenCalledWith('chat');
+      expect(loadSessionState('codex')).toBeNull();
+      expect(loadSessionState('claude')).toBeNull();
+      expect(cb.ctx.chatSession.summarizedMessageCount).toBe(2);
+      expect(cb.ctx.chatSession.summary).toContain('message 0');
+      expect(cb.ctx.chatSession.messages[0].content).toBe('');
+      expect(cb.ctx.chatSession.messages).toHaveLength(14);
+      expect(cb.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'clear' }));
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'success',
+        message: expect.stringContaining('folded 2 older messages into the bounded summary'),
+      }));
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'success',
+        message: expect.stringContaining('Transcript has 14 entries'),
+      }));
+      expect(loadConversation()?.messageHistory[0]?.content).toBe('persist this transcript snapshot');
+    } finally {
+      try { clearConversation(); } catch {}
+      if (previousHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousHome;
+      rmSync(testHome, { recursive: true, force: true });
+    }
+  });
+
+  it('/compact still clears engine context when chat session summary cannot be read', async () => {
+    const previousHome = process.env.AGON_HOME;
+    const testHome = mkdtempSync(join(tmpdir(), 'agon-compact-summary-fails-'));
+    process.env.AGON_HOME = testHome;
+    try {
+      saveConversation([{ role: 'user', content: 'keep snapshot on summary failure' }], 'claude');
+      saveSessionState('codex', { messageHistory: [{ role: 'user', content: 'old codex context' }], confidence: null });
+      saveSessionState('claude', { messageHistory: [{ role: 'user', content: 'old claude context' }], confidence: null });
+      const close = vi.fn(() => { throw new Error('close failed'); });
+      let cb: any;
+      const setCesarSession = vi.fn((session) => { cb.ctx.cesarSession = session; });
+      const clearSession = vi.fn();
+      const chatSession = {
+        id: 'chat-test',
+        startedAt: new Date().toISOString(),
+        get messages() {
+          throw new Error('summary exploded');
+        },
+      };
+      cb = {
+        dispatch: vi.fn(),
+        ctx: {
+          chatSession,
+          config: { cesarEngine: 'codex' },
+          cesarSession: { engineId: 'claude', close },
+          setCesarSession,
+          cesarMemory: { clearSession },
+          activeEngines: () => [],
+          registry: { availableIds: () => ['claude'] },
+        },
+        commandRegistry: null,
+        eventBus: { emit: vi.fn().mockResolvedValue(undefined) },
+        runAsJob: vi.fn(),
+        setMode: vi.fn(),
+        setPendingImages: vi.fn(),
+        setChatSession: vi.fn(),
+        exit: vi.fn(),
+        allImages: [],
+        allSlashCommands: [],
+        dynamicSkills: [],
+        loadedExtensions: [],
+        mode: 'chat',
+      };
+
+      const result = await dispatchIntent({ type: 'compact' }, '/compact', cb);
+
+      expect(result).toEqual({ handled: true, ranAsJob: false });
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(setCesarSession).toHaveBeenCalledWith(null);
+      expect(clearSession).toHaveBeenCalledTimes(1);
+      expect(cb.setMode).toHaveBeenCalledWith('chat');
+      expect(loadSessionState('codex')).toBeNull();
+      expect(loadSessionState('claude')).toBeNull();
+      expect(loadConversation()?.messageHistory[0]?.content).toBe('keep snapshot on summary failure');
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'warning',
+        message: expect.stringContaining('Could not compact chat summary: summary exploded'),
+      }));
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'success',
+        message: expect.stringContaining('chat summary unchanged'),
+      }));
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'success',
+        message: expect.stringContaining('Transcript summary unavailable'),
+      }));
+    } finally {
+      try { clearConversation(); } catch {}
+      if (previousHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousHome;
+      rmSync(testHome, { recursive: true, force: true });
+    }
+  });
+
+  it('/compact clears engine context even when there is no active chat session', async () => {
+    const previousHome = process.env.AGON_HOME;
+    const testHome = mkdtempSync(join(tmpdir(), 'agon-compact-no-chat-'));
+    process.env.AGON_HOME = testHome;
+    try {
+      saveSessionState('claude', { messageHistory: [{ role: 'user', content: 'old claude context' }], confidence: null });
+      const close = vi.fn();
+      const setCesarSession = vi.fn();
+      const clearSession = vi.fn();
+      const cb: any = {
+        dispatch: vi.fn(),
+        ctx: {
+          chatSession: null,
+          config: { cesarEngine: 'claude' },
+          cesarSession: { engineId: 'claude', close },
+          setCesarSession,
+          cesarMemory: { clearSession },
+          activeEngines: () => [],
+          registry: { availableIds: () => ['claude'] },
+        },
+        commandRegistry: null,
+        eventBus: { emit: vi.fn().mockResolvedValue(undefined) },
+        runAsJob: vi.fn(),
+        setMode: vi.fn(),
+        setPendingImages: vi.fn(),
+        setChatSession: vi.fn(),
+        exit: vi.fn(),
+        allImages: [],
+        allSlashCommands: [],
+        dynamicSkills: [],
+        loadedExtensions: [],
+        mode: 'chat',
+      };
+
+      const result = await dispatchIntent({ type: 'compact' }, '/compact', cb);
+
+      expect(result).toEqual({ handled: true, ranAsJob: false });
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(setCesarSession).toHaveBeenCalledWith(null);
+      expect(clearSession).toHaveBeenCalledTimes(1);
+      expect(cb.setMode).toHaveBeenCalledWith('chat');
+      expect(loadSessionState('claude')).toBeNull();
+      expect(cb.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'success',
+        message: expect.stringContaining('No active chat session; cleared engine context only'),
+      }));
     } finally {
       try { clearConversation(); } catch {}
       if (previousHome === undefined) delete process.env.AGON_HOME;

@@ -55,6 +55,7 @@ export type Intent =
   | { type: 'suggest-brainstorm'; input: string; question?: string }
   | { type: 'suggest-tribunal'; input: string; question?: string }
   | { type: 'suggest-forge'; input: string; task?: string; fitnessCmd: string | null | undefined }
+  | { type: 'compact' }
   | { type: 'clear' }
   | { type: 'slash-list' }
   | { type: 'help' }

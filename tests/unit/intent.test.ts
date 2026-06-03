@@ -406,6 +406,11 @@ describe('Intent Detection — Slash Commands', () => {
     expect(SLASH_COMMANDS.some((cmd) => cmd.cmd === '/clean')).toBe(true);
   });
 
+  it('/compact', () => {
+    expect(detectIntent('/compact').type).toBe('compact');
+    expect(SLASH_COMMANDS.some((cmd) => cmd.cmd === '/compact')).toBe(true);
+  });
+
   it('/help', () => {
     expect(detectIntent('/help').type).toBe('help');
   });

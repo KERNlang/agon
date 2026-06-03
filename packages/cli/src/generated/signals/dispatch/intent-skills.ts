@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 
-import { resolveWorkingDir, findSkill, renderSkillPrompt, startChatSession, currentBranch, getAgonHome } from '@kernlang/agon-core';
+import { resolveWorkingDir, findSkill, renderSkillPrompt, startChatSession, currentBranch, getAgonHome, updateChatSummary } from '@kernlang/agon-core';
 
 import type { Dispatch } from '../../../handlers/types.js';
 
@@ -189,17 +189,77 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
       break;
     }
     case 'slash-list': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
+    case 'compact': {
+      const chatSession = cb.ctx.chatSession;
+      const hasChatSession = !!chatSession;
+      let messageCount = 0;
+      let chatCompacted = false;
+      let newlySummarized = 0;
+      let summaryError: string | null = null;
+      try {
+        if (chatSession) {
+          messageCount = Array.isArray(chatSession.messages) ? chatSession.messages.length : 0;
+          const beforeSummarized = Math.max(0, chatSession.summarizedMessageCount ?? 0);
+          chatCompacted = updateChatSummary(chatSession);
+          const afterSummarized = Math.max(0, chatSession.summarizedMessageCount ?? 0);
+          newlySummarized = Math.max(0, afterSummarized - beforeSummarized);
+        }
+      } catch (err) {
+        summaryError = err instanceof Error ? err.message : String(err ?? 'unknown error');
+      }
+      const cesarSession = cb.ctx.cesarSession;
+      if (cesarSession) {
+        try { cesarSession.close(); } catch { /* best-effort */ }
+      }
+      cb.ctx.lastReviewResult = undefined;
+      // Keep ctx.cesarSession visible until this helper records its engineId for cleanup.
+      const clearedEngineIds = clearPersistedSessionContext(cb.ctx, { clearConversation: false });
+      if (cesarSession) {
+        cb.ctx.setCesarSession(null);
+      }
+      try {
+        cb.ctx.cesarMemory?.clearSession?.();
+      } catch { /* best-effort */ }
+      cb.setMode('chat');
+      if (summaryError) {
+        const displayError = summaryError.length > 160 ? `${summaryError.slice(0, 157)}...` : summaryError;
+        cb.dispatch({ type: 'warning', message: `Could not compact chat summary: ${displayError}. Continuing with fresh engine context.` });
+      }
+      const transcriptNote = summaryError
+        ? 'Transcript summary unavailable'
+        : hasChatSession
+        ? `Transcript has ${messageCount} entr${messageCount === 1 ? 'y' : 'ies'}`
+        : 'No active chat session';
+      const summaryNote = !hasChatSession
+        ? 'cleared engine context only'
+        : summaryError
+        ? 'chat summary unchanged'
+        : chatCompacted && newlySummarized > 0
+        ? `folded ${newlySummarized} older message${newlySummarized === 1 ? '' : 's'} into the bounded summary`
+        : chatCompacted
+        ? 'refreshed the bounded summary'
+        : 'transcript already fits in the bounded recent context';
+      cb.dispatch({ type: 'success', message: `Session compacted. ${transcriptNote}; ${summaryNote}. Next Cesar turn will reboot with fresh engine context.` });
+      if (clearedEngineIds.length > 0) {
+        cb.dispatch({ type: 'info', message: `Cleared persisted engine context: ${clearedEngineIds.join(', ')}` });
+      }
+      break;
+    }
     case 'clear': {
       // Option 3: Save context before clearing, kill brain, reset everything
       const oldChatId = cb.ctx.chatSession?.id ?? null;
 
       // 1. Kill Cesar's brain subprocess
-      if (cb.ctx.cesarSession) {
-        cb.ctx.cesarSession.close();
-        cb.ctx.setCesarSession(null);
+      const cesarSession = cb.ctx.cesarSession;
+      if (cesarSession) {
+        try { cesarSession.close(); } catch { /* best-effort */ }
       }
       cb.ctx.lastReviewResult = undefined;
-      const clearedEngineIds = clearPersistedSessionContext(cb.ctx);
+      // Keep ctx.cesarSession visible until this helper records its engineId for cleanup.
+      const clearedEngineIds = clearPersistedSessionContext(cb.ctx, { clearConversation: true });
+      if (cesarSession) {
+        cb.ctx.setCesarSession(null);
+      }
       try {
         cb.ctx.cesarMemory?.clearSession?.();
       } catch { /* best-effort */ }

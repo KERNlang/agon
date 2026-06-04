@@ -417,7 +417,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     case 'patch-review':
       actions.setReviewEvent({ winnerId: (event as any).winnerId, patchPath: (event as any).patchPath, patchContent: (event as any).patchContent });
       return;
-    case 'question':
+    case 'question': {
       // Don't overwrite a pending permission prompt — permission has priority
       if (_permissionQueue.length > 0) {
         // Auto-resolve the question as dismissed — permission takes precedence
@@ -425,8 +425,19 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
         if (qResolve) qResolve('');
         return;
       }
-      actions.setQuestionState({ prompt: (event as any).prompt, resolve: (event as any).resolve, choices: (event as any).choices });
+      // Auto-append an "Other" escape hatch to every choice menu so the user
+      // can always type a free-text answer instead of being boxed into the
+      // listed options. Skipped when there are no choices (already free-text)
+      // or when an Other row is already present. Permission prompts build their
+      // own choices via a direct setQuestionState and never reach this path.
+      const _qChoices = (event as any).choices;
+      const _withOther = Array.isArray(_qChoices) && _qChoices.length > 0
+          && !_qChoices.some((c: any) => c && c.key === '__other')
+        ? [..._qChoices, { key: '__other', label: 'Other', color: '#9ca3af' }]
+        : _qChoices;
+      actions.setQuestionState({ prompt: (event as any).prompt, resolve: (event as any).resolve, choices: _withOther, defaultChoiceKey: (event as any).defaultChoiceKey });
       return;
+    }
     case 'permission-ask': {
       // Flush streaming buffer so permission prompt renders in a clean area
       if (state.streamingText) {

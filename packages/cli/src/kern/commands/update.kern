@@ -1,0 +1,196 @@
+// ── /update — Self-update Agon from npm ─────────────────────────────────────
+//
+// Two surfaces share this file:
+//   1. `runUpdate(latestVersion?)` — called from the in-app banner flow
+//      (see app.kern `triggerUpdatePrompt`). Streams progress to stdout and
+//      exits the process on success so the user's next `agon` invocation picks
+//      up the new version.
+//   2. `updateCommand` — the `agon update [version]` / `/update` command via
+//      citty, with `--check` for a dry-run registry probe and `--no-restart`
+//      for callers that want to relaunch themselves.
+//
+// Both share `runNpmInstall` and `formatHelp` so behavior is identical.
+
+import from="citty" names="defineCommand"
+import from="node:child_process" names="spawn"
+import from="node:os" names="platform"
+import from="../blocks/output-format.js" names="bold,dim,green,red,yellow,info,success,fail,header"
+import from="../blocks/engine.js" names="VERSION"
+import from="../services/update-check.js" names="checkForUpdate,loadDismissedVersion,saveDismissedVersion"
+
+const name=DEFAULT_PACKAGE type=string value="@kernlang/agon"
+const name=DEFAULT_TIMEOUT_MS type=number value={{ 5 * 60 * 1000 }}
+const name=RESTART_DELAY_MS type=number value={{ 1500 }}
+
+// Build the argv we hand to `npm install -g`. Honors `npm_config_prefix`
+// if set (avoids surprises on systems where the global prefix isn't /usr).
+fn name=buildNpmArgs params="packageSpec:string" returns="string[]" export=true
+  handler <<<
+    return ['install', '-g', packageSpec];
+  >>>
+
+// Spawn the update with inherited stdio so the user sees npm's native output
+// (progress bars, peer-dep warnings, etc.) stream live. Returns a promise that
+// resolves to the exit code. NEVER throws — npm exit codes are signals, not
+// errors, and we want to surface them as-is.
+fn name=runNpmInstall async=true params="packageSpec:string, timeoutMs:number" returns="Promise<number>" export=true
+  handler <<<
+    const args = buildNpmArgs(packageSpec);
+    return await new Promise<number>((resolve) => {
+      let settled = false;
+      const finish = (code: number) => { if (!settled) { settled = true; resolve(code); } };
+      let child: any;
+      try {
+        child = spawn('npm', args, { stdio: 'inherit' });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        fail(`Failed to spawn npm: ${msg}`);
+        finish(1);
+        return;
+      }
+      const timer = setTimeout(() => {
+        try { child.kill('SIGTERM'); } catch { /* already dead */ }
+        finish(124); // conventional timeout exit code
+      }, timeoutMs);
+      child.on('error', (err: any) => {
+        clearTimeout(timer);
+        const msg = err && err.message ? err.message : String(err);
+        fail(`npm process error: ${msg}`);
+        finish(1);
+      });
+      child.on('exit', (code: number | null) => {
+        clearTimeout(timer);
+        finish(typeof code === 'number' ? code : 1);
+      });
+    });
+  >>>
+
+// Detect common EACCES-style failure messages npm emits. Returns a
+// human-readable hint or '' if the error doesn't look permission-related.
+fn name=suggestPermissionFix params="code:number, stderrText:string" returns=string export=true
+  handler <<<
+    if (code === 0) return '';
+    const blob = String(stderrText || '').toLowerCase();
+    if (blob.includes('eacces') || blob.includes('permission denied') || blob.includes('needs to be run as root')) {
+      return 'Hint: global installs usually need elevated privileges. Re-run with `sudo npm install -g @kernlang/agon@latest`, or set npm_config_prefix to a user-writable directory.';
+    }
+    if (code === 124) {
+      return 'Hint: the install timed out. Check your network connection, or pass a higher --timeout.';
+    }
+    return '';
+  >>>
+
+// Stream a short progress line. Pure cosmetic; the heavy lifting is npm's own
+// inherited stdio. We emit these between phases so the user sees
+// "Checking... Installing... Done" structure rather than a wall of npm output.
+fn name=announcePhase params="phase:string, detail:string" returns=void export=true
+  handler <<<
+    info(`${bold(phase)} ${dim(detail)}`);
+  >>>
+
+// --- Public: in-app callable ------------------------------------------------
+//
+// Called by `app.tsx`'s `triggerUpdatePrompt` after the user picks "Update now".
+// `latestVersion` is the version the banner already verified. We pass it as the
+// `packageSpec` so we never install a different version than the one advertised.
+// On success we exit the process; the next `agon` invocation picks up the new
+// binary. We do NOT auto-restart inside this function — that's the shell's
+// job in the CLI entrypoint, which re-execs itself.
+fn name=runUpdate async=true params="latestVersion:string|undefined" returns="Promise<number>" export=true
+  handler <<<
+    const version = (typeof latestVersion === 'string' && latestVersion.trim()) ? latestVersion.trim() : 'latest';
+    const packageSpec = version === 'latest' ? DEFAULT_PACKAGE : `${DEFAULT_PACKAGE}@${version}`;
+
+    header(`Updating ${bold(DEFAULT_PACKAGE)} → ${bold(version)}`);
+    announcePhase('●', `running: npm ${buildNpmArgs(packageSpec).join(' ')}`);
+
+    const code = await runNpmInstall(packageSpec, DEFAULT_TIMEOUT_MS);
+    if (code === 0) {
+      success(`Updated to ${bold(version)}. Restart Agon to use the new version.`);
+      // Give stdout a beat to flush before we exit.
+      await new Promise((r) => setTimeout(r, RESTART_DELAY_MS));
+      try { process.exit(0); } catch { /* already exiting */ }
+      return 0;
+    }
+    fail(`npm exited with code ${code}.`);
+    const hint = suggestPermissionFix(code, '');
+    if (hint) info(hint);
+    return code;
+  >>>
+
+// --- Public: citty command (`agon update [version]`) ------------------------
+
+const name=updateCommand type="any"
+  handler <<<
+    defineCommand({
+      meta: {
+        name: 'update',
+        description: 'Update Agon to the latest (or a specific) version from npm. Streams npm output live and exits 0 on success.',
+      },
+      args: {
+        version: {
+          type: 'positional',
+          description: 'Specific version to install (e.g. 0.2.0). Omit to install the latest.',
+          required: false,
+        },
+        check: {
+          type: 'boolean',
+          description: 'Only check the registry — print the latest version and exit. No install.',
+          default: false,
+        },
+        'no-restart': {
+          type: 'boolean',
+          description: 'Skip the final process.exit(0) on success (for callers that want to relaunch themselves).',
+          default: false,
+        },
+        timeout: {
+          type: 'string',
+          description: 'Install timeout in seconds (default 300).',
+          default: '300',
+        },
+      },
+      async run({ args }: { args: { version?: string; check?: boolean; 'no-restart'?: boolean; timeout?: string } }) {
+        const version = (args.version ?? '').trim() || 'latest';
+        const timeoutSec = parseInt(String(args.timeout ?? '300'), 10);
+        const timeoutMs = (Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 300) * 1000;
+
+        if (args.check) {
+          // Dry-run: just hit the registry and report. We probe with the
+          // *running* binary's version so the "you're on" line is honest.
+          const probed = await checkForUpdate(VERSION, undefined);
+          if (probed.error && !probed.hasUpdate) {
+            fail(`Could not reach the npm registry: ${probed.error}`);
+            process.exit(1);
+            return;
+          }
+          if (probed.hasUpdate) {
+            info(`Update available: ${bold(probed.currentVersion)} → ${bold(probed.latestVersion)}`);
+            info(`Run ${yellow('agon update')} to install.`);
+          } else {
+            success(`Already on the latest version (${bold(probed.latestVersion)}).`);
+          }
+          return;
+        }
+
+        const packageSpec = version === 'latest' ? DEFAULT_PACKAGE : `${DEFAULT_PACKAGE}@${version}`;
+        header(`Updating ${bold(DEFAULT_PACKAGE)} → ${bold(version)}`);
+        announcePhase('●', `running: npm ${buildNpmArgs(packageSpec).join(' ')}`);
+
+        const code = await runNpmInstall(packageSpec, timeoutMs);
+        if (code !== 0) {
+          fail(`npm exited with code ${code}.`);
+          info(suggestPermissionFix(code, ''));
+          process.exit(code);
+          return;
+        }
+        success(`Updated to ${bold(version)}. Restart Agon to use the new version.`);
+        if (!args['no-restart']) {
+          await new Promise((r) => setTimeout(r, RESTART_DELAY_MS));
+          try { process.exit(0); } catch { /* already exiting */ }
+        }
+      },
+    })
+  >>>
+
+// Re-export for the registry / tests.
+const name=DEFAULT_UPDATE_PACKAGE type=string value="@kernlang/agon"

@@ -14,6 +14,9 @@ export interface KeyboardCtx {
   reviewEventOpen: boolean;
   toolDetailOpen: boolean;
   questionState: any;
+  questionChoiceIndex: number;
+  questionOtherActive: boolean;
+  updateInfo: any;
   replState: string;
   inputValue: string;
   inputHistory: string[];
@@ -21,6 +24,7 @@ export interface KeyboardCtx {
   planModeQueued: boolean;
   autoModeQueued: boolean;
   activePlanState: string|null;
+  planApprovalIndex: number;
   outputBlockCount: number;
   commands: any[];
   engineIds: string[];
@@ -29,12 +33,15 @@ export interface KeyboardCtx {
   executionRailFocused: boolean;
 }
 
-// @kern-source: keyboard:32
+// @kern-source: keyboard:36
 export type KeyboardAction =
   | { type: 'none' }
   | { type: 'exit' }
   | { type: 'resolveChoice'; choiceKey: string }
   | { type: 'cancelChoice' }
+  | { type: 'moveChoice'; index: number }
+  | { type: 'enterOther' }
+  | { type: 'exitOther' }
   | { type: 'swallow' }
   | { type: 'ghostComplete'; ghost: string }
   | { type: 'togglePlanQueued' }
@@ -64,12 +71,14 @@ export type KeyboardAction =
   | { type: 'togglePauseMenu' }
   | { type: 'movePauseCursor'; direction: 'up'|'down' }
   | { type: 'selectPauseAction' }
-  | { type: 'planControl'; action: 'approve'|'cancel' };
+  | { type: 'planControl'; action: 'approve'|'cancel' }
+  | { type: 'movePlanApproval'; index: number }
+  | { type: 'updateBanner'; action: 'update'|'changelog'|'dismiss' };
 
 /**
  * Pure keyboard decision tree. Takes current state, returns action to execute.
  */
-// @kern-source: keyboard:75
+// @kern-source: keyboard:87
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
   const keyName = typeof key.name === 'string' ? key.name.toLowerCase() : '';
@@ -102,20 +111,60 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     return { type: 'none' };
   }
 
-  // Choice-based question: single keypress resolves immediately
+  // "Other" inline text mode: the PromptTextInput owns typing + Enter; only
+  // Esc is handled app-side, and it returns to the select list (non-destructive)
+  // rather than cancelling the whole prompt.
+  if (ctx.questionState && ctx.questionState.choices && ctx.questionOtherActive) {
+    if (key.escape) return { type: 'exitOther' };
+    return { type: 'none' };
+  }
+  // Choice-based question: Claude-Code-style arrow-navigable select. Arrows move
+  // a cursor (wraps); digits/letters only MOVE the cursor (no auto-apply); Enter
+  // confirms the highlighted row; the '__other' row opens an inline text field.
   if (ctx.questionState && ctx.questionState.choices) {
     if (hasCtrlSignal && normalizedCtrlInput === 'o') return { type: 'openToolDetail' };
-    if ((key.return || input === '\r' || input === '\n') && ctx.questionState.defaultChoiceKey) {
-      return { type: 'resolveChoice', choiceKey: ctx.questionState.defaultChoiceKey };
+    const choices = ctx.questionState.choices as { key: string; label: string }[];
+    const n = choices.length;
+    if (n === 0) return { type: 'swallow' };
+    const cur = Math.min(Math.max(0, ctx.questionChoiceIndex ?? 0), n - 1);
+    if (key.upArrow) return { type: 'moveChoice', index: (cur - 1 + n) % n };
+    if (key.downArrow) return { type: 'moveChoice', index: (cur + 1) % n };
+    if (key.return || input === '\r' || input === '\n') {
+      const sel = choices[cur];
+      if (sel && sel.key === '__other') return { type: 'enterOther' };
+      if (sel) return { type: 'resolveChoice', choiceKey: sel.key };
+      return { type: 'swallow' };
     }
     const pressed = input.toLowerCase();
-    const choices = ctx.questionState.choices as { key: string; label: string }[];
-    const match = choices.find((c) => c.key.toLowerCase() === pressed);
     const numIdx = /^[1-9]$/.test(pressed) ? parseInt(pressed, 10) - 1 : -1;
-    const resolved = match ?? (numIdx >= 0 && numIdx < choices.length ? choices[numIdx] : null);
-    if (resolved) return { type: 'resolveChoice', choiceKey: resolved.key };
+    if (numIdx >= 0 && numIdx < n) return { type: 'moveChoice', index: numIdx };
+    const keyIdx = choices.findIndex((c) => c.key.toLowerCase() === pressed);
+    if (keyIdx >= 0) return { type: 'moveChoice', index: keyIdx };
     if (key.escape) return { type: 'cancelChoice' };
     return { type: 'swallow' };
+  }
+
+  // Update-available banner: u = update now, l = view changelog, x = dismiss
+  // for the advertised version. Gated on an empty composer + no focused text
+  // input so the banner never eats a u/l/x the user is actually typing
+  // (the banner itself is the action affordance; the keyboard is just a
+  // shortcut). Loses to all higher-priority surfaces (pickers, tool detail,
+  // questions, fullscreen scroll) so it never hijacks a focused modal.
+  if (
+    ctx.updateInfo && ctx.updateInfo.latestVersion
+    && ctx.inputValue === ''
+    && !ctx.textInputActive
+    && !ctx.questionState
+    && !ctx.modelPickerOpen && !ctx.cesarPickerOpen
+    && !ctx.toolDetailOpen && !ctx.slashPickerOpen
+    && !ctx.enginePickerOpen && !ctx.reviewEventOpen
+    && !hasCtrlSignal
+    && (input === 'u' || input === 'U' || input === 'l' || input === 'L' || input === 'x' || input === 'X')
+  ) {
+    const lower = input.toLowerCase();
+    if (lower === 'u') return { type: 'updateBanner', action: 'update' };
+    if (lower === 'l') return { type: 'updateBanner', action: 'changelog' };
+    return { type: 'updateBanner', action: 'dismiss' };
   }
 
   // When a child text input is focused, it owns the reserved Ctrl shortcuts.
@@ -163,23 +212,30 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   // Ctrl+L: clear
   if (hasCtrlSignal && normalizedCtrlInput === 'l') return { type: 'submit', value: '/clear' };
 
-  // Plan awaiting approval: Y approves, N cancels — only when the composer
-  // is empty and no modal/picker owns input. Mirrors the permission prompt
-  // hotkey UX so the user does not have to type /approve and risk it being
-  // queued while Cesar's stream is still wrapping up.
+  // Plan awaiting approval: Claude-Code-style select. Arrows move a cursor
+  // between Approve & run / Reject; Enter confirms the highlighted one; y/n or
+  // 1/2 only MOVE the cursor (no instant apply). Typing any other character
+  // falls through to the composer so "type to change it" still works. Only
+  // active when the composer is empty and no modal/picker owns input.
   if (
     ctx.activePlanState === 'awaiting_approval'
     && ctx.inputValue === ''
     && !hasCtrlSignal
-    && !key.escape && !key.return && !key.tab
+    && !key.escape && !key.tab
     && !ctx.slashPickerOpen && !ctx.enginePickerOpen
     && !ctx.reviewEventOpen && !ctx.toolDetailOpen
     && !ctx.questionState
-    && typeof input === 'string' && input.length === 1
   ) {
-    const lowered = input.toLowerCase();
-    if (lowered === 'y') return { type: 'planControl', action: 'approve' };
-    if (lowered === 'n') return { type: 'planControl', action: 'cancel' };
+    const pcur = (ctx.planApprovalIndex ?? 0) === 1 ? 1 : 0;
+    if (key.upArrow || key.downArrow) return { type: 'movePlanApproval', index: pcur === 0 ? 1 : 0 };
+    if (key.return || input === '\r' || input === '\n') {
+      return { type: 'planControl', action: pcur === 1 ? 'cancel' : 'approve' };
+    }
+    if (typeof input === 'string' && input.length === 1) {
+      const lowered = input.toLowerCase();
+      if (lowered === 'y' || lowered === '1') return { type: 'movePlanApproval', index: 0 };
+      if (lowered === 'n' || lowered === '2') return { type: 'movePlanApproval', index: 1 };
+    }
   }
 
   // ── File rail navigation (only when rail is open AND composer is empty) ──

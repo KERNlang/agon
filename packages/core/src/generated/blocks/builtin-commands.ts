@@ -62,6 +62,7 @@ export function registerBuiltinCommands(registry: CommandRegistry): void {
     { name: 'chats',       desc: '[id|resume <id>]        — chat history or resume session', category: 'info' },
     { name: 'jobs',        desc: '                        — list running/completed jobs', category: 'info' },
     { name: 'focus',       desc: '<id>                    — switch to background job output', category: 'info' },
+    { name: 'update',      desc: '[version] [--check]     — self-update from npm (also runs from the in-app banner)', category: 'info' },
 
     // Session
     { name: 'mcp',        desc: 'connect <name|url> | disconnect | list — manage session MCP servers', category: 'session' },

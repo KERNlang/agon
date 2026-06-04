@@ -26,6 +26,7 @@ screen name=PlanProposalView target=ink memo=true
   prop name=markdown type=string optional=true
   prop name=costEstimate type="{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null" optional=true
   prop name=committed type=boolean optional=true
+  prop name=selectedIndex type=number optional=true
   render
     handler <<<
       const steps = plan.steps ?? [];
@@ -75,13 +76,11 @@ screen name=PlanProposalView target=ink memo=true
             {committed ? (
               <Text dimColor>{'Plan moved to history.'}</Text>
             ) : (
-              <Box>
-                <Text color="#fbbf24" bold>{'Awaiting approval   '}</Text>
-                <Text backgroundColor="#166534" color="#ffffff" bold>{' Y '}</Text>
-                <Text color="#4ade80">{' Approve & run    '}</Text>
-                <Text backgroundColor="#7f1d1d" color="#ffffff" bold>{' N '}</Text>
-                <Text color="#ef4444">{' Reject    '}</Text>
-                <Text dimColor>{'✎ type to change it  ·  /approve · /cancel'}</Text>
+              <Box flexDirection="column">
+                <Text color="#fbbf24" bold>{'Awaiting approval'}</Text>
+                <Text color={(selectedIndex ?? 0) === 0 ? '#4ade80' : '#6b7280'} bold={(selectedIndex ?? 0) === 0}>{(selectedIndex ?? 0) === 0 ? '❯ ' : '  '}{'1. Approve & run'}</Text>
+                <Text color={(selectedIndex ?? 0) === 1 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Reject'}</Text>
+                <Text dimColor>{'  ↑↓ move · Enter select · ✎ type to change · /approve · /cancel'}</Text>
               </Box>
             )}
           </Box>
@@ -205,13 +204,11 @@ screen name=PlanProposalView target=ink memo=true
           {committed ? (
             <Text dimColor>{'Plan moved to history.'}</Text>
           ) : (
-            <Box>
-              <Text color="#fbbf24" bold>{'Awaiting approval   '}</Text>
-              <Text backgroundColor="#166534" color="#ffffff" bold>{' Y '}</Text>
-              <Text color="#4ade80">{' Approve & run    '}</Text>
-              <Text backgroundColor="#7f1d1d" color="#ffffff" bold>{' N '}</Text>
-              <Text color="#ef4444">{' Reject    '}</Text>
-              <Text dimColor>{'✎ type to change it  ·  /approve · /cancel'}</Text>
+            <Box flexDirection="column">
+              <Text color="#fbbf24" bold>{'Awaiting approval'}</Text>
+              <Text color={(selectedIndex ?? 0) === 0 ? '#4ade80' : '#6b7280'} bold={(selectedIndex ?? 0) === 0}>{(selectedIndex ?? 0) === 0 ? '❯ ' : '  '}{'1. Approve & run'}</Text>
+              <Text color={(selectedIndex ?? 0) === 1 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Reject'}</Text>
+              <Text dimColor>{'  ↑↓ move · Enter select · ✎ type to change · /approve · /cancel'}</Text>
             </Box>
           )}
         </Box>

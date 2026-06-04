@@ -128,6 +128,8 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
+import { checkForUpdate, loadDismissedVersion, saveDismissedVersion } from '../services/update-check.js';
+
 import { COMPOSER_HISTORY_LIMIT, loadComposerInputHistory, saveComposerInputHistory } from './app-composer.js';
 
 import { toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView } from './app-tool-detail.js';
@@ -148,7 +150,7 @@ import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:92
+// @kern-source: app:93
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -221,6 +223,13 @@ export function App() {
   const [questionState, _setQuestionStateRaw] = useState<any>(null);
   const setQuestionState = useMemo(() => __inkSafe(_setQuestionStateRaw), [_setQuestionStateRaw]);
   const [questionAnswer, setQuestionAnswer] = useState<string>('');
+  const [selectedChoiceIndex, setSelectedChoiceIndex] = useState<number>(0);
+  const [questionOtherActive, setQuestionOtherActive] = useState<boolean>(false);
+  const [planApprovalIndex, setPlanApprovalIndex] = useState<number>(0);
+  const [updateInfo, _setUpdateInfoRaw] = useState<any>(null);
+  const setUpdateInfo = useMemo(() => __inkSafe(_setUpdateInfoRaw), [_setUpdateInfoRaw]);
+  const [updateChecking, _setUpdateCheckingRaw] = useState<boolean>(false);
+  const setUpdateChecking = useMemo(() => __inkSafe(_setUpdateCheckingRaw), [_setUpdateCheckingRaw]);
   const [btwPanel, _setBtwPanelRaw] = useState<any|null>(null);
   const setBtwPanel = useMemo(() => __inkSafe(_setBtwPanelRaw), [_setBtwPanelRaw]);
   const [enginePickerOpen, _setEnginePickerOpenRaw] = useState<boolean>(false);
@@ -1480,15 +1489,82 @@ export function App() {
   }, []);
 
   const handleQuestionAnswer = useCallback((answer:string) => {
-    if (questionState) {
-      questionState.resolve(answer);
-      setQuestionState(null);
-      setQuestionAnswer('');
+    if (!questionState) return;
+    // "Other" inline answer on a choice menu: resolve the waiter with an
+    // explicit sentinel (never confused with a real key / cancel), then route
+    // the typed text to Cesar as a normal user turn. Empty text just returns
+    // to the select list instead of submitting blank.
+    if (questionOtherActive) {
+      const text = (answer ?? '').trim();
+      if (!text) { setQuestionOtherActive(false); setQuestionAnswer(''); return; }
+      questionState.resolve('__other:' + text);
+      setQuestionState(null); setQuestionAnswer('');
+      setQuestionOtherActive(false); setSelectedChoiceIndex(0);
+      handleSubmit(text);
+      return;
     }
-  }, [questionState]);
+    // Genuine free-text question (no choices): the typed text IS the answer.
+    questionState.resolve(answer);
+    setQuestionState(null); setQuestionAnswer('');
+  }, [questionState,questionOtherActive,handleSubmit]);
+
+  const dismissUpdateBanner = useCallback(() => {
+    const info = updateInfo;
+    if (!info || !info.latestVersion) return;
+    setUpdateInfo(null);
+    // Fire-and-forget: saveDismissedVersion is best-effort and never throws.
+    saveDismissedVersion(info.latestVersion).catch(() => {});
+  }, [updateInfo]);
+
+  const triggerUpdatePrompt = useCallback(() => {
+    const info = updateInfo;
+    if (!info || !info.latestVersion) return;
+    if (questionState) return; // never stack a prompt on top of another
+    const current = info.currentVersion || VERSION;
+    const latest = info.latestVersion;
+    const choices = [
+      { key: 'later', label: 'Remind me next time' },
+      { key: 'update', label: `Update now (npm i -g @kernlang/agon@${latest})` },
+      { key: 'changelog', label: 'View changelog on GitHub' },
+      { key: 'dismiss', label: `Don't ask for v${latest} again` },
+    ];
+    new Promise<string>((resolve) => {
+      dispatch({ type: 'question', prompt: `Agon v${latest} is available (you're on v${current}). What do you want to do?`, choices, defaultChoiceKey: 'later', resolve } as any);
+    }).then((raw) => {
+      const ans = typeof raw === 'string' ? raw : '';
+      // Esc / cancel resolves with the global 'n' deny-sentinel (shared with
+      // permission prompts). Treat it as "leave me alone" so the banner
+      // stays visible and the user can re-trigger with u/l/x.
+      if (ans === 'n' || ans === '' || ans === '__cancel') return;
+      if (ans === 'dismiss') {
+        // "Don't ask for this version" — record dismissal and hide banner.
+        saveDismissedVersion(latest).catch(() => {});
+        setUpdateInfo(null);
+        return;
+      }
+      if (ans === 'later') return; // keep banner; user can act later
+      if (ans === 'update') {
+        // Hand off to the update command — implementation lives in
+        // commands/update.kern. Dynamic import so the route is lazy: the
+        // command module is only loaded when the user actually wants to
+        // update, and a missing/broken module never crashes app boot.
+        setUpdateInfo(null);
+        import('../commands/update.js')
+          .then((m: any) => m.runUpdate(latest))
+          .catch((err: any) => {
+            console.error('[agon] failed to launch update:', err && err.message ? err.message : String(err));
+          });
+        return;
+      }
+      if (ans === 'changelog') {
+        try { spawnSync('open', ['https://github.com/KERNlang/agon/releases'], { stdio: 'ignore' }); } catch { /* ignore */ }
+        return;
+      }
+    }).catch(() => {});
+  }, [updateInfo,dispatch,questionState]);
 
   const handleCancelOrExit = useCallback(() => {
-    if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
+    if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); setSelectedChoiceIndex(0); setQuestionOtherActive(false); }
     if (replState !== 'idle') {
       interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
       return;
@@ -1669,8 +1745,11 @@ export function App() {
       modelPickerOpen, cesarPickerOpen, slashPickerOpen, enginePickerOpen,
       reviewEventOpen: !!reviewEvent,
       toolDetailOpen: !!toolDetailEvent,
-      questionState, replState, inputValue, inputHistory, historyIndex,
+      questionState, questionChoiceIndex: selectedChoiceIndex, questionOtherActive,
+      updateInfo,
+      replState, inputValue, inputHistory, historyIndex,
       planModeQueued, autoModeQueued, activePlanState: activePlanRef.current?.state ?? null,
+      planApprovalIndex,
       outputBlockCount: outputBlocks.length,
       commands: allSlashCommands,
       engineIds: availableEngines,
@@ -1684,10 +1763,18 @@ export function App() {
       case 'exit': process.exit(0); return;
       case 'resolveChoice':
         questionState.resolve(action.choiceKey);
-        setQuestionState(null); setQuestionAnswer(''); return;
+        setQuestionState(null); setQuestionAnswer('');
+        setSelectedChoiceIndex(0); setQuestionOtherActive(false); return;
       case 'cancelChoice':
         questionState.resolve('n');
-        setQuestionState(null); setQuestionAnswer(''); return;
+        setQuestionState(null); setQuestionAnswer('');
+        setSelectedChoiceIndex(0); setQuestionOtherActive(false); return;
+      case 'moveChoice':
+        setSelectedChoiceIndex(action.index); return;
+      case 'enterOther':
+        setQuestionOtherActive(true); setQuestionAnswer(''); return;
+      case 'exitOther':
+        setQuestionOtherActive(false); setQuestionAnswer(''); return;
       case 'swallow': return;
       case 'ghostComplete':
         setInputValue(inputValue + action.ghost + ' ');
@@ -1708,10 +1795,26 @@ export function App() {
       case 'submit':
         handleSubmit(action.value); return;
       case 'planControl':
-        // Swallow the y/n keystroke so PromptTextInput does not insert it
+        // Swallow the Enter/key so PromptTextInput does not insert it
         // into the composer after we route the approval.
         ctrlKeyHandledRef.current = true;
+        setPlanApprovalIndex(0);
         handleSubmit(action.action === 'approve' ? '/approve' : '/cancel');
+        return;
+      case 'movePlanApproval':
+        setPlanApprovalIndex(action.index); return;
+      case 'updateBanner':
+        // Route the keyboard shortcut from the in-app update banner.
+        // `update` opens the choice prompt; `changelog` jumps straight to
+        // the release page; `dismiss` hides the banner and remembers the
+        // version so we don't nag again for this release.
+        if (action.action === 'update') {
+          triggerUpdatePrompt();
+        } else if (action.action === 'changelog') {
+          try { spawnSync('open', ['https://github.com/KERNlang/agon/releases'], { stdio: 'ignore' }); } catch { /* ignore */ }
+        } else {
+          dismissUpdateBanner();
+        }
         return;
       case 'toggleToolExpand':
         ctrlKeyHandledRef.current = true;
@@ -1786,7 +1889,7 @@ export function App() {
         handleCancelOrExit();
         return;
     }
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive]);
 
   useEffect(() => {
     initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
@@ -1890,6 +1993,30 @@ export function App() {
   useEffect(() => {
     lastReviewResultRef.current = lastReviewResult;
   }, [lastReviewResult]);
+
+  useEffect(() => {
+    const startedAt = Date.now();
+    const elapsed = () => Date.now() - startedAt;
+    const boot = setTimeout(async () => {
+      setUpdateChecking(true);
+      try {
+        const dismissed = await loadDismissedVersion();
+        const result = await checkForUpdate(VERSION, undefined);
+        if (result && result.hasUpdate && result.latestVersion && result.latestVersion !== dismissed) {
+          setUpdateInfo({
+            currentVersion: result.currentVersion,
+            latestVersion: result.latestVersion,
+            checkedAt: Date.now(),
+          });
+        }
+      } catch {
+        // Swallow — update check is best-effort, never surface to the user.
+      } finally {
+        setUpdateChecking(false);
+      }
+    }, Math.max(0, 4000 - elapsed()));
+    return () => clearTimeout(boot);
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -2138,6 +2265,19 @@ export function App() {
   }, [inputValue]);
 
   useEffect(() => {
+    if (questionState && Array.isArray(questionState.choices) && questionState.choices.length > 0) {
+      const dk = questionState.defaultChoiceKey;
+      const di = dk ? questionState.choices.findIndex((c: any) => c && c.key === dk) : 0;
+      setSelectedChoiceIndex(di >= 0 ? di : 0);
+      setQuestionOtherActive(false);
+    }
+  }, [questionState]);
+
+  useEffect(() => {
+    if (pendingPlanProposal) setPlanApprovalIndex(0);
+  }, [pendingPlanProposal]);
+
+  useEffect(() => {
     _cancelCallback.fn = () => {
       for (const abort of _activeAborts) abort.abort();
       _activeAborts.clear();
@@ -2246,6 +2386,7 @@ export function App() {
       <PlanProposalView
         plan={(pendingPlanProposal as any).plan}
         markdown={(pendingPlanProposal as any).markdown}
+        selectedIndex={planApprovalIndex}
       />
     )}
     {btwPanel && (
@@ -2491,6 +2632,33 @@ export function App() {
     {liveSpinner && mode !== 'chat' && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
     {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && !railTakeover && (
       <Box flexDirection="column" paddingX={1} marginTop={1}>
+        {/* ── Update-available banner ──
+            Sits between the picker row and the composer. Renders ONLY when
+            updateInfo is populated; otherwise nothing is emitted (zero-cost
+            when the user is up-to-date). The banner is keyboard-driven via
+            the global 'u' shortcut (handleKeyboardInput) — see KEY_MAP
+            below for the full surface (u / Enter / x / Esc). */}
+        {updateInfo && updateInfo.latestVersion && !questionState && (
+          <Box flexDirection="row" borderStyle="round" borderColor="#fbbf24" paddingX={1} marginBottom={1}>
+            <Box flexDirection="column" flexGrow={1}>
+              <Box>
+                <Text color="#fbbf24" bold>{'⤴ '}</Text>
+                <Text bold>Agon v{updateInfo.latestVersion}</Text>
+                <Text>{' is available (you\'re on v'}{updateInfo.currentVersion || VERSION}{')'}</Text>
+              </Box>
+              <Box>
+                <Text dimColor>{'Press '}</Text>
+                <Text color="#fbbf24" bold>{'u'}</Text>
+                <Text dimColor>{' to update · '}</Text>
+                <Text dimColor>{'l'}</Text>
+                <Text dimColor>{' to view changelog · '}</Text>
+                <Text dimColor>{'x'}</Text>
+                <Text dimColor>{' to dismiss for v'}{updateInfo.latestVersion}</Text>
+              </Box>
+            </Box>
+            {updateChecking && <Text dimColor>{' · checking'}</Text>}
+          </Box>
+        )}
         {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
         {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
         {liveSpinner && mode === 'chat' && !questionState && (
@@ -2518,6 +2686,8 @@ export function App() {
             onSlashCancel={handleSlashCancel}
             questionState={questionState}
             questionAnswer={questionAnswer}
+            selectedChoiceIndex={selectedChoiceIndex}
+            questionOtherActive={questionOtherActive}
             onQuestionAnswerChange={setQuestionAnswer}
             onQuestionAnswerSubmit={handleQuestionAnswer}
             termWidth={termWidth}
@@ -2585,22 +2755,22 @@ export function App() {
   );
 }
 
-// @kern-source: app:82
+// @kern-source: app:83
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:84
+// @kern-source: app:85
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:86
+// @kern-source: app:87
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:88
+// @kern-source: app:89
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:90
+// @kern-source: app:91
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2296
+// @kern-source: app:2498
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

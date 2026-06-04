@@ -28,6 +28,7 @@ import { councilCommand } from './commands/council.js';
 import { conquerCommand } from './commands/conquer.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { loginCommand } from './commands/login.js';
+import { updateCommand } from './commands/update.js';
 import { startRepl } from './repl.js';
 import { runOnboarding } from './onboarding.js';
 import { loadConfig, loadAllAuthKeys, configSet, installKernStackTraceMapper } from '@kernlang/agon-core';
@@ -198,6 +199,8 @@ const main = defineCommand({
     worktree: worktreeCommand,
     wt: worktreeCommand,
     login: loginCommand,
+    update: updateCommand,
+    upgrade: updateCommand,
   },
 });
 

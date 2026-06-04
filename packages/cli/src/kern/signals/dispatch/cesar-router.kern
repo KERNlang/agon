@@ -215,7 +215,13 @@ fn name=handleDelegatedAction async=true params="result:any, input:string, cb:Di
         let routeAction = result.action;
         if (result.team && !routeAction.startsWith('team-')) routeAction = `team-${routeAction}`;
         const inDelegatedContinuation = Number((cb.ctx as any).delegatedContinuationDepth ?? 0) > 0;
-        const RECURSIVE_THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'team-brainstorm', 'team-tribunal'];
+        // 'review' belongs here too: it absorbs its findings back through
+        // continueCesarAfterResult (which bumps the continuation depth), so without
+        // this guard Cesar re-dispatches review on every synthesis turn and loops
+        // (observed: review ran 3× back-to-back). Execution actions (forge, pipeline,
+        // delegate, agent) are intentionally NOT listed — those may recur as the
+        // focused next step; thinking/analysis dispatches must not.
+        const RECURSIVE_THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'team-brainstorm', 'team-tribunal', 'review'];
         if (inDelegatedContinuation && RECURSIVE_THINKING_ACTIONS.includes(routeAction)) {
           cb.dispatch({ type: 'warning', message: `Skipped repeated ${routeAction} during delegated-result synthesis. Cesar should summarize or choose a focused execution step instead.` });
           return false;

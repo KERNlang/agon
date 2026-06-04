@@ -12,7 +12,9 @@ import type { KernDraft } from '@kernlang/protocol';
 
 import { dedupBrainstormDrafts } from './dedup-bridge.js';
 
-// @kern-source: brainstorm:8
+import { preflightHealthFilter } from './health-check.js';
+
+// @kern-source: brainstorm:9
 export function calibrateConfidence(engineId: string, rawBid: number): number {
   // Use Glicko-2 brainstorm ratings for calibration, fall back to global
   const ratings = getRatings();
@@ -25,7 +27,7 @@ export function calibrateConfidence(engineId: string, rawBid: number): number {
   return Math.round(rawBid * 0.3 + winRate * 100 * 0.7);
 }
 
-// @kern-source: brainstorm:19
+// @kern-source: brainstorm:20
 export function qualityScore(engineId: string, draft: KernDraft): number {
   let score = 0;
   if (draft.approach.length > 10) {
@@ -45,7 +47,7 @@ export function qualityScore(engineId: string, draft: KernDraft): number {
   return score;
 }
 
-// @kern-source: brainstorm:35
+// @kern-source: brainstorm:36
 export function rankDrafts(drafts: {engineId:string, draft:KernDraft, raw:string}[]): {engineId:string, draft:KernDraft, raw:string}[] {
   return [...drafts].sort((a, b) => {
     const scoreA = qualityScore(a.engineId, a.draft);
@@ -54,7 +56,7 @@ export function rankDrafts(drafts: {engineId:string, draft:KernDraft, raw:string
   });
 }
 
-// @kern-source: brainstorm:44
+// @kern-source: brainstorm:45
 export async function collectRankedDrafts(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{engineId:string, draft:KernDraft, raw:string}[]> {
   const draftPrompt = buildKernDraftPrompt({
     question: opts.question,
@@ -123,7 +125,7 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
   return rankDrafts(drafts);
 }
 
-// @kern-source: brainstorm:113
+// @kern-source: brainstorm:114
 export function scoutScore(bid: ScoutBid): number {
   let score = 0;
   // Confidence: 40% weight (0-40 points)
@@ -137,10 +139,14 @@ export function scoutScore(bid: ScoutBid): number {
   return score;
 }
 
-// @kern-source: brainstorm:126
+// @kern-source: brainstorm:127
 export async function runScout(opts: {question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}> {
   const count = opts.scoutCount ?? 2;
-  const scouts = opts.engines.slice(0, count);
+  // Filter quarantined engines BEFORE slicing, else a dead engine in the first
+  // scoutCount slots still burns a scout dispatch (review consensus: claude/kimi/agy/zai).
+  const __hcScout = await preflightHealthFilter({ engineIds: opts.engines, registry: opts.registry, adapter: opts.adapter, signal: opts.signal });
+  __hcScout.skipped.forEach((s) => console.warn(`[agon] scout: skipping ${s.engineId} — ${s.status} (${s.reason})`));
+  const scouts = __hcScout.healthy.slice(0, count);
   const ranked = await collectRankedDrafts({ question: opts.question, context: opts.context, engines: scouts, registry: opts.registry, adapter: opts.adapter, timeout: Math.min(opts.timeout, 30), outputDir: opts.outputDir, signal: opts.signal });
   const bids: ScoutBid[] = ranked.map((d) => Object.assign({}, { engineId: d.engineId, confidence: calibrateConfidence(d.engineId, d.draft.confidence), approach: d.draft.approach, steps: d.draft.steps, keyFiles: d.draft.keyFiles, risk: (d.draft.approach.toLowerCase().includes('risk') || d.draft.tradeoffs.length > 2) ? ('high' as const) : ((d.draft.tradeoffs.length > 0) ? ('medium' as const) : ('low' as const)), needsCompetition: d.draft.tradeoffs.some((t: string) => /compet|test|verify|compar/i.test(t)) }));
   // Sort by scoutScore
@@ -151,7 +157,7 @@ export async function runScout(opts: {question:string, context?:string, engines:
   return { rankedBids: bids, leadEngine: (bids.length > 0) ? bids[0].engineId : scouts[0], topConfidence: topConfidence, disagreementSpread: disagreementSpread };
 }
 
-// @kern-source: brainstorm:139
+// @kern-source: brainstorm:144
 export function fallbackParse(output: string): KernDraft {
   const stripped = output.replace(/\x60\x60\x60(?:json)?\s*/gi, '').replace(/\x60\x60\x60/g, '');
   let depth = 0;
@@ -192,23 +198,31 @@ export function fallbackParse(output: string): KernDraft {
   };
 }
 
-// @kern-source: brainstorm:180
+// @kern-source: brainstorm:185
 export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<BrainstormResult> {
   const brainstormId = randomUUID().slice(0, 8);
   // Cold-start: seed newly-dropped model versions from their predecessor before
   // bidding, so a new engine competes at its family's strength, not 1500.
   seedNewEnginesFromRegistry(opts.registry);
+  // Pre-flight: drop session-quarantined engines (Layer 1, pure zero-dispatch)
+  // so a dead engine doesn't burn a draft slot + a per-engine timeout. Probe opt-in.
+  const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry: opts.registry, adapter: opts.adapter, signal: opts.signal });
+  for (const s of __hc.skipped) console.warn(`[agon] brainstorm: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+  const __engines = __hc.healthy;
+  if (__engines.length === 0) {
+    throw new Error(`No healthy engines for brainstorm; all ${__hc.skipped.length} were quarantined this session (${__hc.skipped.map((s) => s.engineId).join(', ')}). Restore with 'agon engine add <id>'.`);
+  }
   const sidechain = createSidechainLogger({
     sessionId: brainstormId,
     sessionType: 'brainstorm',
     outputDir: opts.outputDir,
   });
-  sidechain.log('brainstorm:init', undefined, { question: opts.question, engines: opts.engines });
+  sidechain.log('brainstorm:init', undefined, { question: opts.question, engines: __engines });
 
   const ranked = await collectRankedDrafts({
     question: opts.question,
     context: opts.context,
-    engines: opts.engines,
+    engines: __engines,
     registry: opts.registry,
     adapter: opts.adapter,
     timeout: opts.timeout,

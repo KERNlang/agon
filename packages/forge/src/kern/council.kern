@@ -25,7 +25,8 @@
 
 import from="node:crypto" names="randomUUID"
 import from="@kernlang/agon-core" names="EngineAdapter,ForgeEvent,DispatchResult,RatingRecord" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,getRatings,pickTopRatedEngine,rankEnginesByRating,resolveWorkingDir,seedNewEnginesFromRegistry,createSidechainLogger,classifyTask,updateGlickoRanked,loadConfig"
+import from="@kernlang/agon-core" names="EngineRegistry,getRatings,pickTopRatedEngine,rankEnginesByRating,resolveWorkingDir,seedNewEnginesFromRegistry,createSidechainLogger,classifyTask,updateGlickoRanked,loadConfig,engineHealth"
+import from="./health-check.js" names="preflightHealthFilter"
 
 const name=DEFAULT_COUNCIL_ROLES type="readonly string[]" value={{ ['Contrarian', 'First-Principles', 'Red-Team', 'Outsider', 'Expansionist'] as const }}
   doc "Advisor roles in PRIORITY order — when engines are scarce the lowest-priority roles drop first, so a 2-advisor council is Contrarian + First-Principles. Expansionist (upside-max) is last because high-stakes decisions are usually sunk by missed risk, not missed upside."
@@ -195,10 +196,32 @@ fn name=parseCouncilConfidence params="text:string" returns="number | null" expo
 fn name=runCouncil async=true params="opts:CouncilOptions" returns="Promise<CouncilResult>" export=true
   doc "Run a full council: decision brief -> role responses -> directed peer critique -> chairman verdict. Scales to the engine count (N-1 advisors + 1 chair; N==2 -> both advisors, Cesar chairs); refuses below 2. A single engine failing degrades (warning) rather than aborting; ok is true only when the chairman returns a usable verdict."
   handler <<<
-    const { question, engines, registry, adapter, timeout, outputDir } = opts;
+    const { question, registry, adapter, timeout, outputDir } = opts;
     const signal = opts.signal;
     const cwd = opts.cwd ?? resolveWorkingDir();
     const warnings: string[] = [];
+
+    // Pre-flight: drop session-quarantined engines (Layer 1, pure zero-dispatch)
+    // BEFORE the floor check, so a degraded panel fails loud rather than silently
+    // seating a dead engine. Active probe is opt-in only.
+    const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry, adapter, signal });
+    for (const s of __hc.skipped) {
+      // Surface skips in the STRUCTURED warnings the UI renders, not just console
+      // (claude review 0.55) — mirrors how dispatch failures already populate warnings.
+      warnings.push(`${s.engineId} skipped — ${s.status} (${s.reason})`);
+      console.warn(`[agon] council: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+    }
+    const engines = __hc.healthy;
+    // Role sub-param resolved AFTER the filter: a quarantined forced chairman
+    // fails loud instead of being silently ignored (council verdict 2026-06-04).
+    const __forcedChair = opts.chairman?.trim();
+    if (__forcedChair && __hc.skipped.some((s) => s.engineId === __forcedChair)) {
+      return {
+        ok: false, question, brief: '', chairmanId: __forcedChair, chairmanReason: 'forced', actingChairmanId: '', seats: [],
+        verdict: `Requested chairman '${__forcedChair}' is quarantined this session (auth-failed/unreachable) and cannot chair. Restore with 'agon engine add <id>' or pick another chair.`,
+        confidence: null, degraded: true, warnings: [`Chairman ${__forcedChair} quarantined this session.`], outputDir,
+      };
+    }
 
     if (engines.length < 2) {
       return {
@@ -232,6 +255,16 @@ fn name=runCouncil async=true params="opts:CouncilOptions" returns="Promise<Coun
       advisors = engines.slice();
       let cesarId = '';
       try { cesarId = (loadConfig(cwd).cesarEngine ?? '').trim(); } catch { cesarId = ''; }
+      // The external Cesar chair sits OUTSIDE opts.engines, so preflightHealthFilter
+      // never saw it. Quarantine-check it here too, else a dead Cesar engine still
+      // burns a chair dispatch before failover (codex review 0.86).
+      if (cesarId && !engines.includes(cesarId)) {
+        const __ch = engineHealth.get(cesarId);
+        if (__ch && (__ch.status === 'auth-failed' || __ch.status === 'unreachable')) {
+          warnings.push(`Configured Cesar chair '${cesarId}' is quarantined this session (${__ch.status}); falling back to ${engines[0]} as chair.`);
+          cesarId = '';
+        }
+      }
       chairmanId = cesarId || engines[0];
       chairmanReason = 'cesar';
       degraded = true;

@@ -1,5 +1,6 @@
 import from="@kernlang/agon-core" names="EngineRegistry,EngineAdapter" types=true
 import from="@kernlang/agon-core" names="resolveWorkingDir"
+import from="./health-check.js" names="preflightHealthFilter"
 
 interface name=CampfireResult export=true
   field name=topic type=string
@@ -7,8 +8,15 @@ interface name=CampfireResult export=true
 
 fn name=runCampfire async=true params="opts:{topic:string,context?:string,engines:string[],registry:EngineRegistry,adapter:EngineAdapter,strategy:'lead-first'|'all-respond',leadEngine?:string,seedPlan?:string,timeout:number,outputDir:string,signal?:AbortSignal}" returns="Promise<CampfireResult>" export=true
   handler <<<
-    const { topic, engines, registry, adapter, strategy, timeout, outputDir } = opts;
+    const { topic, registry, adapter, strategy, timeout, outputDir } = opts;
     const cwd = resolveWorkingDir();
+    // Pre-flight: drop session-quarantined engines (Layer 1, pure zero-dispatch). Probe opt-in.
+    const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry, adapter, signal: opts.signal });
+    for (const s of __hc.skipped) console.warn(`[agon] campfire: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+    const engines = __hc.healthy;
+    if (engines.length === 0) {
+      throw new Error(`No healthy engines for campfire; all ${__hc.skipped.length} were quarantined this session (${__hc.skipped.map((s) => s.engineId).join(', ')}). Restore with 'agon engine add <id>'.`);
+    }
 
     const basePrompt = [
       `## CAMPFIRE`,

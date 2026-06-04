@@ -13,6 +13,7 @@
 
 import from="@kernlang/agon-core" names="EngineAdapter,RatingRecord" types=true
 import from="@kernlang/agon-core" names="EngineRegistry,getRatings,pickTopRatedEngine,resolveWorkingDir,seedNewEnginesFromRegistry"
+import from="./health-check.js" names="preflightHealthFilter"
 
 interface name=NeroOptions
   field name=decision type=string
@@ -136,12 +137,24 @@ fn name=runNero async=true params="opts:NeroOptions" returns="Promise<NeroResult
     // pickTopRatedEngine here: that helper ignores `exclude` once the pool empties
     // and would resurface the author as its own critic (codex review, 0.96). The
     // no-self-review contract wins over forcing a challenge: return no-engines.
+    // Pre-flight: drop session-quarantined engines from the candidate pool (Layer 1,
+    // pure zero-dispatch) so Nero doesn't pick a known-dead critic first. Nero's own
+    // down-pass still handles a critic that fails AT dispatch; this just avoids the
+    // wasted attempt. Active probe is opt-in.
+    const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry: opts.registry, adapter: opts.adapter, signal: opts.signal });
+    for (const s of __hc.skipped) opts.onStatus?.(`Nero: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+    const __engines = __hc.healthy;
     const forced = opts.engine?.trim();
+    // Role sub-param resolved AFTER the filter: a forced critic that is quarantined
+    // fails loud rather than silently down-passing to a different engine.
+    if (forced && opts.engines.includes(forced) && !__engines.includes(forced)) {
+      return { ok: false, engineId: forced, reason: 'none', scope: null, verdict: 'unknown', challengeConfidence: null, challengeText: `Requested Nero critic '${forced}' is quarantined this session (auth-failed/unreachable). Restore with 'agon engine add <id>' or pick another --engine.`, outputDir: opts.outputDir };
+    }
     let ranked: Array<{ engineId: string; reason: 'top-rated' | 'random' | 'forced' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }>;
-    if (forced && opts.engines.includes(forced)) {
+    if (forced && __engines.includes(forced)) {
       ranked = [{ engineId: forced, reason: 'forced', scope: null }];
     } else {
-      ranked = rankNeroCritics(opts.engines, ratings, { exclude: opts.exclude });
+      ranked = rankNeroCritics(__engines, ratings, { exclude: opts.exclude });
     }
 
     if (ranked.length === 0) {

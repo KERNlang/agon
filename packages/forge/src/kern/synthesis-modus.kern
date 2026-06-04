@@ -1,5 +1,6 @@
 import from="@kernlang/agon-core" names="EngineAdapter,ForgeEvent" types=true
 import from="@kernlang/agon-core" names="EngineRegistry,resolveWorkingDir,classifyTask"
+import from="./health-check.js" names="preflightHealthFilter"
 
 interface name=SynthesisDraft
   field name=engineId type=string
@@ -180,9 +181,16 @@ fn name=synthesisRoutingAdvice params="prompt:string" returns="string | null" ex
 
 fn name=runSynthesisModus async=true params="opts:SynthesisOptions" returns="Promise<SynthesisResult>" export=true
   handler <<<
-    const { prompt, engines, registry, adapter, timeout, outputDir } = opts;
+    const { prompt, registry, adapter, timeout, outputDir } = opts;
     const swapRounds = Math.max(0, opts.swaps ?? 1);
     const cwd = resolveWorkingDir();
+    // Pre-flight: drop session-quarantined engines (Layer 1, pure zero-dispatch). Probe opt-in.
+    const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry, adapter, signal: opts.signal });
+    for (const s of __hc.skipped) console.warn(`[agon] synthesis: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+    const engines = __hc.healthy;
+    if (engines.length === 0) {
+      throw new Error(`No healthy engines for synthesis; all ${__hc.skipped.length} were quarantined this session (${__hc.skipped.map((s) => s.engineId).join(', ')}). Restore with 'agon engine add <id>'.`);
+    }
 
     const drafts: SynthesisDraft[] = [];
     const draftPromises = engines.map(async (engineId) => {

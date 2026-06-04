@@ -31,9 +31,22 @@ export function extractBaseCommand(command: string): string {
 }
 
 /**
- * Factory: creates the Bash tool handler for shell command execution.
+ * When a command looks like a GUI/desktop launch that can't run in a headless shell, or its stderr shows a display failure, return a one-line hint pointing at a headless equivalent. Deliberately narrow — null for everything else (no broad 'studio' substring match).
  */
 // @kern-source: tool-bash:25
+export function guiUnavailableHint(command: string, stderr: string): string|null {
+  const cmd = (command ?? '').trim();
+  const launchesGui = /(^|\s)electron(\s|$)/i.test(cmd)
+    || /(^|\s)(pnpm|npm|yarn|bun)\s+(run\s+)?(studio|gui)(\s|$)/i.test(cmd);
+  const displayFailure = /(DISPLAY\s+not\s+set|cannot\s+open\s+display|Missing X server)/i.test(stderr ?? '');
+  if (!launchesGui && !displayFailure) return null;
+  return 'This looks like a GUI/desktop app, which cannot run in this headless shell. Use a headless equivalent (a build/test/CLI script, or a --headless flag), or run the GUI on your own machine.';
+}
+
+/**
+ * Factory: creates the Bash tool handler for shell command execution.
+ */
+// @kern-source: tool-bash:36
 export function createBashTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Bash',
@@ -186,20 +199,25 @@ export function createBashTool(): ToolHandler {
     const durationMs = Date.now() - start;
     const exitCode = closeResult?.exitCode ?? 1;
 
+    // #8: additive GUI-on-CLI hint — never alters ok/exitCode/timeout, only the
+    // error string, so a headless GUI launch stops being a cryptic hang/failure.
+    const guiHint = guiUnavailableHint(command, stderr);
+
     if (closeResult?.timedOut) {
       return {
         ok: false,
         content: stdout,
-        error: `Command timed out after ${timeout}ms`,
+        error: `Command timed out after ${timeout}ms` + (guiHint ? `\n${guiHint}` : ''),
         metadata: { exitCode: 124, durationMs, timedOut: true },
       };
     }
 
     if (exitCode !== 0) {
+      const baseErr = stderr || `Process exited with code ${exitCode}`;
       return {
         ok: false,
         content: stdout,
-        error: stderr || `Process exited with code ${exitCode}`,
+        error: guiHint ? `${baseErr}\n${guiHint}` : baseErr,
         metadata: { exitCode, durationMs, timedOut: false },
       };
     }

@@ -10,6 +10,44 @@ import { currentBranch, gitStatusShort, gitChangedFiles, gitTruncatedDiff, recen
 export type ContextFormat = 'plain' | 'kern';
 
 // @kern-source: context-scanner:7
+export const PROJECT_BRIEF_FILES = [".agon/project.md", "AGON.md", "AGENT.md", "CLAUDE.md", "CODEX.md"];
+
+/**
+ * Upper bound for reading a brief file into memory in hasProjectBrief — a file bigger than this is clearly non-empty, so count it without a full read.
+ */
+// @kern-source: context-scanner:9
+export const MAX_PROJECT_BRIEF_BYTES: number = 512 * 1024;
+
+/**
+ * Larger budget for dedicated Agon briefs (.agon/project.md, AGON.md); generic agent files stay tight.
+ */
+// @kern-source: context-scanner:12
+function projectBriefCap(file: string): number {
+  return (file === ".agon/project.md" || file === "AGON.md") ? 4000 : 2000;
+}
+
+/**
+ * True if cwd has a recognized project-brief file with non-empty content. Mirrors the cascade in scanProjectContext so the no-brief nudge agrees with what actually gets injected — an empty AGON.md/.agon/project.md is NOT a usable brief.
+ */
+// @kern-source: context-scanner:15
+export function hasProjectBrief(cwd: string): boolean {
+  for (const file of PROJECT_BRIEF_FILES) {
+    try {
+      const path = join(cwd, file);
+      // stat first: skip zero-length files and avoid reading a directory or an
+      // accidentally-huge file just to test for non-whitespace content.
+      const st = existsSync(path) ? statSync(path) : null;
+      if (st && st.isFile() && st.size > 0) {
+        // An oversized file is clearly non-empty — count it without reading it all.
+        if (st.size > MAX_PROJECT_BRIEF_BYTES) return true;
+        if (readFileSync(path, "utf-8").trim().length > 0) return true;
+      }
+    } catch { /* ignore unreadable paths / directories */ }
+  }
+  return false;
+}
+
+// @kern-source: context-scanner:34
 export function isKernProject(cwd: string): boolean {
   if (existsSync(join(cwd, 'kern.config.ts'))) return true;
   try {
@@ -37,7 +75,7 @@ export function isKernProject(cwd: string): boolean {
 /**
  * Read-only file tree, 2 levels deep, excluding noise directories.
  */
-// @kern-source: context-scanner:32
+// @kern-source: context-scanner:59
 function buildFileTree(cwd: string, maxDepth?: number): string {
   const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage', '.kern-gaps', '.kern']);
   const depth = maxDepth ?? 2;
@@ -71,7 +109,7 @@ function buildFileTree(cwd: string, maxDepth?: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: context-scanner:67
+// @kern-source: context-scanner:94
 function detectProjectType(cwd: string): string {
   const markers: string[] = [];
   try {
@@ -91,7 +129,7 @@ function detectProjectType(cwd: string): string {
   return markers.join(', ') || 'unknown';
 }
 
-// @kern-source: context-scanner:87
+// @kern-source: context-scanner:114
 export function scanProjectContext(cwd: string, extraContext?: string, format?: ContextFormat): string {
   const MAX_CHARS = 6000;
   const sections: string[] = [];
@@ -138,16 +176,17 @@ export function scanProjectContext(cwd: string, extraContext?: string, format?: 
     }
   }
 
-  // Project instructions — cascade: first match wins (AGON.md > AGENT.md > CLAUDE.md > CODEX.md)
-  const instructionFiles = ["AGON.md", "AGENT.md", "CLAUDE.md", "CODEX.md"];
-  for (const file of instructionFiles) {
+  // Project instructions — cascade: first match wins.
+  // Dedicated Agon briefs (.agon/project.md, AGON.md) outrank generic agent files
+  // and get a larger budget; generic compatibility files stay tight.
+  for (const file of PROJECT_BRIEF_FILES) {
     try {
       const path = join(cwd, file);
       if (existsSync(path)) {
         const content = readFileSync(path, "utf-8").trim();
         if (content) {
-          // Cap at 2000 chars to stay within budget
-          const capped = content.length > 2000 ? content.slice(0, 2000) + "\n... (truncated)" : content;
+          const cap = projectBriefCap(file);
+          const capped = content.length > cap ? content.slice(0, cap) + `\n... (truncated at ${cap} chars)` : content;
           sections.push(`Project instructions (${file}):\n${capped}`);
           break; // first match wins — stop looking
         }

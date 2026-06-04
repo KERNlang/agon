@@ -15,10 +15,10 @@ export function emitPostDispatch(intent: any, input: string, cb: DispatchCallbac
 }
 
 /**
- * Delete persisted workspace conversation plus per-engine session state/tool caches so /clear and /clean start with a genuinely empty context.
+ * Delete per-engine session state/tool caches, and optionally the workspace conversation snapshot. /clear deletes both; /compact keeps the transcript snapshot while forcing a fresh engine context.
  */
 // @kern-source: utils:12
-export function clearPersistedSessionContext(ctx: HandlerContext): string[] {
+export function clearPersistedSessionContext(ctx: HandlerContext, opts?: { clearConversation?: boolean }): string[] {
   const engineIds = new Set<string>();
   const add = (value: unknown) => {
     const id = typeof value === 'string' ? value.trim() : '';
@@ -41,7 +41,7 @@ export function clearPersistedSessionContext(ctx: HandlerContext): string[] {
     if (Array.isArray(ids)) for (const id of ids) add(id);
   } catch { /* registry unavailable */ }
 
-  clearConversation();
+  if (opts?.clearConversation !== false) clearConversation();
   for (const engineId of engineIds) {
     try { clearSessionState(engineId); } catch { /* best-effort */ }
   }

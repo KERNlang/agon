@@ -114,6 +114,7 @@ union name=Intent discriminant=type
     field name=input type=string
     field name=task type=string optional=true
     field name=fitnessCmd type="string | null | undefined"
+  variant name=compact
   variant name=clear
   variant name=slash-list
   variant name=help

@@ -106,5 +106,6 @@ describe('CommandRegistry', () => {
     expect(reg.has('speculate')).toBe(true);
     expect(reg.has('auto')).toBe(true);
     expect(reg.has('autonomous')).toBe(true);
+    expect(reg.has('compact')).toBe(true);
   });
 });

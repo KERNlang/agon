@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@kernlang/agon-core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, hasProjectBrief } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -30,7 +30,7 @@ import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCe
 
 import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
 
-import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline } from './tool-observability.js';
+import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
 
 import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, isUserDirectedQuestion, detectNarratedToolStall, detectMutationIntentStall, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
 
@@ -90,11 +90,28 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
 }
 
 // @kern-source: brain:63
+export const _noBriefNudged: Set<string> = new Set<string>();
+
+// @kern-source: brain:65
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
       const _turnId = createCesarTurnId();
       const _turnCwd = resolveWorkingDir();
+      // #6b: one-time-per-session nudge when the working dir has no usable project
+      // brief. Quiet warning event only — never injected into the prompt or history.
+      try {
+        const _sid = String(ctx.chatSession?.id ?? '');
+        if (_sid && !_noBriefNudged.has(_sid)) {
+          // Mark first: race-safe, and we check the brief only once per session (not
+          // every turn). Cap the set so a long-lived process can't grow it unbounded.
+          if (_noBriefNudged.size > 5000) _noBriefNudged.clear();
+          _noBriefNudged.add(_sid);
+          if (!hasProjectBrief(_turnCwd)) {
+            dispatch({ type: 'warning', message: 'No project brief found in this repo. Create AGON.md or .agon/project.md so Cesar has project context from turn 1.' });
+          }
+        }
+      } catch { /* nudge is best-effort — never block a turn */ }
       const _toolsUsed: string[] = [];
       const _toolUseKeys = new Set<string>();
       let _toolEventCount = 0;
@@ -1070,6 +1087,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     ctx.cesar!.reportedConfidence = value;
                     ctx.cesar!.reportedConfidenceReasoning = reasoning || undefined;
                     ctx.cesar!.confidenceSatisfied = true;
+                    // #7 calibration ledger (data-only): MCP/companion-engine path.
+                    recordCesarConfidence({
+                      sessionId: String(ctx.chatSession?.id ?? 'unknown-session'),
+                      turnId: ctx.cesar!.turnId ?? _turnId,
+                      engineId: cesarEngineId,
+                      value,
+                      reasoning: reasoning || undefined,
+                    });
                     parsedConfidence = value;
                     dispatch({ type: 'info', message: confidenceBadge(value) + ` Cesar (via MCP)` });
                     dispatch({ type: 'confidence-update', value });

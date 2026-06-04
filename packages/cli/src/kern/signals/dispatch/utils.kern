@@ -9,8 +9,8 @@ fn name=emitPostDispatch params="intent:any, input:string, cb:DispatchCallbacks"
     if (cb.eventBus) cb.eventBus.emit('post:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() }).catch(() => {});
   >>>
 
-fn name=clearPersistedSessionContext params="ctx:HandlerContext" returns="string[]" export=true
-  doc "Delete persisted workspace conversation plus per-engine session state/tool caches so /clear and /clean start with a genuinely empty context."
+fn name=clearPersistedSessionContext params="ctx:HandlerContext, opts?:{ clearConversation?: boolean }" returns="string[]" export=true
+  doc "Delete per-engine session state/tool caches, and optionally the workspace conversation snapshot. /clear deletes both; /compact keeps the transcript snapshot while forcing a fresh engine context."
   handler <<<
     const engineIds = new Set<string>();
     const add = (value: unknown) => {
@@ -34,7 +34,7 @@ fn name=clearPersistedSessionContext params="ctx:HandlerContext" returns="string
       if (Array.isArray(ids)) for (const id of ids) add(id);
     } catch { /* registry unavailable */ }
 
-    clearConversation();
+    if (opts?.clearConversation !== false) clearConversation();
     for (const engineId of engineIds) {
       try { clearSessionState(engineId); } catch { /* best-effort */ }
     }
@@ -75,4 +75,3 @@ fn name=countTrackedUserTurns params="ctx:HandlerContext" returns=number
   handler lang="kern"
     let name=messages value="ctx.chatSession?.messages ?? []"
     return value="messages.filter((m: any) => m.role === 'user').length"
-

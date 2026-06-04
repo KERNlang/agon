@@ -1,10 +1,14 @@
+const name=AGON_MODE_NAMES type="readonly string[]" export=true value={{ ['forge', 'brainstorm', 'tribunal', 'campfire', 'council', 'synthesis', 'conquer', 'goal', 'agent', 'pipeline', 'review', 'nero', 'think'] }}
+  doc "Canonical Agon mode (command) names — single source of truth shared by the EngineNotFoundError mode hint and the Cesar system-prompt MODES-vs-ENGINES note, so the two never drift."
+
 error name=AgonError extends=Error
 
 error name=EngineNotFoundError extends=AgonError
   field name=engineId type=string
   field name=installHint type=string optional=true
   handler lang="kern"
-    let name=hint value="installHint ? `. Install: ${installHint}` : ''"
+    let name=modeId value="engineId.toLowerCase()"
+    let name=hint value="AGON_MODE_NAMES.includes(modeId) ? `. \"${engineId}\" is an Agon mode (a command), not an engine — run /${modeId} instead. Engines are backends like codex, claude, or agy.` : (installHint ? `. Install: ${installHint}` : '')"
     do value="super(`Engine \"${engineId}\" not found${hint}`)"
     assign target="this.name" value="'EngineNotFoundError'"
 

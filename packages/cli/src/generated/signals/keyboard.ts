@@ -141,8 +141,10 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     const pressed = input.toLowerCase();
     const numIdx = /^[1-9]$/.test(pressed) ? parseInt(pressed, 10) - 1 : -1;
     const byNum = numIdx >= 0 && numIdx < n ? choices[numIdx] : null;
-    const picked = byNum ?? choices.find((c) => c.key.toLowerCase() === pressed) ?? null;
-    if (picked) {
+    // Guard the key match: a malformed/plugin choice (null, or no string key)
+    // must never crash the REPL on a keypress.
+    const picked = byNum ?? choices.find((c) => c && typeof c.key === 'string' && c.key.toLowerCase() === pressed) ?? null;
+    if (picked && typeof picked.key === 'string') {
       if (picked.key === '__other') return { type: 'enterOther' };
       return { type: 'resolveChoice', choiceKey: picked.key };
     }

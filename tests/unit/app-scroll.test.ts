@@ -458,7 +458,9 @@ describe('app scroll helpers', () => {
 
   it('reserves extra viewport rows while a permission prompt is open', () => {
     expect(estimateQuestionReservedRows(null, 100)).toBe(0);
-    expect(estimateQuestionReservedRows({ kind: 'permission', command: 'npm test', choices: [] }, 100)).toBe(3);
+    // Approval choices render one-per-line now, so reservation scales with the
+    // choice count (+ command/summary/hint + inline-editor headroom).
+    expect(estimateQuestionReservedRows({ kind: 'permission', command: 'npm test', choices: [] }, 100)).toBe(8);
     expect(
       estimateQuestionReservedRows(
         {
@@ -469,7 +471,24 @@ describe('app scroll helpers', () => {
         },
         60,
       ),
-    ).toBe(4);
+    ).toBe(10);
+    // The new 4-choice approval (Yes/No/Always + "tell Cesar instead") must
+    // reserve enough rows that the extra write row + editor never clip.
+    expect(
+      estimateQuestionReservedRows(
+        {
+          kind: 'permission',
+          command: 'gh repo view',
+          choices: [
+            { key: 'y', label: 'Yes' },
+            { key: 'n', label: 'No' },
+            { key: 'a', label: 'Always' },
+            { key: '__other', label: 'No, tell Cesar what to do instead' },
+          ],
+        },
+        100,
+      ),
+    ).toBeGreaterThanOrEqual(8);
   });
 
   it('reserves enough rows for generic yes/no questions so choices do not clip', () => {

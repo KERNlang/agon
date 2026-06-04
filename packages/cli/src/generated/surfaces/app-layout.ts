@@ -104,7 +104,10 @@ export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProg
   const streamRows = hasStream ? ((mode === 'chat') ? 3 : 6) : 0;
   const progressRows = hasProgress ? ((mode === 'chat') ? 3 : 5) : 0;
   const agentRows = (agentCount > 0) ? Math.min(18, agentCount * 7) : 0;
-  const toolRows = (toolStreamCount && toolStreamCount > 0) ? Math.min(10, 1 + toolStreamCount * 2) : 0;
+  // Tail pane is boundedTail (12 lines) + 3 chrome lines + a margin line; budget
+  // 10 rows/stream so 2-3 live tool streams fit before we start starving the
+  // visible-block scrollback on short terminals.
+  const toolRows = (toolStreamCount && toolStreamCount > 0) ? Math.min(24, toolStreamCount * 10) : 0;
   return streamRows + progressRows + agentRows + toolRows;
 }
 

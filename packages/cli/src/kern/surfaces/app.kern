@@ -128,6 +128,7 @@ screen name=App target=ink
   state name=cesarPickerOpen type=boolean initial=false
   state name=streamingText type="Record<string,StreamingEntry>" initial="{}" throttle=33
   state name=liveToolStreams type="Record<string,any>" initial="{}" throttle=50
+  state name=liveToolTailFrozen type="Record<string,boolean>" initial="{}"
   state name=pendingImages type="ImageAttachment[]" initial="[]"
   state name=reviewEvent type="ReviewEvent|null" initial="null"
   state name=pendingPlanProposal type="OutputEvent|null" initial="null"
@@ -320,6 +321,36 @@ screen name=App target=ink
       if cond="lines.length === 0"
         return value="null"
       return value="{ engineId: activeStream.engineId, line: lines[lines.length - 1].trim() }"
+
+  memo name=newestLiveToolStreamId deps="liveToolStreams"
+    handler <<<
+      let newestId = '';
+      let newestStartedAt = -1;
+      for (const entry of Object.values(liveToolStreams ?? {}) as any[]) {
+        const id = String(entry?.streamId ?? '');
+        if (!id) continue;
+        const startedAt = typeof entry?.startedAt === 'number' ? entry.startedAt : 0;
+        if (!newestId || startedAt >= newestStartedAt) {
+          newestId = id;
+          newestStartedAt = startedAt;
+        }
+      }
+      return newestId;
+    >>>
+
+  effect deps="liveToolStreams"
+    handler <<<
+      const activeIds = new Set(Object.keys(liveToolStreams ?? {}));
+      setLiveToolTailFrozen((prev: Record<string, boolean>) => {
+        let changed = false;
+        const next: Record<string, boolean> = {};
+        for (const id of Object.keys(prev)) {
+          if (activeIds.has(id)) next[id] = prev[id];
+          else changed = true;
+        }
+        return changed ? next : prev;
+      });
+    >>>
 
   memo name=latestToolEvent deps="outputBlocks"
     handler lang="kern"
@@ -1095,7 +1126,7 @@ screen name=App target=ink
       assign target="pendingPasteTransformRef.current" value="replacement.length > 0"
       return value="replacement"
 
-  callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued"
+  callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued,livePaneVisible"
     handler lang="kern"
       comment raw="// Swallow input while a choice question is active — the keyboard handler"
       comment raw="// resolves the choice on a single keypress."
@@ -1108,6 +1139,12 @@ screen name=App target=ink
         return
       let name=nextValue value="cleanInputValue(value)"
       let name=prevValue value="inputValueRef.current"
+      comment raw="// Only swallow the leading capital-T shortcut for Shift+T freeze when the"
+      comment raw="// live tail pane is actually visible — otherwise we'd silently eat a user's"
+      comment raw="// intended first character (\"Test the login flow\") whenever any tool stream"
+      comment raw="// is buffered in the background."
+      if cond="!prevValue && nextValue === 'T' && livePaneVisible"
+        return
       let name=change value="findInputChange(prevValue, nextValue)"
       let name=cameFromPasteTransform value="pendingPasteTransformRef.current"
       if cond="cameFromPasteTransform"
@@ -1799,7 +1836,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId"
     handler <<<
       if (isTerminalFocusReport(input)) return;
       if (key?.paste) return;
@@ -1921,6 +1958,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         fileRailFocused: fileRailOpen && inputValue.trim().length === 0,
         fileRailExpanded: fileRailExpandedPath !== null,
         executionRailFocused: executionRailOpen && inputValue.trim().length === 0,
+        liveToolStreamCount: Object.keys(liveToolStreamsRef.current ?? {}).length,
       });
 
       switch (action.type) {
@@ -2008,6 +2046,14 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
           setFileRailOpen(false);
           setFileRailExpandedPath(null);
           setExecutionRailOpen((prev: boolean) => !prev);
+          return;
+        case 'toggleLiveToolTail':
+          ctrlKeyHandledRef.current = true;
+          if (!newestLiveToolStreamId) return;
+          setLiveToolTailFrozen((prev: Record<string, boolean>) => ({
+            ...prev,
+            [newestLiveToolStreamId]: !prev[newestLiveToolStreamId],
+          }));
           return;
         case 'fileRailSelectPrev': {
           const files = listFiles();
@@ -2115,7 +2161,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         )}
         {livePaneVisible && !railTakeover && (
           <>
-            <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} />
+            <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} liveToolTailFrozen={liveToolTailFrozen} />
             {Object.keys(agentProgress).length > 0 && (
               <Box flexDirection="column">
                 {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (

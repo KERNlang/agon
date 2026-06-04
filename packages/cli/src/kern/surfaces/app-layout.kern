@@ -90,7 +90,10 @@ module name=AppLayout
       let name=streamRows value="hasStream ? (mode === 'chat' ? 3 : 6) : 0"
       let name=progressRows value="hasProgress ? (mode === 'chat' ? 3 : 5) : 0"
       let name=agentRows value="agentCount > 0 ? Math.min(18, agentCount * 7) : 0"
-      let name=toolRows value="toolStreamCount && toolStreamCount > 0 ? Math.min(10, 1 + toolStreamCount * 2) : 0"
+      comment raw="// Tail pane is boundedTail (12 lines) + 3 chrome lines + a margin line; budget"
+      comment raw="// 10 rows/stream so 2-3 live tool streams fit before we start starving the"
+      comment raw="// visible-block scrollback on short terminals."
+      let name=toolRows value="toolStreamCount && toolStreamCount > 0 ? Math.min(24, toolStreamCount * 10) : 0"
       return value="streamRows + progressRows + agentRows + toolRows"
 
   fn name=estimateWrappedRows params="text:string, width:number" returns=number

@@ -103,6 +103,9 @@ jobs:
           git checkout -B "${BRANCH}" origin/main
           npm run release:set-version -- "${VERSION}"
           npm run kern:compile
+          # Reconcile the lockfile with the bumped versions/ranges so `npm ci`
+          # stays green on main (metadata only — no install, no scripts).
+          npm install --package-lock-only --ignore-scripts
           # Stage every lockstep-bumped tracked file in the agon family.
           git add \
             packages/core/package.json \
@@ -114,7 +117,8 @@ jobs:
             packages/dedup/package.json \
             packages/cli/src/index.ts \
             packages/cli/src/kern/blocks/engine.kern \
-            packages/cli/src/generated/blocks/engine.tsx
+            packages/cli/src/generated/blocks/engine.tsx \
+            package-lock.json
           if git diff --cached --quiet; then
             echo "main already at ${VERSION}; nothing to sync."
             exit 0

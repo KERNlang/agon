@@ -1,7 +1,24 @@
 import from="node:fs" names="writeFileSync,mkdirSync,unlinkSync,readdirSync,readFileSync,existsSync"
 import from="node:path" names="join,resolve"
 import from="node:os" names="homedir"
+import from="@kernlang/agon-core" names="setAuthKey,removeAuthKey,listStoredProviders"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+
+interface name=ProviderKeyCmd
+  field name=sub type="'set'|'clear'|'list'|'help'"
+  field name=envVar type=string optional=true
+  field name=value type=string optional=true
+
+fn name=parseProviderKeyArgs params="args:string" returns=ProviderKeyCmd export=true
+  doc "Parse the tail of '/provider key …'. 'set <ENV> [value]' → {sub:set,envVar,value}; 'clear|remove|rm <ENV>' → {sub:clear,envVar}; 'list' (or empty) → {sub:list}; anything else → {sub:help}. Pure — unit-tested in tests/unit/provider-key.test.ts."
+  handler <<<
+    const parts = String(args ?? '').trim().split(/\s+/).filter(Boolean);
+    const sub = (parts[0] ?? '').toLowerCase();
+    if (sub === '' || sub === 'list') return { sub: 'list' };
+    if (sub === 'set') return { sub: 'set', envVar: parts[1], value: parts.slice(2).join(' ') || undefined };
+    if (sub === 'clear' || sub === 'remove' || sub === 'rm') return { sub: 'clear', envVar: parts[1] };
+    return { sub: 'help' };
+  >>>
 
 fn name=enginesDir returns=string export=false
   handler <<<
@@ -105,11 +122,57 @@ fn name=handleProviderList params="dispatch:Dispatch" returns=void
     dispatch({ type: 'info', message: 'Add: /provider add <id> <baseUrl> <API_KEY_ENV> <model>' });
   >>>
 
+fn name=handleProviderKey params="args:string, dispatch:Dispatch" returns=void
+  doc "Manage saved API keys from the REPL: /provider key set <ENV> <value> | clear <ENV> | list. Keys are stored by env-var name in ~/.agon/auth.json and shared by every engine pointing at that env var, so 'set' changes the key for all of them at once."
+  handler <<<
+    const cmd = parseProviderKeyArgs(args);
+    if (cmd.sub === 'help') {
+      dispatch({ type: 'info', message: 'Usage: /provider key set <ENV_VAR> <value> | clear <ENV_VAR> | list' });
+      dispatch({ type: 'info', message: 'Change a key: /provider key set MINIMAX_API_KEY <new-value>' });
+      return;
+    }
+    if (cmd.sub === 'list') {
+      const stored = listStoredProviders();
+      if (!stored.length) { dispatch({ type: 'info', message: 'No saved keys. Add one with /provider key set <ENV_VAR> <value>' }); return; }
+      dispatch({ type: 'header', title: 'Saved API keys' });
+      dispatch({ type: 'table', headers: ['Env var', 'Provider'], rows: stored.map((s) => [s.envVar, s.provider ?? '—']) });
+      return;
+    }
+    const envVar = cmd.envVar;
+    if (!envVar || !/^[A-Za-z0-9_]+$/.test(envVar)) {
+      dispatch({ type: 'error', message: `Invalid env var name${envVar ? `: ${envVar}` : ''}. Example: MINIMAX_API_KEY` });
+      return;
+    }
+    if (cmd.sub === 'clear') {
+      // Existence check against the STORE only — getAuthKey() also returns
+      // shell-exported vars, so using it here would falsely report success and
+      // clobber a live env-only key that was never saved.
+      const inStore = listStoredProviders().some((s) => s.envVar === envVar);
+      if (!inStore) {
+        dispatch({ type: 'info', message: `${envVar} is not saved in the auth store${process.env[envVar] ? ' (it is set via your shell environment).' : '.'}` });
+        return;
+      }
+      removeAuthKey(envVar);
+      delete (process.env as Record<string, string | undefined>)[envVar];
+      dispatch({ type: 'success', message: `Cleared ${envVar} from the auth store.` });
+      return;
+    }
+    // set
+    if (!cmd.value) {
+      dispatch({ type: 'error', message: `Usage: /provider key set ${envVar} <value>` });
+      return;
+    }
+    const existed = listStoredProviders().some((s) => s.envVar === envVar);
+    setAuthKey(envVar, cmd.value, undefined);
+    dispatch({ type: 'success', message: `${existed ? 'Replaced' : 'Saved'} ${envVar} in the auth store.` });
+  >>>
+
 fn name=handleProvider params="action:string, args:string, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>" async=true
   handler <<<
     switch (action) {
       case 'add': return handleProviderAdd(dispatch, ctx, args);
       case 'remove': handleProviderRemove(dispatch, ctx, args.trim()); return;
+      case 'key': handleProviderKey(args, dispatch); return;
       case 'list':
       default: handleProviderList(dispatch); return;
     }

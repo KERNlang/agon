@@ -1811,8 +1811,16 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           onTurnComplete: (turn: number) => { dispatch({ type: 'spinner-update', message: `Cesar continuing turn ${turn}…` }); },
           maxTurns: cesarFastPath ? fastPathMaxBudget : undefined,
         });
+        // A chat-answer fast-path turn is a single direct reply — there is no task
+        // to "finish", so it must NEVER enter the auto-continuation nudge loop.
+        // Without this guard a pure greeting that calls ReportConfidence (which flips
+        // hadToolActivity) gets dragged into 5× "finish the task or ask a question"
+        // nudges, producing filler-question spam ("What do you want to dig into?").
+        // simpleEditFastPath is intentionally NOT excluded — an edit is real work that
+        // can legitimately need a nudge if the engine stopped mid-change.
         const _shouldAutoContinue = (hadToolActivity || ranToolLoop)
           && !inPlanMode
+          && !answerFastPath
           && !ctx.cesar!.pendingDelegation
           && session.alive
           && !abort.signal.aborted

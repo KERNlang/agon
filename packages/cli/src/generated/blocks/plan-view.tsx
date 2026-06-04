@@ -9,7 +9,7 @@ import { contentWidth, engineColor, RenderedSegments } from './rendering.js';
 import { parseMarkdownBlocks } from './markdown.js';
 
 // @kern-source: plan-view:24
-const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, costEstimate, committed }: { plan:any; markdown?:string; costEstimate?:{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null; committed?:boolean }) {
+const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, costEstimate, committed, selectedIndex }: { plan:any; markdown?:string; costEstimate?:{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null; committed?:boolean; selectedIndex?:number }) {
   const steps = plan.steps ?? [];
   const est = costEstimate;
   const totalTokens = est?.totalTokens ?? plan.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
@@ -57,13 +57,11 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
         {committed ? (
           <Text dimColor>{'Plan moved to history.'}</Text>
         ) : (
-          <Box>
-            <Text color="#fbbf24" bold>{'Awaiting approval   '}</Text>
-            <Text backgroundColor="#166534" color="#ffffff" bold>{' Y '}</Text>
-            <Text color="#4ade80">{' Approve & run    '}</Text>
-            <Text backgroundColor="#7f1d1d" color="#ffffff" bold>{' N '}</Text>
-            <Text color="#ef4444">{' Reject    '}</Text>
-            <Text dimColor>{'✎ type to change it  ·  /approve · /cancel'}</Text>
+          <Box flexDirection="column">
+            <Text color="#fbbf24" bold>{'Awaiting approval'}</Text>
+            <Text color={(selectedIndex ?? 0) === 0 ? '#4ade80' : '#6b7280'} bold={(selectedIndex ?? 0) === 0}>{(selectedIndex ?? 0) === 0 ? '❯ ' : '  '}{'1. Approve & run'}</Text>
+            <Text color={(selectedIndex ?? 0) === 1 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Reject'}</Text>
+            <Text dimColor>{'  ↑↓ move · Enter select · ✎ type to change · /approve · /cancel'}</Text>
           </Box>
         )}
       </Box>
@@ -187,13 +185,11 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
       {committed ? (
         <Text dimColor>{'Plan moved to history.'}</Text>
       ) : (
-        <Box>
-          <Text color="#fbbf24" bold>{'Awaiting approval   '}</Text>
-          <Text backgroundColor="#166534" color="#ffffff" bold>{' Y '}</Text>
-          <Text color="#4ade80">{' Approve & run    '}</Text>
-          <Text backgroundColor="#7f1d1d" color="#ffffff" bold>{' N '}</Text>
-          <Text color="#ef4444">{' Reject    '}</Text>
-          <Text dimColor>{'✎ type to change it  ·  /approve · /cancel'}</Text>
+        <Box flexDirection="column">
+          <Text color="#fbbf24" bold>{'Awaiting approval'}</Text>
+          <Text color={(selectedIndex ?? 0) === 0 ? '#4ade80' : '#6b7280'} bold={(selectedIndex ?? 0) === 0}>{(selectedIndex ?? 0) === 0 ? '❯ ' : '  '}{'1. Approve & run'}</Text>
+          <Text color={(selectedIndex ?? 0) === 1 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Reject'}</Text>
+          <Text dimColor>{'  ↑↓ move · Enter select · ✎ type to change · /approve · /cancel'}</Text>
         </Box>
       )}
     </Box>
@@ -201,7 +197,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
 });
 export { PlanProposalView };
 
-// @kern-source: plan-view:223
+// @kern-source: plan-view:220
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');

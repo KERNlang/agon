@@ -270,7 +270,13 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
           let routeAction = result.action;
           if (result.team && !routeAction.startsWith('team-')) routeAction = `team-${routeAction}`;
           const inDelegatedContinuation = Number((cb.ctx as any).delegatedContinuationDepth ?? 0) > 0;
-          const RECURSIVE_THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'team-brainstorm', 'team-tribunal'];
+          // 'review' belongs here too: it absorbs its findings back through
+          // continueCesarAfterResult (which bumps the continuation depth), so without
+          // this guard Cesar re-dispatches review on every synthesis turn and loops
+          // (observed: review ran 3× back-to-back). Execution actions (forge, pipeline,
+          // delegate, agent) are intentionally NOT listed — those may recur as the
+          // focused next step; thinking/analysis dispatches must not.
+          const RECURSIVE_THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'team-brainstorm', 'team-tribunal', 'review'];
           if (inDelegatedContinuation && RECURSIVE_THINKING_ACTIONS.includes(routeAction)) {
             cb.dispatch({ type: 'warning', message: `Skipped repeated ${routeAction} during delegated-result synthesis. Cesar should summarize or choose a focused execution step instead.` });
             return false;
@@ -595,7 +601,7 @@ export async function handleDelegatedAction(result: any, input: string, cb: Disp
 /**
  * Confirm + run a delegation recovered from a crashed Cesar session: TTL stale-check, askQuestion confirm, then the recovered-action switch. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. The caller has already nulled cb.ctx.cesar.pendingDelegation. Returns true if a recovery job was dispatched; false on stale/declined/unmatched so the caller falls through to the brain fallback.
  */
-// @kern-source: cesar-router:540
+// @kern-source: cesar-router:546
 export async function handleRecoveredDelegation(crashDel: any, input: string, cb: DispatchCallbacks): Promise<boolean> {
   if (!crashDel) return false;
     // TTL: discard stale delegations older than 60 seconds
@@ -693,7 +699,7 @@ export async function handleRecoveredDelegation(crashDel: any, input: string, cb
 /**
  * Last-resort Cesar recovery when the brain returned no usable response: api-backend silent same-engine retry, non-api session rebuild + retry, fresh one-shot dispatch (with suggestion parsing), then cross-engine acting-Cesar. Extracted from routeWithCesar; kept SAME-FILE to avoid the ESM cycle. crashDel is passed ONLY to preserve the pre-existing coupling where a pending delegation s engines seed a fresh fallback pipeline suggestion (behavior preserved verbatim; latent coupling flagged for a follow-up, per nero Ch.3).
  */
-// @kern-source: cesar-router:636
+// @kern-source: cesar-router:642
 export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks, crashDel: any, priorDeterministic: boolean): Promise<boolean> {
   // Cesar truly didn't respond — try fresh CLI dispatch
   const cesarConfig = cb.ctx.config;
@@ -982,7 +988,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
 /**
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
-// @kern-source: cesar-router:923
+// @kern-source: cesar-router:929
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   // Hoisted out of the try so the fallback ladder below can see whether the

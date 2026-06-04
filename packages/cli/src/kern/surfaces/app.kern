@@ -65,6 +65,7 @@ import from="@kernlang/agon-core" names="loadSkills"
 import from="../../input-utils.js" names="isTerminalFocusReport"
 import from="../../stable-input.js" names="useStableInput"
 import from="../blocks/rich-text.js" names="parseProseToRichLines"
+import from="../services/update-check.js" names="checkForUpdate,loadDismissedVersion,saveDismissedVersion"
 // ── Domain-specific helper imports (refactored from monolithic app-helpers) ──
 import from="./app-composer.js" names="COMPOSER_HISTORY_LIMIT,loadComposerInputHistory,saveComposerInputHistory"
 import from="./app-tool-detail.js" names="toolDetailViewportRows,findLatestToolDetailEvent,findLatestToolEvent,findLatestFailedToolEvent,buildFailedToolRetryDraft,buildToolDetailView"
@@ -104,6 +105,17 @@ screen name=App target=ink
   state name=slashPickerOpen type=boolean initial=false safe=false
   state name=questionState type=any initial="null"
   state name=questionAnswer type=string initial="''" safe=false
+  state name=selectedChoiceIndex type=number initial="0" safe=false
+  state name=questionOtherActive type=boolean initial=false safe=false
+  state name=planApprovalIndex type=number initial="0" safe=false
+  // ── Update-check banner state ──
+  // `updateInfo` is set once at mount (after a 4s delay) when the npm registry
+  // reports a newer @kernlang/agon version than the one we're running. Null
+  // means "no banner to show" (either no update, or the user dismissed it).
+  // `updateChecking` is true during the in-flight check so we can show a
+  // subtle indicator if the user opens the slash menu before it completes.
+  state name=updateInfo type="any" initial="null"
+  state name=updateChecking type=boolean initial="false"
   state name=btwPanel type="any|null" initial="null"
   state name=enginePickerOpen type=boolean initial=false
   state name=modelPickerOpen type=boolean initial=false
@@ -508,6 +520,37 @@ screen name=App target=ink
   effect deps="lastReviewResult"
     handler lang="kern"
       assign target="lastReviewResultRef.current" value="lastReviewResult"
+
+  // ── Startup: non-blocking update check ──
+  // 4s delay so we never block the splash / first prompt. The check itself
+  // is short (5s hard timeout inside checkForUpdate). The dismissal is read
+  // FIRST so a previously-dismissed version never re-shows, even on slow
+  // network. On any error we silently bail (error === 'registry-unreachable'
+  // is common for offline users; the banner is non-critical).
+  effect deps=""
+    handler <<<
+      const startedAt = Date.now();
+      const elapsed = () => Date.now() - startedAt;
+      const boot = setTimeout(async () => {
+        setUpdateChecking(true);
+        try {
+          const dismissed = await loadDismissedVersion();
+          const result = await checkForUpdate(VERSION, undefined);
+          if (result && result.hasUpdate && result.latestVersion && result.latestVersion !== dismissed) {
+            setUpdateInfo({
+              currentVersion: result.currentVersion,
+              latestVersion: result.latestVersion,
+              checkedAt: Date.now(),
+            });
+          }
+        } catch {
+          // Swallow — update check is best-effort, never surface to the user.
+        } finally {
+          setUpdateChecking(false);
+        }
+      }, Math.max(0, 4000 - elapsed()));
+      return () => clearTimeout(boot);
+    >>>
 
   // ── TTL pruner for completed agentProgress snapshots ──
   // After an agent-step-end event sets `completedAt`, leave the panel visible
@@ -1527,16 +1570,128 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
     handler lang="kern"
       do value="setSlashPickerOpen(false)"
 
-  callback name=handleQuestionAnswer params="answer:string" deps="questionState"
-    handler lang="kern"
-      if cond="questionState"
-        do value="questionState.resolve(answer)"
-        do value="setQuestionState(null)"
-        do value="setQuestionAnswer('')"
+  callback name=handleQuestionAnswer params="answer:string" deps="questionState,questionOtherActive,handleSubmit"
+    handler <<<
+      if (!questionState) return;
+      // "Other" inline answer on a choice menu: resolve the waiter with an
+      // explicit sentinel (never confused with a real key / cancel), then route
+      // the typed text to Cesar as a normal user turn. Empty text just returns
+      // to the select list instead of submitting blank.
+      if (questionOtherActive) {
+        const text = (answer ?? '').trim();
+        if (!text) { setQuestionOtherActive(false); setQuestionAnswer(''); return; }
+        questionState.resolve('__other:' + text);
+        setQuestionState(null); setQuestionAnswer('');
+        setQuestionOtherActive(false); setSelectedChoiceIndex(0);
+        handleSubmit(text);
+        return;
+      }
+      // Genuine free-text question (no choices): the typed text IS the answer.
+      questionState.resolve(answer);
+      setQuestionState(null); setQuestionAnswer('');
+    >>>
+
+  // When a new choice menu appears, seat the cursor on its default option
+  // (defaultChoiceKey if set, else the first row) and leave Other-text mode.
+  // Runs after commit, before any keypress can be processed by useInput.
+  effect deps="questionState"
+    handler <<<
+      if (questionState && Array.isArray(questionState.choices) && questionState.choices.length > 0) {
+        const dk = questionState.defaultChoiceKey;
+        const di = dk ? questionState.choices.findIndex((c: any) => c && c.key === dk) : 0;
+        setSelectedChoiceIndex(di >= 0 ? di : 0);
+        setQuestionOtherActive(false);
+      }
+    >>>
+
+  // Seat the plan-approval cursor on "Approve" whenever a new proposal pins, so
+  // an Enter never lands on a stale "Reject" left over from an earlier round.
+  effect deps="pendingPlanProposal"
+    handler <<<
+      if (pendingPlanProposal) setPlanApprovalIndex(0);
+    >>>
+
+  // ── Update-banner lifecycle ──
+  // dismissUpdateBanner: hide the banner now and remember the latest version
+  // so we never nag for the same release again. We do NOT clear updateInfo on
+  // the version itself — we just null the state so the render path hides the
+  // row. If a newer version appears later, the boot effect re-shows it.
+  callback name=dismissUpdateBanner deps="updateInfo"
+    handler <<<
+      const info = updateInfo;
+      if (!info || !info.latestVersion) return;
+      setUpdateInfo(null);
+      // Fire-and-forget: saveDismissedVersion is best-effort and never throws.
+      saveDismissedVersion(info.latestVersion).catch(() => {});
+    >>>
+
+  // triggerUpdate: open the choice prompt asking the user what to do.
+  // Uses the existing askQuestion pipeline so the new keyboard handler from
+  // the in-flight diff (arrow nav + __other) works without any extra wiring.
+  // The first option ("Update now") will be wired in step update-command to
+  // actually spawn npm — for now it resolves with a sentinel that the
+  // command route handles (see handleQuestionAnswer below).
+  callback name=triggerUpdatePrompt deps="updateInfo,dispatch,questionState"
+    handler <<<
+      const info = updateInfo;
+      if (!info || !info.latestVersion) return;
+      if (questionState) return; // never stack a prompt on top of another
+      const current = info.currentVersion || VERSION;
+      const latest = info.latestVersion;
+      const choices = [
+        { key: 'later', label: 'Remind me next time' },
+        { key: 'update', label: `Update now (npm i -g @kernlang/agon@${latest})` },
+        { key: 'changelog', label: 'View changelog on GitHub' },
+        { key: 'dismiss', label: `Don't ask for v${latest} again` },
+      ];
+      new Promise<string>((resolve) => {
+        dispatch({ type: 'question', prompt: `Agon v${latest} is available (you're on v${current}). What do you want to do?`, choices, defaultChoiceKey: 'later', resolve } as any);
+      }).then((raw) => {
+        const ans = typeof raw === 'string' ? raw : '';
+        // Esc / cancel resolves with the global 'n' deny-sentinel (shared with
+        // permission prompts). Treat it as "leave me alone" so the banner
+        // stays visible and the user can re-trigger with u/l/x.
+        if (ans === 'n' || ans === '' || ans === '__cancel') return;
+        if (ans === 'dismiss') {
+          // "Don't ask for this version" — record dismissal and hide banner.
+          saveDismissedVersion(latest).catch(() => {});
+          setUpdateInfo(null);
+          return;
+        }
+        if (ans === 'later') return; // keep banner; user can act later
+        if (ans === 'update') {
+          // Hand off to the update command — implementation lives in
+          // commands/update.kern. Dynamic import so the route is lazy: the
+          // command module is only loaded when the user actually wants to
+          // update, and a missing/broken module never crashes app boot.
+          setUpdateInfo(null);
+          import('../commands/update.js')
+            .then((m: any) => m.runUpdate(latest))
+            .catch((err: any) => {
+              console.error('[agon] failed to launch update:', err && err.message ? err.message : String(err));
+            });
+          return;
+        }
+        if (ans === 'changelog') {
+          const changelogUrl = 'https://github.com/KERNlang/agon/releases';
+          const opener = process.platform === 'darwin' ? { cmd: 'open', args: [changelogUrl] }
+            : process.platform === 'win32' ? { cmd: 'cmd', args: ['/c', 'start', '', changelogUrl] }
+            : { cmd: 'xdg-open', args: [changelogUrl] };
+          let opened = false;
+          try {
+            const r = spawnSync(opener.cmd, opener.args, { stdio: 'ignore' });
+            opened = !r.error && r.status !== 127;
+          } catch { /* opener missing */ }
+          // Headless/unsupported environments (no opener) just get the URL to copy.
+          if (!opened) dispatch({ type: 'info', message: `Changelog: ${changelogUrl}` });
+          return;
+        }
+      }).catch(() => {});
+    >>>
 
   callback name=handleCancelOrExit deps="questionState,replState,inputValue,dispatch"
     handler <<<
-      if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
+      if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); setSelectedChoiceIndex(0); setQuestionOtherActive(false); }
       if (replState !== 'idle') {
         interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
         return;
@@ -1644,7 +1799,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive"
     handler <<<
       if (isTerminalFocusReport(input)) return;
       if (key?.paste) return;
@@ -1755,8 +1910,11 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         modelPickerOpen, cesarPickerOpen, slashPickerOpen, enginePickerOpen,
         reviewEventOpen: !!reviewEvent,
         toolDetailOpen: !!toolDetailEvent,
-        questionState, replState, inputValue, inputHistory, historyIndex,
+        questionState, questionChoiceIndex: selectedChoiceIndex, questionOtherActive,
+        updateInfo,
+        replState, inputValue, inputHistory, historyIndex,
         planModeQueued, autoModeQueued, activePlanState: activePlanRef.current?.state ?? null,
+        planApprovalIndex,
         outputBlockCount: outputBlocks.length,
         commands: allSlashCommands,
         engineIds: availableEngines,
@@ -1770,10 +1928,18 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         case 'exit': process.exit(0); return;
         case 'resolveChoice':
           questionState.resolve(action.choiceKey);
-          setQuestionState(null); setQuestionAnswer(''); return;
+          setQuestionState(null); setQuestionAnswer('');
+          setSelectedChoiceIndex(0); setQuestionOtherActive(false); return;
         case 'cancelChoice':
           questionState.resolve('n');
-          setQuestionState(null); setQuestionAnswer(''); return;
+          setQuestionState(null); setQuestionAnswer('');
+          setSelectedChoiceIndex(0); setQuestionOtherActive(false); return;
+        case 'moveChoice':
+          setSelectedChoiceIndex(action.index); return;
+        case 'enterOther':
+          setQuestionOtherActive(true); setQuestionAnswer(''); return;
+        case 'exitOther':
+          setQuestionOtherActive(false); setQuestionAnswer(''); return;
         case 'swallow': return;
         case 'ghostComplete':
           setInputValue(inputValue + action.ghost + ' ');
@@ -1794,10 +1960,26 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         case 'submit':
           handleSubmit(action.value); return;
         case 'planControl':
-          // Swallow the y/n keystroke so PromptTextInput does not insert it
+          // Swallow the Enter/key so PromptTextInput does not insert it
           // into the composer after we route the approval.
           ctrlKeyHandledRef.current = true;
+          setPlanApprovalIndex(0);
           handleSubmit(action.action === 'approve' ? '/approve' : '/cancel');
+          return;
+        case 'movePlanApproval':
+          setPlanApprovalIndex(action.index); return;
+        case 'updateBanner':
+          // Route the keyboard shortcut from the in-app update banner.
+          // `update` opens the choice prompt; `changelog` jumps straight to
+          // the release page; `dismiss` hides the banner and remembers the
+          // version so we don't nag again for this release.
+          if (action.action === 'update') {
+            triggerUpdatePrompt();
+          } else if (action.action === 'changelog') {
+            try { spawnSync('open', ['https://github.com/KERNlang/agon/releases'], { stdio: 'ignore' }); } catch { /* ignore */ }
+          } else {
+            dismissUpdateBanner();
+          }
           return;
         case 'toggleToolExpand':
           ctrlKeyHandledRef.current = true;
@@ -1953,6 +2135,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
           <PlanProposalView
             plan={(pendingPlanProposal as any).plan}
             markdown={(pendingPlanProposal as any).markdown}
+            selectedIndex={planApprovalIndex}
           />
         )}
         {btwPanel && (
@@ -2198,6 +2381,33 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         {liveSpinner && mode !== 'chat' && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
         {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && !railTakeover && (
           <Box flexDirection="column" paddingX={1} marginTop={1}>
+            {/* ── Update-available banner ──
+                Sits between the picker row and the composer. Renders ONLY when
+                updateInfo is populated; otherwise nothing is emitted (zero-cost
+                when the user is up-to-date). The banner is keyboard-driven via
+                the global 'u' shortcut (handleKeyboardInput) — see KEY_MAP
+                below for the full surface (u / Enter / x / Esc). */}
+            {updateInfo && updateInfo.latestVersion && !questionState && (
+              <Box flexDirection="row" borderStyle="round" borderColor="#fbbf24" paddingX={1} marginBottom={1}>
+                <Box flexDirection="column" flexGrow={1}>
+                  <Box>
+                    <Text color="#fbbf24" bold>{'⤴ '}</Text>
+                    <Text bold>Agon v{updateInfo.latestVersion}</Text>
+                    <Text>{' is available (you\'re on v'}{updateInfo.currentVersion || VERSION}{')'}</Text>
+                  </Box>
+                  <Box>
+                    <Text dimColor>{'Press '}</Text>
+                    <Text color="#fbbf24" bold>{'u'}</Text>
+                    <Text dimColor>{' to update · '}</Text>
+                    <Text dimColor>{'l'}</Text>
+                    <Text dimColor>{' to view changelog · '}</Text>
+                    <Text dimColor>{'x'}</Text>
+                    <Text dimColor>{' to dismiss for v'}{updateInfo.latestVersion}</Text>
+                  </Box>
+                </Box>
+                {updateChecking && <Text dimColor>{' · checking'}</Text>}
+              </Box>
+            )}
             {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
             {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
             {liveSpinner && mode === 'chat' && !questionState && (
@@ -2225,6 +2435,8 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
                 onSlashCancel={handleSlashCancel}
                 questionState={questionState}
                 questionAnswer={questionAnswer}
+                selectedChoiceIndex={selectedChoiceIndex}
+                questionOtherActive={questionOtherActive}
                 onQuestionAnswerChange={setQuestionAnswer}
                 onQuestionAnswerSubmit={handleQuestionAnswer}
                 termWidth={termWidth}

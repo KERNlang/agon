@@ -602,7 +602,10 @@ export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerC
 export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerContext): void {
   // Parse: "/cesar claude api" or "/cesar claude cli" or "/cesar claude" or "/cesar"
   const parts = engineId.trim().split(/\s+/);
-  const id = parts[0] ?? '';
+  // Resolve the short alias to its canonical id so `/cesar kimi` works the
+  // same as `-e kimi` everywhere else (resolveId leaves cli|api|auto and
+  // unknown names unchanged, so the backend-only switch below still works).
+  const id = ctx.registry.resolveId(parts[0] ?? '');
   const backendArg = parts[1]?.toLowerCase();
 
   if (!id) {

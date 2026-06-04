@@ -303,6 +303,7 @@ interface name=CesarState
   field name=busy type=boolean
   field name=busySince type="number | null"
   field name=queue type="{ input: string; dispatch: any; images?: any[] } | null"
+  field name=abortSignal type="AbortSignal | null" optional=true
   field name=toolRegistry type="ToolRegistry | null"
   field name=hasNativeTools type=boolean
   field name=lastDispatch type="((event: any) => void) | null"

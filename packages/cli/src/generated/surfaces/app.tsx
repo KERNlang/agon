@@ -731,8 +731,22 @@ export function App() {
             setStreamingText: (updater: Record<string,StreamingEntry> | ((prev: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)) => {
               const prev = streamingTextRef.current;
               const next = typeof updater === 'function' ? (updater as (p: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)(prev) : updater;
+              // The ref keeps the FULL content — flushStream and streaming-end commit
+              // the complete answer from it. React state only drives the live preview,
+              // so push a bounded tail: rendering grows O(tail), not O(total) per
+              // throttled tick (a long single answer was quadratic — concat + full
+              // re-render every 33ms). Short streams reuse `next` (no extra alloc).
               streamingTextRef.current = next;
-              setStreamingText(next);
+              const LIVE_TAIL = 4000;
+              let bounded: Record<string,StreamingEntry> = next;
+              for (const eid of Object.keys(next)) {
+                const e = next[eid];
+                if (e && typeof e.content === 'string' && e.content.length > LIVE_TAIL) {
+                  if (bounded === next) bounded = { ...next };
+                  bounded[eid] = { ...e, content: e.content.slice(-LIVE_TAIL) };
+                }
+              }
+              setStreamingText(bounded);
             },
             setLiveToolStreams: (updater: Record<string,any> | ((prev: Record<string,any>) => Record<string,any>)) => {
               const prev = liveToolStreamsRef.current;
@@ -2586,7 +2600,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:90
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2282
+// @kern-source: app:2296
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

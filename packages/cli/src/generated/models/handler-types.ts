@@ -148,6 +148,7 @@ export interface CesarState {
   busy: boolean;
   busySince: number | null;
   queue: { input: string; dispatch: any; images?: any[] } | null;
+  abortSignal?: AbortSignal | null;
   toolRegistry: ToolRegistry | null;
   hasNativeTools: boolean;
   lastDispatch: ((event: any) => void) | null;
@@ -172,7 +173,7 @@ export interface CesarState {
   autoModeQueued?: boolean;
 }
 
-// @kern-source: handler-types:329
+// @kern-source: handler-types:330
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

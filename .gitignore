@@ -43,6 +43,8 @@ GO-LIVE-PLAN.local.md
 
 # Stray repo-root generated/ — kern:compile must only emit into packages/*/src/generated/
 /generated/
+# Same rule at the package level: any packages/*/generated/ is a leak, not a source.
+/packages/*/generated/
 
 # Machine-local CLI cache (absolute user paths) - never track
 cache/

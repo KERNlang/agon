@@ -1781,8 +1781,15 @@ export function App() {
         setSelectedChoiceIndex(0); setQuestionOtherActive(false); return;
       case 'moveChoice':
         setSelectedChoiceIndex(action.index); return;
-      case 'enterOther':
+      case 'enterOther': {
+        // Seat the cursor on the __other row so the inline editor renders even
+        // when Other was picked by its number (instant), not by arrowing to it.
+        const _otherIdx = Array.isArray(questionState?.choices)
+          ? questionState.choices.findIndex((c: any) => c && c.key === '__other')
+          : -1;
+        if (_otherIdx >= 0) setSelectedChoiceIndex(_otherIdx);
         setQuestionOtherActive(true); setQuestionAnswer(''); return;
+      }
       case 'exitOther':
         setQuestionOtherActive(false); setQuestionAnswer(''); return;
       case 'swallow': return;
@@ -2780,7 +2787,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:91
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2508
+// @kern-source: app:2515
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

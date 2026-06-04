@@ -208,6 +208,7 @@ function _showNextPermission(actions: OutputActions): void {
       { key: 'y', label: 'Yes', color: '#4ade80' },
       { key: 'n', label: 'No', color: '#ef4444' },
       { key: 'a', label: 'Always', color: '#60a5fa' },
+      { key: '__other', label: 'No, tell Cesar what to do instead', color: '#9ca3af' },
     ],
     resolve: (answer: string) => {
       _permissionQueue.shift();
@@ -248,7 +249,7 @@ function _showNextPermission(actions: OutputActions): void {
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
-// @kern-source: output:221
+// @kern-source: output:222
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {

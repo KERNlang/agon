@@ -181,6 +181,7 @@ fn name=_showNextPermission params="actions:OutputActions" returns=void export=f
         { key: 'y', label: 'Yes', color: '#4ade80' },
         { key: 'n', label: 'No', color: '#ef4444' },
         { key: 'a', label: 'Always', color: '#60a5fa' },
+        { key: '__other', label: 'No, tell Cesar what to do instead', color: '#9ca3af' },
       ],
       resolve: (answer: string) => {
         _permissionQueue.shift();

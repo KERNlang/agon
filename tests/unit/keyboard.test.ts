@@ -236,22 +236,30 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'resolveChoice', choiceKey: 'y' });
   });
 
-  it('moves the cursor to a choice by its visible key — no auto-apply', () => {
+  it('instantly resolves a choice by its visible key', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: 'e',
       key: {},
       questionState: {
         choices: [{ key: 'y', label: 'Approve' }, { key: 'e', label: 'Edit file' }],
       },
-    }))).toEqual({ type: 'moveChoice', index: 1 });
+    }))).toEqual({ type: 'resolveChoice', choiceKey: 'e' });
   });
 
-  it('moves the cursor to a choice by its 1-based position digit', () => {
+  it('instantly resolves a choice by its 1-based position digit', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: '2',
       key: {},
       questionState: { choices: [{ key: 'y', label: 'Approve' }, { key: 'e', label: 'Edit file' }] },
-    }))).toEqual({ type: 'moveChoice', index: 1 });
+    }))).toEqual({ type: 'resolveChoice', choiceKey: 'e' });
+  });
+
+  it('opens the inline Other editor (does NOT auto-apply) when the __other number is pressed', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '2',
+      key: {},
+      questionState: { choices: [{ key: 'y', label: 'Yes' }, { key: '__other', label: 'Other' }] },
+    }))).toEqual({ type: 'enterOther' });
   });
 
   it('moves the cursor with arrow keys and wraps at the edges', () => {

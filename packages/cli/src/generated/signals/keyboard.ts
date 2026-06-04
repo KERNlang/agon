@@ -118,9 +118,11 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     if (key.escape) return { type: 'exitOther' };
     return { type: 'none' };
   }
-  // Choice-based question: Claude-Code-style arrow-navigable select. Arrows move
-  // a cursor (wraps); digits/letters only MOVE the cursor (no auto-apply); Enter
-  // confirms the highlighted row; the '__other' row opens an inline text field.
+  // Choice-based question: Claude-Code-style select. Pressing a number or the
+  // option's letter selects it INSTANTLY (fast path). Arrows move a cursor
+  // (wraps) and Enter confirms the highlighted row (browse path). EITHER way,
+  // landing on the '__other' row opens an inline text field instead of
+  // resolving — so "type your own / tell it what to do" never auto-applies.
   if (ctx.questionState && ctx.questionState.choices) {
     if (hasCtrlSignal && normalizedCtrlInput === 'o') return { type: 'openToolDetail' };
     const choices = ctx.questionState.choices as { key: string; label: string }[];
@@ -135,11 +137,15 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
       if (sel) return { type: 'resolveChoice', choiceKey: sel.key };
       return { type: 'swallow' };
     }
+    // Instant select by 1-based position digit or by the option's own key.
     const pressed = input.toLowerCase();
     const numIdx = /^[1-9]$/.test(pressed) ? parseInt(pressed, 10) - 1 : -1;
-    if (numIdx >= 0 && numIdx < n) return { type: 'moveChoice', index: numIdx };
-    const keyIdx = choices.findIndex((c) => c.key.toLowerCase() === pressed);
-    if (keyIdx >= 0) return { type: 'moveChoice', index: keyIdx };
+    const byNum = numIdx >= 0 && numIdx < n ? choices[numIdx] : null;
+    const picked = byNum ?? choices.find((c) => c.key.toLowerCase() === pressed) ?? null;
+    if (picked) {
+      if (picked.key === '__other') return { type: 'enterOther' };
+      return { type: 'resolveChoice', choiceKey: picked.key };
+    }
     if (key.escape) return { type: 'cancelChoice' };
     return { type: 'swallow' };
   }

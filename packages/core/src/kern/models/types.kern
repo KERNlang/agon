@@ -267,6 +267,9 @@ config name=AgonConfig
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=hiddenEngines type="string[]" optional=true
+    doc "SOFT denylist (verb: /engines hide). Excluded from automatic rosters, rankings, batch selection and health-preflight candidates, but an explicit -e/--engines request for a hidden engine is still HONORED (with a warning). Use for engines you usually don't want but occasionally A/B-test."
+  field name=removedEngines type="string[]" optional=true
+    doc "HARD denylist (verb: /engines remove). Excluded from EVERY roster including explicit -e/--engines — a removed engine cannot run in any agon session, even when an external CLI forwards it via `agon call ... --engines`. Requesting one is a pre-run error, never a silent drop. Restore with /models add <id> or /engines restore <id>."
   field name=engineModels type="Record<string,string>" optional=true
   field name=engineEfforts type="Record<string,string>" optional=true doc="Per-engine reasoning-effort override (engineId → level), set when the user explicitly picks an effort in agon. Absent = defer to the CLI's own config (no --effort / -c forced)."
   field name=engineIsolation type="'workspace-pure'|'inherit'" default="'workspace-pure'"

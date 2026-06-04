@@ -41,7 +41,8 @@ export const modelsCommand: any = defineCommand({
         console.log(`  Mode: ${(config as any).engineActivationMode ?? 'auto'}`);
         console.log(`  Currently active: ${Array.from(active).join(', ') || '(none)'}`);
         console.log(`  Saved explicit list: ${(config.forgeEnabledEngines ?? []).join(', ') || '(none)'}`);
-        console.log(`  Removed: ${((config as any).hiddenEngines ?? []).join(', ') || '(none)'}`);
+        console.log(`  Hidden (soft, -e still works): ${((config as any).hiddenEngines ?? []).join(', ') || '(none)'}`);
+        console.log(`  Removed (hard, blocked everywhere): ${((config as any).removedEngines ?? []).join(', ') || '(none)'}`);
 
         const cliRows: string[][] = [];
         for (const engine of registry.list()) {
@@ -86,9 +87,11 @@ export const modelsCommand: any = defineCommand({
         const config = loadConfig();
         const next = Array.from(new Set([...(config.forgeEnabledEngines ?? []), engine]));
         const hidden = ((config as any).hiddenEngines ?? []).filter((id: string) => id !== engine);
+        const removed = ((config as any).removedEngines ?? []).filter((id: string) => id !== engine);
         configSet('engineActivationMode' as any, 'explicit' as any);
         configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
         configSet('hiddenEngines', hidden as any);
+        configSet('removedEngines', removed as any);
         success(`Activated ${engine}`);
       },
     }),
@@ -116,9 +119,11 @@ export const modelsCommand: any = defineCommand({
         const config = loadConfig();
         const next = Array.from(new Set([...(config.forgeEnabledEngines ?? []), engine]));
         const hidden = ((config as any).hiddenEngines ?? []).filter((id: string) => id !== engine);
+        const removed = ((config as any).removedEngines ?? []).filter((id: string) => id !== engine);
         configSet('engineActivationMode' as any, 'explicit' as any);
         configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
         configSet('hiddenEngines', hidden as any);
+        configSet('removedEngines', removed as any);
         success(`Activated ${engine}`);
       },
     }),

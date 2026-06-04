@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { defineCommand } from 'citty';
+import { EngineRegistry, loadConfig } from '@kernlang/agon-core';
 import { fail, info } from '../output.js';
+import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 
 export interface CallCommandOptions {
   workflow: string;
@@ -52,6 +54,31 @@ function exitWithFailure(message: string): never {
   fail(message);
   process.exit(1);
   throw new Error('process.exit returned unexpectedly');
+}
+
+// Enforce the HARD removedEngines denylist at the external-CLI boundary, BEFORE
+// any `--engines` list is forwarded to a subcommand. Without this, an external
+// CLI (Codex/Antigravity) that passes `--engines a,b,<removed>` would resurrect
+// a hard-removed engine, since explicit -e lists bypass the registry's auto
+// roster. Fails loudly (pre-run error) rather than silently dropping — silent
+// roster rewrite is the trust hazard (Council batch-2 verdict).
+function assertNoRemovedEngines(enginesCsv: string | undefined): void {
+  const text = enginesCsv?.trim();
+  if (!text) return;
+  const requested = text.split(',').map((s) => s.trim()).filter(Boolean);
+  if (requested.length === 0) return;
+  const config = loadConfig();
+  const registry = new EngineRegistry();
+  registry.load(resolveBuiltinEnginesDir());
+  const { removed } = registry.partitionRoster(requested, config as never);
+  if (removed.length > 0) {
+    const plural = removed.length > 1;
+    exitWithFailure(
+      `Refusing to run: ${removed.join(', ')} ${plural ? 'were' : 'was'} hard-removed via ` +
+        '`agon engine remove` and cannot run in any agon session. ' +
+        `Restore with \`agon engine add <id>\`, or drop ${plural ? 'them' : 'it'} from --engines.`,
+    );
+  }
 }
 
 export function normalizeCallWorkflow(workflow: string): string {
@@ -385,6 +412,7 @@ export const callCommand = defineCommand({
     },
   },
   async run({ args }) {
+    assertNoRemovedEngines(args.engines);
     let built: BuiltCallCommands;
     try {
       built = buildCallCommands({

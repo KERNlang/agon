@@ -17,11 +17,12 @@ function makeEngine(id: string): EngineDefinition {
   };
 }
 
-function makeConfig(overrides: Partial<AgonConfig>): Pick<Required<AgonConfig>, 'engineActivationMode'|'forgeEnabledEngines'|'hiddenEngines'> {
+function makeConfig(overrides: Partial<AgonConfig>): Pick<Required<AgonConfig>, 'engineActivationMode'|'forgeEnabledEngines'|'hiddenEngines'|'removedEngines'> {
   return {
     engineActivationMode: 'auto',
     forgeEnabledEngines: [],
     hiddenEngines: [],
+    removedEngines: [],
     ...overrides,
   };
 }
@@ -96,6 +97,61 @@ describe('engine activation', () => {
       forgeEnabledEngines: ['claude', 'codex'],
       hiddenEngines: ['codex'],
     }))).toEqual(['claude']);
+  });
+
+  it('removes hard-removed engines from auto and explicit routing', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('claude'));
+    registry.register(makeEngine('codex'));
+    registry.register(makeEngine('gemini'));
+
+    expect(registry.activeIds(makeConfig({
+      engineActivationMode: 'auto',
+      removedEngines: ['codex'],
+    }))).toEqual(['claude', 'gemini']);
+
+    expect(registry.activeIds(makeConfig({
+      engineActivationMode: 'explicit',
+      forgeEnabledEngines: ['claude', 'codex'],
+      removedEngines: ['codex'],
+    }))).toEqual(['claude']);
+  });
+
+  it('partitionRoster hard-blocks removed engines but still honors hidden ones on explicit requests', () => {
+    process.env[envKey] = 'test';
+    const registry = new EngineRegistry();
+    registry.register(makeEngine('claude'));
+    registry.register(makeEngine('codex'));
+    registry.register(makeEngine('gemini'));
+
+    // Explicit -e list: a HIDDEN engine (soft) is still honored, a REMOVED
+    // engine (hard) is split into `removed` so the caller can fail loudly.
+    const part = registry.partitionRoster(['claude', 'codex', 'gemini'], makeConfig({
+      engineActivationMode: 'explicit',
+      forgeEnabledEngines: ['claude'],
+      hiddenEngines: ['codex'],
+      removedEngines: ['gemini'],
+    }));
+    expect(part.active).toEqual(['claude', 'codex']);
+    expect(part.removed).toEqual(['gemini']);
+
+    // De-dupes and resolves aliases; an unknown id is dropped, not crashed.
+    const dedup = registry.partitionRoster(['claude', 'claude', 'gemini', 'gemini'], makeConfig({
+      removedEngines: ['gemini'],
+    }));
+    expect(dedup.active).toEqual(['claude']);
+    expect(dedup.removed).toEqual(['gemini']);
+
+    // null request → the automatic roster (which already excludes hidden +
+    // removed), with an empty removed list.
+    const auto = registry.partitionRoster(null, makeConfig({
+      engineActivationMode: 'auto',
+      hiddenEngines: ['codex'],
+      removedEngines: ['gemini'],
+    }));
+    expect(auto.active).toEqual(['claude']);
+    expect(auto.removed).toEqual([]);
   });
 
   it('restricts fallback candidates to the active engine list', () => {

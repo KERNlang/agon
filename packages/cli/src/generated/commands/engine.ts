@@ -23,7 +23,7 @@ export const engineCommand: any = defineCommand({
   args: {
     action: {
       type: 'positional',
-      description: 'Action: list | info <id> | add <id> | remove <id>',
+      description: 'Action: list | info <id> | add <id> | hide <id> (soft) | remove <id> (hard)',
       required: true,
     },
     id: {
@@ -130,9 +130,11 @@ export const engineCommand: any = defineCommand({
           const config = loadConfig();
           const next = Array.from(new Set([...(config.forgeEnabledEngines ?? []), id]));
           const hidden = ((config as any).hiddenEngines ?? []).filter((engineId: string) => engineId !== id);
+          const removed = ((config as any).removedEngines ?? []).filter((engineId: string) => engineId !== id);
           configSet('engineActivationMode' as any, 'explicit' as any);
           configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
           configSet('hiddenEngines', hidden as any);
+          configSet('removedEngines', removed as any);
           success(`Added ${id}`);
         } catch {
           fail(`Engine "${id}" not found`);
@@ -141,26 +143,44 @@ export const engineCommand: any = defineCommand({
         break;
       }
 
-      case 'remove':
-      case 'disable':
-      case 'hide': {
+      case 'hide':
+      case 'disable': {
+        if (!id) {
+          fail('Usage: agon engine hide <id>');
+          process.exit(1);
+        }
+        const config = loadConfig();
+        const next = (config.forgeEnabledEngines ?? []).filter((engineId: string) => engineId !== id);
+        const hidden = Array.from(new Set([...((config as any).hiddenEngines ?? []), id]));
+        const removed = ((config as any).removedEngines ?? []).filter((engineId: string) => engineId !== id);
+        configSet('engineActivationMode' as any, 'explicit' as any);
+        configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
+        configSet('hiddenEngines', hidden as any);
+        configSet('removedEngines', removed as any);
+        success(`Hid ${id} (soft — dropped from auto rosters, explicit -e still works)`);
+        break;
+      }
+
+      case 'remove': {
         if (!id) {
           fail('Usage: agon engine remove <id>');
           process.exit(1);
         }
         const config = loadConfig();
         const next = (config.forgeEnabledEngines ?? []).filter((engineId: string) => engineId !== id);
-        const hidden = Array.from(new Set([...((config as any).hiddenEngines ?? []), id]));
+        const removed = Array.from(new Set([...((config as any).removedEngines ?? []), id]));
+        const hidden = ((config as any).hiddenEngines ?? []).filter((engineId: string) => engineId !== id);
         configSet('engineActivationMode' as any, 'explicit' as any);
         configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
+        configSet('removedEngines', removed as any);
         configSet('hiddenEngines', hidden as any);
-        success(`Removed ${id}`);
+        success(`Removed ${id} (hard — blocked from every agon session, incl. explicit -e and external \`agon call\`). Restore: agon engine add ${id}`);
         break;
       }
 
       default:
         fail(`Unknown action: ${args.action}`);
-        info('Available: list, info, add, remove');
+        info('Available: list, info, add, hide, remove');
         process.exit(1);
     }
   },

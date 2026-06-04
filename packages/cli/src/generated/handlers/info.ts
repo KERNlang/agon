@@ -334,44 +334,74 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
   if (action && action !== 'list') {
     const id = String((intent as any)?.id ?? '').trim().toLowerCase();
     if (!id) {
-      dispatch({ type: 'error', message: 'Usage: /engines hide <id> | /engines remove <id> | /engines restore <id>' });
+      dispatch({ type: 'error', message: 'Usage: /engines hide <id> (soft — drops from auto rosters, explicit -e still works) | /engines remove <id> (hard — blocks everywhere incl. -e and external `agon call`) | /engines restore <id>' });
       return;
     }
 
     const hidden = new Set<string>((ctx.config as any).hiddenEngines ?? []);
+    const removed = new Set<string>((ctx.config as any).removedEngines ?? []);
     const enabled = new Set<string>((ctx.config as any).forgeEnabledEngines ?? []);
 
-    if (['hide', 'remove', 'delete'].includes(action)) {
+    if (action === 'hide') {
       hidden.add(id);
+      removed.delete(id);
       enabled.delete(id);
       const hiddenList = Array.from(hidden);
+      const removedList = Array.from(removed);
       const enabledList = Array.from(enabled);
       configSet('hiddenEngines' as any, hiddenList as any);
+      configSet('removedEngines' as any, removedList as any);
       configSet('forgeEnabledEngines' as any, enabledList as any);
       (ctx.config as any).hiddenEngines = hiddenList;
+      (ctx.config as any).removedEngines = removedList;
       (ctx.config as any).forgeEnabledEngines = enabledList;
-
-      let removedUserConfig = false;
-      const userConfigPath = join(getAgonHome(), 'engines', `${id}.json`);
-      if ((action === 'remove' || action === 'delete') && existsSync(userConfigPath)) {
-        rmSync(userConfigPath, { force: true });
-        try { (ctx.registry as any).unregister?.(id); } catch { /* best effort */ }
-        removedUserConfig = true;
-      }
       try { (ctx.registry as any).clearBinaryCache?.(id); } catch { /* older registry */ }
-
-      dispatch({ type: 'success', message: `${id} hidden from Agon${removedUserConfig ? ' and user engine config removed' : ''}. It will not reappear on scan unless restored.` });
+      dispatch({ type: 'success', message: `${id} hidden — dropped from automatic rosters, but an explicit \`-e ${id}\` is still honored. Hard-remove with /engines remove ${id}; restore with /engines restore ${id}.` });
       if (((ctx.config as any).cesarEngine ?? '') === id) {
         dispatch({ type: 'warning', message: `${id} is still configured as Cesar. Switch with /cesar <engine> if needed.` });
       }
       return;
     }
 
+    if (action === 'remove' || action === 'delete') {
+      removed.add(id);
+      hidden.delete(id);
+      enabled.delete(id);
+      const removedList = Array.from(removed);
+      const hiddenList = Array.from(hidden);
+      const enabledList = Array.from(enabled);
+      configSet('removedEngines' as any, removedList as any);
+      configSet('hiddenEngines' as any, hiddenList as any);
+      configSet('forgeEnabledEngines' as any, enabledList as any);
+      (ctx.config as any).removedEngines = removedList;
+      (ctx.config as any).hiddenEngines = hiddenList;
+      (ctx.config as any).forgeEnabledEngines = enabledList;
+
+      let removedUserConfig = false;
+      const userConfigPath = join(getAgonHome(), 'engines', `${id}.json`);
+      if (existsSync(userConfigPath)) {
+        rmSync(userConfigPath, { force: true });
+        try { (ctx.registry as any).unregister?.(id); } catch { /* best effort */ }
+        removedUserConfig = true;
+      }
+      try { (ctx.registry as any).clearBinaryCache?.(id); } catch { /* older registry */ }
+
+      dispatch({ type: 'success', message: `${id} removed — hard-blocked from every agon session, including explicit \`-e\` and external \`agon call\`${removedUserConfig ? ', and the user engine config was deleted' : ''}. Restore with /models add ${id} or /engines restore ${id}.` });
+      if (((ctx.config as any).cesarEngine ?? '') === id) {
+        dispatch({ type: 'warning', message: `${id} was your Cesar engine. Switch with /cesar <engine>.` });
+      }
+      return;
+    }
+
     if (['unhide', 'restore', 'show'].includes(action)) {
       hidden.delete(id);
+      removed.delete(id);
       const hiddenList = Array.from(hidden);
+      const removedList = Array.from(removed);
       configSet('hiddenEngines' as any, hiddenList as any);
+      configSet('removedEngines' as any, removedList as any);
       (ctx.config as any).hiddenEngines = hiddenList;
+      (ctx.config as any).removedEngines = removedList;
       try { (ctx.registry as any).clearBinaryCache?.(id); } catch { /* older registry */ }
       dispatch({ type: 'success', message: `${id} restored. Run /engines scan to refresh availability.` });
       return;
@@ -403,6 +433,7 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
     dispatch({ type: 'spinner-stop' });
 
     const hidden = new Set((config as any).hiddenEngines ?? []);
+    const removed = new Set((config as any).removedEngines ?? []);
     const rows = results.map(({ engine, avail, version, hasBinary, hasApi }: any) => {
       // Show which backends are available
       const ic = icons();
@@ -418,7 +449,7 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
       }
       return [
         engine.id,
-        hidden.has(engine.id) ? 'hidden' : avail ? 'installed' : 'missing',
+        removed.has(engine.id) ? 'removed' : hidden.has(engine.id) ? 'hidden' : avail ? 'installed' : 'missing',
         cli,
         api,
         version,
@@ -427,7 +458,7 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
     });
     dispatch({ type: 'table', headers: ['ID', 'Status', 'CLI', 'API', 'Version', ''], rows });
     dispatch({ type: 'info', message: `Backend: ${cesarBackend}. Switch: /cesar <engine> cli|api` });
-    dispatch({ type: 'info', message: 'Hide/delete in Agon: /engines remove <id>. Restore: /engines restore <id>. Rescan PATH: /engines scan' });
+    dispatch({ type: 'info', message: 'Soft-hide (—e still works): /engines hide <id>. Hard-remove (blocks everywhere): /engines remove <id>. Restore: /engines restore <id>. Rescan PATH: /engines scan' });
   } catch (err) {
     dispatch({ type: 'spinner-stop' });
     throw err;

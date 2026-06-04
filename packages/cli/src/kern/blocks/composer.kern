@@ -129,7 +129,33 @@ screen name=ComposerView target=ink memo=true
                 <Box borderStyle="round" borderColor="#fbbf24" paddingX={1} flexDirection="column" width="100%">
                   <Text bold color="#fbbf24">{icons().warning}{' '}{permissionTool}{' approval required'}</Text>
                   <Box flexDirection="column" paddingLeft={1}>
-                    {choiceList.map((c: any, i: number) => renderChoiceRow(c, i, '#fbbf24'))}
+                    {choiceList.map((c: any, i: number) => {
+                      const active = i === selIdx;
+                      // The active "tell Cesar instead" row becomes an inline editor.
+                      if (questionOtherActive && active && c.key === '__other') {
+                        return (
+                          <Box key={`perm-${i}`}>
+                            <Text color="#fbbf24" bold>{'❯ '}{i + 1}{'. '}{c.label}{': '}</Text>
+                            <Box flexGrow={1}>
+                              <PromptTextInput
+                                value={questionAnswer}
+                                onChange={onQuestionAnswerChange}
+                                onPaste={undefined}
+                                onSubmit={onQuestionAnswerSubmit}
+                                onCtrlShortcut={onCtrlShortcut}
+                                placeholder="type your instruction, Enter to send"
+                                focus={true}
+                                showCursor={true}
+                                highlightPastedText={true}
+                                ghostText={undefined}
+                                width={Math.max(12, termWidth - 24)}
+                                maxVisibleLines={Math.max(2, Math.min(4, promptMaxLines))} />
+                            </Box>
+                          </Box>
+                        );
+                      }
+                      return renderChoiceRow(c, i, '#fbbf24');
+                    })}
                   </Box>
                   {permissionPreview ? (
                     <Text dimColor>{'  $ '}{permissionPreview}{permissionHasMoreLines ? ' …' : ''}</Text>
@@ -137,7 +163,7 @@ screen name=ComposerView target=ink memo=true
                     <Text dimColor>{'  '}{questionPrompt}</Text>
                   ) : null}
                   {permissionSummary ? <Text dimColor>{'  '}{truncateCodeLine(permissionSummary, Math.max(24, termWidth - 10))}</Text> : null}
-                  <Text dimColor>{'  ↑↓ move · Enter select · Esc denies'}</Text>
+                  <Text dimColor>{questionOtherActive ? '  Esc returns to options' : '  press a number, or ↑↓ + Enter · Esc denies'}</Text>
                 </Box>
               </Box>
             ) : (
@@ -173,7 +199,7 @@ screen name=ComposerView target=ink memo=true
                         }
                         return renderChoiceRow(c, i, questionAccent);
                       })}
-                      <Text dimColor>{questionOtherActive ? '  Esc returns to options' : '  ↑↓ move · Enter select · Esc cancel'}</Text>
+                      <Text dimColor>{questionOtherActive ? '  Esc returns to options' : '  press a number, or ↑↓ + Enter · Esc cancel'}</Text>
                     </Box>
                   ) : (
                     <Box paddingLeft={1} width="100%">

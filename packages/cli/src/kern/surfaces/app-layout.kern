@@ -36,9 +36,19 @@ module name=AppLayout
       if (questionState.kind === 'permission') {
         const command = String(questionState.command ?? '').trim();
         const summary = String(questionState.reason ?? questionState.description ?? '').trim();
-        const commandIsLong = command.includes('\n') || command.length > safeWidth;
-        const summaryIsLong = summary.length > safeWidth;
-        return commandIsLong || summaryIsLong ? 4 : 3;
+        // Approval choices now render one-per-line (vertical) — Yes/No/Always plus
+        // the "tell Cesar instead" row — so reserve a wrapped row PER choice rather
+        // than the old single inline row, or short terminals clip the keys.
+        const permChoices = Array.isArray(questionState.choices) ? questionState.choices : [];
+        const choiceRows = permChoices.length
+          ? permChoices.reduce((sum: number, choice: any, index: number) =>
+              sum + estimateWrappedRowCount(`${index + 1}. ${String(choice?.label ?? '').trim()}`, safeWidth), 0)
+          : 3;
+        const commandRows = command ? (command.includes('\n') || command.length > safeWidth ? 2 : 1) : 0;
+        const summaryRows = summary ? (summary.length > safeWidth ? 2 : 1) : 0;
+        // title + choices + command preview + summary + hint, plus a small allowance
+        // for the inline editor that replaces the __other row while typing.
+        return 1 + Math.max(1, choiceRows) + commandRows + summaryRows + 1 + 2;
       }
       if (hasChoices) {
         const fmtChoiceKey = (choice: any, idx: number) => {

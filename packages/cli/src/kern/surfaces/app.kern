@@ -1936,8 +1936,18 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
           setSelectedChoiceIndex(0); setQuestionOtherActive(false); return;
         case 'moveChoice':
           setSelectedChoiceIndex(action.index); return;
-        case 'enterOther':
+        case 'enterOther': {
+          // Seat the cursor on the __other row so the inline editor renders even
+          // when Other was picked by its number (instant), not by arrowing to it.
+          // No __other row → nothing to edit; don't enter Other mode (else the hint
+          // would wrongly flip to "Esc returns to options").
+          const _otherIdx = Array.isArray(questionState?.choices)
+            ? questionState.choices.findIndex((c: any) => c && c.key === '__other')
+            : -1;
+          if (_otherIdx < 0) return;
+          setSelectedChoiceIndex(_otherIdx);
           setQuestionOtherActive(true); setQuestionAnswer(''); return;
+        }
         case 'exitOther':
           setQuestionOtherActive(false); setQuestionAnswer(''); return;
         case 'swallow': return;

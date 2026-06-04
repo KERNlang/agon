@@ -69,15 +69,22 @@ export function CodeBlockView({ segment, borderColor }: { segment:ContentSegment
   const overflow = lines.length - MAX_CODE_LINES;
 
   const bc = borderColor || '#585858';
+  const maxLineLen = capped.reduce((m: number, l: string) => Math.max(m, l.length), 0);
+  const headerLen = (segment.language || 'code').length + (segment.index !== undefined ? ` [${segment.index}]`.length : 0);
+  const innerWidth = Math.max(maxLineLen, headerLen);
+  const boxWidth = innerWidth + 4;
+  const rule = '\u2500'.repeat(boxWidth);
   return (
-    <Box flexDirection="column">
-      <Text color={bc}>{'\u2502'}</Text>
+    <Box flexDirection="column" width={boxWidth + 2} flexShrink={0}>
+      <Text color={bc}>{'\u2502 '}{rule}{' \u2502'}</Text>
       <Text>
         <Text color={bc}>{'\u2502  '}</Text>
         <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
         <Text> </Text>
         <Text dimColor>{segment.language || 'code'}</Text>
         {segment.index !== undefined && <Text color="#585858">{` [${segment.index}]`}</Text>}
+        <Text>{' '.repeat(Math.max(0, boxWidth - headerLen - 1))}</Text>
+        <Text color={bc}>{'  \u2502'}</Text>
       </Text>
       {capped.map((line: string, i: number) => (
         <Text key={`code-${i}`}>
@@ -85,6 +92,8 @@ export function CodeBlockView({ segment, borderColor }: { segment:ContentSegment
           <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
           <Text> </Text>
           {isDiff ? <DiffLine line={line} maxWidth={codeWidth} /> : <SyntaxLine line={line} maxWidth={codeWidth} />}
+          <Text>{' '.repeat(Math.max(0, codeWidth - line.length - 4))}</Text>
+          <Text color={bc}>{'  \u2502'}</Text>
         </Text>
       ))}
       {overflow > 0 && (
@@ -93,14 +102,15 @@ export function CodeBlockView({ segment, borderColor }: { segment:ContentSegment
           <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
           <Text> </Text>
           <Text dimColor>{'\u2026 '}{overflow}{' more lines'}</Text>
+          <Text color={bc}>{'  \u2502'}</Text>
         </Text>
       )}
-      <Text color={bc}>{'\u2502'}</Text>
+      <Text color={bc}>{'\u2502 '}{rule}{' \u2502'}</Text>
     </Box>
   );
 }
 
-// @kern-source: rendering:244
+// @kern-source: rendering:254
 export function RichSpanView({ span }: { span:InlineSpan }) {
   if (span.style.code) {
     return <Text color="#a78bfa" backgroundColor="#1e1033">{span.text}</Text>;
@@ -117,7 +127,7 @@ export function RichSpanView({ span }: { span:InlineSpan }) {
   return el;
 }
 
-// @kern-source: rendering:265
+// @kern-source: rendering:275
 export function RichLineView({ line, borderColor }: { line:RichLine; borderColor?:string }) {
   const border = borderColor ? <Text color={borderColor}>{'\u2502 '}</Text> : null;
   const indent = line.indent > 0 ? '  '.repeat(line.indent) : '';
@@ -139,7 +149,7 @@ export function RichLineView({ line, borderColor }: { line:RichLine; borderColor
   return <Text>{border}{indent}{listIndent}{marker}{line.spans.map((s: InlineSpan, i: number) => <RichSpanView key={i} span={s} />)}</Text>;
 }
 
-// @kern-source: rendering:292
+// @kern-source: rendering:302
 export function MarkdownTableView({ headers, rows, alignments, borderColor }: { headers:string[]; rows:string[][]; alignments:('left' | 'center' | 'right')[]; borderColor:string }) {
   const colWidths = headers.map((h: string, i: number) => {
     let max = h.length;
@@ -175,7 +185,7 @@ export function MarkdownTableView({ headers, rows, alignments, borderColor }: { 
   );
 }
 
-// @kern-source: rendering:335
+// @kern-source: rendering:345
 export function RenderedSegments({ segments, borderColor, wrapWidth }: { segments:ContentSegment[]; borderColor:string; wrapWidth:number }) {
   return (
     <>
@@ -236,7 +246,7 @@ export function RenderedSegments({ segments, borderColor, wrapWidth }: { segment
   );
 }
 
-// @kern-source: rendering:402
+// @kern-source: rendering:412
 export function GradientLine({ text, colors }: { text:string; colors:readonly string[] }) {
   const step = Math.max(1, Math.ceil(text.length / colors.length));
   return (
@@ -249,7 +259,7 @@ export function GradientLine({ text, colors }: { text:string; colors:readonly st
   );
 }
 
-// @kern-source: rendering:418
+// @kern-source: rendering:428
 export function AnsiLine({ text, maxWidth, fallbackDim }: { text:string; maxWidth:number; fallbackDim?:boolean }) {
   if (!hasAnsiCodes(text)) {
     const display = text.length > maxWidth ? text.slice(0, maxWidth - 4) + '\u2026' : text;

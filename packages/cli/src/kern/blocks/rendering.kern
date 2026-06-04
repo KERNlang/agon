@@ -208,15 +208,22 @@ screen name=CodeBlockView target=ink
       const overflow = lines.length - MAX_CODE_LINES;
 
       const bc = borderColor || '#585858';
+      const maxLineLen = capped.reduce((m: number, l: string) => Math.max(m, l.length), 0);
+      const headerLen = (segment.language || 'code').length + (segment.index !== undefined ? ` [${segment.index}]`.length : 0);
+      const innerWidth = Math.max(maxLineLen, headerLen);
+      const boxWidth = innerWidth + 4;
+      const rule = '\u2500'.repeat(boxWidth);
       return (
-        <Box flexDirection="column">
-          <Text color={bc}>{'\u2502'}</Text>
+        <Box flexDirection="column" width={boxWidth + 2} flexShrink={0}>
+          <Text color={bc}>{'\u2502 '}{rule}{' \u2502'}</Text>
           <Text>
             <Text color={bc}>{'\u2502  '}</Text>
             <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
             <Text> </Text>
             <Text dimColor>{segment.language || 'code'}</Text>
             {segment.index !== undefined && <Text color="#585858">{` [${segment.index}]`}</Text>}
+            <Text>{' '.repeat(Math.max(0, boxWidth - headerLen - 1))}</Text>
+            <Text color={bc}>{'  \u2502'}</Text>
           </Text>
           {capped.map((line: string, i: number) => (
             <Text key={`code-${i}`}>
@@ -224,6 +231,8 @@ screen name=CodeBlockView target=ink
               <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
               <Text> </Text>
               {isDiff ? <DiffLine line={line} maxWidth={codeWidth} /> : <SyntaxLine line={line} maxWidth={codeWidth} />}
+              <Text>{' '.repeat(Math.max(0, codeWidth - line.length - 4))}</Text>
+              <Text color={bc}>{'  \u2502'}</Text>
             </Text>
           ))}
           {overflow > 0 && (
@@ -232,9 +241,10 @@ screen name=CodeBlockView target=ink
               <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
               <Text> </Text>
               <Text dimColor>{'\u2026 '}{overflow}{' more lines'}</Text>
+              <Text color={bc}>{'  \u2502'}</Text>
             </Text>
           )}
-          <Text color={bc}>{'\u2502'}</Text>
+          <Text color={bc}>{'\u2502 '}{rule}{' \u2502'}</Text>
         </Box>
       );
     >>>

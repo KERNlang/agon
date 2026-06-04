@@ -27,19 +27,30 @@ export function buildNpmArgs(packageSpec: string): string[] {
 }
 
 // @kern-source: update:36
-export async function runNpmInstall(packageSpec: string, timeoutMs: number): Promise<number> {
+export async function runNpmInstall(packageSpec: string, timeoutMs: number): Promise<{ code: number; stderr: string }> {
   const args = buildNpmArgs(packageSpec);
-  return await new Promise<number>((resolve) => {
+  return await new Promise<{ code: number; stderr: string }>((resolve) => {
     let settled = false;
-    const finish = (code: number) => { if (!settled) { settled = true; resolve(code); } };
+    let stderr = '';
+    const finish = (code: number) => { if (!settled) { settled = true; resolve({ code, stderr }); } };
     let child: any;
     try {
-      child = spawn('npm', args, { stdio: 'inherit' });
+      // Tee stderr: inherit stdin/stdout so npm's live output still streams, but
+      // PIPE stderr so we can echo it AND scan it for EACCES/permission text —
+      // suggestPermissionFix needs the captured stderr to emit the sudo hint.
+      child = spawn('npm', args, { stdio: ['inherit', 'inherit', 'pipe'] });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       fail(`Failed to spawn npm: ${msg}`);
       finish(1);
       return;
+    }
+    if (child.stderr) {
+      child.stderr.on('data', (d: any) => {
+        const s = d.toString();
+        stderr += s;
+        process.stderr.write(s);
+      });
     }
     const timer = setTimeout(() => {
       try { child.kill('SIGTERM'); } catch { /* already dead */ }
@@ -58,7 +69,7 @@ export async function runNpmInstall(packageSpec: string, timeoutMs: number): Pro
   });
 }
 
-// @kern-source: update:70
+// @kern-source: update:81
 export function suggestPermissionFix(code: number, stderrText: string): string {
   if (code === 0) return '';
   const blob = String(stderrText || '').toLowerCase();
@@ -71,12 +82,12 @@ export function suggestPermissionFix(code: number, stderrText: string): string {
   return '';
 }
 
-// @kern-source: update:86
+// @kern-source: update:97
 export function announcePhase(phase: string, detail: string): void {
   info(`${bold(phase)} ${dim(detail)}`);
 }
 
-// @kern-source: update:99
+// @kern-source: update:110
 export async function runUpdate(latestVersion: string|undefined): Promise<number> {
   const version = (typeof latestVersion === 'string' && latestVersion.trim()) ? latestVersion.trim() : 'latest';
   const packageSpec = version === 'latest' ? DEFAULT_PACKAGE : `${DEFAULT_PACKAGE}@${version}`;
@@ -84,7 +95,7 @@ export async function runUpdate(latestVersion: string|undefined): Promise<number
   header(`Updating ${bold(DEFAULT_PACKAGE)} → ${bold(version)}`);
   announcePhase('●', `running: npm ${buildNpmArgs(packageSpec).join(' ')}`);
 
-  const code = await runNpmInstall(packageSpec, DEFAULT_TIMEOUT_MS);
+  const { code, stderr } = await runNpmInstall(packageSpec, DEFAULT_TIMEOUT_MS);
   if (code === 0) {
     success(`Updated to ${bold(version)}. Restart Agon to use the new version.`);
     // Give stdout a beat to flush before we exit.
@@ -93,12 +104,12 @@ export async function runUpdate(latestVersion: string|undefined): Promise<number
     return 0;
   }
   fail(`npm exited with code ${code}.`);
-  const hint = suggestPermissionFix(code, '');
+  const hint = suggestPermissionFix(code, stderr);
   if (hint) info(hint);
   return code;
 }
 
-// @kern-source: update:123
+// @kern-source: update:134
 export const updateCommand: any = defineCommand({
   meta: {
     name: 'update',
@@ -153,10 +164,11 @@ export const updateCommand: any = defineCommand({
     header(`Updating ${bold(DEFAULT_PACKAGE)} → ${bold(version)}`);
     announcePhase('●', `running: npm ${buildNpmArgs(packageSpec).join(' ')}`);
 
-    const code = await runNpmInstall(packageSpec, timeoutMs);
+    const { code, stderr } = await runNpmInstall(packageSpec, timeoutMs);
     if (code !== 0) {
       fail(`npm exited with code ${code}.`);
-      info(suggestPermissionFix(code, ''));
+      const hint = suggestPermissionFix(code, stderr);
+      if (hint) info(hint);
       process.exit(code);
       return;
     }
@@ -168,5 +180,5 @@ export const updateCommand: any = defineCommand({
   },
 });
 
-// @kern-source: update:196
+// @kern-source: update:208
 export const DEFAULT_UPDATE_PACKAGE: string = "@kernlang/agon";

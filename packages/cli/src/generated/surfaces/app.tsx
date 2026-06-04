@@ -1557,7 +1557,17 @@ export function App() {
         return;
       }
       if (ans === 'changelog') {
-        try { spawnSync('open', ['https://github.com/KERNlang/agon/releases'], { stdio: 'ignore' }); } catch { /* ignore */ }
+        const changelogUrl = 'https://github.com/KERNlang/agon/releases';
+        const opener = process.platform === 'darwin' ? { cmd: 'open', args: [changelogUrl] }
+          : process.platform === 'win32' ? { cmd: 'cmd', args: ['/c', 'start', '', changelogUrl] }
+          : { cmd: 'xdg-open', args: [changelogUrl] };
+        let opened = false;
+        try {
+          const r = spawnSync(opener.cmd, opener.args, { stdio: 'ignore' });
+          opened = !r.error && r.status !== 127;
+        } catch { /* opener missing */ }
+        // Headless/unsupported environments (no opener) just get the URL to copy.
+        if (!opened) dispatch({ type: 'info', message: `Changelog: ${changelogUrl}` });
         return;
       }
     }).catch(() => {});
@@ -2770,7 +2780,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:91
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2498
+// @kern-source: app:2508
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -1673,7 +1673,17 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
           return;
         }
         if (ans === 'changelog') {
-          try { spawnSync('open', ['https://github.com/KERNlang/agon/releases'], { stdio: 'ignore' }); } catch { /* ignore */ }
+          const changelogUrl = 'https://github.com/KERNlang/agon/releases';
+          const opener = process.platform === 'darwin' ? { cmd: 'open', args: [changelogUrl] }
+            : process.platform === 'win32' ? { cmd: 'cmd', args: ['/c', 'start', '', changelogUrl] }
+            : { cmd: 'xdg-open', args: [changelogUrl] };
+          let opened = false;
+          try {
+            const r = spawnSync(opener.cmd, opener.args, { stdio: 'ignore' });
+            opened = !r.error && r.status !== 127;
+          } catch { /* opener missing */ }
+          // Headless/unsupported environments (no opener) just get the URL to copy.
+          if (!opened) dispatch({ type: 'info', message: `Changelog: ${changelogUrl}` });
           return;
         }
       }).catch(() => {});

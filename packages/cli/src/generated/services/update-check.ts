@@ -45,7 +45,39 @@ export function parseSemver(raw: string): number[]|null {
   return [major, minor, patch, pre ? 1 : 0];
 }
 
-// @kern-source: update-check:52
+// @kern-source: update-check:49
+function extractPrerelease(raw: string): string {
+  if (typeof raw !== 'string') return '';
+  const body = raw.trim().replace(/^v/i, '').replace(/\+.*$/, '');
+  const dash = body.indexOf('-');
+  return dash >= 0 ? body.slice(dash + 1) : '';
+}
+
+// @kern-source: update-check:61
+export function comparePrerelease(a: string, b: string): number {
+  const ax = a.split('.');
+  const bx = b.split('.');
+  const n = Math.max(ax.length, bx.length);
+  for (let i = 0; i < n; i++) {
+    const ai = ax[i];
+    const bi = bx[i];
+    if (ai === undefined) return -1;
+    if (bi === undefined) return 1;
+    const aNum = /^[0-9]+$/.test(ai);
+    const bNum = /^[0-9]+$/.test(bi);
+    if (aNum && bNum) {
+      const d = parseInt(ai, 10) - parseInt(bi, 10);
+      if (d !== 0) return d < 0 ? -1 : 1;
+    } else if (aNum !== bNum) {
+      return aNum ? -1 : 1;
+    } else if (ai !== bi) {
+      return ai < bi ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+// @kern-source: update-check:90
 export function semverGte(a: string, b: string): boolean {
   const pa = parseSemver(a);
   const pb = parseSemver(b);
@@ -53,13 +85,16 @@ export function semverGte(a: string, b: string): boolean {
   for (let i = 0; i < 3; i++) {
     if (pa[i] !== pb[i]) return pa[i] > pb[i];
   }
-  // major.minor.patch equal — only differs on prerelease flag
-  if (pa[3] === pb[3]) return true;     // both pre or both stable
-  if (pa[3] === 0) return true;          // a is stable, b is pre -> a is newer
-  return false;                          // a is pre, b is stable -> a is older
+  // major.minor.patch equal — the prerelease segment decides.
+  const preA = extractPrerelease(a);
+  const preB = extractPrerelease(b);
+  if (!preA && !preB) return true;   // both stable, equal
+  if (!preA) return true;             // a stable > b prerelease
+  if (!preB) return false;            // a prerelease < b stable
+  return comparePrerelease(preA, preB) >= 0;
 }
 
-// @kern-source: update-check:69
+// @kern-source: update-check:110
 async function runNpmViewVersion(packageName: string, timeoutMs: number): Promise<string> {
   return await new Promise<string>((resolve) => {
     let settled = false;
@@ -77,7 +112,7 @@ async function runNpmViewVersion(packageName: string, timeoutMs: number): Promis
   });
 }
 
-// @kern-source: update-check:91
+// @kern-source: update-check:132
 export async function checkForUpdate(currentVersion: string, opts: UpdateCheckOptions|undefined): Promise<UpdateCheckResult> {
   const packageName = (opts && opts.packageName) || '@kernlang/agon';
   const timeoutMs = (opts && typeof opts.registryTimeoutMs === 'number') ? opts.registryTimeoutMs : 5000;
@@ -111,13 +146,13 @@ export async function checkForUpdate(currentVersion: string, opts: UpdateCheckOp
   return result;
 }
 
-// @kern-source: update-check:134
+// @kern-source: update-check:175
 function updateStatePath(): Promise<string> {
   const home = getAgonHome ? getAgonHome() : join(homedir(), '.agon');
   return Promise.resolve(join(home, 'update-state.json'));
 }
 
-// @kern-source: update-check:140
+// @kern-source: update-check:181
 export async function loadDismissedVersion(): Promise<string> {
   try {
     const p = await updateStatePath();
@@ -129,7 +164,7 @@ export async function loadDismissedVersion(): Promise<string> {
   }
 }
 
-// @kern-source: update-check:152
+// @kern-source: update-check:193
 export async function saveDismissedVersion(version: string): Promise<void> {
   try {
     const home = getAgonHome ? getAgonHome() : join(homedir(), '.agon');

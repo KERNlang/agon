@@ -33,20 +33,31 @@ fn name=buildNpmArgs params="packageSpec:string" returns="string[]" export=true
 // (progress bars, peer-dep warnings, etc.) stream live. Returns a promise that
 // resolves to the exit code. NEVER throws — npm exit codes are signals, not
 // errors, and we want to surface them as-is.
-fn name=runNpmInstall async=true params="packageSpec:string, timeoutMs:number" returns="Promise<number>" export=true
+fn name=runNpmInstall async=true params="packageSpec:string, timeoutMs:number" returns="Promise<{ code: number; stderr: string }>" export=true
   handler <<<
     const args = buildNpmArgs(packageSpec);
-    return await new Promise<number>((resolve) => {
+    return await new Promise<{ code: number; stderr: string }>((resolve) => {
       let settled = false;
-      const finish = (code: number) => { if (!settled) { settled = true; resolve(code); } };
+      let stderr = '';
+      const finish = (code: number) => { if (!settled) { settled = true; resolve({ code, stderr }); } };
       let child: any;
       try {
-        child = spawn('npm', args, { stdio: 'inherit' });
+        // Tee stderr: inherit stdin/stdout so npm's live output still streams, but
+        // PIPE stderr so we can echo it AND scan it for EACCES/permission text —
+        // suggestPermissionFix needs the captured stderr to emit the sudo hint.
+        child = spawn('npm', args, { stdio: ['inherit', 'inherit', 'pipe'] });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         fail(`Failed to spawn npm: ${msg}`);
         finish(1);
         return;
+      }
+      if (child.stderr) {
+        child.stderr.on('data', (d: any) => {
+          const s = d.toString();
+          stderr += s;
+          process.stderr.write(s);
+        });
       }
       const timer = setTimeout(() => {
         try { child.kill('SIGTERM'); } catch { /* already dead */ }
@@ -104,7 +115,7 @@ fn name=runUpdate async=true params="latestVersion:string|undefined" returns="Pr
     header(`Updating ${bold(DEFAULT_PACKAGE)} → ${bold(version)}`);
     announcePhase('●', `running: npm ${buildNpmArgs(packageSpec).join(' ')}`);
 
-    const code = await runNpmInstall(packageSpec, DEFAULT_TIMEOUT_MS);
+    const { code, stderr } = await runNpmInstall(packageSpec, DEFAULT_TIMEOUT_MS);
     if (code === 0) {
       success(`Updated to ${bold(version)}. Restart Agon to use the new version.`);
       // Give stdout a beat to flush before we exit.
@@ -113,7 +124,7 @@ fn name=runUpdate async=true params="latestVersion:string|undefined" returns="Pr
       return 0;
     }
     fail(`npm exited with code ${code}.`);
-    const hint = suggestPermissionFix(code, '');
+    const hint = suggestPermissionFix(code, stderr);
     if (hint) info(hint);
     return code;
   >>>
@@ -176,10 +187,11 @@ const name=updateCommand type="any"
         header(`Updating ${bold(DEFAULT_PACKAGE)} → ${bold(version)}`);
         announcePhase('●', `running: npm ${buildNpmArgs(packageSpec).join(' ')}`);
 
-        const code = await runNpmInstall(packageSpec, timeoutMs);
+        const { code, stderr } = await runNpmInstall(packageSpec, timeoutMs);
         if (code !== 0) {
           fail(`npm exited with code ${code}.`);
-          info(suggestPermissionFix(code, ''));
+          const hint = suggestPermissionFix(code, stderr);
+          if (hint) info(hint);
           process.exit(code);
           return;
         }

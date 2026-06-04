@@ -4,7 +4,7 @@ import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@kernlang/agon-core" names="RunStatusEngine" types=true
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
 import from="@kernlang/agon-forge" names="runSynthesisModus,synthesisRoutingAdvice"
-import from="../blocks/output-format.js" names="header,info,table,bold,green,dim,warn"
+import from="../blocks/output-format.js" names="header,info,table,bold,green,dim,warn,fail"
 import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
 
 const name=synthesisCommand type=any
@@ -61,6 +61,11 @@ const name=synthesisCommand type=any
         const available = args.engines
           ? args.engines.split(',').map((s: string) => s.trim())
           : filterDefaultOrchestrationEngines(registry.activeIds(config as any));
+        const removedSyn = registry.partitionRoster(args.engines ? args.engines.split(',') : null, config as any).removed;
+        if (removedSyn.length > 0) {
+          fail(`Removed engine(s) cannot run: ${removedSyn.join(', ')}. Restore with 'agon engine add <id>'.`);
+          process.exit(1);
+        }
 
         if (args.quiet) process.env.AGON_QUIET = '1';
         const startedAt = new Date().toISOString();

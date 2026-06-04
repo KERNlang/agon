@@ -12,7 +12,7 @@ import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
 import { runSynthesisModus, synthesisRoutingAdvice } from '@kernlang/agon-forge';
 
-import { header, info, table, bold, green, dim, warn } from '../blocks/output-format.js';
+import { header, info, table, bold, green, dim, warn, fail } from '../blocks/output-format.js';
 
 import { filterDefaultOrchestrationEngines } from '../handlers/engine-filter.js';
 
@@ -69,6 +69,11 @@ export const synthesisCommand: any = defineCommand({
     const available = args.engines
       ? args.engines.split(',').map((s: string) => s.trim())
       : filterDefaultOrchestrationEngines(registry.activeIds(config as any));
+    const removedSyn = registry.partitionRoster(args.engines ? args.engines.split(',') : null, config as any).removed;
+    if (removedSyn.length > 0) {
+      fail(`Removed engine(s) cannot run: ${removedSyn.join(', ')}. Restore with 'agon engine add <id>'.`);
+      process.exit(1);
+    }
 
     if (args.quiet) process.env.AGON_QUIET = '1';
     const startedAt = new Date().toISOString();

@@ -635,6 +635,24 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
+export const _mdRowCache = new Map<string, any[]>();
+
+export const _MD_ROW_CACHE_MAX: number = 1500;
+
+export function cachedMarkdownRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
+  // baseKey (block id) is globally unique (Date.now()+random, never reused
+  // across /clear), but key on text identity too so the cache is provably
+  // correct even if an id ever repeats — and keep baseKey so each block's
+  // rows retain their own React keys.
+  const key = `${baseKey}|${text.length}|${text.slice(0, 80)}|${wrapWidth}|${paddingLeft}|${borderColor}`;
+  const hit = _mdRowCache.get(key);
+  if (hit) return hit;
+  const rows = parseMarkdownToRows(baseKey, text, wrapWidth, paddingLeft, borderColor);
+  if (_mdRowCache.size >= _MD_ROW_CACHE_MAX) _mdRowCache.clear();
+  _mdRowCache.set(key, rows);
+  return rows;
+}
+
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);
@@ -701,7 +719,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         if (mode === 'chat') {
           pushSegmentsRow(`${baseKey}-chat-head`, 1, [{ text: `${icons().dotOn} ${event.engineId}`, color: accentColor, bold: true }]);
           pushSpacer(`${baseKey}-chat-space`);
-          rows.push(...parseMarkdownToRows(baseKey, cleaned, chatWidth, 1, ''));
+          rows.push(...cachedMarkdownRows(baseKey, cleaned, chatWidth, 1, ''));
           return;
         }
         pushSegmentsRow(`${baseKey}-engine-head`, 2, [
@@ -709,7 +727,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
           { text: event.engineId, color: accentColor, bold: true },
         ]);
         pushSegmentsRow(`${baseKey}-engine-rule`, 2, [{ text: '│', color: accentColor }]);
-        rows.push(...parseMarkdownToRows(baseKey, cleaned, engineWidth, 2, accentColor));
+        rows.push(...cachedMarkdownRows(baseKey, cleaned, engineWidth, 2, accentColor));
         pushSegmentsRow(`${baseKey}-engine-foot`, 2, [{ text: '└──', color: accentColor }]);
         return;
       }

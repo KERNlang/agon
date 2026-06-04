@@ -53,9 +53,14 @@ export const tribunalCommand: ReturnType<typeof defineCommand> = defineCommand({
     registry.load(resolveBuiltinEnginesDir());
 
     const adapter = createCliAdapter(registry);
-    const available = args.engines
-      ? args.engines.split(',').map((s: string) => registry.resolveId(s.trim())).filter(Boolean)
-      : registry.activeIds(config as any);
+    const { active: available, removed: removedEngines } = registry.partitionRoster(
+      args.engines ? args.engines.split(',') : null,
+      config as any,
+    );
+    if (removedEngines.length > 0) {
+      fail(`Removed engine(s) cannot run: ${removedEngines.join(', ')}. Restore with 'agon engine add <id>'.`);
+      process.exit(1);
+    }
 
     if (available.length < 2) {
       fail('Tribunal needs at least 2 engines. Only found: ' + (available.join(', ') || 'none'));

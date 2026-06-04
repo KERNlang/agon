@@ -332,7 +332,10 @@ export function handleHistory(dispatch: Dispatch, id?: string): void {
 export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, intent?: Intent&{type:'engines'}): Promise<void> {
   const action = String((intent as any)?.action ?? '').toLowerCase();
   if (action && action !== 'list') {
-    const id = String((intent as any)?.id ?? '').trim().toLowerCase();
+    // Resolve to the canonical registered id BEFORE storing, so an alias/
+    // prefix/case (`kimi`, `CODEX`) lands in the denylist as the same id
+    // partitionRoster/activeEngines compare against (review: alias bypass).
+    const id = ctx.registry.resolveId(String((intent as any)?.id ?? '').trim());
     if (!id) {
       dispatch({ type: 'error', message: 'Usage: /engines hide <id> (soft — drops from auto rosters, explicit -e still works) | /engines remove <id> (hard — blocks everywhere incl. -e and external `agon call`) | /engines restore <id>' });
       return;
@@ -388,7 +391,15 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext, int
 
       dispatch({ type: 'success', message: `${id} removed — hard-blocked from every agon session, including explicit \`-e\` and external \`agon call\`${removedUserConfig ? ', and the user engine config was deleted' : ''}. Restore with /models add ${id} or /engines restore ${id}.` });
       if (((ctx.config as any).cesarEngine ?? '') === id) {
-        dispatch({ type: 'warning', message: `${id} was your Cesar engine. Switch with /cesar <engine>.` });
+        // Cesar dispatch reads config.cesarEngine directly (not an auto roster),
+        // so a hard-removed Cesar engine would keep running next turn. Reassign
+        // to a still-active engine to honor "blocked from EVERY session" (review).
+        const fallback = ctx.registry.activeIds(ctx.config as any).find((e: string) => e !== id) ?? '';
+        configSet('cesarEngine' as any, fallback as any);
+        (ctx.config as any).cesarEngine = fallback;
+        dispatch({ type: 'warning', message: fallback
+          ? `${id} was your Cesar engine — switched Cesar to ${fallback}. Change with /cesar <engine>.`
+          : `${id} was your Cesar engine and no other engine is active. Set one with /cesar <engine> before continuing.` });
       }
       return;
     }
@@ -591,7 +602,10 @@ export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerC
 export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerContext): void {
   // Parse: "/cesar claude api" or "/cesar claude cli" or "/cesar claude" or "/cesar"
   const parts = engineId.trim().split(/\s+/);
-  const id = parts[0] ?? '';
+  // Resolve the short alias to its canonical id so `/cesar kimi` works the
+  // same as `-e kimi` everywhere else (resolveId leaves cli|api|auto and
+  // unknown names unchanged, so the backend-only switch below still works).
+  const id = ctx.registry.resolveId(parts[0] ?? '');
   const backendArg = parts[1]?.toLowerCase();
 
   if (!id) {

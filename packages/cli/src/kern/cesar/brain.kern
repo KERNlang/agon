@@ -183,6 +183,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         console.warn('[cesar:brain] force-clearing stuck busy flag');
         ctx.cesar!.busy = false;
         ctx.cesar!.queue = null;
+        ctx.cesar!.abortSignal = null;
       } else {
         // Follow-ups while busy → show elapsed status, don't queue
         if (_isFollowUp) {
@@ -197,7 +198,12 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         } else {
           ctx.cesar!.queue = { input, dispatch, images };
         }
-        dispatch({ type: 'info', message: 'Queued — will send when Cesar finishes.' });
+        // If the active turn is already being interrupted, the queued message
+        // sends the instant that turn tears down (next tick) — say so, rather
+        // than the misleading "will send when Cesar finishes" (which reads as a
+        // long wait and is the main source of the "clunky Esc" feel).
+        const _interrupting = ctx.cesar!.abortSignal?.aborted === true;
+        dispatch({ type: 'info', message: _interrupting ? 'Interrupting — your message is up next…' : 'Queued — will send when Cesar finishes.' });
         return { delegated: false, responded: true };
       }
     }
@@ -246,6 +252,10 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
 
       const color = ENGINE_COLORS[cesarEngineId] ?? 124;
       ctx.setActiveAbort(abort);
+      // Expose this turn's abort signal on the shared cesar state so a message
+      // submitted during teardown can tell "Cesar is busy working" apart from
+      // "Cesar was just interrupted" — without a listener (cleared in finally).
+      ctx.cesar!.abortSignal = abort.signal;
       ctx.cesar!.lastDispatch = dispatch;
       dispatch({ type: 'confidence-update', value: null });
       dispatch({ type: 'spinner-start', message: 'Cesar thinking…', color });
@@ -2210,22 +2220,36 @@ ${reviewFollowup.prompt}`;
           },
         });
       }
-      ctx.cesar!.busy = false;
-      ctx.cesar!.busySince = null;
-      if (ctx.cesar!.turnId === _turnId) ctx.cesar!.turnId = undefined;
+      // Only clear SHARED cesar state if this invocation still owns the turn.
+      // The stuck-busy force-clear path above can start a NEWER turn while this
+      // (older) turn is still unwinding; without this guard our finally would
+      // clobber the new turn's busy/busySince/abortSignal/queue and null its
+      // active abort — flagged by the review panel + nero. Local UI (spinner)
+      // still stops for this turn regardless.
+      const _ownsTurn = ctx.cesar!.turnId === _turnId;
+      const _wasInterrupted = _ownsTurn && ctx.cesar!.abortSignal?.aborted === true;
       dispatch({ type: 'spinner-stop' });
-      ctx.setActiveAbort(null);
+      if (_ownsTurn) {
+        ctx.cesar!.busy = false;
+        ctx.cesar!.busySince = null;
+        ctx.cesar!.abortSignal = null;
+        ctx.cesar!.turnId = undefined;
+        ctx.setActiveAbort(null);
 
-      // Auto-drain queue
-      const queued = ctx.cesar!.queue;
-      if (queued) {
-        ctx.cesar!.queue = null;
-        setTimeout(() => {
-          handleCesarBrain(queued.input, queued.dispatch, ctx, queued.images).catch((err: any) => {
-            console.error(`[cesar:queue] drain failed: ${err.message ?? err}`);
-            ctx.cesar!.busy = false;
-          });
-        }, 100);
+        // Auto-drain queue. Runs only after the generator is provably dead (the
+        // safe point to reuse the persistent session), so a message queued
+        // during an interrupt sends on the very next tick — drop the 100ms
+        // breather for the interrupted case so it feels instant.
+        const queued = ctx.cesar!.queue;
+        if (queued) {
+          ctx.cesar!.queue = null;
+          setTimeout(() => {
+            handleCesarBrain(queued.input, queued.dispatch, ctx, queued.images).catch((err: any) => {
+              console.error(`[cesar:queue] drain failed: ${err.message ?? err}`);
+              ctx.cesar!.busy = false;
+            });
+          }, _wasInterrupted ? 0 : 100);
+        }
       }
     }
   >>>

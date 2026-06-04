@@ -622,6 +622,29 @@ module name=AppRendering
       return rows;
     >>>
 
+  // Markdown parse + word-wrap is the hot O(n) cost: every transcript commit
+  // re-runs buildTranscriptRows over ALL ≤500 blocks, re-parsing each one. An
+  // engine-block's content is immutable once committed (streaming goes through
+  // streamingText, not blocks; tool-calls use their own row builders), so the
+  // parse is memoizable by (block id, width, padding, color). On resize the
+  // width changes the key — correct re-parse; entries are dropped at the cap.
+  const name=_mdRowCache value={{ new Map<string, any[]>() }}
+  const name=_MD_ROW_CACHE_MAX type=number value={{ 1500 }}
+  fn name=cachedMarkdownRows params="baseKey:string, text:string, wrapWidth:number, paddingLeft:number, borderColor:string" returns="any[]"
+    handler <<<
+      // baseKey (block id) is globally unique (Date.now()+random, never reused
+      // across /clear), but key on text identity too so the cache is provably
+      // correct even if an id ever repeats — and keep baseKey so each block's
+      // rows retain their own React keys.
+      const key = `${baseKey}|${text.length}|${text.slice(0, 80)}|${wrapWidth}|${paddingLeft}|${borderColor}`;
+      const hit = _mdRowCache.get(key);
+      if (hit) return hit;
+      const rows = parseMarkdownToRows(baseKey, text, wrapWidth, paddingLeft, borderColor);
+      if (_mdRowCache.size >= _MD_ROW_CACHE_MAX) _mdRowCache.clear();
+      _mdRowCache.set(key, rows);
+      return rows;
+    >>>
+
   fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns="any[]"
     handler <<<
       const rows: any[] = [];
@@ -689,7 +712,7 @@ module name=AppRendering
             if (mode === 'chat') {
               pushSegmentsRow(`${baseKey}-chat-head`, 1, [{ text: `${icons().dotOn} ${event.engineId}`, color: accentColor, bold: true }]);
               pushSpacer(`${baseKey}-chat-space`);
-              rows.push(...parseMarkdownToRows(baseKey, cleaned, chatWidth, 1, ''));
+              rows.push(...cachedMarkdownRows(baseKey, cleaned, chatWidth, 1, ''));
               return;
             }
             pushSegmentsRow(`${baseKey}-engine-head`, 2, [
@@ -697,7 +720,7 @@ module name=AppRendering
               { text: event.engineId, color: accentColor, bold: true },
             ]);
             pushSegmentsRow(`${baseKey}-engine-rule`, 2, [{ text: '│', color: accentColor }]);
-            rows.push(...parseMarkdownToRows(baseKey, cleaned, engineWidth, 2, accentColor));
+            rows.push(...cachedMarkdownRows(baseKey, cleaned, engineWidth, 2, accentColor));
             pushSegmentsRow(`${baseKey}-engine-foot`, 2, [{ text: '└──', color: accentColor }]);
             return;
           }

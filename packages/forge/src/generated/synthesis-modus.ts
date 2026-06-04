@@ -4,14 +4,16 @@ import type { EngineAdapter, ForgeEvent } from '@kernlang/agon-core';
 
 import { EngineRegistry, resolveWorkingDir, classifyTask } from '@kernlang/agon-core';
 
-// @kern-source: synthesis-modus:4
+import { preflightHealthFilter } from './health-check.js';
+
+// @kern-source: synthesis-modus:5
 export interface SynthesisDraft {
   engineId: string;
   content: string;
   round: number;
 }
 
-// @kern-source: synthesis-modus:9
+// @kern-source: synthesis-modus:10
 export interface SynthesisSwap {
   round: number;
   fromEngineId: string;
@@ -21,7 +23,7 @@ export interface SynthesisSwap {
   reasoning: string;
 }
 
-// @kern-source: synthesis-modus:17
+// @kern-source: synthesis-modus:18
 export interface SynthesisScore {
   engineId: string;
   score: number;
@@ -30,7 +32,7 @@ export interface SynthesisScore {
   unhandled?: string;
 }
 
-// @kern-source: synthesis-modus:26
+// @kern-source: synthesis-modus:27
 export interface SynthesisResult {
   prompt: string;
   drafts: SynthesisDraft[];
@@ -40,7 +42,7 @@ export interface SynthesisResult {
   judgeReasoning: string;
 }
 
-// @kern-source: synthesis-modus:34
+// @kern-source: synthesis-modus:35
 export interface SynthesisOptions {
   prompt: string;
   engines: string[];
@@ -54,7 +56,7 @@ export interface SynthesisOptions {
   signal?: AbortSignal;
 }
 
-// @kern-source: synthesis-modus:46
+// @kern-source: synthesis-modus:47
 export function buildSynthesisDraftPrompt(prompt: string): string {
   return [
     '## SYNTHESIS DRAFT',
@@ -68,7 +70,7 @@ export function buildSynthesisDraftPrompt(prompt: string): string {
   ].join('\n');
 }
 
-// @kern-source: synthesis-modus:60
+// @kern-source: synthesis-modus:61
 export function buildSynthesisSwapPrompt(task: string, originalEngineId: string, originalContent: string): string {
   return [
     "## SYNTHESIS SWAP - IMPROVE ANOTHER ENGINE'S DRAFT",
@@ -88,7 +90,7 @@ export function buildSynthesisSwapPrompt(task: string, originalEngineId: string,
   ].join('\n');
 }
 
-// @kern-source: synthesis-modus:80
+// @kern-source: synthesis-modus:81
 export function buildSynthesisJudgePrompt(task: string, entries: {engineId:string;content:string}[]): string {
   const drafts = entries
     .map((e, i) => `## ENTRY ${i + 1} - ${e.engineId}\n---\n${e.content}\n---`)
@@ -125,7 +127,7 @@ export function buildSynthesisJudgePrompt(task: string, entries: {engineId:strin
   ].join('\n');
 }
 
-// @kern-source: synthesis-modus:117
+// @kern-source: synthesis-modus:118
 export function shuffleSynthesisEnginesInPlace(arr: any[]): any[] {
   for (let i = arr.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -134,7 +136,7 @@ export function shuffleSynthesisEnginesInPlace(arr: any[]): any[] {
   return arr;
 }
 
-// @kern-source: synthesis-modus:126
+// @kern-source: synthesis-modus:127
 export function parseSynthesisJudgeOutput(text: string, engineIds: string[]): {scores:SynthesisScore[];winner:string;reasoning:string} {
   const scores: SynthesisScore[] = [];
   for (let i = 0; i < engineIds.length; i += 1) {
@@ -175,7 +177,7 @@ export function parseSynthesisJudgeOutput(text: string, engineIds: string[]): {s
 /**
  * Routing guard. synthesis selects a winner by LLM judgment with NO fitness test — fine for prose/design where no clean pass/fail exists, but a liability for testable code (an LLM judge once scored a broken implementation 91/100). For code-shaped tasks, advise forge, which selects by a real fitness test. Returns null for docs/ambiguous tasks (synthesis is the right tool).
  */
-// @kern-source: synthesis-modus:164
+// @kern-source: synthesis-modus:165
 export function synthesisRoutingAdvice(prompt: string): string | null {
   const cls = classifyTask(prompt);
   const codeClasses = ['algorithm', 'refactor', 'bugfix', 'feature', 'test'];
@@ -191,11 +193,18 @@ export function synthesisRoutingAdvice(prompt: string): string | null {
   ].join(' ');
 }
 
-// @kern-source: synthesis-modus:181
+// @kern-source: synthesis-modus:182
 export async function runSynthesisModus(opts: SynthesisOptions): Promise<SynthesisResult> {
-  const { prompt, engines, registry, adapter, timeout, outputDir } = opts;
+  const { prompt, registry, adapter, timeout, outputDir } = opts;
   const swapRounds = Math.max(0, opts.swaps ?? 1);
   const cwd = resolveWorkingDir();
+  // Pre-flight: drop session-quarantined engines (Layer 1, pure zero-dispatch). Probe opt-in.
+  const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry, adapter, signal: opts.signal });
+  for (const s of __hc.skipped) console.warn(`[agon] synthesis: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+  const engines = __hc.healthy;
+  if (engines.length === 0) {
+    throw new Error(`No healthy engines for synthesis; all ${__hc.skipped.length} were quarantined this session (${__hc.skipped.map((s) => s.engineId).join(', ')}). Restore with 'agon engine add <id>'.`);
+  }
 
   const drafts: SynthesisDraft[] = [];
   const draftPromises = engines.map(async (engineId) => {

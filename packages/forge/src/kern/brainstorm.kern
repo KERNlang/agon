@@ -4,6 +4,7 @@ import from="@kernlang/agon-core" names="EngineRegistry,buildBrainstormPrompt,ge
 import from="@kernlang/protocol" names="buildKernDraftPrompt,parseKernDraft,buildKernRankPrompt"
 import from="@kernlang/protocol" names="KernDraft" types=true
 import from="./dedup-bridge.js" names="dedupBrainstormDrafts"
+import from="./health-check.js" names="preflightHealthFilter"
 
 fn name=calibrateConfidence params="engineId:string, rawBid:number" returns=number
   handler lang="kern"
@@ -126,7 +127,11 @@ fn name=scoutScore params="bid:ScoutBid" returns=number
 fn name=runScout async=true params="opts:{question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}" returns="Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}>"
   handler lang="kern"
     let name=count value="opts.scoutCount ?? 2"
-    let name=scouts value="opts.engines.slice(0, count)"
+    comment raw="// Filter quarantined engines BEFORE slicing, else a dead engine in the first"
+    comment raw="// scoutCount slots still burns a scout dispatch (review consensus: claude/kimi/agy/zai)."
+    let name=__hcScout value="await preflightHealthFilter({ engineIds: opts.engines, registry: opts.registry, adapter: opts.adapter, signal: opts.signal })"
+    do value="__hcScout.skipped.forEach((s) => console.warn(`[agon] scout: skipping ${s.engineId} — ${s.status} (${s.reason})`))"
+    let name=scouts value="__hcScout.healthy.slice(0, count)"
     let name=ranked value="await collectRankedDrafts({ question: opts.question, context: opts.context, engines: scouts, registry: opts.registry, adapter: opts.adapter, timeout: Math.min(opts.timeout, 30), outputDir: opts.outputDir, signal: opts.signal, })"
     let name=bids type="ScoutBid[]" value="ranked.map((d) => Object.assign({}, { engineId: d.engineId, confidence: calibrateConfidence(d.engineId, d.draft.confidence), approach: d.draft.approach, steps: d.draft.steps, keyFiles: d.draft.keyFiles, risk: d.draft.approach.toLowerCase().includes('risk') || d.draft.tradeoffs.length > 2 ? 'high' as const : d.draft.tradeoffs.length > 0 ? 'medium' as const : 'low' as const, needsCompetition: d.draft.tradeoffs.some((t: string) => /compet|test|verify|compar/i.test(t)) }))"
     comment raw="// Sort by scoutScore"
@@ -183,17 +188,25 @@ fn name=runBrainstorm async=true params="opts:{question:string, context?:string,
     // Cold-start: seed newly-dropped model versions from their predecessor before
     // bidding, so a new engine competes at its family's strength, not 1500.
     seedNewEnginesFromRegistry(opts.registry);
+    // Pre-flight: drop session-quarantined engines (Layer 1, pure zero-dispatch)
+    // so a dead engine doesn't burn a draft slot + a per-engine timeout. Probe opt-in.
+    const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry: opts.registry, adapter: opts.adapter, signal: opts.signal });
+    for (const s of __hc.skipped) console.warn(`[agon] brainstorm: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+    const __engines = __hc.healthy;
+    if (__engines.length === 0) {
+      throw new Error(`No healthy engines for brainstorm; all ${__hc.skipped.length} were quarantined this session (${__hc.skipped.map((s) => s.engineId).join(', ')}). Restore with 'agon engine add <id>'.`);
+    }
     const sidechain = createSidechainLogger({
       sessionId: brainstormId,
       sessionType: 'brainstorm',
       outputDir: opts.outputDir,
     });
-    sidechain.log('brainstorm:init', undefined, { question: opts.question, engines: opts.engines });
+    sidechain.log('brainstorm:init', undefined, { question: opts.question, engines: __engines });
 
     const ranked = await collectRankedDrafts({
       question: opts.question,
       context: opts.context,
-      engines: opts.engines,
+      engines: __engines,
       registry: opts.registry,
       adapter: opts.adapter,
       timeout: opts.timeout,

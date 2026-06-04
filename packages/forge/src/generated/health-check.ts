@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import { mkdirSync, rmSync } from 'node:fs';
 
-import { EngineRegistry, engineHealth, classifyDispatchFailure, Semaphore } from '@kernlang/agon-core';
+import { EngineRegistry, engineHealth, classifyDispatchFailure, Semaphore, loadConfig } from '@kernlang/agon-core';
 
 import type { EngineAdapter } from '@kernlang/agon-core';
 
@@ -41,7 +41,7 @@ export const HEALTH_CHECK_DEFAULT_PROMPT: string = "Reply with just: ok";
  * Ping a single engine with a tiny prompt and short timeout. Healthy = dispatch returns within timeout with non-empty stdout and exit code 0. ALWAYS runs in a throwaway scratch dir — never the project cwd — because some configured 'exec' modes are tool-capable and a 'liveness' probe must not alter the user's tree (Codex review 0.94).
  */
 // @kern-source: health-check:35
-export async function healthCheckEngine(engineId: string, registry: EngineRegistry, adapter: EngineAdapter, _cwd: string, timeoutSec: number, prompt: string): Promise<HealthCheckResult> {
+export async function healthCheckEngine(engineId: string, registry: EngineRegistry, adapter: EngineAdapter, _cwd: string, timeoutSec: number, prompt: string, signal?: AbortSignal): Promise<HealthCheckResult> {
   const start = Date.now();
   let engine;
   try {
@@ -84,6 +84,7 @@ export async function healthCheckEngine(engineId: string, registry: EngineRegist
       mode: useAgent ? 'agent' : 'exec',
       timeout: Math.max(1, Math.ceil(timeoutSec)),
       outputDir: scratchDir,
+      signal,
     } as any;
     dispatchResult = useAgent
       ? await adapter.dispatchAgent!(opts)
@@ -136,7 +137,7 @@ export async function healthCheckEngine(engineId: string, registry: EngineRegist
 /**
  * True when the engine has no usable local CLI binary and falls back to its network API (e.g. kimi/zai/minimax). These engines incur provider latency + cold-start and are the ones that lose a concurrent batch to a thundering-herd timeout, so forge throttles and gives them a longer probe window than local CLI engines.
  */
-// @kern-source: health-check:129
+// @kern-source: health-check:130
 export function isApiBackedEngine(engineId: string, registry: EngineRegistry): boolean {
   try {
     const e: any = registry.get(engineId);
@@ -150,8 +151,8 @@ export function isApiBackedEngine(engineId: string, registry: EngineRegistry): b
 /**
  * Ping N engines. Local CLI engines run fully parallel; API/network-backed engines (kimi/zai/minimax) are throttled to maxParallelApi at a time and get a longer apiTimeoutSec probe window, so a big roster's API engines don't all cold-start against rate-limited providers at once and lose the batch to a thundering-herd timeout. Total wall-clock is max(per-engine duration) for CLI engines plus the throttled API tail. Short-circuits to 'all healthy' when AGON_DISABLE_FORGE_HEALTH_CHECK is set.
  */
-// @kern-source: health-check:141
-export async function healthCheckEngines(engineIds: string[], registry: EngineRegistry, adapter: EngineAdapter, cwd: string, timeoutSec: number, prompt: string, apiTimeoutSec?: number, maxParallelApi?: number): Promise<HealthCheckSummary> {
+// @kern-source: health-check:142
+export async function healthCheckEngines(engineIds: string[], registry: EngineRegistry, adapter: EngineAdapter, cwd: string, timeoutSec: number, prompt: string, apiTimeoutSec?: number, maxParallelApi?: number, signal?: AbortSignal): Promise<HealthCheckSummary> {
   const start = Date.now();
   if (process.env[HEALTH_CHECK_DISABLE_ENV]) {
     return { healthy: engineIds.slice(), unhealthy: [], totalMs: Date.now() - start };
@@ -163,10 +164,10 @@ export async function healthCheckEngines(engineIds: string[], registry: EngineRe
     engineIds.map((id: string) => {
       if (isApiBackedEngine(id, registry)) {
         return apiSem.runWith(
-          () => healthCheckEngine(id, registry, adapter, cwd, apiTimeout, prompt)
+          () => healthCheckEngine(id, registry, adapter, cwd, apiTimeout, prompt, signal)
         ) as Promise<HealthCheckResult>;
       }
-      return healthCheckEngine(id, registry, adapter, cwd, timeoutSec, prompt);
+      return healthCheckEngine(id, registry, adapter, cwd, timeoutSec, prompt, signal);
     })
   );
   const healthy: string[] = [];
@@ -190,4 +191,68 @@ export async function healthCheckEngines(engineIds: string[], registry: EngineRe
     }
   });
   return { healthy, unhealthy, totalMs: Date.now() - start };
+}
+
+// @kern-source: health-check:185
+export interface PreflightSkip {
+  engineId: string;
+  status: string;
+  reason: string;
+}
+
+// @kern-source: health-check:190
+export interface PreflightHealthResult {
+  healthy: string[];
+  skipped: PreflightSkip[];
+}
+
+/**
+ * Shared pre-flight engine filter for the interactive orchestration modes (tribunal/council/brainstorm/synthesis/campfire/nero). LAYER 1 (always, default-ON): a PURE, zero-dispatch read of the engineHealth quarantine store — drops engines this session marked auth-failed or unreachable. It is idempotent, so nesting (e.g. brainstorm->scout) double-filtering is harmless. LAYER 2 (active ~5s probe via healthCheckEngines) is OPT-IN ONLY for these modes — enabled per-call with probe:true or globally with AGON_FORCE_HEALTH_PROBE — because a 5s probe is a 100-300% latency regression on a quick interactive run (council verdict 2026-06-04). AGON_DISABLE_FORGE_HEALTH_CHECK still short-circuits the probe inside healthCheckEngines. Forge keeps its own default-ON probe path and does NOT route through here. Never resurrects a quarantined engine; callers enforce their own floor on the returned `healthy` set.
+ */
+// @kern-source: health-check:194
+export async function preflightHealthFilter(opts: { engineIds:string[], registry:EngineRegistry, adapter:EngineAdapter, probe?:boolean, cwd?:string, timeoutSec?:number, signal?:AbortSignal }): Promise<PreflightHealthResult> {
+  const { engineIds, registry, adapter } = opts;
+  const skipped: { engineId: string; status: string; reason: string }[] = [];
+
+  // ── Layer 1: quarantine filter (pure, no dispatch, no mutation) ──
+  const afterQuarantine: string[] = [];
+  for (const id of engineIds) {
+    const health = engineHealth.get(id);
+    if (health && (health.status === 'auth-failed' || health.status === 'unreachable')) {
+      skipped.push({ engineId: id, status: health.status, reason: health.reason || 'quarantined this session' });
+    } else {
+      afterQuarantine.push(id);
+    }
+  }
+
+  // ── Layer 2: active probe (OPT-IN only for interactive modes) ──
+  const wantProbe = opts.probe === true || !!process.env.AGON_FORCE_HEALTH_PROBE;
+  if (!wantProbe || afterQuarantine.length === 0) {
+    return { healthy: afterQuarantine, skipped };
+  }
+  // Pull the API throttle knobs from config so the opt-in probe doesn't thunder-herd
+  // network-backed engines (kimi/zai/minimax) — the exact case healthCheckEngines
+  // mitigates. Best-effort: fall back to healthCheckEngines' own defaults on any read error.
+  let apiTimeoutSec: number | undefined;
+  let maxParallelApi: number | undefined;
+  try {
+    const cfg = loadConfig(opts.cwd ?? process.cwd()) as any;
+    apiTimeoutSec = cfg?.forgeHealthCheckApiTimeoutSec;
+    maxParallelApi = cfg?.forgeMaxParallelApi;
+  } catch { /* defaults */ }
+  const summary = await healthCheckEngines(
+    afterQuarantine.slice(),
+    registry,
+    adapter,
+    opts.cwd ?? process.cwd(),
+    opts.timeoutSec ?? 5,
+    HEALTH_CHECK_DEFAULT_PROMPT,
+    apiTimeoutSec,
+    maxParallelApi,
+    opts.signal,
+  );
+  for (const u of summary.unhealthy) {
+    skipped.push({ engineId: u.engineId, status: 'health-check-failed', reason: u.reason ?? 'probe failed' });
+  }
+  return { healthy: summary.healthy, skipped };
 }

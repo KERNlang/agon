@@ -4,7 +4,9 @@ import type { EngineAdapter, RatingRecord } from '@kernlang/agon-core';
 
 import { EngineRegistry, getRatings, pickTopRatedEngine, resolveWorkingDir, seedNewEnginesFromRegistry } from '@kernlang/agon-core';
 
-// @kern-source: nero:17
+import { preflightHealthFilter } from './health-check.js';
+
+// @kern-source: nero:18
 export interface NeroOptions {
   decision: string;
   reasoning?: string | undefined;
@@ -24,7 +26,7 @@ export interface NeroOptions {
   onStatus?: ((msg: string) => void) | undefined;
 }
 
-// @kern-source: nero:35
+// @kern-source: nero:36
 export interface NeroResult {
   ok: boolean;
   engineId: string;
@@ -39,7 +41,7 @@ export interface NeroResult {
 /**
  * Build the adversarial challenge prompt. Pure — exported for testing. Frameworks: INVERSION, PRE-MORTEM, SECOND-ORDER (ported from /evil-twin).
  */
-// @kern-source: nero:45
+// @kern-source: nero:46
 export function buildNeroPrompt(opts: { decision:string; reasoning?:string; focus?:string; confidence?:number }): string {
   const lines: string[] = [];
   lines.push('You are Nero — a structurally adversarial reviewer. Your job is to find why the reasoning below is WRONG. You are not helpful, not balanced. Assume it contains at least one significant error and find it.');
@@ -83,7 +85,7 @@ export function buildNeroPrompt(opts: { decision:string; reasoning?:string; focu
 /**
  * Extract the final verdict from Nero's output. Pure — exported for testing. The prompt instructs the critic to END with the verdict, so take the LAST VERDICT: marker — earlier ones may appear inside the critic's reasoning.
  */
-// @kern-source: nero:87
+// @kern-source: nero:88
 export function parseNeroVerdict(text: string): 'flawed' | 'proceed-with-caution' | 'sound' | 'unknown' {
   const matches = [...text.matchAll(/VERDICT:\s*(FLAWED|PROCEED WITH CAUTION|SOUND)/gi)];
   if (matches.length === 0) return 'unknown';
@@ -96,7 +98,7 @@ export function parseNeroVerdict(text: string): 'flawed' | 'proceed-with-caution
 /**
  * Extract Nero's confidence that the original is CORRECT (0-100). Pure — exported for testing. Prefers an explicit 'Confidence: X%' marker, else the first percentage.
  */
-// @kern-source: nero:98
+// @kern-source: nero:99
 export function parseNeroConfidence(text: string): number | null {
   const marked = text.match(/confidence[:\s]*~?\s*(\d{1,3})\s*%/i);
   const m = marked ?? text.match(/~?\s*(\d{1,3})\s*%/);
@@ -109,7 +111,7 @@ export function parseNeroConfidence(text: string): number | null {
 /**
  * Build Nero's critic cascade, best critic first. Repeatedly picks the top-rated critic (critique -> tribunal -> global -> random) and excludes it from the next pick, so a failed top critic can down-pass to the next-best. Pure (ratings injected) — exported for testing. NOTE: pickTopRatedEngine IGNORES `exclude` if it would empty the pool (resetting to the full list); the `seen` guard below stops the cascade when that reset re-surfaces an already-ranked or author engine, so the author is never reintroduced as a critic.
  */
-// @kern-source: nero:109
+// @kern-source: nero:110
 export function rankNeroCritics(engineIds: string[], ratings: RatingRecord, opts?: { exclude?:string[] }): Array<{ engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }> {
   const seen = new Set<string>(opts?.exclude ?? []);
   const ranked: Array<{ engineId: string; reason: 'top-rated' | 'random' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }> = [];
@@ -125,7 +127,7 @@ export function rankNeroCritics(engineIds: string[], ratings: RatingRecord, opts
 /**
  * Run an adversarial challenge with self-healing dispatch. Builds the critic cascade (forced engine -> single critic; else top-rated critique/tribunal/global, author excluded), then for each critic RETRIES on a transient miss (empty / timed-out / verdict-less) up to MAX_ATTEMPTS with escalating backoff, and DOWN-PASSES to the next-best critic when one is genuinely unusable. This replaces the old one-shot dispatch that dead-ended on a single empty response — so `--engine codex` is no longer needed as a manual band-aid (it stays as a deliberate override). A valid result = clean exit (exit 0, not timed out) + non-empty + parseable verdict, mirroring the original verdict gate.
  */
-// @kern-source: nero:123
+// @kern-source: nero:124
 export async function runNero(opts: NeroOptions): Promise<NeroResult> {
   // Seed newly-dropped model versions so a fresh critic (with declared lineage) is
   // eligible in the cascade instead of being skipped until another competition rates it.
@@ -140,12 +142,24 @@ export async function runNero(opts: NeroOptions): Promise<NeroResult> {
   // pickTopRatedEngine here: that helper ignores `exclude` once the pool empties
   // and would resurface the author as its own critic (codex review, 0.96). The
   // no-self-review contract wins over forcing a challenge: return no-engines.
+  // Pre-flight: drop session-quarantined engines from the candidate pool (Layer 1,
+  // pure zero-dispatch) so Nero doesn't pick a known-dead critic first. Nero's own
+  // down-pass still handles a critic that fails AT dispatch; this just avoids the
+  // wasted attempt. Active probe is opt-in.
+  const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry: opts.registry, adapter: opts.adapter, signal: opts.signal });
+  for (const s of __hc.skipped) opts.onStatus?.(`Nero: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+  const __engines = __hc.healthy;
   const forced = opts.engine?.trim();
+  // Role sub-param resolved AFTER the filter: a forced critic that is quarantined
+  // fails loud rather than silently down-passing to a different engine.
+  if (forced && opts.engines.includes(forced) && !__engines.includes(forced)) {
+    return { ok: false, engineId: forced, reason: 'none', scope: null, verdict: 'unknown', challengeConfidence: null, challengeText: `Requested Nero critic '${forced}' is quarantined this session (auth-failed/unreachable). Restore with 'agon engine add <id>' or pick another --engine.`, outputDir: opts.outputDir };
+  }
   let ranked: Array<{ engineId: string; reason: 'top-rated' | 'random' | 'forced' | 'none'; scope: 'forge' | 'brainstorm' | 'tribunal' | 'critique' | 'global' | null }>;
-  if (forced && opts.engines.includes(forced)) {
+  if (forced && __engines.includes(forced)) {
     ranked = [{ engineId: forced, reason: 'forced', scope: null }];
   } else {
-    ranked = rankNeroCritics(opts.engines, ratings, { exclude: opts.exclude });
+    ranked = rankNeroCritics(__engines, ratings, { exclude: opts.exclude });
   }
 
   if (ranked.length === 0) {

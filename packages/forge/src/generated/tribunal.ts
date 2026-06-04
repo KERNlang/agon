@@ -10,20 +10,22 @@ import type { TribunalMode, TribunalModeConfig } from './tribunal-modes.js';
 
 import { getModeConfig, buildModePrompt, buildModeSummaryPrompt } from './tribunal-modes.js';
 
-// @kern-source: tribunal:7
+import { preflightHealthFilter } from './health-check.js';
+
+// @kern-source: tribunal:8
 export interface TribunalPosition {
   engineId: string;
   position: string;
   arguments: string[];
 }
 
-// @kern-source: tribunal:12
+// @kern-source: tribunal:13
 export interface TribunalRound {
   round: number;
   positions: TribunalPosition[];
 }
 
-// @kern-source: tribunal:16
+// @kern-source: tribunal:17
 export interface TribunalResult {
   question: string;
   rounds: TribunalRound[];
@@ -32,7 +34,7 @@ export interface TribunalResult {
   mode?: string;
 }
 
-// @kern-source: tribunal:23
+// @kern-source: tribunal:24
 export function buildFallbackSummary(positions: TribunalPosition[]): string {
   return positions.map((p) => `**${p.engineId} (${p.position})**: ${p.arguments[p.arguments.length - 1]?.slice(0, 200) ?? '(no response)'}...`).join('\n\n');
 }
@@ -40,7 +42,7 @@ export function buildFallbackSummary(positions: TribunalPosition[]): string {
 /**
  * Extracts the engine's visible text from a debate-round dispatch. Reasoning-heavy engines (Claude with extended thinking, DeepSeek-R1, o1-class, Kimi reasoning) often emit only internal <think>...</think> when given a single-turn debate prompt. Previous behavior threw on empty-after-strip, degrading the tribunal to '(no response)' placeholders even when the engine actually thought through the question. Now: if stripping leaves nothing but raw output had substantial thinking, surface a truncated thinking excerpt with a clear banner so the debate can continue with real signal.
  */
-// @kern-source: tribunal:27
+// @kern-source: tribunal:28
 export function requireNonEmptyDispatchText(result: DispatchResult, phase: string): string {
   const raw = String(result.stdout ?? '').trim();
   const cleaned = raw.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
@@ -72,11 +74,25 @@ export function requireNonEmptyDispatchText(result: DispatchResult, phase: strin
   });
 }
 
-// @kern-source: tribunal:60
+// @kern-source: tribunal:61
 export async function runTribunal(opts: {question:string, engines:string[], rounds:number, mode?:TribunalMode, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}): Promise<TribunalResult> {
-  const { question, engines, rounds, registry, adapter, timeout, outputDir } = opts;
+  const { question, rounds, registry, adapter, timeout, outputDir } = opts;
   const signal = opts.signal;
   const mode = opts.mode ?? 'adversarial';
+  // Pre-flight: drop engines quarantined this session (auth-failed/unreachable)
+  // so a dead engine doesn't burn a panel slot + a full per-engine timeout.
+  // Layer 1 is a pure zero-dispatch read; the active probe is opt-in only.
+  const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry, adapter, signal });
+  for (const s of __hc.skipped) console.warn(`[agon] tribunal: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+  const engines = __hc.healthy;
+  if (engines.length < 2) {
+    // Distinguish "too few engines provided" from "engines were quarantined" so the
+    // message points at the real cause (zai review 0.80).
+    if (__hc.skipped.length === 0) {
+      throw new Error(`Tribunal needs at least 2 engines; only ${opts.engines.length} provided. Widen --engines or add one with 'agon engine add <id>'.`);
+    }
+    throw new Error(`Tribunal needs at least 2 healthy engines; ${__hc.skipped.length} were quarantined this session (${__hc.skipped.map((s) => s.engineId).join(', ')}). Restore with 'agon engine add <id>' or widen --engines.`);
+  }
   // Cold-start: seed any newly-dropped model version (EngineDefinition.derivedFrom)
   // from its predecessor BEFORE competing, so it enters ranked play at its family's
   // strength rather than the 1500 default.

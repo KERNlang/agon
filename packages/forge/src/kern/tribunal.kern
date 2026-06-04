@@ -3,6 +3,7 @@ import from="@kernlang/agon-core" names="EngineAdapter,EngineDefinition,ForgeEve
 import from="@kernlang/agon-core" names="EngineRegistry,buildTribunalPrompt,createSidechainLogger,updateGlickoRanked,classifyTask,loadConfig,seedNewEnginesFromRegistry"
 import from="./tribunal-modes.js" names="TribunalMode,TribunalModeConfig" types=true
 import from="./tribunal-modes.js" names="getModeConfig,buildModePrompt,buildModeSummaryPrompt"
+import from="./health-check.js" names="preflightHealthFilter"
 
 interface name=TribunalPosition
   field name=engineId type=string
@@ -59,9 +60,23 @@ fn name=requireNonEmptyDispatchText params="result:DispatchResult, phase:string"
 
 fn name=runTribunal async=true params="opts:{question:string, engines:string[], rounds:number, mode?:TribunalMode, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void, signal?:AbortSignal}" returns="Promise<TribunalResult>"
   handler <<<
-    const { question, engines, rounds, registry, adapter, timeout, outputDir } = opts;
+    const { question, rounds, registry, adapter, timeout, outputDir } = opts;
     const signal = opts.signal;
     const mode = opts.mode ?? 'adversarial';
+    // Pre-flight: drop engines quarantined this session (auth-failed/unreachable)
+    // so a dead engine doesn't burn a panel slot + a full per-engine timeout.
+    // Layer 1 is a pure zero-dispatch read; the active probe is opt-in only.
+    const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry, adapter, signal });
+    for (const s of __hc.skipped) console.warn(`[agon] tribunal: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+    const engines = __hc.healthy;
+    if (engines.length < 2) {
+      // Distinguish "too few engines provided" from "engines were quarantined" so the
+      // message points at the real cause (zai review 0.80).
+      if (__hc.skipped.length === 0) {
+        throw new Error(`Tribunal needs at least 2 engines; only ${opts.engines.length} provided. Widen --engines or add one with 'agon engine add <id>'.`);
+      }
+      throw new Error(`Tribunal needs at least 2 healthy engines; ${__hc.skipped.length} were quarantined this session (${__hc.skipped.map((s) => s.engineId).join(', ')}). Restore with 'agon engine add <id>' or widen --engines.`);
+    }
     // Cold-start: seed any newly-dropped model version (EngineDefinition.derivedFrom)
     // from its predecessor BEFORE competing, so it enters ranked play at its family's
     // strength rather than the 1500 default.

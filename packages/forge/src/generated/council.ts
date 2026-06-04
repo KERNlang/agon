@@ -4,15 +4,17 @@ import { randomUUID } from 'node:crypto';
 
 import type { EngineAdapter, ForgeEvent, DispatchResult, RatingRecord } from '@kernlang/agon-core';
 
-import { EngineRegistry, getRatings, pickTopRatedEngine, rankEnginesByRating, resolveWorkingDir, seedNewEnginesFromRegistry, createSidechainLogger, classifyTask, updateGlickoRanked, loadConfig } from '@kernlang/agon-core';
+import { EngineRegistry, getRatings, pickTopRatedEngine, rankEnginesByRating, resolveWorkingDir, seedNewEnginesFromRegistry, createSidechainLogger, classifyTask, updateGlickoRanked, loadConfig, engineHealth } from '@kernlang/agon-core';
+
+import { preflightHealthFilter } from './health-check.js';
 
 /**
  * Advisor roles in PRIORITY order — when engines are scarce the lowest-priority roles drop first, so a 2-advisor council is Contrarian + First-Principles. Expansionist (upside-max) is last because high-stakes decisions are usually sunk by missed risk, not missed upside.
  */
-// @kern-source: council:30
+// @kern-source: council:31
 export const DEFAULT_COUNCIL_ROLES: readonly string[] = ['Contrarian', 'First-Principles', 'Red-Team', 'Outsider', 'Expansionist'] as const;
 
-// @kern-source: council:33
+// @kern-source: council:34
 export interface CouncilSeat {
   engineId: string;
   role: string;
@@ -21,7 +23,7 @@ export interface CouncilSeat {
   critiquedRole: string;
 }
 
-// @kern-source: council:40
+// @kern-source: council:41
 export interface CouncilOptions {
   question: string;
   engines: string[];
@@ -36,7 +38,7 @@ export interface CouncilOptions {
   signal?: AbortSignal | undefined;
 }
 
-// @kern-source: council:53
+// @kern-source: council:54
 export interface CouncilResult {
   ok: boolean;
   question: string;
@@ -55,7 +57,7 @@ export interface CouncilResult {
 /**
  * Map a council role name to its in-character instruction. Pure — exported for testing. Unknown/custom roles fall back to a generic 'sharpest distinctive take' brief.
  */
-// @kern-source: council:68
+// @kern-source: council:69
 export function roleGuidance(role: string): string {
   const r = role.toLowerCase();
   if (r === 'contrarian') return 'You are the CONTRARIAN. Assume the leading answer is wrong. Attack it with the single most damaging objection and a concrete failure scenario. Do not hedge or balance.';
@@ -69,7 +71,7 @@ export function roleGuidance(role: string): string {
 /**
  * Assign roles to advisors. Pure — exported for testing. The first role (Contrarian by default) goes to the top CRITIQUE-rated advisor (critique discipline, then tribunal — the same cascade Nero uses, since the best builder is not the best critic); the remaining advisors fill the remaining roles in global-rating order. Roles are trimmed to the advisor count (lowest-priority dropped first) and padded with generic 'Advisor N' when there are more advisors than roles.
  */
-// @kern-source: council:80
+// @kern-source: council:81
 export function assignCouncilRoles(advisors: string[], ratings: RatingRecord, roleNames: string[]): { engineId: string; role: string }[] {
   const k = advisors.length;
   if (k === 0) return [];
@@ -88,7 +90,7 @@ export function assignCouncilRoles(advisors: string[], ratings: RatingRecord, ro
 /**
  * Chairman prompt that frames the decision object BEFORE the council debates, so every advisor argues the same decision. Pure — exported for testing.
  */
-// @kern-source: council:97
+// @kern-source: council:98
 export function buildCouncilBriefPrompt(question: string): string {
   return [
     'You are the chairman of an expert council. Before the council debates, frame the decision precisely so every member argues the SAME decision object.',
@@ -110,7 +112,7 @@ export function buildCouncilBriefPrompt(question: string): string {
 /**
  * Round-1 prompt: an advisor answers the framed brief strictly in its role. Pure — exported for testing.
  */
-// @kern-source: council:117
+// @kern-source: council:118
 export function buildRolePrompt(opts: { role:string; brief:string }): string {
   return [
     roleGuidance(opts.role),
@@ -126,7 +128,7 @@ export function buildRolePrompt(opts: { role:string; brief:string }): string {
 /**
  * Round-2 prompt: directed, structured peer critique (O(N) round-robin). The advisor extracts deltas — blind spot, fragile assumption, best rival option — NOT a ranking. Pure — exported for testing.
  */
-// @kern-source: council:131
+// @kern-source: council:132
 export function buildCritiquePrompt(opts: { critiqueRole:string; brief:string; targetRole:string; targetResponse:string }): string {
   return [
     `You are the ${opts.critiqueRole} on an expert council. Critique ONE peer's argument below. Do not rank it and do not be polite — extract what is missing or wrong.`,
@@ -149,7 +151,7 @@ export function buildCritiquePrompt(opts: { critiqueRole:string; brief:string; t
 /**
  * Round-3 synthesis prompt. Anti-laundering: the verdict MUST cite which critiques it accepted/rejected, carry a confidence, and a kill-switch (what evidence would reverse it). Pure — exported for testing.
  */
-// @kern-source: council:152
+// @kern-source: council:153
 export function buildChairmanPrompt(opts: { brief:string; seats:{ role:string; response:string; critique:string; critiquedRole:string }[] }): string {
   const responses = opts.seats
     .map((s) => `### ${s.role}\n${(s.response || '(no response)').trim()}`)
@@ -183,7 +185,7 @@ export function buildChairmanPrompt(opts: { brief:string; seats:{ role:string; r
 /**
  * Extract the chairman's confidence (0-100) from the verdict. Pure — exported for testing. Prefers an explicit 'Confidence: X%' marker, else the first percentage.
  */
-// @kern-source: council:184
+// @kern-source: council:185
 export function parseCouncilConfidence(text: string): number | null {
   const marked = text.match(/confidence[:\s]*~?\s*(\d{1,3})\s*%/i);
   const m = marked ?? text.match(/~?\s*(\d{1,3})\s*%/);
@@ -196,12 +198,34 @@ export function parseCouncilConfidence(text: string): number | null {
 /**
  * Run a full council: decision brief -> role responses -> directed peer critique -> chairman verdict. Scales to the engine count (N-1 advisors + 1 chair; N==2 -> both advisors, Cesar chairs); refuses below 2. A single engine failing degrades (warning) rather than aborting; ok is true only when the chairman returns a usable verdict.
  */
-// @kern-source: council:195
+// @kern-source: council:196
 export async function runCouncil(opts: CouncilOptions): Promise<CouncilResult> {
-  const { question, engines, registry, adapter, timeout, outputDir } = opts;
+  const { question, registry, adapter, timeout, outputDir } = opts;
   const signal = opts.signal;
   const cwd = opts.cwd ?? resolveWorkingDir();
   const warnings: string[] = [];
+
+  // Pre-flight: drop session-quarantined engines (Layer 1, pure zero-dispatch)
+  // BEFORE the floor check, so a degraded panel fails loud rather than silently
+  // seating a dead engine. Active probe is opt-in only.
+  const __hc = await preflightHealthFilter({ engineIds: opts.engines, registry, adapter, signal });
+  for (const s of __hc.skipped) {
+    // Surface skips in the STRUCTURED warnings the UI renders, not just console
+    // (claude review 0.55) — mirrors how dispatch failures already populate warnings.
+    warnings.push(`${s.engineId} skipped — ${s.status} (${s.reason})`);
+    console.warn(`[agon] council: skipping ${s.engineId} — ${s.status} (${s.reason})`);
+  }
+  const engines = __hc.healthy;
+  // Role sub-param resolved AFTER the filter: a quarantined forced chairman
+  // fails loud instead of being silently ignored (council verdict 2026-06-04).
+  const __forcedChair = opts.chairman?.trim();
+  if (__forcedChair && __hc.skipped.some((s) => s.engineId === __forcedChair)) {
+    return {
+      ok: false, question, brief: '', chairmanId: __forcedChair, chairmanReason: 'forced', actingChairmanId: '', seats: [],
+      verdict: `Requested chairman '${__forcedChair}' is quarantined this session (auth-failed/unreachable) and cannot chair. Restore with 'agon engine add <id>' or pick another chair.`,
+      confidence: null, degraded: true, warnings: [`Chairman ${__forcedChair} quarantined this session.`], outputDir,
+    };
+  }
 
   if (engines.length < 2) {
     return {
@@ -235,6 +259,16 @@ export async function runCouncil(opts: CouncilOptions): Promise<CouncilResult> {
     advisors = engines.slice();
     let cesarId = '';
     try { cesarId = (loadConfig(cwd).cesarEngine ?? '').trim(); } catch { cesarId = ''; }
+    // The external Cesar chair sits OUTSIDE opts.engines, so preflightHealthFilter
+    // never saw it. Quarantine-check it here too, else a dead Cesar engine still
+    // burns a chair dispatch before failover (codex review 0.86).
+    if (cesarId && !engines.includes(cesarId)) {
+      const __ch = engineHealth.get(cesarId);
+      if (__ch && (__ch.status === 'auth-failed' || __ch.status === 'unreachable')) {
+        warnings.push(`Configured Cesar chair '${cesarId}' is quarantined this session (${__ch.status}); falling back to ${engines[0]} as chair.`);
+        cesarId = '';
+      }
+    }
     chairmanId = cesarId || engines[0];
     chairmanReason = 'cesar';
     degraded = true;

@@ -951,10 +951,32 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
     if (toolKey === 'quicknero') return 'QuickNero';
     return String(raw ?? 'Tool');
   };
+  const timestampMs = (ev: any) => {
+    const candidates = [ev?.timestamp, ev?.startedAt, ev?.endedAt, ev?.completedAt, ev?.finishedAt];
+    for (const value of candidates) {
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (typeof value === 'string' && value.trim()) {
+        const parsed = Date.parse(value);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+    return null;
+  };
+  const durationMs = (ev: any) => {
+    for (const key of ['elapsedMs', 'durationMs']) {
+      const value = ev?.[key];
+      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value;
+    }
+    return null;
+  };
   const toolCounts: Record<string, number> = {};
   let confidenceLabel = '';
   let errors = 0;
   let running = 0;
+  let totalOutputBytes = 0;
+  let explicitElapsedMs = 0;
+  let firstTimestampMs: number | null = null;
+  let lastTimestampMs: number | null = null;
   const changedFiles: string[] = [];
   const changeEvents: any[] = [];
   const changeRows: { key:string; text:string }[] = [];
@@ -965,6 +987,16 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
   };
   for (const b of blocks) {
     const ev = b.event as any;
+    const ts = timestampMs(ev);
+    if (ts != null) {
+      firstTimestampMs = firstTimestampMs == null ? ts : Math.min(firstTimestampMs, ts);
+      lastTimestampMs = lastTimestampMs == null ? ts : Math.max(lastTimestampMs, ts);
+    }
+    const elapsed = durationMs(ev);
+    if (elapsed != null) explicitElapsedMs += elapsed;
+    if (typeof ev.output === 'string' && ev.output.length > 0) {
+      totalOutputBytes += Buffer.byteLength(ev.output, 'utf8');
+    }
     const rawName = ev.tool || 'tool';
     const toolKey = String(rawName).toLowerCase();
     const { rawInput, parsed } = parseToolInputPayload(ev.input ?? '');
@@ -1017,9 +1049,21 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
   const changedSummary = changedFiles.length > 0
     ? ` \u00b7 changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', \u2026' : ''}`
     : '';
+  const firstEvent = (blocks[0]?.event as any) ?? {};
+  const metaEngine = String(firstEvent.engineId ?? '').trim() || 'engine';
+  const inferredElapsedMs = firstTimestampMs != null && lastTimestampMs != null ? Math.max(0, lastTimestampMs - firstTimestampMs) : 0;
+  const metaElapsedMs = explicitElapsedMs > 0 ? explicitElapsedMs : inferredElapsedMs;
+  const metaParts = [
+    metaEngine,
+    `${blocks.length} tool${blocks.length === 1 ? '' : 's'}`,
+    `changed ${changedFiles.length} file${changedFiles.length === 1 ? '' : 's'}`,
+    metaElapsedMs > 0 ? `${(metaElapsedMs / 1000).toFixed(1)}s` : '',
+    totalOutputBytes > 0 ? `${Math.ceil(totalOutputBytes / 1024)}kb` : '',
+  ].filter(Boolean);
 
   return (
     <Box paddingLeft={2} flexDirection="column">
+      <Text dimColor>{'  \u23f5 '}{metaParts.join(' \u00b7 ')}</Text>
       {confidenceLabel && (
         <Text>
           <Text italic color="#a8a8a8">{'  \u25B9 '}{confidenceLabel}</Text>
@@ -1037,7 +1081,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1102
+// @kern-source: engine:1146
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1063,7 +1107,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1131
+// @kern-source: engine:1175
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (

@@ -31,9 +31,10 @@ export interface KeyboardCtx {
   fileRailFocused: boolean;
   fileRailExpanded: boolean;
   executionRailFocused: boolean;
+  liveToolStreamCount: number;
 }
 
-// @kern-source: keyboard:36
+// @kern-source: keyboard:37
 export type KeyboardAction =
   | { type: 'none' }
   | { type: 'exit' }
@@ -53,6 +54,7 @@ export type KeyboardAction =
   | { type: 'openResults' }
   | { type: 'toggleFileRail' }
   | { type: 'toggleExecutionRail' }
+  | { type: 'toggleLiveToolTail' }
   | { type: 'fileRailSelectPrev' }
   | { type: 'fileRailSelectNext' }
   | { type: 'fileRailToggleExpand' }
@@ -78,7 +80,7 @@ export type KeyboardAction =
 /**
  * Pure keyboard decision tree. Takes current state, returns action to execute.
  */
-// @kern-source: keyboard:87
+// @kern-source: keyboard:89
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
   const keyName = typeof key.name === 'string' ? key.name.toLowerCase() : '';
@@ -198,6 +200,18 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   // compatibility aliases, but Ctrl+G is the advertised shortcut because
   // terminal/text-input layers commonly overload Tab/Ctrl+I and Ctrl+T.
   if (hasCtrlSignal && (normalizedCtrlInput === 'g' || normalizedCtrlInput === 'i' || normalizedCtrlInput === 't')) return { type: 'toggleExecutionRail' };
+
+  // Shift+T: freeze/resume the newest live tool-output tail. Plain `f` would
+  // collide with normal composer typing, and Ctrl+T is already a rail alias.
+  if (
+    ctx.liveToolStreamCount > 0
+    && ctx.inputValue.trim().length === 0
+    && !hasCtrlSignal
+    && input === 'T'
+    && !ctx.slashPickerOpen && !ctx.enginePickerOpen
+    && !ctx.reviewEventOpen && !ctx.toolDetailOpen
+    && !ctx.questionState
+  ) return { type: 'toggleLiveToolTail' };
 
   // Shift+Tab: queue auto mode
   if (isShiftTab && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {

@@ -274,8 +274,17 @@ export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisible
 }
 
 // @kern-source: app-views:346
-const StreamingView = React.memo(function StreamingView({ streamingText, mode, liveProgress, liveToolStreams }: { streamingText:{engineId:string,content:string} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,any> }) {
+const StreamingView = React.memo(function StreamingView({ streamingText, mode, liveProgress, liveToolStreams, liveToolTailFrozen }: { streamingText:{engineId:string,content:string} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,any>; liveToolTailFrozen?:Record<string,boolean> }) {
   const toolStreams = Object.values(liveToolStreams ?? {});
+  const frozenToolOutputRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    const activeIds = new Set(Object.keys(liveToolStreams ?? {}));
+    for (const id of Object.keys(frozenToolOutputRef.current)) {
+      if (!activeIds.has(id) || !liveToolTailFrozen?.[id]) {
+        delete frozenToolOutputRef.current[id];
+      }
+    }
+  }, [liveToolStreams, liveToolTailFrozen]);
   return (
     <>
       {streamingText && (() => {
@@ -322,15 +331,49 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
         <Box flexDirection="column" paddingLeft={mode === 'chat' ? 1 : 2}>
           {toolStreams.map((entry: any) => {
             const c = engineColor(entry.engineId);
-            const output = String(entry.output ?? '').split('\n').filter((line: string) => line.trim()).slice(-2).join(' ');
-            const preview = output.length > 96 ? output.slice(0, 95) + '\u2026' : output;
+            const streamId = String(entry.streamId ?? `${entry.engineId}-${entry.tool}`);
+            const isFrozen = !!liveToolTailFrozen?.[streamId];
+            const currentOutput = String(entry.output ?? '');
+            if (isFrozen && frozenToolOutputRef.current[streamId] == null) {
+              frozenToolOutputRef.current[streamId] = currentOutput;
+            } else if (!isFrozen && frozenToolOutputRef.current[streamId] != null) {
+              delete frozenToolOutputRef.current[streamId];
+            }
+            const displayOutput = isFrozen ? (frozenToolOutputRef.current[streamId] ?? currentOutput) : currentOutput;
+            const nonEmptyLines = displayOutput.split('\n').filter((line: string) => line.trim());
+            const previewOutput = nonEmptyLines.slice(-2).join(' ');
+            const preview = previewOutput.length > 96 ? previewOutput.slice(0, 95) + '\u2026' : previewOutput;
+            const rawTail = displayOutput.length > 6000 ? displayOutput.slice(-6000) : displayOutput;
+            const firstNl = displayOutput.length > 6000 ? rawTail.indexOf('\n') : -1;
+            const windowedTail = firstNl >= 0 ? rawTail.slice(firstNl + 1) : rawTail;
+            const cleanedTail = cleanEngineOutput(windowedTail);
+            const tailLines = cleanedTail.split('\n');
+            const boundedTail = tailLines.length > 12 ? tailLines.slice(-12).join('\n') : cleanedTail;
+            const segments = parseMarkdownBlocks(boundedTail);
+            const wrapWidth = contentWidth(mode === 'chat' ? 8 : 10);
             return (
-              <Text key={entry.streamId}>
-                <Text color={c} bold>{icons().dotOn + ' '}{entry.engineId}</Text>
-                <Text dimColor>{' tool '}</Text>
-                <Text color={c}>{entry.tool}</Text>
-                <Text dimColor>{preview ? ` ${preview}` : ' running\u2026'}</Text>
-              </Text>
+              <Box key={streamId} flexDirection="column" marginBottom={1}>
+                <Text>
+                  <Text color={c} bold>{icons().dotOn + ' '}{entry.engineId}</Text>
+                  <Text dimColor>{' tool '}</Text>
+                  <Text color={c}>{entry.tool}</Text>
+                  <Text dimColor>{preview ? ` ${preview}` : ' running\u2026'}</Text>
+                </Text>
+                {boundedTail.trim() ? (
+                  <Box flexDirection="column" paddingLeft={2}>
+                    <RenderedSegments segments={segments} borderColor={c} wrapWidth={wrapWidth} />
+                  </Box>
+                ) : null}
+                <Text dimColor>
+                  {'  '}
+                  {isFrozen ? (
+                    <Text color="#111827" backgroundColor="#93c5fd">{' '}{icons().play}{' Resume tail '}</Text>
+                  ) : (
+                    <Text color="#111827" backgroundColor="#fbbf24">{' \u275a\u275a Freeze tail '}</Text>
+                  )}
+                  <Text dimColor>{' Shift+T'}</Text>
+                </Text>
+              </Box>
             );
           })}
         </Box>

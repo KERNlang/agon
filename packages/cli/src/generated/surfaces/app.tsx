@@ -513,6 +513,7 @@ export function App() {
   const planWatcherStatMtimeRef = useRef<number>(0);
   const lastActivePlanSigRef = useRef<string>('');
   const streamingTextRef = useRef<Record<string,StreamingEntry>>({});
+  const btwAbortRef = useRef<AbortController|null>(null);
   const liveToolStreamsRef = useRef<Record<string,any>>({});
   const agentProgressRef = useRef<Record<string,AgentProgressSnapshot>>({});
   const lastReviewResultRef = useRef<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null>(null);
@@ -635,7 +636,7 @@ export function App() {
             return toolDetailViewportRows(termHeight) + 5;
           }
           if (btwPanel) {
-            return 9;
+            return 16;
           }
           return (enginePickerOpen || modelPickerOpen || cesarPickerOpen || !(!reviewEvent)) ? 4 : 0;
   }, [enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, btwPanel, termHeight]);
@@ -1037,243 +1038,270 @@ export function App() {
     setInputValue(updatedValue);
   }, [slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued]);
 
-  const handleSubmit = useCallback(async (value:string) => {
-    inputEpochRef.current += 1;
-          let input = cleanSubmitValue(value);
-          if (!input) return;
-          // Bare "/" → open slash picker flyout, don't dump text list
-          if (input === '/') {
-            if (planModeQueued) setPlanModeQueued(false);
-            setSlashPickerOpen(true);
+  const sendBtwMessage = useCallback((question:string) => {
+    const q = (question ?? '').trim();
+          if (!q) return;
+          const ctx = buildContext();
+          const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
+          let engineDef: any;
+          try { engineDef = ctx.registry.get(cesarId); } catch { /* cesar engine not registered */ }
+          if (!engineDef) {
+            dispatch({ type: 'error', message: `btw: engine ${cesarId} not available` } as any);
             return;
           }
-          input = expandPastePlaceholders(input, pasteHashesRef.current);
-          pasteHashesRef.current.clear();
-          pendingPasteTransformRef.current = false;
-          inputValueRef.current = '';
-          setInputValue('');
-          setInputHistory((prev: string[]) => {
-            const next = appendInputHistory(prev, input, COMPOSER_HISTORY_LIMIT);
-            saveComposerInputHistory(next);
-            return next;
-          });
-          setHistoryIndex(-1);
 
-          const autoControl = parseAutoModeCommand(input);
-          if (autoControl) {
-            if (autoControl === 'status') {
-              dispatch({ type: 'info', message: autoModeQueued ? 'AUTO is ON by default — plain tasks may self-escalate through Cesar.' : 'AUTO is OFF by default.' } as any);
-              return;
+          // Prior side-conversation, for multi-turn continuity.
+          const priorMessages: any[] = Array.isArray(btwPanel?.messages) ? btwPanel.messages : [];
+          const convo = priorMessages
+            .slice(-8)
+            .map((m: any) => `${m.role === 'user' ? 'You' : 'Cesar'}: ${m.text}`)
+            .join('\n');
+
+          // Live runtime context — same signals the one-shot /btw used.
+          let streamCtx = '';
+          const streamEntries = Object.values(streamingTextRef.current ?? {});
+          if (streamEntries.length > 0) {
+            let latest: StreamingEntry | null = null;
+            for (const e of streamEntries) { if (!latest || e.startedAt > latest.startedAt) latest = e; }
+            if (latest && latest.content) {
+              const lines = latest.content.split('\n').filter((l: string) => l.trim());
+              streamCtx = lines.slice(-10).join('\n');
             }
-            const nextAutoModeQueued = autoControl === 'toggle' ? !autoModeQueued : autoControl === 'on';
-            setPlanModeQueued(false);
-            setPersistentAutoMode(nextAutoModeQueued);
-            dispatch({
-              type: 'info',
-              message: nextAutoModeQueued
-                ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Use /auto off or Ctrl+A to disable.'
-                : 'AUTO OFF by default.',
-            } as any);
-            return;
           }
+          const transcriptCtx = outputBlocks
+            .slice(-16)
+            .map((block: any) => summarizeBtwTranscriptEvent(block?.event))
+            .filter(Boolean)
+            .slice(-8)
+            .join('\n');
+          const runningCtx = [
+            `Mode: ${mode}`,
+            `UI state: ${replState}`,
+            activePlanRef.current?.state ? `Plan state: ${activePlanRef.current.state}` : '',
+            jobManager.running().length > 0 ? `Running background jobs: ${jobManager.running().map((job: any) => job.label ?? job.id).join(', ')}` : '',
+          ].filter(Boolean).join('\n');
 
-          if (!input.startsWith('/') && activePlanRef.current?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
-            input = '/approve';
-          }
+          const prompt = `You are Cesar, answering in a /btw side-chat while Agon continues another task in the main window. This is a continuing side conversation — stay consistent with what was already said.
 
-          // When the user moves forward from a pinned plan proposal, demote it
-          // from the live pane into scrollback history (Claude-style) so this
-          // turn's output is the bottom-most content instead of being buried
-          // under the plan. The chat-route approval ("go sounds legit") never
-          // emits plan-execution, so this turn boundary is the reliable hook.
-          // Exclusions, so an input that is NOT a response to the plan can't
-          // falsely retire it:
-          //   - side-channel slash commands (/btw, /status, /clear, …) — and
-          //     /cancel, which keeps its own plan-cancelled path (no history block)
-          //   - status/progress queries are questions about the plan, not responses
-          const dismissLower = input.trim().toLowerCase();
-          const isSlashNonApprove = dismissLower.startsWith('/') && dismissLower !== '/approve';
-          if (
-            activePlanRef.current?.state === 'awaiting_approval' &&
-            !isSlashNonApprove &&
-            !isCesarPlanStatusInput(input)
-          ) {
-            dispatch({ type: 'plan-dismiss' } as any);
-          }
-
-          // /btw <question> — side-channel question during active dispatch
-          const btwLower = input.trim().toLowerCase();
-          if (btwLower === '/btw') {
-            dispatch({ type: 'info', message: 'Usage: /btw <question> — ask something while engines work.' } as any);
-            return;
-          }
-          if (btwLower.startsWith('/btw ')) {
-            const btwQuestion = input.trim().slice(5).trim();
-            const activeWorkForBtw = hasBtwSideChannelTarget({
-              replState,
-              activePlanState: activePlanRef.current?.state ?? null,
-              runningJobCount: jobManager.running().length,
-            });
-            if (btwQuestion && activeWorkForBtw) {
-              // Fire side-dispatch into its own panel — don't interrupt main task
-              const ctx = buildContext();
-              const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
-              let engineDef: any;
-              try { engineDef = ctx.registry.get(cesarId); } catch { /* cesar engine not registered */ }
-
-              if (!engineDef) {
-                dispatch({ type: 'error', message: `btw: engine ${cesarId} not available` } as any);
-                return;
-              }
-
-              // Build context from streaming output (pick the most recent in-flight stream)
-              let streamCtx = '';
-              const streamEntries = Object.values(streamingTextRef.current ?? {});
-              if (streamEntries.length > 0) {
-                let latest: StreamingEntry | null = null;
-                for (const e of streamEntries) {
-                  if (!latest || e.startedAt > latest.startedAt) latest = e;
-                }
-                if (latest && latest.content) {
-                  const lines = latest.content.split('\n').filter((l: string) => l.trim());
-                  streamCtx = lines.slice(-10).join('\n');
-                }
-              }
-
-              const transcriptCtx = outputBlocks
-                .slice(-16)
-                .map((block: any) => summarizeBtwTranscriptEvent(block?.event))
-                .filter(Boolean)
-                .slice(-8)
-                .join('\n');
-              const runningCtx = [
-                `Mode: ${mode}`,
-                `UI state: ${replState}`,
-                activePlanRef.current?.state ? `Plan state: ${activePlanRef.current.state}` : '',
-                jobManager.running().length > 0 ? `Running background jobs: ${jobManager.running().map((job: any) => job.label ?? job.id).join(', ')}` : '',
-              ].filter(Boolean).join('\n');
-              const contextPreview = [streamCtx, transcriptCtx].filter(Boolean).join('\n').slice(-900);
-
-              const prompt = `You are answering a /btw side question while Agon continues another task in the main window.
-
-    Side question:
-    ${btwQuestion}
+    ${convo ? 'Side-chat so far:\n' + convo + '\n\n' : ''}New message from the user:
+    ${q}
 
     Current runtime context:
     ${runningCtx || '(none)'}
 
-    ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n' : ''}${transcriptCtx ? 'Recent transcript context:\n' + transcriptCtx + '\n\n' : ''}Answer the side question directly and briefly. Do not take over, cancel, or modify the main task.`;
+    ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n' : ''}${transcriptCtx ? 'Recent transcript context:\n' + transcriptCtx + '\n\n' : ''}Answer directly and briefly. Do not take over, cancel, or modify the main task.`;
 
-              const btwOutputDir = join(RUNS_DIR, `btw-${Date.now()}`);
-              const btwId = `btw-${Date.now()}`;
-              setBtwPanel({
-                id: btwId,
-                question: btwQuestion,
-                engineId: cesarId,
-                status: 'running',
-                answer: '',
-                error: '',
-                contextPreview,
-                startedAt: Date.now(),
-              });
-              try { mkdirSync(btwOutputDir, { recursive: true }); } catch { /* dir already exists or parent missing */ }
-              ctx.adapter.dispatch({
-                engine: engineDef,
-                prompt,
-                cwd: resolveWorkingDir(),
-                mode: 'exec' as any,
-                timeout: 60,
-                outputDir: btwOutputDir,
-              }).then((result: any) => {
-                const answer = (result.stdout || '').trim();
-                if (answer) {
-                  setBtwPanel((prev: any) => prev?.id === btwId ? { ...prev, status: 'done', answer } : prev);
-                } else {
-                  setBtwPanel((prev: any) => prev?.id === btwId ? { ...prev, status: 'empty', error: 'No response' } : prev);
-                }
-              }).catch((err: any) => {
-                setBtwPanel((prev: any) => prev?.id === btwId ? { ...prev, status: 'error', error: err instanceof Error ? err.message : String(err) } : prev);
-              });
-              return;
-            }
-            if (!btwQuestion) {
-              dispatch({ type: 'info', message: 'Usage: /btw <question>' } as any);
-              return;
-            }
-            dispatch({ type: 'info', message: 'No active work for /btw. Ask normally without the /btw prefix.' } as any);
-            return;
-          }
-          const isPlanAwaitingControl = activePlanRef.current?.state === 'awaiting_approval'
-            && (input === '/approve' || input === '/cancel');
-          if (replState !== 'idle' && !jobManager.running().length && !isPlanAwaitingControl) {
-            setInputQueue((prev: string[]) => [...prev, input]);
-            dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '\u2026' : input}` } as any);
-            return;
-          }
-          if (planModeQueued && input.trim() && !input.startsWith('/')) {
-            setPlanModeQueued(false);
-            handleSubmit(`/plan ${input}`);
-            return;
-          }
-          const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
-          if (planModeQueued) setPlanModeQueued(false);
-          transition(startCommandReplState);
-          dispatch({ type: 'separator' } as any);
-          dispatch({ type: 'user-message', content: input } as any);
-          const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
-          const allImages = [...pendingImages, ...detectedImages];
-          let intent = detectIntent(cleanInput || input, commandRegistry);
-          if (intent.type === 'status') {
-            setStatusDashboardOpen(true);
-            dispatch({ type: 'info', message: 'Status dashboard open. Press q or Esc to close.' } as any);
-            transition(finishReplState);
-            return;
-          }
-          const ctx = buildContext();
-          (ctx as any).autoModeQueued = autoModeForTurn;
-          const cesarEngineForTurn = String((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
-          activeTurnRef.current = (!input.startsWith('/') && mode === 'chat')
-            ? { input, engineId: cesarEngineForTurn, retried: false }
-            : null;
-          const cb: DispatchCallbacks = {
-            dispatch, ctx, commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
-            runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
-              const job = jobManager.create(type, label);
-              chatStartTimeRef.current = Date.now();
-              setJobList([...jobManager.list()]);
-              dispatch({ type: 'info', message: `Started background job [${job.id}] ${type}: ${label || type}` } as any);
-              // Transition to idle so user can submit new commands while job runs
-              // Strip stays active via jobList.some(j => j.state === 'running') check
-              setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
-              fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); })
-                .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
-            },
-            setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
-            setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups,
-            allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
-            explorationMode, setExplorationMode,
-            neroMode, setNeroMode,
-            setActivePlan: setActivePlanWrapped,
-          };
-          if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
-            if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
-          }
-          if (intent.type === 'unknown' && mode !== 'chat') {
-            switch (mode) {
-              case 'campfire': intent = { type: 'campfire', topic: input } as any; break;
-              case 'brainstorm': intent = { type: 'brainstorm', question: input } as any; break;
-              case 'tribunal': intent = { type: 'tribunal', question: input } as any; break;
-            }
-          }
-          try {
-            const result = await dispatchIntent(intent, input, cb);
-            if (result.ranAsJob) return;
-          } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
-          finally {
-            if (activeTurnRef.current?.input === input) activeTurnRef.current = null;
-            setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
-          }
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks]);
+          // Stable conversation id: a dispatch only writes back into the SAME
+          // side-chat that started it. If the user Escs (panel → null) and opens a
+          // new /btw, an orphaned earlier dispatch sees a different id and is
+          // dropped instead of cross-talking into the new conversation.
+          const btwNow = Date.now();
+          const convId = btwPanel?.id ?? `btw-${btwNow}`;
+          const btwOutputDir = join(RUNS_DIR, `${convId}-${btwNow}`);
+          try { btwAbortRef.current?.abort(); } catch { /* no prior dispatch in flight */ }
+          const btwAbort = new AbortController();
+          btwAbortRef.current = btwAbort;
+          // Append the user's turn and mark running; preserve existing id/messages.
+          setBtwPanel((prev: any) => {
+            const base = prev ?? { id: convId, engineId: cesarId, messages: [] };
+            const messages = [...(Array.isArray(base.messages) ? base.messages : []), { role: 'user', text: q }].slice(-20);
+            return { ...base, id: base.id ?? convId, engineId: cesarId, status: 'running', error: '', messages, startedAt: btwNow };
+          });
+          try { mkdirSync(btwOutputDir, { recursive: true }); } catch { /* dir already exists or parent missing */ }
+          ctx.adapter.dispatch({
+            engine: engineDef,
+            prompt,
+            cwd: resolveWorkingDir(),
+            mode: 'exec' as any,
+            timeout: 60,
+            outputDir: btwOutputDir,
+            signal: btwAbort.signal,
+          }).then((result: any) => {
+            const answer = (result.stdout || '').trim();
+            setBtwPanel((prev: any) => {
+              if (!prev || prev.id !== convId) return prev;
+              if (answer) return { ...prev, status: 'done', messages: [...(Array.isArray(prev.messages) ? prev.messages : []), { role: 'cesar', text: answer }].slice(-20) };
+              return { ...prev, status: 'empty', error: 'No response' };
+            });
+          }).catch((err: any) => {
+            if (btwAbort.signal.aborted) return;
+            setBtwPanel((prev: any) => (prev && prev.id === convId) ? { ...prev, status: 'error', error: err instanceof Error ? err.message : String(err) } : prev);
+          });
+  }, [buildContext,dispatch,mode,replState,outputBlocks,jobManager,btwPanel]);
+
+  const handleSubmit = useCallback(async (value:string) => {
+    inputEpochRef.current += 1;
+    let input = cleanSubmitValue(value);
+    if (!input) return;
+    // Bare "/" → open slash picker flyout, don't dump text list
+    if (input === '/') {
+      if (planModeQueued) setPlanModeQueued(false);
+      setSlashPickerOpen(true);
+      return;
+    }
+    input = expandPastePlaceholders(input, pasteHashesRef.current);
+    pasteHashesRef.current.clear();
+    pendingPasteTransformRef.current = false;
+    inputValueRef.current = '';
+    setInputValue('');
+    setInputHistory((prev: string[]) => {
+      const next = appendInputHistory(prev, input, COMPOSER_HISTORY_LIMIT);
+      saveComposerInputHistory(next);
+      return next;
+    });
+    setHistoryIndex(-1);
+
+    const autoControl = parseAutoModeCommand(input);
+    if (autoControl) {
+      if (autoControl === 'status') {
+        dispatch({ type: 'info', message: autoModeQueued ? 'AUTO is ON by default — plain tasks may self-escalate through Cesar.' : 'AUTO is OFF by default.' } as any);
+        return;
+      }
+      const nextAutoModeQueued = autoControl === 'toggle' ? !autoModeQueued : autoControl === 'on';
+      setPlanModeQueued(false);
+      setPersistentAutoMode(nextAutoModeQueued);
+      dispatch({
+        type: 'info',
+        message: nextAutoModeQueued
+          ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Use /auto off or Ctrl+A to disable.'
+          : 'AUTO OFF by default.',
+      } as any);
+      return;
+    }
+
+    // While the BTW side-chat panel is open, a plain (non-slash) submit is a
+    // follow-up turn in that side conversation — Cesar answers it in the
+    // panel without touching the main task. Esc leaves the side-chat.
+    if (btwPanel && input.trim() && !input.startsWith('/')) {
+      if (btwPanel.status === 'running') {
+        dispatch({ type: 'info', message: 'Side-chat is still answering — one turn at a time.' } as any);
+        return;
+      }
+      sendBtwMessage(input.trim());
+      return;
+    }
+
+    if (!input.startsWith('/') && activePlanRef.current?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
+      input = '/approve';
+    }
+
+    // When the user moves forward from a pinned plan proposal, demote it
+    // from the live pane into scrollback history (Claude-style) so this
+    // turn's output is the bottom-most content instead of being buried
+    // under the plan. The chat-route approval ("go sounds legit") never
+    // emits plan-execution, so this turn boundary is the reliable hook.
+    // Exclusions, so an input that is NOT a response to the plan can't
+    // falsely retire it:
+    //   - side-channel slash commands (/btw, /status, /clear, …) — and
+    //     /cancel, which keeps its own plan-cancelled path (no history block)
+    //   - status/progress queries are questions about the plan, not responses
+    const dismissLower = input.trim().toLowerCase();
+    const isSlashNonApprove = dismissLower.startsWith('/') && dismissLower !== '/approve';
+    if (
+      activePlanRef.current?.state === 'awaiting_approval' &&
+      !isSlashNonApprove &&
+      !isCesarPlanStatusInput(input)
+    ) {
+      dispatch({ type: 'plan-dismiss' } as any);
+    }
+
+    // /btw <question> — side-channel question during active dispatch
+    const btwLower = input.trim().toLowerCase();
+    if (btwLower === '/btw') {
+      dispatch({ type: 'info', message: 'Usage: /btw <question> — ask something while engines work.' } as any);
+      return;
+    }
+    if (btwLower.startsWith('/btw ')) {
+      const btwQuestion = input.trim().slice(5).trim();
+      if (!btwQuestion) {
+        dispatch({ type: 'info', message: 'Usage: /btw <question>' } as any);
+        return;
+      }
+      // Opening a side-chat needs active main work to talk "alongside"; once
+      // the panel is open, follow-ups are handled earlier as plain submits.
+      const activeWorkForBtw = hasBtwSideChannelTarget({
+        replState,
+        activePlanState: activePlanRef.current?.state ?? null,
+        runningJobCount: jobManager.running().length,
+      });
+      if (!btwPanel && !activeWorkForBtw) {
+        dispatch({ type: 'info', message: 'No active work for /btw. Ask normally without the /btw prefix.' } as any);
+        return;
+      }
+      sendBtwMessage(btwQuestion);
+      return;
+    }
+    const isPlanAwaitingControl = activePlanRef.current?.state === 'awaiting_approval'
+      && (input === '/approve' || input === '/cancel');
+    if (replState !== 'idle' && !jobManager.running().length && !isPlanAwaitingControl) {
+      setInputQueue((prev: string[]) => [...prev, input]);
+      dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '\u2026' : input}` } as any);
+      return;
+    }
+    if (planModeQueued && input.trim() && !input.startsWith('/')) {
+      setPlanModeQueued(false);
+      handleSubmit(`/plan ${input}`);
+      return;
+    }
+    const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
+    if (planModeQueued) setPlanModeQueued(false);
+    transition(startCommandReplState);
+    dispatch({ type: 'separator' } as any);
+    dispatch({ type: 'user-message', content: input } as any);
+    const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
+    const allImages = [...pendingImages, ...detectedImages];
+    let intent = detectIntent(cleanInput || input, commandRegistry);
+    if (intent.type === 'status') {
+      setStatusDashboardOpen(true);
+      dispatch({ type: 'info', message: 'Status dashboard open. Press q or Esc to close.' } as any);
+      transition(finishReplState);
+      return;
+    }
+    const ctx = buildContext();
+    (ctx as any).autoModeQueued = autoModeForTurn;
+    const cesarEngineForTurn = String((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
+    activeTurnRef.current = (!input.startsWith('/') && mode === 'chat')
+      ? { input, engineId: cesarEngineForTurn, retried: false }
+      : null;
+    const cb: DispatchCallbacks = {
+      dispatch, ctx, commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
+      runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
+        const job = jobManager.create(type, label);
+        chatStartTimeRef.current = Date.now();
+        setJobList([...jobManager.list()]);
+        dispatch({ type: 'info', message: `Started background job [${job.id}] ${type}: ${label || type}` } as any);
+        // Transition to idle so user can submit new commands while job runs
+        // Strip stays active via jobList.some(j => j.state === 'running') check
+        setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
+        fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); })
+          .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
+      },
+      setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
+      setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups,
+      allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
+      explorationMode, setExplorationMode,
+      neroMode, setNeroMode,
+      setActivePlan: setActivePlanWrapped,
+    };
+    if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
+      if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
+    }
+    if (intent.type === 'unknown' && mode !== 'chat') {
+      switch (mode) {
+        case 'campfire': intent = { type: 'campfire', topic: input } as any; break;
+        case 'brainstorm': intent = { type: 'brainstorm', question: input } as any; break;
+        case 'tribunal': intent = { type: 'tribunal', question: input } as any; break;
+      }
+    }
+    try {
+      const result = await dispatchIntent(intent, input, cb);
+      if (result.ranAsJob) return;
+    } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
+    finally {
+      if (activeTurnRef.current?.input === input) activeTurnRef.current = null;
+      setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
+    }
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
     if (!reviewEvent) {
@@ -1541,6 +1569,8 @@ export function App() {
     const globalCtrlInput = globalCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
     const hasGlobalCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
     if (btwPanel && (key.escape || input === '\x1b')) {
+      try { btwAbortRef.current?.abort(); } catch { /* nothing in flight */ }
+      btwAbortRef.current = null;
       setBtwPanel(null);
       return;
     }
@@ -2129,6 +2159,12 @@ export function App() {
   useStableInput(handleKeyboardInput);
   const showExecutionRail = executionRailOpen;
   const showFileRail = fileRailOpen && !showExecutionRail;
+  // Codex-style full-takeover: in native (no-alt-screen) mode a side rail
+  // can't live as a tall right-hand column — its 36-row height redraws over
+  // committed scrollback on long sessions (the "out of nowhere" mispaint).
+  // Instead it takes over the dynamic region as a full-width overlay that
+  // replaces the composer (Esc returns). Fullscreen keeps the side column.
+  const railTakeover = terminalMode === 'native' && (showFileRail || showExecutionRail);
   const fileRailFiles = useMemo(() => listFiles(), [fileRailVersion]);
   const sideRailWidth = fileRailWidthForTerminal(termWidth, true);
   const sideRailMaxRows = fileRailMaxRowsForTerminal(termHeight, terminalMode, true);
@@ -2159,12 +2195,12 @@ export function App() {
         {transcriptElements}
       </Box>
     )}
-    {terminalMode === 'native' && !startupOnly && nativeLiveTranscriptElements.length > 0 && (
+    {terminalMode === 'native' && !railTakeover && !startupOnly && nativeLiveTranscriptElements.length > 0 && (
       <Box flexDirection="column">
         {nativeLiveTranscriptElements}
       </Box>
     )}
-    {livePaneVisible && (
+    {livePaneVisible && !railTakeover && (
       <>
         <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} />
         {Object.keys(agentProgress).length > 0 && (
@@ -2201,23 +2237,35 @@ export function App() {
     {btwPanel && (
       <Box flexDirection="column" borderStyle="round" borderColor="#22d3ee" paddingX={1} marginY={1}>
         <Box justifyContent="space-between">
-          <Text bold color="#22d3ee">{'BTW'}</Text>
-          <Text dimColor>{btwPanel.status === 'running' ? `${btwPanel.engineId} thinking…` : 'Esc close'}</Text>
+          <Text bold color="#22d3ee">{`BTW · side-chat${btwPanel.engineId ? ' · ' + btwPanel.engineId : ''}`}</Text>
+          <Text dimColor>{btwPanel.status === 'running' ? 'thinking…' : 'type to continue · Esc to leave'}</Text>
         </Box>
-        <Text dimColor>{btwPanel.question}</Text>
-        {btwPanel.contextPreview && (
-          <Text dimColor>{'Context: '}{String(btwPanel.contextPreview).split('\n').filter((line: string) => line.trim()).slice(-2).join(' / ').slice(0, Math.max(40, termWidth - 16))}</Text>
-        )}
-        {btwPanel.status === 'running' ? (
+        {(() => {
+          const msgs = Array.isArray(btwPanel.messages) ? btwPanel.messages : [];
+          const shown = msgs.slice(-2);
+          const baseIdx = msgs.length - shown.length;
+          const hidden = baseIdx;
+          return (<>
+            {hidden > 0 && <Text dimColor>{`… ${hidden} earlier turn${hidden === 1 ? '' : 's'}`}</Text>}
+            {shown.map((m: any, i: number) => {
+              const isUser = m.role === 'user';
+              const raw = String(m.text ?? '').split('\n').filter((l: string) => l.trim()).slice(0, isUser ? 2 : 8);
+              const displayLines = raw.length > 0 ? raw : [''];
+              return (
+                <Box key={baseIdx + i} flexDirection="column">
+                  {displayLines.map((line: string, j: number) => (
+                    <Text key={j} color={isUser ? '#fbbf24' : undefined} dimColor={isUser}>{j === 0 ? (isUser ? '› ' : `${btwPanel.engineId ?? 'cesar'}: `) : '  '}{line}</Text>
+                  ))}
+                </Box>
+              );
+            })}
+          </>);
+        })()}
+        {btwPanel.status === 'running' && (
           <Text color="#fbbf24">{'Answering in a side channel; main work continues.'}</Text>
-        ) : btwPanel.error ? (
+        )}
+        {btwPanel.error && btwPanel.status !== 'running' && (
           <Text color="#ef4444">{btwPanel.error}</Text>
-        ) : (
-          <Box flexDirection="column">
-            {String(btwPanel.answer ?? '').split('\n').slice(0, 8).map((line: string, i: number) => (
-              <Text key={i}>{line}</Text>
-            ))}
-          </Box>
         )}
       </Box>
     )}
@@ -2404,8 +2452,30 @@ export function App() {
         }}
         onCancel={() => setCesarPickerOpen(false)} />
     )}
+    {railTakeover && showFileRail && (
+      <FileRail files={fileRailFiles} maxRows={sideRailMaxRows} width={Math.max(20, termWidth - 2)} focused={fileRailOpen} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen} />
+    )}
+    {railTakeover && showExecutionRail && (
+      <ExecutionRailPanel
+        spinner={liveSpinner}
+        engines={liveProgress}
+        activePlanState={activePlan?.state ?? null}
+        activePlan={activePlan}
+        lastTool={latestToolEvent}
+        recentFallbacks={recentFallbacks}
+        stats={executionRailStats}
+        toolOutputExpanded={toolOutputExpanded}
+        startTime={chatStartTimeRef.current || 0}
+        isActive={replState !== 'idle' || runningJobs.length > 0}
+        width={Math.max(20, termWidth - 2)}
+        maxRows={sideRailMaxRows}
+        focused={executionRailOpen} />
+    )}
+    {railTakeover && (
+      <Box paddingX={1}><Text dimColor>{showFileRail ? '↑↓ navigate · Tab expand · Esc to return to chat' : 'Esc to return to chat'}</Text></Box>
+    )}
     {liveSpinner && mode !== 'chat' && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
-    {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && (
+    {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && !railTakeover && (
       <Box flexDirection="column" paddingX={1} marginTop={1}>
         {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
         {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
@@ -2459,30 +2529,8 @@ export function App() {
         <OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} />
       )}
     </Static>
-    <Box flexDirection="row" width={termWidth}>
-      <Box flexDirection="column" flexGrow={1} minWidth={0} overflowX="hidden">
-        {lowerPanel}
-      </Box>
-      {showFileRail && (
-        <FileRail files={fileRailFiles} maxRows={sideRailMaxRows} width={sideRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputValue.trim().length === 0} />
-      )}
-      {showExecutionRail && (
-        <ExecutionRailPanel
-          spinner={liveSpinner}
-          engines={liveProgress}
-          activePlanState={activePlan?.state ?? null}
-          activePlan={activePlan}
-          lastTool={latestToolEvent}
-          recentFallbacks={recentFallbacks}
-          stats={executionRailStats}
-          toolOutputExpanded={toolOutputExpanded}
-          startTime={chatStartTimeRef.current || 0}
-          isActive={replState !== 'idle' || runningJobs.length > 0}
-          width={sideRailWidth}
-          maxRows={sideRailMaxRows}
-          focused={executionRailOpen && inputValue.trim().length === 0}
-        />
-      )}
+    <Box flexDirection="column" width={termWidth}>
+      {lowerPanel}
     </Box>
   </>
   );
@@ -2538,7 +2586,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:90
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2228
+// @kern-source: app:2282
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

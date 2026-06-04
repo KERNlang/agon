@@ -52,6 +52,13 @@ export const engineCommand: any = defineCommand({
       }
     }
 
+    // Canonicalize the id BEFORE it lands in any config list, so an alias/
+    // prefix/case (`kimi`, `CODEX`) is stored as the same canonical id that
+    // partitionRoster/activeEngines compare against (review: alias bypass).
+    if (id && ['add', 'enable', 'hide', 'disable', 'remove'].includes(action)) {
+      id = registry.resolveId(id);
+    }
+
     switch (action) {
       case 'list': {
         header('Engines');

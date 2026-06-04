@@ -189,7 +189,11 @@ export async function runTeamBrainstorm(options: TeamBrainstormOptions): Promise
     outputDir: options.outputDir,
   });
 
-  const enabledEngines = options.engines ?? options.registry.activeIds(config as any);
+  const __roster = options.registry.partitionRoster(options.engines ?? null, config as any);
+  if (__roster.removed.length > 0) {
+    throw new Error(`Removed engine(s) cannot run: ${__roster.removed.join(', ')}. Restore with 'agon engine add <id>' (or /engines restore <id>).`);
+  }
+  const enabledEngines = __roster.active;
   const available = enabledEngines.filter((id: string) => {
     try {
       const engine = options.registry.get(id);

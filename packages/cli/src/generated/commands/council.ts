@@ -103,6 +103,12 @@ export const councilCommand: any = defineCommand({
         process.exitCode = 1;
         return;
       }
+      const removedReq = registry.partitionRoster(requested, config as any).removed;
+      if (removedReq.length > 0) {
+        console.error(`Removed engine${removedReq.length > 1 ? 's' : ''} cannot join the council: ${removedReq.join(', ')}. Restore with \`agon engine add <id>\`.`);
+        process.exitCode = 1;
+        return;
+      }
       if (wanted.length > 0) pool = wanted;
     }
 

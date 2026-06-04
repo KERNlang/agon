@@ -5,7 +5,7 @@ import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfi
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
 import from="@kernlang/agon-forge" names="runBrainstorm"
-import from="../blocks/output-format.js" names="header,success,info,table,bold,cyan,green"
+import from="../blocks/output-format.js" names="header,success,fail,info,table,bold,cyan,green"
 import from="../signals/icons.js" names="icons"
 
 const name=brainstormCommand type=any
@@ -40,9 +40,14 @@ const name=brainstormCommand type=any
         registry.load(resolveBuiltinEnginesDir());
 
         const adapter = createCliAdapter(registry);
-        const available = args.engines
-          ? args.engines.split(',').map((s: string) => registry.resolveId(s.trim())).filter(Boolean)
-          : registry.activeIds(config as any);
+        const { active: available, removed: removedEngines } = registry.partitionRoster(
+          args.engines ? args.engines.split(',') : null,
+          config as any,
+        );
+        if (removedEngines.length > 0) {
+          fail(`Removed engine(s) cannot run: ${removedEngines.join(', ')}. Restore with 'agon engine add <id>'.`);
+          process.exit(1);
+        }
 
         const outputDir = join(RUNS_DIR, `brainstorm-${Date.now()}`);
         mkdirSync(outputDir, { recursive: true });

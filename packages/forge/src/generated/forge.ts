@@ -307,7 +307,11 @@ export async function runForge(options: ForgeOptions & { onResult?: (engineId:st
     return manifest;
   }
 
-  const enabledEngines = options.engines ?? registry.activeIds(config as any);
+  const __roster = registry.partitionRoster(options.engines ?? null, config as any);
+  if (__roster.removed.length > 0) {
+    throw new Error(`Removed engine(s) cannot run: ${__roster.removed.join(', ')}. They were hard-removed via 'agon engine remove'; restore with 'agon engine add <id>' (or /engines restore <id>).`);
+  }
+  const enabledEngines = __roster.active;
   // Dogfood finding (2026-05-13): when the caller passes -e explicitly,
   // dropped engines used to vanish silently — user provided 6, agon spun
   // up 4, the other two were just gone. Track every drop with a reason

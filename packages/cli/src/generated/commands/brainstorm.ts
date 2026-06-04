@@ -14,7 +14,7 @@ import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
 import { runBrainstorm } from '@kernlang/agon-forge';
 
-import { header, success, info, table, bold, cyan, green } from '../blocks/output-format.js';
+import { header, success, fail, info, table, bold, cyan, green } from '../blocks/output-format.js';
 
 import { icons } from '../signals/icons.js';
 
@@ -49,9 +49,14 @@ export const brainstormCommand: any = defineCommand({
     registry.load(resolveBuiltinEnginesDir());
 
     const adapter = createCliAdapter(registry);
-    const available = args.engines
-      ? args.engines.split(',').map((s: string) => registry.resolveId(s.trim())).filter(Boolean)
-      : registry.activeIds(config as any);
+    const { active: available, removed: removedEngines } = registry.partitionRoster(
+      args.engines ? args.engines.split(',') : null,
+      config as any,
+    );
+    if (removedEngines.length > 0) {
+      fail(`Removed engine(s) cannot run: ${removedEngines.join(', ')}. Restore with 'agon engine add <id>'.`);
+      process.exit(1);
+    }
 
     const outputDir = join(RUNS_DIR, `brainstorm-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });

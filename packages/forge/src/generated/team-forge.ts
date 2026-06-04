@@ -466,7 +466,11 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
     outputDir: forgeDir,
   });
 
-  const enabledEngines = options.engines ?? registry.activeIds(config as any);
+  const __roster = registry.partitionRoster(options.engines ?? null, config as any);
+  if (__roster.removed.length > 0) {
+    throw new Error(`Removed engine(s) cannot run: ${__roster.removed.join(', ')}. Restore with 'agon engine add <id>' (or /engines restore <id>).`);
+  }
+  const enabledEngines = __roster.active;
   const available = enabledEngines.filter((id: string) => {
     try {
       const engine = registry.get(id);

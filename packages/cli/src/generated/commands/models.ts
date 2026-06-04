@@ -35,6 +35,7 @@ export const modelsCommand: any = defineCommand({
         registry.load(resolveBuiltinEnginesDir());
         const active = new Set(registry.activeIds(config as any));
         const hidden = new Set((config as any).hiddenEngines ?? []);
+        const removed = new Set((config as any).removedEngines ?? []);
 
         console.log('');
         header('Engine Activation');
@@ -48,9 +49,9 @@ export const modelsCommand: any = defineCommand({
         for (const engine of registry.list()) {
           if (!engine.binary || !registry.findBinary(engine)) continue;
           cliRows.push([
-            hidden.has(engine.id) ? red(engine.id) : green(engine.id),
+            removed.has(engine.id) || hidden.has(engine.id) ? red(engine.id) : green(engine.id),
             engine.displayName,
-            active.has(engine.id) ? green('active') : hidden.has(engine.id) ? red('removed') : dim('inactive'),
+            removed.has(engine.id) ? red('removed') : hidden.has(engine.id) ? dim('hidden') : active.has(engine.id) ? green('active') : dim('inactive'),
             (config.engineModels as any)?.[engine.id] ?? dim('(default)'),
           ]);
         }
@@ -85,14 +86,15 @@ export const modelsCommand: any = defineCommand({
           process.exit(1);
         }
         const config = loadConfig();
-        const next = Array.from(new Set([...(config.forgeEnabledEngines ?? []), engine]));
-        const hidden = ((config as any).hiddenEngines ?? []).filter((id: string) => id !== engine);
-        const removed = ((config as any).removedEngines ?? []).filter((id: string) => id !== engine);
+        const canonical = def.id;
+        const next = Array.from(new Set([...(config.forgeEnabledEngines ?? []), canonical]));
+        const hidden = ((config as any).hiddenEngines ?? []).filter((id: string) => id !== canonical);
+        const removed = ((config as any).removedEngines ?? []).filter((id: string) => id !== canonical);
         configSet('engineActivationMode' as any, 'explicit' as any);
         configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
         configSet('hiddenEngines', hidden as any);
         configSet('removedEngines', removed as any);
-        success(`Activated ${engine}`);
+        success(`Activated ${canonical}`);
       },
     }),
     add: defineCommand({
@@ -117,14 +119,15 @@ export const modelsCommand: any = defineCommand({
           process.exit(1);
         }
         const config = loadConfig();
-        const next = Array.from(new Set([...(config.forgeEnabledEngines ?? []), engine]));
-        const hidden = ((config as any).hiddenEngines ?? []).filter((id: string) => id !== engine);
-        const removed = ((config as any).removedEngines ?? []).filter((id: string) => id !== engine);
+        const canonical = def.id;
+        const next = Array.from(new Set([...(config.forgeEnabledEngines ?? []), canonical]));
+        const hidden = ((config as any).hiddenEngines ?? []).filter((id: string) => id !== canonical);
+        const removed = ((config as any).removedEngines ?? []).filter((id: string) => id !== canonical);
         configSet('engineActivationMode' as any, 'explicit' as any);
         configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
         configSet('hiddenEngines', hidden as any);
         configSet('removedEngines', removed as any);
-        success(`Activated ${engine}`);
+        success(`Activated ${canonical}`);
       },
     }),
     disable: defineCommand({
@@ -133,15 +136,20 @@ export const modelsCommand: any = defineCommand({
         engine: { type: 'positional', required: true, description: 'Engine ID' },
       },
       async run(ctx) {
-        const engine = String(ctx.args.engine).trim();
-        if (!engine) return;
+        const raw = String(ctx.args.engine).trim();
+        if (!raw) return;
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        const engine = registry.resolveId(raw);
         const config = loadConfig();
         const next = (config.forgeEnabledEngines ?? []).filter((id: string) => id !== engine);
         const hidden = Array.from(new Set([...((config as any).hiddenEngines ?? []), engine]));
+        const removed = ((config as any).removedEngines ?? []).filter((id: string) => id !== engine);
         configSet('engineActivationMode' as any, 'explicit' as any);
         configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
         configSet('hiddenEngines', hidden as any);
-        success(`Removed ${engine}`);
+        configSet('removedEngines', removed as any);
+        success(`Hid ${engine} (soft — explicit -e still works)`);
       },
     }),
     hide: defineCommand({
@@ -150,15 +158,20 @@ export const modelsCommand: any = defineCommand({
         engine: { type: 'positional', required: true, description: 'Engine ID' },
       },
       async run(ctx) {
-        const engine = String(ctx.args.engine).trim();
-        if (!engine) return;
+        const raw = String(ctx.args.engine).trim();
+        if (!raw) return;
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        const engine = registry.resolveId(raw);
         const config = loadConfig();
         const next = (config.forgeEnabledEngines ?? []).filter((id: string) => id !== engine);
         const hidden = Array.from(new Set([...((config as any).hiddenEngines ?? []), engine]));
+        const removed = ((config as any).removedEngines ?? []).filter((id: string) => id !== engine);
         configSet('engineActivationMode' as any, 'explicit' as any);
         configSet('forgeEnabledEngines', next as AgonConfig['forgeEnabledEngines']);
         configSet('hiddenEngines', hidden as any);
-        success(`Removed ${engine}`);
+        configSet('removedEngines', removed as any);
+        success(`Hid ${engine} (soft — explicit -e still works)`);
       },
     }),
     auto: defineCommand({

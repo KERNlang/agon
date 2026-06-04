@@ -32,6 +32,7 @@ interface name=KeyboardCtx
   field name=fileRailFocused type=boolean
   field name=fileRailExpanded type=boolean
   field name=executionRailFocused type=boolean
+  field name=liveToolStreamCount type=number
 
 union name=KeyboardAction discriminant=type
   variant name=none
@@ -56,6 +57,7 @@ union name=KeyboardAction discriminant=type
   variant name=openResults
   variant name=toggleFileRail
   variant name=toggleExecutionRail
+  variant name=toggleLiveToolTail
   variant name=fileRailSelectPrev
   variant name=fileRailSelectNext
   variant name=fileRailToggleExpand
@@ -205,6 +207,18 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
     // compatibility aliases, but Ctrl+G is the advertised shortcut because
     // terminal/text-input layers commonly overload Tab/Ctrl+I and Ctrl+T.
     if (hasCtrlSignal && (normalizedCtrlInput === 'g' || normalizedCtrlInput === 'i' || normalizedCtrlInput === 't')) return { type: 'toggleExecutionRail' };
+
+    // Shift+T: freeze/resume the newest live tool-output tail. Plain `f` would
+    // collide with normal composer typing, and Ctrl+T is already a rail alias.
+    if (
+      ctx.liveToolStreamCount > 0
+      && ctx.inputValue.trim().length === 0
+      && !hasCtrlSignal
+      && input === 'T'
+      && !ctx.slashPickerOpen && !ctx.enginePickerOpen
+      && !ctx.reviewEventOpen && !ctx.toolDetailOpen
+      && !ctx.questionState
+    ) return { type: 'toggleLiveToolTail' };
 
     // Shift+Tab: queue auto mode
     if (isShiftTab && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {

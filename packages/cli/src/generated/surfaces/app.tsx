@@ -298,6 +298,8 @@ export function App() {
       }
     };
   }, []);
+  const [liveToolTailFrozen, _setLiveToolTailFrozenRaw] = useState<Record<string,boolean>>({});
+  const setLiveToolTailFrozen = useMemo(() => __inkSafe(_setLiveToolTailFrozenRaw), [_setLiveToolTailFrozenRaw]);
   const [pendingImages, _setPendingImagesRaw] = useState<ImageAttachment[]>([]);
   const setPendingImages = useMemo(() => __inkSafe(_setPendingImagesRaw), [_setPendingImagesRaw]);
   const [reviewEvent, _setReviewEventRaw] = useState<ReviewEvent|null>(null);
@@ -631,6 +633,21 @@ export function App() {
           }
           return { engineId: activeStream.engineId, line: lines[lines.length - 1].trim() };
   }, [activeStream]);
+
+  const newestLiveToolStreamId = useMemo(() => {
+          let newestId = '';
+          let newestStartedAt = -1;
+          for (const entry of Object.values(liveToolStreams ?? {}) as any[]) {
+            const id = String(entry?.streamId ?? '');
+            if (!id) continue;
+            const startedAt = typeof entry?.startedAt === 'number' ? entry.startedAt : 0;
+            if (!newestId || startedAt >= newestStartedAt) {
+              newestId = id;
+              newestStartedAt = startedAt;
+            }
+          }
+          return newestId;
+  }, [liveToolStreams]);
 
   const latestToolEvent = useMemo(() => {
           return findLatestToolEvent(outputBlocks);
@@ -1023,6 +1040,13 @@ export function App() {
     }
     const nextValue = cleanInputValue(value);
     const prevValue = inputValueRef.current;
+    // Only swallow the leading capital-T shortcut for Shift+T freeze when the
+    // live tail pane is actually visible — otherwise we'd silently eat a user's
+    // intended first character ("Test the login flow") whenever any tool stream
+    // is buffered in the background.
+    if (!prevValue && nextValue === 'T' && livePaneVisible) {
+      return;
+    }
     const change = findInputChange(prevValue, nextValue);
     const cameFromPasteTransform = pendingPasteTransformRef.current;
     if (cameFromPasteTransform) {
@@ -1059,7 +1083,7 @@ export function App() {
     const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
     inputValueRef.current = updatedValue;
     setInputValue(updatedValue);
-  }, [slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued]);
+  }, [slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued,livePaneVisible]);
 
   const sendBtwMessage = useCallback((question:string) => {
     const q = (question ?? '').trim();
@@ -1766,6 +1790,7 @@ export function App() {
       fileRailFocused: fileRailOpen && inputValue.trim().length === 0,
       fileRailExpanded: fileRailExpandedPath !== null,
       executionRailFocused: executionRailOpen && inputValue.trim().length === 0,
+      liveToolStreamCount: Object.keys(liveToolStreamsRef.current ?? {}).length,
     });
 
     switch (action.type) {
@@ -1854,6 +1879,14 @@ export function App() {
         setFileRailExpandedPath(null);
         setExecutionRailOpen((prev: boolean) => !prev);
         return;
+      case 'toggleLiveToolTail':
+        ctrlKeyHandledRef.current = true;
+        if (!newestLiveToolStreamId) return;
+        setLiveToolTailFrozen((prev: Record<string, boolean>) => ({
+          ...prev,
+          [newestLiveToolStreamId]: !prev[newestLiveToolStreamId],
+        }));
+        return;
       case 'fileRailSelectPrev': {
         const files = listFiles();
         const last = Math.max(0, files.length - 1);
@@ -1909,7 +1942,20 @@ export function App() {
         handleCancelOrExit();
         return;
     }
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId]);
+
+  useEffect(() => {
+    const activeIds = new Set(Object.keys(liveToolStreams ?? {}));
+    setLiveToolTailFrozen((prev: Record<string, boolean>) => {
+      let changed = false;
+      const next: Record<string, boolean> = {};
+      for (const id of Object.keys(prev)) {
+        if (activeIds.has(id)) next[id] = prev[id];
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [liveToolStreams]);
 
   useEffect(() => {
     initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
@@ -2376,7 +2422,7 @@ export function App() {
     )}
     {livePaneVisible && !railTakeover && (
       <>
-        <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} />
+        <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} liveToolTailFrozen={liveToolTailFrozen} />
         {Object.keys(agentProgress).length > 0 && (
           <Box flexDirection="column">
             {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (
@@ -2790,7 +2836,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:91
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2518
+// @kern-source: app:2564
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

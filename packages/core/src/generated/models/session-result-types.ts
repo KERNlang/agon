@@ -55,12 +55,23 @@ export interface NeroResultData {
   challengeText: string;
 }
 
+/**
+ * A code review run, recorded so the full per-engine prose lives in the Ctrl+R results pager instead of flooding the transcript inline. The transcript shows only the compact consensus; reviews[] holds each engine's complete review text for on-demand viewing.
+ */
 // @kern-source: session-result-types:40
+export interface ReviewResultData {
+  label: string;
+  consensusSummary: string;
+  blocking: boolean;
+  reviews: { engineId: string; status: string; reviewOutput: string }[];
+}
+
+// @kern-source: session-result-types:51
 export interface SessionResult {
-  type: 'brainstorm' | 'campfire' | 'tribunal' | 'forge' | 'think' | 'council' | 'synthesis' | 'nero';
+  type: 'brainstorm' | 'campfire' | 'tribunal' | 'forge' | 'think' | 'council' | 'synthesis' | 'nero' | 'review';
   timestamp: string;
   question: string;
   engines: string[];
   winner: string | null;
-  data: BrainstormResultData | CampfireResultData | TribunalResultData | ForgeResultData | ThinkResultData | CouncilResultData | SynthesisResultData | NeroResultData;
+  data: BrainstormResultData | CampfireResultData | TribunalResultData | ForgeResultData | ThinkResultData | CouncilResultData | SynthesisResultData | NeroResultData | ReviewResultData;
 }

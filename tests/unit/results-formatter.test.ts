@@ -106,6 +106,55 @@ describe('formatSessionResults', () => {
     expect(output).toContain('42 lines');
   });
 
+  it('formats a review result with consensus summary and full per-engine prose', () => {
+    const results: SessionResult[] = [{
+      type: 'review',
+      timestamp: '2026-04-07T22:35:00.000Z',
+      question: 'uncommitted changes',
+      engines: ['codex', 'claude'],
+      winner: null,
+      data: {
+        label: 'uncommitted changes',
+        consensusSummary: 'Consensus — 2/2 engines reviewed · 0 verified, 1 needs-check, 2 nit',
+        blocking: false,
+        reviews: [
+          { engineId: 'codex', status: 'ok', reviewOutput: 'codex full review prose here' },
+          { engineId: 'claude', status: 'parse-failed', reviewOutput: 'claude unstructured prose' },
+        ],
+      },
+    }];
+
+    const output = formatSessionResults(results);
+    expect(output).toContain('REVIEW #1');
+    expect(output).toContain('uncommitted changes');
+    expect(output).toContain('Consensus');
+    expect(output).toContain('codex full review prose here');
+    expect(output).toContain('claude unstructured prose');
+    // failed-status engines get a status tag in the per-engine header
+    expect(output).toContain('parse-failed');
+  });
+
+  it('flags a blocking review in the header', () => {
+    const results: SessionResult[] = [{
+      type: 'review',
+      timestamp: '2026-04-07T22:36:00.000Z',
+      question: 'branch main',
+      engines: ['codex'],
+      winner: null,
+      data: {
+        label: 'branch main',
+        consensusSummary: 'Consensus — 1/1 engines reviewed · 1 verified',
+        blocking: true,
+        reviews: [{ engineId: 'codex', status: 'ok', reviewOutput: 'found a blocker' }],
+      },
+    }];
+
+    const output = formatSessionResults(results);
+    expect(output).toContain('REVIEW #1');
+    expect(output).toContain('BLOCKING');
+    expect(output).toContain('found a blocker');
+  });
+
   it('numbers multiple results sequentially', () => {
     const results: SessionResult[] = [
       {

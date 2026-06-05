@@ -197,29 +197,33 @@ export const reviewCommand = defineCommand({
           flush([`⚠ timed out after ${timeoutSec}s — aborted.`]);
           return { id: engineId, status: 'timeout', durationMs: Date.now() - engineStart, detail: `exceeded ${timeoutSec}s per-engine timeout`, outputPath };
         }
+        // The full prose review is written to <outputPath> (writeOutput above).
+        // We deliberately do NOT echo it inline — only a one-line status per
+        // engine, then the cross-engine consensus. The consensus IS the
+        // summary; the full text lives in the run dir for on-demand reading.
         if (isPastePlaceholderOnly(rawResponse)) {
           // The capture is the claude TUI paste placeholder, not a review — the
           // prompt never submitted. Never count this as a real verdict.
-          flush([rawResponse, '⚠ captured a paste placeholder, not a review (prompt likely never submitted).']);
+          flush(['⚠ captured a paste placeholder, not a review (prompt likely never submitted).']);
           return { id: engineId, status: 'parse-failure', durationMs: Date.now() - engineStart, detail: 'captured paste placeholder — prompt never submitted', outputPath };
         }
         if (result.parseFailed && result.unstructured) {
           // Substantive prose review but no machine-parseable verdict even after
           // the repair retry. Still useful to a human — surface as a SUCCESS.
-          flush([rawResponse, 'review complete (unstructured — no machine verdict, but the review above is valid).']);
+          flush([`${bold(engineId)}: unstructured (no machine verdict — full review in ${outputPath})`]);
           return { id: engineId, status: 'unstructured', durationMs: Date.now() - engineStart, detail: 'unstructured review (no machine-parseable findings block)', outputPath };
         }
         if (result.parseFailed) {
-          flush([rawResponse, '⚠ returned no usable review output.']);
+          flush(['⚠ returned no usable review output.']);
           return { id: engineId, status: 'parse-failure', durationMs: Date.now() - engineStart, detail: 'empty or unusable response', outputPath };
         }
         const counts = formatSeverityCounts(result.severityCounts);
         captureFindings(engineId, rawResponse);
         if (result.blocking) {
-          flush([rawResponse, `⚠ ${bold(engineId)}: blocking, ${counts}`]);
+          flush([`⚠ ${bold(engineId)}: blocking, ${counts}`]);
           return { id: engineId, status: 'blocking', durationMs: Date.now() - engineStart, detail: `blocking, ${counts}`, outputPath };
         }
-        flush([rawResponse, `${bold(engineId)}: ok, ${counts}`]);
+        flush([`${bold(engineId)}: ok, ${counts}`]);
         return { id: engineId, status: 'ok', durationMs: Date.now() - engineStart, detail: `ok, ${counts}`, outputPath };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -302,5 +306,7 @@ export const reviewCommand = defineCommand({
     if (consensus.speculative.length) lines.push(`  SPECULATIVE: ${consensus.speculative.length} low-confidence finding(s) — likely noise.`);
     if (consensus.nits.length) lines.push(`  NITS: ${consensus.nits.length}.`);
     console.log(lines.join('\n'));
+
+    if (!quiet) info(`Full per-engine reviews: ${outputDir}`);
   },
 });

@@ -1,6 +1,10 @@
 import from="node:fs" names="readFileSync,readdirSync,statSync,existsSync"
-import from="node:path" names="join,basename"
+import from="node:path" names="join,basename,dirname"
+import from="node:module" names="createRequire"
 import from="./git.js" names="currentBranch,gitStatusShort,gitChangedFiles,gitTruncatedDiff,recentCommits,repoRoot"
+import from="./process.js" names="spawnWithTimeout"
+import from="@kernlang/context" names="buildSpine"
+import from="@kernlang/context" names="ProjectContextGraph" types=true
 
 type name=ContextFormat values="plain|kern"
 
@@ -189,4 +193,41 @@ fn name=scanProjectContext params="cwd:string,extraContext?:string,format?:Conte
       return `context {\n${result}\n}`;
     }
     return result;
+  >>>
+
+fn name=buildKernContextSpine params="cwd:string" returns="Promise<string>" async=true export=true
+  doc "Compact <kern-map> cross-file usage spine for a target repo, rendered from the released `kern context` CLI (TypeScript sources). Prepended to a build engine's context so it starts with whole-project structure — which symbols exist and who calls/uses each (blast radius) — instead of cold-reading files. Best-effort: returns '' for non-TS targets, when the kern CLI isn't resolvable, on timeout, or on any error, so a forge run is never blocked. Set AGON_NO_KERN_CONTEXT=1 to disable."
+  handler <<<
+    if (process.env.AGON_NO_KERN_CONTEXT) return '';
+    try {
+      // Resolve the released `kern` CLI bin (@kernlang/cli is a runtime dep).
+      // Its exports map blocks ./package.json, so resolve the "." entry
+      // (dist/index.js) and derive the sibling `kern` bin (dist/cli.js).
+      const requireFn = createRequire(import.meta.url);
+      const cliBin = join(dirname(requireFn.resolve('@kernlang/cli')), 'cli.js');
+      if (!existsSync(cliBin)) return '';
+
+      // `kern context` walks the target's TS sources, builds the import + call
+      // graph, and emits the portable artifact JSON. --base relativizes paths.
+      const result = await spawnWithTimeout({
+        command: process.execPath,
+        args: [cliBin, 'context', cwd, '--stdout', '--base', cwd],
+        cwd,
+        timeout: 20000,
+      });
+      if (result.exitCode !== 0 || result.stdout.trim().length === 0) return '';
+
+      const artifact = JSON.parse(result.stdout) as ProjectContextGraph;
+      if (!artifact.files || artifact.files.length === 0) return ''; // non-TS / empty target
+      const spine = buildSpine(artifact, {
+        batchFiles: artifact.files.map((f) => f.path),
+        tokenBudget: 2000,
+      });
+      return spine ? `Project map (compiler-derived cross-file usage):\n${spine}` : '';
+    } catch (err) {
+      if (process.env.AGON_DEBUG) {
+        console.warn(`[agon] kern context spine unavailable: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return '';
+    }
   >>>

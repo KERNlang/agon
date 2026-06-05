@@ -31,7 +31,7 @@ packages/core -- 69 .kern. Types, config, scoring, tools, sessions. 100% KERN.
 packages/cli -- 60+ .kern. Surfaces, blocks, signals, handlers, commands. ~99% KERN.
 packages/forge -- 17 .kern. Forge, brainstorm, tribunal, campfire. 100% KERN.
 packages/adapter-cli -- 2 .kern. CliAdapter. 100% KERN.
-engines/ -- JSON engine definitions (claude.json, codex.json, gemini.json, etc.)
+engines/ -- JSON engine definitions (claude.json, codex.json, agy.json, etc.)
 
 Dirs: surfaces/ blocks/ signals/ models/ cesar/ tools/ handlers/ commands/
 

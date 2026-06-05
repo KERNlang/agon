@@ -193,7 +193,7 @@ export const neroCommand: any = defineCommand({
     const pick = result.reason === 'forced'
       ? `forced`
       : result.reason === 'random'
-        ? `random — no Elo yet`
+        ? `random — no rating yet`
         : `top-rated via ${result.scope}`;
 
     if (quiet) {

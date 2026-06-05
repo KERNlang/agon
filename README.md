@@ -455,7 +455,7 @@ agon call tribunal "Debate the migration plan" --team --jsonl
 
 ### MCP (heavier alternative)
 
-For MCP-capable clients, Agon also ships a stdio MCP server:
+For MCP-capable clients, Agon also ships a stdio MCP server. It currently runs **from a source checkout** (the MCP server isn't bundled with the npm install yet) — point the command at your clone:
 
 ```bash
 claude mcp add -s user agon -- node /path/to/Agon-AI/plugins/agon-orchestrator/scripts/agon-mcp.js

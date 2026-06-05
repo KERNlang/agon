@@ -23,7 +23,7 @@ import { filterDefaultOrchestrationEngines } from '../handlers/engine-filter.js'
 export function chairmanPickLabel(reason: string): string {
   if (reason === 'forced') return 'forced';
   if (reason === 'cesar') return 'cesar-chaired (2-engine council)';
-  if (reason === 'random') return 'random — no Elo yet';
+  if (reason === 'random') return 'random — no rating yet';
   if (reason === 'top-rated') return 'top-rated';
   return reason;
 }

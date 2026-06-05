@@ -47,7 +47,7 @@ fn name=rankByTaskClass params="engineIds:string[], taskClass:TaskClass" returns
 
       if (i === 0 && r.total >= 3) {
         role = 'lead';
-        specialization = `You are the top-rated engine for ${taskClass} tasks (${r.classElo} ELO, ${Math.round(r.winRate * 100)}% win rate). Lead with your best approach.`;
+        specialization = `You are the top-rated engine for ${taskClass} tasks (${r.classElo} Glicko, ${Math.round(r.winRate * 100)}% win rate). Lead with your best approach.`;
       } else if (i === ranked.length - 1 && r.total >= 3) {
         role = 'challenger';
         specialization = `You are the challenger. Focus on what the lead engine might miss: edge cases, error handling, performance pitfalls. Your contrarian perspective is your strength.`;

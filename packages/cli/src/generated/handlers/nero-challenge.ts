@@ -108,7 +108,7 @@ export async function handleNeroChallenge(decision: string, dispatch: Dispatch, 
     const pick = result.reason === 'forced'
       ? 'forced'
       : result.reason === 'random'
-        ? 'random — no Elo yet'
+        ? 'random — no rating yet'
         : `top-rated via ${result.scope}`;
     dispatch({ type: 'info', message: `Critic: ${result.engineId} (${pick})` });
 

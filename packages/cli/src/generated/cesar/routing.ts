@@ -382,7 +382,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext, consume?
   }
   if (hints.eloSpread !== undefined) {
     const spreadLabel = hints.eloSpread > 15 ? 'clear leader' : 'close race';
-    parts.push(`ELO SPREAD: ${hints.eloSpread} (${spreadLabel})`);
+    parts.push(`GLICKO SPREAD: ${hints.eloSpread} (${spreadLabel})`);
   }
 
   if ((ctx.config as any).sessionContinuity === true) {

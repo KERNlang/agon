@@ -36,6 +36,7 @@ import from="../signals/output.js" names="OutputActions,OutputState,AgentProgres
 import from="../signals/app-input.js" names="appendInputHistory,cleanInputValue,cleanSubmitValue,findInputChange,hasBtwSideChannelTarget,navigateHistory,parseAutoModeCommand,resolveEscapeAction,shouldQueuePlanModeOnTab"
 import from="../signals/keyboard.js" names="resolveKeyboardInput"
 import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
+import from="../signals/input-perf.js" names="perfNow,recordKeystrokeLatency"
 import from="../blocks/review.js" names="handleReviewAction"
 import from="../blocks/engine.js" names="DashboardView,OutputBlockView"
 import from="../blocks/plan-view.js" names="PlanProposalView"
@@ -186,6 +187,9 @@ screen name=App target=ink
   ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   ref name=inputEpochRef type=number initial=0
   ref name=inputValueRef type=string initial="''"
+  // Diagnostic: keystroke t0 captured at handleInputChange, read post-commit by
+  // the AGON_PERF latency effect. 0 when not profiling (perfNow returns 0).
+  ref name=keyT0Ref type=number initial=0
   ref name=ctrlKeyHandledRef type=boolean initial=false
   ref name=pendingPasteTransformRef type=boolean initial=false
   ref name=pasteHashesRef type="Map<string,string>" initial="new Map()"
@@ -1118,6 +1122,13 @@ screen name=App target=ink
     handler lang="kern"
       assign target="inputValueRef.current" value="inputValue"
 
+  // Diagnostic (AGON_PERF=1): record keystroke→commit latency vs block/archive/
+  // live counts + input length. Inert when not profiling (keyT0Ref stays 0).
+  effect deps="inputValue"
+    handler lang="kern"
+      do value="recordKeystrokeLatency(keyT0Ref.current, outputBlocks.length, effectiveNativeArchiveCount, nativeLiveBlocks.length, inputValue.length)"
+      assign target="keyT0Ref.current" value="0"
+
   // ── Input handlers ──
   callback name=handlePasteInput params="raw:string" deps=""
     handler lang="kern"
@@ -1132,6 +1143,8 @@ screen name=App target=ink
 
   callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued,livePaneVisible"
     handler lang="kern"
+      comment raw="// Diagnostic: stamp keystroke arrival; read post-commit by the AGON_PERF effect (0 when off)."
+      assign target="keyT0Ref.current" value="perfNow()"
       comment raw="// Swallow input while a choice question is active — the keyboard handler"
       comment raw="// resolves the choice on a single keypress."
       if cond="questionState && questionState.choices"

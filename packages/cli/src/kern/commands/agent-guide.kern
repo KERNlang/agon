@@ -40,6 +40,15 @@ const name=agentGuideCommand type=any
             flags: ['--engines claude,codex,agy', '--timeout <sec>'],
             machineReadable: 'agon call <mode> "<input>" [flags] --jsonl',
             results: { lastDir: 'agon last', summary: 'cat "$(agon last)/summary.json"', status: 'agon last --status' },
+            rooms: {
+              about: 'Shared multi-party chat rooms — coordinate with other live CLIs/sessions over one persistent transcript (human-mediated: post when prompted).',
+              join: 'agon room join <room> --as <callsign> --engine <codex|claude|agy>',
+              post: 'agon room post <room> --as <callsign> -m "<message>"  (use @callsign to mention)',
+              read: 'agon room read <room> [--since <seq>]',
+              tail: 'agon room tail <room>',
+              who: 'agon room who <room>',
+              leave: 'agon room leave <room> --as <callsign>',
+            },
           }, null, 2) + '\n');
           return;
         }

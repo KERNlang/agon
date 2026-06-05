@@ -24,6 +24,15 @@ export function agentGuideMarkdown(): string {
     '- `agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"` — autonomous controller: drives a task queue to completion unattended, looping build -> witness -> gate -> review (panel + judge) -> fix -> commit per task on a goal/ branch. Bound it with `--max-hours`/`--budget`; `--push` pushes each task. Long-running (designed for 8-24h).',
     '- `agon conquer "<task>" --gate "<test cmd>"` — supervised-autonomous BUILD of an OPEN-ENDED task. Cesar drives a pluggable builder CLI (codex/claude/agy) in agent mode turn by turn; when the builder hits a fork it asks and Cesar convenes the cheapest sufficient consult (nero/tribunal/brainstorm/council) and feeds back a compact verdict; when it claims done, a layered done-oracle runs (the `--gate` command + diff acceptance-drift + a nero falsification round) and it STOPS at a HUMAN merge gate — it never auto-merges to main. The open-ended sibling to `goal`: use `conquer` when you CANNOT write a clean discriminating oracle up front (build a whole tool), `goal` when you can. `--push` needs a clean tree; bound it with `--max-turns`/`--max-hours`.',
     '',
+    '## Collaborate with other agents — rooms',
+    'Agon hosts shared chat ROOMS so multiple live CLIs (you, other Codex/Claude/agy sessions, agon engines) coordinate over one persistent transcript. Human-mediated: you post when prompted, and read what others said. Use a room to hand off work, ask another agent for help, or coordinate parallel work in the same repo.',
+    '- `agon room join <room> --as <callsign> --engine <codex|claude|agy>` — join a room (creates it if new)',
+    '- `agon room post <room> --as <callsign> -m "message"` — post a message; use `@callsign` to mention someone',
+    '- `agon room read <room> [--since <seq>]` — read the shared transcript',
+    '- `agon room tail <room>` — follow the room live (Ctrl+C to leave)',
+    '- `agon room who <room>` — see who is present',
+    '- `agon room leave <room> --as <callsign>` — leave (clears your presence immediately)',
+    '',
     '## Setting up forge & goal — the test/gate IS the spec',
     'These two modes only optimize to make your test (`-t` for forge) or gate/verify (for goal) pass. That command IS the specification — not the prose task. A check that a wrong implementation can still pass will ship a wrong implementation, and often dead-loops the run. Before launching:',
     '- Discriminate: every check must FAIL a plausibly-wrong impl, not just pass the intended one. Use distinct/edge args (atan2(3,4) not atan2(0,1); `5.5 % 2` to catch int() truncation; cbrt(-27) to reject pow(x,1/3), since pow returns NaN on a negative base).',
@@ -64,7 +73,7 @@ export function agentGuideMarkdown(): string {
 /**
  * Per-CLI /agon slash-command shim. format is one of agy | claude | markdown.
  */
-// @kern-source: agent-guide-text:66
+// @kern-source: agent-guide-text:75
 export function agonShim(format: string): string {
   const body = [
     'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, review, goal, conquer).',
@@ -112,7 +121,7 @@ export function agonShim(format: string): string {
 /**
  * Native Codex skill that exposes Agon as $agon.
  */
-// @kern-source: agent-guide-text:112
+// @kern-source: agent-guide-text:121
 export function codexSkillMarkdown(): string {
   return [
     '---',
@@ -150,7 +159,7 @@ export function codexSkillMarkdown(): string {
 /**
  * Codex UI metadata for the Agon skill.
  */
-// @kern-source: agent-guide-text:148
+// @kern-source: agent-guide-text:157
 export function codexSkillOpenAiYaml(): string {
   return [
     'interface:',

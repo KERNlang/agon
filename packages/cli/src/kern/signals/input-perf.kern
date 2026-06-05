@@ -1,0 +1,31 @@
+// ── Input latency probe — diagnostic only, inert unless AGON_PERF=1 ──
+// Measures keystroke→commit latency so we can see whether typing lag scales
+// with block count, archive/live size, or input length BEFORE committing to a
+// hot-path refactor. Appends NDJSON to ~/.agon/perf/input-latency.ndjson.
+// Read it back with: cat ~/.agon/perf/input-latency.ndjson | jq
+
+import from="node:fs" names="appendFileSync,mkdirSync"
+import from="node:path" names="join,dirname"
+import from="@kernlang/agon-core" names="AGON_HOME"
+
+const name=PERF_ENABLED type=boolean value={{ process.env.AGON_PERF === '1' }}
+
+const name=PERF_PATH type=string value={{ join(AGON_HOME, 'perf', 'input-latency.ndjson') }}
+
+fn name=perfEnabled returns=boolean export=true expr={{ return PERF_ENABLED; }}
+
+// Returns a high-res timestamp when profiling, else 0. Callers store this in a
+// ref at keystroke time and hand it back to recordKeystrokeLatency post-commit.
+fn name=perfNow returns=number export=true expr={{ return PERF_ENABLED ? performance.now() : 0; }}
+
+fn name=recordKeystrokeLatency params="t0:number, blocks:number, archive:number, live:number, inputLen:number" returns=void export=true
+  doc "Append one keystroke→commit latency sample as NDJSON. No-op unless AGON_PERF=1 and a valid t0 was captured."
+  handler <<<
+    if (!PERF_ENABLED || !t0) return;
+    try {
+      const dtMs = Math.round((performance.now() - t0) * 100) / 100;
+      const line = JSON.stringify({ ts: Date.now(), dtMs, blocks, archive, live, inputLen }) + '\n';
+      mkdirSync(dirname(PERF_PATH), { recursive: true });
+      appendFileSync(PERF_PATH, line);
+    } catch { /* perf logging is best-effort; never disrupt input */ }
+  >>>

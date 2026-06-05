@@ -6,33 +6,32 @@ import { resolve, basename, extname } from 'node:path';
 
 import { homedir } from 'node:os';
 
+import { fileURLToPath } from 'node:url';
+
 import type { ImageAttachment } from '../models/types.js';
 
-// @kern-source: image:6
+// @kern-source: image:7
 export const IMAGE_EXTENSIONS: Set<string> = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp']);
 
-// @kern-source: image:8
+// @kern-source: image:9
 export const MIME_MAP: Record<string,string> = ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.bmp': 'image/bmp' });
 
-// @kern-source: image:10
-export const IMAGE_PATH_REGEX: RegExp = /(?:^|\s)((?:\/[\w.\-]+)+\.(?:png|jpe?g|gif|webp|svg|bmp)|~\/[\w.\-\/]+\.(?:png|jpe?g|gif|webp|svg|bmp)|\.{1,2}\/[\w.\-\/]+\.(?:png|jpe?g|gif|webp|svg|bmp))/gi;
-
-// @kern-source: image:12
+// @kern-source: image:11
 export const IMG_CMD_REGEX: RegExp = /^\/img\s+(.+)$/i;
 
-// @kern-source: image:14
+// @kern-source: image:13
 export function isImagePath(filePath: string): boolean {
   const ext = extname(filePath).toLowerCase();
   return IMAGE_EXTENSIONS.has(ext);
 }
 
-// @kern-source: image:19
+// @kern-source: image:18
 export function mimeFromExt(filePath: string): string {
   const ext = extname(filePath).toLowerCase();
   return MIME_MAP[ext] ?? 'application/octet-stream';
 }
 
-// @kern-source: image:24
+// @kern-source: image:23
 export function resolveImagePath(rawPath: string, cwd: string): string|null {
   let resolved: string;
   if (rawPath.startsWith('~/')) {
@@ -45,7 +44,7 @@ export function resolveImagePath(rawPath: string, cwd: string): string|null {
   return existsSync(resolved) ? resolved : null;
 }
 
-// @kern-source: image:37
+// @kern-source: image:36
 export function buildImageAttachment(rawPath: string, cwd: string): ImageAttachment|null {
   const resolved = resolveImagePath(rawPath.trim(), cwd);
   if (!resolved) {
@@ -54,36 +53,98 @@ export function buildImageAttachment(rawPath: string, cwd: string): ImageAttachm
   return { path: resolved, filename: basename(resolved), mimeType: mimeFromExt(resolved) };
 }
 
-// @kern-source: image:44
+/**
+ * Normalise a path as a terminal emits it on drag-drop: strip one layer of matching quotes, decode a file:// URI (%20 → space), then unescape shell backslash escapes (\ space → space, \( → ( …). A plain typed path has no quotes/backslashes so it passes through untouched. macOS Terminal/iTerm drop screenshots — whose default names contain spaces — in one of the escaped/quoted/file:// forms, all of which the bare path detector would otherwise miss.
+ */
+// @kern-source: image:43
+export function normalizeDroppedPath(raw: string): string {
+  let p = raw.trim();
+  const sq = p.startsWith("'") && p.endsWith("'");
+  const dq = p.startsWith('"') && p.endsWith('"');
+  if (sq || dq) p = p.slice(1, -1);
+  // file:// URI → OS path via Node's parser: handles the authority (file:///x,
+  // file://localhost/x), %-decoding, and Windows drive letters correctly.
+  if (p.startsWith('file://')) {
+    try { return fileURLToPath(p).trim(); }
+    catch {
+      // Malformed URI — fall back to a plain strip + percent-decode.
+      p = p.slice('file://'.length);
+      try { p = decodeURIComponent(p); } catch { /* keep raw */ }
+      return p.trim();
+    }
+  }
+  // Unescape shell-style backslash escapes (\ space, \', \(, \\ …). A URI never
+  // reaches here; a plain typed path has none so it passes through untouched.
+  p = p.replace(/\\(.)/g, '$1');
+  return p.trim();
+}
+
+/**
+ * Pull image paths out of composer input. Handles the four shapes a terminal produces on drag-drop — plain, backslash-escaped spaces, single/double-quoted, and file:// URIs — plus an explicit /img <path> command. Detected paths are normalised + stripped from the returned text so they aren't duplicated into the prompt; the pixels reach a vision engine via buildCommand's --image flag (non-vision engines get a text fallback).
+ */
+// @kern-source: image:67
 export function extractImagesFromInput(input: string, cwd: string): {text:string, images:ImageAttachment[]} {
   const images: ImageAttachment[] = [];
 
-  // Handle /img <path> command
+  // Explicit /img <path> command (path may itself be quoted / escaped / file://).
   const imgCmdMatch = IMG_CMD_REGEX.exec(input.trim());
   if (imgCmdMatch) {
-    const att = buildImageAttachment(imgCmdMatch[1], cwd);
+    const att = buildImageAttachment(normalizeDroppedPath(imgCmdMatch[1]), cwd);
     if (att) images.push(att);
     return { text: '', images };
   }
 
-  // Detect image paths in mixed text
-  let text = input;
-  const pathRegex = new RegExp(IMAGE_PATH_REGEX.source, 'gi');
-  let match: RegExpExecArray | null;
-  const paths: string[] = [];
+  // Combined detector. Alternatives, in order:
+  //   1. '…ext'           single-quoted (drop of a path containing spaces)
+  //   2. "…ext"           double-quoted (drop of a path containing spaces)
+  //   3. file://…ext       file URI (some terminals drop this form)
+  //   4. /… ~/… ./… ../…   plain OR backslash-escaped-space path
+  // Built via new RegExp (not a /literal/) so the embedded ' and " stay clear of
+  // KERN's {{ }} expression parsing; \x20 matches an escaped space without putting
+  // a literal space in the source.
+  const EXT = '(?:png|jpe?g|gif|webp|svg|bmp)';
+  const detector = new RegExp(
+    "'([^']*\\." + EXT + ")'" +
+    '|"([^"]*\\.' + EXT + ')"' +
+    "|(file:\\/\\/\\S+?\\." + EXT + ")" +
+    "|(?:^|\\s)((?:\\/|~\\/|\\.{1,2}\\/)(?:\\\\\\x20|[^\\s'\"])*\\." + EXT + ")",
+    'gi',
+  );
 
-  while ((match = pathRegex.exec(input)) !== null) {
-    const rawPath = match[1].trim();
-    const att = buildImageAttachment(rawPath, cwd);
+  let text = input;
+  let match: RegExpExecArray | null;
+  const hits: { raw: string; whole: string }[] = [];
+
+  while ((match = detector.exec(input)) !== null) {
+    const raw = match[1] ?? match[2] ?? match[3] ?? match[4];
+    if (raw) hits.push({ raw, whole: match[0] });
+  }
+
+  for (const hit of hits) {
+    const att = buildImageAttachment(normalizeDroppedPath(hit.raw), cwd);
     if (att) {
       images.push(att);
-      paths.push(match[0]);
+      text = text.replace(hit.whole, '');
     }
   }
 
-  for (const p of paths) {
-    text = text.replace(p, '');
+  // Whole-input fallback: a lone dropped path the structured detector can't
+  // disambiguate inside prose — bare unescaped spaces, an escaped apostrophe
+  // ("Bob's Shot.png"), or a bare relative filename. When the ENTIRE message
+  // normalises to a single existing image file, attach it. existsSync (inside
+  // buildImageAttachment) + the image-extension check gate this, so ordinary
+  // prose can never false-attach.
+  if (images.length === 0) {
+    const whole = normalizeDroppedPath(input);
+    if (isImagePath(whole)) {
+      const att = buildImageAttachment(whole, cwd);
+      if (att) {
+        images.push(att);
+        text = '';
+      }
+    }
   }
+
   text = text.replace(/\s{2,}/g, ' ').trim();
 
   return { text, images };

@@ -70,6 +70,8 @@ import { resolveKeyboardInput } from '../signals/keyboard.js';
 
 import { makeBlockArchivePath, appendBlockWithCap } from '../signals/block-archive.js';
 
+import { perfNow, recordKeystrokeLatency } from '../signals/input-perf.js';
+
 import { handleReviewAction } from '../blocks/review.js';
 
 import { DashboardView, OutputBlockView } from '../blocks/engine.js';
@@ -150,7 +152,7 @@ import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:93
+// @kern-source: app:94
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -531,6 +533,7 @@ export function App() {
   const modeRef = useRef<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const inputEpochRef = useRef<number>(0);
   const inputValueRef = useRef<string>('');
+  const keyT0Ref = useRef<number>(0);
   const ctrlKeyHandledRef = useRef<boolean>(false);
   const pendingPasteTransformRef = useRef<boolean>(false);
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
@@ -1027,6 +1030,8 @@ export function App() {
   }, []);
 
   const handleInputChange = useCallback((value:string) => {
+    // Diagnostic: stamp keystroke arrival; read post-commit by the AGON_PERF effect (0 when off).
+    keyT0Ref.current = perfNow();
     // Swallow input while a choice question is active — the keyboard handler
     // resolves the choice on a single keypress.
     if (questionState && questionState.choices) {
@@ -2335,6 +2340,11 @@ export function App() {
   }, [inputValue]);
 
   useEffect(() => {
+    recordKeystrokeLatency(keyT0Ref.current, outputBlocks.length, effectiveNativeArchiveCount, nativeLiveBlocks.length, inputValue.length);
+    keyT0Ref.current = 0;
+  }, [inputValue]);
+
+  useEffect(() => {
     if (questionState && Array.isArray(questionState.choices) && questionState.choices.length > 0) {
       const dk = questionState.defaultChoiceKey;
       const di = dk ? questionState.choices.findIndex((c: any) => c && c.key === dk) : 0;
@@ -2826,22 +2836,22 @@ export function App() {
   );
 }
 
-// @kern-source: app:83
+// @kern-source: app:84
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:85
+// @kern-source: app:86
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:87
+// @kern-source: app:88
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:89
+// @kern-source: app:90
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:91
+// @kern-source: app:92
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2569
+// @kern-source: app:2582
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

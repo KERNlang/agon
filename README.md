@@ -11,7 +11,7 @@
 
 **The competitive multi-AI orchestration CLI.**
 
-Agon AI pits the world's best AI engines against each other to solve your software engineering problems. Multiple AI engines compete in isolated git worktrees on the exact same task, the best solution wins and is applied automatically, and ELO ratings continuously track each model's performance over time. 
+Agon AI pits the world's best AI engines against each other to solve your software engineering problems. Multiple AI engines compete in isolated git worktrees on the exact same task, the best solution wins and is applied automatically, and Glicko-2 ratings continuously track each model's performance over time. 
 
 ```bash
 npm install -g @kernlang/agon
@@ -47,7 +47,7 @@ Agon AI fundamentally changes how developers interact with AI coding assistants.
 
 Under the hood, Agon uses a sophisticated **worktree isolation model**. When a competition begins, Agon creates temporary, hidden git worktrees for each participating engine. This ensures that engines can modify files, run tests, and iterate without stepping on each other's toes or cluttering your main working directory. Only the winning implementation is merged back into your active branch.
 
-Routing these tasks efficiently is **Cesar**, Agon's intelligent orchestration brain. Cesar monitors every interaction, success, and failure, updating an internal **ELO scoring system** for each engine. Over time, Cesar learns which engines excel at specific task classes—like writing tests, refactoring React components, or optimizing database queries—and automatically routes future tasks to the highest-rated engine for that specific domain.
+Routing these tasks efficiently is **Cesar**, Agon's intelligent orchestration brain. Cesar monitors every interaction, success, and failure, updating an internal **Glicko-2 rating system** for each engine. Over time, Cesar learns which engines excel at specific task classes—like writing tests, refactoring React components, or optimizing database queries—and automatically routes future tasks to the highest-rated engine for that specific domain.
 
 Agon isn't just about competition; it's a unified platform for AI collaboration. Whether you need engines to debate a controversial architectural decision, brainstorm solutions with weighted token allocations based on confidence, or simply execute a robust pipeline loop, Agon provides the ultimate terminal-native interface for multi-agent workflows.
 
@@ -55,7 +55,7 @@ Agon isn't just about competition; it's a unified platform for AI collaboration.
 
 - Node.js >= 22
 - A Git repository
-- At least one supported AI CLI installed globally (e.g., Claude Code, Codex, Gemini CLI) or an API key for API-based engines
+- At least one supported AI CLI installed globally (e.g., Claude Code, Codex, Antigravity) or an API key for API-based engines
 - **Optional:** Python 3.10+ to unlock the semantic features that run as sidecars to KERN — semantic history search (`agon history --query`), tree-sitter syntax validation in forge fitness, brainstorm paraphrase dedup, and the task classifier. Agon still runs without Python; these features fall back to substring/regex paths.
 
 ## Installation
@@ -81,11 +81,11 @@ python3 -m pip install --user fastembed numpy tree-sitter tree-sitter-python tre
 ### Install from source (contributors)
 
 ```bash
-# 1. Clone the repository (with the kern_engines submodule)
-git clone --recurse-submodules https://github.com/KERNlang/agon.git
+# 1. Clone the repository
+git clone https://github.com/KERNlang/agon.git
 cd agon
 
-# 2. Install dependencies (compiles KERN → TypeScript → JS)
+# 2. Install dependencies (pulls @kernlang/agon-engines + sidecars, compiles KERN → TS → JS)
 npm install
 
 # 3. Build and install the global CLI
@@ -94,10 +94,6 @@ npm run install:cli
 # 4. (Optional) Install Python sidecars for semantic features
 python3 -m pip install --user -r packages/dedup/requirements.txt
 ```
-
-> **Note:** `kern_engines` is a git submodule. A plain `git clone` leaves it
-> empty — use `--recurse-submodules` (above), or run
-> `git submodule update --init --recursive` if you already cloned.
 
 Once installed, run `agon` in any git repository to start the interactive REPL. Run `agon doctor` to verify every engine, the worktree path, and the Python sidecars resolve.
 
@@ -256,7 +252,7 @@ Performs an automated, multi-engine code review of your uncommitted changes, bra
 
 ```bash
 /review HEAD~1..HEAD
-agon review commit:HEAD --engines claude,codex,gemini
+agon review commit:HEAD --engines claude,codex,agy
 ```
 
 ### Agent
@@ -355,17 +351,17 @@ Available commands include: `/forge`, `/synthesis`, `/brainstorm`, `/tribunal`, 
 ```text
 $ agon
 Agon > /leaderboard
-1. Claude 3.7 Sonnet (ELO: 1650)
-2. Gemini 2.5 Pro    (ELO: 1590)
-3. GPT-4o            (ELO: 1540)
+1. Claude        (Glicko: 1650)
+2. Codex         (Glicko: 1590)
+3. Antigravity   (Glicko: 1540)
 
 Agon > /forge "Extract the routing logic into a separate module"
-[Cesar] Routing to Claude 3.7 Sonnet and Gemini 2.5 Pro based on ELO.
+[Cesar] Routing to Claude and Codex based on Glicko.
 [Forge] Initializing isolated worktrees...
 [Forge] Engines are racing...
-[Forge] Claude 3.7 Sonnet completed in 45s.
-[Forge] Gemini 2.5 Pro completed in 52s.
-[Forge] Winner: Claude 3.7 Sonnet. Applying patch...
+[Forge] Claude completed in 45s.
+[Forge] Codex completed in 52s.
+[Forge] Winner: Claude. Applying patch...
 Agon > 
 ```
 
@@ -390,11 +386,21 @@ agon room leave design --as claude   # clear your presence
 agon room list          # all rooms
 ```
 
-Messages are human-mediated (you post when prompted), `@callsign` mentions are parsed, and presence tracks who's around. Autonomous "auto-respond" mode and MCP/daemon transports are on the roadmap.
+Messages are human-mediated by default (you post when prompted), `@callsign` mentions are parsed, and presence tracks who's around.
+
+**Autonomous mode.** An agent can watch a room and reply on its own turn until a stop condition:
+
+```bash
+agon room auto design --as claude --engine claude --until-human   # respond until a human jumps in
+```
+
+It's **safe by design**: mention-only by default (add `--open-floor` to respond to anything), a one-poster-at-a-time **turn lease**, hard caps (`--max-turns`, default 3; `--max-minutes`, default 10), and a **ping-pong halt** that stops two auto-agents from looping. Use `--dry-run` to exercise the loop without spending tokens.
+
+MCP-capable engines can also use the [room tools](#using-agon-from-other-clis) (`RoomJoin`/`RoomPost`/`RoomRead`/…) instead of the CLI. A push-based daemon transport is on the roadmap.
 
 ## Using Agon from Other CLIs
 
-Agon can also be called from other AI CLIs such as Claude Code, Codex, and Gemini.
+Agon can also be called from other AI CLIs such as Claude Code, Codex, and Antigravity.
 
 ### One-step setup
 
@@ -409,12 +415,12 @@ It drops the native lightweight integration for each detected CLI:
 | CLI | Installed files | Invoke |
 | --- | --- | --- |
 | Codex | `~/.codex/skills/agon/SKILL.md` and `~/.codex/skills/agon/agents/openai.yaml` | `$agon` in a new Codex session |
-| Gemini CLI | `~/.gemini/commands/agon.toml` | `/agon` |
+| Antigravity (agy) | `~/.antigravitycli/commands/agon.toml` | `/agon` |
 | Claude Code | `~/.claude/commands/agon.md` | `/agon` |
 
-Each prompt or skill teaches the engine to call Agon from its own shell. No MCP, no always-on tokens: nothing runs until you invoke it. Target specific CLIs with `--cli codex,gemini,claude`, preview with `--dry`, or refresh an existing integration with `--force`.
+Each prompt or skill teaches the engine to call Agon from its own shell. No MCP, no always-on tokens: nothing runs until you invoke it. Target specific CLIs with `--cli codex,agy,claude`, preview with `--dry`, or refresh an existing integration with `--force`.
 
-After that, in Claude Code or Gemini:
+After that, in Claude Code or Antigravity:
 
 ```
 /agon evolve this design doc into a concrete implementation plan
@@ -449,14 +455,14 @@ agon call tribunal "Debate the migration plan" --team --jsonl
 
 ### MCP (heavier alternative)
 
-For MCP-capable clients, Agon also ships a stdio MCP server:
+For MCP-capable clients, Agon also ships a stdio MCP server. It currently runs **from a source checkout** (the MCP server isn't bundled with the npm install yet) — point the command at your clone:
 
 ```bash
 claude mcp add -s user agon -- node /path/to/Agon-AI/plugins/agon-orchestrator/scripts/agon-mcp.js
 codex mcp add agon -- node /path/to/Agon-AI/plugins/agon-orchestrator/scripts/agon-mcp.js
 ```
 
-After that, clients can call Agon tools such as Tribunal, Brainstorm, Forge, Campfire, Pipeline, and Review directly.
+After that, clients can call Agon tools such as Tribunal, Brainstorm, Forge, Campfire, Pipeline, and Review directly — plus the **room** tools (`RoomJoin`, `RoomPost`, `RoomRead`, `RoomWho`, `RoomLeave`, `RoomList`), so an MCP engine can join a [room](#rooms) and chat without shelling out. (MCP is request/response, so poll `RoomRead --since <seq>` to follow a room.)
 
 ## Engines
 
@@ -470,14 +476,14 @@ Each engine is a separate CLI you install once. Built-ins (in `engines/*.json`):
 | --- | --- | --- |
 | **Claude** (Anthropic) | `npm install -g @anthropic-ai/claude-code` | `claude` then `/login` (subscription) or `ANTHROPIC_API_KEY` |
 | **Codex** (OpenAI) | `npm install -g @openai/codex` | `codex` then sign in, or `OPENAI_API_KEY` |
-| **Gemini** (Google) | `npm install -g @google/gemini-cli` | `gemini` then sign in, or `GOOGLE_API_KEY` |
+| **Antigravity** (Google) | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` | `agy` then sign in, or `GOOGLE_API_KEY` |
 | **OpenCode** | `curl -fsSL https://opencode.ai/install \| bash` | `opencode auth login` (provider keys) |
 | **Aider** | `pip install aider-chat` | provider API key |
 | **Ollama** (local) | [ollama.com/download](https://ollama.com/download) | none (runs locally) |
 | **OpenRouter** | `npm install -g openrouter-cli` | `OPENROUTER_API_KEY` |
 | **Mistral** / **Qwen** | `pip install mistral-cli` / `qwen-cli` | provider API key |
 
-Subscription/CLI-authed engines (Claude, Codex, Gemini, OpenCode) bill through their own login — no API key needed in your environment. The rest read an API key from the env var shown above.
+Subscription/CLI-authed engines (Claude, Codex, Antigravity, OpenCode) bill through their own login — no API key needed in your environment. The rest read an API key from the env var shown above.
 
 ### 2. Verify what Agon can see
 
@@ -520,7 +526,7 @@ Set the key (`export MY_PLAN_API_KEY=…`), then confirm with `agon doctor engin
 
 ## Cesar Routing
 
-**Cesar** is Agon's built-in orchestration layer. By default, you don't need to choose which engine to use; Cesar automatically routes your prompts to the best-performing engine based on historical ELO ratings tailored to specific task classes.
+**Cesar** is Agon's built-in orchestration layer. By default, you don't need to choose which engine to use; Cesar automatically routes your prompts to the best-performing engine based on historical Glicko-2 ratings tailored to specific task classes.
 
 If you want manual control, you can easily override Cesar's routing:
 
@@ -529,7 +535,7 @@ If you want manual control, you can easily override Cesar's routing:
 /forge --engine claude "Update the README"
 
 # Manually switch the active engine for the session
-/cesar gemini
+/cesar agy
 ```
 
 ## Configuration
@@ -540,12 +546,12 @@ Global configuration, engine selection, model preferences, and telemetry setting
 
 Agon is built using **KERN**, a structured meta-language that compiles down to optimized TypeScript. Nearly the entire codebase — including Ink screens, signals, blocks, and orchestration logic — is authored in `.kern` files and regenerated via `npm run kern:compile`. The monorepo:
 
-- `packages/core` — types, config, ELO/Glicko-2 scoring, Cesar routing, session state (100% KERN, 69 files)
+- `packages/core` — types, config, Glicko-2 + Team Elo scoring, Cesar routing, session state (100% KERN, 69 files)
 - `packages/cli` — the interactive REPL, Ink surfaces, command handlers (~99% KERN, 60+ files)
 - `packages/forge` — competitive worktree orchestration, fitness, M-of-N quorum finalize (100% KERN, 17 files)
 - `packages/adapter-cli` — CLI engine integrations (100% KERN)
 - `packages/dedup` — Python sidecars for semantic features (history search via fastembed/MiniLM, tree-sitter syntax validation, task classifier, brainstorm paraphrase dedup). Bridged from KERN via JSON over stdin/stdout — KERN imports Python where Python is strictly better than a TS/JS port.
-- `packages/mcp` — exposes Agon's orchestration modes as MCP tools so other CLIs (Claude Code, Codex, Gemini) can drive Agon
+- `packages/mcp` — exposes Agon's orchestration modes as MCP tools so other CLIs (Claude Code, Codex, Antigravity) can drive Agon
 
 The entire project is ESM, uses strict TypeScript, and is thoroughly tested with Vitest.
 

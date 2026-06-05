@@ -142,7 +142,9 @@ export {
   appendEvent, readEvents, parseMentions, slugifyRoomId,
 } from './generated/rooms/store.js';
 export { recordPresence, removePresence, listPresence, PRESENCE_TTL_MS } from './generated/rooms/presence.js';
-export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry } from './generated/rooms/types.js';
+export { acquireTurnLease, releaseTurnLease, readActiveLease } from './generated/rooms/leases.js';
+export { detectTrigger, detectPingPong, evaluateStop } from './generated/rooms/auto-policy.js';
+export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry, TurnLease, AutoConfig, AutoState, StopDecision, TriggerDecision } from './generated/rooms/types.js';
 export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
 export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';
 export { apiDispatch, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';

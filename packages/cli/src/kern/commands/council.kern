@@ -20,7 +20,7 @@ fn name=chairmanPickLabel params="reason:string" returns=string export=true
   handler <<<
     if (reason === 'forced') return 'forced';
     if (reason === 'cesar') return 'cesar-chaired (2-engine council)';
-    if (reason === 'random') return 'random — no Elo yet';
+    if (reason === 'random') return 'random — no rating yet';
     if (reason === 'top-rated') return 'top-rated';
     return reason;
   >>>

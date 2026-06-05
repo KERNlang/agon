@@ -22,9 +22,10 @@ export interface RoomEvent {
   body: string;
   mentions: string[];
   replyTo: string | null;
+  auto?: boolean;
 }
 
-// @kern-source: types:25
+// @kern-source: types:26
 export interface RoomMeta {
   roomId: string;
   name: string;
@@ -33,7 +34,7 @@ export interface RoomMeta {
   closed: boolean;
 }
 
-// @kern-source: types:32
+// @kern-source: types:33
 export interface PresenceEntry {
   callsign: string;
   actorId: string;
@@ -42,4 +43,44 @@ export interface PresenceEntry {
   lastReadSeq: number;
   auto: boolean;
   cli: string;
+}
+
+// @kern-source: types:46
+export interface TurnLease {
+  leaseId: string;
+  holder: string;
+  triggerSeq: number;
+  acquiredAt: string;
+  expiresAt: string;
+}
+
+// @kern-source: types:53
+export interface AutoConfig {
+  callsign: string;
+  openFloor: boolean;
+  quietMs: number;
+  maxTurns: number;
+  maxWallMs: number;
+  stopPhrase: string;
+  untilHuman: boolean;
+}
+
+// @kern-source: types:62
+export interface AutoState {
+  turns: number;
+  startedAtMs: number;
+  lastSelfSeq: number;
+}
+
+// @kern-source: types:67
+export interface StopDecision {
+  stop: boolean;
+  reason: string;
+}
+
+// @kern-source: types:71
+export interface TriggerDecision {
+  trigger: boolean;
+  triggerSeq: number;
+  reason: string;
 }

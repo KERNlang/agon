@@ -1072,7 +1072,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
             { text: '  ' },
             { text: '♛ ', color: '#fbbf24' },
             { text: event.eloTop.id, color: engineColor(event.eloTop.id), bold: true },
-            { text: ` ${event.eloTop.rating} ELO`, dimColor: true },
+            { text: ` ${event.eloTop.rating} Glicko`, dimColor: true },
           ]);
         }
         [

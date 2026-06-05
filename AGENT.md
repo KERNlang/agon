@@ -2,7 +2,7 @@
 
 > Any AI can join. They compete. You ship.
 
-Agon is a multi-AI orchestration framework. Engines (Claude, Codex, Gemini, MiniMax, Qwen, etc.) compete via forge, debate via tribunal, ideate via brainstorm. Cesar orchestrates — delegates based on confidence, ELO ratings, and task classification.
+Agon is a multi-AI orchestration framework. Engines (Claude, Codex, Antigravity, MiniMax, Qwen, etc.) compete via forge, debate via tribunal, ideate via brainstorm. Cesar orchestrates — delegates based on confidence, Glicko-2 ratings, and task classification.
 
 ## Using Agon From Codex
 
@@ -31,7 +31,7 @@ Machine-readable callers should add `--jsonl`:
 agon call brainstorm "Compare options for this refactor" --jsonl
 ```
 
-Use `--cwd <path>` when the target repository is not the current working directory. Use `--engines claude,codex,gemini` to pin participants when needed. Use `--timeout <seconds>` for long-running tasks.
+Use `--cwd <path>` when the target repository is not the current working directory. Use `--engines claude,codex,agy` to pin participants when needed. Use `--timeout <seconds>` for long-running tasks.
 
 External engines should always call Agon through the shell bridge, not direct model CLIs:
 
@@ -41,7 +41,7 @@ agon call <workflow> "<input>" [flags]
 
 Example workflows: `forge`, `brainstorm`, `synthesis`, `tribunal`, `campfire`, `pipeline`, `review`, `goal`, and `team-*`.
 
-Do not use `qwen`, `opencode`/Kimi, or `ollama` for Agon orchestration unless the user explicitly asks for one of them. Prefer known-good local engines such as `claude`, `codex`, and `gemini` when pinning engines.
+Do not use `qwen`, `opencode`/Kimi, or `ollama` for Agon orchestration unless the user explicitly asks for one of them. Prefer known-good engines such as `claude`, `codex`, and `agy` when pinning engines.
 
 ### Agon Mode Guide
 
@@ -214,7 +214,7 @@ All handlers support `AbortSignal` for cancellation.
 - `spawnStream(opts)` — async generator yielding stdout chunks
 - `signal` + `cleanup` on `fn` — generates AbortController + try/finally
 - `service` with `stream=true` method — generates `async *method(): AsyncGenerator<T>`
-- `companionDispatch` — JSONRPC (Codex), ACP (Gemini/OpenCode), stream-json (Claude)
+- `companionDispatch` — JSONRPC (Codex), ACP (Antigravity/OpenCode), stream-json (Claude)
 
 ## Adding a New Engine
 

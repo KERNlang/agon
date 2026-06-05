@@ -21,6 +21,7 @@ interface name=RoomEvent export=true
   field name=body type=string
   field name=mentions type="string[]"
   field name=replyTo type="string | null"
+  field name=auto type=boolean optional=true
 
 interface name=RoomMeta export=true
   field name=roomId type=string
@@ -37,3 +38,37 @@ interface name=PresenceEntry export=true
   field name=lastReadSeq type=number
   field name=auto type=boolean
   field name=cli type=string
+
+// ── Auto-respond (Phase 3) ──
+// A turn lease is floor control: only the holder may post while it is active,
+// so two auto-agents never talk over each other. Held in leases.json, acquired
+// atomically under the room lock, released on post or expiry.
+interface name=TurnLease export=true
+  field name=leaseId type=string
+  field name=holder type=string
+  field name=triggerSeq type=number
+  field name=acquiredAt type=string
+  field name=expiresAt type=string
+
+interface name=AutoConfig export=true
+  field name=callsign type=string
+  field name=openFloor type=boolean
+  field name=quietMs type=number
+  field name=maxTurns type=number
+  field name=maxWallMs type=number
+  field name=stopPhrase type=string
+  field name=untilHuman type=boolean
+
+interface name=AutoState export=true
+  field name=turns type=number
+  field name=startedAtMs type=number
+  field name=lastSelfSeq type=number
+
+interface name=StopDecision export=true
+  field name=stop type=boolean
+  field name=reason type=string
+
+interface name=TriggerDecision export=true
+  field name=trigger type=boolean
+  field name=triggerSeq type=number
+  field name=reason type=string

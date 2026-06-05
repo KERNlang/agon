@@ -32,7 +32,7 @@ const name=AGON_TIPS type="string[]"
       'Run /cesar <engine> to change your Cesar brain engine',
       'Run /models to browse & add provider models, or /engines to pick active engines',
       'Run /campfire for collaborative multi-engine thinking',
-      'Run /leaderboard to see engine ELO ratings',
+      'Run /leaderboard to see engine Glicko ratings',
       'Run /history to browse past forge runs',
       'Run /tokens to see session cost breakdown',
       'Type an engine name first (e.g. "codex explain...") to pick who answers',

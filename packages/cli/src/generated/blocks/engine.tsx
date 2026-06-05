@@ -258,7 +258,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
             <Text dimColor>{' \u00b7 '}</Text>
             <Text color="#fbbf24">{'\u265b '}</Text>
             <Text bold color={engineColor(event.eloTop.id)}>{event.eloTop.id}</Text>
-            <Text dimColor>{' '}{String(event.eloTop.rating)}{' ELO'}</Text>
+            <Text dimColor>{' '}{String(event.eloTop.rating)}{' Glicko'}</Text>
           </>
         )}
       </Box>

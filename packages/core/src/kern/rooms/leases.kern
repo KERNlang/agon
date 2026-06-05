@@ -1,0 +1,55 @@
+// ── Agon Rooms — turn leases (Phase 3 floor control) ──
+// One active turn lease per room (leases.json). An auto-agent may post only
+// while holding the lease, so two auto-agents never talk over each other.
+// Acquired atomically under the room lock; the lease itself (with a TTL) is the
+// floor control held across the slow engine call — NOT the file lock.
+
+import from="node:fs" names="readFileSync,writeFileSync"
+import from="node:path" names="join"
+import from="./store.js" names="roomDir,withRoomLock"
+import from="./types.js" names="TurnLease" types=true
+
+fn name=leasesPath params="roomId:string" returns="string" expr={{ return join(roomDir(roomId), 'leases.json'); }}
+
+fn name=readActiveLease params="roomId:string" returns="TurnLease | null" export=true
+  doc "The current turn lease if one is held and not expired, else null. Pure read — call inside withRoomLock for an atomic check."
+  handler <<<
+    try {
+      const raw = JSON.parse(readFileSync(leasesPath(roomId), 'utf-8')) as TurnLease | null;
+      if (!raw || !raw.leaseId) return null;
+      if (Date.now() >= new Date(raw.expiresAt).getTime()) return null; // expired → free
+      return raw;
+    } catch { return null; }
+  >>>
+
+fn name=acquireTurnLease params="roomId:string, holder:string, triggerSeq:number, ttlMs:number" returns="TurnLease | null" export=true
+  doc "Atomically acquire the room's single turn lease. Returns the lease if the floor is free (or only an expired lease exists), else null. The holder must releaseTurnLease after posting (or let it expire)."
+  handler <<<
+    let acquired: TurnLease | null = null;
+    withRoomLock(roomId, () => {
+      const active = readActiveLease(roomId);
+      if (active && active.holder !== holder) return; // someone else holds the floor
+      const now = Date.now();
+      const lease: TurnLease = {
+        leaseId: `lease_${now.toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`,
+        holder,
+        triggerSeq,
+        acquiredAt: new Date(now).toISOString(),
+        expiresAt: new Date(now + Math.max(1000, ttlMs)).toISOString(),
+      };
+      writeFileSync(leasesPath(roomId), JSON.stringify(lease, null, 2) + '\n');
+      acquired = lease;
+    });
+    return acquired;
+  >>>
+
+fn name=releaseTurnLease params="roomId:string, leaseId:string" returns="void" export=true
+  doc "Release the turn lease if leaseId matches the held one (idempotent — a no-op if already released or stolen after expiry)."
+  handler <<<
+    withRoomLock(roomId, () => {
+      const active = readActiveLease(roomId);
+      if (active && active.leaseId === leaseId) {
+        try { writeFileSync(leasesPath(roomId), JSON.stringify(null) + '\n'); } catch { /* best-effort */ }
+      }
+    });
+  >>>

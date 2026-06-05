@@ -134,7 +134,7 @@ export { startChatSession, appendMessage, appendUserTurnIfAbsent, updateChatSumm
 export type { ChatMessage as StoredChatMessage, ChatSession } from './chat-store.js';
 export {
   isImagePath, mimeFromExt, resolveImagePath,
-  buildImageAttachment, extractImagesFromInput,
+  buildImageAttachment, extractImagesFromInput, normalizeDroppedPath,
 } from './image.js';
 export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
 export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';

@@ -9,6 +9,7 @@ import {
   resolveImagePath,
   buildImageAttachment,
   extractImagesFromInput,
+  normalizeDroppedPath,
 } from '../../packages/core/src/image.js';
 import { buildCommand } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
 
@@ -119,10 +120,15 @@ describe('buildImageAttachment', () => {
 describe('extractImagesFromInput', () => {
   const testDir = join(tmpdir(), `agon-image-extract-${Date.now()}`);
 
+  // macOS default screenshots have spaces in their names — the case that broke
+  // before. basename of this is "Screen Shot 2026.png".
+  const spaced = () => join(testDir, 'Screen Shot 2026.png');
+
   beforeEach(() => {
     mkdirSync(testDir, { recursive: true });
     writeFileSync(join(testDir, 'screenshot.png'), 'fake');
     writeFileSync(join(testDir, 'photo.jpg'), 'fake');
+    writeFileSync(spaced(), 'fake');
   });
 
   afterEach(() => {
@@ -153,6 +159,96 @@ describe('extractImagesFromInput', () => {
   it('returns empty for /img with nonexistent file', () => {
     const { images } = extractImagesFromInput('/img /nonexistent/file.png', '/');
     expect(images).toHaveLength(0);
+  });
+
+  // ── drag-drop forms (the "clean version" gap) ─────────────────────
+
+  it('detects a backslash-escaped-space path (Terminal/iTerm drag-drop)', () => {
+    const dropped = spaced().replace(/ /g, '\\ ');
+    const { text, images } = extractImagesFromInput(`whats wrong here ${dropped}`, '/');
+    expect(images).toHaveLength(1);
+    expect(images[0].filename).toBe('Screen Shot 2026.png');
+    expect(text).toBe('whats wrong here');
+  });
+
+  it('detects a single-quoted path with spaces', () => {
+    const { images } = extractImagesFromInput(`'${spaced()}'`, '/');
+    expect(images).toHaveLength(1);
+    expect(images[0].filename).toBe('Screen Shot 2026.png');
+  });
+
+  it('detects a double-quoted path with spaces', () => {
+    const { images } = extractImagesFromInput(`"${spaced()}"`, '/');
+    expect(images).toHaveLength(1);
+    expect(images[0].filename).toBe('Screen Shot 2026.png');
+  });
+
+  it('detects a file:// URI with %20-encoded spaces', () => {
+    const uri = 'file://' + spaced().replace(/ /g, '%20');
+    const { images } = extractImagesFromInput(uri, '/');
+    expect(images).toHaveLength(1);
+    expect(images[0].filename).toBe('Screen Shot 2026.png');
+  });
+
+  it('attaches a bare unescaped-space path when it is the whole input (drag-drop fallback)', () => {
+    const { text, images } = extractImagesFromInput(spaced(), '/');
+    expect(images).toHaveLength(1);
+    expect(images[0].filename).toBe('Screen Shot 2026.png');
+    expect(text).toBe('');
+  });
+
+  it('attaches an escaped-apostrophe path via the whole-input fallback', () => {
+    const apos = join(testDir, "Bob's Shot.png");
+    writeFileSync(apos, 'fake');
+    const dropped = apos.replace(/'/g, "\\'").replace(/ /g, '\\ '); // terminal escapes both
+    const { images } = extractImagesFromInput(dropped, '/');
+    expect(images).toHaveLength(1);
+    expect(images[0].filename).toBe("Bob's Shot.png");
+  });
+
+  it('does NOT attach a bare unescaped-space path embedded in prose (no false positive)', () => {
+    const { images } = extractImagesFromInput(`look at ${spaced()} please`, '/');
+    expect(images).toHaveLength(0);
+  });
+
+  it('does NOT attach ordinary prose that happens to end in a word (fallback is existsSync-gated)', () => {
+    const { text, images } = extractImagesFromInput('can you help me with this', '/');
+    expect(images).toHaveLength(0);
+    expect(text).toBe('can you help me with this');
+  });
+
+  it('detects multiple images of mixed form in one message', () => {
+    const input = `compare ${join(testDir, 'screenshot.png')} and "${spaced()}" please`;
+    const { text, images } = extractImagesFromInput(input, '/');
+    expect(images).toHaveLength(2);
+    expect(images.map((i) => i.filename).sort()).toEqual(
+      ['Screen Shot 2026.png', 'screenshot.png'],
+    );
+    expect(text).toBe('compare and please');
+  });
+});
+
+// ── normalizeDroppedPath ────────────────────────────────────────────
+
+describe('normalizeDroppedPath', () => {
+  it('strips matching single quotes', () => {
+    expect(normalizeDroppedPath("'/a/b c.png'")).toBe('/a/b c.png');
+  });
+
+  it('strips matching double quotes', () => {
+    expect(normalizeDroppedPath('"/a/b c.png"')).toBe('/a/b c.png');
+  });
+
+  it('unescapes backslash-escaped spaces', () => {
+    expect(normalizeDroppedPath('/a/b\\ c.png')).toBe('/a/b c.png');
+  });
+
+  it('decodes a file:// URI', () => {
+    expect(normalizeDroppedPath('file:///a/My%20Shot.png')).toBe('/a/My Shot.png');
+  });
+
+  it('leaves a plain path untouched', () => {
+    expect(normalizeDroppedPath('/a/b/shot.png')).toBe('/a/b/shot.png');
   });
 });
 

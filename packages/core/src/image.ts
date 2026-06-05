@@ -6,4 +6,5 @@ export {
   resolveImagePath,
   buildImageAttachment,
   extractImagesFromInput,
+  normalizeDroppedPath,
 } from './generated/blocks/image.js';

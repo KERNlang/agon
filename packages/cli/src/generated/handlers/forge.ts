@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 
 import { execFileSync } from 'node:child_process';
 
-import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, buildKernContextSpine, getActiveWorkspace, snapshotWorkspace, tracker, resolveWorkingDir, loadOrCreateActiveThread, applyPatchWithUndo, acquireApplyLock, releaseApplyLock, headChanged, branchChanged, headSha, currentBranch } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, tracker, resolveWorkingDir, loadOrCreateActiveThread, applyPatchWithUndo, acquireApplyLock, releaseApplyLock, headChanged, branchChanged, headSha, currentBranch } from '@kernlang/agon-core';
 
 import type { Plan, PlanStepInput, ApprovalLevel } from '@kernlang/agon-core';
 
@@ -655,11 +655,9 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     dispatch({ type: 'info', message: `Forge run dir: ${forgeDir}` });
 
     const projectCtx = scanProjectContext(forgeCwd, config.projectContext || undefined, config.contextFormat);
-    // Whole-project cross-file usage spine (best-effort; '' for non-TS targets
-    // or if the kern CLI is unavailable) so the build engine starts already
-    // knowing the project's structure, not just the file tree.
-    const kernSpine = await buildKernContextSpine(forgeCwd);
-    const forgeContext = kernSpine ? `${projectCtx}\n\n${kernSpine}` : projectCtx;
+    // NOTE: the whole-project kern-context spine is injected inside runForge
+    // (the convergence point for forge + goal) and runConquer — NOT here — so
+    // every build mode gets it. See buildKernContextSpine in agon-core.
 
     const engineStatus: Record<string, string> = {};
     const startTime = Date.now();
@@ -727,7 +725,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
           cwd: forgeCwd,
           forgeDir,
           engines,
-          context: forgeContext,
+          context: projectCtx,
           hardened: hardened ?? false,
           // Interactive forge: Cesar synthesizes the best-of-all result (only
           // active when config.forgeEnableSynthesis is on). Falls back to the

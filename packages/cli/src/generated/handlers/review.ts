@@ -510,11 +510,11 @@ export function stripMachineBlock(response: string): string {
 }
 
 /**
- * Build a consensus EngineOutcome from one engine's review. status!=='ok' yields an empty-findings failure lane (never a phantom blocker); 'ok' parses the engine's structured findings into RawFindings. Shared by the single- and multi-engine paths so the mapping lives in one place.
+ * Build a consensus EngineOutcome from one engine's review. status!=='ok' yields an empty-findings failure lane (never a phantom blocker), carrying any diagnostic note (error message / timeout detail) through to ConsensusReport.engineFailures; 'ok' parses the engine's structured findings into RawFindings. Shared by the single- and multi-engine paths so the mapping lives in one place.
  */
 // @kern-source: review:458
-export function reviewOutcome(engineId: string, response: string, status: string): any {
-  if (status !== 'ok') return { engine: engineId, status, findings: [] };
+export function reviewOutcome(engineId: string, response: string, status: string, note?: string): any {
+  if (status !== 'ok') return { engine: engineId, status, findings: [], note };
   // Guard against a model emitting a non-object element (e.g. `[null]` or a
   // bare string) in the findings array — accessing .severity on null throws.
   const raw = (extractReviewFindings(response) || []).filter((x: any) => x && typeof x === 'object');
@@ -637,7 +637,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
     };
 
     // Compact summary inline (the bug list) — never the full prose.
-    const status = unstructured ? 'parse-failed' : 'ok';
+    const status = unstructured ? 'unstructured' : 'ok';
     let consensusSummary: string;
     let blocking = false;
     if (status === 'ok') {
@@ -745,7 +745,7 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
         }
         // One-line per-engine status instead of dumping the full prose — the
         // full review lands in the Ctrl+R pager, the bug list in the consensus.
-        const status = result.unstructured ? 'parse-failed' : 'ok';
+        const status = result.unstructured ? 'unstructured' : 'ok';
         dispatch({ type: 'info', message: result.unstructured
           ? `${icons().success} ${engineId}: unstructured (no machine verdict)`
           : `${icons().success} ${engineId}: ${formatReviewCounts(result.severityCounts)}` });
@@ -777,7 +777,7 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
     // CONSENSUS — fold every engine's parsed findings into one tiered verdict.
     // ok engines contribute their structured findings; unstructured/timeout/
     // error engines land in the engineFailures lane (never a phantom blocker).
-    const outcomes = all.map((c) => reviewOutcome(c.engineId, c.reviewOutput, c.status));
+    const outcomes = all.map((c) => reviewOutcome(c.engineId, c.reviewOutput, c.status, c.note));
     const consensus = buildConsensus(outcomes as any);
     const consensusSummary = buildReviewConsensusLines(consensus).join('\n');
     dispatch({ type: consensus.autoBlock ? 'warning' : 'info', message: consensusSummary });

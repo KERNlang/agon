@@ -41,10 +41,11 @@ describe('reviewOutcome', () => {
     expect(outcome.findings[0].severity).toBe('important');
   });
 
-  it('routes a non-ok engine to the failure lane with no findings', () => {
-    const outcome = reviewOutcome('claude', 'whatever', 'timeout');
+  it('routes a non-ok engine to the failure lane with no findings, carrying the note', () => {
+    const outcome = reviewOutcome('claude', 'whatever', 'timeout', 'exceeded 600s');
     expect(outcome.status).toBe('timeout');
     expect(outcome.findings).toEqual([]);
+    expect(outcome.note).toBe('exceeded 600s');
   });
 
   it('feeds buildConsensus so a single ok engine produces a tiered report', () => {

@@ -119,7 +119,7 @@ describe('formatSessionResults', () => {
         blocking: false,
         reviews: [
           { engineId: 'codex', status: 'ok', reviewOutput: 'codex full review prose here' },
-          { engineId: 'claude', status: 'parse-failed', reviewOutput: 'claude unstructured prose' },
+          { engineId: 'claude', status: 'unstructured', reviewOutput: 'claude unstructured prose' },
         ],
       },
     }];
@@ -130,8 +130,8 @@ describe('formatSessionResults', () => {
     expect(output).toContain('Consensus');
     expect(output).toContain('codex full review prose here');
     expect(output).toContain('claude unstructured prose');
-    // failed-status engines get a status tag in the per-engine header
-    expect(output).toContain('parse-failed');
+    // non-ok engines get a status tag in the per-engine header
+    expect(output).toContain('unstructured');
   });
 
   it('flags a blocking review in the header', () => {

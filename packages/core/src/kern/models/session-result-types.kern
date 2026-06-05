@@ -46,7 +46,7 @@ interface name=ReviewResultData export=true
   field name=blocking type=boolean
     doc "Display-only: drives the pager header colour. True when the consensus auto-blocks (a verified blocker, or fail-closed no-verdict). A single-engine unstructured review records false on purpose — the prose is valid, so it isn't surfaced as a blocker. The automated review GATE does NOT read this field; it uses runReviewCore's own blocking/parseFailed."
   field name=reviews type="{ engineId: string; status: string; reviewOutput: string }[]"
-    doc "Each engine's full prose review, in completion order. status is 'ok' | 'parse-failed' | 'timeout' | 'error'."
+    doc "Each engine's full prose review, in completion order. status is 'ok' | 'unstructured' | 'timeout' | 'error' ('unstructured' = valid prose but no machine-parseable findings block)."
 
 interface name=SessionResult export=true
   field name=type type="'brainstorm' | 'campfire' | 'tribunal' | 'forge' | 'think' | 'council' | 'synthesis' | 'nero' | 'review'"

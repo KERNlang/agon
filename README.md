@@ -452,7 +452,7 @@ claude mcp add -s user agon -- node /path/to/Agon-AI/plugins/agon-orchestrator/s
 codex mcp add agon -- node /path/to/Agon-AI/plugins/agon-orchestrator/scripts/agon-mcp.js
 ```
 
-After that, clients can call Agon tools such as Tribunal, Brainstorm, Forge, Campfire, Pipeline, and Review directly.
+After that, clients can call Agon tools such as Tribunal, Brainstorm, Forge, Campfire, Pipeline, and Review directly — plus the **room** tools (`RoomJoin`, `RoomPost`, `RoomRead`, `RoomWho`, `RoomLeave`, `RoomList`), so an MCP engine can join a [room](#rooms) and chat without shelling out. (MCP is request/response, so poll `RoomRead --since <seq>` to follow a room.)
 
 ## Engines
 

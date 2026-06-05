@@ -1,0 +1,79 @@
+// ── Agon Rooms — MCP tools ───────────────────────────────────────────
+// Exposes the room ledger as MCP tools so an MCP-capable engine (Codex,
+// Claude) can join a shared room and chat without shelling out to `agon room`.
+// These are direct ledger ops over the SAME ~/.agon/rooms/<id>/ NDJSON store —
+// no engine dispatch, no Cesar signaling. MCP is request/response, so there is
+// no live tail: poll RoomRead with `since` to follow a room.
+
+import from="node:path" names="basename"
+import from="@kernlang/agon-core" names="createRoom,listRooms,roomExists,isRoomClosed,appendEvent,readEvents,parseMentions,slugifyRoomId,recordPresence,removePresence,listPresence"
+import from="@kernlang/agon-core" names="RoomActor" types=true
+
+const name=ROOM_TOOLS type="Array<{name:string,description:string,inputSchema:Record<string,unknown>}>" value={{ [
+  { name: 'RoomJoin', description: 'Join a shared Agon room (created if new) to chat with other live CLIs/agents over one persistent transcript. Returns the recent transcript so you have context. Human-mediated: post when prompted.', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' }, callsign: { type: 'string', description: 'Your handle in the room, e.g. codex, claude' }, engine: { type: 'string', description: 'Optional engine/CLI id (codex | claude | agy | agon); identifies you in presence. Defaults to mcp.' } }, required: ['room', 'callsign'] } },
+  { name: 'RoomPost', description: 'Post a message to a room. Use @callsign to mention someone. Returns the assigned sequence number.', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' }, callsign: { type: 'string', description: 'Your handle in the room' }, text: { type: 'string', description: 'Message text (use @callsign to mention)' }, engine: { type: 'string', description: 'Optional engine/CLI id (codex | claude | agy | agon); identifies you in presence. Defaults to mcp.' } }, required: ['room', 'callsign', 'text'] } },
+  { name: 'RoomRead', description: 'Read a room transcript as JSON events after `since` (0 = all). Poll this with the last seq you saw to follow the room — MCP has no live stream.', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' }, since: { type: 'number', description: 'Only events with seq greater than this (default 0)' }, limit: { type: 'number', description: 'Max events to return (default 50)' } }, required: ['room'] } },
+  { name: 'RoomWho', description: 'List who is present in a room (here / stale / left).', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' } }, required: ['room'] } },
+  { name: 'RoomLeave', description: 'Leave a room — clears your presence immediately instead of waiting for the TTL.', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' }, callsign: { type: 'string', description: 'Your handle in the room' }, engine: { type: 'string', description: 'Optional engine/CLI id (codex | claude | agy | agon); identifies you in presence. Defaults to mcp.' } }, required: ['room', 'callsign'] } },
+  { name: 'RoomList', description: 'List all rooms.', inputSchema: { type: 'object', properties: {} } },
+] }}
+
+fn name=isRoomTool params="name:string" returns="boolean" export=true expr={{ return ROOM_TOOLS.some(t => t.name === name); }}
+
+fn name=handleRoomTool params="name:string, args:Record<string,unknown>" returns="string" export=true
+  doc "Execute a room MCP tool directly against the ledger and return a text/JSON result. Never throws — errors come back as 'Error: ...'."
+  handler <<<
+    try {
+      if (name === 'RoomList') return JSON.stringify(listRooms(), null, 2);
+
+      const room = String(args.room ?? '').trim();
+      if (!room) return 'Error: "room" is required.';
+      const roomId = slugifyRoomId(room);
+
+      if (name === 'RoomRead') {
+        if (!roomExists(roomId)) return `Error: no room "${roomId}".`;
+        const since = Number(args.since ?? 0) || 0;
+        const limit = Number(args.limit ?? 50) || 50;
+        const events = readEvents(roomId, since, limit).map(e => ({ seq: e.seq, kind: e.kind, from: e.actor.callsign, body: e.body, mentions: e.mentions, at: e.createdAt }));
+        return JSON.stringify({ room: roomId, events }, null, 2);
+      }
+      if (name === 'RoomWho') {
+        if (!roomExists(roomId)) return `Error: no room "${roomId}".`;
+        return JSON.stringify({ room: roomId, present: listPresence(roomId) }, null, 2);
+      }
+
+      const callsign = String(args.callsign ?? '').trim().toLowerCase();
+      if (!callsign) return 'Error: "callsign" is required.';
+      const engine = args.engine ? String(args.engine) : undefined;
+      const cli = engine || 'mcp';
+      const actor: RoomActor = { actorId: `${cli}:${callsign}`, callsign, kind: 'external-cli', engineId: engine, cli, humanOwner: process.env.USER || 'local' };
+      const repoHint = basename(process.cwd());
+
+      if (name === 'RoomJoin') {
+        if (roomExists(roomId) && isRoomClosed(roomId)) return `Error: room "${roomId}" is closed.`;
+        createRoom(room);
+        recordPresence(roomId, actor, 0, false);
+        appendEvent(roomId, { kind: 'join', actor, body: '', mentions: [], replyTo: null, repoHint });
+        const transcript = readEvents(roomId, 0, 20).map(e => ({ seq: e.seq, kind: e.kind, from: e.actor.callsign, body: e.body, at: e.createdAt }));
+        return JSON.stringify({ joined: roomId, as: callsign, transcript }, null, 2);
+      }
+      if (name === 'RoomPost') {
+        const text = String(args.text ?? '');
+        if (!text.trim()) return 'Error: "text" is required.';
+        if (!roomExists(roomId)) return `Error: no room "${roomId}". Join it first.`;
+        if (isRoomClosed(roomId)) return `Error: room "${roomId}" is closed.`;
+        const ev = appendEvent(roomId, { kind: 'post', actor, body: text, mentions: parseMentions(text), replyTo: null, repoHint });
+        recordPresence(roomId, actor, ev.seq, false);
+        return JSON.stringify({ posted: roomId, seq: ev.seq, mentions: ev.mentions }, null, 2);
+      }
+      if (name === 'RoomLeave') {
+        if (!roomExists(roomId)) return `Error: no room "${roomId}".`;
+        appendEvent(roomId, { kind: 'leave', actor, body: '', mentions: [], replyTo: null, repoHint });
+        removePresence(roomId, callsign);
+        return JSON.stringify({ left: roomId, callsign }, null, 2);
+      }
+      return `Error: unknown room tool "${name}".`;
+    } catch (err: any) {
+      return `Error: ${err?.message ?? String(err)}`;
+    }
+  >>>

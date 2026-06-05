@@ -65,7 +65,7 @@ import from="@kernlang/agon-core" names="loadSkills"
 import from="../../input-utils.js" names="isTerminalFocusReport"
 import from="../../stable-input.js" names="useStableInput"
 import from="../blocks/rich-text.js" names="parseProseToRichLines"
-import from="../services/update-check.js" names="checkForUpdate,loadDismissedVersion,saveDismissedVersion"
+import from="../services/update-check.js" names="checkForUpdate,loadDismissedVersion,saveDismissedVersion,isLinkedDevInstall"
 // ── Domain-specific helper imports (refactored from monolithic app-helpers) ──
 import from="./app-composer.js" names="COMPOSER_HISTORY_LIMIT,loadComposerInputHistory,saveComposerInputHistory"
 import from="./app-tool-detail.js" names="toolDetailViewportRows,findLatestToolDetailEvent,findLatestToolEvent,findLatestFailedToolEvent,buildFailedToolRetryDraft,buildToolDetailView"
@@ -560,6 +560,10 @@ screen name=App target=ink
   // is common for offline users; the banner is non-critical).
   effect deps=""
     handler <<<
+      // On a linked/dev checkout the global `agon` IS this build (via npm link),
+      // so an npm-update banner would offer to install OVER the link and clobber
+      // it. Never auto-check on a dev build — real npm installs still get it.
+      if (isLinkedDevInstall()) return;
       const startedAt = Date.now();
       const elapsed = () => Date.now() - startedAt;
       const boot = setTimeout(async () => {
@@ -2495,6 +2499,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
                 questionOtherActive={questionOtherActive}
                 onQuestionAnswerChange={setQuestionAnswer}
                 onQuestionAnswerSubmit={handleQuestionAnswer}
+                updateBannerActive={!!(updateInfo && updateInfo.latestVersion) && !questionState && !modelPickerOpen && !cesarPickerOpen && !slashPickerOpen && !enginePickerOpen && !toolDetailEvent && !reviewEvent}
                 termWidth={termWidth}
                 termHeight={termHeight}
                 onCtrlShortcut={handleComposerCtrlShortcut} />

@@ -9,8 +9,10 @@
 
 import from="node:child_process" names="execFile"
 import from="node:fs/promises" names="readFile,writeFile,mkdir"
+import from="node:fs" names="existsSync"
 import from="node:os" names="homedir"
-import from="node:path" names="join"
+import from="node:path" names="join,dirname,sep"
+import from="node:url" names="fileURLToPath"
 import from="@kernlang/agon-core" names="getAgonHome"
 
 interface name=UpdateCheckResult
@@ -27,6 +29,32 @@ interface name=UpdateCheckOptions
 interface name=UpdateState
   field name=dismissedFor type=string
   field name=lastChecked type=number
+
+// True when the running CLI is a linked/dev checkout rather than a real npm
+// install. We walk up from this module's directory: crossing a `node_modules`
+// segment first means it's an installed package (global OR local) — the
+// update banner is appropriate there. Reaching a `.git` directory WITHOUT
+// crossing node_modules means we're running from the source checkout (via
+// `npm link`, or `node dist/index.js`). In that case an npm-update banner
+// would offer to install OVER the link and clobber the dev build, so callers
+// suppress it. Best-effort: any failure returns false (show the banner) so a
+// detection edge case never hides a real update from npm users.
+fn name=isLinkedDevInstall returns=boolean export=true
+  handler <<<
+    try {
+      let dir = dirname(fileURLToPath(import.meta.url));
+      for (let i = 0; i < 12; i++) {
+        if (dir.split(sep).includes('node_modules')) return false;
+        if (existsSync(join(dir, '.git'))) return true;
+        const parent = dirname(dir);
+        if (parent === dir) break; // hit the filesystem root
+        dir = parent;
+      }
+    } catch {
+      // never block startup on a detection failure
+    }
+    return false;
+  >>>
 
 // Normalize "1.2", "1.2.3-rc.1", "v1.2.3" into [major, minor, patch, prerelease?]
 // Returns null on garbage so callers can fail closed (treat as "no update").

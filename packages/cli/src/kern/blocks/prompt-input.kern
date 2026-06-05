@@ -251,6 +251,28 @@ fn name=pluralizeLines params="count:number" returns=string export=false expr={{
 
 fn name=isDelegatedCtrlShortcut params="input:string" returns=boolean export=true expr={{ return ['b', 'c', 'e', 'g', 'i', 'j', 'l', 'r', 't', 'y'].includes(input); }}
 
+// Decide whether to DEFER a plain keypress to the app-level global handler
+// instead of inserting it (e.g. the update-banner u/l/x shortcut). Pure so the
+// decision is unit-testable. Deferral happens ONLY when:
+//   - some reserved keys are active (banner showing),
+//   - the keypress is a single plain char (no Ctrl, no special/nav key),
+//   - the composer is EMPTY — `value` is the controlled prop, the SAME source
+//     the global keyboard handler reads (inputValue), so the two layers can
+//     never disagree (no swallow-without-action, no insert-and-fire), and
+//   - the char EXACTLY matches a reserved key. Match is case-SENSITIVE and the
+//     reserved keys are lowercase, so uppercase U/L/X type normally.
+fn name=shouldDeferReservedPlainKey params="input:string, hasCtrlSignal:boolean, hasSpecialKeySignal:boolean, value:string, reservedPlainKeys:string[]" returns=boolean export=true
+  handler <<<
+    return (
+      reservedPlainKeys.length > 0
+      && !hasCtrlSignal
+      && !hasSpecialKeySignal
+      && input.length === 1
+      && value === ''
+      && reservedPlainKeys.includes(input)
+    );
+  >>>
+
 fn name=shouldAdoptPromptValue params="originalValue:string, pendingEchoValue:string|null" returns=boolean export=true
   handler lang="kern"
     if cond="pendingEchoValue === null"
@@ -276,6 +298,7 @@ screen name=PromptTextInput target=ink memo=true export=named
   prop name=onSubmit type="((value:string) => void)|undefined"
   prop name=onCtrlShortcut type="((shortcut:string) => void)|undefined"
   prop name=onPaste type="((raw:string) => string)|undefined"
+  prop name=reservedPlainKeys type="string[]|undefined"
   render
     handler <<<
       const originalValue = value;
@@ -284,6 +307,7 @@ screen name=PromptTextInput target=ink memo=true export=named
       const resolvedShowCursor = showCursor ?? true;
       const resolvedHighlightPastedText = highlightPastedText ?? true;
       const resolvedMaxVisibleLines = maxVisibleLines ?? 6;
+      const resolvedReservedPlainKeys = reservedPlainKeys ?? [];
       const [bufferedValue, setBufferedValue] = useState(originalValue);
       const [state, setState] = useState({
         cursorOffset: originalValue.length,
@@ -413,6 +437,16 @@ screen name=PromptTextInput target=ink memo=true export=named
 
         if (isReservedCtrlShortcut) {
           onCtrlShortcut?.(normalizedCtrlInput);
+          return;
+        }
+
+        // Defer specific PLAIN keys to the app-level global handler while a
+        // transient affordance owns them (e.g. the update-banner u/l/x
+        // shortcut). The app handler runs the action; we swallow the echo here
+        // so `u` triggers the update instead of typing "u". Uses the `value`
+        // prop (not the internal buffer) so this matches the global handler's
+        // emptiness check exactly — see shouldDeferReservedPlainKey.
+        if (shouldDeferReservedPlainKey(input, hasCtrlSignal, hasSpecialKeySignal, value, resolvedReservedPlainKeys)) {
           return;
         }
 

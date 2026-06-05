@@ -333,6 +333,16 @@ describe('resolveKeyboardInput', () => {
         .toEqual({ type: 'updateBanner', action: 'dismiss' });
     });
 
+    it('does NOT fire on uppercase U/L/X (lowercase-only by design, so they type normally)', () => {
+      // The banner advertises a lowercase "u" and the composer's deferral is
+      // case-sensitive, so uppercase variants must NOT trigger the banner —
+      // they fall through and get typed (e.g. starting a message with "Use…").
+      for (const ch of ['U', 'L', 'X']) {
+        const result = resolveKeyboardInput(baseCtx({ input: ch, key: {}, updateInfo }));
+        expect(result).not.toEqual(expect.objectContaining({ type: 'updateBanner' }));
+      }
+    });
+
     it('does NOT hijack u/l/x when the composer has any content (regression: user is typing a message)', () => {
       // Regression: the previous implementation matched bare u/l/x regardless
       // of inputValue, so typing a message containing those letters while the
@@ -348,15 +358,23 @@ describe('resolveKeyboardInput', () => {
       }
     });
 
-    it('does NOT hijack u/l/x while a text input is focused', () => {
-      for (const ch of ['u', 'l', 'x']) {
+    it('fires u/l/x even while the main composer is focused (regression: textInputActive must NOT gate it)', () => {
+      // The main composer is ALWAYS focused in normal chat (textInputActive
+      // true), so the previous `!textInputActive` gate made this branch dead —
+      // `u` fell through and got typed instead of triggering the update. The
+      // composer now DEFERS these exact keys while the banner shows
+      // (reservedPlainKeys), so firing here is correct and the char is never
+      // also inserted. Protection against typing a message lives in the
+      // empty-composer check (inputValue === ''), tested above.
+      const expected = { u: 'update', l: 'changelog', x: 'dismiss' } as const;
+      for (const ch of ['u', 'l', 'x'] as const) {
         const result = resolveKeyboardInput(baseCtx({
           input: ch,
           key: {},
           textInputActive: true,
           updateInfo,
         }));
-        expect(result).not.toEqual(expect.objectContaining({ type: 'updateBanner' }));
+        expect(result).toEqual({ type: 'updateBanner', action: expected[ch] });
       }
     });
 

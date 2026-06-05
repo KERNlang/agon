@@ -14,8 +14,8 @@ import { getGhostCompletion } from '../../ghost-text.js';
 
 import { truncateCodeLine } from './markdown.js';
 
-// @kern-source: composer:20
-const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, autoModeQueued, activePlanState, slashPickerOpen, inputValue, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, onCtrlShortcut, termWidth, termHeight }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; inputValue:string; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; onCtrlShortcut:(shortcut:string) => void; termWidth:number; termHeight:number }) {
+// @kern-source: composer:26
+const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, autoModeQueued, activePlanState, slashPickerOpen, inputValue, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, onCtrlShortcut, updateBannerActive, termWidth, termHeight }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; inputValue:string; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; onCtrlShortcut:(shortcut:string) => void; updateBannerActive:boolean; termWidth:number; termHeight:number }) {
   const placeholder = replState === 'idle'
     ? (mode === 'chat'
         ? ''
@@ -85,6 +85,7 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
                 onPaste={handlePasteInput}
                 onSubmit={handleSubmit}
                 onCtrlShortcut={onCtrlShortcut}
+                reservedPlainKeys={updateBannerActive ? UPDATE_BANNER_KEYS : undefined}
                 placeholder={placeholder}
                 focus={true}
                 showCursor={true}
@@ -116,6 +117,7 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
                             onPaste={undefined}
                             onSubmit={onQuestionAnswerSubmit}
                             onCtrlShortcut={onCtrlShortcut}
+                            reservedPlainKeys={undefined}
                             placeholder="type your instruction, Enter to send"
                             focus={true}
                             showCursor={true}
@@ -159,6 +161,7 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
                               onPaste={undefined}
                               onSubmit={onQuestionAnswerSubmit}
                               onCtrlShortcut={onCtrlShortcut}
+                              reservedPlainKeys={undefined}
                               placeholder="type your answer, Enter to send"
                               focus={true}
                               showCursor={true}
@@ -182,6 +185,7 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
                     onPaste={undefined}
                     onSubmit={onQuestionAnswerSubmit}
                     onCtrlShortcut={onCtrlShortcut}
+                    reservedPlainKeys={undefined}
                     placeholder=""
                     focus={true}
                     showCursor={true}
@@ -199,3 +203,6 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
   );
 });
 export { ComposerView };
+
+// @kern-source: composer:24
+export const UPDATE_BANNER_KEYS: string[] = ['u', 'l', 'x'];

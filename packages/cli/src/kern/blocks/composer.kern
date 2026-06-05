@@ -17,6 +17,12 @@ import from="../signals/icons.js" names="icons"
 import from="../../ghost-text.js" names="getGhostCompletion"
 import from="./markdown.js" names="truncateCodeLine"
 
+// Plain keys the main composer must DEFER (not insert) while the update banner
+// is showing, so `u`/`l`/`x` trigger the banner action instead of typing into
+// the box. Module-level so the reference is stable and PromptTextInput's
+// React.memo never re-renders just because we passed a fresh array.
+const name=UPDATE_BANNER_KEYS type="string[]" value={{ ['u', 'l', 'x'] }}
+
 screen name=ComposerView target=ink memo=true
   prop name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'"
   prop name=replState type=string
@@ -39,6 +45,7 @@ screen name=ComposerView target=ink memo=true
   prop name=onQuestionAnswerChange type="(value:string) => void"
   prop name=onQuestionAnswerSubmit type="(value:string) => void"
   prop name=onCtrlShortcut type="(shortcut:string) => void"
+  prop name=updateBannerActive type=boolean
   prop name=termWidth type=number
   prop name=termHeight type=number
   render
@@ -112,6 +119,7 @@ screen name=ComposerView target=ink memo=true
                     onPaste={handlePasteInput}
                     onSubmit={handleSubmit}
                     onCtrlShortcut={onCtrlShortcut}
+                    reservedPlainKeys={updateBannerActive ? UPDATE_BANNER_KEYS : undefined}
                     placeholder={placeholder}
                     focus={true}
                     showCursor={true}
@@ -143,6 +151,7 @@ screen name=ComposerView target=ink memo=true
                                 onPaste={undefined}
                                 onSubmit={onQuestionAnswerSubmit}
                                 onCtrlShortcut={onCtrlShortcut}
+                                reservedPlainKeys={undefined}
                                 placeholder="type your instruction, Enter to send"
                                 focus={true}
                                 showCursor={true}
@@ -186,6 +195,7 @@ screen name=ComposerView target=ink memo=true
                                   onPaste={undefined}
                                   onSubmit={onQuestionAnswerSubmit}
                                   onCtrlShortcut={onCtrlShortcut}
+                                  reservedPlainKeys={undefined}
                                   placeholder="type your answer, Enter to send"
                                   focus={true}
                                   showCursor={true}
@@ -209,6 +219,7 @@ screen name=ComposerView target=ink memo=true
                         onPaste={undefined}
                         onSubmit={onQuestionAnswerSubmit}
                         onCtrlShortcut={onCtrlShortcut}
+                        reservedPlainKeys={undefined}
                         placeholder=""
                         focus={true}
                         showCursor={true}

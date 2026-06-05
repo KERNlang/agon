@@ -1,0 +1,39 @@
+// ── Agon Rooms — shared types for the multi-party room ledger ──
+// The transcript IS the protocol: an append-only NDJSON event stream per room.
+// CLI / MCP / daemon are adapters over this same ledger.
+
+interface name=RoomActor export=true
+  field name=actorId type=string
+  field name=callsign type=string
+  field name=kind type="'human' | 'external-cli' | 'agon-engine' | 'cesar'"
+  field name=engineId type=string optional=true
+  field name=cli type=string
+  field name=humanOwner type=string optional=true
+
+interface name=RoomEvent export=true
+  field name=seq type=number
+  field name=id type=string
+  field name=roomId type=string
+  field name=kind type=string
+  field name=createdAt type=string
+  field name=actor type=RoomActor
+  field name=repoHint type=string
+  field name=body type=string
+  field name=mentions type="string[]"
+  field name=replyTo type="string | null"
+
+interface name=RoomMeta export=true
+  field name=roomId type=string
+  field name=name type=string
+  field name=createdAt type=string
+  field name=nextSeq type=number
+  field name=closed type=boolean
+
+interface name=PresenceEntry export=true
+  field name=callsign type=string
+  field name=actorId type=string
+  field name=status type="'here' | 'stale' | 'left'"
+  field name=lastSeenAt type=string
+  field name=lastReadSeq type=number
+  field name=auto type=boolean
+  field name=cli type=string

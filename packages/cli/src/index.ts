@@ -8,6 +8,7 @@ import { teamBrainstormCommand } from './commands/team-brainstorm.js';
 import { teamTribunalCommand } from './commands/team-tribunal.js';
 import { leaderboardCommand } from './commands/leaderboard.js';
 import { historyCommand } from './commands/history.js';
+import { roomCommand } from './commands/room.js';
 import { provenanceCommand } from './commands/provenance.js';
 import { engineCommand } from './commands/engine.js';
 import { doctorCommand } from './commands/doctor.js';
@@ -178,6 +179,7 @@ const main = defineCommand({
     'team-tribunal': teamTribunalCommand,
     leaderboard: leaderboardCommand,
     history: historyCommand,
+    room: roomCommand,
     provenance: provenanceCommand,
     engine: engineCommand,
     doctor: doctorCommand,

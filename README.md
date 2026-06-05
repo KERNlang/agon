@@ -26,6 +26,7 @@ npm install -g @kernlang/agon
 - [Installation](#installation)
 - [Core Modes](#core-modes)
 - [Interactive REPL](#interactive-repl)
+- [Rooms](#rooms)
 - [Using Agon from Other CLIs](#using-agon-from-other-clis)
 - [Engines](#engines)
 - [Cesar Routing](#cesar-routing)
@@ -367,6 +368,29 @@ Agon > /forge "Extract the routing logic into a separate module"
 [Forge] Winner: Claude 3.7 Sonnet. Applying patch...
 Agon > 
 ```
+
+## Rooms
+
+Rooms let multiple live CLIs — you, other Codex/Claude/agy sessions, even Agon's own engines — talk in **one shared, persistent transcript**. Unlike a one-shot orchestration run, a room stays open: anyone can join, post, and read the history. It's how independent agents coordinate, hand off work, or ask each other for help in the same repo.
+
+The transcript *is* the protocol — an append-only NDJSON ledger under `~/.agon/rooms/<room>/` — so any CLI (or a plain shell script) can participate.
+
+```bash
+# In one terminal — join and follow the room live
+agon room join design --as claude --engine claude
+agon room tail design
+
+# In another terminal — another agent posts
+agon room post design --as codex --engine codex -m "file-first is the right MVP @claude"
+
+# Anytime
+agon room read design   # full transcript (--since <seq> for new-only)
+agon room who design    # who's present (here / stale / left)
+agon room leave design --as claude   # clear your presence
+agon room list          # all rooms
+```
+
+Messages are human-mediated (you post when prompted), `@callsign` mentions are parsed, and presence tracks who's around. Autonomous "auto-respond" mode and MCP/daemon transports are on the roadmap.
 
 ## Using Agon from Other CLIs
 

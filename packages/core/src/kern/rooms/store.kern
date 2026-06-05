@@ -1,0 +1,169 @@
+// ── Agon Rooms — append-only NDJSON ledger (source of truth) ──
+// One dir per room under ~/.agon/rooms/<roomId>/. events.ndjson is canonical;
+// seq is allocated under an exclusive lock so concurrent CLIs never collide.
+
+import from="node:fs" names="mkdirSync,existsSync,readFileSync,writeFileSync,appendFileSync,readdirSync,openSync,closeSync,unlinkSync,statSync"
+import from="node:path" names="join"
+import from="../utils/paths.js" names="runtimeAgonPath"
+import from="./types.js" names="RoomActor,RoomEvent,RoomMeta" types=true
+
+const name=LOCK_TIMEOUT_MS type=number value=2000
+
+const name=LOCK_STALE_MS type=number value=5000
+
+fn name=roomsDir returns="string" export=true expr={{ return runtimeAgonPath('rooms'); }}
+
+fn name=roomDir params="roomId:string" returns="string" expr={{ return join(roomsDir(), roomId); }}
+
+fn name=eventsPath params="roomId:string" returns="string" expr={{ return join(roomDir(roomId), 'events.ndjson'); }}
+
+fn name=metaPath params="roomId:string" returns="string" expr={{ return join(roomDir(roomId), 'room.json'); }}
+
+fn name=slugifyRoomId params="name:string" returns="string"
+  doc "Turn a human room name into a stable, filesystem-safe roomId so participants can join by name."
+  handler <<<
+    const slug = String(name ?? '').toLowerCase().trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return slug || 'room';
+  >>>
+
+fn name=roomExists params="roomId:string" returns="boolean" expr={{ return existsSync(metaPath(roomId)); }}
+
+fn name=readMeta params="roomId:string" returns="RoomMeta | null"
+  handler <<<
+    try {
+      return JSON.parse(readFileSync(metaPath(roomId), 'utf-8')) as RoomMeta;
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=writeMeta params="meta:RoomMeta" returns="void"
+  handler <<<
+    mkdirSync(roomDir(meta.roomId), { recursive: true });
+    writeFileSync(metaPath(meta.roomId), JSON.stringify(meta, null, 2) + '\n');
+  >>>
+
+fn name=createRoom params="name:string" returns="RoomMeta" export=true
+  doc "Create (or return the existing) room for this name. Idempotent: joining by name twice reuses the room."
+  handler <<<
+    const roomId = slugifyRoomId(name);
+    const existing = readMeta(roomId);
+    if (existing) return existing;
+    mkdirSync(roomDir(roomId), { recursive: true });
+    const meta: RoomMeta = {
+      roomId,
+      name: String(name ?? roomId),
+      createdAt: new Date().toISOString(),
+      nextSeq: 1,
+      closed: false,
+    };
+    writeMeta(meta);
+    if (!existsSync(eventsPath(roomId))) writeFileSync(eventsPath(roomId), '');
+    return meta;
+  >>>
+
+fn name=listRooms returns="RoomMeta[]" export=true
+  handler <<<
+    let ids: string[];
+    try { ids = readdirSync(roomsDir()); } catch { return []; }
+    const out: RoomMeta[] = [];
+    for (const id of ids) {
+      const meta = readMeta(id);
+      if (meta) out.push(meta);
+    }
+    out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return out;
+  >>>
+
+fn name=parseMentions params="text:string" returns="string[]" export=true
+  doc "Extract @callsign mentions, deduped, lowercased. A mention is @ followed by a word that starts alphanumeric."
+  handler <<<
+    const out: string[] = [];
+    const re = /(?:^|[^\w@])@([a-z0-9][\w-]*)/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(String(text ?? ''))) !== null) {
+      const tag = m[1].toLowerCase();
+      if (!out.includes(tag)) out.push(tag);
+    }
+    return out;
+  >>>
+
+fn name=appendEvent params="roomId:string, input:{ kind: string; actor: RoomActor; body: string; mentions: string[]; replyTo: string | null; repoHint: string }" returns="RoomEvent" export=true
+  doc "Append one event under an exclusive lock so seq is monotonic across concurrent CLIs. Steals a stale lock after LOCK_STALE_MS; throws on timeout."
+  handler <<<
+    mkdirSync(roomDir(roomId), { recursive: true });
+    const lock = join(roomDir(roomId), '.lock');
+    const deadline = Date.now() + LOCK_TIMEOUT_MS;
+    let fd: number | null = null;
+    while (fd === null) {
+      try {
+        fd = openSync(lock, 'wx');
+      } catch (err: any) {
+        if (err?.code !== 'EEXIST') throw err;
+        try {
+          const st = statSync(lock);
+          if (Date.now() - st.mtimeMs > LOCK_STALE_MS) { unlinkSync(lock); continue; }
+        } catch { continue; }
+        if (Date.now() > deadline) throw new Error(`room lock timeout: ${roomId}`);
+        const spinUntil = Date.now() + 12;
+        while (Date.now() < spinUntil) { /* brief busy-wait */ }
+      }
+    }
+    try {
+      const meta = readMeta(roomId) ?? createRoom(roomId);
+      const seq = meta.nextSeq;
+      const event: RoomEvent = {
+        seq,
+        id: `evt_${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`,
+        roomId,
+        kind: input.kind,
+        createdAt: new Date().toISOString(),
+        actor: input.actor,
+        repoHint: input.repoHint,
+        body: input.body,
+        mentions: input.mentions,
+        replyTo: input.replyTo,
+      };
+      appendFileSync(eventsPath(roomId), JSON.stringify(event) + '\n');
+      meta.nextSeq = seq + 1;
+      writeMeta(meta);
+      return event;
+    } finally {
+      try { closeSync(fd); } catch { /* already closed */ }
+      try { unlinkSync(lock); } catch { /* already gone */ }
+    }
+  >>>
+
+fn name=readEvents params="roomId:string, sinceSeq:number, limit:number" returns="RoomEvent[]" export=true
+  doc "Read events with seq > sinceSeq (0 = all), tolerating a partially-written final line. limit <= 0 means no limit."
+  handler <<<
+    let raw: string;
+    try { raw = readFileSync(eventsPath(roomId), 'utf-8'); } catch { return []; }
+    const out: RoomEvent[] = [];
+    for (const line of raw.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const ev = JSON.parse(line) as RoomEvent;
+        if (typeof ev.seq === 'number' && ev.seq > sinceSeq) out.push(ev);
+      } catch { /* skip malformed / partial final line */ }
+    }
+    if (limit > 0 && out.length > limit) return out.slice(out.length - limit);
+    return out;
+  >>>
+
+fn name=closeRoom params="roomId:string" returns="void" export=true
+  handler <<<
+    const meta = readMeta(roomId);
+    if (!meta) return;
+    meta.closed = true;
+    writeMeta(meta);
+  >>>
+
+fn name=isRoomClosed params="roomId:string" returns="boolean" export=true
+  doc "True if the room exists and is closed. Callers (post/join) refuse closed rooms so close is enforced, not cosmetic."
+  handler <<<
+    const meta = readMeta(roomId);
+    return meta ? meta.closed === true : false;
+  >>>

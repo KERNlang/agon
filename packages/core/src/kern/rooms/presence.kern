@@ -1,0 +1,67 @@
+// ── Agon Rooms — presence (advisory who-is-here) ──
+// Best-effort, last-write-wins. presence.json maps callsign → entry; status is
+// derived at read time from a TTL so we never claim more precision than we have.
+
+import from="node:fs" names="mkdirSync,existsSync,readFileSync,writeFileSync"
+import from="node:path" names="join"
+import from="./store.js" names="roomDir"
+import from="./types.js" names="RoomActor,PresenceEntry" types=true
+
+const name=PRESENCE_TTL_MS type=number value=90000
+
+fn name=presencePath params="roomId:string" returns="string" expr={{ return join(roomDir(roomId), 'presence.json'); }}
+
+fn name=readPresenceRaw params="roomId:string" returns="Record<string, PresenceEntry>"
+  handler <<<
+    try {
+      return JSON.parse(readFileSync(presencePath(roomId), 'utf-8')) as Record<string, PresenceEntry>;
+    } catch {
+      return {};
+    }
+  >>>
+
+fn name=recordPresence params="roomId:string, actor:RoomActor, lastReadSeq:number, auto:boolean" returns="void" export=true
+  doc "Mark an actor present now. Advisory: written without a lock (last-write-wins is fine for presence)."
+  handler <<<
+    mkdirSync(roomDir(roomId), { recursive: true });
+    const map = readPresenceRaw(roomId);
+    map[actor.callsign] = {
+      callsign: actor.callsign,
+      actorId: actor.actorId,
+      status: 'here',
+      lastSeenAt: new Date().toISOString(),
+      lastReadSeq,
+      auto,
+      cli: actor.cli,
+    };
+    writeFileSync(presencePath(roomId), JSON.stringify(map, null, 2) + '\n');
+  >>>
+
+fn name=removePresence params="roomId:string, callsign:string" returns="void" export=true
+  doc "Drop an actor from presence (explicit leave) so `who` stops showing them immediately instead of waiting for the TTL."
+  handler <<<
+    const map = readPresenceRaw(roomId);
+    if (!map[callsign]) return;
+    delete map[callsign];
+    try { writeFileSync(presencePath(roomId), JSON.stringify(map, null, 2) + '\n'); } catch { /* best-effort */ }
+  >>>
+
+fn name=listPresence params="roomId:string" returns="PresenceEntry[]" export=true
+  doc "Return presence entries with status recomputed from the TTL: here (fresh), stale (over TTL), left (over 4x TTL)."
+  handler <<<
+    const map = readPresenceRaw(roomId);
+    const now = Date.now();
+    const out: PresenceEntry[] = [];
+    for (const key of Object.keys(map)) {
+      const entry = map[key];
+      const age = now - new Date(entry.lastSeenAt).getTime();
+      const status: 'here' | 'stale' | 'left' =
+        !Number.isFinite(age) ? 'left'
+        : age <= PRESENCE_TTL_MS ? 'here'
+        : age <= PRESENCE_TTL_MS * 4 ? 'stale'
+        : 'left';
+      out.push({ ...entry, status });
+    }
+    out.sort((a, b) => a.callsign.localeCompare(b.callsign));
+    return out;
+  >>>

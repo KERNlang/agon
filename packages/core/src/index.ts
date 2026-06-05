@@ -136,6 +136,13 @@ export {
   isImagePath, mimeFromExt, resolveImagePath,
   buildImageAttachment, extractImagesFromInput, normalizeDroppedPath,
 } from './image.js';
+// ── Agon Rooms — multi-party room ledger (file-first; CLI/MCP/daemon are adapters) ──
+export {
+  roomsDir, roomDir, createRoom, listRooms, roomExists, closeRoom, isRoomClosed,
+  appendEvent, readEvents, parseMentions, slugifyRoomId,
+} from './generated/rooms/store.js';
+export { recordPresence, removePresence, listPresence, PRESENCE_TTL_MS } from './generated/rooms/presence.js';
+export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry } from './generated/rooms/types.js';
 export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
 export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';
 export { apiDispatch, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';

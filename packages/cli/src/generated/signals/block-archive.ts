@@ -15,19 +15,18 @@ export const MAX_LIVE_BLOCKS: number = 500;
 export const ARCHIVE_BATCH: number = 100;
 
 /**
- * Per-session archive path under RUNS_DIR. Safe to call repeatedly — same sessionStartTime yields the same path.
+ * Per-session archive path under RUNS_DIR. PURE — computes the path only; the dir is created lazily by archiveBlocks on the first real spill. (Must stay side-effect-free: it is evaluated in a useRef initializer that React re-runs on EVERY render, so a mkdirSync here created one empty live-<ts> dir per keystroke.)
  */
 // @kern-source: block-archive:14
 export function makeBlockArchivePath(sessionStartTime: number): string {
   const dir = join(RUNS_DIR, `live-${sessionStartTime}`);
-  mkdirSync(dir, { recursive: true });
   return join(dir, 'transcript.ndjson');
 }
 
 /**
  * Append blocks as NDJSON. Fire-and-forget: logs a warning on failure but never throws.
  */
-// @kern-source: block-archive:21
+// @kern-source: block-archive:20
 export function archiveBlocks(archivePath: string, blocks: OutputBlock[]): void {
   if (blocks.length === 0) return;
   try {
@@ -39,7 +38,7 @@ export function archiveBlocks(archivePath: string, blocks: OutputBlock[]): void 
   }
 }
 
-// @kern-source: block-archive:36
+// @kern-source: block-archive:35
 export function appendBlockWithCap(prev: OutputBlock[], block: OutputBlock, archivePath: string): OutputBlock[] {
   const next = [...prev, block];
   if (next.length <= MAX_LIVE_BLOCKS) {

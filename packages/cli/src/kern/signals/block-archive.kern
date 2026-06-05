@@ -12,10 +12,9 @@ const name=MAX_LIVE_BLOCKS type=number value=500
 const name=ARCHIVE_BATCH type=number value=100
 
 fn name=makeBlockArchivePath params="sessionStartTime:number" returns=string
-  doc "Per-session archive path under RUNS_DIR. Safe to call repeatedly — same sessionStartTime yields the same path."
+  doc "Per-session archive path under RUNS_DIR. PURE — computes the path only; the dir is created lazily by archiveBlocks on the first real spill. (Must stay side-effect-free: it is evaluated in a useRef initializer that React re-runs on EVERY render, so a mkdirSync here created one empty live-<ts> dir per keystroke.)"
   handler lang="kern"
     let name=dir value="join(RUNS_DIR, `live-${sessionStartTime}`)"
-    do value="mkdirSync(dir, { recursive: true })"
     return value="join(dir, 'transcript.ndjson')"
 
 fn name=archiveBlocks params="archivePath:string, blocks:OutputBlock[]" returns=void

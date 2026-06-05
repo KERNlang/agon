@@ -155,25 +155,32 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   }
 
   // Update-available banner: u = update now, l = view changelog, x = dismiss
-  // for the advertised version. Gated on an empty composer + no focused text
-  // input so the banner never eats a u/l/x the user is actually typing
-  // (the banner itself is the action affordance; the keyboard is just a
-  // shortcut). Loses to all higher-priority surfaces (pickers, tool detail,
-  // questions, fullscreen scroll) so it never hijacks a focused modal.
+  // for the advertised version. Fires ONLY on an empty composer so the banner
+  // never eats a u/l/x the user is mid-typing, and loses to every
+  // higher-priority surface (pickers, tool detail, questions, fullscreen
+  // scroll) so it never hijacks a focused modal. The composer's text input
+  // defers these exact keys while the banner shows (ComposerView
+  // `updateBannerActive` → PromptTextInput `reservedPlainKeys`), so the char
+  // is consumed here as an action and never ALSO typed into the box.
+  // NOTE: do NOT gate on `textInputActive` here — the main composer is always
+  // focused in normal chat, which made this branch dead (the original bug:
+  // `u` fell through and was typed instead of triggering the update).
+  // LOWERCASE-ONLY by design: the banner advertises a lowercase "u", and the
+  // composer's deferral is case-sensitive (UPDATE_BANNER_KEYS are lowercase).
+  // So uppercase U/L/X type normally — a user can still start a message with
+  // "Use…"/"List…" on an empty composer while the banner shows.
   if (
     ctx.updateInfo && ctx.updateInfo.latestVersion
     && ctx.inputValue === ''
-    && !ctx.textInputActive
     && !ctx.questionState
     && !ctx.modelPickerOpen && !ctx.cesarPickerOpen
     && !ctx.toolDetailOpen && !ctx.slashPickerOpen
     && !ctx.enginePickerOpen && !ctx.reviewEventOpen
     && !hasCtrlSignal
-    && (input === 'u' || input === 'U' || input === 'l' || input === 'L' || input === 'x' || input === 'X')
+    && (input === 'u' || input === 'l' || input === 'x')
   ) {
-    const lower = input.toLowerCase();
-    if (lower === 'u') return { type: 'updateBanner', action: 'update' };
-    if (lower === 'l') return { type: 'updateBanner', action: 'changelog' };
+    if (input === 'u') return { type: 'updateBanner', action: 'update' };
+    if (input === 'l') return { type: 'updateBanner', action: 'changelog' };
     return { type: 'updateBanner', action: 'dismiss' };
   }
 

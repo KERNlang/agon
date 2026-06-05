@@ -35,14 +35,15 @@ export interface PromptViewport {
   hiddenBelow: number;
 }
 
-// @kern-source: prompt-input:266
-const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder, focus, showCursor, highlightPastedText, ghostText, width, maxVisibleLines, onChange, onSubmit, onCtrlShortcut, onPaste }: { value:string; placeholder:string|undefined; focus:boolean|undefined; showCursor:boolean|undefined; highlightPastedText:boolean|undefined; ghostText:string|undefined; width:number; maxVisibleLines:number|undefined; onChange:(value:string) => void; onSubmit:((value:string) => void)|undefined; onCtrlShortcut:((shortcut:string) => void)|undefined; onPaste:((raw:string) => string)|undefined }) {
+// @kern-source: prompt-input:288
+const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder, focus, showCursor, highlightPastedText, ghostText, width, maxVisibleLines, onChange, onSubmit, onCtrlShortcut, onPaste, reservedPlainKeys }: { value:string; placeholder:string|undefined; focus:boolean|undefined; showCursor:boolean|undefined; highlightPastedText:boolean|undefined; ghostText:string|undefined; width:number; maxVisibleLines:number|undefined; onChange:(value:string) => void; onSubmit:((value:string) => void)|undefined; onCtrlShortcut:((shortcut:string) => void)|undefined; onPaste:((raw:string) => string)|undefined; reservedPlainKeys:string[]|undefined }) {
   const originalValue = value;
   const resolvedPlaceholder = placeholder ?? '';
   const resolvedFocus = focus ?? true;
   const resolvedShowCursor = showCursor ?? true;
   const resolvedHighlightPastedText = highlightPastedText ?? true;
   const resolvedMaxVisibleLines = maxVisibleLines ?? 6;
+  const resolvedReservedPlainKeys = reservedPlainKeys ?? [];
   const [bufferedValue, setBufferedValue] = useState(originalValue);
   const [state, setState] = useState({
     cursorOffset: originalValue.length,
@@ -172,6 +173,16 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
 
     if (isReservedCtrlShortcut) {
       onCtrlShortcut?.(normalizedCtrlInput);
+      return;
+    }
+
+    // Defer specific PLAIN keys to the app-level global handler while a
+    // transient affordance owns them (e.g. the update-banner u/l/x
+    // shortcut). The app handler runs the action; we swallow the echo here
+    // so `u` triggers the update instead of typing "u". Uses the `value`
+    // prop (not the internal buffer) so this matches the global handler's
+    // emptiness check exactly — see shouldDeferReservedPlainKey.
+    if (shouldDeferReservedPlainKey(input, hasCtrlSignal, hasSpecialKeySignal, value, resolvedReservedPlainKeys)) {
       return;
     }
 
@@ -522,7 +533,19 @@ export function isDelegatedCtrlShortcut(input: string): boolean {
   return ['b', 'c', 'e', 'g', 'i', 'j', 'l', 'r', 't', 'y'].includes(input);
 }
 
-// @kern-source: prompt-input:254
+// @kern-source: prompt-input:264
+export function shouldDeferReservedPlainKey(input: string, hasCtrlSignal: boolean, hasSpecialKeySignal: boolean, value: string, reservedPlainKeys: string[]): boolean {
+  return (
+    reservedPlainKeys.length > 0
+    && !hasCtrlSignal
+    && !hasSpecialKeySignal
+    && input.length === 1
+    && value === ''
+    && reservedPlainKeys.includes(input)
+  );
+}
+
+// @kern-source: prompt-input:276
 export function shouldAdoptPromptValue(originalValue: string, pendingEchoValue: string|null): boolean {
   if (pendingEchoValue === null) {
     return true;

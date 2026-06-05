@@ -4,13 +4,17 @@ import { execFile } from 'node:child_process';
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 
+import { existsSync } from 'node:fs';
+
 import { homedir } from 'node:os';
 
-import { join } from 'node:path';
+import { join, dirname, sep } from 'node:path';
+
+import { fileURLToPath } from 'node:url';
 
 import { getAgonHome } from '@kernlang/agon-core';
 
-// @kern-source: update-check:16
+// @kern-source: update-check:18
 export interface UpdateCheckResult {
   currentVersion: string;
   latestVersion: string;
@@ -19,19 +23,36 @@ export interface UpdateCheckResult {
   error: string;
 }
 
-// @kern-source: update-check:23
+// @kern-source: update-check:25
 export interface UpdateCheckOptions {
   packageName: string;
   registryTimeoutMs: number;
 }
 
-// @kern-source: update-check:27
+// @kern-source: update-check:29
 export interface UpdateState {
   dismissedFor: string;
   lastChecked: number;
 }
 
-// @kern-source: update-check:33
+// @kern-source: update-check:42
+export function isLinkedDevInstall(): boolean {
+  try {
+    let dir = dirname(fileURLToPath(import.meta.url));
+    for (let i = 0; i < 12; i++) {
+      if (dir.split(sep).includes('node_modules')) return false;
+      if (existsSync(join(dir, '.git'))) return true;
+      const parent = dirname(dir);
+      if (parent === dir) break; // hit the filesystem root
+      dir = parent;
+    }
+  } catch {
+    // never block startup on a detection failure
+  }
+  return false;
+}
+
+// @kern-source: update-check:61
 export function parseSemver(raw: string): number[]|null {
   if (typeof raw !== 'string') return null;
   const cleaned = raw.trim().replace(/^v/i, '');
@@ -45,7 +66,7 @@ export function parseSemver(raw: string): number[]|null {
   return [major, minor, patch, pre ? 1 : 0];
 }
 
-// @kern-source: update-check:49
+// @kern-source: update-check:77
 function extractPrerelease(raw: string): string {
   if (typeof raw !== 'string') return '';
   const body = raw.trim().replace(/^v/i, '').replace(/\+.*$/, '');
@@ -53,7 +74,7 @@ function extractPrerelease(raw: string): string {
   return dash >= 0 ? body.slice(dash + 1) : '';
 }
 
-// @kern-source: update-check:61
+// @kern-source: update-check:89
 export function comparePrerelease(a: string, b: string): number {
   const ax = a.split('.');
   const bx = b.split('.');
@@ -77,7 +98,7 @@ export function comparePrerelease(a: string, b: string): number {
   return 0;
 }
 
-// @kern-source: update-check:90
+// @kern-source: update-check:118
 export function semverGte(a: string, b: string): boolean {
   const pa = parseSemver(a);
   const pb = parseSemver(b);
@@ -94,7 +115,7 @@ export function semverGte(a: string, b: string): boolean {
   return comparePrerelease(preA, preB) >= 0;
 }
 
-// @kern-source: update-check:110
+// @kern-source: update-check:138
 async function runNpmViewVersion(packageName: string, timeoutMs: number): Promise<string> {
   return await new Promise<string>((resolve) => {
     let settled = false;
@@ -112,7 +133,7 @@ async function runNpmViewVersion(packageName: string, timeoutMs: number): Promis
   });
 }
 
-// @kern-source: update-check:132
+// @kern-source: update-check:160
 export async function checkForUpdate(currentVersion: string, opts: UpdateCheckOptions|undefined): Promise<UpdateCheckResult> {
   const packageName = (opts && opts.packageName) || '@kernlang/agon';
   const timeoutMs = (opts && typeof opts.registryTimeoutMs === 'number') ? opts.registryTimeoutMs : 5000;
@@ -146,13 +167,13 @@ export async function checkForUpdate(currentVersion: string, opts: UpdateCheckOp
   return result;
 }
 
-// @kern-source: update-check:175
+// @kern-source: update-check:203
 function updateStatePath(): Promise<string> {
   const home = getAgonHome ? getAgonHome() : join(homedir(), '.agon');
   return Promise.resolve(join(home, 'update-state.json'));
 }
 
-// @kern-source: update-check:181
+// @kern-source: update-check:209
 export async function loadDismissedVersion(): Promise<string> {
   try {
     const p = await updateStatePath();
@@ -164,7 +185,7 @@ export async function loadDismissedVersion(): Promise<string> {
   }
 }
 
-// @kern-source: update-check:193
+// @kern-source: update-check:221
 export async function saveDismissedVersion(version: string): Promise<void> {
   try {
     const home = getAgonHome ? getAgonHome() : join(homedir(), '.agon');

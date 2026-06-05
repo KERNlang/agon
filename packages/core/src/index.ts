@@ -259,7 +259,7 @@ export { EngineHealth, engineHealth, classifyDispatchFailure } from './engine-he
 export type { EngineHealthRecord } from './engine-health.js';
 export type { ValidatedEngineDefinition } from './schemas/engine-schema.js';
 export { sessionContext } from './session-context.js';
-export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData, ThinkResultData, CouncilResultData, SynthesisResultData, NeroResultData } from './generated/models/session-result-types.js';
+export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData, ThinkResultData, CouncilResultData, SynthesisResultData, NeroResultData, ReviewResultData } from './generated/models/session-result-types.js';
 export {
   splitPromptBlocks, mergeBlocksByRole,
 } from './prompt-builder.js';

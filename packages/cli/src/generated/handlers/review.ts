@@ -12,6 +12,10 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import { buildConsensus } from '../blocks/consensus.js';
 
+import { sessionResultStore } from '../models/session-results.js';
+
+import { icons } from '../signals/icons.js';
+
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import type { DispatchResult } from '@kernlang/agon-core';
@@ -20,7 +24,7 @@ import { filterDefaultOrchestrationEngines } from './engine-filter.js';
 
 import { stripReasoning, stripTuiChrome } from '../blocks/engine-helpers.js';
 
-// @kern-source: review:15
+// @kern-source: review:17
 export function resolveReviewTarget(target: string|undefined, cwd: string): {diff:string, label:string} {
   const t = (target ?? 'uncommitted').trim();
   let diff = '';
@@ -103,7 +107,7 @@ export function resolveReviewTarget(target: string|undefined, cwd: string): {dif
   return { diff, label };
 }
 
-// @kern-source: review:98
+// @kern-source: review:100
 export function selectReviewEngine(requestedEngine: string|undefined, ctx: HandlerContext): string {
   const allActive = ctx.activeEngines();
   const active = requestedEngine ? allActive : filterDefaultOrchestrationEngines(allActive);
@@ -151,7 +155,7 @@ export function selectReviewEngine(requestedEngine: string|undefined, ctx: Handl
   throw new Error('No engines available for review. Try /engines to check availability.');
 }
 
-// @kern-source: review:146
+// @kern-source: review:148
 export interface ReviewCoreResult {
   response: string;
   blocking: boolean;
@@ -161,10 +165,10 @@ export interface ReviewCoreResult {
   usage?: {promptTokens:number,completionTokens:number,totalTokens:number,source:'sdk'|'cli-reported'|'estimated'};
 }
 
-// @kern-source: review:157
+// @kern-source: review:159
 export const REVIEW_SENTINEL: string = '<!--AGON_REVIEW_FINDINGS_v1-->';
 
-// @kern-source: review:159
+// @kern-source: review:161
 export interface ReviewSeverityCounts {
   blocking: number;
   important: number;
@@ -175,7 +179,7 @@ export interface ReviewSeverityCounts {
 /**
  * Sentinel-anchored, fail-closed extraction of the findings array — the single chokepoint shared by parseReviewBlocking (the blocking gate) and summarizeReviewFindings (severity counts). Returns the parsed array (possibly empty []) or null when no parseable block follows the LAST sentinel. Anti-injection: only text after the LAST sentinel is considered, so attacker brackets quoted earlier in the diff are ignored. Tolerant of almost-JSON (trailing commas, line and block JS-style comments) and fenced json code blocks.
  */
-// @kern-source: review:165
+// @kern-source: review:167
 export function extractReviewFindings(response: string): Array<{severity?:string, blocking?:boolean}> | null {
   if (!response || response.trim().length === 0) return null;
 
@@ -275,7 +279,7 @@ export function extractReviewFindings(response: string): Array<{severity?:string
 /**
  * Sentinel-anchored, fail-closed parser. The engine MUST end its response with a unique sentinel followed by a JSON array of findings. Without a parseable block the response is treated as blocking + parseFailed, so the user must explicitly approve. This blocks the prompt-injection attack where an attacker echoes `[{"blocking":false}]` inside diff content — only the engine's real structured output after the LAST sentinel is considered. Thin wrapper over extractReviewFindings.
  */
-// @kern-source: review:263
+// @kern-source: review:265
 export function parseReviewBlocking(response: string): {blocking:boolean, parseFailed:boolean} {
   const findings = extractReviewFindings(response);
   if (findings === null) return { blocking: true, parseFailed: true };
@@ -286,7 +290,7 @@ export function parseReviewBlocking(response: string): {blocking:boolean, parseF
 /**
  * Count findings by severity from the structured block, for human summaries like 'claude: ok, 1 important, 3 nits'. Returns all-zero when there is no parseable findings block (the caller renders that as unstructured/empty). A finding counts as blocking if blocking===true or severity==='blocking'; otherwise by its severity, with anything not 'important' falling to nit.
  */
-// @kern-source: review:272
+// @kern-source: review:274
 export function summarizeReviewFindings(response: string): ReviewSeverityCounts {
   const findings = extractReviewFindings(response);
   if (!findings) return { blocking: 0, important: 0, nit: 0, total: 0 };
@@ -305,7 +309,7 @@ export function summarizeReviewFindings(response: string): ReviewSeverityCounts 
 /**
  * Repair pass (B): re-ask the engine for ONLY a bare JSON array of the findings it already wrote in prose. Asking for a bare array (no sentinel, no prose, no fence) is the format LLMs comply with most reliably — far better than 'an HTML-comment marker followed by JSON', which engines routinely truncate to just the marker. The caller (runReviewCore) prepends the sentinel itself before parsing, so the anti-injection anchor is preserved. Best-effort: if this still doesn't parse, the fail-closed/unstructured result stands.
  */
-// @kern-source: review:289
+// @kern-source: review:291
 export async function runReviewRepair(priorReview: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal): Promise<string> {
   const config = ctx.config;
   const cwd = resolveWorkingDir();
@@ -355,7 +359,7 @@ export async function runReviewRepair(priorReview: string, engineId: string, ctx
 /**
  * Repo grounding: read the CURRENT full content of each source file the diff touches and format it as a context block. A diff shows only the changed hunks, so reviewers raise false alarms that reading the whole file would kill instantly ('X is unhandled' when the wrapper handles it three lines down; 'unimported' when it's imported at the top). Bounded hard (per-file + total caps) to protect prompt size / TTFT, and skips generated/dist/min files (derived noise that would blow the budget). Best-effort: deleted/binary/unreadable files are skipped — the diff still covers them.
  */
-// @kern-source: review:327
+// @kern-source: review:329
 export function gatherReviewFileContext(diff: string, cwd: string): string {
   const PER_FILE_MAX = 20_000;
   const TOTAL_MAX = 60_000;
@@ -402,7 +406,7 @@ export function gatherReviewFileContext(diff: string, cwd: string): string {
 /**
  * Core review flow with no ctx side effects. Used by both handleReview (with streaming dispatch) and the plan executor's review step (silent). Does NOT touch ctx.setActiveAbort, ctx.lastReviewResult, ctx.chatSession, or tracker. signal is optional: callers that don't have an abort controller can pass undefined. cwdOverride pins the working directory the review engine runs in AND the repo file-context is gathered from — goal passes the per-task worktree so review engines never operate in (and write to) the parent repo; defaults to resolveWorkingDir() for the interactive/CLI review paths.
  */
-// @kern-source: review:372
+// @kern-source: review:374
 export async function runReviewCore(diff: string, label: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, onProgress?: (chunk:string)=>void, cwdOverride?: string): Promise<ReviewCoreResult> {
   const cwd = cwdOverride ?? resolveWorkingDir();
   const config = ctx.config;
@@ -495,7 +499,64 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   return { response: response, blocking: blocking, parseFailed: parseFailed, unstructured: unstructured, severityCounts: severityCounts, usage: usage };
 }
 
-// @kern-source: review:448
+/**
+ * Strip the trailing machine-readable findings block (sentinel + JSON) from a review so the Ctrl+R results pager shows clean prose — the consensus summary already encodes those findings. Cesar's copy (ctx.lastReviewResult.reviewOutput) keeps the full response, so 'fix it' still has the structured file/line/minimalFix data. No-op when there's no sentinel.
+ */
+// @kern-source: review:450
+export function stripMachineBlock(response: string): string {
+  const idx = response.lastIndexOf(REVIEW_SENTINEL);
+  if (idx < 0) return response;
+  return response.slice(0, idx).trimEnd();
+}
+
+/**
+ * Build a consensus EngineOutcome from one engine's review. status!=='ok' yields an empty-findings failure lane (never a phantom blocker), carrying any diagnostic note (error message / timeout detail) through to ConsensusReport.engineFailures; 'ok' parses the engine's structured findings into RawFindings. Shared by the single- and multi-engine paths so the mapping lives in one place.
+ */
+// @kern-source: review:458
+export function reviewOutcome(engineId: string, response: string, status: string, note?: string): any {
+  if (status !== 'ok') return { engine: engineId, status, findings: [], note };
+  // Guard against a model emitting a non-object element (e.g. `[null]` or a
+  // bare string) in the findings array — accessing .severity on null throws.
+  const raw = (extractReviewFindings(response) || []).filter((x: any) => x && typeof x === 'object');
+  const findings = raw.map((x: any) => ({
+    engine: engineId,
+    severity: typeof x.severity === 'string' ? x.severity : (x.blocking ? 'blocking' : 'nit'),
+    blocking: x.blocking,
+    confidence: x.confidence,
+    file: x.file, lines: x.lines, problem: x.problem, minimalFix: x.minimalFix,
+  }));
+  return { engine: engineId, status: 'ok', findings };
+}
+
+/**
+ * Render a consensus report into the compact, human-facing summary lines (tiered: verified / needs-check / speculative / nits / failed). The single source of the summary text shown inline AND stored as ReviewResultData.consensusSummary, so the transcript and the Ctrl+R pager always agree.
+ */
+// @kern-source: review:475
+export function buildReviewConsensusLines(consensus: any): string[] {
+  const fmt = (f: any): string => `  • [${f.severity} ${f.maxConfidence.toFixed(2)} ×${f.engines.length}${f.pairVotes >= 2 ? ' pair' : ''}] ${f.problem}${f.file ? ` (${f.file}${f.lines ? ':' + f.lines : ''})` : ''}`;
+  const lines: string[] = [`Consensus — ${consensus.summary}`];
+  if (consensus.verified.length) { lines.push('VERIFIED (actionable):'); for (const f of consensus.verified) lines.push(fmt(f)); }
+  if (consensus.needsCheck.length) { lines.push('NEEDS-CHECK (want a second opinion):'); for (const f of consensus.needsCheck) lines.push(fmt(f)); }
+  if (consensus.speculative.length) lines.push(`SPECULATIVE: ${consensus.speculative.length} low-confidence finding(s) — likely noise.`);
+  if (consensus.nits.length) lines.push(`NITS: ${consensus.nits.length}.`);
+  if (consensus.engineFailures.length) lines.push(`FAILED (no machine verdict): ${consensus.engineFailures.map((e: any) => `${e.engine} (${e.status})`).join(', ')}.`);
+  return lines;
+}
+
+/**
+ * One-line severity tail for a single engine's review: '2 important, 3 nits' (zero categories omitted; 'no findings' when empty).
+ */
+// @kern-source: review:488
+export function formatReviewCounts(c: ReviewSeverityCounts|undefined): string {
+  if (!c || c.total === 0) return 'no findings';
+  const parts: string[] = [];
+  if (c.blocking) parts.push(`${c.blocking} blocking`);
+  if (c.important) parts.push(`${c.important} important`);
+  if (c.nit) parts.push(`${c.nit} ${c.nit === 1 ? 'nit' : 'nits'}`);
+  return parts.join(', ');
+}
+
+// @kern-source: review:499
 export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngine?: string): Promise<void> {
   const abort = new AbortController();
   try {
@@ -534,16 +595,13 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 
     let response = '';
     let unstructured = false;
-    let streaming = false;
 
     try {
-      const result = await runReviewCore(diff, label, engineId, ctx, abort.signal, (chunk: string) => {
-        if (!streaming) {
-          dispatch({ type: 'spinner-stop' });
-          streaming = true;
-        }
-        dispatch({ type: 'streaming-chunk', engineId, chunk });
-      });
+      // No onProgress callback: we deliberately do NOT stream the prose to the
+      // screen. The spinner stays up while the engine works; when it finishes we
+      // show only the compact consensus summary, and the full review goes to the
+      // Ctrl+R results pager — not the transcript.
+      const result = await runReviewCore(diff, label, engineId, ctx, abort.signal);
       response = result.response;
       unstructured = result.unstructured;
     } catch (err) {
@@ -552,41 +610,69 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
       return;
     }
 
+    dispatch({ type: 'spinner-stop' });
+
     if (abort.signal.aborted) {
-      dispatch({ type: 'spinner-stop' });
       return;
     }
 
-    // 5. Display results
-    if (!streaming && response) {
-      dispatch({ type: 'engine-block', engineId, color, content: response });
-    }
-    if (streaming) {
-      dispatch({ type: 'streaming-end', engineId });
-    }
-
-    // 6. Store in chat session and track
-    if (response) {
-      appendMessage(ctx.chatSession, { role: 'user', content: `[review ${label}]`, timestamp: new Date().toISOString() });
-      appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
-      tracker.record(engineId, { prompt: `[review ${label}]`, response });
-
-      // 7. Store structured last review result for "fix it" flow
-      ctx.lastReviewResult = {
-        engineId,
-        target: target ?? 'uncommitted',
-        label,
-        diff,
-        reviewOutput: response,
-        timestamp: Date.now(),
-      };
-
-      dispatch({ type: 'info', message: unstructured
-        ? `Review complete (unstructured — findings weren't machine-parseable, but the review above is valid). Say "fix it" or "fix it with <engine>" to address it.`
-        : `Review complete. Say "fix it" or "fix it with <engine>" to address the findings.` });
-    } else {
+    if (!response) {
       dispatch({ type: 'warning', message: `${engineId} returned no review output.` });
+      return;
     }
+
+    // Store in chat session + tracker, and keep the FULL response (machine block
+    // included) in lastReviewResult so Cesar's "fix it" has the structured
+    // file/line/minimalFix data.
+    appendMessage(ctx.chatSession, { role: 'user', content: `[review ${label}]`, timestamp: new Date().toISOString() });
+    appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
+    tracker.record(engineId, { prompt: `[review ${label}]`, response });
+    ctx.lastReviewResult = {
+      engineId,
+      target: target ?? 'uncommitted',
+      label,
+      diff,
+      reviewOutput: response,
+      timestamp: Date.now(),
+    };
+
+    // Compact summary inline (the bug list) — never the full prose.
+    const status = unstructured ? 'unstructured' : 'ok';
+    let consensusSummary: string;
+    let blocking = false;
+    if (status === 'ok') {
+      const consensus = buildConsensus([reviewOutcome(engineId, response, status)] as any);
+      consensusSummary = buildReviewConsensusLines(consensus).join('\n');
+      blocking = consensus.autoBlock;
+      dispatch({ type: blocking ? 'warning' : 'info', message: consensusSummary });
+    } else {
+      // Unstructured single-engine review: the prose is valid but there's no
+      // machine verdict. blocking stays false on PURPOSE — this field only drives
+      // the pager's header colour, and surfacing a valid review as RED/BLOCKING
+      // would mislead. The automated review GATE (plan executor) reads
+      // runReviewCore's own blocking/parseFailed, which stay fail-closed.
+      consensusSummary = `${engineId}: unstructured review — no machine-parseable findings (the prose is valid).`;
+      dispatch({ type: 'info', message: consensusSummary });
+    }
+
+    // Full review (clean prose) → Ctrl+R results pager.
+    sessionResultStore.add({
+      type: 'review',
+      timestamp: new Date().toISOString(),
+      question: label,
+      engines: [engineId],
+      winner: null,
+      data: {
+        label,
+        consensusSummary,
+        blocking,
+        reviews: [{ engineId, status, reviewOutput: stripMachineBlock(response) }],
+      },
+    });
+
+    dispatch({ type: 'info', message: unstructured
+      ? `Review complete (unstructured — no machine verdict, but the review is valid). Ctrl+R for the full review · say "fix it" to address it.`
+      : `Review complete. Ctrl+R for the full review · say "fix it" or "fix it with <engine>" to address the findings.` });
   } finally {
     dispatch({ type: 'spinner-stop' });
     ctx.setActiveAbort(null);
@@ -596,7 +682,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 /**
  * Run review for one or more explicitly requested engines. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A single engine delegates to the streaming handleReview path.
  */
-// @kern-source: review:545
+// @kern-source: review:621
 export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
   const abort = new AbortController();
   try {
@@ -646,7 +732,6 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
       controllers.push(controller);
       let timedOut = false;
       const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutSec * 1000);
-      const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 124;
       try {
         const result = await runReviewCore(diff, label, engineId, ctx, controller.signal);
         const response = (result.response ?? '').trim();
@@ -658,10 +743,15 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
           dispatch({ type: 'warning', message: `${engineId} returned no review output.` });
           return { engineId, reviewOutput: '', unstructured: false, status: 'error', note: 'no output' };
         }
-        dispatch({ type: 'engine-block', engineId, color, content: response });
+        // One-line per-engine status instead of dumping the full prose — the
+        // full review lands in the Ctrl+R pager, the bug list in the consensus.
+        const status = result.unstructured ? 'unstructured' : 'ok';
+        dispatch({ type: 'info', message: result.unstructured
+          ? `${icons().success} ${engineId}: unstructured (no machine verdict)`
+          : `${icons().success} ${engineId}: ${formatReviewCounts(result.severityCounts)}` });
         appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
         tracker.record(engineId, { prompt: `[review ${label}]`, response });
-        return { engineId, reviewOutput: response, unstructured: result.unstructured, status: result.unstructured ? 'parse-failed' : 'ok' };
+        return { engineId, reviewOutput: response, unstructured: result.unstructured, status };
       } catch (err) {
         if (timedOut) {
           dispatch({ type: 'warning', message: `${engineId}: timed out after ${timeoutSec}s — skipped.` });
@@ -687,28 +777,10 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
     // CONSENSUS — fold every engine's parsed findings into one tiered verdict.
     // ok engines contribute their structured findings; unstructured/timeout/
     // error engines land in the engineFailures lane (never a phantom blocker).
-    const outcomes = all.map((c) => {
-      if (c.status !== 'ok') return { engine: c.engineId, status: c.status, findings: [], note: c.note };
-      const raw = extractReviewFindings(c.reviewOutput) || [];
-      const findings = raw.map((x: any) => ({
-        engine: c.engineId,
-        severity: typeof x.severity === 'string' ? x.severity : (x.blocking ? 'blocking' : 'nit'),
-        blocking: x.blocking,
-        confidence: x.confidence,
-        file: x.file, lines: x.lines, problem: x.problem, minimalFix: x.minimalFix,
-      }));
-      return { engine: c.engineId, status: 'ok', findings };
-    });
+    const outcomes = all.map((c) => reviewOutcome(c.engineId, c.reviewOutput, c.status, c.note));
     const consensus = buildConsensus(outcomes as any);
-
-    const fmt = (f: any): string => `  • [${f.severity} ${f.maxConfidence.toFixed(2)} ×${f.engines.length}${f.pairVotes >= 2 ? ' pair' : ''}] ${f.problem}${f.file ? ` (${f.file}${f.lines ? ':' + f.lines : ''})` : ''}`;
-    const lines: string[] = [`Consensus — ${consensus.summary}`];
-    if (consensus.verified.length) { lines.push('VERIFIED (actionable):'); for (const f of consensus.verified) lines.push(fmt(f)); }
-    if (consensus.needsCheck.length) { lines.push('NEEDS-CHECK (want a second opinion):'); for (const f of consensus.needsCheck) lines.push(fmt(f)); }
-    if (consensus.speculative.length) lines.push(`SPECULATIVE: ${consensus.speculative.length} low-confidence finding(s) — likely noise.`);
-    if (consensus.nits.length) lines.push(`NITS: ${consensus.nits.length}.`);
-    if (consensus.engineFailures.length) lines.push(`FAILED (no machine verdict): ${consensus.engineFailures.map((e: any) => `${e.engine} (${e.status})`).join(', ')}.`);
-    dispatch({ type: consensus.autoBlock ? 'warning' : 'info', message: lines.join('\n') });
+    const consensusSummary = buildReviewConsensusLines(consensus).join('\n');
+    dispatch({ type: consensus.autoBlock ? 'warning' : 'info', message: consensusSummary });
 
     const anyUnstructured = collected.some((c) => c.unstructured);
     ctx.lastReviewResult = {
@@ -719,7 +791,23 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
       reviewOutput: collected.map((r) => `## ${r.engineId}\n\n${r.reviewOutput}`).join('\n\n---\n\n'),
       timestamp: Date.now(),
     };
-    dispatch({ type: 'info', message: `Multi-review complete (${collected.map((r) => r.engineId).join(', ')}).${anyUnstructured ? ' Some reviews were unstructured (no machine verdict) but valid.' : ''} Say "fix it" or "fix it with <engine>" to address the findings.` });
+
+    // Full per-engine reviews (clean prose) → Ctrl+R results pager.
+    sessionResultStore.add({
+      type: 'review',
+      timestamp: new Date().toISOString(),
+      question: label,
+      engines: collected.map((r) => r.engineId),
+      winner: null,
+      data: {
+        label,
+        consensusSummary,
+        blocking: consensus.autoBlock,
+        reviews: collected.map((r) => ({ engineId: r.engineId, status: r.status, reviewOutput: stripMachineBlock(r.reviewOutput) })),
+      },
+    });
+
+    dispatch({ type: 'info', message: `Multi-review complete (${collected.map((r) => r.engineId).join(', ')}).${anyUnstructured ? ' Some reviews were unstructured (no machine verdict) but valid.' : ''} Ctrl+R for the full reviews · say "fix it" or "fix it with <engine>" to address the findings.` });
   } finally {
     ctx.setActiveAbort(null);
   }

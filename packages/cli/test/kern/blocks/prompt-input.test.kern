@@ -35,3 +35,19 @@ test name="Prompt input block" target="../../../src/kern/blocks/prompt-input.ker
   it name="shortcut delegation remains explicit"
     expect node=fn name=isDelegatedCtrlShortcut prop=returns is=boolean
     expect node=fn name=isDelegatedCtrlShortcut prop=export is=true
+
+  it name="reserved plain keys defer only when empty, plain, and exact-case"
+    # lowercase u/l/x on an empty composer defer to the global banner handler
+    expect fn=shouldDeferReservedPlainKey args={{["u", false, false, "", ["u", "l", "x"]]}} equals=true
+    expect fn=shouldDeferReservedPlainKey args={{["x", false, false, "", ["u", "l", "x"]]}} equals=true
+    # uppercase is case-SENSITIVE → types normally (not deferred)
+    expect fn=shouldDeferReservedPlainKey args={{["U", false, false, "", ["u", "l", "x"]]}} equals=false
+    # non-empty composer → user is typing, insert normally
+    expect fn=shouldDeferReservedPlainKey args={{["u", false, false, "hi", ["u", "l", "x"]]}} equals=false
+    # no reserved keys (banner hidden) → never defer
+    expect fn=shouldDeferReservedPlainKey args={{["u", false, false, "", []]}} equals=false
+    # Ctrl / special-key signals → never defer (Ctrl+U is line-kill, etc.)
+    expect fn=shouldDeferReservedPlainKey args={{["u", true, false, "", ["u", "l", "x"]]}} equals=false
+    expect fn=shouldDeferReservedPlainKey args={{["u", false, true, "", ["u", "l", "x"]]}} equals=false
+    # an unrelated plain char → never defer
+    expect fn=shouldDeferReservedPlainKey args={{["a", false, false, "", ["u", "l", "x"]]}} equals=false

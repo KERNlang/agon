@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 import { join } from 'node:path';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, existsSync } from 'node:fs';
 
 // Mocked execFile: tests can flip `execFileMock` between cases to simulate
 // different registry responses (success, malformed, unreachable). vi.mock is
@@ -20,6 +20,7 @@ import {
   checkForUpdate,
   loadDismissedVersion,
   saveDismissedVersion,
+  isLinkedDevInstall,
 } from '../../packages/cli/src/generated/services/update-check.js';
 
 function makeFakeChild(stdout: string, exitCode: number = 0) {
@@ -52,6 +53,21 @@ function makeFakeChild(stdout: string, exitCode: number = 0) {
 }
 
 describe('update-check service', () => {
+  describe('isLinkedDevInstall', () => {
+    it('returns a boolean, and detects the git checkout when one is present', () => {
+      const result = isLinkedDevInstall();
+      expect(typeof result).toBe('boolean');
+      // Walking up from the module dir reaches a `.git` without crossing
+      // node_modules — the "linked/dev build" signal. Guard the strong
+      // assertion on actual `.git` presence so a rare .git-less export (e.g. a
+      // CI tarball run) doesn't flake the suite; the normal local + CI checkout
+      // case has `.git` at the repo root (cwd) and must report true.
+      if (existsSync(join(process.cwd(), '.git'))) {
+        expect(result).toBe(true);
+      }
+    });
+  });
+
   describe('parseSemver', () => {
     it('parses a clean x.y.z', () => {
       expect(parseSemver('1.2.3')).toEqual([1, 2, 3, 0]);

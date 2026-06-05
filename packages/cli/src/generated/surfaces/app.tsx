@@ -128,7 +128,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-import { checkForUpdate, loadDismissedVersion, saveDismissedVersion } from '../services/update-check.js';
+import { checkForUpdate, loadDismissedVersion, saveDismissedVersion, isLinkedDevInstall } from '../services/update-check.js';
 
 import { COMPOSER_HISTORY_LIMIT, loadComposerInputHistory, saveComposerInputHistory } from './app-composer.js';
 
@@ -2061,6 +2061,10 @@ export function App() {
   }, [lastReviewResult]);
 
   useEffect(() => {
+    // On a linked/dev checkout the global `agon` IS this build (via npm link),
+    // so an npm-update banner would offer to install OVER the link and clobber
+    // it. Never auto-check on a dev build — real npm installs still get it.
+    if (isLinkedDevInstall()) return;
     const startedAt = Date.now();
     const elapsed = () => Date.now() - startedAt;
     const boot = setTimeout(async () => {
@@ -2756,6 +2760,7 @@ export function App() {
             questionOtherActive={questionOtherActive}
             onQuestionAnswerChange={setQuestionAnswer}
             onQuestionAnswerSubmit={handleQuestionAnswer}
+            updateBannerActive={!!(updateInfo && updateInfo.latestVersion) && !questionState && !modelPickerOpen && !cesarPickerOpen && !slashPickerOpen && !enginePickerOpen && !toolDetailEvent && !reviewEvent}
             termWidth={termWidth}
             termHeight={termHeight}
             onCtrlShortcut={handleComposerCtrlShortcut} />
@@ -2836,7 +2841,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:91
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2564
+// @kern-source: app:2569
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

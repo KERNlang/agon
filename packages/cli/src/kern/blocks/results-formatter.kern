@@ -1,4 +1,4 @@
-import from="@kernlang/agon-core" names="SessionResult,BrainstormResultData,CampfireResultData,TribunalResultData,ForgeResultData,ThinkResultData,CouncilResultData,SynthesisResultData,NeroResultData,ChatSession" types=true
+import from="@kernlang/agon-core" names="SessionResult,BrainstormResultData,CampfireResultData,TribunalResultData,ForgeResultData,ThinkResultData,CouncilResultData,SynthesisResultData,NeroResultData,ReviewResultData,ChatSession" types=true
 
 const name=BOLD type=string value={{ '\x1b[1m' }}
 
@@ -204,10 +204,31 @@ fn name=formatNero params="r:SessionResult, idx:number" returns=string
       do value="lines.push('')"
     return value="lines.join('\\n')"
 
+fn name=formatReview params="r:SessionResult, idx:number" returns=string
+  handler lang="kern"
+    let name=data value="r.data as ReviewResultData"
+    let name=lines type="string[]" value="[]"
+    let name=accent value="data.blocking ? RED : YELLOW"
+    do value="lines.push(`${BOLD}${accent}${RULE}${RESET}`)"
+    do value="lines.push(`${BOLD} REVIEW #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}${data.label}${RESET}`)"
+    do value="lines.push(`${DIM} Engines: ${r.engines.join(', ')}${data.blocking ? ` · ${RESET}${RED}${BOLD}BLOCKING${RESET}` : ''}${RESET}`)"
+    do value="lines.push(`${BOLD}${accent}${RULE}${RESET}`)"
+    do value="lines.push('')"
+    if cond="data.consensusSummary"
+      do value="lines.push(`${BOLD}── Consensus ──${RESET}`)"
+      do value="lines.push(data.consensusSummary)"
+      do value="lines.push('')"
+    each name=rev in="data.reviews"
+      let name=statusTag value="rev.status === 'ok' ? '' : `${DIM} [${rev.status}]${RESET}`"
+      do value="lines.push(`${BOLD}── ${rev.engineId}${statusTag} ──${RESET}`)"
+      do value="lines.push(rev.reviewOutput)"
+      do value="lines.push('')"
+    return value="lines.join('\\n')"
+
 fn name=formatSessionResults params="results:SessionResult[]" returns=string export=true
   handler <<<
     if (results.length === 0) {
-      return `${DIM}No results in this session yet. Run /brainstorm, /campfire, /tribunal, /forge, /think, /council, /synthesis, or /nero first.${RESET}\n`;
+      return `${DIM}No results in this session yet. Run /brainstorm, /campfire, /tribunal, /forge, /think, /council, /synthesis, /nero, or /review first.${RESET}\n`;
     }
 
     const sections: string[] = [];
@@ -225,6 +246,7 @@ fn name=formatSessionResults params="results:SessionResult[]" returns=string exp
         case 'council': sections.push(formatCouncil(r, idx)); break;
         case 'synthesis': sections.push(formatSynthesis(r, idx)); break;
         case 'nero': sections.push(formatNero(r, idx)); break;
+        case 'review': sections.push(formatReview(r, idx)); break;
       }
     }
 

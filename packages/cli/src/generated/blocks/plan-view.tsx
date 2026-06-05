@@ -228,6 +228,10 @@ export function PlanExecutionView({ plan }: { plan:any }) {
         const result = s.result;
         const elapsed = result?.durationMs ? `${(result.durationMs / 1000).toFixed(1)}s` : '';
         const cost = result?.actualCostUsd ? `$${result.actualCostUsd.toFixed(4)}` : '';
+        // Defense in depth: never trust a step to have a description.
+        // A malformed/legacy plan (typeless phantom step) must render,
+        // not crash the whole TUI at `s.description.slice()`.
+        const desc = typeof s.description === 'string' ? s.description : '';
         return (
           <Box key={s.id}>
             <Text color={stateInfo.color}>{stateInfo.icon}{' '}</Text>
@@ -235,7 +239,7 @@ export function PlanExecutionView({ plan }: { plan:any }) {
               <Text bold color="white">{String(i + 1)}{'.'}</Text>
             </Box>
             <Text color={cfg.color}>{cfg.icon}{' '}</Text>
-            <Text color={s.state === 'done' ? '#64748b' : s.state === 'running' ? 'white' : undefined}>{s.description.slice(0, 50)}{s.description.length > 50 ? '\u2026' : ''}</Text>
+            <Text color={s.state === 'done' ? '#64748b' : s.state === 'running' ? 'white' : undefined}>{desc.slice(0, 50)}{desc.length > 50 ? '\u2026' : ''}</Text>
             {(elapsed || cost) && (
               <Text dimColor>{' ('}{elapsed}{elapsed && cost ? ', ' : ''}{cost}{')'}</Text>
             )}
@@ -248,7 +252,7 @@ export function PlanExecutionView({ plan }: { plan:any }) {
       {runningSteps.length > 0 && (
         <Box marginTop={1}>
           <Text color="#fbbf24">{'\u25cf Running: '}</Text>
-          <Text>{runningSteps.map((s: any) => s.description).join(', ')}</Text>
+          <Text>{runningSteps.map((s: any) => s.description ?? '').join(', ')}</Text>
         </Box>
       )}
     </Box>

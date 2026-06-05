@@ -18,14 +18,23 @@ fn name=handleProposePlan params="args:any, dispatch:Dispatch, ctx:HandlerContex
       return fallback;
     };
 
-    const steps: CesarPlanStep[] = (args.steps ?? []).map((s: any, i: number) => {
+    // Validate LLM-controlled steps at the boundary. Cesar occasionally
+    // emits malformed step objects with no `type`/`description` (phantom
+    // entries). Those are unexecutable — `plan-executor` returns
+    // "No executor for type: undefined" — and worse, they corrupt the plan
+    // markdown ("### Step 4: undefined") and crash PlanExecutionView at
+    // `s.description.slice()`. Drop any step whose type isn't a real
+    // CesarStepType, and coerce description to a string for the survivors.
+    const VALID_STEP_TYPES = new Set(['self', 'forge', 'teamforge', 'delegate', 'brainstorm', 'campfire', 'tribunal', 'pipeline', 'review', 'agent', 'team-agent']);
+
+    const steps: CesarPlanStep[] = (args.steps ?? []).filter((s: any) => s && VALID_STEP_TYPES.has(s.type)).map((s: any, i: number) => {
       // Tribunal fix #5: estimator is the only source of truth for cost.
       // Cesar cannot lie about cost to slip past the auto-approve ceiling.
       const est = planCostEstimator.estimate(s.type, s.engines ?? []);
       return {
         id: sanitizeId(s.id, `step-${i}-${Math.random().toString(36).slice(2, 8)}`),
         type: s.type,
-        description: s.description,
+        description: typeof s.description === 'string' && s.description.trim() ? s.description : '(no description)',
         engines: s.engines,
         engine: s.engine,
         fitnessCmd: s.fitnessCmd,

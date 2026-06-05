@@ -28,14 +28,23 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
     return fallback;
   };
 
-  const steps: CesarPlanStep[] = (args.steps ?? []).map((s: any, i: number) => {
+  // Validate LLM-controlled steps at the boundary. Cesar occasionally
+  // emits malformed step objects with no `type`/`description` (phantom
+  // entries). Those are unexecutable — `plan-executor` returns
+  // "No executor for type: undefined" — and worse, they corrupt the plan
+  // markdown ("### Step 4: undefined") and crash PlanExecutionView at
+  // `s.description.slice()`. Drop any step whose type isn't a real
+  // CesarStepType, and coerce description to a string for the survivors.
+  const VALID_STEP_TYPES = new Set(['self', 'forge', 'teamforge', 'delegate', 'brainstorm', 'campfire', 'tribunal', 'pipeline', 'review', 'agent', 'team-agent']);
+
+  const steps: CesarPlanStep[] = (args.steps ?? []).filter((s: any) => s && VALID_STEP_TYPES.has(s.type)).map((s: any, i: number) => {
     // Tribunal fix #5: estimator is the only source of truth for cost.
     // Cesar cannot lie about cost to slip past the auto-approve ceiling.
     const est = planCostEstimator.estimate(s.type, s.engines ?? []);
     return {
       id: sanitizeId(s.id, `step-${i}-${Math.random().toString(36).slice(2, 8)}`),
       type: s.type,
-      description: s.description,
+      description: typeof s.description === 'string' && s.description.trim() ? s.description : '(no description)',
       engines: s.engines,
       engine: s.engine,
       fitnessCmd: s.fitnessCmd,
@@ -92,7 +101,7 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
 /**
  * Cesar's escape hatch from plan mode (shared by the native onToolCall path and the MCP/XML signal paths in brain.kern). Archives any pending/paused plan as cancelled-with-reason, clears all plan state so mutation guards lift and go/yes stop routing to /approve, and sets a one-turn ping-pong guard. Refuses to abandon a RUNNING plan (it may have in-flight jobs/worktrees) — the user must cancel that. The dispatch is only for UI events; the state cleanup above does not depend on it, so a null dispatch is non-fatal (both call paths then behave identically). Returns the tool-result string.
  */
-// @kern-source: plan-mode:82
+// @kern-source: plan-mode:91
 export function handleExitPlanMode(reason: string, dispatch: Dispatch|null, ctx: HandlerContext): string {
   const r = (reason && reason.trim()) ? reason.trim() : 'no reason given';
   const current = ctx.activePlan as CesarPlan | undefined;
@@ -118,7 +127,7 @@ export function handleExitPlanMode(reason: string, dispatch: Dispatch|null, ctx:
   return `[PLAN_EXITED] Left plan mode (${r}). You are now live: investigate and act directly with tools, or answer the user. Do NOT propose a plan again this turn.`;
 }
 
-// @kern-source: plan-mode:109
+// @kern-source: plan-mode:118
 export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch): Record<string,StepExecutor> {
   const cwd = resolveWorkingDir();
   const outputDir = join(RUNS_DIR, `plan-exec-${Date.now()}`);

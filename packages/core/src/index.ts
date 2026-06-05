@@ -184,8 +184,9 @@ export {
 export type {
   ThreadMessage, ThreadCheckpoint, FileTouch, LoopMessage, ContextThreadConfig, ThreadSize,
 } from './generated/cesar/context-thread.js';
-export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath } from './generated/cesar/plan.js';
+export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, CESAR_STEP_TYPES } from './generated/cesar/plan.js';
 export type { CesarPlan, CesarPlanStep, CesarStepResult } from './generated/cesar/plan.js';
+export { sanitizePlanSteps } from './generated/cesar/plan-validation.js';
 export { planCostEstimator } from './generated/cesar/plan-cost-estimator.js';
 export type { CostEstimate } from './generated/cesar/plan-cost-estimator.js';
 export { executePlan, getReadySteps } from './generated/cesar/plan-executor.js';

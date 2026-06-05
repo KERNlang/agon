@@ -252,7 +252,7 @@ export function PlanExecutionView({ plan }: { plan:any }) {
       {runningSteps.length > 0 && (
         <Box marginTop={1}>
           <Text color="#fbbf24">{'\u25cf Running: '}</Text>
-          <Text>{runningSteps.map((s: any) => s.description ?? '').join(', ')}</Text>
+          <Text>{runningSteps.map((s: any) => typeof s.description === 'string' ? s.description : '').join(', ')}</Text>
         </Box>
       )}
     </Box>

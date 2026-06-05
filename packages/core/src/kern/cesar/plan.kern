@@ -36,6 +36,14 @@ type name=CesarPlanState values="planning|awaiting_approval|running|paused|done|
 type name=CesarStepState values="pending|blocked|running|done|failed|skipped|cancelled"
 type name=CesarStepType values="self|forge|teamforge|delegate|brainstorm|campfire|tribunal|pipeline|review|agent|team-agent"
 
+// Single source of truth for the valid step types. The Record<CesarStepType,true>
+// annotation makes the compiler REJECT drift: add a CesarStepType variant above
+// and the build fails until you add it here too. CESAR_STEP_TYPES (the runtime
+// list used to validate LLM-proposed steps at the boundary) is derived from it,
+// so the two can never silently diverge.
+const name=CESAR_STEP_TYPE_TABLE type="Record<CesarStepType, true>" value={{ ({ self: true, forge: true, teamforge: true, delegate: true, brainstorm: true, campfire: true, tribunal: true, pipeline: true, review: true, agent: true, 'team-agent': true }) }}
+const name=CESAR_STEP_TYPES type="CesarStepType[]" value={{ (Object.keys(CESAR_STEP_TYPE_TABLE) as CesarStepType[]) }}
+
 interface name=CesarStepResult
   field name=status type="'success'|'failure'"
   field name=actualTokens type=number

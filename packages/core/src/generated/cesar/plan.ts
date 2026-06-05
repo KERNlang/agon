@@ -58,7 +58,13 @@ export type CesarStepState = 'pending' | 'blocked' | 'running' | 'done' | 'faile
 // @kern-source: plan:37
 export type CesarStepType = 'self' | 'forge' | 'teamforge' | 'delegate' | 'brainstorm' | 'campfire' | 'tribunal' | 'pipeline' | 'review' | 'agent' | 'team-agent';
 
-// @kern-source: plan:39
+// @kern-source: plan:44
+export const CESAR_STEP_TYPE_TABLE: Record<CesarStepType, true> = ({ self: true, forge: true, teamforge: true, delegate: true, brainstorm: true, campfire: true, tribunal: true, pipeline: true, review: true, agent: true, 'team-agent': true });
+
+// @kern-source: plan:45
+export const CESAR_STEP_TYPES: CesarStepType[] = (Object.keys(CESAR_STEP_TYPE_TABLE) as CesarStepType[]);
+
+// @kern-source: plan:47
 export interface CesarStepResult {
   status: 'success'|'failure';
   actualTokens: number;
@@ -68,7 +74,7 @@ export interface CesarStepResult {
   error?: string;
 }
 
-// @kern-source: plan:47
+// @kern-source: plan:55
 export interface CesarPlanStep {
   id: string;
   type: CesarStepType;
@@ -96,7 +102,7 @@ export interface CesarPlanStep {
 /**
  * Set when Cesar leaves plan mode via ExitPlanMode — the plan is archived as cancelled with the reason Cesar gave, so the exit is auditable and the proposal isn't silently erased.
  */
-// @kern-source: plan:71
+// @kern-source: plan:79
 export interface CesarPlan {
   id: string;
   state: CesarPlanState;
@@ -126,7 +132,7 @@ export interface CesarPlan {
 /**
  * Create a new CesarPlan in 'planning' state. Steps with dependsOn are marked 'blocked', others 'pending'.
  */
-// @kern-source: plan:97
+// @kern-source: plan:105
 export function createCesarPlan(intent: string, steps: CesarPlanStep[]): CesarPlan {
   const id = `cplan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const initializedSteps = steps.map(s => Object.assign({}, s, { state: ((s.dependsOn && s.dependsOn.length > 0) ? 'blocked' : 'pending') as CesarStepState }));
@@ -139,7 +145,7 @@ export function createCesarPlan(intent: string, steps: CesarPlanStep[]): CesarPl
 /**
  * Transition plan from 'awaiting_approval' to 'running', set approvedAt.
  */
-// @kern-source: plan:107
+// @kern-source: plan:115
 export function approveCesarPlan(plan: CesarPlan): CesarPlan {
   return { ...plan, state: 'running' as CesarPlanState, approvedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
 }
@@ -147,7 +153,7 @@ export function approveCesarPlan(plan: CesarPlan): CesarPlan {
 /**
  * Mark a step done/failed, unblock dependents, determine plan state.
  */
-// @kern-source: plan:112
+// @kern-source: plan:120
 export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarStepResult): CesarPlan {
   const stepIdx = plan.steps.findIndex(s => s.id === stepId);
   if (stepIdx === -1) return plan;
@@ -207,7 +213,7 @@ export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarS
 /**
  * Cancel the plan: mark all non-complete steps as cancelled.
  */
-// @kern-source: plan:170
+// @kern-source: plan:178
 export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
   const newSteps = plan.steps.map(s => {
     if (s.state === 'done' || s.state === 'failed') return s;
@@ -226,7 +232,7 @@ export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
 /**
  * Archive a plan when Cesar leaves plan mode via ExitPlanMode. Cancels it (same step handling as cancelCesarPlan) and records the exit reason + timestamp so the exit is auditable. The pending proposal is preserved on disk as a cancelled record rather than erased.
  */
-// @kern-source: plan:187
+// @kern-source: plan:195
 export function exitCesarPlan(plan: CesarPlan, reason: string): CesarPlan {
   const cancelled = cancelCesarPlan(plan);
   return {
@@ -239,7 +245,7 @@ export function exitCesarPlan(plan: CesarPlan, reason: string): CesarPlan {
 /**
  * Persist a CesarPlan to ~/.agon/plans/<id>.json atomically. Markdown lives beside it as <id>.md so the plan is discoverable and editable. FU-8: write to a .tmp file then renameSync, so concurrent Agon sessions reading the same path observe either the old complete file or the new complete file — never a partial. POSIX rename within the same directory is atomic.
  */
-// @kern-source: plan:198
+// @kern-source: plan:206
 export function saveCesarPlan(plan: CesarPlan): void {
   const dir = getCesarPlansDir();
   mkdirSync(dir, { recursive: true });
@@ -263,7 +269,7 @@ export function saveCesarPlan(plan: CesarPlan): void {
 /**
  * Load a persisted CesarPlan from ~/.agon/plans/<id>.json. Falls back to the legacy ~/.agon/runs path for old sessions.
  */
-// @kern-source: plan:220
+// @kern-source: plan:228
 export function loadCesarPlan(planId: string): CesarPlan|null {
   let safeId = '';
   try {
@@ -289,7 +295,7 @@ export function loadCesarPlan(planId: string): CesarPlan|null {
 /**
  * List persisted CesarPlans from ~/.agon/plans, with legacy ~/.agon/runs fallback.
  */
-// @kern-source: plan:240
+// @kern-source: plan:248
 export function listCesarPlans(): CesarPlan[] {
   const byId = new Map<string, CesarPlan>();
   const readFromDir = (dir: string, canonical: boolean) => {

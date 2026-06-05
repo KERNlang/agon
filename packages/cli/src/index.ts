@@ -165,7 +165,7 @@ maybeNotifyIsolationMigration();
 const main = defineCommand({
   meta: {
     name: 'agon',
-    version: '0.1.3',
+    version: '0.1.4',
     description: 'Any AI can join. They compete. You ship.',
   },
   subCommands: {

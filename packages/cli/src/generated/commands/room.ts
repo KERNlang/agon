@@ -4,16 +4,20 @@ import { defineCommand } from 'citty';
 
 import { basename } from 'node:path';
 
-import { ensureAgonHome, createRoom, listRooms, roomExists, closeRoom, isRoomClosed, appendEvent, readEvents, parseMentions, slugifyRoomId, recordPresence, removePresence, listPresence } from '@kernlang/agon-core';
+import { ensureAgonHome, createRoom, listRooms, roomExists, closeRoom, isRoomClosed, appendEvent, readEvents, parseMentions, slugifyRoomId, recordPresence, removePresence, listPresence, acquireTurnLease, releaseTurnLease, readActiveLease, detectTrigger, evaluateStop, createRunDir, EngineRegistry } from '@kernlang/agon-core';
 
-import type { RoomActor, RoomEvent, PresenceEntry } from '@kernlang/agon-core';
+import type { RoomActor, RoomEvent, PresenceEntry, AutoConfig, AutoState } from '@kernlang/agon-core';
+
+import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
+
+import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
 import { header, info, success, fail, table, bold, green, red, dim } from '../blocks/output-format.js';
 
 /**
  * Build the room actor from CLI flags. callsign comes from --as (or --engine); cli/engine from --engine.
  */
-// @kern-source: room:11
+// @kern-source: room:13
 export function actorFromArgs(args: any): RoomActor {
   const engine = (args.engine as string | undefined) || undefined;
   const callsign = String((args.as as string) || engine || 'me').toLowerCase();
@@ -32,7 +36,7 @@ export function actorFromArgs(args: any): RoomActor {
 /**
  * One transcript line. Posts show the body; join/leave/close render as system lines.
  */
-// @kern-source: room:28
+// @kern-source: room:30
 export function renderEvent(ev: RoomEvent): string {
   const t = new Date(ev.createdAt);
   const hh = String(t.getHours()).padStart(2, '0');
@@ -48,7 +52,7 @@ export function renderEvent(ev: RoomEvent): string {
   return `${seq} ${stamp} ${dim('* ' + ev.kind + ' by ' + ev.actor.callsign)}`;
 }
 
-// @kern-source: room:45
+// @kern-source: room:47
 export const roomCommand: any = defineCommand({
   meta: {
     name: 'room',
@@ -57,7 +61,7 @@ export const roomCommand: any = defineCommand({
   args: {
     action: {
       type: 'positional',
-      description: 'create | join | post | read | tail | who | leave | close | list',
+      description: 'create | join | post | read | tail | auto | who | leave | close | list',
       required: true,
     },
     room: {
@@ -71,6 +75,15 @@ export const roomCommand: any = defineCommand({
     engine: { type: 'string', description: 'Engine/CLI id: codex | claude | agy | agon' },
     since: { type: 'string', description: 'Only events after this seq (read/tail)', default: '0' },
     limit: { type: 'string', description: 'Max events to show (read)', default: '50' },
+    'max-turns': { type: 'string', description: 'auto: stop after N replies (default 3)', default: '3' },
+    'max-minutes': { type: 'string', description: 'auto: stop after N minutes (default 10)', default: '10' },
+    'open-floor': { type: 'boolean', description: 'auto: respond to any post after a quiet gap, not only @mentions' },
+    'until-human': { type: 'boolean', description: 'auto: stop once a human replies after your turn' },
+    'stop-phrase': { type: 'string', description: 'auto: stop when a post contains this phrase' },
+    'quiet-ms': { type: 'string', description: 'auto open-floor: quiet gap before responding (ms, default 4000)', default: '4000' },
+    'poll-ms': { type: 'string', description: 'auto/tail: poll interval (ms, default 1500)', default: '1500' },
+    'lease-ttl': { type: 'string', description: 'auto: turn-lease TTL seconds (default 60)', default: '60' },
+    'dry-run': { type: 'boolean', description: 'auto: post a stub instead of dispatching the engine (test the loop without spending tokens)' },
   },
   async run({ args }) {
     ensureAgonHome();
@@ -144,6 +157,98 @@ export const roomCommand: any = defineCommand({
         await new Promise<void>(() => { /* run until SIGINT */ });
         return;
       }
+      case 'auto': {
+        const dryRun = !!args['dry-run'];
+        if (!dryRun && !actor.engineId) { fail('auto needs --engine <id> (or --dry-run to test the loop without an engine).'); return; }
+        createRoom(roomName); // ensure the room exists
+        if (isRoomClosed(roomId)) { fail(`Room "${roomId}" is closed.`); return; }
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        const adapter = createCliAdapter(registry);
+        const dispatchTimeoutSec = 120;
+        let engine: any = null;
+        if (!dryRun) {
+          try { engine = registry.get(actor.engineId as string); }
+          catch { fail(`Unknown engine "${actor.engineId}". Run: agon engine list`); return; }
+        }
+        const autoCfg: AutoConfig = {
+          callsign: actor.callsign,
+          openFloor: !!args['open-floor'],
+          quietMs: Math.max(0, parseInt(String(args['quiet-ms'] ?? '4000'), 10) || 4000),
+          maxTurns: Math.min(100, Math.max(1, parseInt(String(args['max-turns'] ?? '3'), 10) || 3)),
+          maxWallMs: Math.min(1440, Math.max(1, parseInt(String(args['max-minutes'] ?? '10'), 10) || 10)) * 60000,
+          stopPhrase: String(args['stop-phrase'] ?? ''),
+          untilHuman: !!args['until-human'],
+        };
+        // The lease MUST outlive a dispatch: if it expired mid-call another agent
+        // could grab the floor and both would post. Floor it at dispatch + 15s.
+        const leaseTtlMs = Math.max(Math.max(5, parseInt(String(args['lease-ttl'] ?? '60'), 10) || 60), dispatchTimeoutSec + 15) * 1000;
+        const pollMs = Math.max(250, parseInt(String(args['poll-ms'] ?? '1500'), 10) || 1500);
+        const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+        let cleanedUp = false;
+        const cleanup = () => {
+          if (cleanedUp) return;
+          cleanedUp = true;
+          try { appendEvent(roomId, { kind: 'leave', actor, body: '', mentions: [], replyTo: null, repoHint, auto: true }); } catch { /* best-effort */ }
+          try { removePresence(roomId, actor.callsign); } catch { /* best-effort */ }
+        };
+        const onSigint = () => { cleanup(); process.exit(0); };
+        process.once('SIGINT', onSigint);
+
+        try {
+          recordPresence(roomId, actor, 0, true);
+          appendEvent(roomId, { kind: 'join', actor, body: '', mentions: [], replyTo: null, repoHint, auto: true });
+          header(`Auto ${bold(actor.callsign)} in ${bold(roomId)} ${dim('(' + (autoCfg.openFloor ? 'open-floor' : 'mention-only') + ', ≤' + autoCfg.maxTurns + ' turns / ' + (autoCfg.maxWallMs / 60000) + 'm' + (dryRun ? ', dry-run' : ', ' + actor.engineId) + ' — Ctrl+C to stop)')}`);
+
+          const st: AutoState = { turns: 0, startedAtMs: Date.now(), lastSelfSeq: 0 };
+          let lastHandledSeq = 0;
+          for (;;) {
+            if (isRoomClosed(roomId)) { info(dim('auto stopped: room closed')); break; }
+            const events = readEvents(roomId, 0, 0);
+            const stop = evaluateStop(st, autoCfg, events);
+            if (stop.stop) { info(dim(`auto stopped: ${stop.reason}`)); break; }
+            const trig = detectTrigger(events, actor.callsign, autoCfg.openFloor, autoCfg.quietMs);
+            if (!trig.trigger || trig.triggerSeq <= lastHandledSeq) { await sleep(pollMs); continue; }
+            const lease = acquireTurnLease(roomId, actor.callsign, trig.triggerSeq, leaseTtlMs);
+            if (!lease) { await sleep(pollMs); continue; } // another agent holds the floor
+            try {
+              let reply = '';
+              if (dryRun) {
+                reply = `(dry-run) ${actor.callsign} acks #${trig.triggerSeq}`;
+              } else {
+                const transcript = events.filter((e) => e.kind === 'post').slice(-20).map((e) => `${e.actor.callsign}: ${e.body}`).join('\n');
+                const prompt = `You are "${actor.callsign}" in a multi-agent chat room. Reply concisely (1-3 sentences) to the latest message; do not repeat earlier points. Transcript:\n${transcript}`;
+                const { path: outputDir } = createRunDir({ mode: 'room-auto', announce: false });
+                const result = await adapter.dispatch({ engine, prompt, cwd: process.cwd(), mode: 'exec', timeout: dispatchTimeoutSec, outputDir });
+                reply = (result.stdout || '').trim();
+              }
+              // Re-verify we still hold the floor — a slow dispatch could have
+              // outlived the lease and let another agent post in the meantime.
+              const held = readActiveLease(roomId);
+              if (reply && held && held.leaseId === lease.leaseId) {
+                const posted = appendEvent(roomId, { kind: 'post', actor, body: reply, mentions: parseMentions(reply), replyTo: null, repoHint, auto: true });
+                recordPresence(roomId, actor, posted.seq, true);
+                st.lastSelfSeq = posted.seq;
+                console.log(renderEvent(posted));
+              } else if (reply) {
+                info(dim('auto: lost the floor during dispatch — dropping this reply (one-poster guarantee)'));
+              }
+            } finally {
+              releaseTurnLease(roomId, lease.leaseId);
+            }
+            // Consume the trigger and count the turn EVEN on an empty reply, so a
+            // silent engine cannot re-dispatch the same mention every poll.
+            lastHandledSeq = trig.triggerSeq;
+            st.turns += 1;
+            await sleep(pollMs);
+          }
+        } finally {
+          process.removeListener('SIGINT', onSigint);
+          cleanup();
+        }
+        return;
+      }
       case 'who': {
         if (!roomExists(roomId)) { fail(`No room "${roomId}".`); return; }
         const present: PresenceEntry[] = listPresence(roomId);
@@ -172,7 +277,7 @@ export const roomCommand: any = defineCommand({
         return;
       }
       default:
-        fail(`Unknown action "${action}". Use: create | join | post | read | tail | who | leave | close | list`);
+        fail(`Unknown action "${action}". Use: create | join | post | read | tail | auto | who | leave | close | list`);
     }
   },
 });

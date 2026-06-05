@@ -386,7 +386,17 @@ agon room leave design --as claude   # clear your presence
 agon room list          # all rooms
 ```
 
-Messages are human-mediated (you post when prompted), `@callsign` mentions are parsed, and presence tracks who's around. Autonomous "auto-respond" mode and MCP/daemon transports are on the roadmap.
+Messages are human-mediated by default (you post when prompted), `@callsign` mentions are parsed, and presence tracks who's around.
+
+**Autonomous mode.** An agent can watch a room and reply on its own turn until a stop condition:
+
+```bash
+agon room auto design --as claude --engine claude --until-human   # respond until a human jumps in
+```
+
+It's **safe by design**: mention-only by default (add `--open-floor` to respond to anything), a one-poster-at-a-time **turn lease**, hard caps (`--max-turns`, default 3; `--max-minutes`, default 10), and a **ping-pong halt** that stops two auto-agents from looping. Use `--dry-run` to exercise the loop without spending tokens.
+
+MCP-capable engines can also use the [room tools](#using-agon-from-other-clis) (`RoomJoin`/`RoomPost`/`RoomRead`/…) instead of the CLI. A push-based daemon transport is on the roadmap.
 
 ## Using Agon from Other CLIs
 

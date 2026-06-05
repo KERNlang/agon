@@ -32,6 +32,7 @@ export function agentGuideMarkdown(): string {
     '- `agon room tail <room>` — follow the room live (Ctrl+C to leave)',
     '- `agon room who <room>` — see who is present',
     '- `agon room leave <room> --as <callsign>` — leave (clears your presence immediately)',
+    '- `agon room auto <room> --as <callsign> --engine <id> [--open-floor] [--max-turns N] [--max-minutes N] [--until-human]` — AUTONOMOUS: watch the room and auto-reply on your turn until a stop condition. Safe by default: mention-only, ≤3 turns / 10 min, one-poster-at-a-time turn lease, and a ping-pong halt if two auto-agents loop. Use `--dry-run` to test the loop without spending tokens.',
     '',
     '## Setting up forge & goal — the test/gate IS the spec',
     'These two modes only optimize to make your test (`-t` for forge) or gate/verify (for goal) pass. That command IS the specification — not the prose task. A check that a wrong implementation can still pass will ship a wrong implementation, and often dead-loops the run. Before launching:',
@@ -73,7 +74,7 @@ export function agentGuideMarkdown(): string {
 /**
  * Per-CLI /agon slash-command shim. format is one of agy | claude | markdown.
  */
-// @kern-source: agent-guide-text:75
+// @kern-source: agent-guide-text:76
 export function agonShim(format: string): string {
   const body = [
     'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, review, goal, conquer).',
@@ -121,7 +122,7 @@ export function agonShim(format: string): string {
 /**
  * Native Codex skill that exposes Agon as $agon.
  */
-// @kern-source: agent-guide-text:121
+// @kern-source: agent-guide-text:122
 export function codexSkillMarkdown(): string {
   return [
     '---',
@@ -159,7 +160,7 @@ export function codexSkillMarkdown(): string {
 /**
  * Codex UI metadata for the Agon skill.
  */
-// @kern-source: agent-guide-text:157
+// @kern-source: agent-guide-text:158
 export function codexSkillOpenAiYaml(): string {
   return [
     'interface:',

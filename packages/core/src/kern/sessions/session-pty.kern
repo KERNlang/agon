@@ -7,7 +7,12 @@ fn name=createPtySession params="config:PersistentSessionConfig" returns="Persis
     let claudeSession: any = null;
     let alive = false;
     let firstTurn = true;
-    let busy = false;
+    let turnActive = false;
+    // The PTY pump for the PRIOR turn, still settling in the background after we
+    // early-returned its channel answer. The next send() awaits it so the daemon
+    // (which forbids concurrent asks) is free — this overlaps with the user
+    // reading the last answer + typing, so it's almost always already done.
+    let pendingDrain: Promise<void> | null = null;
 
     // 15-min per-turn ceiling. A turn is short in practice: orchestration tools
     // (Forge/Tribunal) SIGNAL Cesar and return "stop" immediately; AgonBash runs
@@ -76,67 +81,98 @@ fn name=createPtySession params="config:PersistentSessionConfig" returns="Persis
       },
 
       async *send(opts: SessionSendOptions) {
-        if (busy) { yield { type: 'error' as const, content: 'claude PTY session busy (concurrent turn rejected)' }; return; }
-        if (!alive || !claudeSession) {
-          try { await session.start(); }
-          catch (e) { yield { type: 'error' as const, content: `claude PTY session not alive: ${e instanceof Error ? e.message : String(e)}` }; return; }
-        }
-        if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
-
-        busy = true;
-        clearAnswer();
-        // Claude's TUI has no --system-prompt; prepend it on the first turn only
-        // (the persistent session retains it in conversation context thereafter).
-        const sys = firstTurn ? (opts.systemPrompt ?? config.systemPrompt) : undefined;
-        firstTurn = false;
-        const composed = sys
-          ? `[System Instructions]\n${sys}\n\n[User Message]\n${opts.message}`
-          : opts.message;
-
-        let aborted = false;
-        const onAbort = () => {
-          aborted = true;
-          try { claudeSession?.close?.(); } catch { /* ignore */ }
-          claudeSession = null; alive = false;
-        };
-        opts.signal?.addEventListener('abort', onAbort, { once: true });
-
-        let scrapedFinal = '';
+        if (turnActive) { yield { type: 'error' as const, content: 'claude PTY session busy (concurrent turn rejected)' }; return; }
+        turnActive = true;
         try {
-          // Drive the turn to completion. We consume the stream to advance the
-          // daemon's done-detection; the deltas are noisy TUI redraws so we do
-          // NOT surface them as answer text. The generator's RETURN value is the
-          // clean scraped extract, kept only as a fallback.
-          const it = claudeSession.askStream(composed, TURN_TIMEOUT_MS);
-          let res = await it.next();
-          while (!res.done) { res = await it.next(); }
-          scrapedFinal = typeof res.value === 'string' ? res.value : '';
-        } catch (e) {
-          opts.signal?.removeEventListener('abort', onAbort);
-          busy = false;
-          if (aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
-          // Daemon/TUI error — mark dead so the next turn respawns.
-          alive = false; claudeSession = null;
-          yield { type: 'error' as const, content: `claude PTY turn failed: ${e instanceof Error ? e.message : String(e)}` };
-          return;
-        }
-        opts.signal?.removeEventListener('abort', onAbort);
-        busy = false;
-        if (aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+          // Free the daemon: a prior turn whose answer we already returned may
+          // still be settling its PTY pump in the background. Wait it out (this
+          // overlaps with the user's read+type time, so it's usually instant).
+          if (pendingDrain) { try { await pendingDrain; } catch { /* ignore */ } pendingDrain = null; }
 
-        // Authoritative answer via the DeliverAnswer channel.
-        const answer = readAnswer();
-        if (answer !== null && answer.length > 0) {
-          yield { type: 'text' as const, content: answer };
+          if (!alive || !claudeSession) {
+            try { await session.start(); }
+            catch (e) { yield { type: 'error' as const, content: `claude PTY session not alive: ${e instanceof Error ? e.message : String(e)}` }; return; }
+          }
+          if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+
+          clearAnswer();
+          // Claude's TUI has no --system-prompt; prepend it on the first turn only
+          // (the persistent session retains it in conversation context thereafter).
+          const sys = firstTurn ? (opts.systemPrompt ?? config.systemPrompt) : undefined;
+          firstTurn = false;
+          const composed = sys
+            ? `[System Instructions]\n${sys}\n\n[User Message]\n${opts.message}`
+            : opts.message;
+
+          let aborted = false;
+          const onAbort = () => {
+            aborted = true;
+            try { claudeSession?.close?.(); } catch { /* ignore */ }
+            claudeSession = null; alive = false;
+          };
+          opts.signal?.addEventListener('abort', onAbort, { once: true });
+
+          // Driver: pump the PTY turn to completion (idle-settle). It runs to the
+          // end even after we early-return the channel answer, so the daemon's
+          // single-flight lock clears for the next turn. It NEVER rejects — the
+          // scraped extract / error are captured for the fallback path. Tracked
+          // in pendingDrain from creation so it can't orphan the daemon.
+          let scrapedFinal = '';
+          let driverError: unknown = null;
+          const it = claudeSession.askStream(composed, TURN_TIMEOUT_MS);
+          const driver: Promise<void> = (async () => {
+            try {
+              let res = await it.next();
+              while (!res.done) { res = await it.next(); }
+              scrapedFinal = typeof res.value === 'string' ? res.value : '';
+            } catch (e) { driverError = e; }
+          })();
+          pendingDrain = driver;
+          let driverDone = false;
+          void driver.then(() => { driverDone = true; });
+
+          // Race: the DeliverAnswer channel file appearing (normal turn — return
+          // the instant Claude delivers, skipping the idle-settle wait) vs the
+          // driver completing (orchestration STOP turn with no answer, or error).
+          await new Promise<void>((resolve) => {
+            const tick = setInterval(() => {
+              if (driverDone || readAnswer() !== null) { clearInterval(tick); resolve(); }
+            }, 100);
+            void driver.finally(() => { clearInterval(tick); resolve(); });
+          });
+
+          opts.signal?.removeEventListener('abort', onAbort);
+
+          if (aborted) {
+            // pendingDrain already === driver; the closed pump unwinds off the hot path.
+            yield { type: 'done' as const, content: 'cancelled' }; return;
+          }
+
+          // Authoritative answer via the DeliverAnswer channel — return NOW; the
+          // PTY finishes settling in the background (next send() awaits it).
+          const answer = readAnswer();
+          if (answer !== null && answer.length > 0) {
+            yield { type: 'text' as const, content: answer };
+            yield { type: 'done' as const, content: 'end_turn' };
+            return;
+          }
+
+          // No channel answer — the driver has finished (orchestration STOP turn,
+          // or Claude didn't deliver). Surface an error or fall back to scrape.
+          await driver;
+          pendingDrain = null;
+          if (driverError) {
+            alive = false; claudeSession = null;
+            yield { type: 'error' as const, content: `claude PTY turn failed: ${driverError instanceof Error ? driverError.message : String(driverError)}` };
+            return;
+          }
+          if (scrapedFinal && scrapedFinal.trim()) {
+            yield { type: 'text' as const, content: scrapedFinal };
+          }
           yield { type: 'done' as const, content: 'end_turn' };
-          return;
+        } finally {
+          turnActive = false;
         }
-        // Fallback: engine didn't deliver via the channel (or empty) — use the
-        // scraped extract so the turn isn't silently lost.
-        if (scrapedFinal && scrapedFinal.trim()) {
-          yield { type: 'text' as const, content: scrapedFinal };
-        }
-        yield { type: 'done' as const, content: 'end_turn' };
       },
 
       close() {

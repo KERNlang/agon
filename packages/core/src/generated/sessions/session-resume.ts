@@ -8,6 +8,8 @@ import { createInterface } from 'node:readline';
 
 import { apiStreamDispatchWithHistory } from '../api/dispatch.js';
 
+import { encodeImagesForDispatch } from '../blocks/image.js';
+
 import { saveSessionState, loadSessionState, saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache, loadConversation } from '../signals/session-store.js';
 
 import { parseToolCalls, toolCallsToApiFormat } from '../tools/tool-parser.js';
@@ -19,7 +21,7 @@ import type { PersistentSessionConfig, PersistentSession, SessionChunk, SessionS
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */
-// @kern-source: session-resume:10
+// @kern-source: session-resume:11
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
       let sessionId: string | null = null;
@@ -108,9 +110,62 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               firstTurn = false;
             }
 
+            // ── Vision: encode dropped images for THIS turn only ──
+            // base64 is attached at dispatch time (see withImages below), NEVER stored
+            // in messageHistory — that history is persisted, re-sent every turn, and run
+            // through compaction, so inlining base64 there would blow the context window.
+            // Gated by the engine's declared vision capability; a text-only engine gets a
+            // clear note instead of a file path it would otherwise try to Read as bytes.
+            const hasVision = !!config.engine.capabilities?.includes('vision');
+            let turnImageParts: Array<{type:'image',image:string,mediaType:string}> = [];
+            if (opts.images?.length) {
+              if (hasVision) {
+                const enc = encodeImagesForDispatch(opts.images);
+                turnImageParts = enc.parts;
+                if (enc.skipped.length) {
+                  yield { type: 'status' as const, content: `image(s) not sent: ${enc.skipped.join('; ')}` };
+                }
+              } else {
+                yield { type: 'status' as const, content: `${config.engine.id} has no vision capability — ${opts.images.length} image(s) not sent to the model` };
+              }
+            }
+
             // All messages are user messages. Tool results are handled inside the
-            // agentic loop (same turn), not across turns.
-            messageHistory.push({ role: 'user', content: opts.message });
+            // agentic loop (same turn), not across turns. Content stays text-only here.
+            // Keep the object reference so withImages targets THIS exact turn — anchoring
+            // by "last user message" would misfire once compaction appends its own
+            // [CONTEXT STATUS] / emergency-trim user messages later in this same turn.
+            const userTurnMsg: {role: string, content: any} = { role: 'user', content: opts.message };
+            messageHistory.push(userTurnMsg);
+
+            // Per-request view of history: splice the current turn's image parts into
+            // THIS turn's user message. Returns a shallow clone so messageHistory itself
+            // stays base64-free (and string-typed for compaction/estimation).
+            const withImages = (history: typeof messageHistory): typeof messageHistory => {
+              if (!turnImageParts.length) return history;
+              // Prefer object identity; fall back to the most recent user message whose
+              // content is still exactly our prompt (covers compaction cloning the object).
+              // Both miss → attach nothing rather than risk the wrong message.
+              let idx = history.indexOf(userTurnMsg);
+              if (idx < 0) {
+                for (let i = history.length - 1; i >= 0; i--) {
+                  const m = history[i];
+                  if (m?.role === 'user' && typeof m.content === 'string' && m.content === userTurnMsg.content) { idx = i; break; }
+                }
+              }
+              if (idx < 0) return history;
+              const base = history[idx];
+              const text = typeof base.content === 'string' ? base.content : '';
+              // Omit the text part entirely for an image-only turn (e.g. /img <path>):
+              // Anthropic and several OpenAI-compatible vision endpoints reject a
+              // multimodal message that carries an empty text content block.
+              const content = text.trim()
+                ? [{ type: 'text', text }, ...turnImageParts]
+                : [...turnImageParts];
+              const cloned = history.slice();
+              cloned[idx] = { ...base, content };
+              return cloned;
+            };
 
             // ── Three-tier context compaction (OpenCode-inspired) ──
             // Tier 1: Replace old tool results with cached refs (disk-backed)
@@ -517,7 +572,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 yield { type: 'status' as const, content: `tool loop turn ${step}/${budget}…` };
               }
 
-              const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal, effectiveTools);
+              const gen = apiStreamDispatchWithHistory(config.engine.api, withImages(messageHistory), config.engine.timeout ?? 180, opts.signal, effectiveTools);
               try {
                 while (true) {
                   const { value, done } = await gen.next();

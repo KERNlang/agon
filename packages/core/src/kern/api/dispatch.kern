@@ -140,7 +140,14 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
       if (msg.role === 'system') {
         continue;
       } else if (msg.role === 'user') {
-        pushMessage({ role: 'user', content: typeof msg.content === 'string' ? msg.content : String(msg.content ?? '') });
+        // Multimodal user turns (text + {type:'image'} parts) pass through as an
+        // array so the AI SDK forwards images to the provider; everything else is
+        // coerced to a string. Array content is never merged (pushMessage only
+        // merges string+string), so image parts stay intact.
+        const userContent = Array.isArray(msg.content)
+          ? msg.content
+          : (typeof msg.content === 'string' ? msg.content : String(msg.content ?? ''));
+        pushMessage({ role: 'user', content: userContent });
       } else if (msg.role === 'assistant') {
         const parts: any[] = [];
         if (msg.content && typeof msg.content === 'string') {

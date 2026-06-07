@@ -135,6 +135,7 @@ export type { ChatMessage as StoredChatMessage, ChatSession } from './chat-store
 export {
   isImagePath, mimeFromExt, resolveImagePath,
   buildImageAttachment, extractImagesFromInput, normalizeDroppedPath,
+  encodeImagesForDispatch,
 } from './image.js';
 // ── Agon Rooms — multi-party room ledger (file-first; CLI/MCP/daemon are adapters) ──
 export {

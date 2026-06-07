@@ -78,6 +78,36 @@ describe('processPasteContent', () => {
     });
   });
 
+  it('normalizes a lone CR to a newline so inline paste cannot overwrite the line start', () => {
+    // A surviving \r does a literal carriage return at paint time: the cursor
+    // jumps to column 0 and later text overwrites the start of the line.
+    expect(processPasteContent('first half\rsecond half')).toEqual({
+      type: 'direct',
+      content: 'first half\nsecond half',
+    });
+    expect(processPasteContent('trailing\r')).toEqual({
+      type: 'direct',
+      content: 'trailing\n',
+    });
+    // CRLF still collapses to a single LF (no blank line in between).
+    expect(processPasteContent('win\r\ndows')).toEqual({
+      type: 'direct',
+      content: 'win\ndows',
+    });
+  });
+
+  it('strips ANSI escapes and stray control chars from inline pastes (copied log output)', () => {
+    expect(processPasteContent('\x1b[32mOK\x1b[0m deploy done')).toEqual({
+      type: 'direct',
+      content: 'OK deploy done',
+    });
+    // C0 controls (bell, etc.) are dropped, but \t and \n are kept.
+    expect(processPasteContent('a\x07b\tc\nd')).toEqual({
+      type: 'direct',
+      content: 'ab\tc\nd',
+    });
+  });
+
   it('stores very long pastes instead of inlining them', () => {
     vi.spyOn(pasteStore, 'store').mockReturnValue({
       hash: '0123456789abcdef',

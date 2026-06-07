@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall } from '../../packages/cli/src/handlers/cesar-brain.js';
-import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, detectMutationIntentStall } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+// Source of truth for these helpers is packages/cli/src/kern/cesar/brain-helpers.kern;
+// the generated/*.js below is regenerated from it (npm run kern:compile) — do not edit by hand.
+import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectMutationIntentStall } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 
 describe('Cesar Brain', () => {
@@ -82,6 +84,65 @@ describe('Cesar Brain', () => {
       expect(isUserDirectedQuestion("Now I'll edit the file and run typecheck.")).toBe(false);
       expect(isUserDirectedQuestion('Done — brain.kern timers added, typecheck green.')).toBe(false);
       expect(isUserDirectedQuestion('')).toBe(false);
+    });
+  });
+
+  describe('findTrailingUserQuestion (tail scan for the ask-then-advise shape)', () => {
+    it('finds a user question followed by a recommendation/rationale (the bug shape)', () => {
+      const resp = [
+        'Here is what I found.',
+        'Should I rename the source, or leave it alone?',
+        'My recommendation: rename now — it is cheap and reversible.',
+      ].join('\n');
+      expect(findTrailingUserQuestion(resp)).toBe('Should I rename the source, or leave it alone?');
+    });
+
+    it('finds a fork question followed by a confidence line (minimax shape)', () => {
+      const resp = [
+        'Rename now, or stop before the serializer?',
+        'Confidence: ~93% — high confidence in the rename.',
+      ].join('\n');
+      expect(findTrailingUserQuestion(resp)).toBe('Rename now, or stop before the serializer?');
+    });
+
+    it('still finds a question on the last line (last-line case preserved)', () => {
+      expect(findTrailingUserQuestion('All set.\nReady to proceed?')).toBe('Ready to proceed?');
+    });
+
+    it('returns null when there is no user-directed question in the tail', () => {
+      expect(findTrailingUserQuestion('I edited brain.kern and ran typecheck — all green.')).toBeNull();
+    });
+
+    it('returns the question even when the model also narrates an action nearby', () => {
+      // We deliberately do NOT suppress on "the model proceeded" — that produced
+      // false positives that hid real questions. A trailing question wins; it just
+      // stops auto-continuation (benign when the model is already done).
+      expect(findTrailingUserQuestion('I renamed the file.\nShould I also update the tests?')).toBe('Should I also update the tests?');
+      expect(findTrailingUserQuestion('Should I rename it, or leave it?\nI\'d rename it and update the docs too.')).toBe('Should I rename it, or leave it?');
+    });
+
+    it('does NOT catch a question buried above the last 6 non-empty lines', () => {
+      const resp = [
+        'Should I rename it, or leave it?', // line 1 — too far up
+        'line2', 'line3', 'line4', 'line5', 'line6', 'line7 — done.',
+      ].join('\n');
+      expect(findTrailingUserQuestion(resp)).toBeNull();
+    });
+
+    it('returns null for empty input', () => {
+      expect(findTrailingUserQuestion('')).toBeNull();
+    });
+
+    it('handles null/undefined input safely', () => {
+      expect(findTrailingUserQuestion(undefined as unknown as string)).toBeNull();
+      expect(findTrailingUserQuestion(null as unknown as string)).toBeNull();
+    });
+
+    it('finds a question exactly at the 6-non-empty-line boundary, not beyond it', () => {
+      // 6th line from the end → inside the window → found.
+      expect(findTrailingUserQuestion(['Should I proceed?', 'a', 'b', 'c', 'd', 'e'].join('\n'))).toBe('Should I proceed?');
+      // 7th line from the end → outside the window → null.
+      expect(findTrailingUserQuestion(['Should I proceed?', 'a', 'b', 'c', 'd', 'e', 'f'].join('\n'))).toBeNull();
     });
   });
 

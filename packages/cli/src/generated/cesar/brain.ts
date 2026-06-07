@@ -32,7 +32,7 @@ import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
 
 import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
 
-import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, isUserDirectedQuestion, detectNarratedToolStall, detectMutationIntentStall, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
+import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, findTrailingUserQuestion, detectNarratedToolStall, detectMutationIntentStall, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
 
 // @kern-source: brain:19
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
@@ -1762,12 +1762,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // edited 1 of 3 needed files and stopped (minimax/zai review consensus).
         const _detectTurnState = (resp: string, baselineToolCount: number): 'asks-user' | 'done' | 'stuck' => {
           const wroteSinceBaseline = _toolsUsed.slice(baselineToolCount).some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
-          const lines = resp.split('\n').map((l: string) => l.trim()).filter(Boolean);
-          const last = lines[lines.length - 1] ?? '';
           // A question directed at the user (keyword-addressed OR an either/or fork)
-          // means it's THEIR turn — stop, don't auto-continue. Extracted to the
-          // exported isUserDirectedQuestion so the classification is unit-tested.
-          if (isUserDirectedQuestion(last)) return 'asks-user';
+          // means it's THEIR turn — stop, don't auto-continue. Scan the TAIL, not just
+          // the literal last line: engines (esp. minimax) routinely ask the question and
+          // THEN add a recommendation/rationale/confidence line, so the question is line
+          // -2/-3. Last-line-only detection let those barrel through the nudge loop —
+          // the "asked but never got a chance to answer" bug. findTrailingUserQuestion
+          // reuses the unit-tested isUserDirectedQuestion per line, bounded to the tail.
+          if (findTrailingUserQuestion(resp)) return 'asks-user';
           // New writes in continuation AND no "still in progress" signal → done
           if (wroteSinceBaseline && !_AUTO_CONT_CONTINUE_RE.test(resp)) return 'done';
           const effectSummary = /(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b[^.]{0,80}(?:\b(?:and|,)\b[^.]{0,80}\b(?:created|modified|deleted|updated|added|removed|fixed|implemented|renamed)\b)/i.test(resp);

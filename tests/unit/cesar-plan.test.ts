@@ -89,6 +89,32 @@ describe('CesarPlan state machine', () => {
     expect(plan.completedAt).toBeDefined();
   });
 
+  it('pauses the plan on a "paused" result WITHOUT failing the step (re-runnable on resume)', () => {
+    let plan = createCesarPlan('task', [makeStep('s1'), makeStep('s2')]);
+    plan = approveCesarPlan({ ...plan, state: 'awaiting_approval' as const });
+    plan = advanceCesarStep(plan, 's1', { status: 'paused', actualTokens: 10, actualCostUsd: 0, durationMs: 100, output: 'Holding — awaiting your greenlight', error: 'paused — awaiting user input' });
+    expect(plan.state).toBe('paused');
+    // step stays pending (NOT failed) so skipCompletedSteps → /plan resume re-runs it
+    expect(plan.steps[0].state).toBe('pending');
+    expect(plan.steps[0].state).not.toBe('failed');
+  });
+
+  it('executePlan stops at the paused step and does NOT grind on (returns control to idle)', async () => {
+    let plan = createCesarPlan('task', [makeStep('s1'), makeStep('s2')]);
+    plan = approveCesarPlan({ ...plan, state: 'awaiting_approval' as const });
+    let s2Ran = false;
+    const executors = {
+      self: { execute: async (step: CesarPlanStep) => {
+        if (step.id === 's2') s2Ran = true;
+        return { result: { status: 'paused' as const, actualTokens: 1, actualCostUsd: 0, durationMs: 1, output: 'Holding — awaiting greenlight', error: 'paused' } };
+      } },
+    } as any;
+    const noop = () => {};
+    const final = await executePlan(plan, executors, { onStepStart: noop, onStepDone: noop, onPlanUpdate: noop, onBudgetWarning: noop });
+    expect(final.state).toBe('paused');   // executor loop exited → REPL returns to idle
+    expect(s2Ran).toBe(false);            // did NOT silently advance through the next step
+  });
+
   it('pauses plan on step failure', () => {
     let plan = createCesarPlan('task', [makeStep('s1'), makeStep('s2')]);
     plan = approveCesarPlan({ ...plan, state: 'awaiting_approval' as const });

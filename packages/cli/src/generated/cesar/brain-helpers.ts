@@ -52,9 +52,45 @@ export function findTrailingUserQuestion(text: string): string | null {
 }
 
 /**
- * Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling.
+ * True when a Cesar turn ENDS awaiting user input — either a trailing user-directed question (findTrailingUserQuestion) OR a 'holding / awaiting your approval / greenlight' STATEMENT in the tail (which has no '?'). PLAN EXECUTION uses this to pause an approved plan to idle when the brain stalls asking for input it cannot receive mid-run (the weak-brain 'I'll hold for your greenlight' re-ask of already-granted approval). Scoped to plan execution only; a false positive merely causes a recoverable pause (the one-shot executor override + /plan resume recover it), so the statement pattern is tuned to catch that shape without firing on ordinary completion text.
  */
 // @kern-source: brain-helpers:52
+export function detectAwaitingUserInput(text: string): boolean {
+  const body = String(text ?? '');
+  if (findTrailingUserQuestion(body)) return true;
+  // Strip a leading markdown list / blockquote / numbering marker so "- Holding …"
+  // or "1. Awaiting …" still match — trim() alone leaves the marker (agon-review).
+  const tail = body.split(/\r?\n/)
+    .map((l) => l.trim().replace(/^(?:[-*>•]\s+|\d+[.)]\s+)/, ''))
+    .filter(Boolean)
+    .slice(-3);
+  if (tail.length === 0) return false;
+  // "Holding" only counts as a stall when it stands alone or is qualified
+  // (Holding. / Holding — / Holding for/until/off) — NOT "Holding references…"
+  // or "Holding the lock" (agon-review round-2).
+  const HOLDING_RE = /^holding\b(?:\s*$|\s*[.,;:!?…—–-]|\s+for\b|\s+until\b|\s+off\b)/i;
+  // Only QUALIFIED await/hold/approval phrasing pauses a step. NO bare "greenlight"
+  // ("I received the greenlight"), NO bare "let me know", NO bare "waiting for your X"
+  // ("waiting for your files"). Spaced "go ahead"/"sign off" handled via [-\s]?.
+  // (agon-review rounds 1-2). A false positive only costs a recoverable pause, but
+  // spurious pauses are still noise — keep it conservative.
+  // "awaiting" requires an approval-related NOUN (optionally after your/user) — so
+  // "awaiting your files"/"awaiting your branch build" do NOT match (agon-review r3).
+  const AWAITING_RE = /\b(?:awaiting\s+(?:(?:your|user|the\s+user'?s?|explicit\s+user|my)\s+(?:approval|greenlight|sign[-\s]?off|go[-\s]?ahead|confirmation|input|decision|response|reply|call|word|ok)|(?:approval|greenlight|sign[-\s]?off|go[-\s]?ahead|a\s+decision))|waiting\s+(?:on|for)\s+(?:you\s+to\s+(?:approve|confirm|decide|respond|reply)|your\s+(?:approval|greenlight|sign[-\s]?off|go[-\s]?ahead|input|confirmation|decision|response|reply|ok)|approval|greenlight|sign[-\s]?off|confirmation)|hold(?:ing)?\s+(?:for|until|off)|need(?:s|ing)?\s+(?:your|explicit\s+user|user)\s+(?:approval|greenlight|go[-\s]?ahead|sign[-\s]?off|input|confirmation|ok|decision)|your\s+(?:greenlight|go[-\s]?ahead|sign[-\s]?off)\s+(?:to|before)|need\s+(?:a\s+|the\s+)?greenlight|explicit\s+(?:user\s+)?approval|stand(?:ing)?\s+by\s+(?:for|until))\b/i;
+  for (const line of tail) {
+    // Cap per-line scan length: stall phrasing sits at the head, and this bounds
+    // any regex backtracking on pathological input (agon-review ReDoS note).
+    const head = line.slice(0, 300);
+    if (HOLDING_RE.test(head)) return true;
+    if (AWAITING_RE.test(head)) return true;
+  }
+  return false;
+}
+
+/**
+ * Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling.
+ */
+// @kern-source: brain-helpers:86
 export function detectNarratedToolStall(text: string): boolean {
   const body = String(text ?? '').trim();
   if (!body) {
@@ -72,7 +108,7 @@ export function detectNarratedToolStall(text: string): boolean {
 /**
  * Detect a 'false read-only hand-back': the orchestrator narrated intent to change files (apply/edit/the patch) AND claimed it cannot write / offered to delegate the write to an agent / asked the user to paste-or-apply it — WITHOUT emitting a mutating tool call. That is the stall that leaves Cesar's Phase-1 mutation un-deferred, so the execution-phase unlock never fires and the turn dead-ends. The caller uses this to force the unlock so Cesar writes directly instead of narrating a wall.
  */
-// @kern-source: brain-helpers:66
+// @kern-source: brain-helpers:100
 export function detectMutationIntentStall(text: string): boolean {
   const body = String(text ?? '').trim();
   if (!body) return false;
@@ -87,7 +123,7 @@ export function detectMutationIntentStall(text: string): boolean {
 /**
  * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
  */
-// @kern-source: brain-helpers:79
+// @kern-source: brain-helpers:113
 export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
   const names: string[] = [];
   for (const result of results ?? []) {
@@ -105,7 +141,7 @@ export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
 /**
  * Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch.
  */
-// @kern-source: brain-helpers:91
+// @kern-source: brain-helpers:125
 export function shouldRunEagerRepairTool(toolName: string, meta: any, failedToolNames: string[], usedToolNames: string[]): boolean {
   const name = String(toolName ?? '').trim();
   if (!name) return false;
@@ -120,7 +156,7 @@ export function shouldRunEagerRepairTool(toolName: string, meta: any, failedTool
 /**
  * Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet.
  */
-// @kern-source: brain-helpers:104
+// @kern-source: brain-helpers:138
 export function shouldStopAfterXmlToolCall(toolName: string): boolean {
   const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan', 'ExitPlanMode']);
   return HANDOFF_TOOLS.has(String(toolName ?? ''));
@@ -129,7 +165,7 @@ export function shouldStopAfterXmlToolCall(toolName: string): boolean {
 /**
  * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
  */
-// @kern-source: brain-helpers:110
+// @kern-source: brain-helpers:144
 export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
   const trimmed = input.trim();
   const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
@@ -150,7 +186,7 @@ export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): {
   return { matched: true, prompt: prompt };
 }
 
-// @kern-source: brain-helpers:129
+// @kern-source: brain-helpers:163
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;

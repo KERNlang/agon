@@ -298,6 +298,7 @@ interface name=CesarTurnOutcome
   field name=maxHours type=number optional=true
   field name=budget type=number optional=true
   field name=deterministicFailure type=boolean optional=true
+  field name=awaitingUserInput type=boolean optional=true
 
 interface name=CesarState
   field name=busy type=boolean

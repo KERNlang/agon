@@ -300,10 +300,34 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
             '',
             'When the step is complete, finish with a concise recap of what changed and what remains.',
           ].join('\n');
-          const outcome = await handleCesarBrain(prompt, stepDispatch as any, ctx, []);
+          let outcome = await handleCesarBrain(prompt, stepDispatch as any, ctx, []);
+          // Deadlock guard: a weak brain may IGNORE the "do not ask whether to start"
+          // instruction and stall, awaiting a greenlight it cannot receive while the
+          // plan owns the REPL (it never goes idle). Give it ONE forceful override
+          // retry; if it STILL stalls, PAUSE the plan to idle so the user can respond.
+          let retryOutputStart = captured.length;
+          if (outcome.awaitingUserInput && !signal?.aborted) {
+            stepDispatch({ type: 'warning', message: 'Cesar stalled awaiting input on a pre-approved step — forcing one retry.' } as any);
+            const overridePrompt = [
+              '[EXECUTOR OVERRIDE] This plan step is ALREADY APPROVED by the user. Proceed and DO IT NOW.',
+              'Do NOT ask for approval, a greenlight, or confirmation. Do NOT say you are holding or waiting.',
+              'Use the available tools to complete the step. If you are TRULY blocked, end with one concrete question.',
+              `Step ${step.id}: ${task}`,
+            ].join('\n');
+            retryOutputStart = captured.length; // pause message shows only the RETRY's output, not the first stalled run
+            outcome = await handleCesarBrain(overridePrompt, stepDispatch as any, ctx, []);
+          }
           const after = snapshotTokens();
           if (signal?.aborted || outcome.decisionReason === 'aborted') {
             return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: captured.join('\n').trim(), error: 'cancelled' } };
+          }
+          if (outcome.awaitingUserInput) {
+            // Still awaiting after the override → pause the plan to idle. advanceCesarStep
+            // leaves the step pending (re-runs on /plan resume) and sets plan.state='paused'.
+            const retryLines = captured.slice(retryOutputStart);
+            const ask = (retryLines.length ? retryLines : captured).join('\n').trim().split('\n').filter((l) => l.trim()).slice(-4).join('\n');
+            stepDispatch({ type: 'warning', message: `⏸ Plan paused — Cesar is waiting on you before continuing:\n${ask}\n\nType your answer, then /plan resume to continue (or /cancel).` } as any);
+            return { result: { status: 'paused', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: captured.join('\n').trim(), error: 'Cesar is awaiting your input on this approved step' } };
           }
           const output = captured.join('\n').trim() || `Cesar completed step ${step.id}.`;
           if (step.verifyCmd) stepDispatch({ type: 'info', message: `Verifying step ${step.id}: ${step.verifyCmd}` } as any);

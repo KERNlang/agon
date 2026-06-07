@@ -220,20 +220,24 @@ fn name=buildPlanCallbacks params="initialPlan:CesarPlan, cb:DispatchCallbacks" 
       },
       onStepDone: (stepId: string, result: CesarStepResult) => {
         const step = currentPlan.steps.find((s: any) => s.id === stepId);
-        const icon = result.status === 'success' ? '\u2713' : '\u2717';
-        const msgType = result.status === 'success' ? 'success' : 'error';
+        // 'paused' = brain awaiting user input on an approved step \u2014 a deliberate
+        // pause-to-idle, NOT a failure. Render it neutrally (no red \u2717) and leave the
+        // todo pending so /plan resume re-runs the step.
+        const isPausedResult = result.status === 'paused';
+        const icon = result.status === 'success' ? '\u2713' : isPausedResult ? '\u23f8' : '\u2717';
+        const msgType = result.status === 'success' ? 'success' : isPausedResult ? 'warning' : 'error';
         cb.dispatch({ type: 'spinner-stop' } as any);
         cb.dispatch({
           type: 'tool-call',
           engineId: 'cesar',
           tool: 'PlanStep',
           input: JSON.stringify(buildPlanStepToolInput(stepId)),
-          status: result.status === 'success' ? 'done' : 'error',
+          status: result.status === 'success' || isPausedResult ? 'done' : 'error',
           output: result.output ? result.output.slice(0, 4000) : '',
-          error: result.error,
+          error: isPausedResult ? undefined : result.error,
         } as any);
         cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} \u2014 ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s, $${result.actualCostUsd.toFixed(4)})` });
-        cb.dispatch({ type: 'todos-update', id: stepId, state: result.status === 'success' ? 'done' : 'failed', note: result.error ? result.error.slice(0, 80) : undefined } as any);
+        cb.dispatch({ type: 'todos-update', id: stepId, state: result.status === 'success' ? 'done' : isPausedResult ? 'pending' : 'failed', note: result.error ? result.error.slice(0, 80) : undefined } as any);
       },
       onPlanUpdate: (updated: CesarPlan) => {
         const previousState = currentPlan.state;

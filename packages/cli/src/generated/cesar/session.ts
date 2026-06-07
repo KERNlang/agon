@@ -8,7 +8,9 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { createRequire } from 'node:module';
 
 import type { PersistentSession, PersistentSessionConfig } from '@kernlang/agon-core';
 
@@ -30,7 +32,7 @@ import { applyCesarSelfTurnApproval, approvalArgsFromCommand } from './self-turn
 
 import { recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence, buildToolErrorDiagnostic } from './tool-observability.js';
 
-// @kern-source: session:17
+// @kern-source: session:18
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator.
 
 CHARACTER — the most trusted advisor who doesn't need you to like him.
@@ -175,7 +177,7 @@ RULE 10 — TURN CLOSURE: End every turn with one clear closing line so the user
 /**
  * Build the full Cesar system prompt with project context, engine list, and mode flags.
  */
-// @kern-source: session:161
+// @kern-source: session:162
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -353,19 +355,19 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:340
+// @kern-source: session:341
 export const CESAR_SNAPSHOT_MSG_CHAR_CAP: number = 4000;
 
-// @kern-source: session:342
+// @kern-source: session:343
 export const CONFIDENCE_BLOCK_LIMIT: number = 2;
 
-// @kern-source: session:344
+// @kern-source: session:345
 export const SEARCH_NUDGE_THRESHOLD: number = 40;
 
 /**
  * Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it.
  */
-// @kern-source: session:346
+// @kern-source: session:347
 export function capSnapshotMessageContent(content: string): string {
   if (content.length <= CESAR_SNAPSHOT_MSG_CHAR_CAP) return content;
   return `${content.slice(0, CESAR_SNAPSHOT_MSG_CHAR_CAP)}\n… [${content.length - CESAR_SNAPSHOT_MSG_CHAR_CAP} chars truncated for Cesar context]`;
@@ -374,7 +376,7 @@ export function capSnapshotMessageContent(content: string): string {
 /**
  * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched.
  */
-// @kern-source: session:353
+// @kern-source: session:354
 export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const directHistory = session?.getMessageHistory?.() ?? [];
   if (directHistory.length > 0) {
@@ -407,7 +409,7 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
 /**
  * Persist the active Cesar conversation before the session is discarded.
  */
-// @kern-source: session:378
+// @kern-source: session:379
 export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
   if (!session) return;
   const snapshot = buildCesarConversationSnapshot(session, chatSession);
@@ -422,7 +424,7 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
-// @kern-source: session:391
+// @kern-source: session:392
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -726,7 +728,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:693
+// @kern-source: session:694
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -909,7 +911,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:877
+// @kern-source: session:878
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -943,7 +945,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:911
+// @kern-source: session:912
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -967,7 +969,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:935
+// @kern-source: session:936
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -979,7 +981,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:942
+// @kern-source: session:943
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -997,9 +999,37 @@ export function mcpConfigFingerprint(config: any): string {
 }
 
 /**
+ * Resolve the agon-orchestration MCP server entry (packages/mcp/dist/index.js). The CLI ships as a tsup BUNDLE (chunks at packages/cli/dist/), so the old fixed '../../../../mcp/dist/index.js' relative to import.meta.url resolved to a NONEXISTENT path — the MCP server never spawned and Cesar saw zero tools (slow scraping fallback). Resolution order: (1) node module resolution of @kernlang/agon-mcp (works installed AND monorepo-via-symlink), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
+ */
+// @kern-source: session:961
+export function resolveAgonMcpServerPath(fromUrl?: string): string {
+  const raw = fromUrl ?? import.meta.url;
+  // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
+  // throws ERR_INVALID_URL_SCHEME on a bare path, so normalise first.
+  const url = raw.startsWith('file:') ? raw : pathToFileURL(raw).href;
+  // 1) Installed/published OR monorepo workspace symlink — node resolution.
+  try {
+    const req = createRequire(url);
+    const resolved = req.resolve('@kernlang/agon-mcp');
+    if (existsSync(resolved)) return resolved;
+  } catch { /* not resolvable as a dependency — fall through */ }
+  // 2) Monorepo without a node_modules symlink — walk to packages/mcp/dist.
+  let dir = dirname(fileURLToPath(url));
+  for (let i = 0; i < 12; i++) {
+    const cand = join(dir, 'packages', 'mcp', 'dist', 'index.js');
+    if (existsSync(cand)) return cand;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // 3) Last resort: the original relative guess (keeps prior behaviour).
+  return join(dirname(fileURLToPath(url)), '../../../../mcp/dist/index.js');
+}
+
+/**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:960
+// @kern-source: session:987
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1024,7 +1054,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:986
+// @kern-source: session:1013
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1131,27 +1161,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     const signalDir = join(getAgonHome(), 'signals');
     mkdirSync(signalDir, { recursive: true });
     const sessionSignalId = `cesar-${Date.now()}`;
-    // Resolve packages/mcp/dist/index.js robustly. The CLI ships as a tsup
-    // BUNDLE (chunks at packages/cli/dist/), so import.meta.url sits at a depth
-    // the old fixed '../../../../mcp/dist/index.js' was NOT written for — it
-    // resolved to <repo>/../mcp/dist/index.js (nonexistent), so the
-    // agon-orchestration MCP server never spawned and Cesar saw zero tools.
-    // Walk up to the repo root that actually contains packages/mcp/dist.
-    const mcpServerPath = (() => {
-      let dir = dirname(fileURLToPath(import.meta.url));
-      for (let i = 0; i < 12; i++) {
-        const cand = join(dir, 'packages', 'mcp', 'dist', 'index.js');
-        if (existsSync(cand)) return cand;
-        const parent = dirname(dir);
-        if (parent === dir) break;
-        dir = parent;
-      }
-      // Fallback: published/node_modules layout (sibling package), then the
-      // original relative guess so behaviour never regresses below today.
-      const sibling = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'agon-mcp', 'dist', 'index.js');
-      if (existsSync(sibling)) return sibling;
-      return join(dirname(fileURLToPath(import.meta.url)), '../../../../mcp/dist/index.js');
-    })();
+    const mcpServerPath = resolveAgonMcpServerPath();
     if (!existsSync(mcpServerPath)) {
       console.error(`[agon] cesar: agon-orchestration MCP server not found at ${mcpServerPath} — orchestration tools (Forge/Tribunal/AgonBash/DeliverAnswer) will be UNAVAILABLE and Cesar will fall back to slow scraping.`);
     }

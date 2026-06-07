@@ -2,7 +2,8 @@ import from="node:fs" names="readFileSync,statSync,existsSync"
 import from="node:path" names="isAbsolute,resolve,dirname"
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="node:url" names="fileURLToPath"
+import from="node:url" names="fileURLToPath,pathToFileURL"
+import from="node:module" names="createRequire"
 import from="@kernlang/agon-core" names="PersistentSession,PersistentSessionConfig" types=true
 import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
@@ -957,6 +958,32 @@ fn name=mcpConfigFingerprint params="config:any" returns=string
     return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
   >>>
 
+fn name=resolveAgonMcpServerPath params="fromUrl?:string" returns=string export=true
+  doc "Resolve the agon-orchestration MCP server entry (packages/mcp/dist/index.js). The CLI ships as a tsup BUNDLE (chunks at packages/cli/dist/), so the old fixed '../../../../mcp/dist/index.js' relative to import.meta.url resolved to a NONEXISTENT path — the MCP server never spawned and Cesar saw zero tools (slow scraping fallback). Resolution order: (1) node module resolution of @kernlang/agon-mcp (works installed AND monorepo-via-symlink), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL."
+  handler <<<
+    const raw = fromUrl ?? import.meta.url;
+    // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
+    // throws ERR_INVALID_URL_SCHEME on a bare path, so normalise first.
+    const url = raw.startsWith('file:') ? raw : pathToFileURL(raw).href;
+    // 1) Installed/published OR monorepo workspace symlink — node resolution.
+    try {
+      const req = createRequire(url);
+      const resolved = req.resolve('@kernlang/agon-mcp');
+      if (existsSync(resolved)) return resolved;
+    } catch { /* not resolvable as a dependency — fall through */ }
+    // 2) Monorepo without a node_modules symlink — walk to packages/mcp/dist.
+    let dir = dirname(fileURLToPath(url));
+    for (let i = 0; i < 12; i++) {
+      const cand = join(dir, 'packages', 'mcp', 'dist', 'index.js');
+      if (existsSync(cand)) return cand;
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+    // 3) Last resort: the original relative guess (keeps prior behaviour).
+    return join(dirname(fileURLToPath(url)), '../../../../mcp/dist/index.js');
+  >>>
+
 fn name=resolveCesarBackend params="ctx:HandlerContext, engineId?:string" returns="{ backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any }" export=true
   doc "Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that."
   handler <<<
@@ -1090,27 +1117,7 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       const signalDir = join(getAgonHome(), 'signals');
       mkdirSync(signalDir, { recursive: true });
       const sessionSignalId = `cesar-${Date.now()}`;
-      // Resolve packages/mcp/dist/index.js robustly. The CLI ships as a tsup
-      // BUNDLE (chunks at packages/cli/dist/), so import.meta.url sits at a depth
-      // the old fixed '../../../../mcp/dist/index.js' was NOT written for — it
-      // resolved to <repo>/../mcp/dist/index.js (nonexistent), so the
-      // agon-orchestration MCP server never spawned and Cesar saw zero tools.
-      // Walk up to the repo root that actually contains packages/mcp/dist.
-      const mcpServerPath = (() => {
-        let dir = dirname(fileURLToPath(import.meta.url));
-        for (let i = 0; i < 12; i++) {
-          const cand = join(dir, 'packages', 'mcp', 'dist', 'index.js');
-          if (existsSync(cand)) return cand;
-          const parent = dirname(dir);
-          if (parent === dir) break;
-          dir = parent;
-        }
-        // Fallback: published/node_modules layout (sibling package), then the
-        // original relative guess so behaviour never regresses below today.
-        const sibling = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'agon-mcp', 'dist', 'index.js');
-        if (existsSync(sibling)) return sibling;
-        return join(dirname(fileURLToPath(import.meta.url)), '../../../../mcp/dist/index.js');
-      })();
+      const mcpServerPath = resolveAgonMcpServerPath();
       if (!existsSync(mcpServerPath)) {
         console.error(`[agon] cesar: agon-orchestration MCP server not found at ${mcpServerPath} — orchestration tools (Forge/Tribunal/AgonBash/DeliverAnswer) will be UNAVAILABLE and Cesar will fall back to slow scraping.`);
       }

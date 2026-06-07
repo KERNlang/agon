@@ -66,7 +66,7 @@ export const CESAR_STEP_TYPES: CesarStepType[] = (Object.keys(CESAR_STEP_TYPE_TA
 
 // @kern-source: plan:47
 export interface CesarStepResult {
-  status: 'success'|'failure';
+  status: 'success'|'failure'|'paused';
   actualTokens: number;
   actualCostUsd: number;
   durationMs: number;
@@ -159,11 +159,18 @@ export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarS
   if (stepIdx === -1) return plan;
 
   const isSuccess = result.status === 'success';
-  const stepState: CesarStepState = isSuccess ? 'done' : 'failed';
+  // 'paused' = the brain is awaiting user input on an already-approved step (NOT a
+  // failure). Leave the step PENDING so /plan resume re-runs it; plan.state still
+  // goes to 'paused' below (the !isSuccess branch) so the executor loop exits and
+  // the REPL returns to idle for the user to respond.
+  const isPaused = result.status === 'paused';
+  const stepState: CesarStepState = isSuccess ? 'done' : isPaused ? 'pending' : 'failed';
 
   const now = new Date().toISOString();
+  // Paused step is re-set to pending; do NOT attach a result (UI treats
+  // step.result !== undefined as "has run") or a completedAt (agon-review).
   let newSteps = plan.steps.map((s, i) =>
-    i === stepIdx ? { ...s, state: stepState, result, completedAt: now } : s,
+    i === stepIdx ? { ...s, state: stepState, result: isPaused ? undefined : result, completedAt: isPaused ? undefined : now } : s,
   );
 
   // Unblock dependent steps if this step succeeded
@@ -213,7 +220,7 @@ export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarS
 /**
  * Cancel the plan: mark all non-complete steps as cancelled.
  */
-// @kern-source: plan:178
+// @kern-source: plan:185
 export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
   const newSteps = plan.steps.map(s => {
     if (s.state === 'done' || s.state === 'failed') return s;
@@ -232,7 +239,7 @@ export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
 /**
  * Archive a plan when Cesar leaves plan mode via ExitPlanMode. Cancels it (same step handling as cancelCesarPlan) and records the exit reason + timestamp so the exit is auditable. The pending proposal is preserved on disk as a cancelled record rather than erased.
  */
-// @kern-source: plan:195
+// @kern-source: plan:202
 export function exitCesarPlan(plan: CesarPlan, reason: string): CesarPlan {
   const cancelled = cancelCesarPlan(plan);
   return {
@@ -245,7 +252,7 @@ export function exitCesarPlan(plan: CesarPlan, reason: string): CesarPlan {
 /**
  * Persist a CesarPlan to ~/.agon/plans/<id>.json atomically. Markdown lives beside it as <id>.md so the plan is discoverable and editable. FU-8: write to a .tmp file then renameSync, so concurrent Agon sessions reading the same path observe either the old complete file or the new complete file — never a partial. POSIX rename within the same directory is atomic.
  */
-// @kern-source: plan:206
+// @kern-source: plan:213
 export function saveCesarPlan(plan: CesarPlan): void {
   const dir = getCesarPlansDir();
   mkdirSync(dir, { recursive: true });
@@ -269,7 +276,7 @@ export function saveCesarPlan(plan: CesarPlan): void {
 /**
  * Load a persisted CesarPlan from ~/.agon/plans/<id>.json. Falls back to the legacy ~/.agon/runs path for old sessions.
  */
-// @kern-source: plan:228
+// @kern-source: plan:235
 export function loadCesarPlan(planId: string): CesarPlan|null {
   let safeId = '';
   try {
@@ -295,7 +302,7 @@ export function loadCesarPlan(planId: string): CesarPlan|null {
 /**
  * List persisted CesarPlans from ~/.agon/plans, with legacy ~/.agon/runs fallback.
  */
-// @kern-source: plan:248
+// @kern-source: plan:255
 export function listCesarPlans(): CesarPlan[] {
   const byId = new Map<string, CesarPlan>();
   const readFromDir = (dir: string, canonical: boolean) => {

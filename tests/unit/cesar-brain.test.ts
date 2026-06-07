@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall } from '../../packages/cli/src/handlers/cesar-brain.js';
 // Source of truth for these helpers is packages/cli/src/kern/cesar/brain-helpers.kern;
 // the generated/*.js below is regenerated from it (npm run kern:compile) — do not edit by hand.
-import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectMutationIntentStall } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 
 describe('Cesar Brain', () => {
@@ -143,6 +143,58 @@ describe('Cesar Brain', () => {
       expect(findTrailingUserQuestion(['Should I proceed?', 'a', 'b', 'c', 'd', 'e'].join('\n'))).toBe('Should I proceed?');
       // 7th line from the end → outside the window → null.
       expect(findTrailingUserQuestion(['Should I proceed?', 'a', 'b', 'c', 'd', 'e', 'f'].join('\n'))).toBeNull();
+    });
+  });
+
+  describe('detectAwaitingUserInput (plan-execution stall/await signal)', () => {
+    it('detects "holding / awaiting greenlight" statements that have NO question mark', () => {
+      expect(detectAwaitingUserInput('Holding — awaiting your greenlight before the implementation steps.')).toBe(true);
+      expect(detectAwaitingUserInput("I'll hold for your greenlight rather than auto-firing step 3.")).toBe(true);
+      expect(detectAwaitingUserInput('Both specs are on disk.\nThe implementation steps need explicit user approval.')).toBe(true);
+      expect(detectAwaitingUserInput('Holding. Same state: awaiting user greenlight to begin step 3.')).toBe(true);
+    });
+
+    it('detects a trailing user-directed question (reuses findTrailingUserQuestion)', () => {
+      expect(detectAwaitingUserInput('Ready to proceed?')).toBe(true);
+    });
+
+    it('does NOT fire on ordinary completion / progress text', () => {
+      expect(detectAwaitingUserInput('Done — I created the files and the tests pass.')).toBe(false);
+      expect(detectAwaitingUserInput('I edited brain.kern and ran the build; all green.')).toBe(false);
+      expect(detectAwaitingUserInput('The server is waiting for the next request.')).toBe(false); // not user-directed
+      expect(detectAwaitingUserInput('')).toBe(false);
+    });
+
+    it('does NOT fire on greenlight-received or polite "let me know" closers (tightened)', () => {
+      expect(detectAwaitingUserInput('I received the greenlight and am starting now.')).toBe(false);
+      expect(detectAwaitingUserInput('Done. Let me know if you want more test coverage.')).toBe(false);
+      expect(detectAwaitingUserInput('The greenlight is on; proceeding.')).toBe(false);
+    });
+
+    it('still detects a holding/awaiting line behind a markdown list or quote marker', () => {
+      expect(detectAwaitingUserInput('- Holding for your input on the rename.')).toBe(true);
+      expect(detectAwaitingUserInput('1. Awaiting your approval before step 3.')).toBe(true);
+    });
+
+    it('does NOT fire on "Holding <noun>" / "Holding the lock" / "waiting/awaiting your <noun>"', () => {
+      expect(detectAwaitingUserInput('Holding references to assets in the bundle.')).toBe(false);
+      expect(detectAwaitingUserInput('Holding the lock until the write completes.')).toBe(false);
+      expect(detectAwaitingUserInput('The job is waiting for your files to upload.')).toBe(false);
+      expect(detectAwaitingUserInput('Awaiting your files from the previous step.')).toBe(false);
+      expect(detectAwaitingUserInput('Awaiting your branch build to finish.')).toBe(false);
+      // bare "awaiting input/response" (no user qualifier) = runtime status, not a user stall
+      expect(detectAwaitingUserInput('Awaiting input from the upstream API.')).toBe(false);
+      expect(detectAwaitingUserInput('Awaiting response from the server.')).toBe(false);
+    });
+
+    it('DOES fire on "awaiting your input/response" (user-qualified)', () => {
+      expect(detectAwaitingUserInput('Blocked — awaiting your input on the schema.')).toBe(true);
+      expect(detectAwaitingUserInput('Awaiting approval before I delete the table.')).toBe(true);
+    });
+
+    it('detects spaced "go ahead" / "sign off" stall phrasings', () => {
+      expect(detectAwaitingUserInput('Blocked — I need your sign off before deleting.')).toBe(true);
+      expect(detectAwaitingUserInput('Awaiting your go ahead to merge.')).toBe(true);
     });
   });
 

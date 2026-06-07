@@ -49,6 +49,40 @@ fn name=findTrailingUserQuestion params="text:string" returns="string | null" ex
     return null;
   >>>
 
+fn name=detectAwaitingUserInput params="text:string" returns=boolean export=true
+  doc "True when a Cesar turn ENDS awaiting user input — either a trailing user-directed question (findTrailingUserQuestion) OR a 'holding / awaiting your approval / greenlight' STATEMENT in the tail (which has no '?'). PLAN EXECUTION uses this to pause an approved plan to idle when the brain stalls asking for input it cannot receive mid-run (the weak-brain 'I'll hold for your greenlight' re-ask of already-granted approval). Scoped to plan execution only; a false positive merely causes a recoverable pause (the one-shot executor override + /plan resume recover it), so the statement pattern is tuned to catch that shape without firing on ordinary completion text."
+  handler <<<
+    const body = String(text ?? '');
+    if (findTrailingUserQuestion(body)) return true;
+    // Strip a leading markdown list / blockquote / numbering marker so "- Holding …"
+    // or "1. Awaiting …" still match — trim() alone leaves the marker (agon-review).
+    const tail = body.split(/\r?\n/)
+      .map((l) => l.trim().replace(/^(?:[-*>•]\s+|\d+[.)]\s+)/, ''))
+      .filter(Boolean)
+      .slice(-3);
+    if (tail.length === 0) return false;
+    // "Holding" only counts as a stall when it stands alone or is qualified
+    // (Holding. / Holding — / Holding for/until/off) — NOT "Holding references…"
+    // or "Holding the lock" (agon-review round-2).
+    const HOLDING_RE = /^holding\b(?:\s*$|\s*[.,;:!?…—–-]|\s+for\b|\s+until\b|\s+off\b)/i;
+    // Only QUALIFIED await/hold/approval phrasing pauses a step. NO bare "greenlight"
+    // ("I received the greenlight"), NO bare "let me know", NO bare "waiting for your X"
+    // ("waiting for your files"). Spaced "go ahead"/"sign off" handled via [-\s]?.
+    // (agon-review rounds 1-2). A false positive only costs a recoverable pause, but
+    // spurious pauses are still noise — keep it conservative.
+    // "awaiting" requires an approval-related NOUN (optionally after your/user) — so
+    // "awaiting your files"/"awaiting your branch build" do NOT match (agon-review r3).
+    const AWAITING_RE = /\b(?:awaiting\s+(?:(?:your|user|the\s+user'?s?|explicit\s+user|my)\s+(?:approval|greenlight|sign[-\s]?off|go[-\s]?ahead|confirmation|input|decision|response|reply|call|word|ok)|(?:approval|greenlight|sign[-\s]?off|go[-\s]?ahead|a\s+decision))|waiting\s+(?:on|for)\s+(?:you\s+to\s+(?:approve|confirm|decide|respond|reply)|your\s+(?:approval|greenlight|sign[-\s]?off|go[-\s]?ahead|input|confirmation|decision|response|reply|ok)|approval|greenlight|sign[-\s]?off|confirmation)|hold(?:ing)?\s+(?:for|until|off)|need(?:s|ing)?\s+(?:your|explicit\s+user|user)\s+(?:approval|greenlight|go[-\s]?ahead|sign[-\s]?off|input|confirmation|ok|decision)|your\s+(?:greenlight|go[-\s]?ahead|sign[-\s]?off)\s+(?:to|before)|need\s+(?:a\s+|the\s+)?greenlight|explicit\s+(?:user\s+)?approval|stand(?:ing)?\s+by\s+(?:for|until))\b/i;
+    for (const line of tail) {
+      // Cap per-line scan length: stall phrasing sits at the head, and this bounds
+      // any regex backtracking on pathological input (agon-review ReDoS note).
+      const head = line.slice(0, 300);
+      if (HOLDING_RE.test(head)) return true;
+      if (AWAITING_RE.test(head)) return true;
+    }
+    return false;
+  >>>
+
 fn name=detectNarratedToolStall params="text:string" returns=boolean export=true
   doc "Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling."
   handler lang="kern"

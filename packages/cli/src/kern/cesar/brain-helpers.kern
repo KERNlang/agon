@@ -37,6 +37,18 @@ fn name=isUserDirectedQuestion params="lastLine:string" returns=boolean export=t
     return userAddressed || isForkChoice;
   >>>
 
+fn name=findTrailingUserQuestion params="text:string" returns="string | null" export=true
+  doc "Return the nearest user-directed question in the TAIL of a Cesar turn (last 6 non-empty lines), or null. Unlike checking only the LAST line, this catches the common 'ask, then advise' shape — a question FOLLOWED BY a recommendation / rationale / confidence line (esp. minimax) — so auto-continuation recognizes it as the user's turn instead of barreling through it ('asked but never got a chance to answer'). Bounded to the last 6 non-empty lines so a question buried mid-narration does NOT stop the loop; reuses isUserDirectedQuestion for the per-line test. NOTE: we deliberately do NOT try to detect 'the model proceeded past its own question' (matching done / I'll / 'I renamed …') — every anchored attempt produced false positives ('ill', 'I'll wait for your input', 'this is not done yet') that SUPPRESS real questions and reintroduce the very bug this fixes. A stale trailing question merely STOPS the auto-continuation loop when the model is already done, which is benign — the done/effect logic in _detectTurnState already classifies genuine completions. (2 rounds of multi-engine agon review, 2026-06-07.)"
+  handler <<<
+    const lines = String(text ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const TAIL = 6;
+    const start = Math.max(0, lines.length - TAIL);
+    for (let i = lines.length - 1; i >= start; i--) {
+      if (isUserDirectedQuestion(lines[i])) return lines[i];
+    }
+    return null;
+  >>>
+
 fn name=detectNarratedToolStall params="text:string" returns=boolean export=true
   doc "Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling."
   handler lang="kern"

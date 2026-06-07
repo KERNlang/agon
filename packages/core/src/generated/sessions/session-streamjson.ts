@@ -271,6 +271,10 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
       lineHandlers.push(handler);
 
       try {
+        // NOTE: claude vision is intentionally NOT wired on this `claude --print`
+        // stream-json path — it's the AGON_CLAUDE_PRINT=1 escape hatch only; the
+        // default claude brain is the PTY subscription path (session-pty), and
+        // claude images are a deferred follow-up there. So content is plain text.
         // Send user message as NDJSON on stdin
         const envelope: Record<string, unknown> = {
           type: 'user',

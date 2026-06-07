@@ -3,6 +3,7 @@ import from="./session-companion.js" names="createCompanionSession"
 import from="./session-acp.js" names="createAcpSession"
 import from="./session-streamjson.js" names="createStreamJsonSession"
 import from="./session-resume.js" names="createResumeSession"
+import from="./session-pty.js" names="createPtySession"
 
 interface name=SessionChunk
   field name=type type="'text'|'status'|'tool_call'|'error'|'done'"
@@ -30,6 +31,8 @@ interface name=PersistentSessionConfig
   field name=sessionContinuity type=boolean optional=true
   field name=toolLoopBaseBudget type=number optional=true
   field name=toolLoopMaxBudget type=number optional=true
+  field name=answerChannelPath type=string optional=true
+  field name=claudePtyLaunchArgs type="string[]" optional=true
 
 interface name=PersistentSession
   field name=alive type=boolean
@@ -48,9 +51,13 @@ fn name=createPersistentSession params="config:PersistentSessionConfig" returns=
     comment raw="// API path: engine has API config and no binary path provided → use stateless resume session"
     if cond="engine.api && !config.binaryPath"
       return value="createResumeSession(config)"
-    comment raw="// Stream-JSON companion (Claude): bidirectional NDJSON pipe"
+    comment raw="// Claude: PTY subscription brain by default (hard rule — never --print)."
+    comment raw="// Escape hatch: AGON_CLAUDE_PRINT=1|true falls back to the stream-json (--print) path."
     if cond="(engine.companion?.protocol === 'stream-json' || engine.id === 'claude' || engine.binary === 'claude') && config.binaryPath"
-      return value="createStreamJsonSession(config)"
+      let name=printOptOut value="process.env.AGON_CLAUDE_PRINT"
+      if cond="printOptOut === '1' || printOptOut === 'true'"
+        return value="createStreamJsonSession(config)"
+      return value="createPtySession(config)"
     comment raw="// Engines with ACP protocol (OpenCode, Gemini)"
     if cond="engine.companion && engine.companion.protocol === 'acp'"
       return value="createAcpSession(config)"

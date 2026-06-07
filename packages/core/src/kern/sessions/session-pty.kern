@@ -1,0 +1,155 @@
+import from="node:fs" names="existsSync,readFileSync,rmSync"
+import from="./persistent-session.js" names="PersistentSessionConfig,PersistentSession,SessionChunk,SessionSendOptions" types=true
+
+fn name=createPtySession params="config:PersistentSessionConfig" returns="PersistentSession"
+  doc "Persistent interactive Claude brain over the kern-engines PTY subscription daemon (@kernlang/agon-engines), NOT `claude --print`. Honors the hard rule that the claude brain bills via the subscription TUI. Cesar orchestration is preserved by injecting the agon-orchestration MCP server (config.mcpServers → --mcp-config + --strict-mcp-config) with native writes disabled (--disallowedTools) and only Read/Grep/Glob + mcp__agon-orchestration allowed. The engine's FINAL answer is read from the DeliverAnswer answer-channel file (config.answerChannelPath) — authoritative and reliable — instead of scraping the TUI text (which is flaky for short tool-answers: the ⏺ marker collides with spinner glyphs and short answers fuse with status chrome on one row). The scraped extract is kept only as a fallback when the engine didn't call DeliverAnswer."
+  handler <<<
+    let claudeSession: any = null;
+    let alive = false;
+    let firstTurn = true;
+    let busy = false;
+
+    // 15-min per-turn ceiling. A turn is short in practice: orchestration tools
+    // (Forge/Tribunal) SIGNAL Cesar and return "stop" immediately; AgonBash runs
+    // in the MCP server (bounded by its own timeout). The ceiling only guards a
+    // wedged TUI.
+    const TURN_TIMEOUT_MS = 15 * 60 * 1000;
+
+    function buildExtraArgv(): string[] {
+      const args: string[] = [];
+      // Inject the Agon-configured MCP servers (incl. agon-orchestration) the same
+      // way the --print path does, then lock to ONLY these (--strict-mcp-config).
+      if (config.mcpServers && config.mcpServers.length > 0) {
+        const mcpConfig = JSON.stringify({
+          mcpServers: Object.fromEntries(
+            config.mcpServers.map((s: any) => [s.name ?? s.command ?? 'mcp', s]),
+          ),
+        });
+        args.push('--mcp-config', mcpConfig, '--strict-mcp-config');
+      }
+      // Defense in depth: disallow native writes (claude must route through
+      // AgonBash/AgonEdit/AgonWrite) AND only allow read tools + the agon server.
+      // --disallowedTools wins over --allowedTools, so writes are off regardless
+      // of how the default config's --allowedTools merges with this one.
+      args.push('--disallowedTools', 'Bash Edit Write MultiEdit NotebookEdit');
+      args.push('--allowedTools', 'Read Grep Glob mcp__agon-orchestration');
+      // Optional per-session launch flags (model/effort), forwarded by the caller.
+      if (config.claudePtyLaunchArgs && config.claudePtyLaunchArgs.length > 0) {
+        args.push(...config.claudePtyLaunchArgs);
+      }
+      return args;
+    }
+
+    function readAnswer(): string | null {
+      const p = config.answerChannelPath;
+      if (!p) return null;
+      try {
+        if (!existsSync(p)) return null;
+        const parsed = JSON.parse(readFileSync(p, 'utf-8'));
+        const t = (parsed as any)?.text;
+        return typeof t === 'string' ? t : null;
+      } catch { return null; }
+    }
+    function clearAnswer(): void {
+      const p = config.answerChannelPath;
+      if (!p) return;
+      try { rmSync(p, { force: true }); } catch { /* best-effort */ }
+    }
+
+    const session: PersistentSession = {
+      get alive() { return alive; },
+      sessionId: null,
+      engineId: config.engine.id,
+      get pid() { return null; },
+
+      async start() {
+        if (alive) return;
+        const mod: any = await import('@kernlang/agon-engines/cli/claude.js');
+        claudeSession = await mod.ClaudeCliSession.spawn({
+          mode: 'agent',
+          cwd: config.cwd,
+          extraArgv: buildExtraArgv(),
+          daemonTimeoutMs: 60_000,
+        });
+        alive = true;
+        firstTurn = true;
+      },
+
+      async *send(opts: SessionSendOptions) {
+        if (busy) { yield { type: 'error' as const, content: 'claude PTY session busy (concurrent turn rejected)' }; return; }
+        if (!alive || !claudeSession) {
+          try { await session.start(); }
+          catch (e) { yield { type: 'error' as const, content: `claude PTY session not alive: ${e instanceof Error ? e.message : String(e)}` }; return; }
+        }
+        if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+
+        busy = true;
+        clearAnswer();
+        // Claude's TUI has no --system-prompt; prepend it on the first turn only
+        // (the persistent session retains it in conversation context thereafter).
+        const sys = firstTurn ? (opts.systemPrompt ?? config.systemPrompt) : undefined;
+        firstTurn = false;
+        const composed = sys
+          ? `[System Instructions]\n${sys}\n\n[User Message]\n${opts.message}`
+          : opts.message;
+
+        let aborted = false;
+        const onAbort = () => {
+          aborted = true;
+          try { claudeSession?.close?.(); } catch { /* ignore */ }
+          claudeSession = null; alive = false;
+        };
+        opts.signal?.addEventListener('abort', onAbort, { once: true });
+
+        let scrapedFinal = '';
+        try {
+          // Drive the turn to completion. We consume the stream to advance the
+          // daemon's done-detection; the deltas are noisy TUI redraws so we do
+          // NOT surface them as answer text. The generator's RETURN value is the
+          // clean scraped extract, kept only as a fallback.
+          const it = claudeSession.askStream(composed, TURN_TIMEOUT_MS);
+          let res = await it.next();
+          while (!res.done) { res = await it.next(); }
+          scrapedFinal = typeof res.value === 'string' ? res.value : '';
+        } catch (e) {
+          opts.signal?.removeEventListener('abort', onAbort);
+          busy = false;
+          if (aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+          // Daemon/TUI error — mark dead so the next turn respawns.
+          alive = false; claudeSession = null;
+          yield { type: 'error' as const, content: `claude PTY turn failed: ${e instanceof Error ? e.message : String(e)}` };
+          return;
+        }
+        opts.signal?.removeEventListener('abort', onAbort);
+        busy = false;
+        if (aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+
+        // Authoritative answer via the DeliverAnswer channel.
+        const answer = readAnswer();
+        if (answer !== null && answer.length > 0) {
+          yield { type: 'text' as const, content: answer };
+          yield { type: 'done' as const, content: 'end_turn' };
+          return;
+        }
+        // Fallback: engine didn't deliver via the channel (or empty) — use the
+        // scraped extract so the turn isn't silently lost.
+        if (scrapedFinal && scrapedFinal.trim()) {
+          yield { type: 'text' as const, content: scrapedFinal };
+        }
+        yield { type: 'done' as const, content: 'end_turn' };
+      },
+
+      close() {
+        try { claudeSession?.close?.(); } catch { /* ignore */ }
+        claudeSession = null;
+        alive = false;
+      },
+
+      getMessageHistory() {
+        // Claude TUI manages its own conversation thread — no local history.
+        return [];
+      },
+    };
+
+    return session;
+  >>>

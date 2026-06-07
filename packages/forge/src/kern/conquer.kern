@@ -24,7 +24,7 @@
 // token usage, not price), so caps enforce turns + wall-clock; spend is best-effort.
 
 import from="@kernlang/agon-core" names="EngineAdapter,EngineRegistry,RatingRecord" types=true
-import from="@kernlang/agon-core" names="resolveWorkingDir,getRatings,seedNewEnginesFromRegistry,spawnWithTimeout"
+import from="@kernlang/agon-core" names="resolveWorkingDir,getRatings,seedNewEnginesFromRegistry,spawnWithTimeout,buildKernContextSpine"
 import from="./nero.js" names="runNero,rankNeroCritics,parseNeroVerdict"
 import from="./tribunal.js" names="runTribunal"
 import from="./brainstorm.js" names="runBrainstorm"
@@ -473,7 +473,12 @@ fn name=runConquer async=true params="opts:ConquerOptions" returns="Promise<Conq
     const transcript: string[] = [];
     const state: ConquerState = { turn: 0, spentUsd: 0, startedAtMs: Date.now(), consults: 0 };
 
-    let prompt = opts.task;
+    // Conquer builds its own builder prompt (it does NOT route through runForge),
+    // so the whole-project spine is injected here, on the FIRST turn only —
+    // later turns reassign `prompt` from builder output + Cesar's feedback.
+    // Best-effort + memoized per cwd; '' for non-TS targets or if the CLI is absent.
+    const kernSpine = await buildKernContextSpine(cwd);
+    let prompt = kernSpine ? `${opts.task}\n\n${kernSpine}` : opts.task;
     let done = false;
     let lastClaim = '';
     let doneReason = '';

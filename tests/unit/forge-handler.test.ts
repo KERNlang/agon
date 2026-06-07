@@ -30,6 +30,7 @@ vi.mock('@kernlang/agon-core', async () => ({
   failPlan: (plan: any) => ({ ...plan, state: 'failed' }),
   savePlan: (...args: any[]) => savePlanMock(...args),
   scanProjectContext: vi.fn(() => ''),
+  buildKernContextSpine: vi.fn(async () => ''),
   getActiveWorkspace: vi.fn(() => null),
   snapshotWorkspace: vi.fn(() => ({ id: 'cwd', path: '/repo', headSha: 'abc', branch: 'main', dirty: false })),
   resolveWorkingDir: vi.fn(() => '/repo'),

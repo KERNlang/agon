@@ -51,7 +51,7 @@ export {
 export { createLogger } from './logger.js';
 export type { Logger } from './logger.js';
 export { EngineRegistry } from './engine-registry.js';
-export { scanProjectContext, isKernProject, hasProjectBrief } from './context-scanner.js';
+export { scanProjectContext, isKernProject, hasProjectBrief, buildKernContextSpine } from './context-scanner.js';
 export { buildCodebaseMap, collectSourceFiles, extractSymbols, clearCodebaseMapCache } from './generated/blocks/codebase-map.js';
 export {
   addWorkspace, removeWorkspace, listWorkspaces,

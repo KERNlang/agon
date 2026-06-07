@@ -580,6 +580,9 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
     dispatch({ type: 'info', message: `Forge run dir: ${forgeDir}` });
 
     const projectCtx = scanProjectContext(forgeCwd, config.projectContext || undefined, config.contextFormat);
+    // NOTE: the whole-project kern-context spine is injected inside runForge
+    // (the convergence point for forge + goal) and runConquer — NOT here — so
+    // every build mode gets it. See buildKernContextSpine in agon-core.
 
     const engineStatus: Record<string, string> = {};
     const startTime = Date.now();

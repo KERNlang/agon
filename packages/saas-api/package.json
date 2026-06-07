@@ -1,6 +1,6 @@
 {
   "name": "@kernlang/agon-saas-api",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,6 @@
     "typecheck": "echo 'saas-api emits Python; no TS typecheck'"
   },
   "dependencies": {
-    "@kernlang/python": "~3.5.7"
+    "@kernlang/python": "~3.5.8"
   }
 }

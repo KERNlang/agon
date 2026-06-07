@@ -6,16 +6,20 @@ import type { ChildProcess } from 'node:child_process';
 
 import { createInterface } from 'node:readline';
 
+import { existsSync } from 'node:fs';
+
 import type { EngineDefinition } from '../models/types.js';
 
 import { loadConfig } from '../signals/config.js';
+
+import { isImagePath, mimeFromExt, MAX_DISPATCH_IMAGES, DISPATCH_VISION_MIME } from '../blocks/image.js';
 
 import type { PersistentSessionConfig, PersistentSession, SessionChunk, SessionSendOptions } from './persistent-session.js';
 
 /**
  * Persistent JSONRPC session for Codex app-server. Process stays alive across turns.
  */
-// @kern-source: session-companion:8
+// @kern-source: session-companion:10
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -350,10 +354,36 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
         }
         firstTurn = false;
 
+        // Vision: codex's protocol is path-native — attach each dropped image as a
+        // localImage input item (codex reads the file itself; no base64 needed).
+        // Gated by the engine's declared vision capability; existence-checked so a
+        // stale path can't abort the turn. Caps mirror the API path: ≤4 images.
+        const input: Array<Record<string, unknown>> = [{ type: 'text', text: message, text_elements: [] }];
+        if (opts.images?.length) {
+          if (config.engine.capabilities?.includes('vision')) {
+            let attached = 0;
+            const skipped: string[] = [];
+            for (const p of opts.images) {
+              if (attached >= MAX_DISPATCH_IMAGES) { skipped.push(`${p} (exceeds ${MAX_DISPATCH_IMAGES}-image limit)`); continue; }
+              if (!existsSync(p) || !isImagePath(p)) { skipped.push(`${p} (not found or not an image)`); continue; }
+              // Mirror the API path's MIME allowlist (png/jpeg/webp/gif) so a
+              // .svg/.bmp/.tiff isn't attached as a localImage codex then rejects.
+              if (!DISPATCH_VISION_MIME.has(mimeFromExt(p))) { skipped.push(`${p} (unsupported type ${mimeFromExt(p)})`); continue; }
+              input.push({ type: 'localImage', path: p }); attached++;
+            }
+            if (skipped.length) {
+              // Queued before the consume loop starts, so it's yielded first — no wake needed.
+              chunks.push({ type: 'status', content: `image(s) not sent: ${skipped.join('; ')}` });
+            }
+          } else {
+            chunks.push({ type: 'status', content: `${config.engine.id} has no vision capability — ${opts.images.length} image(s) not sent to the model` });
+          }
+        }
+
         // Start turn on existing thread
         await sendRpc('turn/start', {
           threadId,
-          input: [{ type: 'text', text: message, text_elements: [] }],
+          input,
         });
 
         // Yield chunks as they arrive

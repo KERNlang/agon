@@ -1,8 +1,9 @@
-import from="node:fs" names="readFileSync,statSync"
+import from="node:fs" names="readFileSync,statSync,existsSync"
 import from="node:path" names="isAbsolute,resolve,dirname"
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="node:url" names="fileURLToPath"
+import from="node:url" names="fileURLToPath,pathToFileURL"
+import from="node:module" names="createRequire"
 import from="@kernlang/agon-core" names="PersistentSession,PersistentSessionConfig" types=true
 import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
@@ -957,6 +958,32 @@ fn name=mcpConfigFingerprint params="config:any" returns=string
     return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
   >>>
 
+fn name=resolveAgonMcpServerPath params="fromUrl?:string" returns=string export=true
+  doc "Resolve the agon-orchestration MCP server entry (packages/mcp/dist/index.js). The CLI ships as a tsup BUNDLE (chunks at packages/cli/dist/), so the old fixed '../../../../mcp/dist/index.js' relative to import.meta.url resolved to a NONEXISTENT path — the MCP server never spawned and Cesar saw zero tools (slow scraping fallback). Resolution order: (1) node module resolution of @kernlang/agon-mcp (works installed AND monorepo-via-symlink), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL."
+  handler <<<
+    const raw = fromUrl ?? import.meta.url;
+    // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
+    // throws ERR_INVALID_URL_SCHEME on a bare path, so normalise first.
+    const url = raw.startsWith('file:') ? raw : pathToFileURL(raw).href;
+    // 1) Installed/published OR monorepo workspace symlink — node resolution.
+    try {
+      const req = createRequire(url);
+      const resolved = req.resolve('@kernlang/agon-mcp');
+      if (existsSync(resolved)) return resolved;
+    } catch { /* not resolvable as a dependency — fall through */ }
+    // 2) Monorepo without a node_modules symlink — walk to packages/mcp/dist.
+    let dir = dirname(fileURLToPath(url));
+    for (let i = 0; i < 12; i++) {
+      const cand = join(dir, 'packages', 'mcp', 'dist', 'index.js');
+      if (existsSync(cand)) return cand;
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+    // 3) Last resort: the original relative guess (keeps prior behaviour).
+    return join(dirname(fileURLToPath(url)), '../../../../mcp/dist/index.js');
+  >>>
+
 fn name=resolveCesarBackend params="ctx:HandlerContext, engineId?:string" returns="{ backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any }" export=true
   doc "Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that."
   handler <<<
@@ -1075,20 +1102,36 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
     // has neither native nor MCP write tools and reports "I can't execute/write".
     // This gate mirrors createStreamJsonSession's gate in persistent-session.kern.
     const isCompanion = !!binaryPath && (engine.companion?.protocol === 'jsonrpc' || engine.companion?.protocol === 'acp' || engine.companion?.protocol === 'stream-json' || engine.id === 'claude' || engine.binary === 'claude');
+    // Claude PTY brain = interactive claude over the kern-engines subscription
+    // daemon (default; --print only when AGON_CLAUDE_PRINT=1|true). It delivers
+    // its answer via the DeliverAnswer MCP tool → answer-channel file, since the
+    // TUI text scrape is unreliable for short tool-answers. This must be gated to
+    // ONLY claude-PTY: telling codex/agy to call DeliverAnswer would break their
+    // (reliable) native text capture.
+    const printOptOut = process.env.AGON_CLAUDE_PRINT;
+    const usingPrint = printOptOut === '1' || printOptOut === 'true';
+    const isClaudePtyBrain = !!binaryPath && (engine.id === 'claude' || engine.binary === 'claude') && !usingPrint;
+    let answerChannelPath: string | undefined;
     if (isCompanion) {
       ensureAgonHome();
       const signalDir = join(getAgonHome(), 'signals');
       mkdirSync(signalDir, { recursive: true });
       const sessionSignalId = `cesar-${Date.now()}`;
-      const mcpServerPath = join(dirname(fileURLToPath(import.meta.url)), '../../../../mcp/dist/index.js');
+      const mcpServerPath = resolveAgonMcpServerPath();
+      if (!existsSync(mcpServerPath)) {
+        console.error(`[agon] cesar: agon-orchestration MCP server not found at ${mcpServerPath} — orchestration tools (Forge/Tribunal/AgonBash/DeliverAnswer) will be UNAVAILABLE and Cesar will fall back to slow scraping.`);
+      }
+      const mcpEnv: Record<string, string> = { AGON_SIGNAL_DIR: signalDir, AGON_SESSION_ID: sessionSignalId };
+      if (isClaudePtyBrain) mcpEnv.AGON_ANSWER_CHANNEL = '1';
       const agonMcpServer: Record<string, unknown> = {
         name: 'agon-orchestration',
         command: 'node',
         args: [mcpServerPath],
-        env: { AGON_SIGNAL_DIR: signalDir, AGON_SESSION_ID: sessionSignalId },
+        env: mcpEnv,
       };
       mcpServers = mcpServers ? [...mcpServers, agonMcpServer] : [agonMcpServer];
       ctx.cesar!.mcpSignalPath = join(signalDir, `${sessionSignalId}.json`);
+      if (isClaudePtyBrain) answerChannelPath = join(signalDir, `${sessionSignalId}-answer.json`);
     }
 
     // Build system prompt and tool registry
@@ -1110,6 +1153,12 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
     } else if (isCompanion) {
       // CLI companion with MCP orchestration: reference MCP tools, no XML for orchestration
       fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Agent, Delegate, QuickNero, ReportConfidence, ProposePlan, ExitPlanMode\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool except Delegate, QuickNero, and ReportConfidence: STOP and wait.';
+      if (isClaudePtyBrain) {
+        // PTY brain: the user reads your reply ONLY via DeliverAnswer (TUI text is
+        // an unreliable preview). Required every turn that doesn't STOP for an
+        // orchestration tool / plan / delegation.
+        fullPrompt += '\n\nIMPORTANT — DELIVERING YOUR REPLY: You are running under a PTY answer-channel. DeliverAnswer is REQUIRED and is the FASTEST way to reply — calling it returns your answer to the user INSTANTLY. To show the user your response you MUST call the DeliverAnswer tool with your complete reply (markdown) in the `text` argument, then STOP. Plain printed/streamed text is only a draft preview, may not reach the user, AND is SLOWER (Agon then has to wait for the terminal to go idle before it can read anything). NEVER "respond directly", skip the tool, or avoid "tool round-trips" to save time — skipping DeliverAnswer makes the turn SLOWER and risks losing your reply entirely. Even a one-word answer goes through DeliverAnswer. Call it exactly once at the end of every turn — EXCEPT on turns where you STOP for an orchestration tool (Forge/Tribunal/Brainstorm/Campfire/Pipeline/Review/Agent/Delegate), ProposePlan, or ExitPlanMode (those already end your turn and Agon handles the rest). Always call ReportConfidence first as usual.';
+      }
     } else {
       // Fallback: XML tool descriptions for engines without native tools or MCP
       const toolPrompt = buildToolSystemPrompt(toolRegistry);
@@ -1130,6 +1179,7 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       sessionContinuity: (config as any).sessionContinuity === true,
       onToolCall: buildOnToolCall(ctx, toolRegistry, config),
       onApproval: buildOnApproval(ctx, cesarEngineId),
+      answerChannelPath,
     };
 
     const session = createPersistentSession(sessionConfig);

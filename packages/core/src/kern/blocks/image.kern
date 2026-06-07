@@ -1,4 +1,4 @@
-import from="node:fs" names="existsSync"
+import from="node:fs" names="existsSync,readFileSync,statSync"
 import from="node:path" names="resolve,basename,extname"
 import from="node:os" names="homedir"
 import from="node:url" names="fileURLToPath"
@@ -9,6 +9,14 @@ const name=IMAGE_EXTENSIONS type="Set<string>" value={{ new Set(['.png', '.jpg',
 const name=MIME_MAP type="Record<string,string>" value={{ ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.bmp': 'image/bmp' }) }}
 
 const name=IMG_CMD_REGEX type=RegExp value={{ /^\/img\s+(.+)$/i }}
+
+comment raw="// Dispatch caps for API-engine vision. base64 is sent inline per request, so we"
+comment raw="// bound count + per-image bytes to keep a single drop from blowing the context window."
+const name=MAX_DISPATCH_IMAGE_BYTES type=number value={{ 5 * 1024 * 1024 }}
+const name=MAX_DISPATCH_IMAGES type=number value={{ 4 }}
+comment raw="// MIME types every major OpenAI-compatible vision endpoint accepts (animated GIF"
+comment raw="// is sent as a still by most providers). SVG is excluded — vision models can't raster it."
+const name=DISPATCH_VISION_MIME type="Set<string>" value={{ new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']) }}
 
 fn name=isImagePath params="filePath:string" returns="boolean"
   handler lang="kern"
@@ -132,3 +140,43 @@ fn name=extractImagesFromInput params="input:string, cwd:string" returns="{text:
 
     return { text, images };
   >>>
+
+fn name=encodeImagesRaw params="paths:string[], maxBytes?:number, maxImages?:number" returns="{images:Array<{data:string,mediaType:string}>, skipped:string[]}"
+  doc "Single source of truth for turn-local image encoding: read each path to base64, enforcing a count cap, a per-image byte cap, a MIME allowlist, and a regular-file check. Rejections land in `skipped` with a human-readable reason. The two formatters below shape this for the AI-SDK (API engines) and Anthropic content blocks (claude stream-json). base64 is for the live request ONLY — never persist it into message history."
+  handler <<<
+    const lim = maxBytes ?? MAX_DISPATCH_IMAGE_BYTES;
+    const cap = maxImages ?? MAX_DISPATCH_IMAGES;
+    const images: Array<{data:string,mediaType:string}> = [];
+    const skipped: string[] = [];
+    const kb = (n: number) => `${Math.round(n / 1024)}KB`;
+    for (const p of paths) {
+      const name = basename(p);
+      if (images.length >= cap) { skipped.push(`${name} (exceeds ${cap}-image limit)`); continue; }
+      try {
+        if (!existsSync(p)) { skipped.push(`${name} (not found)`); continue; }
+        const mediaType = mimeFromExt(p);
+        if (!DISPATCH_VISION_MIME.has(mediaType)) { skipped.push(`${name} (unsupported type ${mediaType})`); continue; }
+        const st = statSync(p);
+        // Reject anything that isn't a plain file — a FIFO/device/socket path would
+        // block or mislead the size check; readFileSync on it could hang the turn.
+        if (!st.isFile()) { skipped.push(`${name} (not a regular file)`); continue; }
+        if (st.size > lim) { skipped.push(`${name} (${kb(st.size)} over ${kb(lim)} limit)`); continue; }
+        const data = readFileSync(p).toString('base64');
+        images.push({ data, mediaType });
+      } catch {
+        skipped.push(`${name} (read error)`);
+      }
+    }
+    return { images, skipped };
+  >>>
+
+fn name=encodeImagesForDispatch params="paths:string[], maxBytes?:number, maxImages?:number" returns="{parts:Array<{type:'image',image:string,mediaType:string}>, skipped:string[]}"
+  doc "AI-SDK ImagePart shape for OpenAI-compatible / Anthropic API engines (used by session-resume → apiStreamDispatchWithHistory). The image field is a full data: URL — explicit + standard, so the SDK never has to guess base64-vs-URL — and mediaType is set redundantly for providers that read it."
+  handler <<<
+    const { images, skipped } = encodeImagesRaw(paths, maxBytes, maxImages);
+    return {
+      parts: images.map((i) => ({ type: 'image' as const, image: `data:${i.mediaType};base64,${i.data}`, mediaType: i.mediaType })),
+      skipped,
+    };
+  >>>
+

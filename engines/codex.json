@@ -62,6 +62,9 @@
     "dynamicListCmd": ["__pty:/model"]
   },
 
+  "capabilities": ["vision"],
+  "imageFlag": "--image",
+
   "isolationHints": {
     "configEnv": "CODEX_HOME",
     "personalPaths": ["~/.codex"],

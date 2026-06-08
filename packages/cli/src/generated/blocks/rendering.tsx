@@ -61,8 +61,16 @@ export function SyntaxLine({ line, maxWidth }: { line:string; maxWidth:number })
 }
 
 // @kern-source: rendering:199
-export function CodeBlockView({ segment, borderColor }: { segment:ContentSegment & { type: 'code' }; borderColor:string }) {
-  const codeWidth = contentWidth(8);
+export function CodeBlockView({ segment, borderColor, wrapWidth }: { segment:ContentSegment & { type: 'code' }; borderColor:string; wrapWidth?:number }) {
+  // The box is `body + 8` cols wide (frame). When the parent passes the
+  // actual available content width (wrapWidth), the box must fit inside it —
+  // otherwise nesting/padding pushes the block past the available Ink width
+  // and every row wraps again. Cap the body budget at wrapWidth-8 in that
+  // case; fall back to the raw terminal budget when no width is provided.
+  const termBudget = contentWidth(8);
+  const codeWidth = (typeof wrapWidth === 'number' && wrapWidth > 0)
+    ? Math.max(8, Math.min(termBudget, wrapWidth - 8))
+    : termBudget;
   const lines = (segment.code ?? '').split('\n');
   const isDiff = segment.language === 'diff' || lines.some((l: string) => /^[+-@]/.test(l));
   const capped = lines.slice(0, MAX_CODE_LINES);
@@ -120,7 +128,7 @@ export function CodeBlockView({ segment, borderColor }: { segment:ContentSegment
   );
 }
 
-// @kern-source: rendering:264
+// @kern-source: rendering:273
 export function RichSpanView({ span }: { span:InlineSpan }) {
   if (span.style.code) {
     return <Text color="#a78bfa" backgroundColor="#1e1033">{span.text}</Text>;
@@ -137,7 +145,7 @@ export function RichSpanView({ span }: { span:InlineSpan }) {
   return el;
 }
 
-// @kern-source: rendering:285
+// @kern-source: rendering:294
 export function RichLineView({ line, borderColor }: { line:RichLine; borderColor?:string }) {
   const border = borderColor ? <Text color={borderColor}>{'\u2502 '}</Text> : null;
   const indent = line.indent > 0 ? '  '.repeat(line.indent) : '';
@@ -159,7 +167,7 @@ export function RichLineView({ line, borderColor }: { line:RichLine; borderColor
   return <Text>{border}{indent}{listIndent}{marker}{line.spans.map((s: InlineSpan, i: number) => <RichSpanView key={i} span={s} />)}</Text>;
 }
 
-// @kern-source: rendering:312
+// @kern-source: rendering:321
 export function MarkdownTableView({ headers, rows, alignments, borderColor }: { headers:string[]; rows:string[][]; alignments:('left' | 'center' | 'right')[]; borderColor:string }) {
   const colWidths = headers.map((h: string, i: number) => {
     let max = h.length;
@@ -195,7 +203,7 @@ export function MarkdownTableView({ headers, rows, alignments, borderColor }: { 
   );
 }
 
-// @kern-source: rendering:355
+// @kern-source: rendering:364
 export function RenderedSegments({ segments, borderColor, wrapWidth }: { segments:ContentSegment[]; borderColor:string; wrapWidth:number }) {
   return (
     <>
@@ -248,7 +256,7 @@ export function RenderedSegments({ segments, borderColor, wrapWidth }: { segment
         return (
           <React.Fragment key={`seg-${i}`}>
             {spacer}
-            <CodeBlockView segment={seg as ContentSegment & { type: 'code' }} borderColor={borderColor} />
+            <CodeBlockView segment={seg as ContentSegment & { type: 'code' }} borderColor={borderColor} wrapWidth={wrapWidth} />
           </React.Fragment>
         );
       })}
@@ -256,7 +264,7 @@ export function RenderedSegments({ segments, borderColor, wrapWidth }: { segment
   );
 }
 
-// @kern-source: rendering:422
+// @kern-source: rendering:431
 export function GradientLine({ text, colors }: { text:string; colors:readonly string[] }) {
   const step = Math.max(1, Math.ceil(text.length / colors.length));
   return (
@@ -269,7 +277,7 @@ export function GradientLine({ text, colors }: { text:string; colors:readonly st
   );
 }
 
-// @kern-source: rendering:438
+// @kern-source: rendering:447
 export function AnsiLine({ text, maxWidth, fallbackDim }: { text:string; maxWidth:number; fallbackDim?:boolean }) {
   if (!hasAnsiCodes(text)) {
     const display = text.length > maxWidth ? text.slice(0, maxWidth - 4) + '\u2026' : text;

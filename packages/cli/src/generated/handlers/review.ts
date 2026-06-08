@@ -324,12 +324,12 @@ export function summarizeReviewFindings(response: string): ReviewSeverityCounts 
 }
 
 /**
- * Repair pass (B): re-ask the engine for ONLY a bare JSON array of the findings it already wrote in prose. Asking for a bare array (no sentinel, no prose, no fence) is the format LLMs comply with most reliably — far better than 'an HTML-comment marker followed by JSON', which engines routinely truncate to just the marker. The caller (runReviewCore) prepends the sentinel itself before parsing, so the anti-injection anchor is preserved. Best-effort: if this still doesn't parse, the fail-closed/unstructured result stands.
+ * Repair pass (B): re-ask the engine for ONLY a bare JSON array of the findings it already wrote in prose. Asking for a bare array (no sentinel, no prose, no fence) is the format LLMs comply with most reliably — far better than 'an HTML-comment marker followed by JSON', which engines routinely truncate to just the marker. The caller (runReviewCore) prepends the sentinel itself before parsing, so the anti-injection anchor is preserved. Best-effort: if this still doesn't parse, the fail-closed/unstructured result stands. cwdOverride must match the main dispatch's cwd so the repair engine runs in the SAME repo (goal worktree / process.cwd()), never the active workspace.
  */
 // @kern-source: review:308
-export async function runReviewRepair(priorReview: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal): Promise<string> {
+export async function runReviewRepair(priorReview: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, cwdOverride?: string): Promise<string> {
   const config = ctx.config;
-  const cwd = resolveWorkingDir();
+  const cwd = cwdOverride ?? resolveWorkingDir();
   const parts: string[] = [];
   parts.push('You previously produced this code review:');
   parts.push(priorReview);
@@ -497,7 +497,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   let unstructured = false;
   // Repair pass (B): the engine reviewed but didn't emit a parseable findings block (the common case: it ends with the sentinel and no JSON). Re-ask for ONLY a bare JSON array — the format LLMs comply with most reliably — then prepend the sentinel OURSELVES so parseReviewBlocking's anti-injection anchor still holds. Append the reconstructed block so the result is parseable downstream. Failure leaves the fail-closed/unstructured result intact.
   if (parseFailed && response.length > 0 && !signal?.aborted) {
-    const repairResp = await runReviewRepair(response, engineId, ctx, signal);
+    const repairResp = await runReviewRepair(response, engineId, ctx, signal, cwd);
     if (repairResp) {
       const repairBlock = `<!--AGON_REVIEW_FINDINGS_v1-->\n${repairResp}`;
       const parsed2 = parseReviewBlocking(repairBlock);
@@ -590,6 +590,9 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
       return;
     }
 
+    // Announce the real target (and warn on a cwd-vs-reviewed-repo mismatch)
+    // before anything else, so an empty or wrong-repo review is never silent.
+    announceReviewTarget(dispatch, cwd, label);
     if (!diff.trim()) {
       dispatch({ type: 'info', message: `No changes to review (${label}).` });
       return;
@@ -697,9 +700,28 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 }
 
 /**
+ * Make the review's actual target unmistakable BEFORE engines run. Prints the repo name/path/branch being reviewed, and — critically — warns when the directory you're standing in is a DIFFERENT git repo than the one being reviewed. agon resolves the review dir from the active workspace (resolveWorkingDir), not process.cwd(), so running `agon review` from repo X while the active workspace is repo Y silently reviews Y. That footgun produced a 6-engine review of agon's own repo instead of the user's code; this turns it into a loud, actionable signal instead of a silent wrong-repo pass.
+ */
+// @kern-source: review:641
+function announceReviewTarget(dispatch: Dispatch, cwd: string, label: string): void {
+  let reviewRoot = cwd;
+  try { reviewRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf-8' }).trim() || cwd; } catch { /* not a git repo — keep cwd */ }
+  let branch = '';
+  try { branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, encoding: 'utf-8' }).trim(); } catch { /* detached / no repo */ }
+  const name = reviewRoot.split(sep).filter(Boolean).pop() ?? reviewRoot;
+  dispatch({ type: 'info', message: `Reviewing ${label} in ${name} (${reviewRoot})${branch ? ` on ${branch}` : ''}` } as any);
+  try {
+    const pwdRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: process.cwd(), encoding: 'utf-8' }).trim();
+    if (pwdRoot && pwdRoot !== reviewRoot) {
+      dispatch({ type: 'warning', message: `Heads up: you are in ${pwdRoot}, but this review targets the active workspace ${name} (${reviewRoot}). To review where you are, switch the active workspace (e.g. /workspace ${name === 'agon' ? '<your-repo>' : name}) or pass an explicit target (branch:NAME / commit:SHA).` } as any);
+    }
+  } catch { /* process.cwd() isn't a git repo — nothing to compare against */ }
+}
+
+/**
  * Run review for one or more explicitly requested engines. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A single engine delegates to the streaming handleReview path.
  */
-// @kern-source: review:638
+// @kern-source: review:658
 export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
   const abort = new AbortController();
   try {
@@ -724,6 +746,10 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
       dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
       return;
     }
+    // Announce the real target (and warn on a cwd-vs-reviewed-repo mismatch)
+    // BEFORE the empty-diff check, so even "No changes to review" makes clear
+    // which repo was actually inspected.
+    announceReviewTarget(dispatch, cwd, label);
     if (!diff.trim()) {
       dispatch({ type: 'info', message: `No changes to review (${label}).` });
       return;

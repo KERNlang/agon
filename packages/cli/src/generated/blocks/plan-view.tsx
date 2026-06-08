@@ -60,8 +60,9 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
           <Box flexDirection="column">
             <Text color="#fbbf24" bold>{'Awaiting approval'}</Text>
             <Text color={(selectedIndex ?? 0) === 0 ? '#4ade80' : '#6b7280'} bold={(selectedIndex ?? 0) === 0}>{(selectedIndex ?? 0) === 0 ? '❯ ' : '  '}{'1. Approve & run'}</Text>
-            <Text color={(selectedIndex ?? 0) === 1 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Reject'}</Text>
-            <Text dimColor>{'  ↑↓ move · Enter select · ✎ type to change · /approve · /cancel'}</Text>
+            <Text color={(selectedIndex ?? 0) === 1 ? '#60a5fa' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Other — revise the plan'}</Text>
+            <Text color={(selectedIndex ?? 0) === 2 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 2}>{(selectedIndex ?? 0) === 2 ? '❯ ' : '  '}{'3. Reject'}</Text>
+            <Text dimColor>{'  ↑↓ move · Enter select · 1/2/3 jump · y/o/n · /approve · /cancel'}</Text>
           </Box>
         )}
       </Box>
@@ -188,8 +189,9 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
         <Box flexDirection="column">
           <Text color="#fbbf24" bold>{'Awaiting approval'}</Text>
           <Text color={(selectedIndex ?? 0) === 0 ? '#4ade80' : '#6b7280'} bold={(selectedIndex ?? 0) === 0}>{(selectedIndex ?? 0) === 0 ? '❯ ' : '  '}{'1. Approve & run'}</Text>
-          <Text color={(selectedIndex ?? 0) === 1 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Reject'}</Text>
-          <Text dimColor>{'  ↑↓ move · Enter select · ✎ type to change · /approve · /cancel'}</Text>
+          <Text color={(selectedIndex ?? 0) === 1 ? '#60a5fa' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Other — revise the plan'}</Text>
+          <Text color={(selectedIndex ?? 0) === 2 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 2}>{(selectedIndex ?? 0) === 2 ? '❯ ' : '  '}{'3. Reject'}</Text>
+          <Text dimColor>{'  ↑↓ move · Enter select · 1/2/3 jump · y/o/n · /approve · /cancel'}</Text>
         </Box>
       )}
     </Box>
@@ -197,7 +199,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
 });
 export { PlanProposalView };
 
-// @kern-source: plan-view:220
+// @kern-source: plan-view:222
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');

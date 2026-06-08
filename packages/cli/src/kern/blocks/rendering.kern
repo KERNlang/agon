@@ -199,9 +199,18 @@ screen name=SyntaxLine target=ink
 screen name=CodeBlockView target=ink
   prop name=segment type="ContentSegment & { type: 'code' }"
   prop name=borderColor type=string
+  prop name=wrapWidth type=number optional=true
   render
     handler <<<
-      const codeWidth = contentWidth(8);
+      // The box is `body + 8` cols wide (frame). When the parent passes the
+      // actual available content width (wrapWidth), the box must fit inside it —
+      // otherwise nesting/padding pushes the block past the available Ink width
+      // and every row wraps again. Cap the body budget at wrapWidth-8 in that
+      // case; fall back to the raw terminal budget when no width is provided.
+      const termBudget = contentWidth(8);
+      const codeWidth = (typeof wrapWidth === 'number' && wrapWidth > 0)
+        ? Math.max(8, Math.min(termBudget, wrapWidth - 8))
+        : termBudget;
       const lines = (segment.code ?? '').split('\n');
       const isDiff = segment.language === 'diff' || lines.some((l: string) => /^[+-@]/.test(l));
       const capped = lines.slice(0, MAX_CODE_LINES);
@@ -409,7 +418,7 @@ screen name=RenderedSegments target=ink
             return (
               <React.Fragment key={`seg-${i}`}>
                 {spacer}
-                <CodeBlockView segment={seg as ContentSegment & { type: 'code' }} borderColor={borderColor} />
+                <CodeBlockView segment={seg as ContentSegment & { type: 'code' }} borderColor={borderColor} wrapWidth={wrapWidth} />
               </React.Fragment>
             );
           })}

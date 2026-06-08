@@ -1887,6 +1887,17 @@ export function App() {
         // into the composer after we route the approval.
         ctrlKeyHandledRef.current = true;
         setPlanApprovalIndex(0);
+        if (action.action === 'revise') {
+          // Drop the proposal from the live pane but leave the plan in
+          // activePlanRef so /cancel on the next turn is a no-op. Pre-fill
+          // the composer with a revision prompt; pressing Enter routes the
+          // message to Cesar, who (per session.kern RULE 9) will see the
+          // pending plan and ProposePlan again with the user's changes.
+          setPendingPlanProposal(null);
+          setInputValue('Revise the plan: ');
+          dispatch({ type: 'info', message: 'Type your revision and press Enter (Esc clears).' } as any);
+          return;
+        }
         handleSubmit(action.action === 'approve' ? '/approve' : '/cancel');
         return;
       case 'movePlanApproval':
@@ -2921,7 +2932,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:93
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2656
+// @kern-source: app:2667
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

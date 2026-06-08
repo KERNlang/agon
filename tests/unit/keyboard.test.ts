@@ -296,43 +296,50 @@ describe('resolveKeyboardInput', () => {
       .toEqual({ type: 'exitOther' });
   });
 
-  it('plan approval: arrows and y/n move the approve/reject cursor without applying', () => {
+  it('plan approval: arrows and y/n/o move the cursor without applying', () => {
+    // Indices are in VISUAL order: 0=Approve, 1=Other, 2=Reject.
     expect(resolveKeyboardInput(baseCtx({ key: { downArrow: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 0 })))
       .toEqual({ type: 'movePlanApproval', index: 1 });
     expect(resolveKeyboardInput(baseCtx({ input: 'y', key: {}, activePlanState: 'awaiting_approval' })))
       .toEqual({ type: 'movePlanApproval', index: 0 });
-    expect(resolveKeyboardInput(baseCtx({ input: 'n', key: {}, activePlanState: 'awaiting_approval' })))
+    expect(resolveKeyboardInput(baseCtx({ input: 'o', key: {}, activePlanState: 'awaiting_approval' })))
       .toEqual({ type: 'movePlanApproval', index: 1 });
+    expect(resolveKeyboardInput(baseCtx({ input: 'n', key: {}, activePlanState: 'awaiting_approval' })))
+      .toEqual({ type: 'movePlanApproval', index: 2 });
   });
 
   it('plan approval: Enter confirms the highlighted action', () => {
     expect(resolveKeyboardInput(baseCtx({ input: '\r', key: { return: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 0 })))
       .toEqual({ type: 'planControl', action: 'approve' });
+    // index 1 = Other → revise; index 2 = Reject → cancel.
     expect(resolveKeyboardInput(baseCtx({ input: '\r', key: { return: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 1 })))
+      .toEqual({ type: 'planControl', action: 'revise' });
+    expect(resolveKeyboardInput(baseCtx({ input: '\r', key: { return: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 2 })))
       .toEqual({ type: 'planControl', action: 'cancel' });
   });
 
-  it('plan approval: third "Other" slot — arrows cycle 0→1→2→0, o/3 jump to it, Enter on it revises', () => {
-    // Down from Approve goes to Reject (1) — unchanged behavior.
+  it('plan approval: 3-way cursor cycles in visual order — Approve→Other→Reject; o/3 jump; Enter on Other revises', () => {
+    // Arrow cycle matches the on-screen top-to-bottom layout (0=Approve,
+    // 1=Other, 2=Reject). Down never skips the middle Other slot.
     expect(resolveKeyboardInput(baseCtx({ key: { downArrow: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 0 })))
-      .toEqual({ type: 'movePlanApproval', index: 1 });
-    // Down from Reject (1) wraps to Other (2) — new.
+      .toEqual({ type: 'movePlanApproval', index: 1 }); // Approve → Other
     expect(resolveKeyboardInput(baseCtx({ key: { downArrow: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 1 })))
-      .toEqual({ type: 'movePlanApproval', index: 2 });
-    // Down from Other (2) wraps back to Approve (0).
+      .toEqual({ type: 'movePlanApproval', index: 2 }); // Other → Reject
     expect(resolveKeyboardInput(baseCtx({ key: { downArrow: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 2 })))
-      .toEqual({ type: 'movePlanApproval', index: 0 });
-    // Up from Approve (0) wraps to Other (2).
+      .toEqual({ type: 'movePlanApproval', index: 0 }); // Reject → Approve (wrap)
+    // Up from Approve wraps to Reject (bottom).
     expect(resolveKeyboardInput(baseCtx({ key: { upArrow: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 0 })))
       .toEqual({ type: 'movePlanApproval', index: 2 });
-    // o/3 jump straight to Other.
+    // o/2 jump straight to Other (middle); n/3 to Reject (bottom).
     expect(resolveKeyboardInput(baseCtx({ input: 'o', key: {}, activePlanState: 'awaiting_approval' })))
-      .toEqual({ type: 'movePlanApproval', index: 2 });
+      .toEqual({ type: 'movePlanApproval', index: 1 });
+    expect(resolveKeyboardInput(baseCtx({ input: '2', key: {}, activePlanState: 'awaiting_approval' })))
+      .toEqual({ type: 'movePlanApproval', index: 1 });
     expect(resolveKeyboardInput(baseCtx({ input: '3', key: {}, activePlanState: 'awaiting_approval' })))
       .toEqual({ type: 'movePlanApproval', index: 2 });
-    // Enter on Other emits the 'revise' action (new union member) — the app
-    // route clears the proposal and pre-fills the composer for free-form feedback.
-    expect(resolveKeyboardInput(baseCtx({ input: '\r', key: { return: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 2 })))
+    // Enter on Other emits 'revise' — the app route clears the proposal and
+    // pre-fills the composer for free-form feedback.
+    expect(resolveKeyboardInput(baseCtx({ input: '\r', key: { return: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 1 })))
       .toEqual({ type: 'planControl', action: 'revise' });
   });
 

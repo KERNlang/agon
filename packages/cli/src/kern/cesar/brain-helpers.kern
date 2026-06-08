@@ -110,6 +110,19 @@ fn name=detectMutationIntentStall params="text:string" returns=boolean export=tr
     return MUTATION_INTENT_RE.test(body) && HANDBACK_RE.test(body);
   >>>
 
+fn name=detectFabricatedDelegation params="text:string" returns=boolean export=true
+  doc "Detect a response that CLAIMS an async review/forge/tribunal/brainstorm/agent or background job was dispatched or is now running — e.g. 'review delegated to codex, claude, agy', 'three reviewers are reading the diff in parallel', 'I kicked off the review', \"I'll get back when they report\". The caller pairs this with 'no delegation was actually emitted this turn' (ctx.cesar.pendingDelegation is null) to catch the confabulation where a weak engine narrates a dispatch it never made. Requires BOTH a delegable target AND a dispatch/running claim, so a plain answer that merely mentions the word 'review' does not trip it."
+  handler <<<
+    const body = String(text ?? '').trim();
+    if (!body) return false;
+    // A delegable target: review / forge / tribunal / brainstorm / campfire / agents / engines / a background job.
+    const TARGET_RE = /\b(?:review(?:er)?s?|forg(?:e|ing)|tribunal|brainstorm|campfire|agents?|engines?|jobs?)\b/i;
+    if (!TARGET_RE.test(body)) return false;
+    // A claim that the target was dispatched or is now running / will report back.
+    const DISPATCH_RE = /\b(?:kick(?:ed|ing)?\s*(?:it|them|that|the\s+\w+)?\s*off|fired?\s*(?:it|them|off)|dispatch(?:ed|ing)|delegat(?:ed|ing)|(?:is|are|now)\s+running|running\s+(?:in|now)|in\s+parallel|reading\s+the\s+(?:diff|changes|code)|working\s+(?:on\s+it|in\s+parallel)|in\s+progress|under\s*way|i'?ll\s+(?:get\s+back|report|let\s+you\s+know|surface|update)|report(?:s|ing)?\s+back|when\s+they\s+(?:report|land|return|finish|come\s+back)|still\s+(?:running|going|working|in\s+progress)|spun?\s+up|started\s+(?:the|a)\s+(?:review|forge|job|tribunal|brainstorm))\b/i;
+    return DISPATCH_RE.test(body);
+  >>>
+
 fn name=eagerFailedToolNames params="results:ToolCallResult[]" returns="string[]" export=true
   doc "Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed."
   handler lang="kern"

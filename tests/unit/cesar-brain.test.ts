@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall } from '../../packages/cli/src/handlers/cesar-brain.js';
 // Source of truth for these helpers is packages/cli/src/kern/cesar/brain-helpers.kern;
 // the generated/*.js below is regenerated from it (npm run kern:compile) — do not edit by hand.
-import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall, detectFabricatedDelegation } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 
 describe('Cesar Brain', () => {
@@ -33,6 +33,29 @@ describe('Cesar Brain', () => {
 
     it('does not flag normal answers', () => {
       expect(detectNarratedToolStall('The tools are wired, but Kimi may be weak at native tool calls.')).toBe(false);
+    });
+  });
+
+  describe('detectFabricatedDelegation (confabulated dispatch)', () => {
+    it('flags a claim that reviewers/jobs are running or were dispatched', () => {
+      // Real phrases from the confabulation transcript.
+      expect(detectFabricatedDelegation('Going — three reviewers (codex, claude, agy) are reading the 90-file diff in parallel.')).toBe(true);
+      expect(detectFabricatedDelegation('The review is still running — codex, claude, and agy are each reading the diff in parallel.')).toBe(true);
+      expect(detectFabricatedDelegation("Review delegated to codex, claude, and agy. I'll get back when they report.")).toBe(true);
+      expect(detectFabricatedDelegation('I kicked off the review — the agents are working in parallel now.')).toBe(true);
+    });
+
+    it('does not flag a plain answer that merely mentions a review', () => {
+      expect(detectFabricatedDelegation('You should run a review before merging this branch.')).toBe(false);
+      expect(detectFabricatedDelegation('The review tool diffs the branch against its base.')).toBe(false);
+      expect(detectFabricatedDelegation('Here is the fix; nothing is running right now.')).toBe(false);
+    });
+
+    it('requires both a delegable target AND a dispatch/running claim', () => {
+      // "running" but no delegable target → not a fabricated delegation.
+      expect(detectFabricatedDelegation('The build is running in parallel across packages.')).toBe(false);
+      // target but no dispatch claim → not flagged.
+      expect(detectFabricatedDelegation('A tribunal would surface the tradeoffs here.')).toBe(false);
     });
   });
 

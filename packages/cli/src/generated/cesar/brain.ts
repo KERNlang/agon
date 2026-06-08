@@ -32,7 +32,7 @@ import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
 
 import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
 
-import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
+import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
 
 // @kern-source: brain:19
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
@@ -1625,6 +1625,43 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           }
             if (planResponse.trim()) {
               dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: planResponse.trim() });
+            }
+          } catch {
+            dispatch({ type: 'spinner-stop' });
+          }
+        }
+
+        // ── Fabricated-delegation guard: ground a confabulated dispatch ──
+        // Catches the failure where a weak engine narrates that it dispatched or is
+        // running an async review/forge/agent job ("three reviewers are reading the
+        // diff in parallel", "I kicked off the review", "I'll report when they land")
+        // WITHOUT having emitted any delegation this turn — pendingDelegation is null,
+        // so nothing is actually queued or running. Re-prompt once to ground it: call
+        // the real tool now, or tell the user plainly that nothing is running. If the
+        // re-prompt dispatches for real, pendingDelegation gets set and the existing
+        // downstream delegation path takes over.
+        if (
+          !ctx.cesar!.pendingDelegation
+          && session.alive
+          && !abort.signal.aborted
+          && detectFabricatedDelegation(response.trim())
+        ) {
+          dispatch({ type: 'warning', message: 'Cesar claimed a job was running but never dispatched one — grounding...' });
+          dispatch({ type: 'spinner-start', message: 'Cesar grounding…', color });
+          try {
+            let groundResponse = '';
+            const groundGen = session.send({
+              message: '[SYSTEM] GROUNDING CHECK: You did NOT dispatch any review/forge/tribunal/brainstorm/agent/job this turn, and none is pending or running. Do NOT claim background work is "running", "in parallel", "kicked off", or that anyone "will report back" — that is false and misleads the user. If the user wants that work done, call the actual tool now (Review/Forge/Tribunal/Brainstorm/Agent). Otherwise tell the user plainly that nothing is currently running and ask whether to start it.',
+              signal: abort.signal,
+            });
+            for await (const chunk of groundGen) {
+              if (chunk.type === 'text') groundResponse += chunk.content;
+              if (chunk.type === 'done' || chunk.type === 'error') break;
+            }
+            dispatch({ type: 'spinner-stop' });
+            if (groundResponse.trim()) {
+              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: groundResponse.trim() });
+              response = groundResponse.trim();
             }
           } catch {
             dispatch({ type: 'spinner-stop' });

@@ -71,11 +71,20 @@ export function CodeBlockView({ segment, borderColor }: { segment:ContentSegment
   const bc = borderColor || '#585858';
   const maxLineLen = capped.reduce((m: number, l: string) => Math.max(m, l.length), 0);
   const headerLen = (segment.language || 'code').length + (segment.index !== undefined ? ` [${segment.index}]`.length : 0);
-  const innerWidth = Math.max(maxLineLen, headerLen);
-  const boxWidth = innerWidth + 4;
-  const rule = '\u2500'.repeat(boxWidth);
+  // Single coherent inner-content width for every row. Clamp to the terminal
+  // budget so a long line truncates instead of forcing the box wider than the
+  // screen. Every row is built as: `\u2502  \u258c <content padded to body>  \u2502`
+  //   left frame  `\u2502  \u258c ` = 5 cols, right frame `  \u2502` = 3 cols \u2192 rowWidth = body + 8.
+  //   border row  `\u2502 ` + rule + ` \u2502` = rule.length + 4, so rule = body + 4.
+  // Previously the box was sized to body+2 while rows rendered at body+4..body+11,
+  // so every row overflowed and Ink wrapped it \u2014 dropping the trailing `\u2502` onto a
+  // blank row (the stray pipes + huge gaps between lines).
+  const body = Math.min(Math.max(maxLineLen, headerLen), codeWidth);
+  const rowWidth = body + 8;
+  const rule = '\u2500'.repeat(body + 4);
+  const overflowLabel = `\u2026 ${overflow} more lines`;
   return (
-    <Box flexDirection="column" width={boxWidth + 2} flexShrink={0}>
+    <Box flexDirection="column" width={rowWidth} flexShrink={0}>
       <Text color={bc}>{'\u2502 '}{rule}{' \u2502'}</Text>
       <Text>
         <Text color={bc}>{'\u2502  '}</Text>
@@ -83,7 +92,7 @@ export function CodeBlockView({ segment, borderColor }: { segment:ContentSegment
         <Text> </Text>
         <Text dimColor>{segment.language || 'code'}</Text>
         {segment.index !== undefined && <Text color="#585858">{` [${segment.index}]`}</Text>}
-        <Text>{' '.repeat(Math.max(0, boxWidth - headerLen - 1))}</Text>
+        <Text>{' '.repeat(Math.max(0, body - headerLen))}</Text>
         <Text color={bc}>{'  \u2502'}</Text>
       </Text>
       {capped.map((line: string, i: number) => (
@@ -91,8 +100,8 @@ export function CodeBlockView({ segment, borderColor }: { segment:ContentSegment
           <Text color={bc}>{'\u2502  '}</Text>
           <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
           <Text> </Text>
-          {isDiff ? <DiffLine line={line} maxWidth={codeWidth} /> : <SyntaxLine line={line} maxWidth={codeWidth} />}
-          <Text>{' '.repeat(Math.max(0, codeWidth - line.length - 4))}</Text>
+          {isDiff ? <DiffLine line={line} maxWidth={body} /> : <SyntaxLine line={line} maxWidth={body} />}
+          <Text>{' '.repeat(Math.max(0, body - line.length))}</Text>
           <Text color={bc}>{'  \u2502'}</Text>
         </Text>
       ))}
@@ -101,7 +110,8 @@ export function CodeBlockView({ segment, borderColor }: { segment:ContentSegment
           <Text color={bc}>{'\u2502  '}</Text>
           <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
           <Text> </Text>
-          <Text dimColor>{'\u2026 '}{overflow}{' more lines'}</Text>
+          <Text dimColor>{overflowLabel}</Text>
+          <Text>{' '.repeat(Math.max(0, body - overflowLabel.length))}</Text>
           <Text color={bc}>{'  \u2502'}</Text>
         </Text>
       )}
@@ -110,7 +120,7 @@ export function CodeBlockView({ segment, borderColor }: { segment:ContentSegment
   );
 }
 
-// @kern-source: rendering:254
+// @kern-source: rendering:264
 export function RichSpanView({ span }: { span:InlineSpan }) {
   if (span.style.code) {
     return <Text color="#a78bfa" backgroundColor="#1e1033">{span.text}</Text>;
@@ -127,7 +137,7 @@ export function RichSpanView({ span }: { span:InlineSpan }) {
   return el;
 }
 
-// @kern-source: rendering:275
+// @kern-source: rendering:285
 export function RichLineView({ line, borderColor }: { line:RichLine; borderColor?:string }) {
   const border = borderColor ? <Text color={borderColor}>{'\u2502 '}</Text> : null;
   const indent = line.indent > 0 ? '  '.repeat(line.indent) : '';
@@ -149,7 +159,7 @@ export function RichLineView({ line, borderColor }: { line:RichLine; borderColor
   return <Text>{border}{indent}{listIndent}{marker}{line.spans.map((s: InlineSpan, i: number) => <RichSpanView key={i} span={s} />)}</Text>;
 }
 
-// @kern-source: rendering:302
+// @kern-source: rendering:312
 export function MarkdownTableView({ headers, rows, alignments, borderColor }: { headers:string[]; rows:string[][]; alignments:('left' | 'center' | 'right')[]; borderColor:string }) {
   const colWidths = headers.map((h: string, i: number) => {
     let max = h.length;
@@ -185,7 +195,7 @@ export function MarkdownTableView({ headers, rows, alignments, borderColor }: { 
   );
 }
 
-// @kern-source: rendering:345
+// @kern-source: rendering:355
 export function RenderedSegments({ segments, borderColor, wrapWidth }: { segments:ContentSegment[]; borderColor:string; wrapWidth:number }) {
   return (
     <>
@@ -246,7 +256,7 @@ export function RenderedSegments({ segments, borderColor, wrapWidth }: { segment
   );
 }
 
-// @kern-source: rendering:412
+// @kern-source: rendering:422
 export function GradientLine({ text, colors }: { text:string; colors:readonly string[] }) {
   const step = Math.max(1, Math.ceil(text.length / colors.length));
   return (
@@ -259,7 +269,7 @@ export function GradientLine({ text, colors }: { text:string; colors:readonly st
   );
 }
 
-// @kern-source: rendering:428
+// @kern-source: rendering:438
 export function AnsiLine({ text, maxWidth, fallbackDim }: { text:string; maxWidth:number; fallbackDim?:boolean }) {
   if (!hasAnsiCodes(text)) {
     const display = text.length > maxWidth ? text.slice(0, maxWidth - 4) + '\u2026' : text;

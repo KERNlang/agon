@@ -72,6 +72,23 @@ fn name=resolveReviewTarget params="target:string|undefined, cwd:string" returns
     } else if (t.startsWith('branch:')) {
       const branch = t.slice(7);
       label = `branch ${branch}`;
+      // `git diff BRANCH...HEAD` reviews HEAD's changes relative to BRANCH as the
+      // base — correct when BRANCH is the base (e.g. branch:main). The footgun:
+      // when BRANCH resolves to the same commit as HEAD (targeting the branch you
+      // are currently on), it's an empty self-diff that surfaces as a silent
+      // "No changes to review" — which a caller (or Cesar) can mistake for a clean
+      // review. Detect that and fail LOUDLY with the right targets instead.
+      let branchSha = '';
+      let headSha = '';
+      try {
+        branchSha = execFileSync('git', ['rev-parse', branch], { cwd, encoding: 'utf-8' }).trim();
+        headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf-8' }).trim();
+      } catch (err) {
+        throw new Error(`Failed to resolve branch "${branch}": ${err instanceof Error ? err.message : String(err)}`);
+      }
+      if (branchSha && branchSha === headSha) {
+        throw new Error(`branch:${branch} points at the commit you are currently on, so diffing it against HEAD yields nothing to review. Use "branch:main" (or your base branch) to review this branch's commits, or "uncommitted" to review working-tree changes.`);
+      }
       try {
         diff = execFileSync('git', ['diff', `${branch}...HEAD`], { cwd, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }).trim();
       } catch (err) {

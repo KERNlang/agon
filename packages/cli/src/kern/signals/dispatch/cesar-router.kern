@@ -889,11 +889,17 @@ fn name=runCesarBrainFallback async=true params="input:string, cb:DispatchCallba
       const outDir = join(RUNS_DIR, `acting-cesar-${Date.now()}`);
       mkdirSync(outDir, { recursive: true });
       if (!_silentMode) cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('acting', actingCesar, `log: ${outDir}`) });
+      // Acting-Cesar leads and may need tools, so dispatch in 'agent' mode when the
+      // substitute supports it. 'exec' triggers agy's OUTPUT-RULES gag (adapter-helpers:
+      // engine.id === 'agy' && mode !== 'agent') which forbids file edits / tool use and
+      // forces single-pass text — the reason agy refused to run tools as acting Cesar.
+      // Fall back to 'exec' for engines without an agent mode (no regression).
+      const actingMode = ((actingEngine as any)?.agent ? 'agent' : 'exec') as any;
       const actingResult = await cb.ctx.adapter.dispatch({
         engine: actingEngine,
         prompt: actingPrompt,
         cwd: resolveWorkingDir(),
-        mode: 'exec' as any,
+        mode: actingMode,
         timeout: (cesarConfig as any).timeout ?? 120,
         outputDir: outDir,
         systemPrompt: buildCesarSystemPrompt(cb.ctx),

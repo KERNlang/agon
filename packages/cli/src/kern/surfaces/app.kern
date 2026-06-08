@@ -67,6 +67,7 @@ import from="../../input-utils.js" names="isTerminalFocusReport"
 import from="../../stable-input.js" names="useStableInput"
 import from="../blocks/rich-text.js" names="parseProseToRichLines"
 import from="../services/update-check.js" names="checkForUpdate,loadDismissedVersion,saveDismissedVersion,isLinkedDevInstall"
+import from="../lib/terminal-notify.js" names="bell,setWindowTitle"
 // ── Domain-specific helper imports (refactored from monolithic app-helpers) ──
 import from="./app-composer.js" names="COMPOSER_HISTORY_LIMIT,loadComposerInputHistory,saveComposerInputHistory"
 import from="./app-tool-detail.js" names="toolDetailViewportRows,findLatestToolDetailEvent,findLatestToolEvent,findLatestFailedToolEvent,buildFailedToolRetryDraft,buildToolDetailView"
@@ -196,6 +197,13 @@ screen name=App target=ink
   ref name=activeAbortRef type="AbortController|null" initial="null"
   ref name=activeTurnRef type="{ input:string; engineId:string; retried:boolean }|null" initial="null"
   ref name=lastActivityTimeRef type=number initial="Date.now()"
+  // Single-shot bell guard: set true when we ring on done/await, cleared on
+  // the next user keystroke or next dispatch. Prevents double-bell when both
+  // a question and a plan-approval land in the same render.
+  ref name=pendingBellRef type=boolean initial=false
+  // Tracks whether we've already announced a given plan-approval state so a
+  // re-render of the same awaiting_approval state doesn't re-ring the bell.
+  ref name=awaitingPlanAnnouncedRef type=string initial="''"
   ref name=blockArchivePathRef type=string initial="makeBlockArchivePath(Date.now())"
   ref name=nestedCtrlShortcutRef type="{ key: string; at: number }" initial="{ key: '', at: 0 }"
   ref name=displayRowCountRef type=number initial=0
@@ -470,6 +478,39 @@ screen name=App target=ink
     handler lang="kern"
       assign target="modeRef.current" value="mode"
 
+  effect deps="questionState,activePlan,replState,bell,setWindowTitle,pendingBellRef,awaitingPlanAnnouncedRef"
+    handler <<<
+      // Awaiting-user-input: a question is open OR a plan needs approval.
+      // Ring the bell once and set the window title to the alert variant
+      // so the user notices the terminal even when it's backgrounded.
+      const planState = String(activePlan?.state ?? '');
+      const planAwaiting = planState === 'awaiting_approval';
+      const planId = String(activePlan?.id ?? '');
+      if (questionState || planAwaiting) {
+        // Gate per-plan-id: a fresh plan approval (different id) re-rings,
+        // but a re-render of the SAME awaiting_approval state is silent.
+        // The question path re-uses the same pendingBellRef so an open
+        // question and a plan-approval that land in the same render still
+        // produce a single bell.
+        const freshPlan = planAwaiting && planId && planId !== awaitingPlanAnnouncedRef.current;
+        if (!pendingBellRef.current || freshPlan) {
+          bell();
+          pendingBellRef.current = true;
+        }
+        if (freshPlan) awaitingPlanAnnouncedRef.current = planId;
+        setWindowTitle('\u25cf agon \u2014 input needed');
+      } else if (replState === 'idle') {
+        setWindowTitle('agon');
+      } else {
+        setWindowTitle('\u25cf agon \u2014 running');
+      }
+      // Track plan-approval state to avoid re-ringing on the same approval.
+      // Reset on the next user keystroke (inputEpoch bump) or next dispatch.
+      if (!planAwaiting) {
+        awaitingPlanAnnouncedRef.current = '';
+      }
+    >>>
+
   effect deps="mouseSelection"
     handler lang="kern"
       assign target="mouseSelectionRef.current" value="mouseSelection"
@@ -665,10 +706,24 @@ screen name=App target=ink
       };
     >>>
 
-  callback name=transition params="fn:any"
+  callback name=transition params="fn:any" deps="bell,setWindowTitle,pendingBellRef"
     handler <<<
       setReplState((prev: any) => {
-        try { return fn({ state: prev }).state; }
+        try {
+          const next = fn({ state: prev }).state;
+          // Ring once and reset the window title when we return to idle
+          // (finishReplState / cancelReplState both end a run). Guard with
+          // pendingBellRef so a question and a finishReplState in the same
+          // render don't double-bell; user keystroke or next dispatch clears.
+          if (next === 'idle' && prev !== 'idle') {
+            if (!pendingBellRef.current) {
+              bell();
+              pendingBellRef.current = true;
+            }
+            setWindowTitle('agon');
+          }
+          return next;
+        }
         catch { return prev; }
       });
     >>>
@@ -902,6 +957,10 @@ screen name=App target=ink
         if cond="message"
           do value="dispatch({ type: 'warning', message } as any)"
         do value="setReplState((prev: any) => prev === 'idle' ? prev : cancelReplState({ state: prev }).state)"
+        if cond="!pendingBellRef.current"
+          do value="bell()"
+          assign target="pendingBellRef.current" value="true"
+        do value="setWindowTitle('agon')"
       if cond="clearChat"
         do value="dispatch({ type: 'clear' } as any)"
 
@@ -1141,10 +1200,14 @@ screen name=App target=ink
       assign target="pendingPasteTransformRef.current" value="replacement.length > 0"
       return value="replacement"
 
-  callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued,livePaneVisible"
+  callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued,livePaneVisible,pendingBellRef"
     handler lang="kern"
       comment raw="// Diagnostic: stamp keystroke arrival; read post-commit by the AGON_PERF effect (0 when off)."
       assign target="keyT0Ref.current" value="perfNow()"
+      comment raw="// User is back at the keyboard — clear the pending bell so the NEXT await"
+      comment raw="// (after this turn) can ring again, and announce this new plan approval."
+      assign target="pendingBellRef.current" value="false"
+      assign target="awaitingPlanAnnouncedRef.current" value="''"
       comment raw="// Swallow input while a choice question is active — the keyboard handler"
       comment raw="// resolves the choice on a single keypress."
       if cond="questionState && questionState.choices"
@@ -1287,10 +1350,13 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       });
     >>>
 
-  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage"
+  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef"
     handler <<<
       inputEpochRef.current += 1;
       let input = cleanSubmitValue(value);
+      // User is submitting a turn — allow the next await to ring again.
+      pendingBellRef.current = false;
+      awaitingPlanAnnouncedRef.current = '';
       if (!input) return;
       // Bare "/" → open slash picker flyout, don't dump text list
       if (input === '/') {
@@ -1405,6 +1471,8 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
       if (planModeQueued) setPlanModeQueued(false);
       transition(startCommandReplState);
+      pendingBellRef.current = false;
+      setWindowTitle('\u25cf agon \u2014 running');
       dispatch({ type: 'separator' } as any);
       dispatch({ type: 'user-message', content: input } as any);
       const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
@@ -1432,8 +1500,8 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
           // Transition to idle so user can submit new commands while job runs
           // Strip stays active via jobList.some(j => j.state === 'running') check
           setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
-          fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); })
-            .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
+          fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); bell(); setWindowTitle('agon'); })
+            .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); bell(); setWindowTitle('agon'); });
         },
         setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
         setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups,
@@ -1458,7 +1526,13 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
       finally {
         if (activeTurnRef.current?.input === input) activeTurnRef.current = null;
-        setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
+        // Route through transition() so a normally-completed turn rings the
+        // done-bell. A direct setReplState here bypassed transition's bell hook,
+        // so the MAIN completion path (every non-job turn) was silent — only the
+        // status-dashboard / empty-mode-switch edge cases rang. transition's own
+        // `next==='idle' && prev!=='idle'` guard makes this a no-op (no bell) for
+        // job turns that already went idle at the runAsJob handoff above.
+        transition(finishReplState);
       }
     >>>
 

@@ -121,9 +121,24 @@ export function detectMutationIntentStall(text: string): boolean {
 }
 
 /**
- * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
+ * Detect a response that CLAIMS an async review/forge/tribunal/brainstorm/agent or background job was dispatched or is now running — e.g. 'review delegated to codex, claude, agy', 'three reviewers are reading the diff in parallel', 'I kicked off the review', "I'll get back when they report". The caller pairs this with 'no delegation was actually emitted this turn' (ctx.cesar.pendingDelegation is null) to catch the confabulation where a weak engine narrates a dispatch it never made. Requires BOTH a delegable target AND a dispatch/running claim, so a plain answer that merely mentions the word 'review' does not trip it.
  */
 // @kern-source: brain-helpers:113
+export function detectFabricatedDelegation(text: string): boolean {
+  const body = String(text ?? '').trim();
+  if (!body) return false;
+  // A delegable target: review / forge / tribunal / brainstorm / campfire / agents / engines / a background job.
+  const TARGET_RE = /\b(?:review(?:er)?s?|forg(?:e|ing)|tribunal|brainstorm|campfire|agents?|engines?|jobs?)\b/i;
+  if (!TARGET_RE.test(body)) return false;
+  // A claim that the target was dispatched or is now running / will report back.
+  const DISPATCH_RE = /\b(?:kick(?:ed|ing)?\s*(?:it|them|that|the\s+\w+)?\s*off|fired?\s*(?:it|them|off)|dispatch(?:ed|ing)|delegat(?:ed|ing)|(?:is|are|now)\s+running|running\s+(?:in|now)|in\s+parallel|reading\s+the\s+(?:diff|changes|code)|working\s+(?:on\s+it|in\s+parallel)|in\s+progress|under\s*way|i'?ll\s+(?:get\s+back|report|let\s+you\s+know|surface|update)|report(?:s|ing)?\s+back|when\s+they\s+(?:report|land|return|finish|come\s+back)|still\s+(?:running|going|working|in\s+progress)|spun?\s+up|started\s+(?:the|a)\s+(?:review|forge|job|tribunal|brainstorm))\b/i;
+  return DISPATCH_RE.test(body);
+}
+
+/**
+ * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
+ */
+// @kern-source: brain-helpers:126
 export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
   const names: string[] = [];
   for (const result of results ?? []) {
@@ -141,7 +156,7 @@ export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
 /**
  * Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch.
  */
-// @kern-source: brain-helpers:125
+// @kern-source: brain-helpers:138
 export function shouldRunEagerRepairTool(toolName: string, meta: any, failedToolNames: string[], usedToolNames: string[]): boolean {
   const name = String(toolName ?? '').trim();
   if (!name) return false;
@@ -156,7 +171,7 @@ export function shouldRunEagerRepairTool(toolName: string, meta: any, failedTool
 /**
  * Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet.
  */
-// @kern-source: brain-helpers:138
+// @kern-source: brain-helpers:151
 export function shouldStopAfterXmlToolCall(toolName: string): boolean {
   const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan', 'ExitPlanMode']);
   return HANDOFF_TOOLS.has(String(toolName ?? ''));
@@ -165,7 +180,7 @@ export function shouldStopAfterXmlToolCall(toolName: string): boolean {
 /**
  * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
  */
-// @kern-source: brain-helpers:144
+// @kern-source: brain-helpers:157
 export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
   const trimmed = input.trim();
   const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
@@ -186,7 +201,7 @@ export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): {
   return { matched: true, prompt: prompt };
 }
 
-// @kern-source: brain-helpers:163
+// @kern-source: brain-helpers:176
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;

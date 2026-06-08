@@ -289,8 +289,14 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
           const outputDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
           mkdirSync(outputDir, { recursive: true });
           const primedPrompt = buildHistoryPrimedPrompt(ctx.chatSession, input);
+          // Cesar is an agentic leading role, so dispatch in 'agent' mode when the
+          // engine supports it. 'exec' triggers agy's OUTPUT-RULES gag (adapter-helpers:
+          // engine.id === 'agy' && mode !== 'agent') which forbids file edits / tool use
+          // and forces a single-pass text answer — exactly why agy could not run tools
+          // as Cesar. Fall back to 'exec' for engines without an agent mode (no regression).
+          const fallbackMode = ((engine as any)?.agent ? 'agent' : 'exec') as any;
           const freshResult = await ctx.adapter.dispatch({
-            engine, prompt: primedPrompt, cwd: resolveWorkingDir(), mode: 'exec' as any,
+            engine, prompt: primedPrompt, cwd: resolveWorkingDir(), mode: fallbackMode,
             timeout: config.timeout ?? 120, outputDir, signal: abort.signal, systemPrompt: buildCesarSystemPrompt(ctx),
           });
           dispatch({ type: 'spinner-stop' });

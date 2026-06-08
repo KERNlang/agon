@@ -18,6 +18,14 @@ export default defineConfig({
   format: ['esm'],
   dts: false,
   sourcemap: true,
+  // Ship source MAPS (so the runtime stack-trace mapper can resolve dist → src
+  // file:line for readable error frames) but NOT the embedded original source.
+  // sourcesContent:false strips the full .ts/.kern-generated source from the
+  // published .js.map — otherwise `npm i -g @kernlang/agon` would carry the
+  // entire codebase, defeating the private-repo posture and doubling pkg size.
+  esbuildOptions(options) {
+    options.sourcesContent = false;
+  },
   clean: true,
   // @kernlang/agon-core, @kernlang/agon-forge, @kernlang/agon-adapter-cli are INLINED (pure JS) so a bare
   // `npm i -g @kernlang/agon` is self-contained — they are deliberately NOT external.

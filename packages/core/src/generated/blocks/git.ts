@@ -225,7 +225,7 @@ export function hydrateWorktreeBuildArtifacts(repoDir: string, worktreePath: str
 
 // @kern-source: git:205
 export const activeWorktrees: Map<string, string> = (() => {
-    const g = global as any;
+    const g = globalThis as any;
     if (!g.__agonActiveWorktrees) {
       g.__agonActiveWorktrees = new Map<string, string>();
     }
@@ -234,7 +234,7 @@ export const activeWorktrees: Map<string, string> = (() => {
 
 // @kern-source: git:215
 export function registerExitHooks(): void {
-  const g = global as any;
+  const g = globalThis as any;
   if (g.__agonExitHooksRegistered) return;
   g.__agonExitHooksRegistered = true;
 

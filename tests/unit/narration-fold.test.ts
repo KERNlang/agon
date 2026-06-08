@@ -11,7 +11,7 @@ import {
 // A condensed but faithful slice of a real agy (--print black-box agent)
 // "wall of text": glued research narration followed by a real answer tail.
 const AGY_WALL =
-  'I will list the contents of the root workspace directory /Users/nicolascukas/KERN/Agon-AI to understand the project structure.' +
+  'I will list the contents of the root workspace directory /home/user/project to understand the project structure.' +
   'I will read the contents of AGON.md to understand the core concept of Agon.' +
   'I will view the contents of CLAUDE.md to see if there are build instructions.' +
   'I will search the codebase for the string openFiles across the application.' +

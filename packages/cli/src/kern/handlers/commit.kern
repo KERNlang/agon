@@ -51,7 +51,8 @@ fn name=handleCommit async=true params="message:string|undefined, dispatch:Dispa
         do value="dispatch({ type: 'warning', message: 'No modified tracked files to commit. Use git add to stage new files.' })"
         return
       each name=f in="modifiedFiles"
-        do value="gitExec(`git add \"${f}\"`, cwd)"
+        comment raw="// execFileSync (argv array) — never interpolate a filename into a shell string (injection-safe)"
+        do value="execFileSync('git', ['add', f], { cwd, encoding: 'utf-8', timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] })"
       do value="dispatch({ type: 'success', message: `Staged ${modifiedFiles.length} file(s)` })"
     comment raw="// Step 3: Generate or use provided commit message"
     let name=commitMsg kind=let value="message?.trim()"

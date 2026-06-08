@@ -204,7 +204,7 @@ fn name=hydrateWorktreeBuildArtifacts params="repoDir:string,worktreePath:string
 
 const name=activeWorktrees type="Map<string, string>" value={{
   (() => {
-    const g = global as any;
+    const g = globalThis as any;
     if (!g.__agonActiveWorktrees) {
       g.__agonActiveWorktrees = new Map<string, string>();
     }
@@ -214,7 +214,7 @@ const name=activeWorktrees type="Map<string, string>" value={{
 
 fn name=registerExitHooks returns=void
   handler <<<
-    const g = global as any;
+    const g = globalThis as any;
     if (g.__agonExitHooksRegistered) return;
     g.__agonExitHooksRegistered = true;
 

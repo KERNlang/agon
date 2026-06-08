@@ -312,6 +312,30 @@ describe('resolveKeyboardInput', () => {
       .toEqual({ type: 'planControl', action: 'cancel' });
   });
 
+  it('plan approval: third "Other" slot — arrows cycle 0→1→2→0, o/3 jump to it, Enter on it revises', () => {
+    // Down from Approve goes to Reject (1) — unchanged behavior.
+    expect(resolveKeyboardInput(baseCtx({ key: { downArrow: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 0 })))
+      .toEqual({ type: 'movePlanApproval', index: 1 });
+    // Down from Reject (1) wraps to Other (2) — new.
+    expect(resolveKeyboardInput(baseCtx({ key: { downArrow: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 1 })))
+      .toEqual({ type: 'movePlanApproval', index: 2 });
+    // Down from Other (2) wraps back to Approve (0).
+    expect(resolveKeyboardInput(baseCtx({ key: { downArrow: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 2 })))
+      .toEqual({ type: 'movePlanApproval', index: 0 });
+    // Up from Approve (0) wraps to Other (2).
+    expect(resolveKeyboardInput(baseCtx({ key: { upArrow: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 0 })))
+      .toEqual({ type: 'movePlanApproval', index: 2 });
+    // o/3 jump straight to Other.
+    expect(resolveKeyboardInput(baseCtx({ input: 'o', key: {}, activePlanState: 'awaiting_approval' })))
+      .toEqual({ type: 'movePlanApproval', index: 2 });
+    expect(resolveKeyboardInput(baseCtx({ input: '3', key: {}, activePlanState: 'awaiting_approval' })))
+      .toEqual({ type: 'movePlanApproval', index: 2 });
+    // Enter on Other emits the 'revise' action (new union member) — the app
+    // route clears the proposal and pre-fills the composer for free-form feedback.
+    expect(resolveKeyboardInput(baseCtx({ input: '\r', key: { return: true }, activePlanState: 'awaiting_approval', planApprovalIndex: 2 })))
+      .toEqual({ type: 'planControl', action: 'revise' });
+  });
+
   it('leaves PgUp/PgDn/Home/End to the terminal — main-buffer + native scrollback owns scroll', () => {
     // In Agon's current architecture (no alt-screen, transcript rows committed
     // to Static → terminal scrollback), the app has no in-app scroll surface.

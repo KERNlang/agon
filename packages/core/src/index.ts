@@ -24,7 +24,7 @@ export type {
 export { defaultFinalizeOnScoreForTask } from './generated/blocks/finalize-policy.js';
 export {
   repoRoot, headSha, worktreePrune, worktreeCreate, worktreeRemove,
-  worktreeRemoveBestEffort, worktreePruneAll, stashSnapshot,
+  worktreeRemoveBestEffort, worktreePruneAll, worktreePruneOrphaned, stashSnapshot,
   worktreeDiff, worktreeChangedDiff, worktreeChangedShortstat,
   readOnlyDiff, diffLineCount, diffFileCount, applyPatch, recentCommits,
   currentBranch, isDirty,

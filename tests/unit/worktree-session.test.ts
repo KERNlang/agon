@@ -151,5 +151,73 @@ describe('session worktrees', () => {
       expect(removeSessionWorktree(repo, 'feat/dirty', true)).toBe(true);
       expect(existsSync(m.path)).toBe(false);
     });
+
+    it('worktreePruneOrphaned removes worktrees registered in git pointing to runs or agent-worktrees', async () => {
+      const { worktreePruneOrphaned } = await import('../../packages/core/src/generated/blocks/git.js');
+
+      const fakeAgentWtDir = join(repo, '.agon', 'agent-worktrees', 'run-xyz', 'scout');
+      mkdirSync(fakeAgentWtDir, { recursive: true });
+
+      git(['worktree', 'add', '--detach', fakeAgentWtDir, 'HEAD'], repo);
+
+      const wtListBefore = git(['worktree', 'list', '--porcelain'], repo);
+      expect(wtListBefore.includes('.agon/agent-worktrees')).toBe(true);
+
+      worktreePruneOrphaned(repo);
+
+      const wtListAfter = git(['worktree', 'list', '--porcelain'], repo);
+      expect(wtListAfter.includes('.agon/agent-worktrees')).toBe(false);
+      expect(existsSync(fakeAgentWtDir)).toBe(false);
+    });
+
+    it('worktreePruneOrphaned does NOT remove persistent session worktrees under ~/.agon/worktrees', async () => {
+      const { worktreePruneOrphaned } = await import('../../packages/core/src/generated/blocks/git.js');
+
+      const sessionWtDir = join(home, 'worktrees', 'abc123', 'feat-session');
+      mkdirSync(sessionWtDir, { recursive: true });
+      git(['worktree', 'add', '--detach', sessionWtDir, 'HEAD'], repo);
+
+      const wtListBefore = git(['worktree', 'list', '--porcelain'], repo);
+      expect(wtListBefore.includes('worktrees/abc123/feat-session')).toBe(true);
+
+      worktreePruneOrphaned(repo);
+
+      const wtListAfter = git(['worktree', 'list', '--porcelain'], repo);
+      expect(wtListAfter.includes('worktrees/abc123/feat-session')).toBe(true);
+      expect(existsSync(sessionWtDir)).toBe(true);
+
+      // Clean up so the temp repo can be torn down cleanly
+      git(['worktree', 'remove', '--force', sessionWtDir], repo);
+    });
+
+    it('worktreePruneAll removes aged engine worktrees under .agon/agent-worktrees', async () => {
+      const { worktreePruneAll } = await import('../../packages/core/src/generated/blocks/git.js');
+
+      const runDir = join(repo, '.agon', 'agent-worktrees', 'run-old');
+      const engineWtDir = join(runDir, 'codex');
+      mkdirSync(engineWtDir, { recursive: true });
+      git(['worktree', 'add', '--detach', engineWtDir, 'HEAD'], repo);
+
+      const recentDir = join(repo, '.agon', 'agent-worktrees', 'run-recent');
+      const recentEngineWtDir = join(recentDir, 'claude');
+      mkdirSync(recentEngineWtDir, { recursive: true });
+      git(['worktree', 'add', '--detach', recentEngineWtDir, 'HEAD'], repo);
+
+      // Backdate only the old run directory
+      const old = new Date('2020-01-01T00:00:00.000Z');
+      utimesSync(runDir, old, old);
+
+      const wtListBefore = git(['worktree', 'list', '--porcelain'], repo);
+      expect(wtListBefore.includes('agent-worktrees/run-old/codex')).toBe(true);
+      expect(wtListBefore.includes('agent-worktrees/run-recent/claude')).toBe(true);
+
+      worktreePruneAll(repo, 1000);
+
+      const wtListAfter = git(['worktree', 'list', '--porcelain'], repo);
+      expect(wtListAfter.includes('agent-worktrees/run-old/codex')).toBe(false);
+      expect(wtListAfter.includes('agent-worktrees/run-recent/claude')).toBe(true);
+      expect(existsSync(engineWtDir)).toBe(false);
+      expect(existsSync(recentEngineWtDir)).toBe(true);
+    });
   });
 });

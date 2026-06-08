@@ -132,6 +132,8 @@ import { parseProseToRichLines } from '../blocks/rich-text.js';
 
 import { checkForUpdate, loadDismissedVersion, saveDismissedVersion, isLinkedDevInstall } from '../services/update-check.js';
 
+import { bell, setWindowTitle } from '../lib/terminal-notify.js';
+
 import { COMPOSER_HISTORY_LIMIT, loadComposerInputHistory, saveComposerInputHistory } from './app-composer.js';
 
 import { toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView } from './app-tool-detail.js';
@@ -152,7 +154,7 @@ import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:94
+// @kern-source: app:95
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -540,6 +542,8 @@ export function App() {
   const activeAbortRef = useRef<AbortController|null>(null);
   const activeTurnRef = useRef<{ input:string; engineId:string; retried:boolean }|null>(null);
   const lastActivityTimeRef = useRef<number>(Date.now());
+  const pendingBellRef = useRef<boolean>(false);
+  const awaitingPlanAnnouncedRef = useRef<string>('');
   const blockArchivePathRef = useRef<string>(makeBlockArchivePath(Date.now()));
   const nestedCtrlShortcutRef = useRef<{ key: string; at: number }>({ key: '', at: 0 });
   const displayRowCountRef = useRef<number>(0);
@@ -840,10 +844,24 @@ export function App() {
 
   const transition = useCallback((fn:any) => {
     setReplState((prev: any) => {
-      try { return fn({ state: prev }).state; }
+      try {
+        const next = fn({ state: prev }).state;
+        // Ring once and reset the window title when we return to idle
+        // (finishReplState / cancelReplState both end a run). Guard with
+        // pendingBellRef so a question and a finishReplState in the same
+        // render don't double-bell; user keystroke or next dispatch clears.
+        if (next === 'idle' && prev !== 'idle') {
+          if (!pendingBellRef.current) {
+            bell();
+            pendingBellRef.current = true;
+          }
+          setWindowTitle('agon');
+        }
+        return next;
+      }
       catch { return prev; }
     });
-  }, []);
+  }, [bell,setWindowTitle,pendingBellRef]);
 
   const trackAbort = useCallback((abort:AbortController|null) => {
     if (activeAbortRef.current) {
@@ -986,6 +1004,11 @@ export function App() {
         dispatch({ type: 'warning', message: message } as any);
       }
       setReplState((prev: any) => (prev === 'idle') ? prev : cancelReplState({ state: prev }).state);
+      if (!pendingBellRef.current) {
+        bell();
+        pendingBellRef.current = true;
+      }
+      setWindowTitle('agon');
     }
     if (clearChat) {
       dispatch({ type: 'clear' } as any);
@@ -1032,6 +1055,10 @@ export function App() {
   const handleInputChange = useCallback((value:string) => {
     // Diagnostic: stamp keystroke arrival; read post-commit by the AGON_PERF effect (0 when off).
     keyT0Ref.current = perfNow();
+    // User is back at the keyboard — clear the pending bell so the NEXT await
+    // (after this turn) can ring again, and announce this new plan approval.
+    pendingBellRef.current = false;
+    awaitingPlanAnnouncedRef.current = '';
     // Swallow input while a choice question is active — the keyboard handler
     // resolves the choice on a single keypress.
     if (questionState && questionState.choices) {
@@ -1088,7 +1115,7 @@ export function App() {
     const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
     inputValueRef.current = updatedValue;
     setInputValue(updatedValue);
-  }, [slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued,livePaneVisible]);
+  }, [slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued,livePaneVisible,pendingBellRef]);
 
   const sendBtwMessage = useCallback((question:string) => {
     const q = (question ?? '').trim();
@@ -1184,6 +1211,9 @@ export function App() {
   const handleSubmit = useCallback(async (value:string) => {
     inputEpochRef.current += 1;
     let input = cleanSubmitValue(value);
+    // User is submitting a turn — allow the next await to ring again.
+    pendingBellRef.current = false;
+    awaitingPlanAnnouncedRef.current = '';
     if (!input) return;
     // Bare "/" → open slash picker flyout, don't dump text list
     if (input === '/') {
@@ -1298,6 +1328,8 @@ export function App() {
     const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
     if (planModeQueued) setPlanModeQueued(false);
     transition(startCommandReplState);
+    pendingBellRef.current = false;
+    setWindowTitle('\u25cf agon \u2014 running');
     dispatch({ type: 'separator' } as any);
     dispatch({ type: 'user-message', content: input } as any);
     const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
@@ -1325,8 +1357,8 @@ export function App() {
         // Transition to idle so user can submit new commands while job runs
         // Strip stays active via jobList.some(j => j.state === 'running') check
         setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
-        fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); })
-          .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
+        fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); bell(); setWindowTitle('agon'); })
+          .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); bell(); setWindowTitle('agon'); });
       },
       setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
       setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups,
@@ -1351,9 +1383,15 @@ export function App() {
     } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
     finally {
       if (activeTurnRef.current?.input === input) activeTurnRef.current = null;
-      setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
+      // Route through transition() so a normally-completed turn rings the
+      // done-bell. A direct setReplState here bypassed transition's bell hook,
+      // so the MAIN completion path (every non-job turn) was silent — only the
+      // status-dashboard / empty-mode-switch edge cases rang. transition's own
+      // `next==='idle' && prev!=='idle'` guard makes this a no-op (no bell) for
+      // job turns that already went idle at the runAsJob handoff above.
+      transition(finishReplState);
     }
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage]);
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
     if (!reviewEvent) {
@@ -1975,6 +2013,38 @@ export function App() {
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
+
+  useEffect(() => {
+    // Awaiting-user-input: a question is open OR a plan needs approval.
+    // Ring the bell once and set the window title to the alert variant
+    // so the user notices the terminal even when it's backgrounded.
+    const planState = String(activePlan?.state ?? '');
+    const planAwaiting = planState === 'awaiting_approval';
+    const planId = String(activePlan?.id ?? '');
+    if (questionState || planAwaiting) {
+      // Gate per-plan-id: a fresh plan approval (different id) re-rings,
+      // but a re-render of the SAME awaiting_approval state is silent.
+      // The question path re-uses the same pendingBellRef so an open
+      // question and a plan-approval that land in the same render still
+      // produce a single bell.
+      const freshPlan = planAwaiting && planId && planId !== awaitingPlanAnnouncedRef.current;
+      if (!pendingBellRef.current || freshPlan) {
+        bell();
+        pendingBellRef.current = true;
+      }
+      if (freshPlan) awaitingPlanAnnouncedRef.current = planId;
+      setWindowTitle('\u25cf agon \u2014 input needed');
+    } else if (replState === 'idle') {
+      setWindowTitle('agon');
+    } else {
+      setWindowTitle('\u25cf agon \u2014 running');
+    }
+    // Track plan-approval state to avoid re-ringing on the same approval.
+    // Reset on the next user keystroke (inputEpoch bump) or next dispatch.
+    if (!planAwaiting) {
+      awaitingPlanAnnouncedRef.current = '';
+    }
+  }, [questionState,activePlan,replState,bell,setWindowTitle,pendingBellRef,awaitingPlanAnnouncedRef]);
 
   useEffect(() => {
     mouseSelectionRef.current = mouseSelection;
@@ -2836,22 +2906,22 @@ export function App() {
   );
 }
 
-// @kern-source: app:84
+// @kern-source: app:85
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:86
+// @kern-source: app:87
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:88
+// @kern-source: app:89
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:90
+// @kern-source: app:91
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:92
+// @kern-source: app:93
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2582
+// @kern-source: app:2656
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -11,6 +11,7 @@ export {
   handleUse,
   handleCesar,
   handleTokens,
+  handleRaw,
   handleWorkspace,
   handleChats,
   handleModels,

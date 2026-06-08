@@ -20,6 +20,8 @@ import { deriveRoutingHints, buildRoutingContext } from '../cesar/routing.js';
 
 import { summarizeAllCesarToolReliability } from '../cesar/reliability.js';
 
+import { getLastFoldedRaw, getFoldedRaw, getFoldedRawCount } from '../blocks/narration-fold.js';
+
 // ── Module: InfoHandlers ──
 
 export function handleLeaderboard(dispatch: Dispatch): void {
@@ -670,6 +672,25 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
   const backend = backendArg ?? (ctx.config as any).cesarBackend ?? 'auto';
   dispatch({ type: 'success', message: `Cesar brain set to: ${id} (backend: ${backend})` });
   dispatch({ type: 'info', message: 'Conversation context + memory preserved. Forge/tribunal engines unchanged — use /use to change those.' });
+}
+
+/**
+ * Reprint the untouched raw text of a recently narration-folded engine-block. The compact '▸ N reasoning steps folded · /raw' placeholder points here; native scrollback rows cannot expand in place, so /raw re-emits the full original as a fresh block. Bare /raw shows the most recent fold; /raw <n> pages back (1 = most recent) through the last 20. foldedSteps:0 marks it pre-processed so output.kern does not re-fold it.
+ */
+export function handleRaw(dispatch: Dispatch, index?: number): void {
+  const count = getFoldedRawCount();
+  if (count === 0) {
+    dispatch({ type: 'info', message: 'Nothing folded yet — /raw reprints the full text of a recently folded engine block.' });
+    return;
+  }
+  const n = index && index > 0 ? Math.floor(index) : 1;
+  const raw = getFoldedRaw(n) ?? '';
+  if (!raw.trim()) {
+    dispatch({ type: 'info', message: `No folded block #${n} — ${count} recent fold${count === 1 ? '' : 's'} kept (try /raw 1..${count}).` });
+    return;
+  }
+  dispatch({ type: 'header', title: count > 1 ? `Raw engine output (unfolded) — ${n} of ${count} recent` : 'Raw engine output (unfolded)' });
+  dispatch({ type: 'engine-block', engineId: 'raw', color: 244, content: raw, foldedSteps: 0 });
 }
 
 export function handleTokens(dispatch: Dispatch): void {

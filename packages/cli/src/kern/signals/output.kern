@@ -4,6 +4,7 @@
 
 import from="../../handlers/types.js" names="OutputEvent,EngineProgress" types=true
 import from="../blocks/markdown.js" names="parseMarkdownBlocks,cleanEngineOutput"
+import from="../blocks/narration-fold.js" names="foldNarration,setLastFoldedRaw"
 import from="../../code-buffer.js" names="codeBlockBuffer"
 import from="@kernlang/agon-core" names="loadConfig,configSet"
 import from="./todos.js" names="Todo" types=true
@@ -219,6 +220,17 @@ fn name=_showNextPermission params="actions:OutputActions" returns=void export=f
     });
   >>>
 
+fn name=foldEngineContent params="content:string" returns="{ content: string, foldedSteps?: number }"
+  doc "Apply engine-agnostic narration folding to engine-block content per the narrationFold config (off|safe|aggressive, default safe). On a fold, records the raw in the bounded ring (for /raw) and returns { content, foldedSteps } to spread onto the engine-block; clean text folds nothing and returns just { content }. Pure backstop — runs on every engine-block, structured engines simply fold nothing. The raw is NOT returned per-event; it lives in the ring to avoid unbounded per-block memory growth."
+  handler <<<
+    const cfg = loadConfig();
+    const policy = String((cfg as any).narrationFold ?? 'safe');
+    const r = foldNarration(content, policy);
+    if (!r.didFold) return { content };
+    setLastFoldedRaw(r.raw);
+    return { content: r.visible, foldedSteps: r.foldedSteps };
+  >>>
+
 fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:OutputActions, mode:string, chatStartTime:number" returns=void
   doc "Process a single OutputEvent — updates spinner, streaming, and block state."
   handler <<<
@@ -323,9 +335,10 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
             return next;
           });
           if (cleaned.trim()) {
-            const segments = parseMarkdownBlocks(cleaned);
+            const folded = foldEngineContent(cleaned);
+            const segments = parseMarkdownBlocks(folded.content);
             codeBlockBuffer.recordFromSegments(segments);
-            actions.addBlock({ type: 'engine-block', engineId: st.engineId, color, content: cleaned } as any);
+            actions.addBlock({ type: 'engine-block', engineId: st.engineId, color, content: folded.content, foldedSteps: folded.foldedSteps } as any);
             if (mode === 'chat' && chatStartTime > 0) {
               actions.addBlock({ type: 'response-meta', engineId: st.engineId, elapsed: Date.now() - chatStartTime } as any);
             }
@@ -768,9 +781,16 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         // Record code blocks from engine-block events
         if (event.type === 'engine-block') {
           const cleaned = cleanEngineOutput((event as any).content);
-          const segments = parseMarkdownBlocks(cleaned);
+          // Skip folding if this block already carries fold metadata — a /raw
+          // re-dispatch sets foldedSteps (0) so the raw text renders unfolded.
+          // `!= null` covers both undefined and an explicit null.
+          const preFolded = (event as any).foldedSteps != null;
+          const folded: { content: string; foldedSteps?: number } = preFolded
+            ? { content: cleaned, foldedSteps: (event as any).foldedSteps }
+            : foldEngineContent(cleaned);
+          const segments = parseMarkdownBlocks(folded.content);
           codeBlockBuffer.recordFromSegments(segments);
-          event = { ...(event as any), content: cleaned } as any;
+          event = { ...(event as any), content: folded.content, foldedSteps: folded.foldedSteps } as any;
         }
         // Flush any pending stream before adding non-stream events
         if (event.type === 'text' || event.type === 'engine-block' || event.type === 'separator') {

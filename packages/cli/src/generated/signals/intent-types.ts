@@ -19,6 +19,7 @@ export type Intent =
   | { type: 'use'; engineIds: string[] }
   | { type: 'models' }
   | { type: 'tokens' }
+  | { type: 'raw'; index?: number }
   | { type: 'doctor'; scope?: string }
   | { type: 'harness-replay'; turnId?: string }
   | { type: 'plan'; planId?: string }

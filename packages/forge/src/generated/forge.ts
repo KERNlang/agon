@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 
 import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric, EngineResult } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, extractPatchFilePatterns, tracker, engineHealth, seedNewEnginesFromRegistry, buildKernContextSpine } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, worktreePruneOrphaned, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, extractPatchFilePatterns, tracker, engineHealth, seedNewEnginesFromRegistry, buildKernContextSpine } from '@kernlang/agon-core';
 
 import { healthCheckEngines, HEALTH_CHECK_DEFAULT_PROMPT } from './health-check.js';
 
@@ -999,6 +999,11 @@ export async function runForge(options: ForgeOptions & { onResult?: (engineId:st
     try { await new Promise(resolve => setTimeout(resolve, 1000)); } catch { /* non-fatal */ }
     for (const wt of worktrees) {
       worktreeRemoveBestEffort(wt.repoRoot, wt.path);
+    }
+    try {
+      worktreePruneOrphaned(root);
+    } catch (err) {
+      /* non-fatal */
     }
   }
   // Reached only on the catch path (try block returns directly). Manifest

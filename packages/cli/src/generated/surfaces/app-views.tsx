@@ -16,9 +16,13 @@ import type { Job } from '../signals/job-manager.js';
 
 import { parseMarkdownBlocks, cleanEngineOutput } from '../blocks/markdown.js';
 
+import { foldNarrationLines } from '../blocks/narration-fold.js';
+
+import { loadConfig } from '@kernlang/agon-core';
+
 import { icons } from '../signals/icons.js';
 
-// @kern-source: app-views:78
+// @kern-source: app-views:80
 const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, replState, runningJobs, planModeQueued, autoModeQueued, activePlanState, activePlan }: { mode:string; cwdLabel:string; engineCount:number; replState:string; runningJobs:Job[]; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any }) {
   const planChrome = buildPlanChromeSummary(activePlan, activePlanState, planModeQueued, autoModeQueued);
   const planRow = planChrome.visible ? (
@@ -64,7 +68,7 @@ const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, r
 });
 export { ChromeBar };
 
-// @kern-source: app-views:134
+// @kern-source: app-views:136
 const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:any }) {
   const borderPrefix = row.borderColor ? <Text color={row.borderColor}>{'\u2502 '}</Text> : null;
   const selectionRail = <Text color={row.selected ? '#60a5fa' : '#2b2b2b'}>{row.selected ? '\u258c' : ' '}</Text>;
@@ -196,7 +200,7 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
 });
 export { TranscriptRowView };
 
-// @kern-source: app-views:268
+// @kern-source: app-views:270
 export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisibleRows, onClose }: { title:string; subtitle:string; accentColor:string; rows:any[]; maxVisibleRows:number; onClose:() => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -273,10 +277,126 @@ export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisible
   );
 }
 
-// @kern-source: app-views:346
+// @kern-source: app-views:360
 const StreamingView = React.memo(function StreamingView({ streamingText, mode, liveProgress, liveToolStreams, liveToolTailFrozen }: { streamingText:{engineId:string,content:string} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,any>; liveToolTailFrozen?:Record<string,boolean> }) {
-  const toolStreams = Object.values(liveToolStreams ?? {});
   const frozenToolOutputRef = useRef<Record<string, string>>({});
+
+  // Narration-fold policy (off|safe|aggressive) — read once per mount so a
+  // verbose engine's live wall is collapsed the same way the committed
+  // block is. Cheap + stable; config rarely changes mid-stream.
+  const narrationPolicy = useMemo(() => {
+    try { return String((loadConfig() as any).narrationFold ?? 'safe'); } catch { return 'safe'; }
+  }, []);
+
+  // ── Throttled rendered state for main engine stream ──
+  const [renderedText, setRenderedText] = useState<{engineId:string;content:string} | null>(null);
+  const textRef = useRef<{engineId:string;content:string} | null>(null);
+  textRef.current = streamingText;
+
+  useEffect(() => {
+    if (!streamingText) {
+      setRenderedText(null);
+      return;
+    }
+
+    let lastHash = '';
+    let frameTimer: any = null;
+
+    const updateTick = () => {
+      const current = textRef.current;
+      if (!current) {
+        setRenderedText(null);
+        return;
+      }
+
+      // Content-aware diff before state commit
+      const content = current.content;
+      const hash = `${current.engineId}:${content.length}:${content.slice(-20)}`;
+      if (hash !== lastHash) {
+        lastHash = hash;
+
+        // Double buffering: cork stdout writes
+        if (process.stdout.cork) {
+          process.stdout.cork();
+        }
+        setRenderedText(current);
+        if (process.stdout.uncork) {
+          process.nextTick(() => {
+            process.stdout.uncork();
+          });
+        }
+      }
+
+      frameTimer = setTimeout(updateTick, 42); // ~24fps frame rate
+    };
+
+    updateTick();
+
+    return () => {
+      if (frameTimer) {
+        clearTimeout(frameTimer);
+      }
+    };
+  }, [streamingText ? streamingText.engineId : null]);
+
+  // ── Throttled rendered state for tool streams ──
+  const [renderedToolStreams, setRenderedToolStreams] = useState<Record<string, any>>({});
+  const toolRef = useRef<Record<string, any>>({});
+  toolRef.current = liveToolStreams ?? {};
+
+  useEffect(() => {
+    if (!liveToolStreams || Object.keys(liveToolStreams).length === 0) {
+      setRenderedToolStreams({});
+      return;
+    }
+
+    let lastHash = '';
+    let frameTimer: any = null;
+
+    const updateTick = () => {
+      const current = toolRef.current;
+      if (!current || Object.keys(current).length === 0) {
+        setRenderedToolStreams({});
+        return;
+      }
+
+      // Build a structural hash of all tool streams
+      let hash = '';
+      const keys = Object.keys(current).sort();
+      for (const key of keys) {
+        const entry = current[key];
+        const output = String(entry.output ?? '');
+        hash += `|${key}:${entry.engineId}:${entry.tool}:${output.length}:${output.slice(-20)}`;
+      }
+
+      if (hash !== lastHash) {
+        lastHash = hash;
+
+        if (process.stdout.cork) {
+          process.stdout.cork();
+        }
+        setRenderedToolStreams(current);
+        if (process.stdout.uncork) {
+          process.nextTick(() => {
+            process.stdout.uncork();
+          });
+        }
+      }
+
+      frameTimer = setTimeout(updateTick, 50); // ~20fps for tool streams
+    };
+
+    updateTick();
+
+    return () => {
+      if (frameTimer) {
+        clearTimeout(frameTimer);
+      }
+    };
+  }, [liveToolStreams ? Object.keys(liveToolStreams).join(',') : null]);
+
+  const toolStreams = Object.values(renderedToolStreams ?? {});
+
   useEffect(() => {
     const activeIds = new Set(Object.keys(liveToolStreams ?? {}));
     for (const id of Object.keys(frozenToolOutputRef.current)) {
@@ -285,32 +405,34 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
       }
     }
   }, [liveToolStreams, liveToolTailFrozen]);
+
   return (
     <>
-      {streamingText && (() => {
-        const c = engineColor(streamingText.engineId);
+      {renderedText && (() => {
+        const c = engineColor(renderedText.engineId);
         // The live preview only ever shows the tail (chat: last line; box: last
-        // few lines), so clean/parse the TAIL \u2014 not the whole accumulated stream.
+        // few lines), so clean/parse the TAIL — not the whole accumulated stream.
         // Re-cleaning + parseMarkdownBlocks over the full buffer on every chunk is
-        // O(n) and grows over a long forge/brainstorm run \u2192 flicker + progressive
+        // O(n) and grows over a long forge/brainstorm run → flicker + progressive
         // lag, and an ever-taller box that makes the text "jump".
-        const rawStream = streamingText.content;
+        const rawStream = renderedText.content;
         // Slice the tail, then drop the (possibly partial) first line so the window
         // never starts mid-line — avoids splitting a multi-byte char / ANSI escape.
-        const slicedStream = rawStream.length > 6000 ? rawStream.slice(-6000) : rawStream;
-        const firstNl = rawStream.length > 6000 ? slicedStream.indexOf('\n') : -1;
+        const rawTailLen = 6000;
+        const slicedStream = rawStream.length > rawTailLen ? rawStream.slice(-rawTailLen) : rawStream;
+        const firstNl = rawStream.length > rawTailLen ? slicedStream.indexOf('\n') : -1;
         const windowed = firstNl >= 0 ? slicedStream.slice(firstNl + 1) : slicedStream;
         const cleaned = cleanEngineOutput(windowed);
         const wrapWidth = contentWidth(mode === 'chat' ? 6 : 8);
         if (mode === 'chat') {
           const lines = cleaned.split('\n').filter((line: string) => line.trim());
           const lastLine = lines.length > 0 ? lines[lines.length - 1].trim() : '';
-          const previewLimit = Math.max(24, wrapWidth - streamingText.engineId.length - 6);
-          const preview = lastLine.length > previewLimit ? lastLine.slice(0, previewLimit - 1) + '\u2026' : lastLine;
+          const previewLimit = Math.max(24, wrapWidth - renderedText.engineId.length - 6);
+          const preview = lastLine.length > previewLimit ? lastLine.slice(0, previewLimit - 1) + '…' : lastLine;
           return (
             <Box marginY={1} paddingLeft={1}>
-              <Text color={c} bold>{icons().dotOn + ' '}{streamingText.engineId}</Text>
-              <Text dimColor>{preview ? ` ${preview}` : ' thinking\u2026'}</Text>
+              <Text color={c} bold>{icons().dotOn + ' '}{renderedText.engineId}</Text>
+              <Text dimColor>{preview ? ` ${preview}` : ' thinking…'}</Text>
             </Box>
           );
         }
@@ -318,12 +440,34 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
         // stable height instead of growing (and repainting) with every chunk.
         const allLines = cleaned.split('\n');
         const tailLines = allLines.length > 24 ? allLines.slice(-24).join('\n') : cleaned;
-        const segments = parseMarkdownBlocks(tailLines);
+        // Phase 2: live narration fold. Collapse research play-by-play in the
+        // visible window into a transient '\u25b8 N steps \u00b7 <current step>' line so a
+        // verbose / black-box engine's wall never appears even mid-stream. Runs
+        // on the already-bounded 24-line window (O(24)/frame), respecting the
+        // anti-O(n) slicing above. The committed block re-folds with the
+        // substance-tail-anchored foldNarration at streaming-end.
+        const live = foldNarrationLines(tailLines, narrationPolicy);
+        const foldedTail = live.visible;
+        // Fence-parity for re-opening a sliced code block uses the cleaned
+        // window prefix ONLY -- not a raw+cleaned mix (cleanEngineOutput can
+        // drop a fenced block nested in a tool tag, so a raw ``` count
+        // diverges from the cleaned text) and not the full raw head (O(n)
+        // per frame). Trade-off: a single code block longer than the ~6000
+        // char window won't re-open, which is rare and self-heals once its
+        // closing fence scrolls into view.
+        const cleanedPrefix = allLines.length > 24 ? allLines.slice(0, -24).join('\n') + '\n' : '';
+        const contextualized = contextualizeSlicedMarkdown(cleanedPrefix, foldedTail);
+        const segments = parseMarkdownBlocks(contextualized);
+        const stepLimit = Math.max(16, wrapWidth - 14);
+        const stepHint = live.lastStep.length > stepLimit ? live.lastStep.slice(0, stepLimit - 1) + '\u2026' : live.lastStep;
         return (
           <Box flexDirection="column" marginY={1} paddingLeft={2}>
-            <Text color={c} bold>{'\u250c\u2500\u2500 '}{streamingText.engineId}</Text>
+            <Text color={c} bold>{'\u250c\u2500\u2500 '}{renderedText.engineId}</Text>
+            {live.foldedSteps > 0 ? (
+              <Text color={c}>{'\u2502 '}<Text dimColor>{'\u25b8 '}{String(live.foldedSteps)}{' step'}{live.foldedSteps === 1 ? '' : 's'}{stepHint ? ` \u00b7 ${stepHint}` : ''}</Text></Text>
+            ) : null}
             <Text color={c}>{'\u2502'}</Text>
-            <RenderedSegments segments={segments} borderColor={c} wrapWidth={wrapWidth} />
+            {foldedTail.trim() ? <RenderedSegments segments={segments} borderColor={c} wrapWidth={wrapWidth} /> : null}
           </Box>
         );
       })()}
@@ -342,14 +486,18 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
             const displayOutput = isFrozen ? (frozenToolOutputRef.current[streamId] ?? currentOutput) : currentOutput;
             const nonEmptyLines = displayOutput.split('\n').filter((line: string) => line.trim());
             const previewOutput = nonEmptyLines.slice(-2).join(' ');
-            const preview = previewOutput.length > 96 ? previewOutput.slice(0, 95) + '\u2026' : previewOutput;
-            const rawTail = displayOutput.length > 6000 ? displayOutput.slice(-6000) : displayOutput;
-            const firstNl = displayOutput.length > 6000 ? rawTail.indexOf('\n') : -1;
+            const preview = previewOutput.length > 96 ? previewOutput.slice(0, 95) + '…' : previewOutput;
+            const rawTailLen = 6000;
+            const rawTail = displayOutput.length > rawTailLen ? displayOutput.slice(-rawTailLen) : displayOutput;
+            const firstNl = displayOutput.length > rawTailLen ? rawTail.indexOf('\n') : -1;
             const windowedTail = firstNl >= 0 ? rawTail.slice(firstNl + 1) : rawTail;
             const cleanedTail = cleanEngineOutput(windowedTail);
             const tailLines = cleanedTail.split('\n');
             const boundedTail = tailLines.length > 12 ? tailLines.slice(-12).join('\n') : cleanedTail;
-            const segments = parseMarkdownBlocks(boundedTail);
+            // Cleaned-prefix-only fence parity (see main stream branch).
+            const cleanedPrefix = tailLines.length > 12 ? tailLines.slice(0, -12).join('\n') + '\n' : '';
+            const contextualized = contextualizeSlicedMarkdown(cleanedPrefix, boundedTail);
+            const segments = parseMarkdownBlocks(contextualized);
             const wrapWidth = contentWidth(mode === 'chat' ? 8 : 10);
             return (
               <Box key={streamId} flexDirection="column" marginBottom={1}>
@@ -357,7 +505,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
                   <Text color={c} bold>{icons().dotOn + ' '}{entry.engineId}</Text>
                   <Text dimColor>{' tool '}</Text>
                   <Text color={c}>{entry.tool}</Text>
-                  <Text dimColor>{preview ? ` ${preview}` : ' running\u2026'}</Text>
+                  <Text dimColor>{preview ? ` ${preview}` : ' running…'}</Text>
                 </Text>
                 {boundedTail.trim() ? (
                   <Box flexDirection="column" paddingLeft={2}>
@@ -369,7 +517,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
                   {isFrozen ? (
                     <Text color="#111827" backgroundColor="#93c5fd">{' '}{icons().play}{' Resume tail '}</Text>
                   ) : (
-                    <Text color="#111827" backgroundColor="#fbbf24">{' \u275a\u275a Freeze tail '}</Text>
+                    <Text color="#111827" backgroundColor="#fbbf24">{' ❚❚ Freeze tail '}</Text>
                   )}
                   <Text dimColor>{' Shift+T'}</Text>
                 </Text>
@@ -384,7 +532,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
 });
 export { StreamingView };
 
-// @kern-source: app-views:17
+// @kern-source: app-views:19
 export function renderSelectedText(text: string, start: number, end: number, keyPrefix: string): any {
   const safeText = String(text ?? '');
   const startIndex = Math.max(0, Math.min(safeText.length, Number.isFinite(start) ? start : 0));
@@ -404,7 +552,7 @@ export function renderSelectedText(text: string, start: number, end: number, key
 /**
  * Compact sticky plan chip for the top chrome. Keeps plan progress out of the noisy bottom status strip.
  */
-// @kern-source: app-views:34
+// @kern-source: app-views:36
 export function buildPlanChromeSummary(activePlan: any, activePlanState?: string|null, planModeQueued?: boolean, autoModeQueued?: boolean): any {
   const gauge = buildPlanPhaseGauge(activePlan, 8);
   const displayState = (gauge.visible && gauge.phase === 'complete') ? 'done' : String(activePlanState ?? '');
@@ -440,4 +588,16 @@ export function buildPlanChromeSummary(activePlan: any, activePlanState?: string
   }
   const failed = Number(gauge.failed ?? 0);
   return { visible: true, label: label, color: gauge.visible ? gauge.color : '#c084fc', shortId: gauge.shortId ?? '', bar: gauge.bar ?? '', pct: Number(gauge.pct ?? 0), stepLabel: gauge.label ?? '', current: gauge.current ?? '', failed: failed, action: action };
+}
+
+// @kern-source: app-views:347
+export function contextualizeSlicedMarkdown(prefix: string, slicedText: string): string {
+  const parts = prefix.split('```');
+  if (parts.length % 2 === 0) {
+    const lastPart = parts[parts.length - 1];
+    const firstLine = lastPart.split('\n')[0].trim();
+    const lang = /^[a-zA-Z0-9_\-]+$/.test(firstLine) ? firstLine : '';
+    return `\`\`\`${lang}\n${slicedText}`;
+  }
+  return slicedText;
 }

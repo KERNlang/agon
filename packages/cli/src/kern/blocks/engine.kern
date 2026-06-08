@@ -117,6 +117,7 @@ screen name=EngineBlock target=ink memo=true
   prop name=color type=number
   prop name=content type=string
   prop name=actingNote type=string optional=true
+  prop name=foldedSteps type=number optional=true
   render
     handler <<<
       const wrapWidth = contentWidth(8);
@@ -138,6 +139,9 @@ screen name=EngineBlock target=ink memo=true
       return (
         <Box flexDirection="column" marginY={1} paddingLeft={2}>
           <Text color={hexColor}>{'\u250c\u2500\u2500 '}<Text bold color={hexColor}>{engineId}</Text>{actingNote ? <Text dimColor>{' ('}{actingNote}{')'}</Text> : null}</Text>
+          {foldedSteps && foldedSteps > 0 ? (
+            <Text color={hexColor}>{'\u2502 '}<Text dimColor>{'\u25b8 '}{String(foldedSteps)}{' reasoning steps folded \u00b7 /raw to inspect'}</Text></Text>
+          ) : null}
           <Text color={hexColor}>{'\u2502'}</Text>
           <RenderedSegments segments={segments} borderColor={hexColor} wrapWidth={wrapWidth} />
           <Text color={hexColor}>{'\u2514\u2500\u2500'}</Text>
@@ -151,6 +155,7 @@ screen name=ConversationalResponse target=ink memo=true
   prop name=engineId type=string
   prop name=content type=string
   prop name=actingNote type=string optional=true
+  prop name=foldedSteps type=number optional=true
   render
     handler <<<
       const wrapWidth = contentWidth(2);
@@ -161,6 +166,9 @@ screen name=ConversationalResponse target=ink memo=true
       return (
         <Box flexDirection="column" marginTop={1} marginBottom={0} paddingLeft={1}>
           <Text><Text color={accentColor} bold>{icons().dotOn + ' '}{engineId}</Text>{actingNote ? <Text dimColor>{' ('}{actingNote}{')'}</Text> : null}</Text>
+          {foldedSteps && foldedSteps > 0 ? (
+            <Text dimColor>{'▸ '}{String(foldedSteps)}{' reasoning steps folded · /raw to inspect'}</Text>
+          ) : null}
           <Text>{' '}</Text>
           <RenderedSegments segments={segments} borderColor={''} wrapWidth={wrapWidth} />
         </Box>
@@ -399,8 +407,8 @@ screen name=OutputBlockView target=ink memo=true
           </Box>
         );
         case 'engine-block': return mode === 'chat'
-          ? <ConversationalResponse engineId={event.engineId} content={event.content} actingNote={event.actingNote} />
-          : <EngineBlock engineId={event.engineId} color={event.color} content={event.content} actingNote={event.actingNote} />;
+          ? <ConversationalResponse engineId={event.engineId} content={event.content} actingNote={event.actingNote} foldedSteps={event.foldedSteps} />
+          : <EngineBlock engineId={event.engineId} color={event.color} content={event.content} actingNote={event.actingNote} foldedSteps={event.foldedSteps} />;
         case 'separator': return <Text>{' '}</Text>;
         case 'header': return <Box flexDirection="column"><Text>{' '}</Text><Text bold color="cyan">{'  ' + icons().header + ' '}{event.title}</Text></Box>;
         case 'success': return <Text>{'  '}<Text color="#4ade80">{icons().success}</Text>{' '}{event.message}</Text>;

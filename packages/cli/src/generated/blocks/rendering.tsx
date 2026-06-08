@@ -25,7 +25,7 @@ export interface SyntaxToken {
 }
 
 // @kern-source: rendering:153
-export function DiffLine({ line, maxWidth }: { line:string; maxWidth:number }) {
+const DiffLine = React.memo(function DiffLine({ line, maxWidth }: { line:string; maxWidth:number }) {
   const truncated = truncateCodeLine(line, maxWidth);
   if (line.startsWith('+')) {
     return <Text color="#22c55e">{truncated}</Text>;
@@ -37,10 +37,11 @@ export function DiffLine({ line, maxWidth }: { line:string; maxWidth:number }) {
     return <Text color="#22d3ee">{truncated}</Text>;
   }
   return <Text>{truncated}</Text>;
-}
+});
+export { DiffLine };
 
 // @kern-source: rendering:173
-export function SyntaxLine({ line, maxWidth }: { line:string; maxWidth:number }) {
+const SyntaxLine = React.memo(function SyntaxLine({ line, maxWidth }: { line:string; maxWidth:number }) {
   if (line.length > maxWidth) {
     const visible = line.slice(0, maxWidth - 4);
     const overflow = line.length - maxWidth + 4;
@@ -58,10 +59,11 @@ export function SyntaxLine({ line, maxWidth }: { line:string; maxWidth:number })
       {tokens.map((t: SyntaxToken, i: number) => t.color ? <Text key={i} color={t.color}>{t.text}</Text> : <Text key={i}>{t.text}</Text>)}
     </Text>
   );
-}
+});
+export { SyntaxLine };
 
 // @kern-source: rendering:199
-export function CodeBlockView({ segment, borderColor, wrapWidth }: { segment:ContentSegment & { type: 'code' }; borderColor:string; wrapWidth?:number }) {
+const CodeBlockView = React.memo(function CodeBlockView({ segment, borderColor, wrapWidth }: { segment:ContentSegment & { type: 'code' }; borderColor:string; wrapWidth?:number }) {
   // The box is `body + 8` cols wide (frame). When the parent passes the
   // actual available content width (wrapWidth), the box must fit inside it —
   // otherwise nesting/padding pushes the block past the available Ink width
@@ -126,10 +128,11 @@ export function CodeBlockView({ segment, borderColor, wrapWidth }: { segment:Con
       <Text color={bc}>{'\u2502 '}{rule}{' \u2502'}</Text>
     </Box>
   );
-}
+});
+export { CodeBlockView };
 
 // @kern-source: rendering:273
-export function RichSpanView({ span }: { span:InlineSpan }) {
+const RichSpanView = React.memo(function RichSpanView({ span }: { span:InlineSpan }) {
   if (span.style.code) {
     return <Text color="#a78bfa" backgroundColor="#1e1033">{span.text}</Text>;
   }
@@ -143,10 +146,11 @@ export function RichSpanView({ span }: { span:InlineSpan }) {
   else if (span.style.italic) el = <Text italic>{span.text}</Text>;
   if (span.style.dimColor) el = <Text dimColor>{span.text}</Text>;
   return el;
-}
+});
+export { RichSpanView };
 
 // @kern-source: rendering:294
-export function RichLineView({ line, borderColor }: { line:RichLine; borderColor?:string }) {
+const RichLineView = React.memo(function RichLineView({ line, borderColor }: { line:RichLine; borderColor?:string }) {
   const border = borderColor ? <Text color={borderColor}>{'\u2502 '}</Text> : null;
   const indent = line.indent > 0 ? '  '.repeat(line.indent) : '';
 
@@ -165,10 +169,11 @@ export function RichLineView({ line, borderColor }: { line:RichLine; borderColor
   const marker = line.marker ?? '';
   const listIndent = (line.kind === 'bullet' || line.kind === 'ordered') && !indent ? ' ' : '';
   return <Text>{border}{indent}{listIndent}{marker}{line.spans.map((s: InlineSpan, i: number) => <RichSpanView key={i} span={s} />)}</Text>;
-}
+});
+export { RichLineView };
 
 // @kern-source: rendering:321
-export function MarkdownTableView({ headers, rows, alignments, borderColor }: { headers:string[]; rows:string[][]; alignments:('left' | 'center' | 'right')[]; borderColor:string }) {
+const MarkdownTableView = React.memo(function MarkdownTableView({ headers, rows, alignments, borderColor }: { headers:string[]; rows:string[][]; alignments:('left' | 'center' | 'right')[]; borderColor:string }) {
   const colWidths = headers.map((h: string, i: number) => {
     let max = h.length;
     for (const row of rows) {
@@ -201,13 +206,15 @@ export function MarkdownTableView({ headers, rows, alignments, borderColor }: { 
       ))}
     </Box>
   );
-}
+});
+export { MarkdownTableView };
 
-// @kern-source: rendering:364
-export function RenderedSegments({ segments, borderColor, wrapWidth }: { segments:ContentSegment[]; borderColor:string; wrapWidth:number }) {
+// @kern-source: rendering:410
+const RenderedSegments = React.memo(function RenderedSegments({ segments, borderColor, wrapWidth }: { segments:ContentSegment[]; borderColor:string; wrapWidth:number }) {
+  const stableSegments = useShallowSegmentDirty(segments);
   return (
     <>
-      {segments.map((seg: ContentSegment, i: number) => {
+      {stableSegments.map((seg: ContentSegment, i: number) => {
         const spacer = i > 0 && borderColor ? <Text key={`sp-${i}`} color={borderColor}>{'\u2502'}</Text> : (i > 0 ? <Text key={`sp-${i}`}>{' '}</Text> : null);
 
         if (seg.type === 'prose') {
@@ -262,10 +269,11 @@ export function RenderedSegments({ segments, borderColor, wrapWidth }: { segment
       })}
     </>
   );
-}
+});
+export { RenderedSegments };
 
-// @kern-source: rendering:431
-export function GradientLine({ text, colors }: { text:string; colors:readonly string[] }) {
+// @kern-source: rendering:478
+const GradientLine = React.memo(function GradientLine({ text, colors }: { text:string; colors:readonly string[] }) {
   const step = Math.max(1, Math.ceil(text.length / colors.length));
   return (
     <Text>
@@ -275,10 +283,11 @@ export function GradientLine({ text, colors }: { text:string; colors:readonly st
       })}
     </Text>
   );
-}
+});
+export { GradientLine };
 
-// @kern-source: rendering:447
-export function AnsiLine({ text, maxWidth, fallbackDim }: { text:string; maxWidth:number; fallbackDim?:boolean }) {
+// @kern-source: rendering:494
+const AnsiLine = React.memo(function AnsiLine({ text, maxWidth, fallbackDim }: { text:string; maxWidth:number; fallbackDim?:boolean }) {
   if (!hasAnsiCodes(text)) {
     const display = text.length > maxWidth ? text.slice(0, maxWidth - 4) + '\u2026' : text;
     return fallbackDim ? <Text dimColor>{display}</Text> : <Text>{display}</Text>;
@@ -298,7 +307,8 @@ export function AnsiLine({ text, maxWidth, fallbackDim }: { text:string; maxWidt
       ))}
     </Text>
   );
-}
+});
+export { AnsiLine };
 
 // @kern-source: rendering:16
 export const CONTENT_WIDTH_OVERRIDE: {value:number|null} = ({ value: null });
@@ -437,4 +447,52 @@ export function tokenizeLine(line: string): SyntaxToken[] {
   }
 
   return tokens;
+}
+
+// @kern-source: rendering:362
+export function segmentsEqual(a: ContentSegment, b: ContentSegment): boolean {
+  if (a.type !== b.type) return false;
+  if (a.type === 'prose') {
+    return a.text === b.text;
+  }
+  if (a.type === 'code') {
+    return a.code === b.code && a.language === b.language && a.index === b.index;
+  }
+  if (a.type === 'table') {
+    if (a.headers?.length !== b.headers?.length) return false;
+    if (a.rows?.length !== b.rows?.length) return false;
+    // Compare alignments too — a table whose only change is the markdown
+    // delimiter alignment (:--- vs ---: ) must NOT be treated as equal, else
+    // useShallowSegmentDirty reuses the stale segment and renders old columns.
+    return JSON.stringify(a.headers) === JSON.stringify(b.headers) &&
+           JSON.stringify(a.rows) === JSON.stringify(b.rows) &&
+           JSON.stringify(a.alignments ?? []) === JSON.stringify(b.alignments ?? []);
+  }
+  return false;
+}
+
+/**
+ * Return a referentially-stable segment array: unchanged items keep their prior object reference so memoized children can skip re-render. Pure during render — the ref cache is committed in a useEffect (not mutated mid-render), so it is safe under StrictMode double-invoke and concurrent renders that may be discarded.
+ */
+// @kern-source: rendering:384
+export function useShallowSegmentDirty(segments: ContentSegment[]): ContentSegment[] {
+  const ref = React.useRef<ContentSegment[]>([]);
+  const prev = ref.current;
+  let changed = prev.length !== segments.length;
+  const next: ContentSegment[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    const currSeg = segments[i];
+    const prevSeg = prev[i];
+    if (prevSeg && segmentsEqual(prevSeg, currSeg)) {
+      next.push(prevSeg);
+    } else {
+      next.push(currSeg);
+      changed = true;
+    }
+  }
+  // When nothing changed, return the exact prior array reference; otherwise
+  // the freshly-built one (which still reuses unchanged item refs).
+  const stable = changed ? next : prev;
+  React.useEffect(() => { ref.current = stable; }, [stable]);
+  return stable;
 }

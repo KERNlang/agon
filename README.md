@@ -7,6 +7,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/node-%3E%3D22-brightgreen" alt="Node.js >= 22">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT">
+  <img src="https://img.shields.io/badge/100%25-KERN-orange" alt="100% KERN">
+  <img src="https://img.shields.io/badge/rating-Glicko--2-red" alt="Glicko-2 rated">
 </p>
 
 **The competitive multi-AI orchestration CLI.**

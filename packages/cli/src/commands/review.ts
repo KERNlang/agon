@@ -151,6 +151,7 @@ export const reviewCommand = defineCommand({
       : 'single engine';
     if (!quiet) {
       header(`Review: ${target.label}`);
+      info(`Repo: ${cwd}`);
       info(`Engines: ${requested.join(', ')} (${concurrencyNote})`);
       info(`Per-engine timeout: ${timeoutSec}s (auto-cancel, others unaffected)`);
     }
@@ -188,7 +189,13 @@ export const reviewCommand = defineCommand({
       // Flush a single labeled block so concurrent engines never interleave mid-line.
       const flush = (body: string[]) => { if (!quiet && body.length) console.log(`\n▸ Reviewer: ${bold(engineId)}\n${body.join('\n')}`); };
       try {
-        const result = await runReviewCore(target.diff, target.label, engineId, ctx, controller.signal);
+        // Pin the engine dispatch to the SAME cwd the diff came from (process.cwd()).
+        // Without this cwdOverride, runReviewCore falls back to resolveWorkingDir()
+        // = the active workspace — so `agon review` run from repo X dispatched every
+        // engine into the active-workspace repo (e.g. agon's own source) to gather
+        // file context, while reviewing X's diff. The reviewers "never saw the code"
+        // the diff referenced. Passing cwd keeps diff + engine context in one repo.
+        const result = await runReviewCore(target.diff, target.label, engineId, ctx, controller.signal, undefined, cwd);
         const rawResponse = result.response ?? '';
         writeOutput(rawResponse);
         if (timedOut) {

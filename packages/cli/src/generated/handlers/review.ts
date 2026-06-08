@@ -324,12 +324,12 @@ export function summarizeReviewFindings(response: string): ReviewSeverityCounts 
 }
 
 /**
- * Repair pass (B): re-ask the engine for ONLY a bare JSON array of the findings it already wrote in prose. Asking for a bare array (no sentinel, no prose, no fence) is the format LLMs comply with most reliably — far better than 'an HTML-comment marker followed by JSON', which engines routinely truncate to just the marker. The caller (runReviewCore) prepends the sentinel itself before parsing, so the anti-injection anchor is preserved. Best-effort: if this still doesn't parse, the fail-closed/unstructured result stands.
+ * Repair pass (B): re-ask the engine for ONLY a bare JSON array of the findings it already wrote in prose. Asking for a bare array (no sentinel, no prose, no fence) is the format LLMs comply with most reliably — far better than 'an HTML-comment marker followed by JSON', which engines routinely truncate to just the marker. The caller (runReviewCore) prepends the sentinel itself before parsing, so the anti-injection anchor is preserved. Best-effort: if this still doesn't parse, the fail-closed/unstructured result stands. cwdOverride must match the main dispatch's cwd so the repair engine runs in the SAME repo (goal worktree / process.cwd()), never the active workspace.
  */
 // @kern-source: review:308
-export async function runReviewRepair(priorReview: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal): Promise<string> {
+export async function runReviewRepair(priorReview: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, cwdOverride?: string): Promise<string> {
   const config = ctx.config;
-  const cwd = resolveWorkingDir();
+  const cwd = cwdOverride ?? resolveWorkingDir();
   const parts: string[] = [];
   parts.push('You previously produced this code review:');
   parts.push(priorReview);
@@ -497,7 +497,7 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
   let unstructured = false;
   // Repair pass (B): the engine reviewed but didn't emit a parseable findings block (the common case: it ends with the sentinel and no JSON). Re-ask for ONLY a bare JSON array — the format LLMs comply with most reliably — then prepend the sentinel OURSELVES so parseReviewBlocking's anti-injection anchor still holds. Append the reconstructed block so the result is parseable downstream. Failure leaves the fail-closed/unstructured result intact.
   if (parseFailed && response.length > 0 && !signal?.aborted) {
-    const repairResp = await runReviewRepair(response, engineId, ctx, signal);
+    const repairResp = await runReviewRepair(response, engineId, ctx, signal, cwd);
     if (repairResp) {
       const repairBlock = `<!--AGON_REVIEW_FINDINGS_v1-->\n${repairResp}`;
       const parsed2 = parseReviewBlocking(repairBlock);

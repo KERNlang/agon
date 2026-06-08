@@ -80,8 +80,9 @@ describe('Auto-Router', () => {
     it('plain orchestration words stay in auto instead of starting jobs', () => {
       expect(detectIntent('forge fix it').type).toBe('auto');
       expect(detectIntent('debate whether REST fits').type).toBe('auto');
-      expect(detectIntent('review with codex').type).toBe('auto');
       expect(detectIntent('can you ask others what they think').type).toBe('auto');
+      // NOTE: an explicit "review with <known engine>" now dispatches a review
+      // directly (see intent.test.ts) — forge/tribunal/campfire remain slash-only.
     });
 
     it('keyword shortcuts still work', () => {

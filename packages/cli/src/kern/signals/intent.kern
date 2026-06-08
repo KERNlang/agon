@@ -136,7 +136,11 @@ module name=IntentParsing
           .forEach(add);
       };
 
-      const withMatch = input.match(/\bwith\s+([a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*)/i);
+      // Accept comma/and/or/plus separators AND plain spaces between engine
+      // names, so "with codex claude agy" captures all three (not just codex).
+      // Over-capturing trailing prose is harmless: normalizeEngineToken() drops
+      // any token that isn't a known engine id.
+      const withMatch = input.match(/\bwith\s+([a-z0-9@_.-]+(?:(?:\s*,\s*|\s+and\s+|\s+or\s+|\s+plus\s+|\s+)[a-z0-9@_.-]+)*)/i);
       if (withMatch) collect(withMatch[1]);
 
       const askMatch = input.match(/\b(?:ask|have|get)\s+([a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*)\s+(?:to\s+)?(?:review|check|audit|look|inspect|compare|weigh|think|debate)\b/i);
@@ -653,6 +657,17 @@ module name=IntentParsing
       let name=delegationShortcut value="parseSemanticDelegationShortcut(input)"
       if cond="delegationShortcut"
         return value="delegationShortcut"
+      comment raw="// Deterministic review dispatch for an UNAMBIGUOUS chat request:"
+      comment raw="// a review verb + \"with <known engine(s)>\" (politeness prefixes ok,"
+      comment raw="// compound \"fix then review\" excluded, engine tokens validated). This"
+      comment raw="// grounds \"review with codex claude agy\" / \"can you review with ...\" so it"
+      comment raw="// dispatches directly (target defaults to uncommitted) instead of relying"
+      comment raw="// on the Cesar model to call the Review tool — which a weak engine may fake"
+      comment raw="// or mis-target to the current branch. Plain mentions still reach Cesar:"
+      comment raw="// parseSemanticReviewShortcut returns null when no known engine is named."
+      let name=reviewShortcut value="parseSemanticReviewShortcut(input)"
+      if cond="reviewShortcut"
+        return value="reviewShortcut"
       comment raw="// Natural-language toggle for autoCredit (German + English)"
       if cond="AUTOCREDIT_OFF_KEYWORDS.test(input)"
         return value="{ type: 'toggleAutoCredit', autoCredit: false, input } as Intent"

@@ -170,7 +170,11 @@ function parseExplicitEngineIds(input: string): string[] {
       .forEach(add);
   };
 
-  const withMatch = input.match(/\bwith\s+([a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*)/i);
+  // Accept comma/and/or/plus separators AND plain spaces between engine
+  // names, so "with codex claude agy" captures all three (not just codex).
+  // Over-capturing trailing prose is harmless: normalizeEngineToken() drops
+  // any token that isn't a known engine id.
+  const withMatch = input.match(/\bwith\s+([a-z0-9@_.-]+(?:(?:\s*,\s*|\s+and\s+|\s+or\s+|\s+plus\s+|\s+)[a-z0-9@_.-]+)*)/i);
   if (withMatch) collect(withMatch[1]);
 
   const askMatch = input.match(/\b(?:ask|have|get)\s+([a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*)\s+(?:to\s+)?(?:review|check|audit|look|inspect|compare|weigh|think|debate)\b/i);
@@ -179,7 +183,7 @@ function parseExplicitEngineIds(input: string): string[] {
   return engineIds;
 }
 
-// @kern-source: intent:148
+// @kern-source: intent:152
 function parseSemanticReviewShortcut(input: string): Intent|null {
   const lower = input.toLowerCase();
   const reviewVerb = /\b(?:review|check|audit|inspect|look\s+over)\b/i.test(input);
@@ -209,17 +213,17 @@ function parseSemanticReviewShortcut(input: string): Intent|null {
   return { type: 'review', engineId: engineIds[0], engineIds: engineIds, target: target } as Intent;
 }
 
-// @kern-source: intent:172
+// @kern-source: intent:176
 function stripCollaborationLeadIn(input: string): string {
   return input.replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:to\s+)?/i, '').replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?what\s+do\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:think\s+about\s+|say\s+about\s+|recommend\s+for\s+)?/i, '').replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:talk|think)\s+(?:it|this)?\s*(?:through\s+)?with\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s*/i, '').trim();
 }
 
-// @kern-source: intent:176
+// @kern-source: intent:180
 function hasCollaborationAskShape(input: string): boolean {
   return /^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\b/i.test(input) || /^(?:can\s+you\s+|could\s+you\s+|please\s+)?what\s+do\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:think|say|recommend)\b/i.test(input) || /^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:brainstorm|compare|weigh\s+in)\s+(?:this|it)?\s*(?:with\s+)?(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\b/i.test(input);
 }
 
-// @kern-source: intent:180
+// @kern-source: intent:184
 function parseSemanticCollaborationShortcut(input: string): Intent|null {
   const question = stripCollaborationLeadIn(input);
   if (/\b(?:debate|argue|tribunal|red-team|red\s+team)\b/i.test(input)) {
@@ -235,7 +239,7 @@ function parseSemanticCollaborationShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:192
+// @kern-source: intent:196
 function parseSemanticForgeShortcut(input: string): Intent|null {
   const explicitForgeImperative = /^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\b/i.test(input) && !/^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\s+(?:is|was|seems?|looks?|does|did|can|should|would|will|not|still)\b/i.test(input);
   const hasForgeShape = explicitForgeImperative || /\b(?:forge\s+this|forge\s+it|have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|competitive\s+(?:build|implementation|fix))\b/i.test(input);
@@ -250,23 +254,23 @@ function parseSemanticForgeShortcut(input: string): Intent|null {
 /**
  * Plain text must not start orchestration. Brainstorm, tribunal, campfire, forge, and review are slash-only from chat input; mention words like 'tribunal' or 'forge' should reach Cesar as normal text unless the user uses /tribunal, /forge, etc.
  */
-// @kern-source: intent:202
+// @kern-source: intent:206
 function parseSemanticDelegationShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:207
+// @kern-source: intent:211
 function splitReviewArgs(input: string): string[] {
   return input.split(/\s+/).flatMap((part) => part.split(',')).map((part) => part.trim()).filter(Boolean);
 }
 
-// @kern-source: intent:211
+// @kern-source: intent:215
 function isReviewTargetArg(part: string): boolean {
   const lower = part.toLowerCase();
   return lower === 'uncommitted' || lower.startsWith('branch:') || lower.startsWith('commit:');
 }
 
-// @kern-source: intent:216
+// @kern-source: intent:220
 function isImplicitReviewSubjectArg(part: string): boolean {
   const lower = part.toLowerCase();
   return lower === 'it' || lower === 'this' || lower === 'that' || lower === 'them' || lower === 'changes' || lower === 'diff';
@@ -275,7 +279,7 @@ function isImplicitReviewSubjectArg(part: string): boolean {
 /**
  * Parse review args into target + engine list. When bareWordsAreEngines is true (the explicit /review slash path), any bare word that isn't a target (uncommitted/branch:/commit:) or a keyword is treated as an engine name — so `/review codex claude` reviews with BOTH, no `with` needed. The natural-language shortcut path leaves it false so prose like `review this code` doesn't mis-bind `code` as an engine.
  */
-// @kern-source: intent:221
+// @kern-source: intent:225
 function parseReviewInput(input: string, bareWordsAreEngines?: boolean): Intent {
   const reviewParts = splitReviewArgs(input);
   const engineIds: string[] = [];
@@ -310,7 +314,7 @@ function parseReviewInput(input: string, bareWordsAreEngines?: boolean): Intent 
   return { type: 'review', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target } as Intent;
 }
 
-// @kern-source: intent:257
+// @kern-source: intent:261
 function parseReviewShortcut(input: string): Intent|null {
   const match = input.match(/^(?:review|cr)(?:\s+([\s\S]+))?$/i);
   if (!match) {
@@ -338,7 +342,7 @@ function parseReviewShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:279
+// @kern-source: intent:283
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
@@ -698,7 +702,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   }
 }
 
-// @kern-source: intent:639
+// @kern-source: intent:643
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) {
@@ -720,6 +724,18 @@ export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const delegationShortcut = parseSemanticDelegationShortcut(input);
   if (delegationShortcut) {
     return delegationShortcut;
+  }
+  // Deterministic review dispatch for an UNAMBIGUOUS chat request:
+  // a review verb + "with <known engine(s)>" (politeness prefixes ok,
+  // compound "fix then review" excluded, engine tokens validated). This
+  // grounds "review with codex claude agy" / "can you review with ..." so it
+  // dispatches directly (target defaults to uncommitted) instead of relying
+  // on the Cesar model to call the Review tool — which a weak engine may fake
+  // or mis-target to the current branch. Plain mentions still reach Cesar:
+  // parseSemanticReviewShortcut returns null when no known engine is named.
+  const reviewShortcut = parseSemanticReviewShortcut(input);
+  if (reviewShortcut) {
+    return reviewShortcut;
   }
   // Natural-language toggle for autoCredit (German + English)
   if (AUTOCREDIT_OFF_KEYWORDS.test(input)) {

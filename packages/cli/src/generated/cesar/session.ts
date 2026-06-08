@@ -999,7 +999,7 @@ export function mcpConfigFingerprint(config: any): string {
 }
 
 /**
- * Resolve the agon-orchestration MCP server entry (packages/mcp/dist/index.js). The CLI ships as a tsup BUNDLE (chunks at packages/cli/dist/), so the old fixed '../../../../mcp/dist/index.js' relative to import.meta.url resolved to a NONEXISTENT path — the MCP server never spawned and Cesar saw zero tools (slow scraping fallback). Resolution order: (1) node module resolution of @kernlang/agon-mcp (works installed AND monorepo-via-symlink), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
+ * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
 // @kern-source: session:961
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
@@ -1007,6 +1007,12 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
   // throws ERR_INVALID_URL_SCHEME on a bare path, so normalise first.
   const url = raw.startsWith('file:') ? raw : pathToFileURL(raw).href;
+  // 0) Bundled sibling — cli's tsup build emits the MCP server to
+  //    <cli-dist>/mcp/index.js (see tsup.config.ts). This is the PUBLISHED
+  //    path: self-contained, no @kernlang/agon-mcp dependency. The importing
+  //    chunk lives in the cli dist dir, so dist/mcp/index.js sits beside it.
+  const bundledSibling = join(dirname(fileURLToPath(url)), 'mcp', 'index.js');
+  if (existsSync(bundledSibling)) return bundledSibling;
   // 1) Installed/published OR monorepo workspace symlink — node resolution.
   try {
     const req = createRequire(url);
@@ -1029,7 +1035,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:987
+// @kern-source: session:993
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1054,7 +1060,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1013
+// @kern-source: session:1019
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

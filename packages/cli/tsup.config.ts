@@ -14,7 +14,12 @@ function copyEngines(outDir: string) {
 }
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  // Two entries from ONE build: the CLI itself, and the agon-orchestration MCP
+  // server (../mcp/src/index.ts) emitted to dist/mcp/index.js. Bundling the MCP
+  // server in keeps `npm i -g @kernlang/agon` self-contained — Cesar spawns the
+  // bundled copy (see resolveAgonMcpServerPath) instead of an unpublished
+  // @kernlang/agon-mcp dependency. Both entries inline agon-core and share chunks.
+  entry: { index: 'src/index.ts', 'mcp/index': '../mcp/src/index.ts' },
   format: ['esm'],
   dts: false,
   sourcemap: true,
@@ -48,5 +53,10 @@ export default defineConfig({
   },
   async onSuccess() {
     copyEngines(join(process.cwd(), 'dist'));
+    // The bundled MCP server resolves engines via <its-own-dir>/engines
+    // (resolveBuiltinEnginesDir), so it needs a copy next to dist/mcp/index.js —
+    // otherwise the spawned server starts with ZERO engines and Cesar silently
+    // loses its orchestration tools.
+    copyEngines(join(process.cwd(), 'dist', 'mcp'));
   },
 });

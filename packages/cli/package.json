@@ -56,7 +56,6 @@
   "dependencies": {
     "@kernlang/agon-engines": "^0.1.1",
     "@kernlang/agon-dedup": "^0.1.6",
-    "@kernlang/agon-mcp": "^0.1.6",
     "@ai-sdk/anthropic": "^3.0.67",
     "@ai-sdk/openai-compatible": "^2.0.40",
     "@kernlang/protocol": "~3.5.8",

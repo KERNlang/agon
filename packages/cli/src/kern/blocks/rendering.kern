@@ -150,7 +150,7 @@ fn name=tokenizeLine params="line:string" returns="SyntaxToken[]"
 
 // ── Screen: DiffLine ────────────────────────────────────────────────
 
-screen name=DiffLine target=ink
+screen name=DiffLine target=ink memo=true
   prop name=line type=string
   prop name=maxWidth type=number
   render
@@ -170,7 +170,7 @@ screen name=DiffLine target=ink
 
 // ── Screen: SyntaxLine ──────────────────────────────────────────────
 
-screen name=SyntaxLine target=ink
+screen name=SyntaxLine target=ink memo=true
   prop name=line type=string
   prop name=maxWidth type=number
   render
@@ -196,7 +196,7 @@ screen name=SyntaxLine target=ink
 
 // ── Screen: CodeBlockView ───────────────────────────────────────────
 
-screen name=CodeBlockView target=ink
+screen name=CodeBlockView target=ink memo=true
   prop name=segment type="ContentSegment & { type: 'code' }"
   prop name=borderColor type=string
   prop name=wrapWidth type=number optional=true
@@ -270,7 +270,7 @@ screen name=CodeBlockView target=ink
 
 // ── Screen: RichSpanView ────────────────────────────────────────────
 
-screen name=RichSpanView target=ink
+screen name=RichSpanView target=ink memo=true
   prop name=span type=InlineSpan
   render
     handler <<<
@@ -291,7 +291,7 @@ screen name=RichSpanView target=ink
 
 // ── Screen: RichLineView ────────────────────────────────────────────
 
-screen name=RichLineView target=ink
+screen name=RichLineView target=ink memo=true
   prop name=line type=RichLine
   prop name=borderColor type=string optional=true
   render
@@ -318,7 +318,7 @@ screen name=RichLineView target=ink
 
 // ── Screen: MarkdownTableView ───────────────────────────────────────
 
-screen name=MarkdownTableView target=ink
+screen name=MarkdownTableView target=ink memo=true
   prop name=headers type="string[]"
   prop name=rows type="string[][]"
   prop name=alignments type="('left' | 'center' | 'right')[]"
@@ -359,17 +359,64 @@ screen name=MarkdownTableView target=ink
       );
     >>>
 
+fn name=segmentsEqual params="a:ContentSegment, b:ContentSegment" returns=boolean
+  handler <<<
+    if (a.type !== b.type) return false;
+    if (a.type === 'prose') {
+      return a.text === b.text;
+    }
+    if (a.type === 'code') {
+      return a.code === b.code && a.language === b.language && a.index === b.index;
+    }
+    if (a.type === 'table') {
+      if (a.headers?.length !== b.headers?.length) return false;
+      if (a.rows?.length !== b.rows?.length) return false;
+      // Compare alignments too — a table whose only change is the markdown
+      // delimiter alignment (:--- vs ---: ) must NOT be treated as equal, else
+      // useShallowSegmentDirty reuses the stale segment and renders old columns.
+      return JSON.stringify(a.headers) === JSON.stringify(b.headers) &&
+             JSON.stringify(a.rows) === JSON.stringify(b.rows) &&
+             JSON.stringify(a.alignments ?? []) === JSON.stringify(b.alignments ?? []);
+    }
+    return false;
+  >>>
+
+fn name=useShallowSegmentDirty params="segments:ContentSegment[]" returns="ContentSegment[]"
+  doc "Return a referentially-stable segment array: unchanged items keep their prior object reference so memoized children can skip re-render. Pure during render — the ref cache is committed in a useEffect (not mutated mid-render), so it is safe under StrictMode double-invoke and concurrent renders that may be discarded."
+  handler <<<
+    const ref = React.useRef<ContentSegment[]>([]);
+    const prev = ref.current;
+    let changed = prev.length !== segments.length;
+    const next: ContentSegment[] = [];
+    for (let i = 0; i < segments.length; i++) {
+      const currSeg = segments[i];
+      const prevSeg = prev[i];
+      if (prevSeg && segmentsEqual(prevSeg, currSeg)) {
+        next.push(prevSeg);
+      } else {
+        next.push(currSeg);
+        changed = true;
+      }
+    }
+    // When nothing changed, return the exact prior array reference; otherwise
+    // the freshly-built one (which still reuses unchanged item refs).
+    const stable = changed ? next : prev;
+    React.useEffect(() => { ref.current = stable; }, [stable]);
+    return stable;
+  >>>
+
 // ── Screen: RenderedSegments ────────────────────────────────────────
 
-screen name=RenderedSegments target=ink
+screen name=RenderedSegments target=ink memo=true
   prop name=segments type="ContentSegment[]"
   prop name=borderColor type=string
   prop name=wrapWidth type=number
   render
     handler <<<
+      const stableSegments = useShallowSegmentDirty(segments);
       return (
         <>
-          {segments.map((seg: ContentSegment, i: number) => {
+          {stableSegments.map((seg: ContentSegment, i: number) => {
             const spacer = i > 0 && borderColor ? <Text key={`sp-${i}`} color={borderColor}>{'\u2502'}</Text> : (i > 0 ? <Text key={`sp-${i}`}>{' '}</Text> : null);
 
             if (seg.type === 'prose') {
@@ -428,7 +475,7 @@ screen name=RenderedSegments target=ink
 
 // ── Screen: GradientLine ────────────────────────────────────────────
 
-screen name=GradientLine target=ink
+screen name=GradientLine target=ink memo=true
   prop name=text type=string
   prop name=colors type="readonly string[]"
   render
@@ -444,7 +491,7 @@ screen name=GradientLine target=ink
       );
     >>>
 
-screen name=AnsiLine target=ink
+screen name=AnsiLine target=ink memo=true
   prop name=text type=string
   prop name=maxWidth type=number
   prop name=fallbackDim type=boolean optional=true

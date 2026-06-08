@@ -7,7 +7,7 @@ import from="@kernlang/agon-core" names="loadCesarPlan"
 import from="@kernlang/agon-core" names="CesarPlan" types=true
 import from="../../../handlers/types.js" names="Dispatch" types=true
 import from="../../blocks/output-format.js" names="ENGINE_COLORS"
-import from="../../../handlers/index.js" names="handleLeaderboard,handleCesarReport,handleCesarHints,handleHistory,handleEngines,handleDiscover,handleConfig,handleUse,handleCesar,handleTokens,handleWorkspace,handleChats,handlePlanShow,handlePlansList,handleApprove,handleRetry,handleCancel,handleApplyPatch,handleCp,handleCommit,handleFlowReport,handleFlowAnalysis,handleRun"
+import from="../../../handlers/index.js" names="handleLeaderboard,handleCesarReport,handleCesarHints,handleHistory,handleEngines,handleDiscover,handleConfig,handleUse,handleCesar,handleTokens,handleRaw,handleWorkspace,handleChats,handlePlanShow,handlePlansList,handleApprove,handleRetry,handleCancel,handleApplyPatch,handleCp,handleCommit,handleFlowReport,handleFlowAnalysis,handleRun"
 import from="../../handlers/provider.js" names="handleProvider"
 import from="../../commands/doctor.js" names="diagnoseEngineDoctorEntry,checkDoctorWorktree,buildHarnessDoctorReport"
 import from="../../cesar/tool-observability.js" names="replayCesarHarnessLogs"
@@ -128,6 +128,7 @@ fn name=dispatchSessionInfoIntent async=true params="intent:any, input:string, c
         break;
       }
       case 'tokens': handleTokens(cb.dispatch); break;
+      case 'raw': handleRaw(cb.dispatch, intent.index); break;
       case 'models': {
         cb.setModelPickerTargetEngine?.(null);
         cb.setModelPickerInitialFilter?.('');

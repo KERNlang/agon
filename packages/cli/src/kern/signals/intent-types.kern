@@ -38,6 +38,8 @@ union name=Intent discriminant=type
     field name=engineIds type="string[]"
   variant name=models
   variant name=tokens
+  variant name=raw
+    field name=index type=number optional=true
   variant name=doctor
     field name=scope type=string optional=true
   variant name=harness-replay

@@ -39,6 +39,24 @@ describe('Intent Detection — Slash Commands', () => {
     if (r.type === 'tribunal') expect(r.question).toBe('React vs Svelte');
   });
 
+  it('/raw parses with no index', () => {
+    const r = detectIntent('/raw');
+    expect(r.type).toBe('raw');
+    if (r.type === 'raw') expect(r.index).toBeUndefined();
+  });
+
+  it('/raw parses a numeric page index', () => {
+    const r = detectIntent('/raw 3');
+    expect(r.type).toBe('raw');
+    if (r.type === 'raw') expect(r.index).toBe(3);
+  });
+
+  it('/raw ignores a non-numeric arg (defaults to most recent)', () => {
+    const r = detectIntent('/raw foo');
+    expect(r.type).toBe('raw');
+    if (r.type === 'raw') expect(r.index).toBeUndefined();
+  });
+
   it('/team-tribunal parses size and mode', () => {
     const r = detectIntent('/team-tribunal 3v3 synthesis What should we launch first?');
     expect(r.type).toBe('team-tribunal');

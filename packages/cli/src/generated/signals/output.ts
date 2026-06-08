@@ -4,6 +4,8 @@ import type { OutputEvent, EngineProgress } from '../../handlers/types.js';
 
 import { parseMarkdownBlocks, cleanEngineOutput } from '../blocks/markdown.js';
 
+import { foldNarration, setLastFoldedRaw } from '../blocks/narration-fold.js';
+
 import { codeBlockBuffer } from '../../code-buffer.js';
 
 import { loadConfig, configSet } from '@kernlang/agon-core';
@@ -15,7 +17,7 @@ import { setTodos, updateTodoState, clearTodos } from './todos.js';
 /**
  * Live state for a running autonomous agent session. Fed by agent-* OutputEvents, rendered by surfaces/agent.kern::AgentProgressView. teamId groups members of a single AgentTeam run for explicit clear-by-team. completedAt is set by agent-step-end and consumed by the TTL pruner in app.kern.
  */
-// @kern-source: output:12
+// @kern-source: output:13
 export interface AgentProgressSnapshot {
   engineId: string;
   turnIndex: number;
@@ -39,14 +41,14 @@ export interface AgentProgressSnapshot {
 /**
  * Per-engine streaming buffer. Sharding on engineId prevents N concurrent agents from clobbering each other's in-flight tokens.
  */
-// @kern-source: output:32
+// @kern-source: output:33
 export interface StreamingEntry {
   engineId: string;
   content: string;
   startedAt: number;
 }
 
-// @kern-source: output:38
+// @kern-source: output:39
 export interface OutputState {
   liveSpinner: {message:string,color?:number,engineId?:string}|null;
   liveProgress: EngineProgress[]|null;
@@ -56,7 +58,7 @@ export interface OutputState {
   todos: Todo[];
 }
 
-// @kern-source: output:46
+// @kern-source: output:47
 export interface OutputActions {
   setLiveSpinner: (val:any) => void;
   setLiveProgress: (val:EngineProgress[]|null) => void;
@@ -80,16 +82,16 @@ export interface OutputActions {
   setTodos: (updater:Todo[] | ((prev:Todo[]) => Todo[])) => void;
 }
 
-// @kern-source: output:69
+// @kern-source: output:70
 export const _thinkingBuffer: {engineId:string,content:string} = { engineId: '', content: '' };
 
-// @kern-source: output:72
+// @kern-source: output:73
 export const _permissionQueue: Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>;
 
-// @kern-source: output:74
+// @kern-source: output:75
 export const _sessionAllowList: string[] = [] as string[];
 
-// @kern-source: output:76
+// @kern-source: output:77
 export function getSessionAllowList(): string[] {
   return _sessionAllowList;
 }
@@ -97,7 +99,7 @@ export function getSessionAllowList(): string[] {
 /**
  * Reject all queued permissions and clear the queue. Called on interrupt/cancel.
  */
-// @kern-source: output:78
+// @kern-source: output:79
 export function clearPermissionQueue(): void {
   while (_permissionQueue.length > 0) {
     const entry = _permissionQueue.shift()!;
@@ -108,31 +110,31 @@ export function clearPermissionQueue(): void {
 /**
  * Drop any buffered thinking-chunk content. Called on interrupt / clear / SIGINT so the next turn doesn't emit stale content as a fresh block.
  */
-// @kern-source: output:85
+// @kern-source: output:86
 export function clearThinkingBuffer(): void {
   _thinkingBuffer.engineId = '';
   _thinkingBuffer.content = '';
 }
 
-// @kern-source: output:97
+// @kern-source: output:98
 export const TOOL_CALL_GROUP_FLUSH_MS: number = 500;
 
-// @kern-source: output:99
+// @kern-source: output:100
 export const _pendingToolCalls: any[] = [] as any[];
 
-// @kern-source: output:101
+// @kern-source: output:102
 export const _pendingFlushTimer: { timer: any, actions: any } = ({ timer: null, actions: null }) as any;
 
-// @kern-source: output:104
+// @kern-source: output:105
 export const _liveToolStreams: Record<string,any> = {} as Record<string, any>;
 
-// @kern-source: output:109
+// @kern-source: output:110
 export const _pinnedPlan: { event: any } = ({ event: null }) as { event: any };
 
-// @kern-source: output:117
+// @kern-source: output:118
 export const _planStepActive: { on: boolean } = ({ on: false }) as { on: boolean };
 
-// @kern-source: output:119
+// @kern-source: output:120
 function toolCallKey(event: any): string {
   return [String(event?.engineId ?? ''), String(event?.tool ?? ''), String(event?.input ?? '')].join('\x00');
 }
@@ -140,7 +142,7 @@ function toolCallKey(event: any): string {
 /**
  * Emit any buffered tool-call events as a single tool-call-group block.
  */
-// @kern-source: output:123
+// @kern-source: output:124
 export function flushPendingToolCalls(actions: OutputActions): void {
   if (_pendingFlushTimer.timer) {
     clearTimeout(_pendingFlushTimer.timer);
@@ -155,7 +157,7 @@ export function flushPendingToolCalls(actions: OutputActions): void {
 /**
  * Debounce-flush pending tool-calls after a quiet period — covers turns that end on a tool-call without any trailing event.
  */
-// @kern-source: output:136
+// @kern-source: output:137
 export function schedulePendingFlush(actions: OutputActions): void {
   _pendingFlushTimer.actions = actions;
   if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
@@ -168,7 +170,7 @@ export function schedulePendingFlush(actions: OutputActions): void {
 /**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
-// @kern-source: output:147
+// @kern-source: output:148
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
@@ -188,7 +190,7 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
-// @kern-source: output:164
+// @kern-source: output:165
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -247,9 +249,22 @@ function _showNextPermission(actions: OutputActions): void {
 }
 
 /**
+ * Apply engine-agnostic narration folding to engine-block content per the narrationFold config (off|safe|aggressive, default safe). On a fold, records the raw in the bounded ring (for /raw) and returns { content, foldedSteps } to spread onto the engine-block; clean text folds nothing and returns just { content }. Pure backstop — runs on every engine-block, structured engines simply fold nothing. The raw is NOT returned per-event; it lives in the ring to avoid unbounded per-block memory growth.
+ */
+// @kern-source: output:223
+export function foldEngineContent(content: string): { content: string, foldedSteps?: number } {
+  const cfg = loadConfig();
+  const policy = String((cfg as any).narrationFold ?? 'safe');
+  const r = foldNarration(content, policy);
+  if (!r.didFold) return { content };
+  setLastFoldedRaw(r.raw);
+  return { content: r.visible, foldedSteps: r.foldedSteps };
+}
+
+/**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
-// @kern-source: output:222
+// @kern-source: output:234
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
@@ -352,9 +367,10 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
           return next;
         });
         if (cleaned.trim()) {
-          const segments = parseMarkdownBlocks(cleaned);
+          const folded = foldEngineContent(cleaned);
+          const segments = parseMarkdownBlocks(folded.content);
           codeBlockBuffer.recordFromSegments(segments);
-          actions.addBlock({ type: 'engine-block', engineId: st.engineId, color, content: cleaned } as any);
+          actions.addBlock({ type: 'engine-block', engineId: st.engineId, color, content: folded.content, foldedSteps: folded.foldedSteps } as any);
           if (mode === 'chat' && chatStartTime > 0) {
             actions.addBlock({ type: 'response-meta', engineId: st.engineId, elapsed: Date.now() - chatStartTime } as any);
           }
@@ -797,9 +813,16 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // Record code blocks from engine-block events
       if (event.type === 'engine-block') {
         const cleaned = cleanEngineOutput((event as any).content);
-        const segments = parseMarkdownBlocks(cleaned);
+        // Skip folding if this block already carries fold metadata — a /raw
+        // re-dispatch sets foldedSteps (0) so the raw text renders unfolded.
+        // `!= null` covers both undefined and an explicit null.
+        const preFolded = (event as any).foldedSteps != null;
+        const folded: { content: string; foldedSteps?: number } = preFolded
+          ? { content: cleaned, foldedSteps: (event as any).foldedSteps }
+          : foldEngineContent(cleaned);
+        const segments = parseMarkdownBlocks(folded.content);
         codeBlockBuffer.recordFromSegments(segments);
-        event = { ...(event as any), content: cleaned } as any;
+        event = { ...(event as any), content: folded.content, foldedSteps: folded.foldedSteps } as any;
       }
       // Flush any pending stream before adding non-stream events
       if (event.type === 'text' || event.type === 'engine-block' || event.type === 'separator') {

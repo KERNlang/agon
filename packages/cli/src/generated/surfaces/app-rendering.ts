@@ -139,8 +139,30 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
     if (segment.type === 'table') {
       const headers = (segment.headers ?? []) as string[];
       const tableRows = (segment.rows ?? []) as string[][];
-      const headerLine = headers.join(' │ ');
-      const ruleWidth = Math.max(12, Math.min(wrapWidth, headerLine.length));
+      const alignments = (segment.alignments ?? []) as string[];
+
+      const colWidths = headers.map((h: string, i: number) => {
+        let max = h.length;
+        for (const row of tableRows) {
+          if (row[i] && row[i].length > max) max = row[i].length;
+        }
+        return max;
+      });
+
+      const padCell = (text: string, colIdx: number): string => {
+        const w = colWidths[colIdx] ?? text.length;
+        const align = alignments[colIdx] ?? 'left';
+        if (align === 'right') return text.padStart(w);
+        if (align === 'center') {
+          const pad = w - text.length;
+          const left = Math.floor(pad / 2);
+          return ' '.repeat(left) + text + ' '.repeat(pad - left);
+        }
+        return text.padEnd(w);
+      };
+
+      const headerLine = headers.map((h: string, i: number) => padCell(h, i)).join(' │ ');
+      const sepLine = colWidths.map((w: number) => '─'.repeat(w)).join('─┼─');
 
       rows.push({
         key: `${baseKey}-table-head-${rowIndex++}`,
@@ -154,15 +176,16 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
         kind: 'segments',
         paddingLeft,
         borderColor,
-        segments: [{ text: '─'.repeat(ruleWidth), dimColor: true }],
+        segments: [{ text: sepLine, dimColor: true }],
       });
       tableRows.forEach((tableRow: string[], index: number) => {
+        const rowLine = tableRow.map((cell: string, i: number) => padCell(cell, i)).join(' │ ');
         rows.push({
           key: `${baseKey}-table-row-${rowIndex++}-${index}`,
           kind: 'segments',
           paddingLeft,
           borderColor,
-          segments: [{ text: tableRow.join(' │ ') }],
+          segments: [{ text: rowLine }],
         });
       });
     }
@@ -716,8 +739,15 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         if (!cleaned.trim()) return;
         const accentColor = color256toHex(event.color ?? (ENGINE_COLORS[event.engineId] ?? 124));
         if (rows.length > 0) pushSpacer(`${baseKey}-gap`);
+        // Narration-fold placeholder — committed Static rows render here
+        // (not via <EngineBlock>), so the '/raw' affordance must be emitted
+        // on this path too, else folded blocks in scrollback look truncated.
+        const foldNote = (event.foldedSteps && event.foldedSteps > 0)
+          ? `▸ ${event.foldedSteps} reasoning steps folded · /raw to inspect`
+          : '';
         if (mode === 'chat') {
           pushSegmentsRow(`${baseKey}-chat-head`, 1, [{ text: `${icons().dotOn} ${event.engineId}`, color: accentColor, bold: true }]);
+          if (foldNote) pushSegmentsRow(`${baseKey}-chat-fold`, 1, [{ text: foldNote, dimColor: true }]);
           pushSpacer(`${baseKey}-chat-space`);
           rows.push(...cachedMarkdownRows(baseKey, cleaned, chatWidth, 1, ''));
           return;
@@ -726,6 +756,12 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
           { text: '┌── ', color: accentColor },
           { text: event.engineId, color: accentColor, bold: true },
         ]);
+        if (foldNote) {
+          pushSegmentsRow(`${baseKey}-engine-fold`, 2, [
+            { text: '│ ', color: accentColor },
+            { text: foldNote, dimColor: true },
+          ]);
+        }
         pushSegmentsRow(`${baseKey}-engine-rule`, 2, [{ text: '│', color: accentColor }]);
         rows.push(...cachedMarkdownRows(baseKey, cleaned, engineWidth, 2, accentColor));
         pushSegmentsRow(`${baseKey}-engine-foot`, 2, [{ text: '└──', color: accentColor }]);

@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@kernlang/agon-core": "*",
-    "@kernlang/agon-engines": "*"
+    "@kernlang/agon-engines": "^0.1.2"
   },
   "optionalDependencies": {}
 }

@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@kernlang/agon-dedup": "^0.1.7",
-    "@kernlang/agon-engines": "*",
+    "@kernlang/agon-engines": "^0.1.2",
     "@kernlang/context": "~3.5.8",
     "@ai-sdk/anthropic": "^3.0.67",
     "@ai-sdk/openai-compatible": "^2.0.40",

@@ -2,14 +2,6 @@
 
 Multi-AI orchestration. Engines compete (forge), debate (tribunal), ideate (brainstorm). Cesar orchestrates. Global: `~/.agon/AGON.md`
 
-## Orchestration — route deliberately
-
-Cesar picks the mode. The discipline is **choosing**, not defaulting. Before routing, read what the task actually needs and pick the best-fitting mode — never reach for *any* mode on autopilot.
-
-- **Answer directly (chat)** when the ask is a lookup or the answer is already in hand. Do NOT convene brainstorm/tribunal/council to *find* an answer you can produce yourself — orchestrator modes are for tradeoffs and decisions, not retrieval.
-- Escalate by stakes/reversibility, not reflex: **nero** = one adversary · **tribunal** = 2-side debate · **council** = whole-panel + chair · **forge** = competitive build · **conquer** = supervised build.
-- If the user names a mode ("brainstorm it", "tribunal this"), honor it — the routing discipline applies when *Cesar* owns the choice, not when the user already made it.
-
 ## ALL IN KERN
 
 Every new function, type, constant, handler MUST be in KERN. No hand-maintained TS unless impossible.

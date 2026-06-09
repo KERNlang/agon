@@ -1,8 +1,8 @@
 import from="@kernlang/agon-core" names="EngineDefinition,EngineMode,EngineModeConfig,ImageAttachment,EngineIsolationPlan" types=true
 import from="@kernlang/agon-core" names="EngineNotFoundError,loadConfig,engineHealth,classifyDispatchFailure,resolveIsolationMode,planEngineIsolation,agonPath"
-import from="node:fs" names="statSync,mkdirSync,existsSync,copyFileSync,chmodSync,unlinkSync"
+import from="node:fs" names="statSync,mkdirSync,existsSync,copyFileSync,chmodSync,unlinkSync,readFileSync,mkdtempSync,rmSync"
 import from="node:path" names="join,dirname,basename"
-import from="node:os" names="homedir"
+import from="node:os" names="homedir,tmpdir"
 
 fn name=recordDispatchHealth params="engineId:string, result:{exitCode?:number,stderr?:string,timedOut?:boolean}" returns=void
   doc "Centralized engine-health recording for any dispatch return point. exitCode 0 + not timed out → mark ok (clears prior quarantine). Otherwise classify and quarantine only on auth-failed/unreachable — timeouts and generic failures stay in rotation since they may be transient."
@@ -329,8 +329,49 @@ fn name=composeClaudePtyPrompt params="prompt:string, systemPrompt?:string" retu
     return `[System Instructions]\n${systemPrompt}\n\n[User Message]\n${prompt}`;
   >>>
 
+fn name=answerChannelMode returns="string"
+  doc "Structured answer-channel transport for ONE-SHOT claude exec dispatch (council/forge/brainstorm/tribunal members), bypassing the flaky TUI scrape. Reads AGON_CLAUDE_ANSWER_CHANNEL: 'file' (or '1'/'true') → claude writes its answer via its native Write tool to a temp file we read as authoritative; 'mcp' → reserved for the DeliverAnswer MCP variant (phase 2); anything else → 'off' (scrape as today). Default off so existing behaviour is untouched until proven."
+  handler <<<
+    const v = (process.env.AGON_CLAUDE_ANSWER_CHANNEL || '').trim().toLowerCase();
+    if (v === 'mcp') return 'mcp';
+    if (v === 'file' || v === '1' || v === 'true' || v === 'on') return 'file';
+    return 'off';
+  >>>
+
+fn name=fileChannelInstruction params="answerFile:string" returns="string"
+  doc "Appended to a one-shot claude prompt under file answer-channel mode: instruct claude to deliver its COMPLETE answer by writing it (markdown only, no commentary) to answerFile with its native Write tool. This is what makes the answer arrive as a clean file instead of a scraped TUI frame."
+  handler <<<
+    return `\n\n---\n[ANSWER DELIVERY — REQUIRED] After composing your COMPLETE final answer, use your Write tool to write that answer — markdown only, no preamble, no commentary, nothing but the answer itself — to this exact file path:\n${answerFile}\nThat file is the ONLY channel by which your answer is captured. Write it exactly once, at the very end. Do NOT skip it.`;
+  >>>
+
+fn name=readAnswerChannelFile params="answerFile:string" returns="string"
+  doc "Read the authoritative answer a one-shot claude wrote to the channel file. Returns '' when the file is absent/empty (caller falls back to the scrape). Accepts raw markdown (file mode, native Write) OR a {text} JSON envelope (mcp mode, DeliverAnswer) transparently."
+  handler <<<
+    try {
+      if (!existsSync(answerFile)) return '';
+      const raw = readFileSync(answerFile, 'utf-8');
+      if (!raw.trim()) return '';
+      const t = raw.trim();
+      if (t.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(t);
+          if (parsed && typeof parsed.text === 'string' && parsed.text.trim()) return parsed.text;
+        } catch { /* not a JSON envelope — treat as raw markdown */ }
+      }
+      return raw;
+    } catch { return ''; }
+  >>>
+
+fn name=setupFileAnswerChannel params="composed:string" returns="{ prompt:string, answerFile:string, dir:string }"
+  doc "Create a fresh temp dir + answer file for file-mode delivery and append the delivery instruction to the composed prompt. Returns the augmented prompt, the answer file path to read after the turn, and the dir to remove afterwards."
+  handler <<<
+    const dir = mkdtempSync(join(tmpdir(), 'agon-ac-'));
+    const answerFile = join(dir, 'answer.md');
+    return { prompt: composed + fileChannelInstruction(answerFile), answerFile, dir };
+  >>>
+
 fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string, env?:Record<string,string>, extraArgv?:string[]" returns="Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}>" async=true
-  doc "Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @kernlang/agon-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt; extraArgv (model/effort launch flags) is forwarded to the engine exec. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check."
+  doc "Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @kernlang/agon-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt; extraArgv (model/effort launch flags) is forwarded to the engine exec. When AGON_CLAUDE_ANSWER_CHANNEL=file and mode=exec, claude is asked to Write its answer to a temp file we read as the AUTHORITATIVE result (clean — no TUI scrape), falling back to the scrape if the file is absent. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check."
   handler <<<
     const start = Date.now();
     try {
@@ -376,18 +417,41 @@ fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:A
         signal.addEventListener('abort', onAbort, { once: true });
       }
 
+      // File answer-channel: only for one-shot exec dispatch (council/forge/
+      // brainstorm/tribunal members). claude writes its answer to a temp file we
+      // read as authoritative, bypassing the flaky scrape. Off by default.
+      const useFileChannel = (mode ?? 'exec') === 'exec' && answerChannelMode() === 'file';
+      let channelDir = '';
       try {
-        const composed = composeClaudePtyPrompt(prompt, systemPrompt);
-        const text = await session.ask(composed, timeoutSec * 1000);
+        let composed = composeClaudePtyPrompt(prompt, systemPrompt);
+        let answerFile = '';
+        if (useFileChannel) {
+          const ch = setupFileAnswerChannel(composed);
+          composed = ch.prompt; answerFile = ch.answerFile; channelDir = ch.dir;
+        }
+        const scraped = await session.ask(composed, timeoutSec * 1000);
+        // Prefer the authoritative channel file; fall back to the scrape if claude
+        // didn't deliver (it sometimes won't) so we never regress to empty.
+        const channelText = useFileChannel ? readAnswerChannelFile(answerFile) : '';
+        if (useFileChannel) console.error(`[agon] answer-channel(file): ${channelText ? 'hit ' + channelText.length + 'ch' : 'miss → scrape fallback'}`);
+        const text = channelText || scraped;
         return {
           exitCode: 0,
           stdout: text,
-          stderr: '',
+          stderr: channelText ? '' : (useFileChannel ? 'answer-channel: file empty, used scrape fallback' : ''),
           durationMs: Date.now() - start,
           timedOut: false,
         };
       } catch (e: any) {
         const isTimeout = e?.kind === 'timeout' || e?.name === 'ClaudeSessionTimeout';
+        // Even on a hard timeout, claude may have already written the channel file
+        // before the TUI wedged — salvage it rather than returning empty.
+        if (useFileChannel && channelDir) {
+          const salvaged = readAnswerChannelFile(join(channelDir, 'answer.md'));
+          if (salvaged) {
+            return { exitCode: 0, stdout: salvaged, stderr: 'answer-channel: salvaged from file after ask error', durationMs: Date.now() - start, timedOut: false };
+          }
+        }
         return {
           exitCode: isTimeout ? 124 : 1,
           stdout: '',
@@ -398,6 +462,7 @@ fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:A
       } finally {
         if (signal) signal.removeEventListener('abort', onAbort);
         await session.close().catch(() => undefined);
+        if (channelDir) { try { rmSync(channelDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
       }
     } catch (e: any) {
       // Last-ditch: any unforeseen error becomes unavailable so the KERN
@@ -460,20 +525,31 @@ fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, sig
         signal.addEventListener('abort', onAbort, { once: true });
       }
 
+      // File answer-channel (one-shot exec only): stream the scraped deltas for live
+      // UX, but read the FINAL answer from the authoritative file claude writes.
+      const useFileChannel = (mode ?? 'exec') === 'exec' && answerChannelMode() === 'file';
+      let channelDir = '';
       const collected: string[] = [];
       try {
-        const composed = composeClaudePtyPrompt(prompt, systemPrompt);
+        let composed = composeClaudePtyPrompt(prompt, systemPrompt);
+        let answerFile = '';
+        if (useFileChannel) {
+          const ch = setupFileAnswerChannel(composed);
+          composed = ch.prompt; answerFile = ch.answerFile; channelDir = ch.dir;
+        }
         const gen = session.askStream(composed, timeoutSec * 1000);
         while (true) {
           const next = await gen.next();
           if (next.done) {
-            const text = typeof next.value === 'string' && next.value
+            const scraped = typeof next.value === 'string' && next.value
               ? next.value
               : collected.join('');
+            const channelText = useFileChannel ? readAnswerChannelFile(answerFile) : '';
+            if (useFileChannel) console.error(`[agon] answer-channel(file): ${channelText ? 'hit ' + channelText.length + 'ch' : 'miss → scrape fallback'}`);
             return {
               exitCode: 0,
-              stdout: text,
-              stderr: '',
+              stdout: channelText || scraped,
+              stderr: channelText ? '' : (useFileChannel ? 'answer-channel: file empty, used scrape fallback' : ''),
               durationMs: Date.now() - start,
               timedOut: false,
             };
@@ -483,6 +559,10 @@ fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, sig
         }
       } catch (e: any) {
         const isTimeout = e?.kind === 'timeout' || e?.name === 'ClaudeSessionTimeout';
+        const salvaged = (useFileChannel && channelDir) ? readAnswerChannelFile(join(channelDir, 'answer.md')) : '';
+        if (salvaged) {
+          return { exitCode: 0, stdout: salvaged, stderr: 'answer-channel: salvaged from file after ask error', durationMs: Date.now() - start, timedOut: false };
+        }
         return {
           exitCode: isTimeout ? 124 : 1,
           stdout: collected.join(''),
@@ -493,6 +573,7 @@ fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, sig
       } finally {
         if (signal) signal.removeEventListener('abort', onAbort);
         await session.close().catch(() => undefined);
+        if (channelDir) { try { rmSync(channelDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
       }
     } catch (e: any) {
       // Outer guard for anything the inner blocks miss.

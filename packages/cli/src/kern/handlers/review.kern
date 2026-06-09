@@ -6,7 +6,7 @@ import from="node:path" names="join,resolve,sep"
 import from="node:fs" names="mkdirSync,readFileSync,statSync"
 import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,scanProjectContext,resolveWorkingDir,rankByTaskClass"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
-import from="../blocks/consensus.js" names="buildConsensus"
+import from="../blocks/consensus.js" names="buildConsensus,formatConsensusRow"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../signals/icons.js" names="icons"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
@@ -490,12 +490,11 @@ fn name=reviewOutcome params="engineId:string, response:string, status:string, n
   >>>
 
 fn name=buildReviewConsensusLines params="consensus:any" returns="string[]" export=true
-  doc "Render a consensus report into the compact, human-facing summary lines (tiered: verified / needs-check / speculative / nits / failed). The single source of the summary text shown inline AND stored as ReviewResultData.consensusSummary, so the transcript and the Ctrl+R pager always agree."
+  doc "Render a consensus report into the compact, human-facing summary lines (tiered: verified / needs-check / speculative / nits / failed). The single source of the summary text shown inline AND stored as ReviewResultData.consensusSummary, so the transcript and the Ctrl+R pager always agree. Each finding row carries compact engine badges ([codex][kimi]) instead of ×N, and disputed clusters get a `⚠ DISPUTED` prefix + indented per-engine stance lines — both via the shared formatConsensusRow so the REPL and the CLI render identically."
   handler <<<
-    const fmt = (f: any): string => `  • [${f.severity} ${f.maxConfidence.toFixed(2)} ×${f.engines.length}${f.pairVotes >= 2 ? ' pair' : ''}] ${f.problem}${f.file ? ` (${f.file}${f.lines ? ':' + f.lines : ''})` : ''}`;
     const lines: string[] = [`Consensus — ${consensus.summary}`];
-    if (consensus.verified.length) { lines.push('VERIFIED (actionable):'); for (const f of consensus.verified) lines.push(fmt(f)); }
-    if (consensus.needsCheck.length) { lines.push('NEEDS-CHECK (want a second opinion):'); for (const f of consensus.needsCheck) lines.push(fmt(f)); }
+    if (consensus.verified.length) { lines.push('VERIFIED (actionable):'); for (const f of consensus.verified) for (const l of formatConsensusRow(f)) lines.push(l); }
+    if (consensus.needsCheck.length) { lines.push('NEEDS-CHECK (want a second opinion):'); for (const f of consensus.needsCheck) for (const l of formatConsensusRow(f)) lines.push(l); }
     if (consensus.speculative.length) lines.push(`SPECULATIVE: ${consensus.speculative.length} low-confidence finding(s) — likely noise.`);
     if (consensus.nits.length) lines.push(`NITS: ${consensus.nits.length}.`);
     if (consensus.engineFailures.length) lines.push(`FAILED (no machine verdict): ${consensus.engineFailures.map((e: any) => `${e.engine} (${e.status})`).join(', ')}.`);

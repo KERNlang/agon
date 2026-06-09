@@ -10,7 +10,7 @@ import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanPro
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
-import { buildConsensus } from '../blocks/consensus.js';
+import { buildConsensus, formatConsensusRow } from '../blocks/consensus.js';
 
 import { sessionResultStore } from '../models/session-results.js';
 
@@ -546,14 +546,13 @@ export function reviewOutcome(engineId: string, response: string, status: string
 }
 
 /**
- * Render a consensus report into the compact, human-facing summary lines (tiered: verified / needs-check / speculative / nits / failed). The single source of the summary text shown inline AND stored as ReviewResultData.consensusSummary, so the transcript and the Ctrl+R pager always agree.
+ * Render a consensus report into the compact, human-facing summary lines (tiered: verified / needs-check / speculative / nits / failed). The single source of the summary text shown inline AND stored as ReviewResultData.consensusSummary, so the transcript and the Ctrl+R pager always agree. Each finding row carries compact engine badges ([codex][kimi]) instead of ×N, and disputed clusters get a `⚠ DISPUTED` prefix + indented per-engine stance lines — both via the shared formatConsensusRow so the REPL and the CLI render identically.
  */
 // @kern-source: review:492
 export function buildReviewConsensusLines(consensus: any): string[] {
-  const fmt = (f: any): string => `  • [${f.severity} ${f.maxConfidence.toFixed(2)} ×${f.engines.length}${f.pairVotes >= 2 ? ' pair' : ''}] ${f.problem}${f.file ? ` (${f.file}${f.lines ? ':' + f.lines : ''})` : ''}`;
   const lines: string[] = [`Consensus — ${consensus.summary}`];
-  if (consensus.verified.length) { lines.push('VERIFIED (actionable):'); for (const f of consensus.verified) lines.push(fmt(f)); }
-  if (consensus.needsCheck.length) { lines.push('NEEDS-CHECK (want a second opinion):'); for (const f of consensus.needsCheck) lines.push(fmt(f)); }
+  if (consensus.verified.length) { lines.push('VERIFIED (actionable):'); for (const f of consensus.verified) for (const l of formatConsensusRow(f)) lines.push(l); }
+  if (consensus.needsCheck.length) { lines.push('NEEDS-CHECK (want a second opinion):'); for (const f of consensus.needsCheck) for (const l of formatConsensusRow(f)) lines.push(l); }
   if (consensus.speculative.length) lines.push(`SPECULATIVE: ${consensus.speculative.length} low-confidence finding(s) — likely noise.`);
   if (consensus.nits.length) lines.push(`NITS: ${consensus.nits.length}.`);
   if (consensus.engineFailures.length) lines.push(`FAILED (no machine verdict): ${consensus.engineFailures.map((e: any) => `${e.engine} (${e.status})`).join(', ')}.`);
@@ -563,7 +562,7 @@ export function buildReviewConsensusLines(consensus: any): string[] {
 /**
  * One-line severity tail for a single engine's review: '2 important, 3 nits' (zero categories omitted; 'no findings' when empty).
  */
-// @kern-source: review:505
+// @kern-source: review:504
 export function formatReviewCounts(c: ReviewSeverityCounts|undefined): string {
   if (!c || c.total === 0) return 'no findings';
   const parts: string[] = [];
@@ -573,7 +572,7 @@ export function formatReviewCounts(c: ReviewSeverityCounts|undefined): string {
   return parts.join(', ');
 }
 
-// @kern-source: review:516
+// @kern-source: review:515
 export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngine?: string): Promise<void> {
   const abort = new AbortController();
   try {
@@ -702,7 +701,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
 /**
  * Make the review's actual target unmistakable BEFORE engines run. Prints the repo name/path/branch being reviewed, and — critically — warns when the directory you're standing in is a DIFFERENT git repo than the one being reviewed. agon resolves the review dir from the active workspace (resolveWorkingDir), not process.cwd(), so running `agon review` from repo X while the active workspace is repo Y silently reviews Y. That footgun produced a 6-engine review of agon's own repo instead of the user's code; this turns it into a loud, actionable signal instead of a silent wrong-repo pass.
  */
-// @kern-source: review:641
+// @kern-source: review:640
 function announceReviewTarget(dispatch: Dispatch, cwd: string, label: string): void {
   let reviewRoot = cwd;
   try { reviewRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf-8' }).trim() || cwd; } catch { /* not a git repo — keep cwd */ }
@@ -721,7 +720,7 @@ function announceReviewTarget(dispatch: Dispatch, cwd: string, label: string): v
 /**
  * Run review for one or more explicitly requested engines. With 2+ engines they run in PARALLEL — each gets its own hard timeout, so a slow-but-excellent reviewer (codex) never blocks the others and a hung engine can't wedge the whole review. Each engine's block is dispatched as it finishes; findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning. A single engine delegates to the streaming handleReview path.
  */
-// @kern-source: review:658
+// @kern-source: review:657
 export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
   const abort = new AbortController();
   try {

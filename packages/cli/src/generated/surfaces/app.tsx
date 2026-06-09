@@ -150,7 +150,7 @@ import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinn
 
 import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, appendTranscriptBlock, summarizeBtwTranscriptEvent } from './app-blocks.js';
 
-import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js';
+import { buildExecutionRailStats, buildTranscriptRows, clearBlockRowCache } from './app-rendering.js';
 
 // ── Module: AppHelperExports ──
 
@@ -185,7 +185,7 @@ export function App() {
     return (value: React.SetStateAction<any>) => {
       const now = Date.now();
       const elapsed = now - _lastCall;
-      if (elapsed >= 50) {
+      if (elapsed >= 120) {
         _lastCall = now;
         if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
         setTimeout(() => _setLiveSpinnerRaw(value), 0);
@@ -196,7 +196,7 @@ export function App() {
             _lastCall = Date.now();
             _pendingTimer = null;
             _setLiveSpinnerRaw(_pendingValue);
-          }, 50 - elapsed);
+          }, 120 - elapsed);
         }
       }
     };
@@ -209,7 +209,7 @@ export function App() {
     return (value: React.SetStateAction<EngineProgress[]|null>) => {
       const now = Date.now();
       const elapsed = now - _lastCall;
-      if (elapsed >= 50) {
+      if (elapsed >= 120) {
         _lastCall = now;
         if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
         setTimeout(() => _setLiveProgressRaw(value), 0);
@@ -220,7 +220,7 @@ export function App() {
             _lastCall = Date.now();
             _pendingTimer = null;
             _setLiveProgressRaw(_pendingValue);
-          }, 50 - elapsed);
+          }, 120 - elapsed);
         }
       }
     };
@@ -806,6 +806,7 @@ export function App() {
               setOutputBlocks([]);
               setClearEpoch((epoch: number) => nextStaticEpoch(epoch, 'reset'));
               setNativeArchiveCount(0);
+              clearBlockRowCache();
             },
             setPendingPlanProposal: (val: OutputEvent | null) => setPendingPlanProposal(val),
             setReviewEvent,
@@ -2974,7 +2975,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:94
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2738
+// @kern-source: app:2739
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

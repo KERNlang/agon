@@ -176,7 +176,13 @@ module name=AppBlocks
       if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
       const safeBudget = Math.max(1, Math.floor(Number(rowBudget) || 1));
-      const maxLiveBlocks = 80;
+      // 40 (was 80): Ink rewrites the ENTIRE live tail every render (~15-30/s
+      // during runs), so the live window is the dominant stdout cost. The row
+      // budget usually seals far earlier anyway — this cap only bites on runs of
+      // many tiny blocks, exactly where per-frame rewrite cost compounds. Sealed
+      // blocks render identically (they just stop being mouse-selectable), and a
+      // measured A/B (fat-block probe) showed no UX regression at 40.
+      const maxLiveBlocks = 40;
       let rows = 0;
       let liveStart = blocks.length;
 

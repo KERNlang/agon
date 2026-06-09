@@ -77,7 +77,7 @@ import from="./app-terminal.js" names="createInitialRegistry,drainStdinBuffer,no
 import from="./app-selection.js" names="normalizeTextSelection"
 import from="./app-layout.js" names="estimateVisibleBlockBudget,estimateBottomChromeExtraRows,estimatePinnedLiveRows"
 import from="./app-blocks.js" names="buildDashboardBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount,appendTranscriptBlock,summarizeBtwTranscriptEvent"
-import from="./app-rendering.js" names="buildExecutionRailStats,buildTranscriptRows"
+import from="./app-rendering.js" names="buildExecutionRailStats,buildTranscriptRows,clearBlockRowCache"
 
 module name=AppHelperExports
   export from="./app-helpers.js" names="COMPOSER_HISTORY_LIMIT,isMutatingToolCall,probeEngineVitals,parseToolCallPayload,toolPreviewWindow,toolCallSupportsDetailView,detailViewerSupportsEvent,toolDetailViewportRows,findLatestToolDetailEvent,findLatestToolEvent,buildExecutionRailStats,composerHistoryPath,loadComposerInputHistory,saveComposerInputHistory,findLatestFailedToolEvent,buildFailedToolRetryDraft,buildToolDetailView,createInitialRegistry,drainStdinBuffer,maxScrollOffsetForRowCount,nextWheelAnimationStep,clampNumber,charDisplayWidth,stringDisplayWidth,displayColumnToStringIndex,normalizeRowSelection,normalizeTextSelection,richLineToPlainText,transcriptRowToPlainText,transcriptRowTextStartColumn,resolveTranscriptColumnFromMouse,transcriptRowsToPlainText,resolveTranscriptRowFromMouse,estimateVisibleBlockBudget,estimateWrappedRowCount,estimateQuestionReservedRows,estimateBottomChromeExtraRows,summarizeBtwTranscriptEvent,buildDashboardBlock,estimatePinnedLiveRows,estimateWrappedRows,estimateToolCallRows,estimateOutputEventRows,buildDisplayItems,isToolCallLikeBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,estimateDisplayItemRows,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount,isDuplicateEngineBlock,appendTranscriptBlock,normalizeTerminalMode,fileRailWidthForTerminal,fileRailMaxRowsForTerminal,buildTerminalReplaySnapshot,parseMarkdownToRows,buildToolCallRows,buildCollapsedToolGroupRows,buildTranscriptRows"
@@ -103,8 +103,8 @@ screen name=App target=ink
   state name=historyIndex type=number initial=-1 safe=false
   state name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   state name=sessionStartTime type=number initial="Date.now()"
-  state name=liveSpinner type=any initial="null" throttle=50
-  state name=liveProgress type="EngineProgress[]|null" initial="null" throttle=50
+  state name=liveSpinner type=any initial="null" throttle=120
+  state name=liveProgress type="EngineProgress[]|null" initial="null" throttle=120
   state name=slashPickerOpen type=boolean initial=false safe=false
   state name=questionState type=any initial="null"
   state name=questionAnswer type=string initial="''" safe=false
@@ -920,6 +920,7 @@ screen name=App target=ink
           setOutputBlocks([]);
           setClearEpoch((epoch: number) => nextStaticEpoch(epoch, 'reset'));
           setNativeArchiveCount(0);
+          clearBlockRowCache();
         },
         setPendingPlanProposal: (val: OutputEvent | null) => setPendingPlanProposal(val),
         setReviewEvent,

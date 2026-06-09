@@ -256,6 +256,11 @@ fn name=createPtySession params="config:PersistentSessionConfig" returns="Persis
             // The nudge PTY turn gets its own SHORT ceiling, not TURN_TIMEOUT_MS:
             // we only await it for NUDGE_TIMEOUT_MS, and pendingDrain must never
             // make the NEXT send() block on a 15-minute zombie nudge turn.
+            // Re-arm abort BEFORE starting the nudge pump: an async generator
+            // body runs synchronously inside the first next() call, so arming
+            // after askStream would miss an abort that fires in that first
+            // execution slice.
+            opts.signal?.addEventListener('abort', onAbort, { once: true });
             const nit = claudeSession.askStream(nudgeMsg, NUDGE_TURN_TIMEOUT_MS);
             let nudgeDone = false;
             const nudgeDriver: Promise<void> = (async () => {
@@ -270,8 +275,6 @@ fn name=createPtySession params="config:PersistentSessionConfig" returns="Persis
             void nudgeDriver.finally(() => { if (pendingDrain === nudgeDriver) pendingDrain = null; });
             void nudgeDriver.then(() => { nudgeDone = true; });
 
-            // Re-arm abort for the nudge turn so a cancel here is honored.
-            opts.signal?.addEventListener('abort', onAbort, { once: true });
             await raceAnswerOrSettle(() => nudgeDone, NUDGE_TIMEOUT_MS);
             opts.signal?.removeEventListener('abort', onAbort);
 
@@ -314,10 +317,10 @@ fn name=createPtySession params="config:PersistentSessionConfig" returns="Persis
             return;
           }
 
-          // Nudge preconditions not met without an earlier return means a late
-          // first-turn channel file landed (readAnswer() !== null) while the scrape
-          // was non-substantive — return that authoritative answer. (Aborted and
-          // substantive-scrape already returned above.) Otherwise: explicit marker,
+          // Reached only when settledAnswer === '' — the engine DID call
+          // DeliverAnswer but with empty text (a deliberate, authoritative
+          // empty delivery). Don't nudge it; re-read once in case a non-empty
+          // write raced in, otherwise mark the turn incomplete explicitly —
           // never flaky raw text.
           pendingDrain = null;
           const lateAnswer = readAnswer();

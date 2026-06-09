@@ -328,6 +328,41 @@ describe('createPtySession — DeliverAnswer retry-nudge', () => {
     expect((out.text ?? []).join('')).toBe('');
     expect(ptyState.prompts.length).toBe(1); // no nudge after abort
   });
+
+  it('an abort during the nudge turn cancels — no fallback text leaks out', async () => {
+    const { createPtySession } = await import('../../packages/core/src/generated/sessions/session-pty.js');
+    const answerChannelPath = join(tmp, 'cesar-1-answer.json');
+    const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
+    await session.start();
+    const ac = new AbortController();
+    ptyState.onAsk = (prompt: string) => {
+      if (prompt === NUDGE_PROMPT) {
+        // User cancels while the retry is in flight.
+        ac.abort();
+        return { scraped: 'retry scrape would be substantive otherwise' };
+      }
+      return { scraped: '⏺ ·' }; // thin first scrape → nudge fires
+    };
+    const out = await collect(session.send({ message: 'hi', signal: ac.signal }) as any);
+    expect(out.done?.join('')).toBe('cancelled');
+    expect((out.text ?? []).join('')).toBe('');
+    expect(ptyState.prompts.length).toBe(2); // first turn + the one nudge
+  });
+
+  it('an explicitly EMPTY DeliverAnswer is not nudged — explicit marker, no raw scrape', async () => {
+    const { createPtySession } = await import('../../packages/core/src/generated/sessions/session-pty.js');
+    const answerChannelPath = join(tmp, 'cesar-1-answer.json');
+    const session = createPtySession(claudeConfig({ answerChannelPath }) as any);
+    await session.start();
+    // Engine DID call DeliverAnswer, but with empty text, and the scrape is thin.
+    ptyState.onAsk = () => ({
+      scraped: '⏺ ·',
+      writeAnswer: () => writeFileSync(answerChannelPath, JSON.stringify({ type: 'answer', text: '' })),
+    });
+    const out = await collect(session.send({ message: 'hi' }) as any);
+    expect((out.text ?? []).join('')).toBe(INCOMPLETE_MARKER);
+    expect(ptyState.prompts.length).toBe(1); // deliberate empty delivery → no nudge
+  });
 });
 
 describe('createPersistentSession — claude routing', () => {

@@ -224,18 +224,38 @@ export function createPtySession(config: PersistentSessionConfig): PersistentSes
         // Snapshot the FIRST turn's scrape now; the nudge reassigns scrapedFinal.
         const firstScrape = scrapedFinal;
 
+        // Re-check cancellation: an abort landing during `await driver` (after
+        // the first race removed onAbort) neither sets `aborted` nor closes the
+        // session — addEventListener on an already-aborted signal never fires —
+        // so check the signal itself before deciding to nudge.
+        if (aborted || opts.signal?.aborted) {
+          yield { type: 'done' as const, content: 'cancelled' }; return;
+        }
+
+        // A channel answer that landed while the driver settled is authoritative
+        // and outranks ANY scrape — fallback tier 2 over tiers 3/4 — so consult
+        // the channel before the scrape short-circuit.
+        const settledAnswer = readAnswer();
+        if (settledAnswer !== null && settledAnswer.length > 0) {
+          debug('late first-turn DeliverAnswer landed while the driver settled');
+          pendingDrain = null;
+          yield { type: 'text' as const, content: settledAnswer };
+          yield { type: 'done' as const, content: 'end_turn' };
+          return;
+        }
+
         // ── Completion guard: exactly ONE DeliverAnswer retry-nudge ──────────
         // Fire only when ALL hold: the turn settled with no channel file, the
         // first scrape is non-substantive (empty / chrome-like noise), and the
         // turn wasn't aborted. A substantive scrape short-circuits — no nudge.
-        if (!aborted && isSubstantiveScrape(firstScrape)) {
+        if (isSubstantiveScrape(firstScrape)) {
           pendingDrain = null;
           yield { type: 'text' as const, content: firstScrape };
           yield { type: 'done' as const, content: 'end_turn' };
           return;
         }
 
-        if (!aborted && readAnswer() === null && !isSubstantiveScrape(firstScrape)) {
+        if (settledAnswer === null) {
           // Final re-read INSTEAD of clearing: a first-turn DeliverAnswer can
           // land in the window after the check above, and clearAnswer() here
           // would DELETE that valid authoritative answer. The turn already
@@ -257,6 +277,11 @@ export function createPtySession(config: PersistentSessionConfig): PersistentSes
           // The nudge PTY turn gets its own SHORT ceiling, not TURN_TIMEOUT_MS:
           // we only await it for NUDGE_TIMEOUT_MS, and pendingDrain must never
           // make the NEXT send() block on a 15-minute zombie nudge turn.
+          // Re-arm abort BEFORE starting the nudge pump: an async generator
+          // body runs synchronously inside the first next() call, so arming
+          // after askStream would miss an abort that fires in that first
+          // execution slice.
+          opts.signal?.addEventListener('abort', onAbort, { once: true });
           const nit = claudeSession.askStream(nudgeMsg, NUDGE_TURN_TIMEOUT_MS);
           let nudgeDone = false;
           const nudgeDriver: Promise<void> = (async () => {
@@ -271,8 +296,6 @@ export function createPtySession(config: PersistentSessionConfig): PersistentSes
           void nudgeDriver.finally(() => { if (pendingDrain === nudgeDriver) pendingDrain = null; });
           void nudgeDriver.then(() => { nudgeDone = true; });
 
-          // Re-arm abort for the nudge turn so a cancel here is honored.
-          opts.signal?.addEventListener('abort', onAbort, { once: true });
           await raceAnswerOrSettle(() => nudgeDone, NUDGE_TIMEOUT_MS);
           opts.signal?.removeEventListener('abort', onAbort);
 
@@ -315,10 +338,10 @@ export function createPtySession(config: PersistentSessionConfig): PersistentSes
           return;
         }
 
-        // Nudge preconditions not met without an earlier return means a late
-        // first-turn channel file landed (readAnswer() !== null) while the scrape
-        // was non-substantive — return that authoritative answer. (Aborted and
-        // substantive-scrape already returned above.) Otherwise: explicit marker,
+        // Reached only when settledAnswer === '' — the engine DID call
+        // DeliverAnswer but with empty text (a deliberate, authoritative
+        // empty delivery). Don't nudge it; re-read once in case a non-empty
+        // write raced in, otherwise mark the turn incomplete explicitly —
         // never flaky raw text.
         pendingDrain = null;
         const lateAnswer = readAnswer();

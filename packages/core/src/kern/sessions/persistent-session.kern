@@ -6,7 +6,8 @@ import from="./session-resume.js" names="createResumeSession"
 import from="./session-pty.js" names="createPtySession"
 
 interface name=SessionChunk
-  field name=type type="'text'|'status'|'tool_call'|'error'|'done'"
+  doc "A streamed unit from a PersistentSession.send() turn. 'text' is the authoritative answer; 'preview' is a SPECULATIVE, best-effort live draft (currently emitted only by the PTY brain while it waits for the DeliverAnswer channel). A 'preview' chunk may ONLY update the live/dynamic streaming pane — it must NEVER be committed to the transcript or accumulated into the final answer. Every consumer that does not understand 'preview' must ignore it (all current consumers accumulate only 'text' and break on 'done'/'error', so a new 'preview' falls through harmlessly)."
+  field name=type type="'text'|'preview'|'status'|'tool_call'|'error'|'done'"
   field name=content type=string
   field name=metadata type="Record<string,unknown>" optional=true
 

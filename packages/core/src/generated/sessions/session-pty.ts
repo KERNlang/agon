@@ -29,9 +29,57 @@ export const NUDGE_TURN_TIMEOUT_MS: number = 20000;
 export const TURN_INCOMPLETE_MARKER: string = "[turn incomplete — the engine did not deliver an answer]";
 
 /**
- * Pure, testable heuristic: is a scraped TUI extract a real answer (true) vs empty / chrome-like noise (false)? Conservative — requires SUBSTANTIVE_SCRAPE_MIN_CHARS visible chars after trim. No side effects.
+ * A speculative live preview frame must have at least this many visible (trimmed) chars to be emitted — same conservative floor as SUBSTANTIVE_SCRAPE_MIN_CHARS. Below it, a frame is treated as chrome/noise and suppressed: the preview is purely cosmetic and must never flicker garbage at the user.
  */
 // @kern-source: session-pty:16
+export const PREVIEW_MIN_CHARS: number = 20;
+
+/**
+ * Minimum interval between emitted preview chunks. The PTY daemon redraws the TUI many times per second; the preview is best-effort, so we coalesce to at most one growth-gated frame per ~500ms to keep the live pane calm and cheap.
+ */
+// @kern-source: session-pty:19
+export const PREVIEW_THROTTLE_MS: number = 500;
+
+/**
+ * Hard cap on the in-memory preview accumulation buffer. The daemon emits thousands of TUI redraws over a long turn; the preview only needs the recent tail (the live pane tails it anyway), so the buffer is sliced to its last PREVIEW_ACCUM_CAP chars. Prevents unbounded memory growth on a long PTY turn. Generous enough that the growth-gate plateau it eventually causes is rare in practice.
+ */
+// @kern-source: session-pty:22
+export const PREVIEW_ACCUM_CAP: number = 8000;
+
+/**
+ * A frame matching this pattern is TUI chrome — spinner glyphs (⏺ ⠋ ⠹), status dots/ellipsis (· …), box-drawing rails (│ ┌ ─ └), block/shade glyphs, the 'Osmosing…' / 'Esc to interrupt' / token-counter status rows. Such a frame is never emitted as preview prose. Conservative on purpose: a false-suppress just drops a cosmetic draft, while a false-emit would flicker garbage.
+ */
+// @kern-source: session-pty:25
+export const PREVIEW_CHROME_RE: RegExp = /[⏺·…•│┌─└█░▒▓⠋⠹]|Osmosing|Esc to interrupt|tokens|^\s*[✓✗●○]\s*$/i;
+
+/**
+ * Pure, testable gate for a single SPECULATIVE preview frame. Returns the sanitized frame text to emit, or null to suppress. Suppresses when: empty/missing; fewer than PREVIEW_MIN_CHARS visible chars after trim; the frame looks like TUI chrome (PREVIEW_CHROME_RE); or it did NOT grow past the previously-emitted preview (growth-gated — `prev` is the last emitted preview text, so a redraw of the same content is dropped). No side effects, no I/O. The preview is best-effort and must NEVER contaminate the authoritative answer, so every ambiguous case suppresses.
+ */
+// @kern-source: session-pty:28
+export function sanitizePreviewFrame(text: string|null|undefined, prev: string): string|null {
+  if (text == null) {
+    return null;
+  }
+  const trimmed = String(text).trim();
+  if (trimmed.length < PREVIEW_MIN_CHARS) {
+    return null;
+  }
+  if (PREVIEW_CHROME_RE.test(trimmed)) {
+    return null;
+  }
+  // Growth gate: only emit when this frame is strictly longer than the last
+  // emitted preview (the PTY stream accumulates, so a real new draft grows).
+  // A redraw at the same/shorter length is a repaint — drop it.
+  if (trimmed.length <= prev.trim().length) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
+ * Pure, testable heuristic: is a scraped TUI extract a real answer (true) vs empty / chrome-like noise (false)? Conservative — requires SUBSTANTIVE_SCRAPE_MIN_CHARS visible chars after trim. No side effects.
+ */
+// @kern-source: session-pty:45
 export function isSubstantiveScrape(text: string|null|undefined): boolean {
   if (text == null) {
     return false;
@@ -43,7 +91,7 @@ export function isSubstantiveScrape(text: string|null|undefined): boolean {
 /**
  * Persistent interactive Claude brain over the kern-engines PTY subscription daemon (@kernlang/agon-engines), NOT `claude --print`. Honors the hard rule that the claude brain bills via the subscription TUI. Cesar orchestration is preserved by injecting the agon-orchestration MCP server (config.mcpServers → --mcp-config + --strict-mcp-config) with native writes disabled (--disallowedTools) and only Read/Grep/Glob + mcp__agon-orchestration allowed. The engine's FINAL answer is read from the DeliverAnswer answer-channel file (config.answerChannelPath) — authoritative and reliable — instead of scraping the TUI text (which is flaky for short tool-answers: the ⏺ marker collides with spinner glyphs and short answers fuse with status chrome on one row). The scraped extract is kept only as a fallback when the engine didn't call DeliverAnswer.
  */
-// @kern-source: session-pty:24
+// @kern-source: session-pty:53
 export function createPtySession(config: PersistentSessionConfig): PersistentSession {
   let claudeSession: any = null;
   let alive = false;
@@ -176,13 +224,46 @@ export function createPtySession(config: PersistentSessionConfig): PersistentSes
         // single-flight lock clears for the next turn. It NEVER rejects — the
         // scraped extract / error are captured for the fallback path. Tracked
         // in pendingDrain from creation so it can't orphan the daemon.
+        //
+        // SPECULATIVE PREVIEW: each intermediate frame the daemon yields (a noisy
+        // TUI redraw — normally discarded) is run through the pure
+        // sanitizePreviewFrame gate and, when it passes, queued as a best-effort
+        // live-draft. These NEVER feed the final answer (which comes from the
+        // DeliverAnswer channel or the scrape fallback below) — they only update
+        // the dynamic streaming pane while the user waits. Off when AGON_NO_PREVIEW.
         let scrapedFinal = '';
         let driverError: unknown = null;
+        const previewsEnabled = !process.env.AGON_NO_PREVIEW;
+        const previewQueue: string[] = [];
+        let previewAccum = '';
+        let lastEmittedPreview = '';
+        let lastPreviewAt = 0;
+        const considerPreviewFrame = (delta: unknown) => {
+          if (!previewsEnabled) return;
+          // The daemon's deltas accumulate into the redraw buffer; gate on the
+          // running accumulation so the growth check matches the real draft.
+          // Bound the buffer: over a long PTY turn the daemon emits thousands of
+          // TUI redraws; the preview only ever needs the recent tail, so cap
+          // previewAccum to PREVIEW_ACCUM_CAP chars (the live pane tails it
+          // anyway). Without this, previewAccum would grow unbounded in memory.
+          previewAccum += typeof delta === 'string' ? delta : '';
+          if (previewAccum.length > PREVIEW_ACCUM_CAP) previewAccum = previewAccum.slice(-PREVIEW_ACCUM_CAP);
+          const now = Date.now();
+          if (now - lastPreviewAt < PREVIEW_THROTTLE_MS) return;
+          const frame = sanitizePreviewFrame(previewAccum, lastEmittedPreview);
+          if (frame === null) return;
+          lastEmittedPreview = frame;
+          lastPreviewAt = now;
+          previewQueue.push(frame);
+        };
         const it = claudeSession.askStream(composed, TURN_TIMEOUT_MS);
         const driver: Promise<void> = (async () => {
           try {
             let res = await it.next();
-            while (!res.done) { res = await it.next(); }
+            while (!res.done) {
+              considerPreviewFrame(res.value);
+              res = await it.next();
+            }
             scrapedFinal = typeof res.value === 'string' ? res.value : '';
           } catch (e) { driverError = e; }
         })();
@@ -193,7 +274,35 @@ export function createPtySession(config: PersistentSessionConfig): PersistentSes
         // Race: the DeliverAnswer channel file appearing (normal turn — return
         // the instant Claude delivers, skipping the idle-settle wait) vs the
         // driver completing (orchestration STOP turn with no answer, or error).
-        await raceAnswerOrSettle(() => driverDone, TURN_TIMEOUT_MS);
+        // While waiting, drain any queued preview frames out to the dynamic pane.
+        // The 100ms poll cadence (same as raceAnswerOrSettle) bounds preview
+        // latency without a second timer. The preview yields are speculative and
+        // tagged so downstream can ONLY ever update the live pane with them.
+        {
+          let settled = false;
+          // raceAnswerOrSettle is documented never to reject, but flip `settled`
+          // on any rejection too so the drain loop can never spin forever.
+          const racePromise = raceAnswerOrSettle(() => driverDone, TURN_TIMEOUT_MS).then(() => { settled = true; }, () => { settled = true; });
+          // Yield true while it's still OK to emit previews (kill on abort/disable).
+          const previewsOk = () => previewsEnabled && !aborted && !opts.signal?.aborted;
+          while (!settled) {
+            // Flush every queued preview to the dynamic pane. Speculative + tagged,
+            // so downstream can ONLY update the live pane with them.
+            while (previewQueue.length > 0 && previewsOk()) {
+              yield { type: 'preview' as const, content: previewQueue.shift() as string, metadata: { draft: true } };
+            }
+            if (settled) break;
+            await new Promise<void>((r) => setTimeout(r, 100));
+          }
+          await racePromise;
+          // Final drain: a frame queued during the last sleep would otherwise be
+          // stranded. Harmless either way (the authoritative text below + the
+          // downstream firewall overwrite/drop any draft), but flushing keeps the
+          // pane's last draft fresh right up to the answer landing.
+          while (previewQueue.length > 0 && previewsOk()) {
+            yield { type: 'preview' as const, content: previewQueue.shift() as string, metadata: { draft: true } };
+          }
+        }
 
         opts.signal?.removeEventListener('abort', onAbort);
 

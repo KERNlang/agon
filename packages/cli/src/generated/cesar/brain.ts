@@ -38,10 +38,14 @@ import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, findTrai
 
 // @kern-source: brain:20
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
+  // streaming-end commits a real stream OR (when only a speculative preview
+  // draft sits on the pane) drops the draft without committing — safe no-op when
+  // there's no entry at all. Always firing it clears a lingering PTY draft.
   if (streaming) {
     dispatch({ type: 'streaming-end', engineId: cesarEngineId });
   }
   if (!streaming) {
+    dispatch({ type: 'streaming-end', engineId: cesarEngineId });
     dispatch({ type: 'spinner-stop' });
   }
   await yieldToInk();
@@ -63,12 +67,15 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:42
+// @kern-source: brain:46
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
+  // streaming-end commits a real stream OR drops a lingering speculative preview
+  // draft without committing — safe no-op when there's no entry at all.
   if (streaming) {
     dispatch({ type: 'streaming-end', engineId: cesarEngineId });
   }
   if (!streaming) {
+    dispatch({ type: 'streaming-end', engineId: cesarEngineId });
     dispatch({ type: 'spinner-stop' });
   }
   await yieldToInk();
@@ -91,10 +98,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:64
+// @kern-source: brain:71
 export const _noBriefNudged: Set<string> = new Set<string>();
 
-// @kern-source: brain:66
+// @kern-source: brain:73
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -397,6 +404,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         let response = '';
         let streaming = false;
         let wasStreamed = false; // tracks if response was already shown via streaming chunks
+        let previewShown = false; // a speculative PTY 'preview' draft was put on the live pane this turn
         let parsedConfidence: number | null = null;
         let confidenceParsed = false;
         let insideThinkBlock = false;
@@ -703,6 +711,21 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           for await (const chunk of gen) {
             if (abort.signal.aborted) break;
 
+            if (chunk.type === 'preview') {
+              // SPECULATIVE live draft (PTY brain, while it waits for the authoritative
+              // DeliverAnswer channel). Route ONLY to the live pane via streaming-preview,
+              // which REPLACES the draft content and marks it draft=true so it can never
+              // reach the transcript or the accumulated `response`. The authoritative
+              // 'text' chunk below clears the draft (output.kern firewall) and is what
+              // actually commits. Never touch `response`/`streaming` here — preview is
+              // cosmetic-only. Suppressed entirely once real text has started.
+              if (!abort.signal.aborted && !streaming && !wasStreamed) {
+                previewShown = true;
+                dispatch({ type: 'streaming-preview', engineId: cesarEngineId, content: String(chunk.content ?? '') } as any);
+              }
+              continue;
+            }
+
             if (chunk.type === 'status') {
               const statusText = String(chunk.content ?? '');
               // Live context gauge: surface as a context-usage event for the status
@@ -815,6 +838,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               // (timeouts, 5xx, resets) are NOT matched here, so their retry stays.
               const _deterministic = /\b(?:400|401|403|404)\b|not found|unauthorized|invalid api key|authentication|no such (?:route|endpoint)/i.test(_errFull);
               dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) stream error before any output: ${errBody}.${_deterministic ? ' Looks like an engine config/auth issue — check the engine with /engines.' : ' Try again or switch engine with /engine.'}` });
+              // Drop a lingering speculative preview draft on the pre-stream-error
+              // exit (firewall drops a draft-only entry without committing).
+              if (previewShown) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
               clearInterval(heartbeat);
               processMcpSideChannel();
               if (mcpWatcherInterval) clearInterval(mcpWatcherInterval);
@@ -965,6 +991,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // Fall through to process whatever response we have
           } else {
             dispatch({ type: 'warning', message: 'Cesar session error — will restart on next message' });
+            // Drop a lingering speculative preview draft on the no-output error exit.
+            if (previewShown) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
             return { delegated: false, responded: false, decisionReason: 'stream-error' };
           }
         }
@@ -975,6 +1003,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
 
         if (abort.signal.aborted) {
           dispatch({ type: 'spinner-stop' });
+          // Drop a lingering speculative preview draft from the live pane on abort.
+          // streaming-end drops a draft-only entry without committing (firewall);
+          // safe no-op when no entry exists.
+          if (previewShown) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
           const elapsed = Math.round((Date.now() - _turnStart) / 1000);
           if (elapsed >= cesarTimeout) {
             dispatch({ type: 'warning', message: `Cesar timed out after ${elapsed}s. Try a simpler question, or use /forge for complex tasks.` });
@@ -2133,6 +2165,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           });
         }
 
+        // Drop any speculative preview draft still on the live pane before the
+        // non-streamed commit below. streaming-end drops a draft-only entry WITHOUT
+        // committing (output.kern firewall), so this only clears the cosmetic draft —
+        // the authoritative `response` is what gets committed as the engine-block.
+        if (previewShown && !streaming) {
+          dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+        }
         // ── Display final response (skip if already displayed via streaming or tool loop) ──
         if (!streaming && response && !ranToolLoop && !wasStreamed) {
           dispatch({ type: 'spinner-stop' });

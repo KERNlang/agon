@@ -809,6 +809,9 @@ export function App() {
               for (const eid of Object.keys(prev)) {
                 const entry = prev[eid];
                 if (!entry) continue;
+                // Contamination firewall: never flush a speculative preview draft to the
+                // transcript — it is dropped, not committed (same rule as streaming-end).
+                if (entry.draft) continue;
                 const color = ENGINE_COLORS[entry.engineId] ?? 124;
                 setOutputBlocks((blocks: any) => appendTranscriptBlock(blocks, { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } as any, blockArchivePathRef.current));
               }
@@ -2932,7 +2935,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:93
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2667
+// @kern-source: app:2670
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

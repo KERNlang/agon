@@ -862,6 +862,9 @@ screen name=App target=ink
           for (const eid of Object.keys(prev)) {
             const entry = prev[eid];
             if (!entry) continue;
+            // Contamination firewall: never flush a speculative preview draft to the
+            // transcript — it is dropped, not committed (same rule as streaming-end).
+            if (entry.draft) continue;
             const color = ENGINE_COLORS[entry.engineId] ?? 124;
             setOutputBlocks((blocks: any) => appendTranscriptBlock(blocks, { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } as any, blockArchivePathRef.current));
           }

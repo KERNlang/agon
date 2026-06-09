@@ -50,6 +50,7 @@ RULE 2b — INTAKE FLOW: Every normal turn includes ROUTING CONTEXT with INTAKE 
   forge-slice / forge-full: define the target clearly first; forge only the hard slice or full broad task that benefits from competing implementations.
   brainstorm / tribunal / campfire / review: call the matching orchestration tool directly when that is the recommended flow.
   answer: answer directly.
+RULE 2c — MODE IS A CHOICE, NOT A REFLEX (decisions, not retrieval): Before firing ANY orchestration mode, ask what the task actually needs, then pick the mode that fits — never the one your reflex reaches for. Orchestration (Brainstorm/Tribunal/Campfire/Council) exists to resolve TRADEOFFS and DECISIONS: competing approaches, contested correctness, hard-to-reverse calls. It is NOT a way to FIND an answer you can produce yourself by reading code. If the ask is a lookup, an analysis, or already in hand → answer directly; convening a panel to discover what one investigation would reveal burns the user's tokens and time. "Find me X / are there issues in Y / how does Z work" = investigate and answer, NOT brainstorm. Escalate by stakes and reversibility: QuickNero = one adversary · Tribunal = two-side debate · Council = whole-panel + chair · Forge = competitive build. When the user explicitly names a mode ("brainstorm it", "tribunal this"), honor it — this rule governs the turns where YOU own the routing choice.
 
 CRITICAL: You have orchestration modes as DIRECT TOOL CALLS. NEVER use Bash to run CLI commands for orchestration. Call the tools directly:
 

@@ -25,6 +25,10 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async dispatch(options: DispatchOptions): Promise<DispatchResult> {
+    // Honor the engine's own declared timeout (slow coding-plan engines like zai set timeout=180) when it exceeds the generic command default, so orchestration (brainstorm/tribunal/council, default 120s) does not cut a slow engine off mid-answer and lose its slot.
+    if (options.engine && Number((options.engine as any).timeout ?? 0) > Number(options.timeout ?? 0)) {
+      options.timeout = Number((options.engine as any).timeout);
+    }
     // Prefer CLI binary when available — API is fallback for binary-less engines
     const binaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
     if (!binaryPath) {

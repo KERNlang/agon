@@ -35,7 +35,7 @@ import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue
 import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry" types=true
 import from="../signals/app-input.js" names="appendInputHistory,cleanInputValue,cleanSubmitValue,findInputChange,hasBtwSideChannelTarget,navigateHistory,parseAutoModeCommand,resolveEscapeAction,shouldQueuePlanModeOnTab"
 import from="../signals/keyboard.js" names="resolveKeyboardInput"
-import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
+import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap,nextStaticEpoch"
 import from="../signals/input-perf.js" names="perfNow,recordKeystrokeLatency"
 import from="../blocks/review.js" names="handleReviewAction"
 import from="../blocks/engine.js" names="DashboardView,OutputBlockView"
@@ -229,7 +229,10 @@ screen name=App target=ink
   state name=workspacePath type=string initial="resolveWorkingDir()"
   state name=termWidth type=number initial="process.stdout.columns || 100" throttle=100
   state name=termHeight type=number initial="process.stdout.rows || 24" throttle=100
-  state name=nativeStaticEpoch type=number initial=0
+  // Drives the native <Static> remount key. Incremented ONLY by clearBlocks
+  // (a true transcript reset: /clear, /clean, session reset). Append and cap-spill
+  // must NEVER advance it — remounting <Static> repaints the full sealed region.
+  state name=clearEpoch type=number initial=0
   state name=nativeArchiveCount type=number initial=0
   state name=fileRailOpen type=boolean initial="false"
   state name=executionRailOpen type=boolean initial="false"
@@ -574,6 +577,14 @@ screen name=App target=ink
       };
     >>>
 
+  // Tracks the last-seen transcript length so effectiveNativeArchiveCount can
+  // drop its stale high-water-mark when the array shrinks (a cap-spill front-slice
+  // makes the absolute archive count too large for the now-shorter array). This
+  // intentionally does NOT touch the <Static> remount epoch — that is driven
+  // solely by clearEpoch (bumped in clearBlocks on a true reset). A cap-spill
+  // shrinks the array but must NOT remount <Static>: Ink's <Static> is append-only
+  // and renders nothing for a front-slice, so a remount would needlessly repaint
+  // the entire sealed region (the long-session repaint storm).
   effect deps="terminalMode,nativeTranscriptBlocks"
     handler lang="kern"
       let name=nextCount value="nativeTranscriptBlocks.length"
@@ -582,7 +593,6 @@ screen name=App target=ink
         return
       let name=previousCount value="nativeTranscriptBlockCountRef.current"
       if cond="nextCount < previousCount"
-        do value="setNativeStaticEpoch((epoch: number) => epoch + 1)"
         do value="setNativeArchiveCount(0)"
       assign target="nativeTranscriptBlockCountRef.current" value="nextCount"
 
@@ -849,7 +859,15 @@ screen name=App target=ink
             return appendTranscriptBlock(filtered, event, blockArchivePathRef.current);
           });
         },
-        clearBlocks: () => setOutputBlocks([]),
+        clearBlocks: () => {
+          // Single funnel for every true transcript reset (/clear, /clean,
+          // session reset all dispatch OutputEvent {type:'clear'} → clearBlocks).
+          // Bump the epoch HERE so the <Static> remount is tied to the cause, not
+          // inferred from the array shrinking (which a cap-spill also does).
+          setOutputBlocks([]);
+          setClearEpoch((epoch: number) => nextStaticEpoch(epoch, 'reset'));
+          setNativeArchiveCount(0);
+        },
         setPendingPlanProposal: (val: OutputEvent | null) => setPendingPlanProposal(val),
         setReviewEvent,
         setQuestionState,
@@ -2616,7 +2634,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
 
       if (terminalMode === 'native') return (
       <>
-        <Static key={`native-static-${nativeStaticEpoch}`} items={nativeArchiveBlocks}>
+        <Static key={`native-static-${clearEpoch}`} items={nativeArchiveBlocks}>
           {(block: any) => (
             <OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} />
           )}

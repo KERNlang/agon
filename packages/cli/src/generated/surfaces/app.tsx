@@ -68,7 +68,7 @@ import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange,
 
 import { resolveKeyboardInput } from '../signals/keyboard.js';
 
-import { makeBlockArchivePath, appendBlockWithCap } from '../signals/block-archive.js';
+import { makeBlockArchivePath, appendBlockWithCap, nextStaticEpoch } from '../signals/block-archive.js';
 
 import { perfNow, recordKeystrokeLatency } from '../signals/input-perf.js';
 
@@ -496,8 +496,8 @@ export function App() {
       }
     };
   }, []);
-  const [nativeStaticEpoch, _setNativeStaticEpochRaw] = useState<number>(0);
-  const setNativeStaticEpoch = useMemo(() => __inkSafe(_setNativeStaticEpochRaw), [_setNativeStaticEpochRaw]);
+  const [clearEpoch, _setClearEpochRaw] = useState<number>(0);
+  const setClearEpoch = useMemo(() => __inkSafe(_setClearEpochRaw), [_setClearEpochRaw]);
   const [nativeArchiveCount, _setNativeArchiveCountRaw] = useState<number>(0);
   const setNativeArchiveCount = useMemo(() => __inkSafe(_setNativeArchiveCountRaw), [_setNativeArchiveCountRaw]);
   const [fileRailOpen, _setFileRailOpenRaw] = useState<boolean>(false);
@@ -796,7 +796,15 @@ export function App() {
                 return appendTranscriptBlock(filtered, event, blockArchivePathRef.current);
               });
             },
-            clearBlocks: () => setOutputBlocks([]),
+            clearBlocks: () => {
+              // Single funnel for every true transcript reset (/clear, /clean,
+              // session reset all dispatch OutputEvent {type:'clear'} → clearBlocks).
+              // Bump the epoch HERE so the <Static> remount is tied to the cause, not
+              // inferred from the array shrinking (which a cap-spill also does).
+              setOutputBlocks([]);
+              setClearEpoch((epoch: number) => nextStaticEpoch(epoch, 'reset'));
+              setNativeArchiveCount(0);
+            },
             setPendingPlanProposal: (val: OutputEvent | null) => setPendingPlanProposal(val),
             setReviewEvent,
             setQuestionState,
@@ -2127,7 +2135,6 @@ export function App() {
     }
     const previousCount = nativeTranscriptBlockCountRef.current;
     if (nextCount < previousCount) {
-      setNativeStaticEpoch((epoch: number) => epoch + 1);
       setNativeArchiveCount(0);
     }
     nativeTranscriptBlockCountRef.current = nextCount;
@@ -2870,7 +2877,7 @@ export function App() {
 
   if (terminalMode === 'native') return (
   <>
-    <Static key={`native-static-${nativeStaticEpoch}`} items={nativeArchiveBlocks}>
+    <Static key={`native-static-${clearEpoch}`} items={nativeArchiveBlocks}>
       {(block: any) => (
         <OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} />
       )}
@@ -2932,7 +2939,7 @@ export const _lastSigintAt: { value: number } = { value: 0 };
 // @kern-source: app:93
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2667
+// @kern-source: app:2685
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

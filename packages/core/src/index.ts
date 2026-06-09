@@ -146,6 +146,17 @@ export { recordPresence, removePresence, listPresence, PRESENCE_TTL_MS } from '.
 export { acquireTurnLease, releaseTurnLease, readActiveLease } from './generated/rooms/leases.js';
 export { detectTrigger, detectPingPong, evaluateStop } from './generated/rooms/auto-policy.js';
 export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry, TurnLease, AutoConfig, AutoState, StopDecision, TriggerDecision } from './generated/rooms/types.js';
+// ── EventLog — append-only per-session event ledger (client/server split M1) ──
+export {
+  append as eventLogAppend, flush as eventLogFlush, replay as eventLogReplay,
+  latestSeq as eventLogLatestSeq, listSessions as eventLogListSessions,
+  readMeta as eventLogReadMeta, resetEventLogState, eventLogWriteFailures,
+  sessionsRoot as eventLogSessionsRoot, sessionDir as eventLogSessionDir,
+  eventsPath as eventLogEventsPath, metaPath as eventLogMetaPath,
+  sanitizeSessionId as eventLogSanitizeSessionId,
+  EVENT_LOG_FLUSH_MS, EVENT_LOG_ROTATE_BYTES,
+} from './generated/sessions/event-log.js';
+export type { LoggedEvent, SessionMeta as EventLogSessionMeta, AppendOptions as EventLogAppendOptions } from './generated/sessions/event-log.js';
 export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
 export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';
 export { apiDispatch, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';

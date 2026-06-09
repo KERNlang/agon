@@ -33,6 +33,8 @@ import from="../cesar/telemetry-poller.js" names="createTelemetryPoller,Telemetr
 import from="../cesar/telemetry.js" names="EngineVitals" types=true
 import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue,clearThinkingBuffer"
 import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry" types=true
+import from="../signals/event-log-tee.js" names="teeOutputEvent"
+import from="@kernlang/agon-core" names="resetEventLogState"
 import from="../signals/app-input.js" names="appendInputHistory,cleanInputValue,cleanSubmitValue,findInputChange,hasBtwSideChannelTarget,navigateHistory,parseAutoModeCommand,resolveEscapeAction,shouldQueuePlanModeOnTab"
 import from="../signals/keyboard.js" names="resolveKeyboardInput"
 import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
@@ -895,8 +897,14 @@ screen name=App target=ink
       };
     >>>
 
-  callback name=dispatch params="event:OutputEvent" deps="mode"
+  callback name=dispatch params="event:OutputEvent" deps="mode,chatSession"
     handler lang="kern"
+      comment raw="// Client/server split M1: tee every OutputEvent into the append-only"
+      comment raw="// EventLog keyed by the REPL's chat session id. Fire-and-forget — the"
+      comment raw="// helper is self-guarding (try/catch + disable-after-N latch + the"
+      comment raw="// AGON_NO_EVENT_LOG opt-out) so a log failure can NEVER break the UI,"
+      comment raw="// and core's append() buffers in memory so this is not a syscall per event."
+      do value="teeOutputEvent(chatSession.id, event)"
       let name=et value="(event as any).type"
       if cond="et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update'"
         assign target="lastActivityTimeRef.current" value="Date.now()"
@@ -2690,6 +2698,15 @@ fn name=startRepl async=true returns="Promise<void>"
         return;
       }
       _lastSigintAt.value = now;
+    });
+    // Client/server split M1: flush any buffered EventLog batches on exit. The
+    // coalesce timer is unref'd, so the final ~50ms window would otherwise be
+    // lost on a clean exit. resetEventLogState() flushes synchronously (and the
+    // double-Ctrl-C SIGINT path calls process.exit, which fires 'exit' too).
+    // Registered unconditionally — a non-TTY exit must still drain the log even
+    // though the stdin drain below is TTY-only.
+    process.on('exit', () => {
+      try { resetEventLogState(); } catch { /* best-effort */ }
     });
     if (process.stdout.isTTY) {
       process.on('exit', () => {

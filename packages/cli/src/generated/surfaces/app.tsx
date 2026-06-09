@@ -64,6 +64,10 @@ import { handleOutputEvent, clearPermissionQueue, clearThinkingBuffer } from '..
 
 import type { OutputActions, OutputState, AgentProgressSnapshot, StreamingEntry } from '../signals/output.js';
 
+import { teeOutputEvent } from '../signals/event-log-tee.js';
+
+import { resetEventLogState } from '@kernlang/agon-core';
+
 import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange, hasBtwSideChannelTarget, navigateHistory, parseAutoModeCommand, resolveEscapeAction, shouldQueuePlanModeOnTab } from '../signals/app-input.js';
 
 import { resolveKeyboardInput } from '../signals/keyboard.js';
@@ -154,7 +158,7 @@ import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:95
+// @kern-source: app:97
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -935,6 +939,12 @@ export function App() {
   }, []);
 
   const dispatch = useCallback((event:OutputEvent) => {
+    // Client/server split M1: tee every OutputEvent into the append-only
+    // EventLog keyed by the REPL's chat session id. Fire-and-forget — the
+    // helper is self-guarding (try/catch + disable-after-N latch + the
+    // AGON_NO_EVENT_LOG opt-out) so a log failure can NEVER break the UI,
+    // and core's append() buffers in memory so this is not a syscall per event.
+    teeOutputEvent(chatSession.id, event);
     const et = (event as any).type;
     if (et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
       lastActivityTimeRef.current = Date.now();
@@ -961,7 +971,7 @@ export function App() {
     }
     const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, liveToolStreams: liveToolStreamsRef.current ?? {}, agentProgress: agentProgressRef.current ?? {}, todos: todos };
     handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
-  }, [mode]);
+  }, [mode,chatSession]);
 
   const askQuestion = useCallback((prompt:string) => {
     return new Promise<string>((resolve) => { dispatch({ type: 'question', prompt, resolve } as any); });
@@ -2917,22 +2927,22 @@ export function App() {
   );
 }
 
-// @kern-source: app:85
+// @kern-source: app:87
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:87
+// @kern-source: app:89
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:89
+// @kern-source: app:91
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:91
+// @kern-source: app:93
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:93
+// @kern-source: app:95
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2667
+// @kern-source: app:2675
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());
@@ -2958,6 +2968,15 @@ export async function startRepl(): Promise<void> {
       return;
     }
     _lastSigintAt.value = now;
+  });
+  // Client/server split M1: flush any buffered EventLog batches on exit. The
+  // coalesce timer is unref'd, so the final ~50ms window would otherwise be
+  // lost on a clean exit. resetEventLogState() flushes synchronously (and the
+  // double-Ctrl-C SIGINT path calls process.exit, which fires 'exit' too).
+  // Registered unconditionally — a non-TTY exit must still drain the log even
+  // though the stdin drain below is TTY-only.
+  process.on('exit', () => {
+    try { resetEventLogState(); } catch { /* best-effort */ }
   });
   if (process.stdout.isTTY) {
     process.on('exit', () => {

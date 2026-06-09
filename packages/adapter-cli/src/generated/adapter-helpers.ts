@@ -373,14 +373,14 @@ export function composeClaudePtyPrompt(prompt: string, systemPrompt?: string): s
 }
 
 /**
- * Structured answer-channel transport for ONE-SHOT claude exec dispatch (council/forge/brainstorm/tribunal members), bypassing the flaky TUI scrape. Reads AGON_CLAUDE_ANSWER_CHANNEL: 'file' (or '1'/'true') → claude writes its answer via its native Write tool to a temp file we read as authoritative; 'mcp' → reserved for the DeliverAnswer MCP variant (phase 2); anything else → 'off' (scrape as today). Default off so existing behaviour is untouched until proven.
+ * Structured answer-channel transport for ONE-SHOT claude exec dispatch (council/forge/brainstorm/tribunal/synthesis members), bypassing the flaky TUI scrape. ON by default ('file' — claude writes its answer via its native Write tool to a temp file we read as authoritative). AGON_CLAUDE_ANSWER_CHANNEL: 'off'/'0'/'false' → off (raw scrape, for debugging); 'mcp' → the DeliverAnswer MCP variant (reserved); anything else (incl. unset) → 'file'. Never worse than the scrape — we fall back to it when claude doesn't deliver.
  */
 // @kern-source: adapter-helpers:332
 export function answerChannelMode(): string {
   const v = (process.env.AGON_CLAUDE_ANSWER_CHANNEL || '').trim().toLowerCase();
+  if (v === 'off' || v === '0' || v === 'false') return 'off';
   if (v === 'mcp') return 'mcp';
-  if (v === 'file' || v === '1' || v === 'true' || v === 'on') return 'file';
-  return 'off';
+  return 'file';
 }
 
 /**
@@ -486,7 +486,7 @@ export async function runClaudePtyDispatch(prompt: string, timeoutSec: number, s
       // Prefer the authoritative channel file; fall back to the scrape if claude
       // didn't deliver (it sometimes won't) so we never regress to empty.
       const channelText = useFileChannel ? readAnswerChannelFile(answerFile) : '';
-      if (useFileChannel) console.error(`[agon] answer-channel(file): ${channelText ? 'hit ' + channelText.length + 'ch' : 'miss → scrape fallback'}`);
+      if (useFileChannel && process.env.AGON_DEBUG) console.error(`[agon] answer-channel(file): ${channelText ? 'hit ' + channelText.length + 'ch' : 'miss → scrape fallback'}`);
       const text = channelText || scraped;
       return {
         exitCode: 0,
@@ -599,7 +599,7 @@ export async function* runClaudePtyStreamDispatch(prompt: string, timeoutSec: nu
             ? next.value
             : collected.join('');
           const channelText = useFileChannel ? readAnswerChannelFile(answerFile) : '';
-          if (useFileChannel) console.error(`[agon] answer-channel(file): ${channelText ? 'hit ' + channelText.length + 'ch' : 'miss → scrape fallback'}`);
+          if (useFileChannel && process.env.AGON_DEBUG) console.error(`[agon] answer-channel(file): ${channelText ? 'hit ' + channelText.length + 'ch' : 'miss → scrape fallback'}`);
           return {
             exitCode: 0,
             stdout: channelText || scraped,

@@ -227,19 +227,20 @@ describe('answer-channel (file mode)', () => {
     else process.env.AGON_CLAUDE_ANSWER_CHANNEL = saved;
   });
 
-  it('answerChannelMode parses the env flag', () => {
-    for (const v of ['file', '1', 'true', 'on', 'FILE']) {
+  it('answerChannelMode defaults to file (on) and opts out only on off/0/false', () => {
+    // ON by default — unset and any non-off/mcp value resolve to 'file'.
+    delete process.env.AGON_CLAUDE_ANSWER_CHANNEL;
+    expect(answerChannelMode()).toBe('file');
+    for (const v of ['file', '1', 'true', 'on', 'FILE', '', 'nonsense']) {
       process.env.AGON_CLAUDE_ANSWER_CHANNEL = v;
       expect(answerChannelMode()).toBe('file');
     }
     process.env.AGON_CLAUDE_ANSWER_CHANNEL = 'mcp';
     expect(answerChannelMode()).toBe('mcp');
-    for (const v of ['', 'off', 'nonsense']) {
+    for (const v of ['off', '0', 'false', 'OFF']) {
       process.env.AGON_CLAUDE_ANSWER_CHANNEL = v;
       expect(answerChannelMode()).toBe('off');
     }
-    delete process.env.AGON_CLAUDE_ANSWER_CHANNEL;
-    expect(answerChannelMode()).toBe('off');
   });
 
   it('fileChannelInstruction embeds the exact answer-file path + Write directive', () => {

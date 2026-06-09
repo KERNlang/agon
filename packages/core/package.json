@@ -1,6 +1,6 @@
 {
   "name": "@kernlang/agon-core",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "type": "module",
   "exports": {
     ".": {
@@ -20,7 +20,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kernlang/agon-dedup": "^0.1.7",
+    "@kernlang/agon-dedup": "^0.1.8",
     "@kernlang/agon-engines": "^0.1.2",
     "@kernlang/context": "~3.5.8",
     "@ai-sdk/anthropic": "^3.0.67",

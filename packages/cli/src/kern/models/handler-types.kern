@@ -318,6 +318,7 @@ interface name=CesarState
   field name=confidenceBlockCount type=number optional=true
   field name=searchToolCount type=number optional=true
   field name=searchNudged type=boolean optional=true
+  field name=budgetWarned type=boolean optional=true
   field name=quickNeroRequested type=boolean optional=true
   field name=autoNero type=boolean
   field name=advisorPending type=boolean

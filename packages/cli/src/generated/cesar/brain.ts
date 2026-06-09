@@ -20,6 +20,8 @@ import { parseSuggestion } from './suggestion.js';
 
 import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend } from './session.js';
 
+import { enforceContextBudget } from './context-budget.js';
+
 import { createCesarToolRegistry, createEagerToolContext, executeEagerTool } from './tools.js';
 
 import { fireQuickNero, fireNero, fireAdvisor, handleSecondOpinion, activateNero, deactivateNero, promptDelegation, promptProtocolEnforcement } from './escalation.js';
@@ -34,7 +36,7 @@ import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline
 
 import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
 
-// @kern-source: brain:19
+// @kern-source: brain:20
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) {
     dispatch({ type: 'streaming-end', engineId: cesarEngineId });
@@ -61,7 +63,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:41
+// @kern-source: brain:42
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) {
     dispatch({ type: 'streaming-end', engineId: cesarEngineId });
@@ -89,10 +91,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:63
+// @kern-source: brain:64
 export const _noBriefNudged: Set<string> = new Set<string>();
 
-// @kern-source: brain:65
+// @kern-source: brain:66
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -290,6 +292,29 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         dispatch({ type: 'confidence-update', value: null });
         dispatch({ type: 'spinner-start', message: 'Cesar thinking…', color });
         await yieldToInk();
+
+        // ── Pre-turn context-budget gate ──
+        // Estimate the brain session's token usage and warn / auto-compact /
+        // hard-stop BEFORE composing the turn. Inert for engines without
+        // engine.sessionBudget. Runs against the CURRENT session (if any) so an
+        // auto-compact can fold + drop it; ensureCesarSession below then reboots
+        // with fresh, compacted context.
+        try {
+          const _budgetBackend = resolveCesarBackend(ctx, cesarEngineId);
+          const _budgetGate = await enforceContextBudget(
+            ctx,
+            ctx.cesarSession ?? null,
+            _budgetBackend.engine,
+            _budgetBackend.backend,
+            dispatch,
+            input,
+          );
+          if (!_budgetGate.proceed) {
+            // hard-stop: abort the turn. The finally block owns busy/abort cleanup.
+            dispatch({ type: 'spinner-stop' });
+            return { delegated: false, responded: false };
+          }
+        } catch { /* budget gate must never break a turn */ }
 
         // ── Boot or reuse persistent session ──
         let session: PersistentSession;

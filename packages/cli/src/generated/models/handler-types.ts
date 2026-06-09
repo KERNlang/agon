@@ -161,6 +161,7 @@ export interface CesarState {
   confidenceBlockCount?: number;
   searchToolCount?: number;
   searchNudged?: boolean;
+  budgetWarned?: boolean;
   quickNeroRequested?: boolean;
   autoNero: boolean;
   advisorPending: boolean;
@@ -174,7 +175,7 @@ export interface CesarState {
   autoModeQueued?: boolean;
 }
 
-// @kern-source: handler-types:333
+// @kern-source: handler-types:334
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

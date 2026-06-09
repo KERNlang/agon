@@ -1,0 +1,154 @@
+// ── Cesar context-budget gate: proactive context-window management ──
+// Pure-ish wiring around the core estimator/gate (packages/core sessions/).
+// Estimates the brain session's token usage BEFORE composing a turn and:
+//   warn      → emit ONE quiet info nudge per session (/compact available)
+//   compact   → auto-fold the chat summary + reboot the brain session (reuses the
+//               /compact compaction path), then emit an info event
+//   hard-stop → block the turn with a clear error (compaction couldn't free enough)
+// Engines without engine.sessionBudget get NO behavior — the gate returns proceed.
+import from="@kernlang/agon-core" names="SessionBudget,PersistentSession,ChatSession" types=true
+import from="@kernlang/agon-core" names="estimateSessionTokens,checkSessionBudget,budgetRatioPct,updateChatSummary"
+import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="./session.js" names="buildCesarSystemPrompt"
+
+interface name=BudgetGateResult
+  field name=proceed type=boolean
+    doc "false ONLY at hard-stop AFTER a failed compact-restart — the caller must abort the turn (the user was told to /compact or /clear)."
+  field name=compacted type=boolean
+    doc "true when an auto-compaction folded the summary and reset the brain session this turn."
+
+comment raw="// Fixed token overhead for the backend-specific tail buildCesarSystemPrompt"
+comment raw="// does NOT include but ensureCesarSession appends to the REAL session prompt:"
+comment raw="// native-tool / MCP-companion / DeliverAnswer / full XML tool instructions"
+comment raw="// (codex review: the estimator would otherwise systematically undercount and"
+comment raw="// compact too late, esp. on the XML/companion paths). Conservative flat add."
+const name=TOOL_PROMPT_OVERHEAD_TOKENS type=number value={{ 2500 }}
+
+fn name=estimateBrainTokens params="ctx:HandlerContext, session:PersistentSession|null, backend:string, budget:SessionBudget, pendingInput:string" returns=number export=true
+  doc "Estimate the brain session's token usage. API backend → sum the session's structured message history. PTY/CLI brain → estimate from orchestrator-KNOWN inputs (system prompt + bounded chat summary + recent turns + the pending input), NOT the TUI scrape."
+  handler <<<
+    // API engine: the real message history is the source of truth. Append the
+    // pending user turn so the estimate reflects the session AS-IT-WILL-BE-SENT
+    // (the PTY path already counts pendingInputChars; keep the paths symmetric).
+    if (backend === 'api' && session && typeof session.getMessageHistory === 'function') {
+      try {
+        const history = session.getMessageHistory() ?? [];
+        if (Array.isArray(history) && history.length > 0) {
+          const withPending = pendingInput
+            ? [...history, { role: 'user', content: pendingInput }]
+            : history;
+          return estimateSessionTokens({ messageHistory: withPending as any }, budget);
+        }
+      } catch { /* fall through to the orchestrator-known estimate */ }
+    }
+    // PTY / CLI brain (or an API session not yet warmed): estimate from what the
+    // orchestrator controls. The system prompt is re-sent every turn; the chat
+    // summary folds older turns; recent raw turns + the pending input are live.
+    let systemPromptChars = 0;
+    try { systemPromptChars = (buildCesarSystemPrompt(ctx) ?? '').length; } catch { /* best-effort */ }
+    const chat = ctx.chatSession as ChatSession | undefined;
+    let continuityChars = 0;
+    let userTurnsChars = 0;
+    let toolResultsChars = 0;
+    if (chat) {
+      continuityChars += (chat.summary ?? '').length;
+      const msgs = Array.isArray(chat.messages) ? chat.messages : [];
+      for (const m of msgs) {
+        const len = typeof m?.content === 'string' ? m.content.length : 0;
+        if (m?.role === 'user') userTurnsChars += len;
+        else toolResultsChars += len; // engine turns carry tool-result + reply text
+      }
+    }
+    // Session memory digest is also re-injected into prompts when present.
+    try {
+      const digest = ctx.cesarMemory?.toPromptContext?.();
+      if (typeof digest === 'string') continuityChars += digest.length;
+    } catch { /* best-effort */ }
+    const base = estimateSessionTokens({
+      pty: {
+        systemPromptChars,
+        userTurnsChars,
+        toolResultsChars,
+        continuityChars,
+        pendingInputChars: (pendingInput ?? '').length,
+      },
+    }, budget);
+    // Add the backend-specific tool/MCP/XML prompt tail that buildCesarSystemPrompt
+    // omits but ensureCesarSession appends to the real session prompt.
+    return base + TOOL_PROMPT_OVERHEAD_TOKENS;
+  >>>
+
+fn name=enforceContextBudget async=true params="ctx:HandlerContext, session:PersistentSession|null, engine:any, backend:string, dispatch:Dispatch, pendingInput:string" returns="Promise<BudgetGateResult>" export=true
+  doc "Pre-turn context-budget gate. Inert (proceed:true) for engines without sessionBudget. Interactive default = warn-then-auto-compact. When autonomous/auto mode is active, auto-compact at compactAt WITHOUT the warn step (no human to prompt)."
+  handler <<<
+    const budget: SessionBudget | undefined = engine?.sessionBudget;
+    if (!budget || typeof budget.contextWindow !== 'number' || budget.contextWindow <= 0) {
+      return { proceed: true, compacted: false };
+    }
+    let estimated = 0;
+    try {
+      estimated = estimateBrainTokens(ctx, session, backend, budget, pendingInput);
+    } catch {
+      // Estimation must never break a turn — treat as under budget.
+      return { proceed: true, compacted: false };
+    }
+    const engineId = (engine && typeof engine.id === 'string') ? engine.id : 'this engine';
+    const check = checkSessionBudget(estimated, budget);
+    const pct = budgetRatioPct(check.ratio);
+    const autoMode = ctx.autoModeQueued === true || ctx.cesar?.autoModeQueued === true;
+
+    // ── ok ──
+    if (check.level === 'ok') {
+      return { proceed: true, compacted: false };
+    }
+
+    // ── warn ── (interactive only — once per session). In auto mode we skip the
+    // nudge entirely; the compact level below handles it without a human prompt.
+    if (check.level === 'warn') {
+      if (!autoMode && ctx.cesar && !ctx.cesar.budgetWarned) {
+        ctx.cesar.budgetWarned = true;
+        dispatch({ type: 'info', message: `Context at ${pct}% of ${engineId}'s window — Cesar will auto-compact soon. Run /compact now to fold older turns, or /clear to reset.` });
+      }
+      return { proceed: true, compacted: false };
+    }
+
+    // Compaction primitive (reuses the /compact path): fold older turns into the
+    // bounded summary, then close+null the session so ensureCesarSession rebuilds
+    // fresh, dropping the engine-side accumulated history. Returns whether a fold
+    // happened (for messaging).
+    const doCompactReboot = (): boolean => {
+      let folded = false;
+      try { if (ctx.chatSession) folded = updateChatSummary(ctx.chatSession); } catch { /* best-effort fold */ }
+      try { session?.close?.(); } catch { /* best-effort */ }
+      try { ctx.setCesarSession(null); } catch { /* best-effort */ }
+      try { ctx.cesarMemory?.clearSession?.(); } catch { /* best-effort */ }
+      // ensureCesarSession resets budgetWarned when it boots the fresh session.
+      return folded;
+    };
+
+    // ── compact ── auto-fold + reboot the brain session.
+    if (check.level === 'compact') {
+      const folded = doCompactReboot();
+      dispatch({ type: 'info', message: `Context reached ${pct}% — auto-compacted Cesar context${folded ? ' (folded older turns into a summary)' : ''} and rebooted the brain with fresh context. The transcript is preserved.` });
+      return { proceed: true, compacted: true };
+    }
+
+    // ── hard-stop ── try the SAME compact-and-restart recovery FIRST; a fresh
+    // session that replays only the compacted transcript may drop back under the
+    // limit (codex review). Re-estimate against the now-null session (PTY path /
+    // folded chat) and only BLOCK if still over hard-stop.
+    const foldedHs = doCompactReboot();
+    let postEstimate = estimated;
+    try {
+      postEstimate = estimateBrainTokens(ctx, null, backend, budget, pendingInput);
+    } catch { /* keep the pre-compaction estimate */ }
+    const postCheck = checkSessionBudget(postEstimate, budget);
+    if (postCheck.level !== 'hard-stop') {
+      dispatch({ type: 'info', message: `Context hit ${pct}% — auto-compacted Cesar context${foldedHs ? ' (folded older turns into a summary)' : ''} and rebooted the brain (now ~${budgetRatioPct(postCheck.ratio)}%). The transcript is preserved.` });
+      return { proceed: true, compacted: true };
+    }
+    // Compaction couldn't free enough (e.g. the pending turn alone is too large).
+    // Block the turn and tell the user. Do NOT silently drop.
+    dispatch({ type: 'error', message: `Cesar context is still at ${budgetRatioPct(postCheck.ratio)}% of ${engineId}'s window after auto-compaction — too full to safely send this turn. Trim the message, or run /clear to reset the session, then resend.` });
+    return { proceed: false, compacted: true };
+  >>>

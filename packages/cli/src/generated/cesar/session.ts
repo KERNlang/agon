@@ -1238,5 +1238,9 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   ctx.setCesarSession(session);
   // Store MCP config fingerprint so we can detect changes on next reuse check
   ctx.cesar!.mcpFingerprint = currentMcpFp;
+  // Fresh session → reset the once-per-session context-budget warn flag so the
+  // next time usage crosses warnAt the user gets a nudge again (the pre-turn
+  // budget gate sets it true after warning). A new session starts near-empty.
+  ctx.cesar!.budgetWarned = false;
   return session;
 }

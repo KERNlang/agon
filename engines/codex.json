@@ -41,6 +41,10 @@
     "maxTokens": 4096
   },
 
+  "sessionBudget": {
+    "contextWindow": 400000
+  },
+
   "env": {
     "OPENAI_API_KEY": { "required": false }
   },

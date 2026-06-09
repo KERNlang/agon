@@ -8,6 +8,7 @@ import from="../../handlers/types.js" names="Dispatch,HandlerContext,PendingDele
 import from="./confidence.js" names="CONFIDENCE_TIERS,parseConfidence,confidenceBadge"
 import from="./suggestion.js" names="parseSuggestion"
 import from="./session.js" names="ensureCesarSession,CESAR_SYSTEM_PROMPT,buildCesarSystemPrompt,resolveCesarBackend"
+import from="./context-budget.js" names="enforceContextBudget"
 import from="./tools.js" names="createCesarToolRegistry,createEagerToolContext,executeEagerTool"
 import from="./escalation.js" names="fireQuickNero,fireNero,fireAdvisor,handleSecondOpinion,activateNero,deactivateNero,promptDelegation,promptProtocolEnforcement"
 import from="./routing.js" names="buildRoutingContext,deriveRoutingHints,shouldSpeculate"
@@ -260,6 +261,29 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       dispatch({ type: 'confidence-update', value: null });
       dispatch({ type: 'spinner-start', message: 'Cesar thinking…', color });
       await yieldToInk();
+
+      // ── Pre-turn context-budget gate ──
+      // Estimate the brain session's token usage and warn / auto-compact /
+      // hard-stop BEFORE composing the turn. Inert for engines without
+      // engine.sessionBudget. Runs against the CURRENT session (if any) so an
+      // auto-compact can fold + drop it; ensureCesarSession below then reboots
+      // with fresh, compacted context.
+      try {
+        const _budgetBackend = resolveCesarBackend(ctx, cesarEngineId);
+        const _budgetGate = await enforceContextBudget(
+          ctx,
+          ctx.cesarSession ?? null,
+          _budgetBackend.engine,
+          _budgetBackend.backend,
+          dispatch,
+          input,
+        );
+        if (!_budgetGate.proceed) {
+          // hard-stop: abort the turn. The finally block owns busy/abort cleanup.
+          dispatch({ type: 'spinner-stop' });
+          return { delegated: false, responded: false };
+        }
+      } catch { /* budget gate must never break a turn */ }
 
       // ── Boot or reuse persistent session ──
       let session: PersistentSession;

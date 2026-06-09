@@ -103,6 +103,20 @@ export {
   sessionCacheDir,
   saveConversation, loadConversation, clearConversation, stripEngineArtifacts,
 } from './session-store.js';
+// ── Session budget — proactive context-window management ──
+export {
+  estimateSessionTokens, estimateMessageHistoryTokens, estimateFlatHistoryTokens,
+  estimatePtyTokens, estimateMessageTokens, effectiveWindow, resolveCharsPerToken,
+} from './generated/sessions/token-estimator.js';
+export type {
+  EstimatorMessage, PtyAccumulation, SessionTokenInputs,
+} from './generated/sessions/token-estimator.js';
+export {
+  checkSessionBudget, resolveThresholds, budgetRatioPct,
+} from './generated/sessions/session-budget.js';
+export type {
+  BudgetCheck, BudgetThresholds,
+} from './generated/sessions/session-budget.js';
 // ── Context Parts (structured message parts + StageContext) ──
 export {
   buildStageContext, renderStageContext,

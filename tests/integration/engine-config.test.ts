@@ -83,6 +83,18 @@ describe('Engine Config Validation', () => {
         expect(result.data.isolationHints?.authFiles).toEqual(raw.isolationHints.authFiles);
       });
 
+      // Regression (same class as isolationHints above): the Zod schema strips
+      // any unmodelled key. sessionBudget MUST round-trip through validation or
+      // the pre-turn context-budget gate is silently inert for every engine.
+      it('preserves sessionBudget in validated config', () => {
+        if (!raw.sessionBudget) return;
+        const result = validateEngineConfig(raw, filename);
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.data.sessionBudget).toBeDefined();
+        expect(result.data.sessionBudget?.contextWindow).toBe(raw.sessionBudget.contextWindow);
+      });
+
       it('passes Zod validation (with warnings for missing optionals)', () => {
         const result = validateEngineConfig(raw, filename);
         // Log warnings but don't fail — some configs are intentionally minimal
@@ -150,6 +162,41 @@ describe('Engine Config Validation', () => {
     it('accepts the real claude/codex isolationHints shapes', () => {
       expect(validateEngineConfig({ ...base, isolationHints: { configEnv: 'CLAUDE_CONFIG_DIR', authFiles: [], authMarker: '.claude.json', loginArgs: ['auth', 'login'] } }, 't.json').ok).toBe(true);
       expect(validateEngineConfig({ ...base, isolationHints: { configEnv: 'CODEX_HOME', authFiles: ['auth.json'], authMarker: 'auth.json', loginArgs: ['login'] } }, 't.json').ok).toBe(true);
+    });
+  });
+
+  describe('sessionBudget validation', () => {
+    const base = { schemaVersion: 3, id: 't', displayName: 't', isLocal: false, tier: 'builtin', timeout: 120 };
+
+    it('accepts a minimal sessionBudget (contextWindow only)', () => {
+      expect(validateEngineConfig({ ...base, sessionBudget: { contextWindow: 200000 } }, 't.json').ok).toBe(true);
+    });
+
+    it('accepts a fully-specified sessionBudget', () => {
+      expect(validateEngineConfig({ ...base, sessionBudget: { contextWindow: 400000, reserveTokens: 20000, warnAt: 0.7, compactAt: 0.82, hardStopAt: 0.92, estimator: 'message-history', charsPerToken: 3.9 } }, 't.json').ok).toBe(true);
+    });
+
+    it('rejects a non-positive contextWindow', () => {
+      expect(validateEngineConfig({ ...base, sessionBudget: { contextWindow: 0 } }, 't.json').ok).toBe(false);
+      expect(validateEngineConfig({ ...base, sessionBudget: { contextWindow: -1 } }, 't.json').ok).toBe(false);
+    });
+
+    it('rejects threshold fractions outside (0,1]', () => {
+      expect(validateEngineConfig({ ...base, sessionBudget: { contextWindow: 100000, warnAt: 1.5 } }, 't.json').ok).toBe(false);
+      expect(validateEngineConfig({ ...base, sessionBudget: { contextWindow: 100000, compactAt: 0 } }, 't.json').ok).toBe(false);
+    });
+
+    it('rejects an unknown estimator enum value', () => {
+      expect(validateEngineConfig({ ...base, sessionBudget: { contextWindow: 100000, estimator: 'tiktoken' as any } }, 't.json').ok).toBe(false);
+    });
+
+    it('rejects reserveTokens >= contextWindow (degenerate effective window)', () => {
+      expect(validateEngineConfig({ ...base, sessionBudget: { contextWindow: 100000, reserveTokens: 100000 } }, 't.json').ok).toBe(false);
+      expect(validateEngineConfig({ ...base, sessionBudget: { contextWindow: 100000, reserveTokens: 150000 } }, 't.json').ok).toBe(false);
+    });
+
+    it('accepts reserveTokens below contextWindow', () => {
+      expect(validateEngineConfig({ ...base, sessionBudget: { contextWindow: 100000, reserveTokens: 20000 } }, 't.json').ok).toBe(true);
     });
   });
 });

@@ -663,7 +663,19 @@ module name=AppRendering
       const hit = _mdRowCache.get(key);
       if (hit) return hit;
       const rows = parseMarkdownToRows(baseKey, text, wrapWidth, paddingLeft, borderColor);
-      if (_mdRowCache.size >= _MD_ROW_CACHE_MAX) _mdRowCache.clear();
+      // At the cap, evict the oldest 20% (300 entries) by walking the Map in
+      // insertion order — first-key is least-recently-inserted. Amortizes the
+      // eviction cost across inserts instead of nuking the whole cache (which
+      // would force a cold re-parse of all committed prose on the next commit).
+      if (_mdRowCache.size >= _MD_ROW_CACHE_MAX) {
+        const evictCount = Math.floor(_MD_ROW_CACHE_MAX * 0.2);
+        const it = _mdRowCache.keys();
+        for (let i = 0; i < evictCount; i++) {
+          const oldest = it.next().value;
+          if (oldest === undefined) break;
+          _mdRowCache.delete(oldest);
+        }
+      }
       _mdRowCache.set(key, rows);
       return rows;
     >>>

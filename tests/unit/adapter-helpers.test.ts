@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { shouldUseCompanionForAgent, buildCommand, resolveArgs, computeEngineIsolation, resolveClaudePtyExtraArgs } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
+import { shouldUseCompanionForAgent, buildCommand, resolveArgs, computeEngineIsolation, resolveClaudePtyExtraArgs, answerChannelMode, fileChannelInstruction, readAnswerChannelFile, setupFileAnswerChannel } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
 
 describe('adapter helper routing', () => {
   it('uses one-shot agent companion only for JSON-RPC engines', () => {
@@ -217,5 +217,77 @@ describe('reasoning effort + respect-CLI-own-config', () => {
       effort: { flag: '--effort', levels: ['low', 'high'] },
     } as any;
     expect(resolveClaudePtyExtraArgs(eng, '/wt')).toEqual([]);
+  });
+});
+
+describe('answer-channel (file mode)', () => {
+  const saved = process.env.AGON_CLAUDE_ANSWER_CHANNEL;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.AGON_CLAUDE_ANSWER_CHANNEL;
+    else process.env.AGON_CLAUDE_ANSWER_CHANNEL = saved;
+  });
+
+  it('answerChannelMode defaults to file (on) and opts out only on off/0/false', () => {
+    // ON by default — unset and any non-off/mcp value resolve to 'file'.
+    delete process.env.AGON_CLAUDE_ANSWER_CHANNEL;
+    expect(answerChannelMode()).toBe('file');
+    for (const v of ['file', '1', 'true', 'on', 'FILE', '', 'nonsense']) {
+      process.env.AGON_CLAUDE_ANSWER_CHANNEL = v;
+      expect(answerChannelMode()).toBe('file');
+    }
+    process.env.AGON_CLAUDE_ANSWER_CHANNEL = 'mcp';
+    expect(answerChannelMode()).toBe('mcp');
+    for (const v of ['off', '0', 'false', 'OFF']) {
+      process.env.AGON_CLAUDE_ANSWER_CHANNEL = v;
+      expect(answerChannelMode()).toBe('off');
+    }
+  });
+
+  it('fileChannelInstruction embeds the exact answer-file path + Write directive', () => {
+    const out = fileChannelInstruction('/tmp/ac/answer.md');
+    expect(out).toContain('/tmp/ac/answer.md');
+    expect(out).toContain('Write tool');
+  });
+
+  it('readAnswerChannelFile: absent/empty → "" ; raw markdown → raw ; {text} JSON → text', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ac-test-'));
+    try {
+      const missing = join(dir, 'nope.md');
+      expect(readAnswerChannelFile(missing)).toBe('');
+
+      const empty = join(dir, 'empty.md');
+      writeFileSync(empty, '   \n  ');
+      expect(readAnswerChannelFile(empty)).toBe('');
+
+      const raw = join(dir, 'raw.md');
+      writeFileSync(raw, '# Hello\n\nclean answer');
+      expect(readAnswerChannelFile(raw)).toBe('# Hello\n\nclean answer');
+
+      const jsonEnv = join(dir, 'env.json');
+      writeFileSync(jsonEnv, JSON.stringify({ text: 'delivered via mcp' }));
+      expect(readAnswerChannelFile(jsonEnv)).toBe('delivered via mcp');
+
+      // A markdown doc that happens to start with '{' but isn't a {text} envelope → returned raw.
+      const braceMd = join(dir, 'brace.md');
+      writeFileSync(braceMd, '{not json at all');
+      expect(readAnswerChannelFile(braceMd)).toBe('{not json at all');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('setupFileAnswerChannel appends the instruction and points at a fresh writable file', () => {
+    const { prompt, answerFile, dir } = setupFileAnswerChannel('Original prompt body.');
+    try {
+      expect(prompt.startsWith('Original prompt body.')).toBe(true);
+      expect(prompt).toContain(answerFile);
+      expect(answerFile.startsWith(dir)).toBe(true);
+      expect(existsSync(dir)).toBe(true);
+      // Round-trip: a write to answerFile is read back authoritatively.
+      writeFileSync(answerFile, 'the answer');
+      expect(readAnswerChannelFile(answerFile)).toBe('the answer');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

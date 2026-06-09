@@ -20,6 +20,8 @@ import type { EngineAdapter } from '@kernlang/agon-core';
 
 import { detectIntent, SLASH_COMMANDS } from '../signals/intent.js';
 
+import { runsStore } from '../signals/runs-store.js';
+
 import { CommandRegistry, registerBuiltinCommands, initExtensions, EventBus, bridgeShellHooks } from '@kernlang/agon-core';
 
 import { JobManager } from '../signals/job-manager.js';
@@ -154,7 +156,7 @@ import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:95
+// @kern-source: app:96
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -2182,6 +2184,39 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const boot = setTimeout(() => {
+      void (async () => {
+        // Patch the already-rendered startup dashboard block in place (only if
+        // it's still present — the user may have /clear'd it). Preserves the
+        // block id so Ink reconciles instead of remounting. At 1.5s the
+        // dashboard is the lone block in the live region, well under the seal
+        // budget, so the in-place count update renders.
+        const patchDashboardCount = (count: number) => {
+          setOutputBlocks((prev: any) =>
+            prev.map((b: any) =>
+              b?.event?.type === 'dashboard'
+                ? { ...b, event: { ...b.event, runCount: count } }
+                : b,
+            ),
+          );
+        };
+        try {
+          const snap = await runsStore.hydrate();
+          patchDashboardCount(snap.count);
+        } catch { /* count stays 0 — non-critical */ }
+        try {
+          const result = await runsStore.maybePrune();
+          // If the prune actually removed files, the cached count dropped —
+          // re-patch so the dashboard never shows the stale pre-prune count.
+          if (result.deleted > 0) patchDashboardCount(runsStore.snapshot().count);
+        } catch { /* prune is best-effort */ }
+      })();
+    }, 1500);
+    if (typeof (boot as any).unref === 'function') (boot as any).unref();
+    return () => clearTimeout(boot);
+  }, []);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       const prev = agentProgressRef.current;
       if (!prev || Object.keys(prev).length === 0) return;
@@ -2924,22 +2959,22 @@ export function App() {
   );
 }
 
-// @kern-source: app:85
+// @kern-source: app:86
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:87
+// @kern-source: app:88
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:89
+// @kern-source: app:90
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:91
+// @kern-source: app:92
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:93
+// @kern-source: app:94
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2685
+// @kern-source: app:2738
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

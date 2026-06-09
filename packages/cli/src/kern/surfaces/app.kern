@@ -11,6 +11,7 @@ import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
 import from="@kernlang/agon-core" names="EngineAdapter" types=true
 import from="../signals/intent.js" names="detectIntent,SLASH_COMMANDS"
+import from="../signals/runs-store.js" names="runsStore"
 import from="@kernlang/agon-core" names="CommandRegistry,registerBuiltinCommands,initExtensions,EventBus,bridgeShellHooks"
 import from="../signals/job-manager.js" names="JobManager"
 import from="../signals/job-manager.js" names="Job" types=true
@@ -639,6 +640,58 @@ screen name=App target=ink
           setUpdateChecking(false);
         }
       }, Math.max(0, 4000 - elapsed()));
+      return () => clearTimeout(boot);
+    >>>
+
+  // ── Startup: hydrate the runs snapshot + auto-prune ~/.agon/runs ──
+  // The dashboard's runCount reads ONLY runsStore.snapshot() (zero fs in the
+  // render path). The startup dashboard block is built in the outputBlocks
+  // initializer (app.kern:99) BEFORE hydrate resolves, so it renders with
+  // count 0; we await hydrate() here and then PATCH that block in place so the
+  // count fills in once known — preserving its id (0) so Ink reconciles instead
+  // of remounting. Then we kick a non-blocking prune. Strictly SEQUENTIAL
+  // (hydrate → patch → prune) so we never run two fs scans concurrently off
+  // boot. The prune self-rate-limits via a 1h .prune-stamp cooldown, so calling
+  // it on every launch is cheap. All of it is fire-and-forget relative to render
+  // (an async IIFE inside the timer) and errors are swallowed best-effort.
+  //
+  // Active in-flight runs are protected inside maybePrune by the 10-minute
+  // RUN_PROTECT_MIN_AGE_MS floor (active records are necessarily recent + the
+  // policy deletes oldest-first under a 7-day window). No session/run id is
+  // cheaply in scope at this call site, so activeRunIds is intentionally left
+  // unthreaded — the age floor is the in-flight protection; id matching is
+  // defense in depth wired only where an id source already exists.
+  effect deps=""
+    handler <<<
+      const boot = setTimeout(() => {
+        void (async () => {
+          // Patch the already-rendered startup dashboard block in place (only if
+          // it's still present — the user may have /clear'd it). Preserves the
+          // block id so Ink reconciles instead of remounting. At 1.5s the
+          // dashboard is the lone block in the live region, well under the seal
+          // budget, so the in-place count update renders.
+          const patchDashboardCount = (count: number) => {
+            setOutputBlocks((prev: any) =>
+              prev.map((b: any) =>
+                b?.event?.type === 'dashboard'
+                  ? { ...b, event: { ...b.event, runCount: count } }
+                  : b,
+              ),
+            );
+          };
+          try {
+            const snap = await runsStore.hydrate();
+            patchDashboardCount(snap.count);
+          } catch { /* count stays 0 — non-critical */ }
+          try {
+            const result = await runsStore.maybePrune();
+            // If the prune actually removed files, the cached count dropped —
+            // re-patch so the dashboard never shows the stale pre-prune count.
+            if (result.deleted > 0) patchDashboardCount(runsStore.snapshot().count);
+          } catch { /* prune is best-effort */ }
+        })();
+      }, 1500);
+      if (typeof (boot as any).unref === 'function') (boot as any).unref();
       return () => clearTimeout(boot);
     >>>
 

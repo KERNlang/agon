@@ -1,10 +1,10 @@
 // ── Block management — archive, dedupe, coalescing ──────────────────
-import from="node:fs" names="readdirSync"
-import from="@kernlang/agon-core" names="loadConfig,getRatings,getActiveWorkspace,RUNS_DIR"
+import from="@kernlang/agon-core" names="loadConfig,getRatings,getActiveWorkspace"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@kernlang/agon-core" names="EngineRegistry"
 import from="../blocks/markdown.js" names="cleanEngineOutput"
 import from="../signals/block-archive.js" names="appendBlockWithCap"
+import from="../signals/runs-store.js" names="runsStore"
 import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
 import from="../../handlers/types.js" names="OutputEvent" types=true
 import from="./app-layout.js" names="estimateOutputEventRows"
@@ -46,8 +46,10 @@ module name=AppBlocks
       const sorted = Object.entries(ratings.global)
         .map(([id, r]: any) => [id, { rating: Math.round(r.mu - 2 * r.phi) }] as const)
         .sort(([, a], [, b]) => b.rating - a.rating);
-      let runCount = 0;
-      try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch { /* runs dir missing — first run */ }
+      // Render path is fs-free: read the cached runs snapshot, never readdirSync.
+      // runsStore.hydrate() runs async at startup (app.kern boot effect) and
+      // refreshes (debounced) after each run record is written.
+      const runCount = runsStore.snapshot().count;
 
       return {
         id: 0,

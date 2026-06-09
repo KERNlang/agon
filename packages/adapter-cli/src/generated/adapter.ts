@@ -24,7 +24,17 @@ export class CliAdapter implements EngineAdapter {
     this.getVersion = this.getVersion.bind(this);
   }
 
+  private withEngineTimeout(options: DispatchOptions): DispatchOptions {
+    // Honor the engine's declared timeout (slow coding-plan engines like zai set timeout=300) over a lower generic command default (orchestration uses 120s), so a slow engine isn't cut off mid-answer and lose its slot. Returns a NEW options object — never mutates the caller's, since callers may reuse/retry the same DispatchOptions.
+    const declared = Number((options.engine as any)?.timeout ?? 0);
+    if (declared > Number(options.timeout ?? 0)) {
+      return { ...options, timeout: declared };
+    }
+    return options;
+  }
+
   async dispatch(options: DispatchOptions): Promise<DispatchResult> {
+    options = this.withEngineTimeout(options);
     // Prefer CLI binary when available — API is fallback for binary-less engines
     const binaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
     if (!binaryPath) {
@@ -119,6 +129,7 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async *dispatchStream(options: DispatchOptions): AsyncGenerator<string, DispatchResult, void> {
+    options = this.withEngineTimeout(options);
     // workspace-pure isolation, resolved once for every dispatch path below.
     const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
     // Subscription pty path for claude — yields response deltas, returns final result.
@@ -215,6 +226,7 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async dispatchAgent(options: DispatchOptions): Promise<AgentDispatchResult> {
+    options = this.withEngineTimeout(options);
     // workspace-pure isolation, resolved once for every agent dispatch path below.
     const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
     // Subscription pty path for claude (agent mode: tools + bypassed perms).
@@ -371,6 +383,7 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async *dispatchAgentStream(options: DispatchOptions): AsyncGenerator<string, AgentDispatchResult, void> {
+    options = this.withEngineTimeout(options);
     // workspace-pure isolation, resolved once for every agent-stream path below.
     const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
     // Subscription pty path for claude (agent mode). Same diff capture as dispatchAgent.

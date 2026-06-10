@@ -1,0 +1,320 @@
+// ── Runs store — async metadata snapshot + auto-prune for ~/.agon/runs ──
+//
+// ~/.agon/runs accumulates one ${forgeId}.json record (plus per-run dirs) for
+// every orchestration run, forever. It once regrew to 40k files. The dashboard
+// used to count those files with a SYNCHRONOUS readdirSync inside the Ink
+// render path (surfaces/app-blocks.kern:buildDashboardBlock) — a 40k-entry
+// directory scan on every dashboard repaint.
+//
+// This module owns runs metadata so the render path NEVER touches the fs:
+//   • hydrate()         — async scan at startup, caches a snapshot in memory
+//   • snapshot()        — sync, cheap, zero-fs accessor for render
+//   • scheduleRefresh() — debounced re-hydrate after a run record is written
+//   • maybePrune()      — async auto-prune with a 1h cooldown stamp + soft lock
+//
+// All paths resolve via agonPath('runs') at CALL time so AGON_HOME overrides
+// (test isolation) apply — never freeze RUNS_DIR at module load.
+
+import from="node:fs" names="readFileSync,writeFileSync"
+import from="node:fs/promises" names="readdir,stat,unlink"
+import from="node:path" names="join"
+import from="@kernlang/agon-core" names="agonPath"
+
+// ── Policy constants ───────────────────────────────────────────────────
+
+const name=RUN_KEEP_AGE_MS type=number value={{ 7 * 24 * 60 * 60 * 1000 }}
+  doc "Keep every run file newer than this regardless of count (7 days)."
+
+const name=RUN_SOFT_CAP type=number value=2000
+  doc "Beyond the age window, keep at most this many newest run files."
+
+const name=RUN_HARD_CAP type=number value=5000
+  doc "Absolute ceiling on total run files kept, even within the age window."
+
+const name=RUN_PROTECT_MIN_AGE_MS type=number value={{ 10 * 60 * 1000 }}
+  doc "Never delete a run file younger than this — it may belong to an in-flight run (10 minutes). Long-running orchestrations (forge/goal/conquer) can keep a run's record 'open' for many minutes, so a generous floor is the primary in-flight protection; activeRunId matching is defense in depth."
+
+const name=RUN_PRUNE_COOLDOWN_MS type=number value={{ 60 * 60 * 1000 }}
+  doc "Skip a prune if one completed within this window (1h)."
+
+const name=RUN_PRUNE_CHUNK type=number value=200
+  doc "Delete this many files then yield to the event loop, so prune never monopolizes the loop."
+
+const name=PRUNE_STAMP_NAME type=string value={{ '.prune-stamp' }}
+  doc "Filename inside the runs dir holding the last-prune timestamp (also a poor-man's lock)."
+
+// ── Types ──────────────────────────────────────────────────────────────
+
+interface name=RunsSnapshot
+  field name=count type=number
+    doc "Number of *.json run record files (excludes the .prune-stamp)."
+  field name=hydratedAt type=number
+    doc "Date.now() of the scan that produced this snapshot; 0 before first hydrate."
+
+interface name=PruneResult
+  field name=deleted type=number
+  field name=skipped type=boolean
+    doc "True when the prune was a no-op due to cooldown / lock / nothing-to-do."
+  field name=reason type=string
+
+interface name=PruneOptions
+  field name=activeRunIds type="string[]" optional=true
+    doc "Run ids whose files must never be deleted (the active session's runs)."
+  field name=force type=boolean optional=true
+    doc "Bypass the cooldown stamp (used by tests / explicit triggers)."
+
+// ── Internal fs helpers (resolve AGON_HOME at call time) ───────────────
+
+fn name=runsDirPath returns=string export=false expr={{ return agonPath('runs'); }}
+
+fn name=pruneStampPath returns=string export=false expr={{ return join(agonPath('runs'), PRUNE_STAMP_NAME); }}
+
+fn name=listRunJsonFiles async=true returns="Promise<{ name: string; mtimeMs: number }[]>" export=false
+  doc "List *.json run record files with mtimes via node:fs/promises (never blocks the Ink event loop, even on a 40k-entry dir). Returns [] if the dir is missing. Skips the .prune-stamp and any entry that cannot be stat'd."
+  handler <<<
+    const dir = runsDirPath();
+    let names: string[];
+    try {
+      names = await readdir(dir);
+    } catch {
+      return [];
+    }
+    const out: { name: string; mtimeMs: number }[] = [];
+    for (const entry of names) {
+      if (!entry.endsWith('.json')) continue;
+      try {
+        const st = await stat(join(dir, entry));
+        if (st.isFile()) out.push({ name: entry, mtimeMs: st.mtimeMs });
+      } catch {
+        // entry vanished mid-scan or is unreadable — ignore
+      }
+    }
+    return out;
+  >>>
+
+fn name=countRunJsonFiles async=true returns="Promise<number>" export=false
+  doc "Count *.json run record files WITHOUT stat'ing each one. hydrate()/scheduleRefresh only need the count, so on a 40k-file dir this avoids ~40k stat syscalls (one readdir is enough). Returns 0 if the dir is missing. The .prune-stamp has no .json suffix so it's excluded automatically."
+  handler <<<
+    const dir = runsDirPath();
+    let names: string[];
+    try {
+      names = await readdir(dir);
+    } catch {
+      return 0;
+    }
+    let count = 0;
+    for (const entry of names) {
+      if (entry.endsWith('.json')) count++;
+    }
+    return count;
+  >>>
+
+fn name=readPruneStamp returns=number export=false
+  doc "Read the last-prune timestamp from .prune-stamp. Returns 0 if absent/unreadable."
+  handler <<<
+    try {
+      const raw = readFileSync(pruneStampPath(), 'utf-8').trim();
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : 0;
+    } catch {
+      return 0;
+    }
+  >>>
+
+fn name=writePruneStamp params="ts:number" returns=void export=false
+  doc "Persist the last-prune timestamp (best effort)."
+  handler <<<
+    try {
+      writeFileSync(pruneStampPath(), String(ts));
+    } catch {
+      // best effort — a missing stamp just means the next prune isn't rate-limited
+    }
+  >>>
+
+fn name=computeRunPruneTargets params="files:{ name: string; mtimeMs: number }[], now:number, activeRunIds:string[]" returns="string[]" export=true
+  doc "Pure prune-policy core: given the current run files + clock + protected ids, return the file names to delete (oldest-first). Keep everything < 7 days; beyond that keep newest RUN_SOFT_CAP; hard cap RUN_HARD_CAP total. Never returns an active-id file or one younger than RUN_PROTECT_MIN_AGE_MS. Exported so the policy is unit-testable without touching the fs."
+  handler <<<
+    // Exact id match, NOT substring: a run id must equal the file's basename
+    // (`${id}.json`) or be a prefix followed by a non-alphanumeric delimiter
+    // (e.g. `${id}-meta.json`). Substring matching would over-protect — id "1"
+    // would shield "1234.json" — and (worse) could be tricked into UNDER-deleting.
+    //
+    // Structural guarantee (why id matching is only defense in depth): deletion
+    // is oldest-first under a 7-day age window + newest-N caps, and an active
+    // run's record is necessarily recent, so it's effectively unreachable by the
+    // policy regardless of this check. The RUN_PROTECT_MIN_AGE_MS floor already
+    // shields every fresh file; activeRunId matching just hardens the edge.
+    const isActive = (fileName: string): boolean =>
+      activeRunIds.some((id) => {
+        if (!id) return false;
+        if (fileName === `${id}.json`) return true;
+        if (!fileName.startsWith(id)) return false;
+        const next = fileName.charAt(id.length);
+        // Prefix must end at a delimiter, never mid-token (so "1" never matches "12.json").
+        return next !== '' && !/[A-Za-z0-9]/.test(next);
+      });
+
+    // Files we are even ALLOWED to delete: not active, and old enough that they
+    // can't belong to an in-flight run.
+    const deletable = files
+      .filter((f) => !isActive(f.name) && now - f.mtimeMs >= RUN_PROTECT_MIN_AGE_MS)
+      .sort((a, b) => a.mtimeMs - b.mtimeMs); // oldest first
+
+    const cutoff = now - RUN_KEEP_AGE_MS;
+    const deletableOld = deletable.filter((f) => f.mtimeMs < cutoff); // older than 7d
+
+    const removalSet = new Map<string, true>();
+
+    // 1) Soft cap: keep only the newest RUN_SOFT_CAP files overall. The overflow
+    //    must come from OLD (>7d) deletable files first — files inside the 7d
+    //    window are kept regardless of the soft cap.
+    const softOverflow = Math.max(0, files.length - RUN_SOFT_CAP);
+    const softRemoveCount = Math.min(softOverflow, deletableOld.length);
+    for (let k = 0; k < softRemoveCount; k++) {
+      removalSet.set(deletableOld[k].name, true);
+    }
+
+    // 2) Hard cap: total kept must end ≤ RUN_HARD_CAP. Remove additional oldest
+    //    deletable files (young or old) until the total fits.
+    const mustRemoveForHardCap = Math.max(0, files.length - RUN_HARD_CAP);
+    let i = 0;
+    while (removalSet.size < mustRemoveForHardCap && i < deletable.length) {
+      removalSet.set(deletable[i].name, true);
+      i++;
+    }
+
+    // Return oldest-first, matching the deletable ordering.
+    return deletable.filter((f) => removalSet.has(f.name)).map((f) => f.name);
+  >>>
+
+// ── RunsStore — process singleton ──────────────────────────────────────
+
+service name=RunsStore singleton=true
+  doc "Owns ~/.agon/runs metadata so the render path never scans the fs. Caches a snapshot, refreshes on demand (debounced), and auto-prunes off the critical path."
+
+  field name=snap type=RunsSnapshot private=true
+    doc "In-memory cached snapshot. The ONLY thing render reads."
+  field name=refreshTimer type="ReturnType<typeof setTimeout>|null" private=true
+    doc "Debounce handle for scheduleRefresh."
+  field name=pruning type=boolean private=true
+    doc "In-process guard so two maybePrune() calls don't overlap."
+
+  constructor
+    handler lang="kern"
+      assign target="this.snap" value="{ count: 0, hydratedAt: 0 }"
+      assign target="this.refreshTimer" value="null"
+      assign target="this.pruning" value="false"
+
+  method name=snapshot returns=RunsSnapshot
+    doc "Cheap, synchronous, zero-fs accessor for the render path. Returns the cached snapshot."
+    handler lang="kern"
+      return value="this.snap"
+
+  method name=runCount returns=number
+    doc "Convenience: cached run-file count for the dashboard. Zero fs."
+    handler lang="kern"
+      return value="this.snap.count"
+
+  method name=hydrate async=true returns="Promise<RunsSnapshot>"
+    doc "Scan the runs dir once and cache the snapshot. Async so the directory read never blocks render. Safe to call repeatedly."
+    handler <<<
+      // Yield to the macrotask queue first so a startup hydrate never lands in
+      // the same tick as first paint.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      // Count-only path: hydrate just needs the file count, so skip the per-file
+      // stat() that listRunJsonFiles does (mtime is only needed by the prune).
+      const count = await countRunJsonFiles();
+      this.snap = { count, hydratedAt: Date.now() };
+      return this.snap;
+    >>>
+
+  method name=scheduleRefresh params="delayMs?:number" returns=void
+    doc "Debounced re-hydrate. Called after a run record is written so the dashboard count stays fresh without a render-path fs scan. Coalesces bursts (forge writes the manifest incrementally)."
+    handler <<<
+      const delay = typeof delayMs === 'number' && delayMs >= 0 ? delayMs : 750;
+      if (this.refreshTimer) clearTimeout(this.refreshTimer);
+      const timer = setTimeout(() => {
+        this.refreshTimer = null;
+        // Fire and forget — errors are non-critical (stale count at worst).
+        void this.hydrate().catch(() => { /* snapshot stays as-is */ });
+      }, delay);
+      this.refreshTimer = timer;
+      // Never keep the process alive just to refresh a count.
+      if (typeof (timer as any).unref === 'function') (timer as any).unref();
+    >>>
+
+  method name=maybePrune params="opts?:PruneOptions" async=true returns="Promise<PruneResult>"
+    doc "Auto-prune the runs dir if the cooldown has elapsed and no prune is in progress. Non-blocking: deletes oldest-first by mtime in async chunks. Logs ONE quiet diagnostic line on a real prune."
+    handler <<<
+      // In-process overlap guard FIRST, before any stamp/cooldown logic. Two
+      // same-process callers (e.g. the boot effect racing a scheduleRefresh) both
+      // read the stamp in the same tick; claiming `this.pruning` here — not after
+      // the cooldown check — is what makes the second caller bail deterministically.
+      if (this.pruning) {
+        return { deleted: 0, skipped: true, reason: 'in-progress' };
+      }
+      this.pruning = true;
+      try {
+        const force = opts?.force === true;
+        const now = Date.now();
+        const lastPrune = readPruneStamp();
+
+        // Cooldown + soft cross-process lock: a recent stamp means a prune ran (or
+        // is running) within the cooldown window — skip. The stamp doubles as the
+        // lock because maybePrune() claims it (writes "now") before any deletion.
+        if (!force && lastPrune > 0 && now - lastPrune < RUN_PRUNE_COOLDOWN_MS) {
+          return { deleted: 0, skipped: true, reason: 'cooldown' };
+        }
+
+        // Claim the cross-process lock by stamping "now" BEFORE scanning/deleting.
+        // This is deliberate (do not move it after the delete): the stamp is the
+        // lock claim a concurrent PROCESS reads to back off, and the cooldown
+        // limits SCAN cost — so even a no-op scan should start the cooldown.
+        // Crash-mid-prune costs at most a 1h delay before the next attempt; that's
+        // strictly cheaper than letting N processes scan a 40k-file dir in lockstep.
+        writePruneStamp(now);
+
+        const files = await listRunJsonFiles();
+        const activeIds = Array.isArray(opts?.activeRunIds) ? opts!.activeRunIds! : [];
+        const toDelete = computeRunPruneTargets(files, now, activeIds);
+
+        if (toDelete.length === 0) {
+          // Nothing to remove — refresh the snapshot and bail quietly.
+          this.snap = { count: files.length, hydratedAt: now };
+          return { deleted: 0, skipped: true, reason: 'within-policy' };
+        }
+
+        const dir = runsDirPath();
+        let deleted = 0;
+        for (let idx = 0; idx < toDelete.length; idx++) {
+          try {
+            await unlink(join(dir, toDelete[idx]));
+            deleted++;
+          } catch {
+            // file vanished or unremovable — skip
+          }
+          // Yield every RUN_PRUNE_CHUNK deletions so we never block the loop.
+          if ((idx + 1) % RUN_PRUNE_CHUNK === 0) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          }
+        }
+
+        // Re-stamp completion time and refresh the cached snapshot. Count-only:
+        // we just need the post-prune total, not mtimes.
+        const finishedAt = Date.now();
+        writePruneStamp(finishedAt);
+        const remaining = await countRunJsonFiles();
+        this.snap = { count: remaining, hydratedAt: finishedAt };
+
+        if (deleted > 0 && process.env.AGON_DEBUG) {
+          // Diagnostic only under AGON_DEBUG — a background prune must never write into the live TUI.
+          console.error(`[agon] runs prune: removed ${deleted} old run record(s), kept ${remaining}`);
+        }
+        return { deleted, skipped: false, reason: 'pruned' };
+      } finally {
+        this.pruning = false;
+      }
+    >>>
+
+const name=runsStore value={{ new RunsStore() }}
+  doc "Process-wide RunsStore singleton. Import this from render + telemetry; never construct another."

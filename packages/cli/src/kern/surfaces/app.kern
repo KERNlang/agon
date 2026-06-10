@@ -11,6 +11,7 @@ import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
 import from="@kernlang/agon-core" names="EngineAdapter" types=true
 import from="../signals/intent.js" names="detectIntent,SLASH_COMMANDS"
+import from="../signals/runs-store.js" names="runsStore"
 import from="@kernlang/agon-core" names="CommandRegistry,registerBuiltinCommands,initExtensions,EventBus,bridgeShellHooks"
 import from="../signals/job-manager.js" names="JobManager"
 import from="../signals/job-manager.js" names="Job" types=true
@@ -37,7 +38,7 @@ import from="../signals/event-log-tee.js" names="teeOutputEvent"
 import from="@kernlang/agon-core" names="resetEventLogState"
 import from="../signals/app-input.js" names="appendInputHistory,cleanInputValue,cleanSubmitValue,findInputChange,hasBtwSideChannelTarget,navigateHistory,parseAutoModeCommand,resolveEscapeAction,shouldQueuePlanModeOnTab"
 import from="../signals/keyboard.js" names="resolveKeyboardInput"
-import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
+import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap,nextStaticEpoch"
 import from="../signals/input-perf.js" names="perfNow,recordKeystrokeLatency"
 import from="../blocks/review.js" names="handleReviewAction"
 import from="../blocks/engine.js" names="DashboardView,OutputBlockView"
@@ -78,7 +79,7 @@ import from="./app-terminal.js" names="createInitialRegistry,drainStdinBuffer,no
 import from="./app-selection.js" names="normalizeTextSelection"
 import from="./app-layout.js" names="estimateVisibleBlockBudget,estimateBottomChromeExtraRows,estimatePinnedLiveRows"
 import from="./app-blocks.js" names="buildDashboardBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount,appendTranscriptBlock,summarizeBtwTranscriptEvent"
-import from="./app-rendering.js" names="buildExecutionRailStats,buildTranscriptRows"
+import from="./app-rendering.js" names="buildExecutionRailStats,buildTranscriptRows,clearBlockRowCache"
 
 module name=AppHelperExports
   export from="./app-helpers.js" names="COMPOSER_HISTORY_LIMIT,isMutatingToolCall,probeEngineVitals,parseToolCallPayload,toolPreviewWindow,toolCallSupportsDetailView,detailViewerSupportsEvent,toolDetailViewportRows,findLatestToolDetailEvent,findLatestToolEvent,buildExecutionRailStats,composerHistoryPath,loadComposerInputHistory,saveComposerInputHistory,findLatestFailedToolEvent,buildFailedToolRetryDraft,buildToolDetailView,createInitialRegistry,drainStdinBuffer,maxScrollOffsetForRowCount,nextWheelAnimationStep,clampNumber,charDisplayWidth,stringDisplayWidth,displayColumnToStringIndex,normalizeRowSelection,normalizeTextSelection,richLineToPlainText,transcriptRowToPlainText,transcriptRowTextStartColumn,resolveTranscriptColumnFromMouse,transcriptRowsToPlainText,resolveTranscriptRowFromMouse,estimateVisibleBlockBudget,estimateWrappedRowCount,estimateQuestionReservedRows,estimateBottomChromeExtraRows,summarizeBtwTranscriptEvent,buildDashboardBlock,estimatePinnedLiveRows,estimateWrappedRows,estimateToolCallRows,estimateOutputEventRows,buildDisplayItems,isToolCallLikeBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,estimateDisplayItemRows,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount,isDuplicateEngineBlock,appendTranscriptBlock,normalizeTerminalMode,fileRailWidthForTerminal,fileRailMaxRowsForTerminal,buildTerminalReplaySnapshot,parseMarkdownToRows,buildToolCallRows,buildCollapsedToolGroupRows,buildTranscriptRows"
@@ -104,8 +105,8 @@ screen name=App target=ink
   state name=historyIndex type=number initial=-1 safe=false
   state name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   state name=sessionStartTime type=number initial="Date.now()"
-  state name=liveSpinner type=any initial="null" throttle=50
-  state name=liveProgress type="EngineProgress[]|null" initial="null" throttle=50
+  state name=liveSpinner type=any initial="null" throttle=120
+  state name=liveProgress type="EngineProgress[]|null" initial="null" throttle=120
   state name=slashPickerOpen type=boolean initial=false safe=false
   state name=questionState type=any initial="null"
   state name=questionAnswer type=string initial="''" safe=false
@@ -231,7 +232,10 @@ screen name=App target=ink
   state name=workspacePath type=string initial="resolveWorkingDir()"
   state name=termWidth type=number initial="process.stdout.columns || 100" throttle=100
   state name=termHeight type=number initial="process.stdout.rows || 24" throttle=100
-  state name=nativeStaticEpoch type=number initial=0
+  // Drives the native <Static> remount key. Incremented ONLY by clearBlocks
+  // (a true transcript reset: /clear, /clean, session reset). Append and cap-spill
+  // must NEVER advance it — remounting <Static> repaints the full sealed region.
+  state name=clearEpoch type=number initial=0
   state name=nativeArchiveCount type=number initial=0
   state name=fileRailOpen type=boolean initial="false"
   state name=executionRailOpen type=boolean initial="false"
@@ -576,6 +580,14 @@ screen name=App target=ink
       };
     >>>
 
+  // Tracks the last-seen transcript length so effectiveNativeArchiveCount can
+  // drop its stale high-water-mark when the array shrinks (a cap-spill front-slice
+  // makes the absolute archive count too large for the now-shorter array). This
+  // intentionally does NOT touch the <Static> remount epoch — that is driven
+  // solely by clearEpoch (bumped in clearBlocks on a true reset). A cap-spill
+  // shrinks the array but must NOT remount <Static>: Ink's <Static> is append-only
+  // and renders nothing for a front-slice, so a remount would needlessly repaint
+  // the entire sealed region (the long-session repaint storm).
   effect deps="terminalMode,nativeTranscriptBlocks"
     handler lang="kern"
       let name=nextCount value="nativeTranscriptBlocks.length"
@@ -584,7 +596,6 @@ screen name=App target=ink
         return
       let name=previousCount value="nativeTranscriptBlockCountRef.current"
       if cond="nextCount < previousCount"
-        do value="setNativeStaticEpoch((epoch: number) => epoch + 1)"
         do value="setNativeArchiveCount(0)"
       assign target="nativeTranscriptBlockCountRef.current" value="nextCount"
 
@@ -631,6 +642,58 @@ screen name=App target=ink
           setUpdateChecking(false);
         }
       }, Math.max(0, 4000 - elapsed()));
+      return () => clearTimeout(boot);
+    >>>
+
+  // ── Startup: hydrate the runs snapshot + auto-prune ~/.agon/runs ──
+  // The dashboard's runCount reads ONLY runsStore.snapshot() (zero fs in the
+  // render path). The startup dashboard block is built in the outputBlocks
+  // initializer (app.kern:99) BEFORE hydrate resolves, so it renders with
+  // count 0; we await hydrate() here and then PATCH that block in place so the
+  // count fills in once known — preserving its id (0) so Ink reconciles instead
+  // of remounting. Then we kick a non-blocking prune. Strictly SEQUENTIAL
+  // (hydrate → patch → prune) so we never run two fs scans concurrently off
+  // boot. The prune self-rate-limits via a 1h .prune-stamp cooldown, so calling
+  // it on every launch is cheap. All of it is fire-and-forget relative to render
+  // (an async IIFE inside the timer) and errors are swallowed best-effort.
+  //
+  // Active in-flight runs are protected inside maybePrune by the 10-minute
+  // RUN_PROTECT_MIN_AGE_MS floor (active records are necessarily recent + the
+  // policy deletes oldest-first under a 7-day window). No session/run id is
+  // cheaply in scope at this call site, so activeRunIds is intentionally left
+  // unthreaded — the age floor is the in-flight protection; id matching is
+  // defense in depth wired only where an id source already exists.
+  effect deps=""
+    handler <<<
+      const boot = setTimeout(() => {
+        void (async () => {
+          // Patch the already-rendered startup dashboard block in place (only if
+          // it's still present — the user may have /clear'd it). Preserves the
+          // block id so Ink reconciles instead of remounting. At 1.5s the
+          // dashboard is the lone block in the live region, well under the seal
+          // budget, so the in-place count update renders.
+          const patchDashboardCount = (count: number) => {
+            setOutputBlocks((prev: any) =>
+              prev.map((b: any) =>
+                b?.event?.type === 'dashboard'
+                  ? { ...b, event: { ...b.event, runCount: count } }
+                  : b,
+              ),
+            );
+          };
+          try {
+            const snap = await runsStore.hydrate();
+            patchDashboardCount(snap.count);
+          } catch { /* count stays 0 — non-critical */ }
+          try {
+            const result = await runsStore.maybePrune();
+            // If the prune actually removed files, the cached count dropped —
+            // re-patch so the dashboard never shows the stale pre-prune count.
+            if (result.deleted > 0) patchDashboardCount(runsStore.snapshot().count);
+          } catch { /* prune is best-effort */ }
+        })();
+      }, 1500);
+      if (typeof (boot as any).unref === 'function') (boot as any).unref();
       return () => clearTimeout(boot);
     >>>
 
@@ -851,7 +914,16 @@ screen name=App target=ink
             return appendTranscriptBlock(filtered, event, blockArchivePathRef.current);
           });
         },
-        clearBlocks: () => setOutputBlocks([]),
+        clearBlocks: () => {
+          // Single funnel for every true transcript reset (/clear, /clean,
+          // session reset all dispatch OutputEvent {type:'clear'} → clearBlocks).
+          // Bump the epoch HERE so the <Static> remount is tied to the cause, not
+          // inferred from the array shrinking (which a cap-spill also does).
+          setOutputBlocks([]);
+          setClearEpoch((epoch: number) => nextStaticEpoch(epoch, 'reset'));
+          setNativeArchiveCount(0);
+          clearBlockRowCache();
+        },
         setPendingPlanProposal: (val: OutputEvent | null) => setPendingPlanProposal(val),
         setReviewEvent,
         setQuestionState,
@@ -2624,7 +2696,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
 
       if (terminalMode === 'native') return (
       <>
-        <Static key={`native-static-${nativeStaticEpoch}`} items={nativeArchiveBlocks}>
+        <Static key={`native-static-${clearEpoch}`} items={nativeArchiveBlocks}>
           {(block: any) => (
             <OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} />
           )}

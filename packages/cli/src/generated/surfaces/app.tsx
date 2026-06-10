@@ -20,6 +20,8 @@ import type { EngineAdapter } from '@kernlang/agon-core';
 
 import { detectIntent, SLASH_COMMANDS } from '../signals/intent.js';
 
+import { runsStore } from '../signals/runs-store.js';
+
 import { CommandRegistry, registerBuiltinCommands, initExtensions, EventBus, bridgeShellHooks } from '@kernlang/agon-core';
 
 import { JobManager } from '../signals/job-manager.js';
@@ -72,7 +74,7 @@ import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange,
 
 import { resolveKeyboardInput } from '../signals/keyboard.js';
 
-import { makeBlockArchivePath, appendBlockWithCap } from '../signals/block-archive.js';
+import { makeBlockArchivePath, appendBlockWithCap, nextStaticEpoch } from '../signals/block-archive.js';
 
 import { perfNow, recordKeystrokeLatency } from '../signals/input-perf.js';
 
@@ -152,13 +154,13 @@ import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinn
 
 import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, appendTranscriptBlock, summarizeBtwTranscriptEvent } from './app-blocks.js';
 
-import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js';
+import { buildExecutionRailStats, buildTranscriptRows, clearBlockRowCache } from './app-rendering.js';
 
 // ── Module: AppHelperExports ──
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:97
+// @kern-source: app:98
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -187,7 +189,7 @@ export function App() {
     return (value: React.SetStateAction<any>) => {
       const now = Date.now();
       const elapsed = now - _lastCall;
-      if (elapsed >= 50) {
+      if (elapsed >= 120) {
         _lastCall = now;
         if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
         setTimeout(() => _setLiveSpinnerRaw(value), 0);
@@ -198,7 +200,7 @@ export function App() {
             _lastCall = Date.now();
             _pendingTimer = null;
             _setLiveSpinnerRaw(_pendingValue);
-          }, 50 - elapsed);
+          }, 120 - elapsed);
         }
       }
     };
@@ -211,7 +213,7 @@ export function App() {
     return (value: React.SetStateAction<EngineProgress[]|null>) => {
       const now = Date.now();
       const elapsed = now - _lastCall;
-      if (elapsed >= 50) {
+      if (elapsed >= 120) {
         _lastCall = now;
         if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
         setTimeout(() => _setLiveProgressRaw(value), 0);
@@ -222,7 +224,7 @@ export function App() {
             _lastCall = Date.now();
             _pendingTimer = null;
             _setLiveProgressRaw(_pendingValue);
-          }, 50 - elapsed);
+          }, 120 - elapsed);
         }
       }
     };
@@ -500,8 +502,8 @@ export function App() {
       }
     };
   }, []);
-  const [nativeStaticEpoch, _setNativeStaticEpochRaw] = useState<number>(0);
-  const setNativeStaticEpoch = useMemo(() => __inkSafe(_setNativeStaticEpochRaw), [_setNativeStaticEpochRaw]);
+  const [clearEpoch, _setClearEpochRaw] = useState<number>(0);
+  const setClearEpoch = useMemo(() => __inkSafe(_setClearEpochRaw), [_setClearEpochRaw]);
   const [nativeArchiveCount, _setNativeArchiveCountRaw] = useState<number>(0);
   const setNativeArchiveCount = useMemo(() => __inkSafe(_setNativeArchiveCountRaw), [_setNativeArchiveCountRaw]);
   const [fileRailOpen, _setFileRailOpenRaw] = useState<boolean>(false);
@@ -800,7 +802,16 @@ export function App() {
                 return appendTranscriptBlock(filtered, event, blockArchivePathRef.current);
               });
             },
-            clearBlocks: () => setOutputBlocks([]),
+            clearBlocks: () => {
+              // Single funnel for every true transcript reset (/clear, /clean,
+              // session reset all dispatch OutputEvent {type:'clear'} → clearBlocks).
+              // Bump the epoch HERE so the <Static> remount is tied to the cause, not
+              // inferred from the array shrinking (which a cap-spill also does).
+              setOutputBlocks([]);
+              setClearEpoch((epoch: number) => nextStaticEpoch(epoch, 'reset'));
+              setNativeArchiveCount(0);
+              clearBlockRowCache();
+            },
             setPendingPlanProposal: (val: OutputEvent | null) => setPendingPlanProposal(val),
             setReviewEvent,
             setQuestionState,
@@ -2137,7 +2148,6 @@ export function App() {
     }
     const previousCount = nativeTranscriptBlockCountRef.current;
     if (nextCount < previousCount) {
-      setNativeStaticEpoch((epoch: number) => epoch + 1);
       setNativeArchiveCount(0);
     }
     nativeTranscriptBlockCountRef.current = nextCount;
@@ -2181,6 +2191,39 @@ export function App() {
         setUpdateChecking(false);
       }
     }, Math.max(0, 4000 - elapsed()));
+    return () => clearTimeout(boot);
+  }, []);
+
+  useEffect(() => {
+    const boot = setTimeout(() => {
+      void (async () => {
+        // Patch the already-rendered startup dashboard block in place (only if
+        // it's still present — the user may have /clear'd it). Preserves the
+        // block id so Ink reconciles instead of remounting. At 1.5s the
+        // dashboard is the lone block in the live region, well under the seal
+        // budget, so the in-place count update renders.
+        const patchDashboardCount = (count: number) => {
+          setOutputBlocks((prev: any) =>
+            prev.map((b: any) =>
+              b?.event?.type === 'dashboard'
+                ? { ...b, event: { ...b.event, runCount: count } }
+                : b,
+            ),
+          );
+        };
+        try {
+          const snap = await runsStore.hydrate();
+          patchDashboardCount(snap.count);
+        } catch { /* count stays 0 — non-critical */ }
+        try {
+          const result = await runsStore.maybePrune();
+          // If the prune actually removed files, the cached count dropped —
+          // re-patch so the dashboard never shows the stale pre-prune count.
+          if (result.deleted > 0) patchDashboardCount(runsStore.snapshot().count);
+        } catch { /* prune is best-effort */ }
+      })();
+    }, 1500);
+    if (typeof (boot as any).unref === 'function') (boot as any).unref();
     return () => clearTimeout(boot);
   }, []);
 
@@ -2880,7 +2923,7 @@ export function App() {
 
   if (terminalMode === 'native') return (
   <>
-    <Static key={`native-static-${nativeStaticEpoch}`} items={nativeArchiveBlocks}>
+    <Static key={`native-static-${clearEpoch}`} items={nativeArchiveBlocks}>
       {(block: any) => (
         <OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} />
       )}
@@ -2927,22 +2970,22 @@ export function App() {
   );
 }
 
-// @kern-source: app:87
+// @kern-source: app:88
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:89
+// @kern-source: app:90
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:91
+// @kern-source: app:92
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:93
+// @kern-source: app:94
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:95
+// @kern-source: app:96
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2675
+// @kern-source: app:2747
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -158,11 +158,13 @@ import { buildExecutionRailStats, buildTranscriptRows, clearBlockRowCache } from
 
 import { loadExtensionsForWorkspace, startPlanSyncWatcher, startUpdateCheck, subscribeOrchestrationResults, startTelemetryPoller } from './app-lifecycle.js';
 
+import { buildOutputActions } from './app-output-bridge.js';
+
 // ── Module: AppHelperExports ──
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:99
+// @kern-source: app:100
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -766,100 +768,29 @@ export function App() {
   }, [startupFitsViewport, termWidth]);
 
   const outputActions = useMemo(() => {
-          return {
+          return buildOutputActions({
             setLiveSpinner,
             setLiveProgress,
-            setStreamingText: (updater: Record<string,StreamingEntry> | ((prev: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)) => {
-              const prev = streamingTextRef.current;
-              const next = typeof updater === 'function' ? (updater as (p: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)(prev) : updater;
-              // The ref keeps the FULL content — flushStream and streaming-end commit
-              // the complete answer from it. React state only drives the live preview,
-              // so push a bounded tail: rendering grows O(tail), not O(total) per
-              // throttled tick (a long single answer was quadratic — concat + full
-              // re-render every 33ms). Short streams reuse `next` (no extra alloc).
-              streamingTextRef.current = next;
-              const LIVE_TAIL = 4000;
-              let bounded: Record<string,StreamingEntry> = next;
-              for (const eid of Object.keys(next)) {
-                const e = next[eid];
-                if (e && typeof e.content === 'string' && e.content.length > LIVE_TAIL) {
-                  if (bounded === next) bounded = { ...next };
-                  bounded[eid] = { ...e, content: e.content.slice(-LIVE_TAIL) };
-                }
-              }
-              setStreamingText(bounded);
-            },
-            setLiveToolStreams: (updater: Record<string,any> | ((prev: Record<string,any>) => Record<string,any>)) => {
-              const prev = liveToolStreamsRef.current;
-              const next = typeof updater === 'function' ? (updater as (p: Record<string,any>) => Record<string,any>)(prev) : updater;
-              liveToolStreamsRef.current = next;
-              setLiveToolStreams(next);
-            },
-            addBlock: (event: any) => {
-              setOutputBlocks((prev: any) => appendTranscriptBlock(prev, event, blockArchivePathRef.current));
-            },
-            replaceBlocksOfType: (eventType: string, event: any) => {
-              setOutputBlocks((prev: any) => {
-                const filtered = prev.filter((b: any) => b.event.type !== eventType);
-                return appendTranscriptBlock(filtered, event, blockArchivePathRef.current);
-              });
-            },
-            clearBlocks: () => {
-              // Single funnel for every true transcript reset (/clear, /clean,
-              // session reset all dispatch OutputEvent {type:'clear'} → clearBlocks).
-              // Bump the epoch HERE so the <Static> remount is tied to the cause, not
-              // inferred from the array shrinking (which a cap-spill also does).
-              setOutputBlocks([]);
-              setClearEpoch((epoch: number) => nextStaticEpoch(epoch, 'reset'));
-              setNativeArchiveCount(0);
-              clearBlockRowCache();
-            },
-            setPendingPlanProposal: (val: OutputEvent | null) => setPendingPlanProposal(val),
+            streamingTextRef,
+            setStreamingText,
+            liveToolStreamsRef,
+            setLiveToolStreams,
+            setOutputBlocks,
+            blockArchivePathRef,
+            setClearEpoch,
+            setNativeArchiveCount,
+            setPendingPlanProposal,
             setReviewEvent,
             setQuestionState,
-            setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
-            flushStream: () => {
-              // Flush every in-flight engine's stream to the transcript. Multi-agent
-              // teams may have N concurrent streams when flush is requested (e.g.,
-              // permission-ask interrupts mid-stream).
-              const prev = streamingTextRef.current;
-              for (const eid of Object.keys(prev)) {
-                const entry = prev[eid];
-                if (!entry) continue;
-                // Contamination firewall: never flush a speculative preview draft to the
-                // transcript — it is dropped, not committed (same rule as streaming-end).
-                if (entry.draft) continue;
-                const color = ENGINE_COLORS[entry.engineId] ?? 124;
-                setOutputBlocks((blocks: any) => appendTranscriptBlock(blocks, { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } as any, blockArchivePathRef.current));
-              }
-              streamingTextRef.current = {};
-              setStreamingText({});
-              liveToolStreamsRef.current = {};
-              setLiveToolStreams({});
-            },
-            getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
+            chatStartTimeRef,
             setCesarConfidence,
             setCesarContext,
-            setLiveScoreboard: (val: Scoreboard | null) => setLiveScoreboard(val),
-            setLiveRationale: (val: ModeRationale | null) => setLiveRationale(val),
-            setAgentProgress: (updater: Record<string,AgentProgressSnapshot> | ((prev: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => {
-              const prev = agentProgressRef.current;
-              const next = typeof updater === 'function' ? (updater as (p: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)(prev) : updater;
-              agentProgressRef.current = next;
-              setAgentProgress(next);
-            },
-            clearAgentProgressByTeam: (teamId: string) => {
-              const prev = agentProgressRef.current;
-              const next: Record<string, AgentProgressSnapshot> = {};
-              for (const eid of Object.keys(prev)) {
-                const entry = prev[eid];
-                if (entry && entry.teamId !== teamId) next[eid] = entry;
-              }
-              agentProgressRef.current = next;
-              setAgentProgress(next);
-            },
-            setTodos: (updater: Todo[] | ((prev: Todo[]) => Todo[])) => setTodos(updater as any),
-          };
+            setLiveScoreboard,
+            setLiveRationale,
+            agentProgressRef,
+            setAgentProgress,
+            setTodos,
+          });
   }, []);
 
   const transition = useCallback((fn:any) => {
@@ -2796,22 +2727,22 @@ export function App() {
   );
 }
 
-// @kern-source: app:89
+// @kern-source: app:90
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:91
+// @kern-source: app:92
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:93
+// @kern-source: app:94
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:95
+// @kern-source: app:96
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:97
+// @kern-source: app:98
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2572
+// @kern-source: app:2503
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

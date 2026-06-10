@@ -35,7 +35,6 @@ import from="../signals/output.js" names="OutputActions,OutputState,AgentProgres
 import from="../signals/event-log-tee.js" names="teeOutputEvent"
 import from="@kernlang/agon-core" names="resetEventLogState"
 import from="../signals/app-input.js" names="appendInputHistory,cleanInputValue,cleanSubmitValue,findInputChange,hasBtwSideChannelTarget,navigateHistory,parseAutoModeCommand,resolveEscapeAction,shouldQueuePlanModeOnTab"
-import from="../signals/keyboard.js" names="resolveKeyboardInput"
 import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap,nextStaticEpoch"
 import from="../signals/input-perf.js" names="perfNow,recordKeystrokeLatency"
 import from="../blocks/review.js" names="handleReviewAction"
@@ -64,7 +63,6 @@ import from="node:child_process" names="spawnSync"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../blocks/results-formatter.js" names="formatSessionResults,formatChatTranscript"
 import from="@kernlang/agon-core" names="loadSkills"
-import from="../../input-utils.js" names="isTerminalFocusReport"
 import from="../../stable-input.js" names="useStableInput"
 import from="../blocks/rich-text.js" names="parseProseToRichLines"
 import from="../services/update-check.js" names="checkForUpdate,loadDismissedVersion,saveDismissedVersion,isLinkedDevInstall"
@@ -80,16 +78,20 @@ import from="./app-blocks.js" names="buildDashboardBlock,coalesceToolCallBlocks,
 import from="./app-rendering.js" names="buildExecutionRailStats,buildTranscriptRows,clearBlockRowCache"
 import from="./app-lifecycle.js" names="loadExtensionsForWorkspace,startPlanSyncWatcher,startUpdateCheck,subscribeOrchestrationResults,startTelemetryPoller"
 import from="./app-output-bridge.js" names="buildOutputActions"
-import from="./app-interrupt.js" names="_cancelCallback,_lastSigintAt,runTrackAbort,runInterruptActiveRun,buildCancelCallback,handleSigint"
+import from="./app-interrupt.js" names="_cancelCallback,runTrackAbort,runInterruptActiveRun,buildCancelCallback,handleSigint"
+import from="./app-keyboard.js" names="runHandleCancelOrExit,runHandleComposerCtrlShortcut,runHandleKeyboardInput"
 
 module name=AppHelperExports
   export from="./app-helpers.js" names="COMPOSER_HISTORY_LIMIT,isMutatingToolCall,probeEngineVitals,parseToolCallPayload,toolPreviewWindow,toolCallSupportsDetailView,detailViewerSupportsEvent,toolDetailViewportRows,findLatestToolDetailEvent,findLatestToolEvent,buildExecutionRailStats,composerHistoryPath,loadComposerInputHistory,saveComposerInputHistory,findLatestFailedToolEvent,buildFailedToolRetryDraft,buildToolDetailView,createInitialRegistry,drainStdinBuffer,maxScrollOffsetForRowCount,nextWheelAnimationStep,clampNumber,charDisplayWidth,stringDisplayWidth,displayColumnToStringIndex,normalizeRowSelection,normalizeTextSelection,richLineToPlainText,transcriptRowToPlainText,transcriptRowTextStartColumn,resolveTranscriptColumnFromMouse,transcriptRowsToPlainText,resolveTranscriptRowFromMouse,estimateVisibleBlockBudget,estimateWrappedRowCount,estimateQuestionReservedRows,estimateBottomChromeExtraRows,summarizeBtwTranscriptEvent,buildDashboardBlock,estimatePinnedLiveRows,estimateWrappedRows,estimateToolCallRows,estimateOutputEventRows,buildDisplayItems,isToolCallLikeBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,estimateDisplayItemRows,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount,isDuplicateEngineBlock,appendTranscriptBlock,normalizeTerminalMode,fileRailWidthForTerminal,fileRailMaxRowsForTerminal,buildTerminalReplaySnapshot,parseMarkdownToRows,buildToolCallRows,buildCollapsedToolGroupRows,buildTranscriptRows"
 
 // ── Module-level mutable refs for SIGINT ──
 // The interrupt singletons (_activeAborts, _cancelCallback, _lastSigintAt,
-// _pauseState) live in app-interrupt.kern; the ones app.kern still references
-// directly (_cancelCallback, _lastSigintAt) are imported above. They MUST be the
-// same single instances the out-of-React SIGINT handler mutates.
+// _pauseState) live in app-interrupt.kern; the one app.kern still references
+// directly (_cancelCallback, in the SIGINT cancel-callback effect) is imported
+// above. _lastSigintAt is now consumed only by the keyboard cancel/exit path,
+// which moved to app-keyboard.kern (it imports _lastSigintAt from app-interrupt
+// itself). They MUST be the same single instances the out-of-React SIGINT
+// handler mutates.
 // _cesarSessionRef stays here — it's the Cesar session holder (telemetry + the
 // SIGINT close path), not interrupt machinery.
 const name=_cesarSessionRef type="{ session: PersistentSession | null }" value={{ { session: null } }}
@@ -1610,76 +1612,20 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
 
   callback name=handleCancelOrExit deps="questionState,replState,inputValue,dispatch"
     handler <<<
-      if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); setSelectedChoiceIndex(0); setQuestionOtherActive(false); }
-      if (replState !== 'idle') {
-        interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
-        return;
-      }
-
-      const now = Date.now();
-      if (inputValue) {
-        _lastSigintAt.value = now;
-        setInputValue('');
-        dispatch({ type: 'info', message: 'Input cleared. Press Ctrl+C again to exit.' } as any);
-        return;
-      }
-
-      if (now - _lastSigintAt.value < 1200) {
-        process.exit(0);
-      }
-
-      _lastSigintAt.value = now;
-      dispatch({ type: 'info', message: 'Press Ctrl+C again to exit.' } as any);
+      runHandleCancelOrExit({
+        questionState, replState, inputValue, activeAbortRef,
+        setQuestionState, setQuestionAnswer, setSelectedChoiceIndex, setQuestionOtherActive,
+        interruptActiveRun, setInputValue, dispatch,
+      });
     >>>
 
   callback name=handleComposerCtrlShortcut params="shortcut:string" deps="handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry"
     handler <<<
-      nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
-      switch (shortcut) {
-        case 'b':
-          ctrlKeyHandledRef.current = true;
-          setExecutionRailOpen(false);
-          setFileRailOpen((prev: boolean) => !prev);
-          return;
-        case 'c':
-          ctrlKeyHandledRef.current = true;
-          handleCancelOrExit();
-          return;
-        case 'e':
-          ctrlKeyHandledRef.current = true;
-          setToolOutputExpanded((prev: boolean) => !prev);
-          return;
-        case 'g':
-        case 'i':
-        case 't':
-          ctrlKeyHandledRef.current = true;
-          setFileRailOpen(false);
-          setFileRailExpandedPath(null);
-          setExecutionRailOpen((prev: boolean) => !prev);
-          return;
-        case 'o':
-          ctrlKeyHandledRef.current = true;
-          openLatestToolDetail();
-          return;
-        case 'l':
-          ctrlKeyHandledRef.current = true;
-          handleSubmit('/clear');
-          return;
-        case 'r':
-          ctrlKeyHandledRef.current = true;
-          openResultsPager();
-          return;
-        case 'y':
-          ctrlKeyHandledRef.current = true;
-          draftLatestFailedToolRetry();
-          return;
-        case 'j':
-          ctrlKeyHandledRef.current = true;
-          setInputValue((prev: string) => prev + '\n');
-          return;
-        default:
-          return;
-      }
+      runHandleComposerCtrlShortcut({
+        nestedCtrlShortcutRef, ctrlKeyHandledRef,
+        setExecutionRailOpen, setFileRailOpen, setFileRailExpandedPath, setToolOutputExpanded, setInputValue,
+        handleCancelOrExit, handleSubmit, openLatestToolDetail, openResultsPager, draftLatestFailedToolRetry,
+      }, shortcut);
     >>>
 
   // ── Register cancel callback for SIGINT ──
@@ -1699,289 +1645,27 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
   callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId"
     handler <<<
-      if (isTerminalFocusReport(input)) return;
-      if (key?.paste) return;
-
-      const keyName = typeof key?.name === 'string' ? key.name.toLowerCase() : '';
-      const globalCtrlInputMap = {
-        '\x01': 'a',
-        '\x03': 'c',
-        '\x05': 'e',
-        '\x07': 'g',
-        '\x0f': 'o',
-        '\x0a': 'j',
-        '\x0b': 'k',
-        '\x0c': 'l',
-        '\x12': 'r',
-        '\x14': 't',
-        '\x15': 'u',
-        '\x17': 'w',
-        '\x02': 'b',
-        ...(key.ctrl ? { '\x09': 'i' } : {}),
-      } as Record<string, string>;
-      const globalCtrlInput = globalCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
-      const hasGlobalCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
-      if (btwPanel && (key.escape || input === '\x1b')) {
-        try { btwAbortRef.current?.abort(); } catch { /* nothing in flight */ }
-        btwAbortRef.current = null;
-        setBtwPanel(null);
-        return;
-      }
-      const textInputOwnsReservedShortcut = !statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices);
-      if (hasGlobalCtrlSignal && globalCtrlInput === 'e' && !textInputOwnsReservedShortcut) {
-        const nested = nestedCtrlShortcutRef.current;
-        if (nested.key === 'e' && Date.now() - nested.at < 120) {
-          nestedCtrlShortcutRef.current = { key: '', at: 0 };
-          return;
-        }
-        nestedCtrlShortcutRef.current = { key: 'e', at: Date.now() };
-        ctrlKeyHandledRef.current = true;
-        setToolOutputExpanded((prev: boolean) => !prev);
-        return;
-      }
-
-      if (statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
-        if (key.escape || input === 'q' || input === 'Q' || (key.ctrl && input === '\x03')) {
-          setStatusDashboardOpen(false);
-          return;
-        }
-        if (input === 'a' || input === 'A') {
-          setStatusDashboardFilter('all');
-          return;
-        }
-        if (input === 'p' || input === 'P') {
-          setStatusDashboardFilter('problem');
-          return;
-        }
-        return;
-      }
-
-      // ScrollBox keyboard shortcuts (only when fullscreen owns the viewport and no modal is open).
-      if (terminalMode === 'fullscreen' && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
-        if (key.shift && key.name === 'pageup') {
-          scrollBoxRef.current?.scrollBy(-Math.max(1, Math.floor(currentVisibleRowBudget / 2)));
-          return;
-        }
-        if (key.shift && key.name === 'pagedown') {
-          scrollBoxRef.current?.scrollBy(Math.max(1, Math.floor(currentVisibleRowBudget / 2)));
-          return;
-        }
-        if (key.name === 'home') {
-          scrollBoxRef.current?.scrollTo(0);
-          return;
-        }
-        if (key.name === 'end') {
-          scrollBoxRef.current?.scrollToBottom?.();
-          return;
-        }
-      }
-
-      const normalizedCtrlInputMap = {
-        '\x01': 'a',
-        '\x03': 'c',
-        '\x05': 'e',
-        '\x07': 'g',
-        '\x0f': 'o',
-        '\x0a': 'j',
-        '\x0b': 'k',
-        '\x0c': 'l',
-        '\x12': 'r',
-        '\x14': 't',
-        '\x15': 'u',
-        '\x17': 'w',
-        '\x02': 'b',
-        ...(key.ctrl ? { '\x09': 'i' } : {}),
-      } as Record<string, string>;
-      const normalizedCtrlInput = normalizedCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
-      const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
-      if (hasCtrlSignal && normalizedCtrlInput) {
-        const nested = nestedCtrlShortcutRef.current;
-        if (nested.key === normalizedCtrlInput && Date.now() - nested.at < 120) {
-          nestedCtrlShortcutRef.current = { key: '', at: 0 };
-          return;
-        }
-      }
-
-      const action = resolveKeyboardInput({
-        input, key,
-        textInputActive: !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices),
+      runHandleKeyboardInput({
         modelPickerOpen, cesarPickerOpen, slashPickerOpen, enginePickerOpen,
-        reviewEventOpen: !!reviewEvent,
-        toolDetailOpen: !!toolDetailEvent,
-        questionState, questionChoiceIndex: selectedChoiceIndex, questionOtherActive,
-        updateInfo,
+        reviewEvent, toolDetailEvent, btwPanel, statusDashboardOpen,
+        questionState, selectedChoiceIndex, questionOtherActive,
         replState, inputValue, inputHistory, historyIndex,
-        planModeQueued, autoModeQueued, activePlanState: activePlanRef.current?.state ?? null,
-        planApprovalIndex,
-        outputBlockCount: outputBlocks.length,
-        commands: allSlashCommands,
-        engineIds: availableEngines,
-        fileRailFocused: fileRailOpen && inputValue.trim().length === 0,
-        fileRailExpanded: fileRailExpandedPath !== null,
-        executionRailFocused: executionRailOpen && inputValue.trim().length === 0,
-        liveToolStreamCount: Object.keys(liveToolStreamsRef.current ?? {}).length,
-      });
-
-      switch (action.type) {
-        case 'none': return;
-        case 'exit': process.exit(0); return;
-        case 'resolveChoice':
-          questionState.resolve(action.choiceKey);
-          setQuestionState(null); setQuestionAnswer('');
-          setSelectedChoiceIndex(0); setQuestionOtherActive(false); return;
-        case 'cancelChoice':
-          questionState.resolve('n');
-          setQuestionState(null); setQuestionAnswer('');
-          setSelectedChoiceIndex(0); setQuestionOtherActive(false); return;
-        case 'moveChoice':
-          setSelectedChoiceIndex(action.index); return;
-        case 'enterOther': {
-          // Seat the cursor on the __other row so the inline editor renders even
-          // when Other was picked by its number (instant), not by arrowing to it.
-          // No __other row → nothing to edit; don't enter Other mode (else the hint
-          // would wrongly flip to "Esc returns to options").
-          const _otherIdx = Array.isArray(questionState?.choices)
-            ? questionState.choices.findIndex((c: any) => c && c.key === '__other')
-            : -1;
-          if (_otherIdx < 0) return;
-          setSelectedChoiceIndex(_otherIdx);
-          setQuestionOtherActive(true); setQuestionAnswer(''); return;
-        }
-        case 'exitOther':
-          setQuestionOtherActive(false); setQuestionAnswer(''); return;
-        case 'swallow': return;
-        case 'ghostComplete':
-          setInputValue(inputValue + action.ghost + ' ');
-          return;
-        case 'togglePlanQueued':
-          setPlanModeQueued((prev: boolean) => !prev); return;
-        case 'toggleAutoQueued':
-          const nextAutoModeQueued = !autoModeQueued;
-          setPlanModeQueued(false);
-          setPersistentAutoMode(nextAutoModeQueued);
-          dispatch({
-            type: 'info',
-            message: nextAutoModeQueued
-              ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Ctrl+A toggles it off.'
-              : 'AUTO OFF by default.',
-          } as any);
-          return;
-        case 'submit':
-          handleSubmit(action.value); return;
-        case 'planControl':
-          // Swallow the Enter/key so PromptTextInput does not insert it
-          // into the composer after we route the approval.
-          ctrlKeyHandledRef.current = true;
-          setPlanApprovalIndex(0);
-          if (action.action === 'revise') {
-            // Drop the proposal from the live pane but leave the plan in
-            // activePlanRef so /cancel on the next turn is a no-op. Pre-fill
-            // the composer with a revision prompt; pressing Enter routes the
-            // message to Cesar, who (per session.kern RULE 9) will see the
-            // pending plan and ProposePlan again with the user's changes.
-            setPendingPlanProposal(null);
-            setInputValue('Revise the plan: ');
-            dispatch({ type: 'info', message: 'Type your revision and press Enter (Esc clears).' } as any);
-            return;
-          }
-          handleSubmit(action.action === 'approve' ? '/approve' : '/cancel');
-          return;
-        case 'movePlanApproval':
-          setPlanApprovalIndex(action.index); return;
-        case 'updateBanner':
-          // Route the keyboard shortcut from the in-app update banner.
-          // `update` opens the choice prompt; `changelog` jumps straight to
-          // the release page; `dismiss` hides the banner and remembers the
-          // version so we don't nag again for this release.
-          if (action.action === 'update') {
-            triggerUpdatePrompt();
-          } else if (action.action === 'changelog') {
-            try { spawnSync('open', ['https://github.com/KERNlang/agon/releases'], { stdio: 'ignore' }); } catch { /* ignore */ }
-          } else {
-            dismissUpdateBanner();
-          }
-          return;
-        case 'toggleToolExpand':
-          ctrlKeyHandledRef.current = true;
-          setToolOutputExpanded((prev: boolean) => !prev); return;
-        case 'openToolDetail':
-          openLatestToolDetail(); return;
-        case 'retryFailedTool':
-          draftLatestFailedToolRetry(); return;
-        case 'openResults':
-          openResultsPager(); return;
-        case 'toggleFileRail':
-          setExecutionRailOpen(false);
-          setFileRailOpen((prev: boolean) => !prev);
-          return;
-        case 'toggleExecutionRail':
-          setFileRailOpen(false);
-          setFileRailExpandedPath(null);
-          setExecutionRailOpen((prev: boolean) => !prev);
-          return;
-        case 'toggleLiveToolTail':
-          ctrlKeyHandledRef.current = true;
-          if (!newestLiveToolStreamId) return;
-          setLiveToolTailFrozen((prev: Record<string, boolean>) => ({
-            ...prev,
-            [newestLiveToolStreamId]: !prev[newestLiveToolStreamId],
-          }));
-          return;
-        case 'fileRailSelectPrev': {
-          const files = listFiles();
-          const last = Math.max(0, files.length - 1);
-          setFileRailSelectedIdx((i: number) => Math.max(0, Math.min(last, i) - 1));
-          return;
-        }
-        case 'fileRailSelectNext': {
-          const files = listFiles();
-          const last = Math.max(0, files.length - 1);
-          setFileRailSelectedIdx((i: number) => Math.min(last, Math.max(0, i) + 1));
-          return;
-        }
-        case 'fileRailToggleExpand': {
-          const files = listFiles();
-          if (files.length === 0) return;
-          const idx = Math.max(0, Math.min(files.length - 1, fileRailSelectedIdx));
-          const target = files[idx];
-          setFileRailExpandedPath((prev: string|null) => prev === target.path ? null : target.path);
-          return;
-        }
-        case 'fileRailClose':
-          setFileRailOpen(false);
-          setFileRailExpandedPath(null);
-          return;
-        case 'executionRailClose':
-          setExecutionRailOpen(false);
-          return;
-        case 'unqueuePlan':
-          setPlanModeQueued(false); return;
-        case 'unqueueAuto':
-          setPersistentAutoMode(false);
-          dispatch({ type: 'info', message: 'AUTO OFF by default.' } as any);
-          return;
-        case 'closeSlash':
-          setSlashPickerOpen(false); return;
-        case 'closeEnginePicker':
-          setEnginePickerOpen(false); return;
-        case 'cancelQuestion':
-          if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
-          return;
-        case 'interrupt':
-          interruptActiveRun('Interrupted.', false); return;
-        case 'clearInput':
-          setInputValue(''); return;
-        case 'insertNewline':
-          setInputValue((prev: string) => prev + '\n'); return;
-        case 'historySet':
-          setHistoryIndex(action.index);
-          // value is always a string — empty string means "return to blank composer".
-          setInputValue(action.value);
-          return;
-        case 'cancelOrExit':
-          handleCancelOrExit();
-          return;
-      }
+        planModeQueued, autoModeQueued, planApprovalIndex,
+        outputBlocks, allSlashCommands, availableEngines, updateInfo, terminalMode,
+        newestLiveToolStreamId, fileRailOpen, fileRailExpandedPath, fileRailSelectedIdx,
+        executionRailOpen, currentVisibleRowBudget, startupOnly,
+        nestedCtrlShortcutRef, ctrlKeyHandledRef, btwAbortRef, scrollBoxRef,
+        liveToolStreamsRef, activePlanRef,
+        setBtwPanel, setStatusDashboardOpen, setStatusDashboardFilter,
+        setSlashPickerOpen, setEnginePickerOpen, setPendingPlanProposal,
+        setQuestionState, setQuestionAnswer, setSelectedChoiceIndex, setQuestionOtherActive,
+        setInputValue, setHistoryIndex, setPlanModeQueued, setPersistentAutoMode, setPlanApprovalIndex,
+        setToolOutputExpanded, setLiveToolTailFrozen, setExecutionRailOpen, setFileRailOpen,
+        setFileRailExpandedPath, setFileRailSelectedIdx,
+        handleSubmit, interruptActiveRun, handleCancelOrExit,
+        openLatestToolDetail, openResultsPager, draftLatestFailedToolRetry,
+        triggerUpdatePrompt, dismissUpdateBanner, dispatch,
+      }, input, key);
     >>>
 
   // ── Render ──

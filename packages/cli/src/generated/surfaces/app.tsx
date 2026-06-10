@@ -156,11 +156,13 @@ import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBloc
 
 import { buildExecutionRailStats, buildTranscriptRows, clearBlockRowCache } from './app-rendering.js';
 
+import { loadExtensionsForWorkspace, startPlanSyncWatcher, startUpdateCheck, subscribeOrchestrationResults, startTelemetryPoller } from './app-lifecycle.js';
+
 // ── Module: AppHelperExports ──
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:98
+// @kern-source: app:99
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -2036,13 +2038,7 @@ export function App() {
   }, [liveToolStreams]);
 
   useEffect(() => {
-    initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
-      if (extSkills.length > 0) setExtensionSkills(extSkills);
-      if (systemPromptFragments.length > 0) setExtensionPromptFragments(systemPromptFragments);
-      if (extensions.length > 0) setLoadedExtensions(extensions);
-    }).catch((err: Error) => {
-      console.warn(`[agon] extension loading failed: ${err.message}`);
-    });
+    loadExtensionsForWorkspace(workspacePath, commandRegistry, registry, eventBus, setExtensionSkills, setExtensionPromptFragments, setLoadedExtensions);
   }, [workspacePath]);
 
   useEffect(() => {
@@ -2090,57 +2086,7 @@ export function App() {
   }, [activePlan]);
 
   useEffect(() => {
-    if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
-    if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
-    if (!activePlan?.id) return;
-    const planId = activePlan.id;
-    const planFilePath = (() => { try { return cesarPlanJsonPath(planId); } catch { return null; } })();
-    planWatcherTimerRef.current = setInterval(() => {
-      try {
-        // Idle bail-out: free syscall, returns immediately when file hasn't
-        // been written since last tick. Skips the readFileSync + JSON.parse
-        // + comparison + stringify-fallback hot path that compounds as the
-        // plan grows. Only the gate — the rest of the body is identical to
-        // the original conservative logic so render-frequency is unchanged
-        // on real updates.
-        if (planFilePath) {
-          try {
-            const mtimeMs = statSync(planFilePath).mtimeMs;
-            if (mtimeMs === planWatcherStatMtimeRef.current) return;
-            planWatcherStatMtimeRef.current = mtimeMs;
-          } catch { /* file gone — fall through to loadCesarPlan which handles missing */ }
-        }
-        const loaded = loadCesarPlan(planId);
-        if (!loaded) return;
-        const current = activePlanRef.current;
-        const loadedMs = Date.parse(String(loaded.updatedAt ?? ''));
-        const currentMs = Date.parse(String(current?.updatedAt ?? ''));
-        const loadedValid = Number.isFinite(loadedMs);
-        const currentValid = Number.isFinite(currentMs);
-        if (loadedValid && currentValid) {
-          if (loadedMs <= currentMs) return;
-        } else if (loadedValid === currentValid) {
-          // Both missing/invalid — treat as unchanged unless structurally different
-          if (JSON.stringify(loaded) === JSON.stringify(current)) return;
-        }
-        if (planWatcherDebounceTimerRef.current) clearTimeout(planWatcherDebounceTimerRef.current);
-        planWatcherDebounceTimerRef.current = setTimeout(() => {
-          const latest = activePlanRef.current;
-          const latestMs = Date.parse(String(latest?.updatedAt ?? ''));
-          const latestValid = Number.isFinite(latestMs);
-          if (loadedValid && latestValid) {
-            if (loadedMs <= latestMs) return;
-          } else if (loadedValid === latestValid) {
-            if (JSON.stringify(loaded) === JSON.stringify(latest)) return;
-          }
-          setActivePlanWrapped(loaded);
-        }, 500);
-      } catch {}
-    }, 2000);
-    return () => {
-      if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
-      if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
-    };
+    return startPlanSyncWatcher(activePlan, setActivePlanWrapped, planWatcherTimerRef, planWatcherDebounceTimerRef, planWatcherStatMtimeRef, activePlanRef);
   }, [activePlan,setActivePlanWrapped]);
 
   useEffect(() => {
@@ -2170,31 +2116,7 @@ export function App() {
   }, [lastReviewResult]);
 
   useEffect(() => {
-    // On a linked/dev checkout the global `agon` IS this build (via npm link),
-    // so an npm-update banner would offer to install OVER the link and clobber
-    // it. Never auto-check on a dev build — real npm installs still get it.
-    if (isLinkedDevInstall()) return;
-    const startedAt = Date.now();
-    const elapsed = () => Date.now() - startedAt;
-    const boot = setTimeout(async () => {
-      setUpdateChecking(true);
-      try {
-        const dismissed = await loadDismissedVersion();
-        const result = await checkForUpdate(VERSION, undefined);
-        if (result && result.hasUpdate && result.latestVersion && result.latestVersion !== dismissed) {
-          setUpdateInfo({
-            currentVersion: result.currentVersion,
-            latestVersion: result.latestVersion,
-            checkedAt: Date.now(),
-          });
-        }
-      } catch {
-        // Swallow — update check is best-effort, never surface to the user.
-      } finally {
-        setUpdateChecking(false);
-      }
-    }, Math.max(0, 4000 - elapsed()));
-    return () => clearTimeout(boot);
+    return startUpdateCheck(VERSION, setUpdateChecking, setUpdateInfo);
   }, []);
 
   useEffect(() => {
@@ -2254,46 +2176,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!eventBus) return;
-    const modes = ['brainstorm', 'forge', 'tribunal', 'campfire'] as const;
-    const listeners: Array<{ mode: string; handler: () => void }> = [];
-    for (const mode of modes) {
-      const handler = () => {
-        const result = sessionResultStore.getLatest();
-        if (!result || result.type !== mode) return;
-        const winner = result.winner ?? 'none';
-        let summary = '';
-        if (result.type === 'brainstorm' && 'bids' in result.data) {
-          const winBid = (result.data as any).bids?.find((b: any) => b.engineId === winner);
-          summary = winBid?.approach ?? winBid?.reasoning?.slice(0, 200) ?? (result.data as any).response?.slice(0, 200) ?? '';
-        } else if (result.type === 'forge' && 'winner' in result.data) {
-          summary = winner !== 'none' ? `Winner: ${winner}. Diff proposed for review.` : 'No winner — all engines failed.';
-        } else if (result.type === 'tribunal' && 'verdict' in result.data) {
-          summary = (result.data as any).verdict?.slice(0, 200) ?? '';
-        } else if (result.type === 'campfire' && 'rounds' in result.data) {
-          const rounds = (result.data as any).rounds;
-          const last = rounds?.[rounds.length - 1];
-          summary = last ? `${last.engineId}: ${last.content?.slice(0, 200)}` : '';
-        }
-        // Append to chat history so Cesar sees it on next turn
-        appendMessage(chatSession, {
-          role: 'engine' as any,
-          engineId: `${mode}-result`,
-          content: `[${mode} result] Winner: ${winner}. ${summary}`,
-          timestamp: new Date().toISOString(),
-        });
-        // Narrate to UI
-        const label = winner !== 'none' ? `${mode} complete — winner: ${winner}` : `${mode} complete`;
-        dispatch({ type: 'info', message: label } as any);
-      };
-      eventBus.on(`post:${mode}`, handler);
-      listeners.push({ mode, handler });
-    }
-    return () => {
-      for (const listener of listeners) {
-        eventBus.off(`post:${listener.mode}`, listener.handler);
-      }
-    };
+    return subscribeOrchestrationResults(eventBus, dispatch, chatSession);
   }, [eventBus,dispatch,chatSession]);
 
   useEffect(() => {
@@ -2401,67 +2284,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (telemetryPollerRef.current) {
-      telemetryPollerRef.current.stop();
-      telemetryPollerRef.current = null;
-    }
-    const poller = createTelemetryPoller({
-      registry,
-      probe: async (id: string) => probeEngineVitals(registry, id, _cesarSessionRef.session, activeEnginePidsRef.current),
-      intervalMs: 5000,
-      stallThresholdMs: 30000,
-      probeTimeoutMs: 2500,
-      activeEngineIds: activeEngines,
-      autoFallback: 'auto',
-      onAutoFallback: async (from: string, to: string, reason: string) => {
-        const activeTurn = activeTurnRef.current;
-        const retryActiveTurn = !!(activeTurn && !activeTurn.retried && activeTurn.engineId === from && activeTurn.input);
-        if (retryActiveTurn && activeTurn) {
-          activeTurn.retried = true;
-        }
-        const plan = activePlanRef.current;
-        const runningStep = plan?.state === 'running' && Array.isArray(plan?.steps)
-          ? plan.steps.find((step: any) => String(step?.state ?? '') === 'running')
-          : null;
-        const stepEngines = runningStep
-          ? [runningStep.engine, ...(Array.isArray(runningStep.engines) ? runningStep.engines : [])].filter((id: any) => typeof id === 'string' && id.trim())
-          : [];
-        const retryActivePlan = !!(runningStep && !((plan as any).fallbackRetriesUsed?.[runningStep.id]) && (stepEngines.length === 0 || stepEngines.includes(from)));
-        setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
-        if (!retryActivePlan && !retryActiveTurn) {
-          dispatch({ type: 'warning', message: `Telemetry: ${from} stalled (${reason}); keeping Cesar unchanged.` } as any);
-          return false;
-        }
-
-        configSet('cesarEngine' as any, to as any);
-        setConfigVersion((v: number) => v + 1);
-        if (cesarSession) {
-          cesarSession.close();
-          setCesarSessionWrapped(null);
-        }
-        if (retryActivePlan) {
-          if (activeAbortRef.current) activeAbortRef.current.abort();
-          dispatch({ type: 'warning', message: `Telemetry: ${from} stalled during plan step — switched to ${to} and retrying that step (${reason})` } as any);
-        } else if (retryActiveTurn && activeTurn) {
-          if (activeAbortRef.current) activeAbortRef.current.abort();
-          setInputQueue((prev: string[]) => [...prev, activeTurn.input]);
-          dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — switched to ${to} and retrying this prompt (${reason})` } as any);
-        } else {
-          dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — auto-fallback to ${to} (${reason})` } as any);
-        }
-        return true;
-      },
-    });
-    poller.start();
-    telemetryPollerRef.current = poller;
-    const unsub = poller.subscribe((snapshot: Map<string, EngineVitals>) => {
-      setTelemetryVitals(new Map(snapshot));
-    });
-    return () => {
-      unsub();
-      poller.stop();
-      telemetryPollerRef.current = null;
-    };
+    return startTelemetryPoller(registry, cesarSession, activeEngines, dispatch, _cesarSessionRef, telemetryPollerRef, activeEnginePidsRef, activeTurnRef, activePlanRef, activeAbortRef, setRecentFallbacks, setConfigVersion, setCesarSessionWrapped, setInputQueue, setTelemetryVitals);
   }, [registry,cesarSession,activeEngines]);
 
   useEffect(() => {
@@ -2973,22 +2796,22 @@ export function App() {
   );
 }
 
-// @kern-source: app:88
+// @kern-source: app:89
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:90
+// @kern-source: app:91
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:92
+// @kern-source: app:93
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:94
+// @kern-source: app:95
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:96
+// @kern-source: app:97
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:2750
+// @kern-source: app:2572
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

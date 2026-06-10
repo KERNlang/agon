@@ -12,7 +12,7 @@
 
 import from="node:fs" names="existsSync,readFileSync,writeFileSync,mkdirSync"
 import from="node:path" names="join"
-import from="@kernlang/agon-core" names="ensureAgonHome,spawnWithTimeout,worktreeCreate,worktreeRemoveBestEffort,worktreeChangedDiff"
+import from="@kernlang/agon-core" names="ensureAgonHome,spawnWithTimeout,worktreeCreate,worktreeRemoveBestEffort,worktreeChangedDiff,loadConfig,appendCoAuthor"
 import from="./paths.js" names="assertSafeGoalId,resolveWithin"
 import from="./journal.js" names="createJournal,loadJournal,saveJournal,addTasks,requeueInflightTasks,nextTask,markStatus,recordAttempt,remainingCount,isDone,logEvent,goalDir"
 import from="./oracle.js" names="snapshotOracle,witnessTest,witnessVerifyCommand"
@@ -472,8 +472,9 @@ fn name=runGoalController async=true params="opts:{ spec: GoalSpec, repoRoot: st
         }
 
         // COMMIT — one commit per task, then advance the goal branch ref.
+        // Append the configured Co-Authored-By identity (commitCoAuthor) for commits agon creates; no-op when unset.
         await git(['add', '-A'], wt);
-        const commit = await git(['commit', '-m', `goal(${spec.goalId}): ${task.source}`, '--no-verify'], wt);
+        const commit = await git(['commit', '-m', appendCoAuthor(`goal(${spec.goalId}): ${task.source}`, loadConfig(repoRoot)), '--no-verify'], wt);
         if (commit.exitCode !== 0) throw { kind: 'error', detail: `commit failed: ${commit.stderr.trim()}` };
         const headRes = await git(['rev-parse', 'HEAD'], wt);
         const newSha = headRes.stdout.trim();

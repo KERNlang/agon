@@ -632,6 +632,30 @@ fn name=recentCommits params="cwd:string,count?:number" returns=string
       catch name=e
         return value="''"
 
+fn name=coAuthorTrailer params="config:{commitCoAuthor?:string}" returns=string export=true
+  doc "Co-Authored-By trailer paragraph for commits agon itself creates. IDIOM: returns '' when config.commitCoAuthor is unset/blank, else a full leading-blank-line paragraph `\\n\\nCo-Authored-By: <value>` meant to be string-CONCATENATED onto the commit message body (matching the autoCredit trailer pattern in /commit). NOTE: call sites should prefer appendCoAuthor, which is paragraph-aware — it joins into the message's final paragraph when that paragraph is already a trailer block (so git keeps both trailers), instead of blindly prepending a blank-line paragraph. coAuthorTrailer stays exported for direct unit testing of the raw paragraph idiom."
+  handler lang="kern"
+    let name=v value="(config.commitCoAuthor ?? '').trim()"
+    if cond="!v"
+      return value="''"
+    return value="`\\n\\nCo-Authored-By: ${v}`"
+
+fn name=appendCoAuthor params="message:string,config:{commitCoAuthor?:string}" returns=string export=true
+  doc "Paragraph-aware Co-Authored-By append. Returns message unchanged when config.commitCoAuthor is blank/unset. Otherwise: if the message's LAST paragraph is a SEPARATE trailer block — there is more than one paragraph AND every non-empty line of the last one matches /^[A-Za-z][A-Za-z-]*: / (e.g. a user-supplied Co-Authored-By: or Signed-off-by:) — the new trailer is joined with a single `\\n` so all trailers share ONE final paragraph (git only parses trailers from the last paragraph; a blank-line separator would orphan the existing ones). Otherwise the trailer is appended as a new `\\n\\n` paragraph. The >1-paragraph guard is load-bearing: a single-paragraph conventional-commit subject like `feat: do thing` also matches the trailer regex and must NOT be treated as a trailer block. Prefer this over coAuthorTrailer at all commit call sites."
+  handler lang="kern"
+    let name=v value="(config.commitCoAuthor ?? '').trim()"
+    if cond="!v"
+      return value="message"
+    let name=trailerLine value="`Co-Authored-By: ${v}`"
+    comment raw="// Split into paragraphs on blank lines; inspect the LAST one. A trailer block must be a SEPARATE final paragraph — the subject line (a single-paragraph message like `feat: do thing`) also matches the trailer regex, so only treat the last paragraph as trailers when there is MORE than one paragraph."
+    let name=paragraphs value="message.split(/\\n\\s*\\n/)"
+    let name=lastParagraph value="paragraphs[paragraphs.length - 1] ?? ''"
+    let name=nonEmptyLines value="lastParagraph.split('\\n').map((l: string) => l.trim()).filter(Boolean)"
+    let name=isTrailerBlock value="paragraphs.length > 1 && nonEmptyLines.length > 0 && nonEmptyLines.every((l: string) => /^[A-Za-z][A-Za-z-]*: /.test(l))"
+    if cond="isTrailerBlock"
+      return value="`${message}\\n${trailerLine}`"
+    return value="`${message}\\n\\n${trailerLine}`"
+
 fn name=gitStatusShort params="cwd:string" returns=string
   doc "Read-only: git status --short. Never mutates the working tree."
   handler lang="kern"

@@ -30,6 +30,7 @@ export {
   currentBranch, isDirty,
   gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff,
   absoluteGitDir, branchExists, worktreeAddOnBranch, hydrateWorktreeBuildArtifacts,
+  coAuthorTrailer, appendCoAuthor,
 } from './git.js';
 export {
   createSessionWorktree, listSessionWorktrees, findSessionWorktree,

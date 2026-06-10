@@ -109,6 +109,8 @@ union name=OutputEvent discriminant=type
     field name=command type=string
     field name=description type=string optional=true
     field name=reason type=string
+    field name=diffPreview type="{ files: Array<{ path: string; relPath: string; status: string; additions: number; deletions: number; lines: string[]; omitted: number }>; totalFiles: number }" optional=true
+    field name=fallbackNote type=string optional=true
     field name=resolve type="(approved: boolean) => void"
   variant name=patch-review
     field name=winnerId type=string

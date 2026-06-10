@@ -13,6 +13,7 @@ import from="../signals/output.js" names="getSessionAllowList"
 import from="./routing.js" names="buildRoutingContext"
 import from="./brain-helpers.js" names="extractDelegation"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval,approvalArgsFromCommand"
+import from="./approval-diff.js" names="approvalToolIsFileMutating,buildApprovalDiffPreview"
 import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence,buildToolErrorDiagnostic"
 
 const name=CESAR_SYSTEM_PROMPT type=string
@@ -874,7 +875,14 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
         const dispatch = ctx.cesar!.lastDispatch;
         if (dispatch) {
           logApproval('prompted', 'user-prompt', `Cesar (${engineId}) wants to execute`);
-          dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engineId}) wants to execute`, resolve: (approved: boolean | string) => {
+          // File-mutating tools carry a unified diff (computed from the tool
+          // input before execution) so the approval shows the real change.
+          let permDiffPreview: any = undefined;
+          if (approvalToolIsFileMutating(agonTool)) {
+            try { permDiffPreview = buildApprovalDiffPreview(agonTool, approvalArgsFromCommand(agonTool, command)); }
+            catch { /* diff is best-effort — fall back to command preview */ }
+          }
+          dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engineId}) wants to execute`, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
             const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved;
             logApproval(wasApproved ? 'approved' : 'denied', 'user-prompt', wasApproved ? 'user approved' : 'user denied');
             resolve(wasApproved);

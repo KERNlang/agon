@@ -14,6 +14,7 @@ import from="./escalation.js" names="fireQuickNero,fireNero,fireAdvisor,handleSe
 import from="./routing.js" names="buildRoutingContext,deriveRoutingHints,shouldSpeculate"
 import from="./reliability.js" names="readCesarToolReliability,formatCesarReliabilityLine,shouldDowngradeCesarToolWork,buildWhatHappenedSummary"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval"
+import from="./approval-diff.js" names="approvalToolIsFileMutating,buildApprovalDiffPreview"
 import from="./tool-observability.js" names="createCesarTurnId,recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence"
 import from="./brain-helpers.js" names="yieldToInk,splitBeforeToolMarkup,XML_TOOL_MARKUP_HOLD_CHARS,findTrailingUserQuestion,detectAwaitingUserInput,detectNarratedToolStall,detectMutationIntentStall,detectFabricatedDelegation,eagerFailedToolNames,shouldRunEagerRepairTool,shouldStopAfterXmlToolCall,buildReviewFollowupPrompt,extractDelegation"
 
@@ -645,9 +646,17 @@ ${reviewFollowup.prompt}`;
                 continue;
               }
             }
-            // Dispatch permission-ask to UI
+            // Dispatch permission-ask to UI. For file-mutating tools, compute a
+            // unified diff from the tool input (old content from disk + the
+            // proposed change) so the user approves the actual change, not just
+            // a truncated path/command. Other tools keep the command preview.
             logMcpApproval('prompted', 'mcp.user-prompt', 'Cesar wants to execute');
-            dispatch({ type: 'permission-ask', tool: req.tool, command: String(req.args?.command ?? req.args?.file_path ?? JSON.stringify(req.args)), reason: `Cesar wants to execute`, resolve: (approved: boolean | string) => {
+            let permDiffPreview: any = undefined;
+            if (approvalToolIsFileMutating(req.tool)) {
+              try { permDiffPreview = buildApprovalDiffPreview(String(req.tool), reqArgs); }
+              catch { /* diff is best-effort — fall back to command preview */ }
+            }
+            dispatch({ type: 'permission-ask', tool: req.tool, command: String(req.args?.command ?? req.args?.file_path ?? JSON.stringify(req.args)), reason: `Cesar wants to execute`, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
               const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : approved;
               logMcpApproval(wasApproved ? 'approved' : 'denied', 'mcp.user-prompt', wasApproved ? 'user approved' : 'user denied');
               // Handle "Always" — persist to config

@@ -71,8 +71,9 @@ export function classifyDispatchFailure(signal: {stderr?:string, exitCode?:numbe
   if (/\b401\b|invalid api key|invalid access token|token (expired|invalid)|oauth|free tier was discontinued|coding plan|unauthori[sz]ed|authentication (failed|error)|authorized_error|authentication required/.test(haystack)) {
     return 'auth-failed';
   }
-  // Binary-missing: a declared CLI binary absent from PATH. Matches the EngineNotFoundError message ("binary \"x\" not found on path"), "command not found", "is not installed", and `spawn <bin> enoent` (a process-spawn ENOENT is a missing binary, distinct from a network ENOTFOUND). Above unreachable so it never mis-reports as a network failure. spawn.*enoent matches paths after "spawn" (e.g. "spawn /usr/bin/aider enoent").
-  if (/not found on path|command not found|is not installed|no such file or directory|spawn.*enoent/.test(haystack)) {
+  // Binary-missing: a declared CLI binary absent from PATH. Matches the EngineNotFoundError message ("binary \"x\" not found on path"), "is not installed", and `spawn <bin> enoent` — a Node process-spawn ENOENT IS the canonical missing-binary signal (distinct from a network ENOTFOUND). Above unreachable so it never mis-reports as a network failure. spawn.*enoent matches paths after "spawn" (e.g. "spawn /usr/bin/aider enoent").
+  // Deliberately NOT matching "command not found" (shell-127 text) or "no such file or directory": both over-match a HEALTHY engine's stderr that mentions an inner-shell tool failure ("bash: jq: command not found") or a missing data/config file ("cannot open ~/.foo/config: No such file or directory"), which would hard-quarantine the engine for the whole session. After Finding 1 a declared-but-absent binary throws EngineNotFoundError ("not found on path") BEFORE any spawn, and a binary deleted mid-session surfaces as `spawn <bin> ENOENT` — both still matched here — so dropping the two broad patterns loses no real binary-missing signal.
+  if (/not found on path|is not installed|spawn.*enoent/.test(haystack)) {
     return 'binary-missing';
   }
   // Unreachable: ENOTFOUND DNS, ECONNREFUSED, ECONNRESET, network unreachable (spawn ENOENT is handled above as binary-missing).

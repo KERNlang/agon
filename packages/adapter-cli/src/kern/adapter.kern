@@ -31,8 +31,8 @@ service name=CliAdapter implements=EngineAdapter
       comment raw="// Prefer CLI binary when available — API is fallback for binary-less engines"
       let name=binaryPath value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
       if cond="!binaryPath"
-        comment raw="// No CLI binary — use API if available, otherwise fail"
-        if cond="options.engine.api"
+        comment raw="// No CLI binary — use API ONLY when a usable key is present, otherwise fail. Gating on the key (not just the api block) is what keeps binary-missing + no-key from mis-reporting as \"Missing API key\" for codex/claude/agy (which all declare an api block): without a key it falls through to the EngineNotFoundError(missingBinary) throw, while binary-missing + valid key still uses the api fallback (a feature). A possibly-absent apiKeyEnv → process.env[undefined] → undefined (falsy), correctly treated as no usable key."
+        if cond="options.engine.api && process.env[options.engine.api.apiKeyEnv]"
           let name=resolvedModel value="resolveModel(options.engine, options.cwd)"
           let name=apiConfig value="{ ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) }"
           comment raw="// Inject project context for API engines so they know the codebase"
@@ -141,7 +141,8 @@ service name=CliAdapter implements=EngineAdapter
       const binaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
 
       if (!binaryPath) {
-        if (options.engine.api) {
+        // API fallback ONLY when a usable key is present — binary-missing + no-key falls through to EngineNotFoundError(missingBinary) instead of mis-reporting "Missing API key". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)
+        if (options.engine.api && process.env[options.engine.api.apiKeyEnv]) {
           const resolvedModel = resolveModel(options.engine, options.cwd);
           const apiConfig = { ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) };
           const gen = apiStreamDispatch(apiConfig, options.prompt, options.timeout, options.signal, options.systemPrompt);
@@ -238,9 +239,9 @@ service name=CliAdapter implements=EngineAdapter
           let name=files value="diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0"
           do value="recordDispatchHealth(options.engine.id, ptyResult)"
           return value="{ ...ptyResult, diff, diffLines: lines, filesChanged: files }"
-      comment raw="// API fallback: use API agent loop when binary is declared but not installed"
+      comment raw="// API fallback: use API agent loop when binary is declared but not installed AND a usable key is present. Without a key, fall through to the EngineNotFoundError(missingBinary) throw below rather than mis-reporting \"Missing API key\". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)"
       let name=agentBinaryPath value="options.engine.binary ? this.registry.findBinary(options.engine) : null"
-      if cond="options.engine.api && !agentBinaryPath"
+      if cond="options.engine.api && !agentBinaryPath && process.env[options.engine.api.apiKeyEnv]"
         let name=resolvedModel value="resolveModel(options.engine, options.cwd)"
         let name=apiConfig value="{ ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) }"
         let name=cwd value="options.cwd || resolveWorkingDir()"
@@ -388,7 +389,8 @@ service name=CliAdapter implements=EngineAdapter
       }
 
       const streamBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
-      if (options.engine.api && !streamBinaryPath) {
+      // API-only-stream notice ONLY when a usable key is present — binary-missing + no-key falls through to EngineNotFoundError(missingBinary) instead of mis-reporting "Missing API key". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)
+      if (options.engine.api && !streamBinaryPath && process.env[options.engine.api.apiKeyEnv]) {
         yield `Engine "${options.engine.id}" is API-only and does not support streaming agent mode. Use non-streaming dispatch or install the CLI binary.`;
         return {
           exitCode: 1,

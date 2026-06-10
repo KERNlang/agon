@@ -15,9 +15,20 @@ describe('classifyDispatchFailure — binary-missing classification', () => {
     expect(classifyDispatchFailure({ errorMessage: 'spawn codex ENOENT' })).toBe('binary-missing');
   });
 
-  it('classifies "command not found" / "is not installed" as binary-missing', () => {
-    expect(classifyDispatchFailure({ stderr: 'codex: command not found' })).toBe('binary-missing');
+  it('classifies "is not installed" as binary-missing', () => {
     expect(classifyDispatchFailure({ stderr: 'the aider CLI is not installed' })).toBe('binary-missing');
+  });
+
+  it('does NOT quarantine a healthy engine over inner-shell "command not found"', () => {
+    // A subprocess the engine itself shelled out to is missing (e.g. jq inside a tool),
+    // not the dispatched binary — must not hard-quarantine the engine.
+    expect(classifyDispatchFailure({ stderr: 'bash: jq: command not found' })).toBe('failed');
+  });
+
+  it('does NOT quarantine a healthy engine over "No such file or directory" (missing data/config file)', () => {
+    expect(
+      classifyDispatchFailure({ stderr: 'cannot open ~/.foo/config: No such file or directory' }),
+    ).toBe('failed');
   });
 
   it('still classifies network failures as unreachable (not binary-missing)', () => {

@@ -2,7 +2,7 @@
 
 import { defineCommand } from 'citty';
 
-import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, spawnWithTimeout, coAuthorTrailer } from '@kernlang/agon-core';
+import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, spawnWithTimeout, appendCoAuthor } from '@kernlang/agon-core';
 
 import { runConquer } from '@kernlang/agon-forge';
 
@@ -180,7 +180,7 @@ export const conquerCommand: any = defineCommand({
         process.exitCode = 1;
       } else {
         const add = await git(['add', '-A'], 30_000);
-        const commit = add.exitCode === 0 ? await git(['commit', '-m', `conquer: ${taskStr}`, '-m', `${claim}${coAuthorTrailer(config)}`], 30_000) : add;
+        const commit = add.exitCode === 0 ? await git(['commit', '-m', `conquer: ${taskStr}`, '-m', appendCoAuthor(claim, config)], 30_000) : add;
         if (add.exitCode !== 0 || commit.exitCode !== 0) {
           const stage = add.exitCode !== 0 ? 'add' : 'commit';
           const errTxt = String((add.exitCode !== 0 ? add.stderr : commit.stderr) ?? '').slice(0, 200);

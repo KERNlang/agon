@@ -687,7 +687,7 @@ export function recentCommits(cwd: string, count?: number): string {
 }
 
 /**
- * Co-Authored-By trailer paragraph for commits agon itself creates. IDIOM: returns '' when config.commitCoAuthor is unset/blank, else a full leading-blank-line paragraph `\n\nCo-Authored-By: <value>` meant to be string-CONCATENATED onto the commit message body (matching the autoCredit trailer pattern in /commit). Single-`-m` call sites append it to the message string; multi-`-m` sites append it to their final `-m` paragraph.
+ * Co-Authored-By trailer paragraph for commits agon itself creates. IDIOM: returns '' when config.commitCoAuthor is unset/blank, else a full leading-blank-line paragraph `\n\nCo-Authored-By: <value>` meant to be string-CONCATENATED onto the commit message body (matching the autoCredit trailer pattern in /commit). NOTE: call sites should prefer appendCoAuthor, which is paragraph-aware — it joins into the message's final paragraph when that paragraph is already a trailer block (so git keeps both trailers), instead of blindly prepending a blank-line paragraph. coAuthorTrailer stays exported for direct unit testing of the raw paragraph idiom.
  */
 // @kern-source: git:635
 export function coAuthorTrailer(config: {commitCoAuthor?:string}): string {
@@ -699,9 +699,30 @@ export function coAuthorTrailer(config: {commitCoAuthor?:string}): string {
 }
 
 /**
- * Read-only: git status --short. Never mutates the working tree.
+ * Paragraph-aware Co-Authored-By append. Returns message unchanged when config.commitCoAuthor is blank/unset. Otherwise: if the message's LAST paragraph is a SEPARATE trailer block — there is more than one paragraph AND every non-empty line of the last one matches /^[A-Za-z][A-Za-z-]*: / (e.g. a user-supplied Co-Authored-By: or Signed-off-by:) — the new trailer is joined with a single `\n` so all trailers share ONE final paragraph (git only parses trailers from the last paragraph; a blank-line separator would orphan the existing ones). Otherwise the trailer is appended as a new `\n\n` paragraph. The >1-paragraph guard is load-bearing: a single-paragraph conventional-commit subject like `feat: do thing` also matches the trailer regex and must NOT be treated as a trailer block. Prefer this over coAuthorTrailer at all commit call sites.
  */
 // @kern-source: git:643
+export function appendCoAuthor(message: string, config: {commitCoAuthor?:string}): string {
+  const v = (config.commitCoAuthor ?? '').trim();
+  if (!v) {
+    return message;
+  }
+  const trailerLine = `Co-Authored-By: ${v}`;
+  // Split into paragraphs on blank lines; inspect the LAST one. A trailer block must be a SEPARATE final paragraph — the subject line (a single-paragraph message like `feat: do thing`) also matches the trailer regex, so only treat the last paragraph as trailers when there is MORE than one paragraph.
+  const paragraphs = message.split(/\n\s*\n/);
+  const lastParagraph = paragraphs[paragraphs.length - 1] ?? '';
+  const nonEmptyLines = lastParagraph.split('\n').map((l: string) => l.trim()).filter(Boolean);
+  const isTrailerBlock = paragraphs.length > 1 && nonEmptyLines.length > 0 && nonEmptyLines.every((l: string) => /^[A-Za-z][A-Za-z-]*: /.test(l));
+  if (isTrailerBlock) {
+    return `${message}\n${trailerLine}`;
+  }
+  return `${message}\n\n${trailerLine}`;
+}
+
+/**
+ * Read-only: git status --short. Never mutates the working tree.
+ */
+// @kern-source: git:659
 export function gitStatusShort(cwd: string): string {
   try {
     return git(['status', '--short'], cwd);
@@ -713,7 +734,7 @@ export function gitStatusShort(cwd: string): string {
 /**
  * Read-only: git diff --stat for unstaged changes. No git add.
  */
-// @kern-source: git:651
+// @kern-source: git:667
 export function gitDiffStat(cwd: string): string {
   try {
     return git(['diff', '--stat'], cwd);
@@ -725,7 +746,7 @@ export function gitDiffStat(cwd: string): string {
 /**
  * Read-only: list of changed file paths (unstaged + staged). No git add.
  */
-// @kern-source: git:659
+// @kern-source: git:675
 export function gitChangedFiles(cwd: string): string[] {
   try {
     const unstaged = git(['diff', '--name-only'], cwd);
@@ -740,7 +761,7 @@ export function gitChangedFiles(cwd: string): string[] {
 /**
  * Read-only: truncated git diff (unstaged). Caps output. No git add.
  */
-// @kern-source: git:670
+// @kern-source: git:686
 export function gitTruncatedDiff(cwd: string, maxLines?: number): string {
   try {
     const diff = git(['diff'], cwd);

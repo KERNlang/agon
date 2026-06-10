@@ -12,7 +12,7 @@
 // follow-up. See .design-docs-local/cesar-autonomous-mode.md.
 
 import from="citty" names="defineCommand"
-import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,spawnWithTimeout,coAuthorTrailer"
+import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,spawnWithTimeout,appendCoAuthor"
 import from="@kernlang/agon-forge" names="runConquer"
 import from="@kernlang/agon-forge" names="ConquerResult,ConquerTurn" types=true
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
@@ -185,7 +185,7 @@ const name=conquerCommand type=any
             process.exitCode = 1;
           } else {
             const add = await git(['add', '-A'], 30_000);
-            const commit = add.exitCode === 0 ? await git(['commit', '-m', `conquer: ${taskStr}`, '-m', `${claim}${coAuthorTrailer(config)}`], 30_000) : add;
+            const commit = add.exitCode === 0 ? await git(['commit', '-m', `conquer: ${taskStr}`, '-m', appendCoAuthor(claim, config)], 30_000) : add;
             if (add.exitCode !== 0 || commit.exitCode !== 0) {
               const stage = add.exitCode !== 0 ? 'add' : 'commit';
               const errTxt = String((add.exitCode !== 0 ? add.stderr : commit.stderr) ?? '').slice(0, 200);

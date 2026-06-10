@@ -2,7 +2,7 @@
 
 import { execSync, execFileSync } from 'node:child_process';
 
-import { loadConfig, resolveWorkingDir, configGet, coAuthorTrailer } from '@kernlang/agon-core';
+import { loadConfig, resolveWorkingDir, configGet, appendCoAuthor } from '@kernlang/agon-core';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
@@ -89,13 +89,16 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
       agonGenerated = false;
     }
   }
-  // Append Co-authored-by trailer when Agon generated the message and user hasn't disabled it
+  // Append the configured Co-Authored-By identity (commitCoAuthor) for commits agon creates; no-op when unset.
+  // appendCoAuthor is paragraph-aware: a user-supplied message already ending in a trailer block gets the identity joined into that final paragraph (git only parses trailers from the last paragraph).
+  const config = loadConfig(cwd);
+  const commitCoAuthor = (config.commitCoAuthor ?? '').trim();
+  // commitCoAuthor SUPERSEDES the legacy autoCredit 'Agon AI <agon@local>' line: when an identity is set (the default), agon@local resolves to no GitHub account and two co-author identities for the same tool is noise. autoCredit only applies when commitCoAuthor is opted out ("").
   const autoCredit = configGet('autoCredit', cwd) as boolean;
-  if (agonGenerated && autoCredit) {
+  if (agonGenerated && autoCredit && !commitCoAuthor) {
     commitMsg += '\n\nCo-authored-by: Agon AI <agon@local>';
   }
-  // Append the configured Co-Authored-By identity (commitCoAuthor) for commits agon creates; no-op when unset.
-  commitMsg += coAuthorTrailer(loadConfig(cwd));
+  commitMsg = appendCoAuthor(commitMsg, config);
   // Step 4: Commit with HEREDOC (safe for special chars)
   dispatch({ type: 'spinner-start', message: 'Committing...' });
   try {

@@ -160,6 +160,12 @@ export type { LoggedEvent, SessionMeta as EventLogSessionMeta, AppendOptions as 
 // ── SessionHost — read-side seam over the EventLog ledger (client/server split M2) ──
 export { InProcessSessionHost, inProcessSessionHost, getSessionHost, SUBSCRIBE_POLL_MS } from './generated/sessions/session-host.js';
 export type { SessionHost, SessionDescriptor, SubscribeOptions } from './generated/sessions/session-host.js';
+// ── Daemon wire protocol — newline-JSON frames agond speaks (client/server split M3) ──
+export {
+  encodeDaemonRequest, encodeDaemonResponse,
+  parseDaemonRequest, parseDaemonResponse, splitFrames,
+} from './generated/sessions/daemon-protocol.js';
+export type { DaemonRequest, DaemonResponse } from './generated/sessions/daemon-protocol.js';
 export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
 export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';
 export { apiDispatch, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';

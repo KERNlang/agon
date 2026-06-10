@@ -1,5 +1,5 @@
 import from="node:child_process" names="execSync,execFileSync"
-import from="@kernlang/agon-core" names="loadConfig,resolveWorkingDir,configGet"
+import from="@kernlang/agon-core" names="loadConfig,resolveWorkingDir,configGet,coAuthorTrailer"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 fn name=gitExec params="cmd:string, cwd:string" returns=string export=false
@@ -77,6 +77,8 @@ fn name=handleCommit async=true params="message:string|undefined, dispatch:Dispa
     let name=autoCredit value="configGet('autoCredit', cwd) as boolean"
     if cond="agonGenerated && autoCredit"
       assign target="commitMsg" op="+=" value="'\\n\\nCo-authored-by: Agon AI <agon@local>'"
+    comment raw="// Append the configured Co-Authored-By identity (commitCoAuthor) for commits agon creates; no-op when unset."
+    assign target="commitMsg" op="+=" value="coAuthorTrailer(loadConfig(cwd))"
     comment raw="// Step 4: Commit with HEREDOC (safe for special chars)"
     do value="dispatch({ type: 'spinner-start', message: 'Committing...' })"
     try

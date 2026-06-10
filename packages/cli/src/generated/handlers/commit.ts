@@ -2,7 +2,7 @@
 
 import { execSync, execFileSync } from 'node:child_process';
 
-import { loadConfig, resolveWorkingDir, configGet } from '@kernlang/agon-core';
+import { loadConfig, resolveWorkingDir, configGet, coAuthorTrailer } from '@kernlang/agon-core';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
@@ -94,6 +94,8 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
   if (agonGenerated && autoCredit) {
     commitMsg += '\n\nCo-authored-by: Agon AI <agon@local>';
   }
+  // Append the configured Co-Authored-By identity (commitCoAuthor) for commits agon creates; no-op when unset.
+  commitMsg += coAuthorTrailer(loadConfig(cwd));
   // Step 4: Commit with HEREDOC (safe for special chars)
   dispatch({ type: 'spinner-start', message: 'Committing...' });
   try {

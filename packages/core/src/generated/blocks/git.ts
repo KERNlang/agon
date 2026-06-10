@@ -687,9 +687,21 @@ export function recentCommits(cwd: string, count?: number): string {
 }
 
 /**
- * Read-only: git status --short. Never mutates the working tree.
+ * Co-Authored-By trailer paragraph for commits agon itself creates. IDIOM: returns '' when config.commitCoAuthor is unset/blank, else a full leading-blank-line paragraph `\n\nCo-Authored-By: <value>` meant to be string-CONCATENATED onto the commit message body (matching the autoCredit trailer pattern in /commit). Single-`-m` call sites append it to the message string; multi-`-m` sites append it to their final `-m` paragraph.
  */
 // @kern-source: git:635
+export function coAuthorTrailer(config: {commitCoAuthor?:string}): string {
+  const v = (config.commitCoAuthor ?? '').trim();
+  if (!v) {
+    return '';
+  }
+  return `\n\nCo-Authored-By: ${v}`;
+}
+
+/**
+ * Read-only: git status --short. Never mutates the working tree.
+ */
+// @kern-source: git:643
 export function gitStatusShort(cwd: string): string {
   try {
     return git(['status', '--short'], cwd);
@@ -701,7 +713,7 @@ export function gitStatusShort(cwd: string): string {
 /**
  * Read-only: git diff --stat for unstaged changes. No git add.
  */
-// @kern-source: git:643
+// @kern-source: git:651
 export function gitDiffStat(cwd: string): string {
   try {
     return git(['diff', '--stat'], cwd);
@@ -713,7 +725,7 @@ export function gitDiffStat(cwd: string): string {
 /**
  * Read-only: list of changed file paths (unstaged + staged). No git add.
  */
-// @kern-source: git:651
+// @kern-source: git:659
 export function gitChangedFiles(cwd: string): string[] {
   try {
     const unstaged = git(['diff', '--name-only'], cwd);
@@ -728,7 +740,7 @@ export function gitChangedFiles(cwd: string): string[] {
 /**
  * Read-only: truncated git diff (unstaged). Caps output. No git add.
  */
-// @kern-source: git:662
+// @kern-source: git:670
 export function gitTruncatedDiff(cwd: string, maxLines?: number): string {
   try {
     const diff = git(['diff'], cwd);

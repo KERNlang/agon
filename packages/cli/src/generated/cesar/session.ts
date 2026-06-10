@@ -211,6 +211,14 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       if (ctx.explorationMode) {
         systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
       }
+
+      // When the user configured a commitCoAuthor identity, tell Cesar to end any
+      // git commit message it writes itself (via Bash) with that trailer, so its
+      // commits carry the same authorship attribution as agon's own commit paths.
+      const commitCoAuthor = (config.commitCoAuthor || '').trim();
+      if (commitCoAuthor) {
+        systemParts.push(`COMMIT ATTRIBUTION: When you create a git commit yourself via Bash, end the commit message with a trailer line \`Co-Authored-By: ${commitCoAuthor}\`.`);
+      }
       // Inject only in-process/session memory. Cross-session persistent memory is
       // intentionally not fed back into normal Cesar turns — it causes stale,
       // low-value bleed from prior sessions.
@@ -356,19 +364,19 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:342
+// @kern-source: session:350
 export const CESAR_SNAPSHOT_MSG_CHAR_CAP: number = 4000;
 
-// @kern-source: session:344
+// @kern-source: session:352
 export const CONFIDENCE_BLOCK_LIMIT: number = 2;
 
-// @kern-source: session:346
+// @kern-source: session:354
 export const SEARCH_NUDGE_THRESHOLD: number = 40;
 
 /**
  * Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it.
  */
-// @kern-source: session:348
+// @kern-source: session:356
 export function capSnapshotMessageContent(content: string): string {
   if (content.length <= CESAR_SNAPSHOT_MSG_CHAR_CAP) return content;
   return `${content.slice(0, CESAR_SNAPSHOT_MSG_CHAR_CAP)}\n… [${content.length - CESAR_SNAPSHOT_MSG_CHAR_CAP} chars truncated for Cesar context]`;
@@ -377,7 +385,7 @@ export function capSnapshotMessageContent(content: string): string {
 /**
  * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched.
  */
-// @kern-source: session:355
+// @kern-source: session:363
 export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const directHistory = session?.getMessageHistory?.() ?? [];
   if (directHistory.length > 0) {
@@ -410,7 +418,7 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
 /**
  * Persist the active Cesar conversation before the session is discarded.
  */
-// @kern-source: session:380
+// @kern-source: session:388
 export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
   if (!session) return;
   const snapshot = buildCesarConversationSnapshot(session, chatSession);
@@ -425,7 +433,7 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
-// @kern-source: session:393
+// @kern-source: session:401
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -729,7 +737,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:695
+// @kern-source: session:703
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -912,7 +920,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:879
+// @kern-source: session:887
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -946,7 +954,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:913
+// @kern-source: session:921
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -970,7 +978,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:937
+// @kern-source: session:945
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -982,7 +990,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:944
+// @kern-source: session:952
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -1002,7 +1010,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
-// @kern-source: session:962
+// @kern-source: session:970
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
   const raw = fromUrl ?? import.meta.url;
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
@@ -1036,7 +1044,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:994
+// @kern-source: session:1002
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1061,7 +1069,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1020
+// @kern-source: session:1028
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

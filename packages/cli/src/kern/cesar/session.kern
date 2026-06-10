@@ -194,6 +194,14 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export
     if (ctx.explorationMode) {
       systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
     }
+
+    // When the user configured a commitCoAuthor identity, tell Cesar to end any
+    // git commit message it writes itself (via Bash) with that trailer, so its
+    // commits carry the same authorship attribution as agon's own commit paths.
+    const commitCoAuthor = (config.commitCoAuthor || '').trim();
+    if (commitCoAuthor) {
+      systemParts.push(`COMMIT ATTRIBUTION: When you create a git commit yourself via Bash, end the commit message with a trailer line \`Co-Authored-By: ${commitCoAuthor}\`.`);
+    }
     // Inject only in-process/session memory. Cross-session persistent memory is
     // intentionally not fed back into normal Cesar turns — it causes stale,
     // low-value bleed from prior sessions.

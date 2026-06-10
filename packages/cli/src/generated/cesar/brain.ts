@@ -18,7 +18,7 @@ import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge } from './confidence
 
 import { parseSuggestion } from './suggestion.js';
 
-import { parseLiveTodos } from './todos-marker.js';
+import { parseLiveTodos, parsePreamble } from './todos-marker.js';
 
 import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend } from './session.js';
 
@@ -38,7 +38,7 @@ import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline
 
 import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering.js';
 
-import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
+import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
 
 // @kern-source: brain:22
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
@@ -223,6 +223,24 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       // when a plan is active: plan mode owns the rolling list (plan-executor
       // dispatches source-less todos), and a live block must not clobber it.
       // Returns the response with every [TODOS] block stripped, ready to display.
+      // ── Preamble emission (the [INTENT] marker, RULE 7c) ──
+      // Parse a START-anchored `[INTENT] <one line>` out of the brain's text and
+      // dispatch a distinct dim cesar-preamble block. Idempotent: dispatched ONCE
+      // per turn the first time the complete intent line is seen (during streaming,
+      // so it lands BEFORE tool-call blocks), then the final-cleanup call just
+      // strips the marker from the committed text. No engine round-trip, no new
+      // tool — same idiom as [TODOS]. Returns the response with the leading [INTENT]
+      // line removed, ready to display/commit. Absent marker = no block, no change.
+      let _preambleEmitted = false;
+      const emitPreamble = (text: string): string => {
+        const parsed = parsePreamble(text);
+        if (!parsed.found || !parsed.intent) return text;
+        if (!_preambleEmitted) {
+          _preambleEmitted = true;
+          dispatch({ type: 'cesar-preamble', engineId: _actualCesarEngineId || undefined, intent: parsed.intent } as any);
+        }
+        return parsed.rest;
+      };
       const emitLiveTodos = (text: string): string => {
         const planActive = !!(ctx.activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(ctx.activePlan.state));
         if (planActive) return text;
@@ -520,6 +538,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // Per-turn native-path [TODOS] display stripper (state encapsulated in the
         // factory closure: hold buffer + insideBlock). Flushed at stream end.
         const stripTodosForDisplay = createTodosDisplayStripper();
+        // Per-turn native-path [INTENT] preamble display stripper. Holds the leading
+        // text until it can decide whether the response opens with an [INTENT] line,
+        // suppressing that line from the streamed display. Flushed at stream end.
+        const stripPreambleForDisplay = createPreambleStripper();
         let hadToolActivity = false; // tracks if native tool calls were shown to user
         // Engine-failure tracking: when a send yields an `error` chunk or returns
         // empty (overflow, rate limit, content filter, dead session), capture the
@@ -1036,6 +1058,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     cleanFirst = response.replace(/<think>[\s\S]*/gi, '');
                   }
                 }
+                // Dispatch the [INTENT] preamble block early (before tool work) the
+                // moment the complete leading line is available, then strip it from
+                // the streamed display so the marker never flashes. Runs on both the
+                // native and XML paths since the marker is plain leading text.
+                emitPreamble(response);
+                cleanFirst = stripPreambleForDisplay(cleanFirst);
                 if (!ctx.cesar!.hasNativeTools) {
                   const split = splitBeforeToolMarkup(cleanFirst);
                   cleanFirst = split.visible;
@@ -1048,6 +1076,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 response += chunk.content;
                 noteXmlToolDetected(true);
                 let displayChunk = chunk.content;
+                // Suppress the leading [INTENT] line from the streamed display and
+                // dispatch its block early (idempotent) once the line completes.
+                emitPreamble(response);
+                displayChunk = stripPreambleForDisplay(displayChunk);
+                if (!displayChunk) continue;
                 if (!ctx.cesar!.hasNativeTools) {
                   displayChunk = takeXmlSafeDisplayChunk(displayChunk);
                   if (!displayChunk) continue;
@@ -1090,6 +1123,18 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 }
               }
             }
+          }
+          // Flush any leading text the preamble stripper is still holding (a marker
+          // that never saw its terminating newline before stream end). Route the
+          // flushed remainder through the same downstream stripper the live path
+          // uses so it is not double-shown nor leaked. emitPreamble already fired
+          // the block (parsePreamble matches a newline-less leading [INTENT] too).
+          const trailingPreambleSafe = stripPreambleForDisplay('', true);
+          if (streaming && trailingPreambleSafe) {
+            const routed = ctx.cesar!.hasNativeTools
+              ? stripTodosForDisplay(trailingPreambleSafe)
+              : takeXmlSafeDisplayChunk(trailingPreambleSafe);
+            if (routed.trim()) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: routed });
           }
           const trailingXmlSafe = takeXmlSafeDisplayChunk('', true);
           if (streaming && trailingXmlSafe.trim()) {
@@ -1147,6 +1192,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (ctx.cesar!.hasNativeTools) {
           response = response.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
         }
+        // Preamble: strip the leading [INTENT] line from the committed text (and
+        // dispatch its block if streaming never did — idempotent). Run BEFORE the
+        // todos strip since the marker is the very first line.
+        response = emitPreamble(response);
         // Live-todo emission: parse the [TODOS] block out of the response, dispatch
         // the source:'live' checklist, and keep only the stripped text. Safe no-op
         // when no block is present or a plan is active (emitLiveTodos guards both).

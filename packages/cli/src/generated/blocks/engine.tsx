@@ -200,6 +200,12 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
           ))}
         </Text>
       ) : null}
+      {(event as any).todos && Number((event as any).todos.total ?? 0) > 0 ? (
+        <Text>
+          <Text dimColor>{'  todos: '}</Text>
+          <Text color={Number((event as any).todos.done ?? 0) >= Number((event as any).todos.total ?? 0) ? '#4ade80' : '#fbbf24'}>{Number((event as any).todos.done ?? 0)}{'/'}{Number((event as any).todos.total ?? 0)}{' done'}</Text>
+        </Text>
+      ) : null}
       <Text dimColor>{'  '}{toolLine}{failedTools > 0 ? ` · ${failedTools} failed` : ''}</Text>
       {(event as any).confidenceReasoning ? (
         <Text italic color="#a8a8a8">{'  why: '}{(event as any).confidenceReasoning}</Text>
@@ -239,7 +245,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
 });
 export { CesarRecapBlock };
 
-// @kern-source: engine:285
+// @kern-source: engine:291
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -307,7 +313,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-// @kern-source: engine:357
+// @kern-source: engine:363
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -331,7 +337,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:386
+// @kern-source: engine:392
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -926,6 +932,15 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       );
     }
     case 'cesar-recap': return <CesarRecapBlock event={event as OutputEvent & { type: 'cesar-recap' }} />;
+    case 'cesar-preamble': {
+      const intent = String((event as any).intent ?? '').trim();
+      if (!intent) return null;
+      return (
+        <Box paddingLeft={1} marginTop={1}>
+          <Text dimColor>{'• '}{intent}</Text>
+        </Box>
+      );
+    }
     case 'file-changes': {
       const files = (event as any).files as { path: string; status: string; additions: number; deletions: number }[];
       if (!files || files.length === 0) return null;
@@ -962,7 +977,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:1023
+// @kern-source: engine:1038
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -1107,7 +1122,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1174
+// @kern-source: engine:1189
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1133,7 +1148,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1203
+// @kern-source: engine:1218
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (

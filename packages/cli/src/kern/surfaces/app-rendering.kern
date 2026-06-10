@@ -1107,6 +1107,15 @@ module name=AppRendering
               confidence ? { text: ` · ${confidence}`, dimColor: true } : null,
               seconds ? { text: ` · ${seconds}`, dimColor: true } : null,
             ].filter(Boolean));
+            const recapTodos = (event as any).todos;
+            if (recapTodos && Number(recapTodos.total ?? 0) > 0) {
+              const tDone = Number(recapTodos.done ?? 0);
+              const tTotal = Number(recapTodos.total ?? 0);
+              pushSegmentsRow(`${baseKey}-recap-todos`, 1, [
+                { text: '  todos: ', dimColor: true },
+                { text: `${tDone}/${tTotal} done`, color: tDone >= tTotal ? '#4ade80' : '#fbbf24' },
+              ]);
+            }
             pushSegmentsRow(`${baseKey}-recap-tools`, 1, [{ text: `  ${toolLine}${failedTools > 0 ? ` · ${failedTools} failed` : ''}`, dimColor: true }]);
             if ((event as any).confidenceReasoning) {
               pushSegmentsRow(`${baseKey}-recap-why`, 1, [{ text: `  why: ${(event as any).confidenceReasoning}`, italic: true, color: '#a8a8a8' }]);
@@ -1252,6 +1261,12 @@ module name=AppRendering
             pushSegmentsRow(`${baseKey}-team-complete`, 2, [{ text: `Team ${event.teamId} complete · winner ${event.winner ?? 'none'} · $${event.teamCostUsd.toFixed(2)}`, dimColor: true }]);
             return;
           case 'spinner-start':
+          case 'cesar-preamble': {
+            const intent = String((event as any).intent ?? '').trim();
+            if (!intent) return;
+            pushSegmentsRow(`${baseKey}-preamble`, 1, [{ text: `• ${intent}`, dimColor: true }]);
+            return;
+          }
           case 'spinner-stop':
           case 'spinner-update':
           case 'progress-update':

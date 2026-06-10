@@ -171,9 +171,15 @@ union name=OutputEvent discriminant=type
     field name=toolSummary type="string[]"
     field name=commands type="Array<{ label: string; command: string; status: string }>"
     field name=files type="Array<{ path: string; relPath: string; status: string; touchCount: number }>"
+    doc "The turn's final live-todo checklist progress (N/M done), or null when the turn declared no live checklist. Rendered as a 'todos: N/M done' line."
+    field name=todos type="{ done: number; total: number } | null" optional=true
     field name=checkpoints type="Array<{ id: string; label: string }>" optional=true
     field name=diffPreview type="{ files: Array<{ path: string; relPath: string; status: string; additions: number; deletions: number; lines: string[]; omitted: number }>; totalFiles: number }" optional=true
     field name=warnings type="string[]"
+  variant name=cesar-preamble
+    doc "One short intent line ([INTENT] marker, RULE 7c) shown as a distinct dim block at the START of a Cesar turn, before any tool work. Parsed + stripped from the visible answer like [TODOS]; absent marker = no block."
+    field name=engineId type=string optional=true
+    field name=intent type=string
   variant name=file-changes
     field name=files type="{ path: string; status: 'modified'|'created'|'deleted'; additions: number; deletions: number }[]"
   variant name=dashboard

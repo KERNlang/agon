@@ -85,3 +85,45 @@ fn name=parseLiveTodos params="response:string" returns="TodosMarkerResult" expo
     const todos = order.map((id) => byId.get(id)!).filter(Boolean);
     return { todos, found, rest };
   >>>
+
+// ── Cesar Preamble: parse the [INTENT] <one line> marker ──────────────
+// The SECOND sanctioned marker idiom (RULE 7c): one short intent line at the
+// VERY START of the brain's response declaring what the turn is about to do,
+// e.g. `[INTENT] Tracing the dispatch path before changing timeouts`. The
+// brain renders it as a distinct dim block BEFORE any tool work, then strips
+// it from the visible/committed answer — exactly like [TODOS], but a single
+// START-anchored line with no closing tag.
+//
+// ANCHOR RULE: the marker is recognized ONLY at the start of the response
+// (after optional leading whitespace). A mid-text "[INTENT] …" is left intact
+// (it's ordinary prose, not a preamble) — this keeps the signal unambiguous
+// and prevents a stray bracketed phrase deep in an answer from being hoisted
+// into a preamble block. The intent line ends at the first newline (or end of
+// string). Malformed/empty intent (just "[INTENT]" with no text) is treated
+// as ABSENT (found:false) so a bare marker neither renders an empty block nor
+// is stripped.
+
+interface name=PreambleMarkerResult export=true
+  field name=intent type="string | null"
+  doc "The parsed one-line intent (marker stripped, trimmed), or null when no start-anchored [INTENT] line is present."
+  field name=found type=boolean
+  doc "True when a start-anchored [INTENT] <non-empty> line was located and stripped."
+  field name=rest type=string
+  doc "Response text with the leading [INTENT] line removed, ready to display."
+
+fn name=parsePreamble params="response:string" returns="PreambleMarkerResult" export=true
+  doc "Extract a START-anchored [INTENT] <one line> preamble. Only the first line (after optional leading whitespace) is considered; a mid-text [INTENT] is left intact. An empty intent (bare marker) is treated as absent. Strips the matched line (and a single following newline) from rest."
+  handler <<<
+    const text = String(response ?? '');
+    // Anchor at the start, allowing leading whitespace/newlines. The intent
+    // runs to the first newline or end of string. Case-insensitive marker.
+    const m = text.match(/^(\s*)\[INTENT\][ \t]*([^\r\n]*)(\r?\n)?/i);
+    if (!m) return { intent: null, found: false, rest: text };
+    const intent = String(m[2] ?? '').trim();
+    // Bare/empty marker → treat as absent (no block, no strip).
+    if (!intent) return { intent: null, found: false, rest: text };
+    // Strip the full matched prefix (leading ws + marker line + one newline),
+    // then trimStart the remainder so the answer doesn't open on blank lines.
+    const rest = text.slice(m[0].length).replace(/^\r?\n/, '');
+    return { intent, found: true, rest };
+  >>>

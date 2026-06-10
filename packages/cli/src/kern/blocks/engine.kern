@@ -242,6 +242,12 @@ screen name=CesarRecapBlock target=ink memo=true
               ))}
             </Text>
           ) : null}
+          {(event as any).todos && Number((event as any).todos.total ?? 0) > 0 ? (
+            <Text>
+              <Text dimColor>{'  todos: '}</Text>
+              <Text color={Number((event as any).todos.done ?? 0) >= Number((event as any).todos.total ?? 0) ? '#4ade80' : '#fbbf24'}>{Number((event as any).todos.done ?? 0)}{'/'}{Number((event as any).todos.total ?? 0)}{' done'}</Text>
+            </Text>
+          ) : null}
           <Text dimColor>{'  '}{toolLine}{failedTools > 0 ? ` · ${failedTools} failed` : ''}</Text>
           {(event as any).confidenceReasoning ? (
             <Text italic color="#a8a8a8">{'  why: '}{(event as any).confidenceReasoning}</Text>
@@ -983,6 +989,15 @@ screen name=OutputBlockView target=ink memo=true
           );
         }
         case 'cesar-recap': return <CesarRecapBlock event={event as OutputEvent & { type: 'cesar-recap' }} />;
+        case 'cesar-preamble': {
+          const intent = String((event as any).intent ?? '').trim();
+          if (!intent) return null;
+          return (
+            <Box paddingLeft={1} marginTop={1}>
+              <Text dimColor>{'• '}{intent}</Text>
+            </Box>
+          );
+        }
         case 'file-changes': {
           const files = (event as any).files as { path: string; status: string; additions: number; deletions: number }[];
           if (!files || files.length === 0) return null;

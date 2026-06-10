@@ -73,3 +73,36 @@ export function parseLiveTodos(response: string): TodosMarkerResult {
   const todos = order.map((id) => byId.get(id)!).filter(Boolean);
   return { todos, found, rest };
 }
+
+/**
+ * The parsed one-line intent (marker stripped, trimmed), or null when no start-anchored [INTENT] line is present.
+ *
+ * True when a start-anchored [INTENT] <non-empty> line was located and stripped.
+ *
+ * Response text with the leading [INTENT] line removed, ready to display.
+ */
+// @kern-source: todos-marker:106
+export interface PreambleMarkerResult {
+  intent: string | null;
+  found: boolean;
+  rest: string;
+}
+
+/**
+ * Extract a START-anchored [INTENT] <one line> preamble. Only the first line (after optional leading whitespace) is considered; a mid-text [INTENT] is left intact. An empty intent (bare marker) is treated as absent. Strips the matched line (and a single following newline) from rest.
+ */
+// @kern-source: todos-marker:114
+export function parsePreamble(response: string): PreambleMarkerResult {
+  const text = String(response ?? '');
+  // Anchor at the start, allowing leading whitespace/newlines. The intent
+  // runs to the first newline or end of string. Case-insensitive marker.
+  const m = text.match(/^(\s*)\[INTENT\][ \t]*([^\r\n]*)(\r?\n)?/i);
+  if (!m) return { intent: null, found: false, rest: text };
+  const intent = String(m[2] ?? '').trim();
+  // Bare/empty marker → treat as absent (no block, no strip).
+  if (!intent) return { intent: null, found: false, rest: text };
+  // Strip the full matched prefix (leading ws + marker line + one newline),
+  // then trimStart the remainder so the answer doesn't open on blank lines.
+  const rest = text.slice(m[0].length).replace(/^\r?\n/, '');
+  return { intent, found: true, rest };
+}

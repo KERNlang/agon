@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseLiveTodos } from '../../packages/cli/src/generated/cesar/todos-marker.js';
-import { createTodosDisplayStripper } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+import { parseLiveTodos, parsePreamble } from '../../packages/cli/src/generated/cesar/todos-marker.js';
+import { createTodosDisplayStripper, createPreambleStripper } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 import {
   updateTodoState,
   clearLiveTodos,
@@ -149,6 +149,110 @@ describe('createTodosDisplayStripper — native-path incremental [TODOS] strippe
     const strip = createTodosDisplayStripper();
     expect(strip('tail [')).toBe('tail ');
     expect(strip('', true)).toBe('[');
+  });
+});
+
+describe('parsePreamble — START-anchored [INTENT] marker parser', () => {
+  it('parses a leading [INTENT] line, strips it, returns the rest', () => {
+    const r = parsePreamble('[INTENT] Tracing the dispatch path\nNow the answer.');
+    expect(r.found).toBe(true);
+    expect(r.intent).toBe('Tracing the dispatch path');
+    expect(r.rest).toBe('Now the answer.');
+  });
+
+  it('allows leading whitespace/newlines before the marker (still start-anchored)', () => {
+    const r = parsePreamble('\n  [INTENT] Reading session.kern\nbody');
+    expect(r.found).toBe(true);
+    expect(r.intent).toBe('Reading session.kern');
+    expect(r.rest).toBe('body');
+  });
+
+  it('matches the marker case-insensitively', () => {
+    const r = parsePreamble('[intent] lower-case marker\nrest');
+    expect(r.found).toBe(true);
+    expect(r.intent).toBe('lower-case marker');
+  });
+
+  it('returns found:false and untouched text when no marker present', () => {
+    const text = 'Just a normal answer with no preamble.';
+    const r = parsePreamble(text);
+    expect(r.found).toBe(false);
+    expect(r.intent).toBeNull();
+    expect(r.rest).toBe(text);
+  });
+
+  it('does NOT treat a mid-text [INTENT] as a preamble (anchor rule)', () => {
+    const text = 'Here is some prose.\n[INTENT] not a preamble\nmore prose.';
+    const r = parsePreamble(text);
+    expect(r.found).toBe(false);
+    expect(r.intent).toBeNull();
+    expect(r.rest).toBe(text);
+  });
+
+  it('treats a bare/empty marker as absent (no block, no strip)', () => {
+    const text = '[INTENT]\nbody';
+    const r = parsePreamble(text);
+    expect(r.found).toBe(false);
+    expect(r.intent).toBeNull();
+    expect(r.rest).toBe(text);
+  });
+
+  it('handles a newline-less marker-only response (intent to end of string)', () => {
+    const r = parsePreamble('[INTENT] only an intent line');
+    expect(r.found).toBe(true);
+    expect(r.intent).toBe('only an intent line');
+    expect(r.rest).toBe('');
+  });
+});
+
+describe('createPreambleStripper — native-path incremental [INTENT] stripper', () => {
+  it('suppresses a leading [INTENT] line delivered in one chunk', () => {
+    const strip = createPreambleStripper();
+    expect(strip('[INTENT] tracing path\nthe answer')).toBe('the answer');
+    // Past the preamble: pure pass-through.
+    expect(strip(' continues')).toBe(' continues');
+  });
+
+  it('marker split across chunks ("[INT" + "ENT] …\\n…") never leaks the marker', () => {
+    const strip = createPreambleStripper();
+    expect(strip('[INT')).toBe('');           // partial marker held
+    expect(strip('ENT] doing a thing\n')).toBe(''); // completes line, suppressed
+    expect(strip('real answer')).toBe('real answer');
+  });
+
+  it('non-marker leading text flushes immediately (never withheld)', () => {
+    const strip = createPreambleStripper();
+    expect(strip('Here is the answer.')).toBe('Here is the answer.');
+    // A later "[INTENT]" mid-stream is NOT a preamble — pass-through.
+    expect(strip(' [INTENT] not stripped')).toBe(' [INTENT] not stripped');
+  });
+
+  it('leading text that briefly looks like the marker but diverges flushes', () => {
+    const strip = createPreambleStripper();
+    // "[In" is a prefix of "[intent]" → held; "voice" diverges → flush all.
+    expect(strip('[In')).toBe('');
+    expect(strip('voice list')).toBe('[Invoice list');
+  });
+
+  it('force flush returns held non-marker text verbatim (no loss)', () => {
+    const strip = createPreambleStripper();
+    expect(strip('[INT')).toBe('');
+    // Stream ended mid-partial-marker that never completed → flush verbatim.
+    expect(strip('', true)).toBe('[INT');
+  });
+
+  it('force flush strips a complete newline-less [INTENT] line (no marker leak)', () => {
+    const strip = createPreambleStripper();
+    // The whole response is just the intent line, no trailing newline.
+    expect(strip('[INTENT] only intent')).toBe('');
+    expect(strip('', true)).toBe('');
+  });
+
+  it('intent line longer than the first chunk is held until its newline', () => {
+    const strip = createPreambleStripper();
+    expect(strip('[INTENT] a fairly ')).toBe('');
+    expect(strip('long intent line')).toBe('');
+    expect(strip(' wrapping on\nanswer body')).toBe('answer body');
   });
 });
 

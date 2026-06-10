@@ -108,6 +108,99 @@ const name=createTodosDisplayStripper type="() => ((chunk: string, force?: boole
     }
   >>>
 
+// ── Preamble [INTENT] incremental display stripper (factory) ──────────
+// Sibling to createTodosDisplayStripper for the SECOND marker idiom: a single
+// START-anchored `[INTENT] <one line>` preamble. The shapes differ enough that
+// a sibling is cleaner than overloading the block stripper — [INTENT] has no
+// closing tag, is recognized ONLY at the very start of the response, and ends
+// at the first newline. Keeping it separate preserves each factory's own
+// chunk-split / force-flush guarantees rather than tangling two state machines.
+//
+// createPreambleStripper() returns ONE strip fn closing over its own per-turn
+// state. brain.kern creates one instance per turn. (chunk, force?) => string:
+//   - Until the start-anchored decision is made, leading text is HELD: a split
+//     like "[INT" + "ENT] tracing…\nrest" must not leak the partial marker, and
+//     "before…" that is NOT a marker prefix must flush immediately (it can never
+//     become a start-anchored [INTENT]).
+//   - Once the [INTENT] line's terminating newline arrives, the WHOLE preamble
+//     line is suppressed and everything after it streams normally.
+//   - If the held text is provably NOT a leading [INTENT] (diverges from the
+//     marker prefix, or contains a newline before completing it), flush verbatim
+//     and stop holding for the rest of the turn.
+//   - force=true (stream end): flush — return held text verbatim. A response that
+//     is ONLY "[INTENT] …" with no trailing newline still flushes its text rather
+//     than vanishing (the parse-path strips the marker for the committed answer).
+const name=createPreambleStripper type="() => ((chunk: string, force?: boolean) => string)" export=true
+  doc "Factory for the native-path START-anchored [INTENT] preamble display stripper. Returns a stateful strip fn (chunk, force?) => string closing over its own decision flags + hold buffer — one instance per turn. Holds leading text until it can decide whether the response opens with an [INTENT] line; suppresses the matched line; once decided (matched-and-consumed, or provably-not-a-marker) it is a pass-through. force=true flushes any held tail verbatim for the stream-end flush. Mirrors createTodosDisplayStripper's hold/flush guarantees for the single-line, no-close-tag marker shape."
+  handler <<<
+    () => {
+      const MARKER = '[intent]';
+      let decided = false;   // start-anchored decision resolved → pass-through
+      let hold = '';         // leading text held while deciding
+      // True when `lower` (already lowercased, leading ws stripped) is a strict
+      // prefix of MARKER or vice-versa up to its length — i.e. still *could* be
+      // a leading [INTENT].
+      const couldBeMarker = (lowerTrimmed: string): boolean => {
+        const n = Math.min(lowerTrimmed.length, MARKER.length);
+        return lowerTrimmed.slice(0, n) === MARKER.slice(0, n);
+      };
+      // Strip a complete START-anchored "[INTENT] <line>" prefix from `text`,
+      // returning the remainder. Handles the no-trailing-newline case (the whole
+      // tail is the intent line → remainder is ''). Returns the text unchanged
+      // when it does not open with the full marker.
+      const stripLeadingPreamble = (text: string): string => {
+        const m = text.match(/^(\s*)\[intent\][ \t]*([^\r\n]*)(\r?\n)?/i);
+        if (!m) return text;
+        return text.slice(m[0].length).replace(/^\r?\n/, '');
+      };
+      return (chunk: string, force = false): string => {
+        if (decided) return chunk;
+        hold += chunk;
+        if (force) {
+          // Stream end. If the held text still opens with a (now complete, since
+          // the stream is over) "[INTENT] …" line, suppress that line and flush
+          // only the remainder — so a newline-less marker-only tail never leaks.
+          // Otherwise flush verbatim; never drop genuine content.
+          decided = true;
+          const afterWs = hold.replace(/^\s*/, '');
+          const out = couldBeMarker(afterWs.toLowerCase()) && afterWs.toLowerCase().startsWith(MARKER)
+            ? stripLeadingPreamble(hold)
+            : hold;
+          hold = '';
+          return out;
+        }
+        // Inspect the held text with leading whitespace ignored for the anchor.
+        const leadingWsMatch = hold.match(/^\s*/);
+        const leadingWs = leadingWsMatch ? leadingWsMatch[0] : '';
+        const afterWs = hold.slice(leadingWs.length);
+        const lower = afterWs.toLowerCase();
+        // Not a possible leading marker → flush everything, stop holding.
+        if (!couldBeMarker(lower)) {
+          decided = true;
+          const out = hold;
+          hold = '';
+          return out;
+        }
+        // Possible marker but not yet the full '[intent]' token → keep holding.
+        if (lower.length < MARKER.length) return '';
+        // We have the full '[INTENT]' token at the start. Wait for the line's end.
+        const nlIdx = afterWs.search(/\r?\n/);
+        if (nlIdx < 0) {
+          // No newline yet — keep holding the whole (possibly long) intent line.
+          return '';
+        }
+        // Suppress the preamble line (leading ws + '[INTENT] …' + its newline) and
+        // emit only what follows. Past this point we are a pure pass-through.
+        const nlMatch = afterWs.slice(nlIdx).match(/^\r?\n/);
+        const nlLen = nlMatch ? nlMatch[0].length : 0;
+        const rest = afterWs.slice(nlIdx + nlLen);
+        decided = true;
+        hold = '';
+        return rest;
+      };
+    }
+  >>>
+
 fn name=isUserDirectedQuestion params="lastLine:string" returns=boolean export=true
   doc "True when the last line of a Cesar turn is a question directed at the USER — either keyword-addressed (which/should/want/your call/…) OR an either/or fork ('A, or B?'). Auto-continuation uses this to STOP and wait for the user instead of treating the question as a mid-task stall and re-prompting Cesar (which caused fork questions like 'plan it all, or start with X?' to loop)."
   handler <<<

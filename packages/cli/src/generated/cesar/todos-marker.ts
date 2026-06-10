@@ -101,8 +101,8 @@ export function parsePreamble(response: string): PreambleMarkerResult {
   const intent = String(m[2] ?? '').trim();
   // Bare/empty marker → treat as absent (no block, no strip).
   if (!intent) return { intent: null, found: false, rest: text };
-  // Strip the full matched prefix (leading ws + marker line + one newline),
-  // then trimStart the remainder so the answer doesn't open on blank lines.
+  // Strip the full matched prefix (leading ws + marker line) plus at most ONE
+  // extra blank line; deeper blank runs are the model's own formatting.
   const rest = text.slice(m[0].length).replace(/^\r?\n/, '');
   return { intent, found: true, rest };
 }

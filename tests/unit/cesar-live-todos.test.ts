@@ -254,6 +254,22 @@ describe('createPreambleStripper — native-path incremental [INTENT] stripper',
     expect(strip('long intent line')).toBe('');
     expect(strip(' wrapping on\nanswer body')).toBe('answer body');
   });
+
+  it('bare [INTENT] marker: display and commit paths agree (both keep it)', () => {
+    // parsePreamble treats a bare/whitespace-only intent as ABSENT and leaves
+    // the marker in the committed text — the display stripper must match, or
+    // live output and transcript diverge.
+    for (const text of ['[INTENT]\nbody', '[INTENT]   \nbody']) {
+      expect(parsePreamble(text).found).toBe(false);
+      expect(parsePreamble(text).rest).toBe(text);
+      const strip = createPreambleStripper();
+      expect(strip(text) + strip('', true)).toBe(text);
+    }
+    // Same rule on the force-flush path (newline-less bare marker).
+    const strip = createPreambleStripper();
+    expect(strip('[INTENT]')).toBe('');
+    expect(strip('', true)).toBe('[INTENT]');
+  });
 });
 
 describe('todos mutators — source field', () => {

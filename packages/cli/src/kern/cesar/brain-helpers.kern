@@ -147,10 +147,13 @@ const name=createPreambleStripper type="() => ((chunk: string, force?: boolean) 
       // Strip a complete START-anchored "[INTENT] <line>" prefix from `text`,
       // returning the remainder. Handles the no-trailing-newline case (the whole
       // tail is the intent line → remainder is ''). Returns the text unchanged
-      // when it does not open with the full marker.
+      // when it does not open with the full marker, OR when the intent is
+      // bare/whitespace-only — parsePreamble treats a bare marker as absent
+      // (leaves it in the committed text), so display must show it too.
       const stripLeadingPreamble = (text: string): string => {
         const m = text.match(/^(\s*)\[intent\][ \t]*([^\r\n]*)(\r?\n)?/i);
         if (!m) return text;
+        if (!String(m[2] ?? '').trim()) return text;
         return text.slice(m[0].length).replace(/^\r?\n/, '');
       };
       return (chunk: string, force = false): string => {
@@ -188,6 +191,14 @@ const name=createPreambleStripper type="() => ((chunk: string, force?: boolean) 
         if (nlIdx < 0) {
           // No newline yet — keep holding the whole (possibly long) intent line.
           return '';
+        }
+        // Bare/whitespace-only intent → parsePreamble keeps the marker in the
+        // committed text, so display must too: flush verbatim, stop holding.
+        if (!afterWs.slice(MARKER.length, nlIdx).trim()) {
+          decided = true;
+          const out = hold;
+          hold = '';
+          return out;
         }
         // Suppress the preamble line (leading ws + '[INTENT] …' + its newline) and
         // emit only what follows. Past this point we are a pure pass-through.

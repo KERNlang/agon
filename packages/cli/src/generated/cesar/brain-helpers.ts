@@ -106,10 +106,13 @@ export const createPreambleStripper: () => ((chunk: string, force?: boolean) => 
   // Strip a complete START-anchored "[INTENT] <line>" prefix from `text`,
   // returning the remainder. Handles the no-trailing-newline case (the whole
   // tail is the intent line → remainder is ''). Returns the text unchanged
-  // when it does not open with the full marker.
+  // when it does not open with the full marker, OR when the intent is
+  // bare/whitespace-only — parsePreamble treats a bare marker as absent
+  // (leaves it in the committed text), so display must show it too.
   const stripLeadingPreamble = (text: string): string => {
     const m = text.match(/^(\s*)\[intent\][ \t]*([^\r\n]*)(\r?\n)?/i);
     if (!m) return text;
+    if (!String(m[2] ?? '').trim()) return text;
     return text.slice(m[0].length).replace(/^\r?\n/, '');
   };
   return (chunk: string, force = false): string => {
@@ -148,6 +151,14 @@ export const createPreambleStripper: () => ((chunk: string, force?: boolean) => 
       // No newline yet — keep holding the whole (possibly long) intent line.
       return '';
     }
+    // Bare/whitespace-only intent → parsePreamble keeps the marker in the
+    // committed text, so display must too: flush verbatim, stop holding.
+    if (!afterWs.slice(MARKER.length, nlIdx).trim()) {
+      decided = true;
+      const out = hold;
+      hold = '';
+      return out;
+    }
     // Suppress the preamble line (leading ws + '[INTENT] …' + its newline) and
     // emit only what follows. Past this point we are a pure pass-through.
     const nlMatch = afterWs.slice(nlIdx).match(/^\r?\n/);
@@ -162,7 +173,7 @@ export const createPreambleStripper: () => ((chunk: string, force?: boolean) => 
 /**
  * True when the last line of a Cesar turn is a question directed at the USER — either keyword-addressed (which/should/want/your call/…) OR an either/or fork ('A, or B?'). Auto-continuation uses this to STOP and wait for the user instead of treating the question as a mid-task stall and re-prompting Cesar (which caused fork questions like 'plan it all, or start with X?' to loop).
  */
-// @kern-source: brain-helpers:204
+// @kern-source: brain-helpers:215
 export function isUserDirectedQuestion(lastLine: string): boolean {
   const last = String(lastLine ?? '').trim();
   if (!/\?\s*$/.test(last)) return false;
@@ -176,7 +187,7 @@ export function isUserDirectedQuestion(lastLine: string): boolean {
 /**
  * Return the nearest user-directed question in the TAIL of a Cesar turn (last 6 non-empty lines), or null. Unlike checking only the LAST line, this catches the common 'ask, then advise' shape — a question FOLLOWED BY a recommendation / rationale / confidence line (esp. minimax) — so auto-continuation recognizes it as the user's turn instead of barreling through it ('asked but never got a chance to answer'). Bounded to the last 6 non-empty lines so a question buried mid-narration does NOT stop the loop; reuses isUserDirectedQuestion for the per-line test. NOTE: we deliberately do NOT try to detect 'the model proceeded past its own question' (matching done / I'll / 'I renamed …') — every anchored attempt produced false positives ('ill', 'I'll wait for your input', 'this is not done yet') that SUPPRESS real questions and reintroduce the very bug this fixes. A stale trailing question merely STOPS the auto-continuation loop when the model is already done, which is benign — the done/effect logic in _detectTurnState already classifies genuine completions. (2 rounds of multi-engine agon review, 2026-06-07.)
  */
-// @kern-source: brain-helpers:216
+// @kern-source: brain-helpers:227
 export function findTrailingUserQuestion(text: string): string | null {
   const lines = String(text ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const TAIL = 6;
@@ -190,7 +201,7 @@ export function findTrailingUserQuestion(text: string): string | null {
 /**
  * True when a Cesar turn ENDS awaiting user input — either a trailing user-directed question (findTrailingUserQuestion) OR a 'holding / awaiting your approval / greenlight' STATEMENT in the tail (which has no '?'). PLAN EXECUTION uses this to pause an approved plan to idle when the brain stalls asking for input it cannot receive mid-run (the weak-brain 'I'll hold for your greenlight' re-ask of already-granted approval). Scoped to plan execution only; a false positive merely causes a recoverable pause (the one-shot executor override + /plan resume recover it), so the statement pattern is tuned to catch that shape without firing on ordinary completion text.
  */
-// @kern-source: brain-helpers:228
+// @kern-source: brain-helpers:239
 export function detectAwaitingUserInput(text: string): boolean {
   const body = String(text ?? '');
   if (findTrailingUserQuestion(body)) return true;
@@ -226,7 +237,7 @@ export function detectAwaitingUserInput(text: string): boolean {
 /**
  * Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling.
  */
-// @kern-source: brain-helpers:262
+// @kern-source: brain-helpers:273
 export function detectNarratedToolStall(text: string): boolean {
   const body = String(text ?? '').trim();
   if (!body) {
@@ -244,7 +255,7 @@ export function detectNarratedToolStall(text: string): boolean {
 /**
  * Detect a 'false read-only hand-back': the orchestrator narrated intent to change files (apply/edit/the patch) AND claimed it cannot write / offered to delegate the write to an agent / asked the user to paste-or-apply it — WITHOUT emitting a mutating tool call. That is the stall that leaves Cesar's Phase-1 mutation un-deferred, so the execution-phase unlock never fires and the turn dead-ends. The caller uses this to force the unlock so Cesar writes directly instead of narrating a wall.
  */
-// @kern-source: brain-helpers:276
+// @kern-source: brain-helpers:287
 export function detectMutationIntentStall(text: string): boolean {
   const body = String(text ?? '').trim();
   if (!body) return false;
@@ -259,7 +270,7 @@ export function detectMutationIntentStall(text: string): boolean {
 /**
  * Detect a response that CLAIMS an async review/forge/tribunal/brainstorm/agent or background job was dispatched or is now running — e.g. 'review delegated to codex, claude, agy', 'three reviewers are reading the diff in parallel', 'I kicked off the review', "I'll get back when they report". The caller pairs this with 'no delegation was actually emitted this turn' (ctx.cesar.pendingDelegation is null) to catch the confabulation where a weak engine narrates a dispatch it never made. Requires BOTH a delegable target AND a dispatch/running claim, so a plain answer that merely mentions the word 'review' does not trip it.
  */
-// @kern-source: brain-helpers:289
+// @kern-source: brain-helpers:300
 export function detectFabricatedDelegation(text: string): boolean {
   const body = String(text ?? '').trim();
   if (!body) return false;
@@ -274,7 +285,7 @@ export function detectFabricatedDelegation(text: string): boolean {
 /**
  * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
  */
-// @kern-source: brain-helpers:302
+// @kern-source: brain-helpers:313
 export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
   const names: string[] = [];
   for (const result of results ?? []) {
@@ -292,7 +303,7 @@ export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
 /**
  * Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch.
  */
-// @kern-source: brain-helpers:314
+// @kern-source: brain-helpers:325
 export function shouldRunEagerRepairTool(toolName: string, meta: any, failedToolNames: string[], usedToolNames: string[]): boolean {
   const name = String(toolName ?? '').trim();
   if (!name) return false;
@@ -307,7 +318,7 @@ export function shouldRunEagerRepairTool(toolName: string, meta: any, failedTool
 /**
  * Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet.
  */
-// @kern-source: brain-helpers:327
+// @kern-source: brain-helpers:338
 export function shouldStopAfterXmlToolCall(toolName: string): boolean {
   const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan', 'ExitPlanMode']);
   return HANDOFF_TOOLS.has(String(toolName ?? ''));
@@ -316,7 +327,7 @@ export function shouldStopAfterXmlToolCall(toolName: string): boolean {
 /**
  * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
  */
-// @kern-source: brain-helpers:333
+// @kern-source: brain-helpers:344
 export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
   const trimmed = input.trim();
   const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
@@ -337,7 +348,7 @@ export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): {
   return { matched: true, prompt: prompt };
 }
 
-// @kern-source: brain-helpers:352
+// @kern-source: brain-helpers:363
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;

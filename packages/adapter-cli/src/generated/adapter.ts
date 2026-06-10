@@ -58,7 +58,8 @@ export class CliAdapter implements EngineAdapter {
         recordDispatchHealth(options.engine.id, result);
         return result;
       }
-      throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
+      // No CLI binary AND no API fallback. If a binary was DECLARED but absent from PATH, say so explicitly — a missing binary must never surface as an env/API-key problem (the codex incident). Env-var checks below only run once a binary is present.
+      throw new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary);
     }
     const envError = checkEnvVars(options.engine);
     if (envError) {
@@ -174,7 +175,8 @@ export class CliAdapter implements EngineAdapter {
         writeFileSync(outputPath, result.stdout);
         return result;
       }
-      throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
+      // No CLI binary AND no API fallback — report the missing binary, not a key.
+      throw new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary);
     }
 
     // Resolve system prompt for CLI: native flag if available, else prepend
@@ -300,7 +302,8 @@ export class CliAdapter implements EngineAdapter {
     }
     const binaryPath = this.registry.findBinary(options.engine);
     if (!binaryPath) {
-      throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
+      // Binary check BEFORE env-var check: a missing binary must never report as a missing key.
+      throw new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary);
     }
     const envError = checkEnvVars(options.engine);
     if (envError) {
@@ -440,7 +443,8 @@ export class CliAdapter implements EngineAdapter {
 
     const binaryPath = this.registry.findBinary(options.engine);
     if (!binaryPath) {
-      throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
+      // Missing binary, not a key — report the binary by name with an install hint.
+      throw new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary);
     }
 
     const { command, args } = buildCommand(

@@ -5,14 +5,14 @@ import from="node:path" names="join,dirname,basename"
 import from="node:os" names="homedir,tmpdir"
 
 fn name=recordDispatchHealth params="engineId:string, result:{exitCode?:number,stderr?:string,timedOut?:boolean}" returns=void
-  doc "Centralized engine-health recording for any dispatch return point. exitCode 0 + not timed out → mark ok (clears prior quarantine). Otherwise classify and quarantine only on auth-failed/unreachable — timeouts and generic failures stay in rotation since they may be transient."
+  doc "Centralized engine-health recording for any dispatch return point. exitCode 0 + not timed out → mark ok (clears prior quarantine). Otherwise classify and quarantine only on auth-failed/unreachable/binary-missing — timeouts and generic failures stay in rotation since they may be transient. (A missing binary won't reappear mid-session, so it's quarantined like an auth failure.)"
   handler lang="kern"
     let name=exitCode value="result.exitCode ?? 0"
     if cond="exitCode === 0 && !result.timedOut"
       do value="engineHealth.mark(engineId, 'ok', '')"
       return
     let name=status value="classifyDispatchFailure({ stderr: result.stderr, exitCode, timedOut: result.timedOut })"
-    if cond="status === 'auth-failed' || status === 'unreachable'"
+    if cond="status === 'auth-failed' || status === 'unreachable' || status === 'binary-missing'"
       do value="engineHealth.mark(engineId, status, (result.stderr || '').split('\\n')[0])"
 
 fn name=stampDispatchDepth params="env?:Record<string,string>" returns="Record<string,string>" export=false

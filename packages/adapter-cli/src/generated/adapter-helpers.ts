@@ -13,7 +13,7 @@ import { join, dirname, basename } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 
 /**
- * Centralized engine-health recording for any dispatch return point. exitCode 0 + not timed out → mark ok (clears prior quarantine). Otherwise classify and quarantine only on auth-failed/unreachable — timeouts and generic failures stay in rotation since they may be transient.
+ * Centralized engine-health recording for any dispatch return point. exitCode 0 + not timed out → mark ok (clears prior quarantine). Otherwise classify and quarantine only on auth-failed/unreachable/binary-missing — timeouts and generic failures stay in rotation since they may be transient. (A missing binary won't reappear mid-session, so it's quarantined like an auth failure.)
  */
 // @kern-source: adapter-helpers:7
 export function recordDispatchHealth(engineId: string, result: {exitCode?:number,stderr?:string,timedOut?:boolean}): void {
@@ -23,7 +23,7 @@ export function recordDispatchHealth(engineId: string, result: {exitCode?:number
     return;
   }
   const status = classifyDispatchFailure({ stderr: result.stderr, exitCode: exitCode, timedOut: result.timedOut });
-  if (status === 'auth-failed' || status === 'unreachable') {
+  if (status === 'auth-failed' || status === 'unreachable' || status === 'binary-missing') {
     engineHealth.mark(engineId, status, (result.stderr || '').split('\n')[0]);
   }
 }

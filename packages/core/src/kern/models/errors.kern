@@ -6,9 +6,12 @@ error name=AgonError extends=Error
 error name=EngineNotFoundError extends=AgonError
   field name=engineId type=string
   field name=installHint type=string optional=true
+  field name=missingBinary type=string optional=true
   handler lang="kern"
     let name=modeId value="engineId.toLowerCase()"
-    let name=hint value="AGON_MODE_NAMES.includes(modeId) ? `. \"${engineId}\" is an Agon mode (a command), not an engine — run /${modeId} instead. Engines are backends like codex, claude, or agy.` : (installHint ? `. Install: ${installHint}` : '')"
+    comment raw="// missingBinary set ⇒ the engine's CLI binary is absent from PATH (NOT an API-key/env problem). Surface the binary name + an install hint so the user fixes the right thing — the codex incident was a missing binary mis-reported as a missing key."
+    let name=binMsg value="missingBinary ? ` — binary \"${missingBinary}\" not found on PATH${installHint ? `. Install: ${installHint}` : ''}` : ''"
+    let name=hint value="AGON_MODE_NAMES.includes(modeId) ? `. \"${engineId}\" is an Agon mode (a command), not an engine — run /${modeId} instead. Engines are backends like codex, claude, or agy.` : (binMsg ? binMsg : (installHint ? `. Install: ${installHint}` : ''))"
     do value="super(`Engine \"${engineId}\" not found${hint}`)"
     assign target="this.name" value="'EngineNotFoundError'"
 

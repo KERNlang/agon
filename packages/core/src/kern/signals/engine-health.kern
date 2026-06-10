@@ -4,7 +4,7 @@
 
 interface name=EngineHealthRecord
   field name=engineId type=string
-  field name=status type="'ok'|'auth-failed'|'unreachable'|'timeout'|'failed'"
+  field name=status type="'ok'|'auth-failed'|'unreachable'|'binary-missing'|'timeout'|'failed'"
   field name=reason type=string
   field name=lastFailureAt type=number
   field name=failureCount type=number
@@ -16,7 +16,7 @@ service name=EngineHealth singleton=true
     handler lang="kern"
       assign target="this.records" value="new Map()"
 
-  method name=mark params="engineId:string, status:'ok'|'auth-failed'|'unreachable'|'timeout'|'failed', reason:string" returns=void
+  method name=mark params="engineId:string, status:'ok'|'auth-failed'|'unreachable'|'binary-missing'|'timeout'|'failed', reason:string" returns=void
     doc "Record an engine failure. Subsequent calls accumulate failureCount. 'ok' clears the record."
     handler lang="kern"
       if cond="status === 'ok'"
@@ -53,8 +53,8 @@ service name=EngineHealth singleton=true
 
 const name=engineHealth value={{ new EngineHealth() }}
 
-fn name=classifyDispatchFailure params="signal:{stderr?:string, exitCode?:number, errorMessage?:string, timedOut?:boolean}" returns="'auth-failed'|'unreachable'|'timeout'|'failed'"
-  doc "Heuristic classifier — maps a dispatch failure signal to a health status. Order matters: timeout > auth > unreachable > failed."
+fn name=classifyDispatchFailure params="signal:{stderr?:string, exitCode?:number, errorMessage?:string, timedOut?:boolean}" returns="'auth-failed'|'unreachable'|'binary-missing'|'timeout'|'failed'"
+  doc "Heuristic classifier — maps a dispatch failure signal to a health status. Order matters: timeout > auth > binary-missing > unreachable > failed. binary-missing sits ABOVE unreachable so a declared CLI absent from PATH (spawn ENOENT / EngineNotFoundError 'binary … not found on PATH') is reported as a missing install, not a network problem or a missing key."
   handler lang="kern"
     if cond="signal.timedOut === true"
       return value="'timeout'"
@@ -64,10 +64,10 @@ fn name=classifyDispatchFailure params="signal:{stderr?:string, exitCode?:number
     comment raw="// Auth: 401, \"invalid api key\", \"token expired\", \"unauthorized\", \"authentication failed\", OAuth plan/auth failures"
     if cond="/\\b401\\b|invalid api key|invalid access token|token (expired|invalid)|oauth|free tier was discontinued|coding plan|unauthori[sz]ed|authentication (failed|error)|authorized_error|authentication required/.test(haystack)"
       return value="'auth-failed'"
-    comment raw="// Unreachable: ENOENT spawn, ENOTFOUND DNS, ECONNREFUSED, ECONNRESET, network unreachable"
-    comment raw="// Use spawn.*enoent instead of spawn[^a-z]+enoent — paths after \"spawn\""
-    comment raw="// routinely contain lowercase letters (e.g. \"spawn /usr/bin/aider enoent\"),"
-    comment raw="// and [^a-z]+ would stop at the first letter, missing the match."
-    if cond="/spawn.*enoent|enotfound|econnrefused|econnreset|getaddrinfo|network (is )?unreachable|fetch failed|connect (etimedout|timeout)/.test(haystack)"
+    comment raw="// Binary-missing: a declared CLI binary absent from PATH. Matches the EngineNotFoundError message (\"binary \\\"x\\\" not found on path\"), \"command not found\", \"is not installed\", and `spawn <bin> enoent` (a process-spawn ENOENT is a missing binary, distinct from a network ENOTFOUND). Above unreachable so it never mis-reports as a network failure. spawn.*enoent matches paths after \"spawn\" (e.g. \"spawn /usr/bin/aider enoent\")."
+    if cond="/not found on path|command not found|is not installed|no such file or directory|spawn.*enoent/.test(haystack)"
+      return value="'binary-missing'"
+    comment raw="// Unreachable: ENOTFOUND DNS, ECONNREFUSED, ECONNRESET, network unreachable (spawn ENOENT is handled above as binary-missing)."
+    if cond="/enotfound|econnrefused|econnreset|getaddrinfo|network (is )?unreachable|fetch failed|connect (etimedout|timeout)/.test(haystack)"
       return value="'unreachable'"
     return value="'failed'"

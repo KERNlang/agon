@@ -96,6 +96,19 @@ describe('Cesar steering buffer', () => {
       expect(left.map((m) => m.input)).toEqual(['a', 'b']);
       expect(drainLeftoverSteering()).toEqual([]);
     });
+
+    // phase-A review finding 2: a steering message that referenced an image must
+    // keep that image when it is NOT consumed mid-turn and falls through to the
+    // app-side idle leftover-drain → inputQueue → next handleSubmit path (which is
+    // the path that actually re-attaches the image to the next turn). Asserts the
+    // images survive the release+leftover hop, not just the message text.
+    it('drainLeftoverSteering preserves image attachments on unconsumed steering', () => {
+      markSteeringTurn('t1');
+      const img = [{ path: '/tmp/shot.png' }] as any;
+      pushSteering('see this', img);
+      releaseSteeringTurn('t1');
+      expect(drainLeftoverSteering()).toEqual([{ input: 'see this', images: img }]);
+    });
   });
 
   describe('interrupt (clear / drop)', () => {

@@ -435,11 +435,23 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         && !input.startsWith('/')
         && !opts.jobManager.running().length
         && !isPlanAwaitingControl;
-      if (isChatSteer && pushSteering(input)) {
-        const count = peekSteeringCount();
-        opts.setSteeringCount(count);
-        opts.dispatch({ type: 'info', message: count > 1 ? `Steering queued (${count}) — injects at next step.` : 'Steering queued — injects at next step.' } as any);
-        return;
+      if (isChatSteer) {
+        // Extract image attachments from the steering line (and fold in any
+        // pending composer images) BEFORE buffering — pushSteering used to receive
+        // the RAW text only, so a steering message that referenced an image lost
+        // it entirely. Mirror the normal-turn extraction at line ~461 so a steered
+        // image survives into the buffer; it then rides the mid-turn injection or,
+        // if unconsumed, the idle leftover-drain → inputQueue → next handleSubmit
+        // path (which already processes images). (phase-A review finding 2.)
+        const { images: steerImages } = extractImagesFromInput(input, resolveWorkingDir());
+        const steerAllImages = [...opts.pendingImages, ...steerImages];
+        if (pushSteering(input, steerAllImages.length ? steerAllImages : undefined)) {
+          if (opts.pendingImages.length) opts.setPendingImages([]);
+          const count = peekSteeringCount();
+          opts.setSteeringCount(count);
+          opts.dispatch({ type: 'info', message: count > 1 ? `Steering queued (${count}) — injects at next step.` : 'Steering queued — injects at next step.' } as any);
+          return;
+        }
       }
       if (opts.replState !== 'idle' && !opts.jobManager.running().length && !isPlanAwaitingControl) {
         opts.setInputQueue((prev: string[]) => [...prev, input]);

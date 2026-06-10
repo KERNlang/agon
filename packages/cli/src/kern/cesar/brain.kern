@@ -163,14 +163,21 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
     const _toolStartMs = new Map<string, number>();
     const dispatchToolCall = (
       evt: { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running' | 'done' | 'error'; output?: string; durationMs?: number },
-      opts?: { toolCallId?: string; eager?: boolean },
+      opts?: { toolCallId?: string; eager?: boolean; standalone?: boolean },
     ): void => {
       const key = String(opts?.toolCallId || evt.tool || 'tool');
       let durationMs: number | undefined = evt.durationMs;
       if (evt.status === 'running') {
         // Eager calls supply their own duration on the terminal event — don't
         // record a start here (avoids a stale, never-cleared map entry).
-        if (!opts?.eager) _toolStartMs.set(key, Date.now());
+        if (!opts?.eager && !opts?.standalone) _toolStartMs.set(key, Date.now());
+      } else if (opts?.standalone) {
+        // Standalone terminal events (MCP side-channel / signal-file completions
+        // from companion engines) have NO correlating 'running' in this map and
+        // carry their own timing (or none). They must NOT consume a name-keyed
+        // start entry left by an in-flight native tool of the same name — that
+        // would both mis-attribute a duration here AND wipe the native tool's
+        // pending start, corrupting its duration. Keep their own durationMs as-is.
       } else {
         const startedAt = _toolStartMs.get(key);
         if (startedAt !== undefined) {
@@ -341,19 +348,33 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       // `source` labels which boundary the steering was injected at, for telemetry:
       // 'xml' = the text/XML tool-loop + eager-continuation paths, 'exec' = the
       // mutation-unlock execution loop, 'auto' = the auto-continuation tool loop.
+      // Images drained alongside the last steering injection (so a direct
+      // session.send site can forward them). drainSteeringIntoSend returns only a
+      // string — the runToolLoop send contract is string-in/string-out and has no
+      // image channel — so image-bearing steering is delivered at the eager
+      // direct-send site; any images drained at a string-only site stay null here
+      // and ride the next-turn leftover path instead. (phase-A review finding 2.)
+      let _lastDrainedSteerImages: string[] | null = null;
       const drainSteeringIntoSend = (carrier: string, source: 'xml' | 'exec' | 'auto'): string => {
+        _lastDrainedSteerImages = null;
         const pending = drainSteering(_turnId);
         if (pending.length === 0) return carrier;
         const blocks: string[] = [];
+        const drainedImages: string[] = [];
         for (const msg of pending) {
           const text = (msg.input ?? '').trim();
+          for (const img of (msg.images ?? [])) {
+            const p = (img as any)?.path;
+            if (typeof p === 'string' && p) drainedImages.push(p);
+          }
           if (!text) continue;
           // Visible pickup: render as the normal user-message block + persist.
           dispatch({ type: 'user-message', content: text } as any);
           appendMessage(ctx.chatSession, { role: 'user', content: text, timestamp: new Date().toISOString() });
           blocks.push(text);
-          recordTimeline({ event: 'steering_injected', engineId: cesarEngineId, cwd: _turnCwd, source, input: { text } });
+          recordTimeline({ event: 'steering_injected', engineId: cesarEngineId, cwd: _turnCwd, source, input: { text, images: drainedImages.length || undefined } });
         }
+        if (drainedImages.length) _lastDrainedSteerImages = drainedImages;
         if (blocks.length === 0) return carrier;
         // Make it unmistakable to the engine that this is a fresh instruction
         // layered on top of the tool result it is being handed.
@@ -699,7 +720,7 @@ ${reviewFollowup.prompt}`;
                 input: toolInput,
                 status,
                 output: typeof done.output === 'string' ? done.output : undefined,
-              } as any);
+              } as any, { standalone: true });
             } catch { /* malformed/stale completion — ignore */ }
           }
 
@@ -1182,8 +1203,11 @@ ${reviewFollowup.prompt}`;
           const repairUsed: string[] = [];
           const repairResults: ToolCallResult[] = [];
           // Tool boundary (eager path): append any mid-turn user steering to the
-          // tool-result continuation before sending it back.
-          const contGen = session.send({ message: drainSteeringIntoSend(formatted, 'xml'), signal: abort.signal });
+          // tool-result continuation before sending it back. This is a DIRECT
+          // session.send (not the string-only runToolLoop contract), so steering
+          // image attachments drained alongside the text can be forwarded here.
+          const _steerMsg = drainSteeringIntoSend(formatted, 'xml');
+          const contGen = session.send({ message: _steerMsg, signal: abort.signal, ...(_lastDrainedSteerImages ? { images: _lastDrainedSteerImages } : {}) });
           for await (const chunk of contGen) {
             if (chunk.type === 'text') continuation += chunk.content;
             if (chunk.type === 'tool_call') {
@@ -1229,7 +1253,12 @@ ${reviewFollowup.prompt}`;
             }
           }
           dispatch({ type: 'spinner-stop' });
-          if (continuation.trim()) response = emitLiveTodos(continuation.trim());
+          // Strip a leading [INTENT] preamble from the continuation too (emitPreamble
+          // before emitLiveTodos, mirroring the main commit path) so the marker never
+          // leaks into committed text on a tool-result continuation. emitPreamble is
+          // idempotent (the _preambleEmitted latch suppresses a duplicate block) and
+          // still strips the marker from the text on every call.
+          if (continuation.trim()) response = emitLiveTodos(emitPreamble(continuation.trim()));
         }
       }
 
@@ -1296,7 +1325,7 @@ ${reviewFollowup.prompt}`;
                   input: toolInput,
                   status: 'error',
                   output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.`,
-                } as any);
+                } as any, { standalone: true });
                 continue;
               }
               if (signal.tool === 'ReportConfidence') {
@@ -1338,7 +1367,7 @@ ${reviewFollowup.prompt}`;
                     input: JSON.stringify(signal.args ?? {}),
                     status: 'error',
                     output: 'A Cesar plan is already active; nested plans are blocked. Resume or cancel the current plan before proposing another.',
-                  } as any);
+                  } as any, { standalone: true });
                   continue;
                 }
                 const { handleProposePlan } = await import('../handlers/plan-mode.js');
@@ -1360,7 +1389,7 @@ ${reviewFollowup.prompt}`;
                 const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
                 try {
                   const exitResult = handleExitPlanMode(String((signal.args as any)?.reason ?? ''), planDispatch, ctx);
-                  dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: 'ExitPlanMode', input: JSON.stringify(signal.args ?? {}), status: 'done', output: exitResult } as any);
+                  dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: 'ExitPlanMode', input: JSON.stringify(signal.args ?? {}), status: 'done', output: exitResult } as any, { standalone: true });
                 } catch (err) {
                   console.warn(`[agon] ExitPlanMode via MCP signal failed: ${err instanceof Error ? err.message : String(err)}`);
                 }
@@ -2146,7 +2175,11 @@ ${reviewFollowup.prompt}`;
             break;
           }
           dispatch({ type: 'spinner-stop' });
-          const cleanCont = emitLiveTodos(contResponse.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim());
+          // Strip a leading [INTENT] preamble (emitPreamble before emitLiveTodos,
+          // mirroring the main commit path) so the marker never leaks into the
+          // committed/displayed text on an auto-continuation turn. emitPreamble is
+          // idempotent — the _preambleEmitted latch suppresses a duplicate block.
+          const cleanCont = emitLiveTodos(emitPreamble(contResponse.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim()));
           // Engine failed to produce a continuation (overflow / rate limit / dead
           // session). Surface the REAL reason and stop — don't keep nudging into
           // the misleading canned "paused mid-task" closure (the spin bug).

@@ -1153,12 +1153,27 @@ screen name=ToolCallGroup target=ink memo=true
       const firstEvent = (blocks[0]?.event as any) ?? {};
       const metaEngine = String(firstEvent.engineId ?? '').trim() || 'engine';
       const inferredElapsedMs = firstTimestampMs != null && lastTimestampMs != null ? Math.max(0, lastTimestampMs - firstTimestampMs) : 0;
-      const metaElapsedMs = explicitElapsedMs > 0 ? explicitElapsedMs : inferredElapsedMs;
+      // Duration honesty: tool-call events carry a per-tool durationMs but NO
+      // wall-clock timestamp, so a group's only available number is the SUM of
+      // per-tool durations (explicitElapsedMs). For a group of tools that ran
+      // CONCURRENTLY (eager streaming dispatches >1 tool at once), that sum
+      // overreports the real wall-clock span. Only present it as a plain duration
+      // when it can't be a misleading sum — a single timed tool, or a verified
+      // timestamp span. Otherwise (a multi-tool sum with no span to confirm
+      // sequencing) prefix it with Σ so it reads as cumulative tool time, not
+      // wall-clock. (phase-A review finding 8.)
+      const timedToolCount = blocks.reduce((n: number, b: any) => n + (durationMs(b?.event) != null ? 1 : 0), 0);
+      const useInferredSpan = inferredElapsedMs > 0;
+      const metaElapsedMs = useInferredSpan ? inferredElapsedMs : (explicitElapsedMs > 0 ? explicitElapsedMs : 0);
+      const elapsedIsCumulativeSum = !useInferredSpan && explicitElapsedMs > 0 && timedToolCount > 1;
+      const elapsedLabel = metaElapsedMs > 0
+        ? (elapsedIsCumulativeSum ? `Σ ${formatDuration(metaElapsedMs)}` : formatDuration(metaElapsedMs))
+        : '';
       const metaParts = [
         metaEngine,
         `${blocks.length} tool${blocks.length === 1 ? '' : 's'}`,
         `changed ${changedFiles.length} file${changedFiles.length === 1 ? '' : 's'}`,
-        metaElapsedMs > 0 ? formatDuration(metaElapsedMs) : '',
+        elapsedLabel,
         totalOutputBytes > 0 ? `${Math.ceil(totalOutputBytes / 1024)}kb` : '',
       ].filter(Boolean);
 

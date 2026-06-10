@@ -6,7 +6,7 @@ import { Box, Static, Text, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, appendMessage, getAgonHome, tracker, planCostEstimator, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@kernlang/agon-core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
@@ -40,13 +40,9 @@ import type { OutputEvent, HandlerContext } from '../../handlers/types.js';
 
 import { codeBlockBuffer } from '../../code-buffer.js';
 
-import { startCommandReplState, finishReplState, cancelReplState } from '../signals/app-state.js';
+import { startCommandReplState, finishReplState } from '../signals/app-state.js';
 
 import type { ReplStateState } from '../signals/app-state.js';
-
-import { createPauseState, renderPauseMenu, movePauseCursor, selectPauseAction, dismissPauseState } from '../cesar/pause-state.js';
-
-import type { PauseState } from '../cesar/pause-state.js';
 
 import type { Scoreboard } from '../cesar/scoreboard.js';
 
@@ -62,7 +58,7 @@ import { createTelemetryPoller, TelemetryPoller } from '../cesar/telemetry-polle
 
 import type { EngineVitals } from '../cesar/telemetry.js';
 
-import { handleOutputEvent, clearPermissionQueue, clearThinkingBuffer } from '../signals/output.js';
+import { handleOutputEvent } from '../signals/output.js';
 
 import type { OutputActions, OutputState, AgentProgressSnapshot, StreamingEntry } from '../signals/output.js';
 
@@ -160,11 +156,13 @@ import { loadExtensionsForWorkspace, startPlanSyncWatcher, startUpdateCheck, sub
 
 import { buildOutputActions } from './app-output-bridge.js';
 
+import { _cancelCallback, _lastSigintAt, runTrackAbort, runInterruptActiveRun, buildCancelCallback, handleSigint } from './app-interrupt.js';
+
 // ── Module: AppHelperExports ──
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:100
+// @kern-source: app:97
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -815,14 +813,7 @@ export function App() {
   }, [bell,setWindowTitle,pendingBellRef]);
 
   const trackAbort = useCallback((abort:AbortController|null) => {
-    if (activeAbortRef.current) {
-      _activeAborts.delete(activeAbortRef.current);
-    }
-    activeAbortRef.current = abort;
-    if (abort) {
-      _activeAborts.add(abort);
-    }
-    setActiveAbort(abort);
+    runTrackAbort(abort, activeAbortRef, setActiveAbort);
   }, []);
 
   const setCesarSessionWrapped = useCallback((session:PersistentSession|null) => {
@@ -925,51 +916,7 @@ export function App() {
   }, [dispatch]);
 
   const interruptActiveRun = useCallback((message:string, clearChat:boolean) => {
-    const abort = activeAbortRef.current;
-    if (abort) {
-      abort.abort();
-    }
-    trackAbort(null);
-    setLiveSpinner(null);
-    setLiveProgress(null);
-    // Commit any in-flight streams before wiping. In main-buffer mode the
-    // partial text has already been written to the terminal; dropping it
-    // from React state without flushing causes logUpdate.eraseLines to
-    // wipe visible output the user was just reading.
-    outputActions.flushStream();
-    clearPermissionQueue();
-    clearThinkingBuffer();
-    setQuestionState(null);
-    setQuestionAnswer('');
-    setPendingPlanProposal(null);
-    setSlashPickerOpen(false);
-    setEnginePickerOpen(false);
-    setModelPickerOpen(false);
-    setCesarPickerOpen(false);
-    setReviewEvent(null);
-    const pendingPlan = activePlanRef.current;
-    if (pendingPlan && ['planning', 'awaiting_approval'].includes(String(pendingPlan.state ?? ''))) {
-      try {
-        saveCesarPlan(cancelCesarPlan(pendingPlan));
-      } catch (_err) {
-      }
-      activePlanRef.current = null;
-      setActivePlan(null);
-    }
-    if (replState !== 'idle') {
-      if (message) {
-        dispatch({ type: 'warning', message: message } as any);
-      }
-      setReplState((prev: any) => (prev === 'idle') ? prev : cancelReplState({ state: prev }).state);
-      if (!pendingBellRef.current) {
-        bell();
-        pendingBellRef.current = true;
-      }
-      setWindowTitle('agon');
-    }
-    if (clearChat) {
-      dispatch({ type: 'clear' } as any);
-    }
+    runInterruptActiveRun({ activeAbortRef: activeAbortRef, activePlanRef: activePlanRef, setActiveAbort: setActiveAbort, setActivePlan: setActivePlan, setLiveSpinner: setLiveSpinner, setLiveProgress: setLiveProgress, outputActions: outputActions, setQuestionState: setQuestionState, setQuestionAnswer: setQuestionAnswer, setPendingPlanProposal: setPendingPlanProposal, setSlashPickerOpen: setSlashPickerOpen, setEnginePickerOpen: setEnginePickerOpen, setModelPickerOpen: setModelPickerOpen, setCesarPickerOpen: setCesarPickerOpen, setReviewEvent: setReviewEvent, replState: replState, dispatch: dispatch, setReplState: setReplState, pendingBellRef: pendingBellRef, bell: bell, setWindowTitle: setWindowTitle }, message, clearChat);
   }, [replState,dispatch,trackAbort,outputActions]);
 
   const buildContext = useCallback(() => {
@@ -2249,36 +2196,15 @@ export function App() {
   }, [pendingPlanProposal]);
 
   useEffect(() => {
-    _cancelCallback.fn = () => {
-      for (const abort of _activeAborts) abort.abort();
-      _activeAborts.clear();
-      activeAbortRef.current = null;
-      setActiveAbort(null);
-      setLiveSpinner(null);
-      setLiveProgress(null);
-      // Commit any in-flight streams before wiping — see interruptActiveRun.
-      outputActions.flushStream();
-      agentProgressRef.current = {};
-      setAgentProgress({});
-      clearPermissionQueue();
-      clearThinkingBuffer();
-      setQuestionState(null);
-      setQuestionAnswer('');
-      setPendingPlanProposal(null);
-      setSlashPickerOpen(false);
-      setEnginePickerOpen(false);
-      setModelPickerOpen(false);
-      setCesarPickerOpen(false);
-      setReviewEvent(null);
-      setToolDetailEvent(null);
-      const pendingPlan = activePlanRef.current;
-      if (pendingPlan && ['planning', 'awaiting_approval'].includes(String(pendingPlan.state ?? ''))) {
-        try { saveCesarPlan(cancelCesarPlan(pendingPlan)); } catch (_err) {}
-        activePlanRef.current = null;
-        setActivePlan(null);
-      }
-      setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
-    };
+    _cancelCallback.fn = buildCancelCallback({
+      activeAbortRef, activePlanRef, setActiveAbort, setActivePlan,
+      setLiveSpinner, setLiveProgress, outputActions,
+      agentProgressRef, setAgentProgress,
+      setQuestionState, setQuestionAnswer, setPendingPlanProposal,
+      setSlashPickerOpen, setEnginePickerOpen, setModelPickerOpen,
+      setCesarPickerOpen, setReviewEvent, setToolDetailEvent,
+      setReplState,
+    });
   }, [setActiveAbort,outputActions]);
 
   useStableInput(handleKeyboardInput);
@@ -2727,48 +2653,14 @@ export function App() {
   );
 }
 
-// @kern-source: app:90
-export const _activeAborts: Set<AbortController> = new Set<AbortController>();
-
-// @kern-source: app:92
-export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
-
-// @kern-source: app:94
+// @kern-source: app:95
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:96
-export const _lastSigintAt: { value: number } = { value: 0 };
-
-// @kern-source: app:98
-export const _pauseState: { value: PauseState | null } = { value: null };
-
-// @kern-source: app:2503
+// @kern-source: app:2437
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());
-  process.on('SIGINT', () => {
-    const now = Date.now();
-    if (now - _lastSigintAt.value < 1200) {
-      if (_cesarSessionRef.session) { try { _cesarSessionRef.session.close(); } catch { /* session already closed or errored */ } _cesarSessionRef.session = null; }
-      process.exit(0);
-    }
-    if (_pauseState.value?.active) {
-      // Second Ctrl+C during pause — hard cancel
-      _pauseState.value = dismissPauseState();
-      for (const abort of _activeAborts) abort.abort();
-      _activeAborts.clear();
-      _lastSigintAt.value = now;
-      if (_cancelCallback.fn) _cancelCallback.fn();
-      return;
-    }
-    if (_activeAborts.size > 0) {
-      // First Ctrl+C — enter pause state instead of immediate abort
-      _pauseState.value = createPauseState();
-      _lastSigintAt.value = now;
-      return;
-    }
-    _lastSigintAt.value = now;
-  });
+  process.on('SIGINT', () => handleSigint(_cesarSessionRef));
   // Client/server split M1: flush any buffered EventLog batches on exit. The
   // coalesce timer is unref'd, so the final ~50ms window would otherwise be
   // lost on a clean exit. resetEventLogState() flushes synchronously (and the

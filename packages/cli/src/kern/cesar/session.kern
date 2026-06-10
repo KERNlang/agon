@@ -657,7 +657,18 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
             const d = ctx.cesar!.lastDispatch;
             if (d) {
               const cmd = (args as any).command ?? (args as any).file_path ?? JSON.stringify(args);
-              d({ type: 'permission-ask', tool, command: cmd, reason: message, resolve } as any);
+              // Finding 1: API-class engines (engine.api: zai/kimi/minimax/GPT)
+              // run Edit/Write through executeToolCall, hitting THIS approval
+              // dispatch — which previously carried no diff. This site has the
+              // FULL args object, so thread the same diff preview the MCP watcher
+              // (brain.kern) and command-string buildOnApproval path use. args is
+              // truthful here (no command-string reparse needed).
+              let permDiffPreview: any = undefined;
+              if (approvalToolIsFileMutating(tool)) {
+                try { permDiffPreview = buildApprovalDiffPreview(String(tool), args as Record<string, unknown>); }
+                catch { /* diff is best-effort — fall back to command preview */ }
+              }
+              d({ type: 'permission-ask', tool, command: cmd, reason: message, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve } as any);
             } else {
               resolve(true);
             }

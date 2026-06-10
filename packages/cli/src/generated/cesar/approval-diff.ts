@@ -33,9 +33,34 @@ export function isProbablyBinary(text: string): boolean {
 }
 
 /**
- * Compute a compact diff preview from a file-mutating tool's input. Returns the recap-shaped { files, totalFiles } object, or { fallback: <note> } when the file is binary/too large to render inline (caller keeps the truncated command preview), or null when no diff applies.
+ * Mirror tool-edit.kern: replace curly/smart quotes with straight ASCII equivalents so old_string matching at preview time agrees with the real executor.
  */
 // @kern-source: approval-diff:37
+export function normalizeCurlyQuotes(text: string): string {
+  return text.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"');
+}
+
+/**
+ * Mirror tool-edit.kern occurrence count (non-overlapping).
+ */
+// @kern-source: approval-diff:42
+export function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) return 0;
+  let count = 0;
+  let pos = 0;
+  while (true) {
+    pos = haystack.indexOf(needle, pos);
+    if (pos === -1) break;
+    count++;
+    pos += needle.length;
+  }
+  return count;
+}
+
+/**
+ * Compute a compact diff preview from a file-mutating tool's input. Returns the recap-shaped { files, totalFiles } object, or { fallback: <note> } when the file is binary/too large to render inline (caller keeps the truncated command preview), or null when no diff applies.
+ */
+// @kern-source: approval-diff:57
 export function buildApprovalDiffPreview(tool: string, args: Record<string,unknown>): any {
   const key = String(tool ?? '').toLowerCase();
   const filePath = typeof (args as any)?.file_path === 'string' ? String((args as any).file_path) : '';
@@ -50,7 +75,13 @@ export function buildApprovalDiffPreview(tool: string, args: Record<string,unkno
   let status: 'created' | 'edited' = 'edited';
 
   if (key === 'write' || key === 'agonwrite') {
-    newContent = typeof (args as any)?.content === 'string' ? String((args as any).content) : '';
+    // Finding 4: a degraded command-string args path can yield { file_path }
+    // only (content absent). Previewing that as a full-file deletion is wrong
+    // and alarming — keep the old (command) preview by returning null. An
+    // INTENTIONAL empty string (content === '') is a real truncation and is
+    // still previewed.
+    if (typeof (args as any)?.content !== 'string') return null;
+    newContent = String((args as any).content);
     const exists = existsSync(filePath);
     if (!exists) {
       status = 'created';
@@ -73,6 +104,7 @@ export function buildApprovalDiffPreview(tool: string, args: Record<string,unkno
   } else if (key === 'edit' || key === 'agonedit') {
     const oldStr = typeof (args as any)?.old_string === 'string' ? String((args as any).old_string) : '';
     const newStr = typeof (args as any)?.new_string === 'string' ? String((args as any).new_string) : '';
+    const replaceAll = (args as any)?.replace_all === true;
     if (!existsSync(filePath)) return null;
     try {
       const st = statSync(filePath);
@@ -83,12 +115,38 @@ export function buildApprovalDiffPreview(tool: string, args: Record<string,unkno
     } catch {
       return null;
     }
-    // Apply the edit in-memory exactly as the MCP exec does (first occurrence).
-    if (oldStr && !oldContent.includes(oldStr)) {
-      // old_string won't match — the edit will fail at exec; nothing to preview.
-      return null;
+    // Finding 2 — mirror tool-edit.kern's executor EXACTLY so the preview
+    // matches what actually happens:
+    //   1) try a raw match; if it misses, normalize curly quotes on BOTH the
+    //      disk content and old_string and retry (the executor then operates
+    //      on the normalized content).
+    //   2) reject (no preview) when old_string is absent — the edit fails.
+    //   3) when old_string matches >1 location and !replace_all, the executor
+    //      REJECTS the edit — return a fallback note, not a fake first-hit diff.
+    //   4) replace_all → split/join (all occurrences); else first occurrence.
+    let searchStr = oldStr;
+    let baseContent = oldContent;
+    if (oldStr && !baseContent.includes(searchStr)) {
+      const normContent = normalizeCurlyQuotes(baseContent);
+      const normSearch = normalizeCurlyQuotes(oldStr);
+      if (normContent.includes(normSearch)) {
+        baseContent = normContent;
+        searchStr = normSearch;
+      } else {
+        // old_string won't match — the edit will fail at exec; nothing to preview.
+        return null;
+      }
     }
-    newContent = oldStr ? oldContent.replace(oldStr, newStr) : oldContent;
+    if (searchStr && !replaceAll) {
+      const occurrences = countOccurrences(baseContent, searchStr);
+      if (occurrences > 1) {
+        return { fallback: `old_string matches ${occurrences} locations — edit will fail` };
+      }
+    }
+    oldContent = baseContent;
+    newContent = searchStr
+      ? (replaceAll ? baseContent.split(searchStr).join(newStr) : baseContent.replace(searchStr, newStr))
+      : baseContent;
   } else {
     return null;
   }
@@ -117,15 +175,54 @@ export function buildApprovalDiffPreview(tool: string, args: Record<string,unkno
 /**
  * Produce one recap-shaped diff-preview file entry: a minimal LCS line diff rendered as +/- lines with a leading @@ hunk marker, capped to maxLines (and maxTotal as the hard ceiling). additions/deletions count the full diff; omitted reports how many interesting lines were dropped past the cap.
  */
-// @kern-source: approval-diff:117
+// @kern-source: approval-diff:170
 export function computeFileDiffPreview(path: string, relPath: string, status: string, oldContent: string, newContent: string, maxLines: number, maxTotal: number): any {
-  const oldLines = oldContent.length === 0 ? [] : oldContent.replace(/\n$/, '').split('\n');
-  const newLines = newContent.length === 0 ? [] : newContent.replace(/\n$/, '').split('\n');
+  const oldAll = oldContent.length === 0 ? [] : oldContent.replace(/\n$/, '').split('\n');
+  const newAll = newContent.length === 0 ? [] : newContent.replace(/\n$/, '').split('\n');
 
-  // Standard LCS table over lines. Bounded by file size; the byte guards in
-  // the caller keep this from exploding on huge files.
+  // Finding 3 — bound the LCS cost. The 256KB byte cap still permits tens of
+  // thousands of lines; a full (n+1)*(m+1) table over that would freeze/OOM at
+  // approval time. First strip the shared prefix/suffix (cheap, O(min) — most
+  // real edits touch a small contiguous region), then if the remaining work is
+  // still too large bail to a count-only fallback note instead of building the
+  // table.
+  const APPROVAL_DIFF_MAX_LCS_LINES = 4000;
+
+  let pre = 0;
+  const oldLenAll = oldAll.length;
+  const newLenAll = newAll.length;
+  while (pre < oldLenAll && pre < newLenAll && oldAll[pre] === newAll[pre]) pre++;
+  let suf = 0;
+  while (
+    suf < (oldLenAll - pre) &&
+    suf < (newLenAll - pre) &&
+    oldAll[oldLenAll - 1 - suf] === newAll[newLenAll - 1 - suf]
+  ) suf++;
+
+  const oldLines = oldAll.slice(pre, oldLenAll - suf);
+  const newLines = newAll.slice(pre, newLenAll - suf);
+
   const n = oldLines.length;
   const m = newLines.length;
+
+  if (n + m > APPROVAL_DIFF_MAX_LCS_LINES) {
+    // Too large to diff inline after trimming common context — report
+    // line counts only (the trimmed region is entirely changed in the
+    // worst case; report it as such rather than freezing on the table).
+    const addCount = m;
+    const delCount = n;
+    return {
+      path,
+      relPath,
+      status,
+      additions: addCount,
+      deletions: delCount,
+      lines: [`@@ +${addCount}/-${delCount} lines — diff too large to preview @@`],
+      omitted: addCount + delCount,
+    };
+  }
+
+  // Standard LCS table over the trimmed line ranges.
   const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
@@ -190,7 +287,7 @@ export function computeFileDiffPreview(path: string, relPath: string, status: st
 /**
  * Single-line truncation for a diff body line (no leading +/- marker).
  */
-// @kern-source: approval-diff:188
+// @kern-source: approval-diff:280
 export function truncateDiffLine(line: string, max: number): string {
   const text = String(line ?? '').replace(/\t/g, '  ');
   if (text.length <= max) {

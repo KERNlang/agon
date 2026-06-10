@@ -4,41 +4,34 @@
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,Static,render"
 import from="@kernlang/terminal/runtime" names="ScrollBox,AlternateScreen"
-import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,seedChatSessionFromThread,loadOrCreateActiveThread,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,getAuthKey,setAuthKey,appendMessage,getAgonHome,tracker,planCostEstimator,cancelCesarPlan,saveCesarPlan,listCesarPlans,loadCesarPlan,cesarPlanJsonPath"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,seedChatSessionFromThread,loadOrCreateActiveThread,getRatings,getActiveWorkspace,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,getAuthKey,setAuthKey,getAgonHome,tracker,planCostEstimator,listCesarPlans"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@kernlang/agon-core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
 import from="@kernlang/agon-core" names="EngineAdapter" types=true
-import from="../signals/intent.js" names="detectIntent,SLASH_COMMANDS"
+import from="../signals/intent.js" names="SLASH_COMMANDS"
 import from="../signals/runs-store.js" names="runsStore"
-import from="@kernlang/agon-core" names="CommandRegistry,registerBuiltinCommands,initExtensions,EventBus,bridgeShellHooks"
+import from="@kernlang/agon-core" names="CommandRegistry,registerBuiltinCommands,EventBus,bridgeShellHooks"
 import from="../signals/job-manager.js" names="JobManager"
 import from="../signals/job-manager.js" names="Job" types=true
-import from="../blocks/output-format.js" names="ENGINE_COLORS,shortToolPath,isCesarTelemetryLine,formatConfidenceToolLabel"
+import from="../blocks/output-format.js" names="shortToolPath,isCesarTelemetryLine,formatConfidenceToolLabel"
 import from="../signals/icons.js" names="icons"
 import from="../blocks/markdown.js" names="cleanEngineOutput,parseMarkdownBlocks,truncateCodeLine"
 import from="../blocks/engine-helpers.js" names="extractPatchText,parsePatchPreview"
 import from="../../handlers/types.js" names="OutputEvent,HandlerContext" types=true
 import from="../../code-buffer.js" names="codeBlockBuffer"
-import from="../signals/app-state.js" names="startCommandReplState,finishReplState,cancelReplState"
+import from="../signals/app-state.js" names="finishReplState"
 import from="../signals/app-state.js" names="ReplStateState" types=true
-import from="../cesar/pause-state.js" names="createPauseState,renderPauseMenu,movePauseCursor,selectPauseAction,dismissPauseState"
-import from="../cesar/pause-state.js" names="PauseState" types=true
 import from="../cesar/scoreboard.js" names="Scoreboard" types=true
 import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
-import from="../signals/paste-handler.js" names="processPasteContent,expandPastePlaceholders,recordPastePlaceholder"
-import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch,isCesarPlanApprovalInput,isCesarPlanStatusInput"
-import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
-import from="../cesar/telemetry-poller.js" names="createTelemetryPoller,TelemetryPoller"
-import from="../cesar/telemetry.js" names="EngineVitals" types=true
-import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue,clearThinkingBuffer"
+import from="../signals/paste-handler.js" names="processPasteContent,recordPastePlaceholder"
+import from="../signals/output.js" names="handleOutputEvent"
 import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry" types=true
 import from="../signals/event-log-tee.js" names="teeOutputEvent"
 import from="@kernlang/agon-core" names="resetEventLogState"
-import from="../signals/app-input.js" names="appendInputHistory,cleanInputValue,cleanSubmitValue,findInputChange,hasBtwSideChannelTarget,navigateHistory,parseAutoModeCommand,resolveEscapeAction,shouldQueuePlanModeOnTab"
-import from="../signals/keyboard.js" names="resolveKeyboardInput"
-import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap,nextStaticEpoch"
+import from="../signals/app-input.js" names="cleanInputValue,findInputChange"
+import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
 import from="../signals/input-perf.js" names="perfNow,recordKeystrokeLatency"
 import from="../blocks/review.js" names="handleReviewAction"
 import from="../blocks/engine.js" names="DashboardView,OutputBlockView"
@@ -47,53 +40,55 @@ import from="../blocks/todo-list.js" names="TodoList"
 import from="../signals/todos.js" names="Todo" types=true
 import from="../signals/todos.js" names="clearTodos"
 import from="../cesar/session.js" names="saveCesarConversationSnapshot"
-import from="../../generated/surfaces/status.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,BackgroundJobRail,StatusDashboard,ExecutionRailPanel"
+import from="../../generated/surfaces/status.js" names="SpinnerBlock,BackgroundJobRail,ExecutionRailPanel"
 import from="../../generated/blocks/controls.js" names="EnginePicker,ModelPicker,ReviewBlock,CesarPicker"
-import from="../../generated/blocks/composer.js" names="ComposerView"
-import from="../../generated/surfaces/agent.js" names="AgentProgressView"
 import from="../../generated/blocks/rendering.js" names="contentWidth,withContentWidthOverride,color256toHex,engineColor,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES"
 import from="../../generated/blocks/engine.js" names="LOGO_LINES,VERSION,BRAND"
-import from="./app-views.js" names="ChromeBar,StreamingView,ToolDetailBlock,TranscriptRowView"
+import from="./app-views.js" names="ChromeBar,ToolDetailBlock,TranscriptRowView,LiveStreamSection,BtwSidePanel,RailTakeoverPanel,BottomChromeSection"
 import from="../signals/file-tracker.js" names="recordToolCall,listFiles,getFileTrackerVersion,clearFileTracker"
 import from="../blocks/file-rail.js" names="FileRail"
 import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
 import from="../../generated/blocks/controls.js" names="ReviewEvent" types=true
-import from="node:path" names="join,dirname"
+import from="node:path" names="join"
 import from="node:url" names="fileURLToPath"
-import from="node:fs" names="readdirSync,readFileSync,writeFileSync,mkdirSync,unlinkSync,statSync"
+import from="node:fs" names="readdirSync,readFileSync,writeFileSync,mkdirSync,unlinkSync"
 import from="node:os" names="tmpdir,totalmem,cpus"
 import from="node:child_process" names="spawnSync"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../blocks/results-formatter.js" names="formatSessionResults,formatChatTranscript"
 import from="@kernlang/agon-core" names="loadSkills"
-import from="../../input-utils.js" names="isTerminalFocusReport"
 import from="../../stable-input.js" names="useStableInput"
 import from="../blocks/rich-text.js" names="parseProseToRichLines"
-import from="../services/update-check.js" names="checkForUpdate,loadDismissedVersion,saveDismissedVersion,isLinkedDevInstall"
+import from="../services/update-check.js" names="saveDismissedVersion"
 import from="../lib/terminal-notify.js" names="bell,setWindowTitle"
 // ── Domain-specific helper imports (refactored from monolithic app-helpers) ──
-import from="./app-composer.js" names="COMPOSER_HISTORY_LIMIT,loadComposerInputHistory,saveComposerInputHistory"
+import from="./app-composer.js" names="loadComposerInputHistory"
 import from="./app-tool-detail.js" names="toolDetailViewportRows,findLatestToolDetailEvent,findLatestToolEvent,findLatestFailedToolEvent,buildFailedToolRetryDraft,buildToolDetailView"
-import from="./app-telemetry.js" names="probeEngineVitals"
 import from="./app-terminal.js" names="createInitialRegistry,drainStdinBuffer,normalizeTerminalMode,fileRailWidthForTerminal,fileRailMaxRowsForTerminal"
 import from="./app-selection.js" names="normalizeTextSelection"
 import from="./app-layout.js" names="estimateVisibleBlockBudget,estimateBottomChromeExtraRows,estimatePinnedLiveRows"
-import from="./app-blocks.js" names="buildDashboardBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount,appendTranscriptBlock,summarizeBtwTranscriptEvent"
-import from="./app-rendering.js" names="buildExecutionRailStats,buildTranscriptRows,clearBlockRowCache"
+import from="./app-blocks.js" names="buildDashboardBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount"
+import from="./app-rendering.js" names="buildExecutionRailStats,buildTranscriptRows"
+import from="./app-lifecycle.js" names="loadExtensionsForWorkspace,startPlanSyncWatcher,startUpdateCheck,subscribeOrchestrationResults,startTelemetryPoller"
+import from="./app-output-bridge.js" names="buildOutputActions"
+import from="./app-interrupt.js" names="_cancelCallback,runTrackAbort,runInterruptActiveRun,buildCancelCallback,handleSigint"
+import from="./app-keyboard.js" names="runHandleCancelOrExit,runHandleComposerCtrlShortcut,runHandleKeyboardInput"
+import from="./app-submit.js" names="runProcessInputQueue,runSendBtwMessage,runHandleSubmit"
 
 module name=AppHelperExports
   export from="./app-helpers.js" names="COMPOSER_HISTORY_LIMIT,isMutatingToolCall,probeEngineVitals,parseToolCallPayload,toolPreviewWindow,toolCallSupportsDetailView,detailViewerSupportsEvent,toolDetailViewportRows,findLatestToolDetailEvent,findLatestToolEvent,buildExecutionRailStats,composerHistoryPath,loadComposerInputHistory,saveComposerInputHistory,findLatestFailedToolEvent,buildFailedToolRetryDraft,buildToolDetailView,createInitialRegistry,drainStdinBuffer,maxScrollOffsetForRowCount,nextWheelAnimationStep,clampNumber,charDisplayWidth,stringDisplayWidth,displayColumnToStringIndex,normalizeRowSelection,normalizeTextSelection,richLineToPlainText,transcriptRowToPlainText,transcriptRowTextStartColumn,resolveTranscriptColumnFromMouse,transcriptRowsToPlainText,resolveTranscriptRowFromMouse,estimateVisibleBlockBudget,estimateWrappedRowCount,estimateQuestionReservedRows,estimateBottomChromeExtraRows,summarizeBtwTranscriptEvent,buildDashboardBlock,estimatePinnedLiveRows,estimateWrappedRows,estimateToolCallRows,estimateOutputEventRows,buildDisplayItems,isToolCallLikeBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,estimateDisplayItemRows,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount,isDuplicateEngineBlock,appendTranscriptBlock,normalizeTerminalMode,fileRailWidthForTerminal,fileRailMaxRowsForTerminal,buildTerminalReplaySnapshot,parseMarkdownToRows,buildToolCallRows,buildCollapsedToolGroupRows,buildTranscriptRows"
 
 // ── Module-level mutable refs for SIGINT ──
-const name=_activeAborts type="Set<AbortController>" value={{ new Set<AbortController>() }}
-
-const name=_cancelCallback type="{ fn: (() => void) | null }" value={{ { fn: null } }}
-
+// The interrupt singletons (_activeAborts, _cancelCallback, _lastSigintAt,
+// _pauseState) live in app-interrupt.kern; the one app.kern still references
+// directly (_cancelCallback, in the SIGINT cancel-callback effect) is imported
+// above. _lastSigintAt is now consumed only by the keyboard cancel/exit path,
+// which moved to app-keyboard.kern (it imports _lastSigintAt from app-interrupt
+// itself). They MUST be the same single instances the out-of-React SIGINT
+// handler mutates.
+// _cesarSessionRef stays here — it's the Cesar session holder (telemetry + the
+// SIGINT close path), not interrupt machinery.
 const name=_cesarSessionRef type="{ session: PersistentSession | null }" value={{ { session: null } }}
-
-const name=_lastSigintAt type="{ value: number }" value={{ { value: 0 } }}
-
-const name=_pauseState type="{ value: PauseState | null }" value={{ { value: null } }}
 
 screen name=App target=ink
   // ── State ──
@@ -471,13 +466,7 @@ screen name=App target=ink
   // ── Load extensions on startup + workspace switch ──
   effect deps="workspacePath"
     handler <<<
-      initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
-        if (extSkills.length > 0) setExtensionSkills(extSkills);
-        if (systemPromptFragments.length > 0) setExtensionPromptFragments(systemPromptFragments);
-        if (extensions.length > 0) setLoadedExtensions(extensions);
-      }).catch((err: Error) => {
-        console.warn(`[agon] extension loading failed: ${err.message}`);
-      });
+      loadExtensionsForWorkspace(workspacePath, commandRegistry, registry, eventBus, setExtensionSkills, setExtensionPromptFragments, setLoadedExtensions);
     >>>
 
   effect deps="mode"
@@ -527,57 +516,7 @@ screen name=App target=ink
 
   effect deps="activePlan,setActivePlanWrapped"
     handler <<<
-      if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
-      if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
-      if (!activePlan?.id) return;
-      const planId = activePlan.id;
-      const planFilePath = (() => { try { return cesarPlanJsonPath(planId); } catch { return null; } })();
-      planWatcherTimerRef.current = setInterval(() => {
-        try {
-          // Idle bail-out: free syscall, returns immediately when file hasn't
-          // been written since last tick. Skips the readFileSync + JSON.parse
-          // + comparison + stringify-fallback hot path that compounds as the
-          // plan grows. Only the gate — the rest of the body is identical to
-          // the original conservative logic so render-frequency is unchanged
-          // on real updates.
-          if (planFilePath) {
-            try {
-              const mtimeMs = statSync(planFilePath).mtimeMs;
-              if (mtimeMs === planWatcherStatMtimeRef.current) return;
-              planWatcherStatMtimeRef.current = mtimeMs;
-            } catch { /* file gone — fall through to loadCesarPlan which handles missing */ }
-          }
-          const loaded = loadCesarPlan(planId);
-          if (!loaded) return;
-          const current = activePlanRef.current;
-          const loadedMs = Date.parse(String(loaded.updatedAt ?? ''));
-          const currentMs = Date.parse(String(current?.updatedAt ?? ''));
-          const loadedValid = Number.isFinite(loadedMs);
-          const currentValid = Number.isFinite(currentMs);
-          if (loadedValid && currentValid) {
-            if (loadedMs <= currentMs) return;
-          } else if (loadedValid === currentValid) {
-            // Both missing/invalid — treat as unchanged unless structurally different
-            if (JSON.stringify(loaded) === JSON.stringify(current)) return;
-          }
-          if (planWatcherDebounceTimerRef.current) clearTimeout(planWatcherDebounceTimerRef.current);
-          planWatcherDebounceTimerRef.current = setTimeout(() => {
-            const latest = activePlanRef.current;
-            const latestMs = Date.parse(String(latest?.updatedAt ?? ''));
-            const latestValid = Number.isFinite(latestMs);
-            if (loadedValid && latestValid) {
-              if (loadedMs <= latestMs) return;
-            } else if (loadedValid === latestValid) {
-              if (JSON.stringify(loaded) === JSON.stringify(latest)) return;
-            }
-            setActivePlanWrapped(loaded);
-          }, 500);
-        } catch {}
-      }, 2000);
-      return () => {
-        if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
-        if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
-      };
+      return startPlanSyncWatcher(activePlan, setActivePlanWrapped, planWatcherTimerRef, planWatcherDebounceTimerRef, planWatcherStatMtimeRef, activePlanRef);
     >>>
 
   // Tracks the last-seen transcript length so effectiveNativeArchiveCount can
@@ -618,31 +557,7 @@ screen name=App target=ink
   // is common for offline users; the banner is non-critical).
   effect deps=""
     handler <<<
-      // On a linked/dev checkout the global `agon` IS this build (via npm link),
-      // so an npm-update banner would offer to install OVER the link and clobber
-      // it. Never auto-check on a dev build — real npm installs still get it.
-      if (isLinkedDevInstall()) return;
-      const startedAt = Date.now();
-      const elapsed = () => Date.now() - startedAt;
-      const boot = setTimeout(async () => {
-        setUpdateChecking(true);
-        try {
-          const dismissed = await loadDismissedVersion();
-          const result = await checkForUpdate(VERSION, undefined);
-          if (result && result.hasUpdate && result.latestVersion && result.latestVersion !== dismissed) {
-            setUpdateInfo({
-              currentVersion: result.currentVersion,
-              latestVersion: result.latestVersion,
-              checkedAt: Date.now(),
-            });
-          }
-        } catch {
-          // Swallow — update check is best-effort, never surface to the user.
-        } finally {
-          setUpdateChecking(false);
-        }
-      }, Math.max(0, 4000 - elapsed()));
-      return () => clearTimeout(boot);
+      return startUpdateCheck(VERSION, setUpdateChecking, setUpdateInfo);
     >>>
 
   // ── Startup: hydrate the runs snapshot + auto-prune ~/.agon/runs ──
@@ -729,46 +644,7 @@ screen name=App target=ink
   // ── Feed orchestration results back to Cesar's chat history ──
   effect deps="eventBus,dispatch,chatSession"
     handler <<<
-      if (!eventBus) return;
-      const modes = ['brainstorm', 'forge', 'tribunal', 'campfire'] as const;
-      const listeners: Array<{ mode: string; handler: () => void }> = [];
-      for (const mode of modes) {
-        const handler = () => {
-          const result = sessionResultStore.getLatest();
-          if (!result || result.type !== mode) return;
-          const winner = result.winner ?? 'none';
-          let summary = '';
-          if (result.type === 'brainstorm' && 'bids' in result.data) {
-            const winBid = (result.data as any).bids?.find((b: any) => b.engineId === winner);
-            summary = winBid?.approach ?? winBid?.reasoning?.slice(0, 200) ?? (result.data as any).response?.slice(0, 200) ?? '';
-          } else if (result.type === 'forge' && 'winner' in result.data) {
-            summary = winner !== 'none' ? `Winner: ${winner}. Diff proposed for review.` : 'No winner — all engines failed.';
-          } else if (result.type === 'tribunal' && 'verdict' in result.data) {
-            summary = (result.data as any).verdict?.slice(0, 200) ?? '';
-          } else if (result.type === 'campfire' && 'rounds' in result.data) {
-            const rounds = (result.data as any).rounds;
-            const last = rounds?.[rounds.length - 1];
-            summary = last ? `${last.engineId}: ${last.content?.slice(0, 200)}` : '';
-          }
-          // Append to chat history so Cesar sees it on next turn
-          appendMessage(chatSession, {
-            role: 'engine' as any,
-            engineId: `${mode}-result`,
-            content: `[${mode} result] Winner: ${winner}. ${summary}`,
-            timestamp: new Date().toISOString(),
-          });
-          // Narrate to UI
-          const label = winner !== 'none' ? `${mode} complete — winner: ${winner}` : `${mode} complete`;
-          dispatch({ type: 'info', message: label } as any);
-        };
-        eventBus.on(`post:${mode}`, handler);
-        listeners.push({ mode, handler });
-      }
-      return () => {
-        for (const listener of listeners) {
-          eventBus.off(`post:${listener.mode}`, listener.handler);
-        }
-      };
+      return subscribeOrchestrationResults(eventBus, dispatch, chatSession);
     >>>
 
   callback name=transition params="fn:any" deps="bell,setWindowTitle,pendingBellRef"
@@ -795,12 +671,7 @@ screen name=App target=ink
 
   callback name=trackAbort params="abort:AbortController|null"
     handler lang="kern"
-      if cond="activeAbortRef.current"
-        do value="_activeAborts.delete(activeAbortRef.current)"
-      assign target="activeAbortRef.current" value="abort"
-      if cond="abort"
-        do value="_activeAborts.add(abort)"
-      do value="setActiveAbort(abort)"
+      do value="runTrackAbort(abort, activeAbortRef, setActiveAbort)"
 
   callback name=setCesarSessionWrapped params="session:PersistentSession|null" deps="chatSession,config"
     handler lang="kern"
@@ -874,102 +745,32 @@ screen name=App target=ink
     >>>
 
   // ── Output actions (KERN bridge) ──
+  // deps="" → built ONCE; buildOutputActions lives in app-output-bridge.kern.
   memo name=outputActions deps=""
     handler <<<
-      return {
+      return buildOutputActions({
         setLiveSpinner,
         setLiveProgress,
-        setStreamingText: (updater: Record<string,StreamingEntry> | ((prev: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)) => {
-          const prev = streamingTextRef.current;
-          const next = typeof updater === 'function' ? (updater as (p: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)(prev) : updater;
-          // The ref keeps the FULL content — flushStream and streaming-end commit
-          // the complete answer from it. React state only drives the live preview,
-          // so push a bounded tail: rendering grows O(tail), not O(total) per
-          // throttled tick (a long single answer was quadratic — concat + full
-          // re-render every 33ms). Short streams reuse `next` (no extra alloc).
-          streamingTextRef.current = next;
-          const LIVE_TAIL = 4000;
-          let bounded: Record<string,StreamingEntry> = next;
-          for (const eid of Object.keys(next)) {
-            const e = next[eid];
-            if (e && typeof e.content === 'string' && e.content.length > LIVE_TAIL) {
-              if (bounded === next) bounded = { ...next };
-              bounded[eid] = { ...e, content: e.content.slice(-LIVE_TAIL) };
-            }
-          }
-          setStreamingText(bounded);
-        },
-        setLiveToolStreams: (updater: Record<string,any> | ((prev: Record<string,any>) => Record<string,any>)) => {
-          const prev = liveToolStreamsRef.current;
-          const next = typeof updater === 'function' ? (updater as (p: Record<string,any>) => Record<string,any>)(prev) : updater;
-          liveToolStreamsRef.current = next;
-          setLiveToolStreams(next);
-        },
-        addBlock: (event: any) => {
-          setOutputBlocks((prev: any) => appendTranscriptBlock(prev, event, blockArchivePathRef.current));
-        },
-        replaceBlocksOfType: (eventType: string, event: any) => {
-          setOutputBlocks((prev: any) => {
-            const filtered = prev.filter((b: any) => b.event.type !== eventType);
-            return appendTranscriptBlock(filtered, event, blockArchivePathRef.current);
-          });
-        },
-        clearBlocks: () => {
-          // Single funnel for every true transcript reset (/clear, /clean,
-          // session reset all dispatch OutputEvent {type:'clear'} → clearBlocks).
-          // Bump the epoch HERE so the <Static> remount is tied to the cause, not
-          // inferred from the array shrinking (which a cap-spill also does).
-          setOutputBlocks([]);
-          setClearEpoch((epoch: number) => nextStaticEpoch(epoch, 'reset'));
-          setNativeArchiveCount(0);
-          clearBlockRowCache();
-        },
-        setPendingPlanProposal: (val: OutputEvent | null) => setPendingPlanProposal(val),
+        streamingTextRef,
+        setStreamingText,
+        liveToolStreamsRef,
+        setLiveToolStreams,
+        setOutputBlocks,
+        blockArchivePathRef,
+        setClearEpoch,
+        setNativeArchiveCount,
+        setPendingPlanProposal,
         setReviewEvent,
         setQuestionState,
-        setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
-        flushStream: () => {
-          // Flush every in-flight engine's stream to the transcript. Multi-agent
-          // teams may have N concurrent streams when flush is requested (e.g.,
-          // permission-ask interrupts mid-stream).
-          const prev = streamingTextRef.current;
-          for (const eid of Object.keys(prev)) {
-            const entry = prev[eid];
-            if (!entry) continue;
-            // Contamination firewall: never flush a speculative preview draft to the
-            // transcript — it is dropped, not committed (same rule as streaming-end).
-            if (entry.draft) continue;
-            const color = ENGINE_COLORS[entry.engineId] ?? 124;
-            setOutputBlocks((blocks: any) => appendTranscriptBlock(blocks, { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } as any, blockArchivePathRef.current));
-          }
-          streamingTextRef.current = {};
-          setStreamingText({});
-          liveToolStreamsRef.current = {};
-          setLiveToolStreams({});
-        },
-        getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
+        chatStartTimeRef,
         setCesarConfidence,
         setCesarContext,
-        setLiveScoreboard: (val: Scoreboard | null) => setLiveScoreboard(val),
-        setLiveRationale: (val: ModeRationale | null) => setLiveRationale(val),
-        setAgentProgress: (updater: Record<string,AgentProgressSnapshot> | ((prev: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => {
-          const prev = agentProgressRef.current;
-          const next = typeof updater === 'function' ? (updater as (p: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)(prev) : updater;
-          agentProgressRef.current = next;
-          setAgentProgress(next);
-        },
-        clearAgentProgressByTeam: (teamId: string) => {
-          const prev = agentProgressRef.current;
-          const next: Record<string, AgentProgressSnapshot> = {};
-          for (const eid of Object.keys(prev)) {
-            const entry = prev[eid];
-            if (entry && entry.teamId !== teamId) next[eid] = entry;
-          }
-          agentProgressRef.current = next;
-          setAgentProgress(next);
-        },
-        setTodos: (updater: Todo[] | ((prev: Todo[]) => Todo[])) => setTodos(updater as any),
-      };
+        setLiveScoreboard,
+        setLiveRationale,
+        agentProgressRef,
+        setAgentProgress,
+        setTodos,
+      });
     >>>
 
   callback name=dispatch params="event:OutputEvent" deps="mode,chatSession"
@@ -1008,44 +809,7 @@ screen name=App target=ink
 
   callback name=interruptActiveRun params="message:string, clearChat:boolean" deps="replState,dispatch,trackAbort,outputActions"
     handler lang="kern"
-      let name=abort value="activeAbortRef.current"
-      if cond="abort"
-        do value="abort.abort()"
-      do value="trackAbort(null)"
-      do value="setLiveSpinner(null)"
-      do value="setLiveProgress(null)"
-      comment raw="// Commit any in-flight streams before wiping. In main-buffer mode the"
-      comment raw="// partial text has already been written to the terminal; dropping it"
-      comment raw="// from React state without flushing causes logUpdate.eraseLines to"
-      comment raw="// wipe visible output the user was just reading."
-      do value="outputActions.flushStream()"
-      do value="clearPermissionQueue()"
-      do value="clearThinkingBuffer()"
-      do value="setQuestionState(null)"
-      do value="setQuestionAnswer('')"
-      do value="setPendingPlanProposal(null)"
-      do value="setSlashPickerOpen(false)"
-      do value="setEnginePickerOpen(false)"
-      do value="setModelPickerOpen(false)"
-      do value="setCesarPickerOpen(false)"
-      do value="setReviewEvent(null)"
-      let name=pendingPlan value="activePlanRef.current"
-      if cond="pendingPlan && ['planning', 'awaiting_approval'].includes(String(pendingPlan.state ?? ''))"
-        try
-          do value="saveCesarPlan(cancelCesarPlan(pendingPlan))"
-          catch name=_err
-        assign target="activePlanRef.current" value="null"
-        do value="setActivePlan(null)"
-      if cond="replState !== 'idle'"
-        if cond="message"
-          do value="dispatch({ type: 'warning', message } as any)"
-        do value="setReplState((prev: any) => prev === 'idle' ? prev : cancelReplState({ state: prev }).state)"
-        if cond="!pendingBellRef.current"
-          do value="bell()"
-          assign target="pendingBellRef.current" value="true"
-        do value="setWindowTitle('agon')"
-      if cond="clearChat"
-        do value="dispatch({ type: 'clear' } as any)"
+      do value="runInterruptActiveRun({ activeAbortRef, activePlanRef, setActiveAbort, setActivePlan, setLiveSpinner, setLiveProgress, outputActions, setQuestionState, setQuestionAnswer, setPendingPlanProposal, setSlashPickerOpen, setEnginePickerOpen, setModelPickerOpen, setCesarPickerOpen, setReviewEvent, replState, dispatch, setReplState, pendingBellRef, bell, setWindowTitle }, message, clearChat)"
 
   callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped"
     handler <<<
@@ -1181,77 +945,13 @@ screen name=App target=ink
   // ── Telemetry poller lifecycle ──
   effect deps="registry,cesarSession,activeEngines"
     handler <<<
-      if (telemetryPollerRef.current) {
-        telemetryPollerRef.current.stop();
-        telemetryPollerRef.current = null;
-      }
-      const poller = createTelemetryPoller({
-        registry,
-        probe: async (id: string) => probeEngineVitals(registry, id, _cesarSessionRef.session, activeEnginePidsRef.current),
-        intervalMs: 5000,
-        stallThresholdMs: 30000,
-        probeTimeoutMs: 2500,
-        activeEngineIds: activeEngines,
-        autoFallback: 'auto',
-        onAutoFallback: async (from: string, to: string, reason: string) => {
-          const activeTurn = activeTurnRef.current;
-          const retryActiveTurn = !!(activeTurn && !activeTurn.retried && activeTurn.engineId === from && activeTurn.input);
-          if (retryActiveTurn && activeTurn) {
-            activeTurn.retried = true;
-          }
-          const plan = activePlanRef.current;
-          const runningStep = plan?.state === 'running' && Array.isArray(plan?.steps)
-            ? plan.steps.find((step: any) => String(step?.state ?? '') === 'running')
-            : null;
-          const stepEngines = runningStep
-            ? [runningStep.engine, ...(Array.isArray(runningStep.engines) ? runningStep.engines : [])].filter((id: any) => typeof id === 'string' && id.trim())
-            : [];
-          const retryActivePlan = !!(runningStep && !((plan as any).fallbackRetriesUsed?.[runningStep.id]) && (stepEngines.length === 0 || stepEngines.includes(from)));
-          setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
-          if (!retryActivePlan && !retryActiveTurn) {
-            dispatch({ type: 'warning', message: `Telemetry: ${from} stalled (${reason}); keeping Cesar unchanged.` } as any);
-            return false;
-          }
-
-          configSet('cesarEngine' as any, to as any);
-          setConfigVersion((v: number) => v + 1);
-          if (cesarSession) {
-            cesarSession.close();
-            setCesarSessionWrapped(null);
-          }
-          if (retryActivePlan) {
-            if (activeAbortRef.current) activeAbortRef.current.abort();
-            dispatch({ type: 'warning', message: `Telemetry: ${from} stalled during plan step — switched to ${to} and retrying that step (${reason})` } as any);
-          } else if (retryActiveTurn && activeTurn) {
-            if (activeAbortRef.current) activeAbortRef.current.abort();
-            setInputQueue((prev: string[]) => [...prev, activeTurn.input]);
-            dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — switched to ${to} and retrying this prompt (${reason})` } as any);
-          } else {
-            dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — auto-fallback to ${to} (${reason})` } as any);
-          }
-          return true;
-        },
-      });
-      poller.start();
-      telemetryPollerRef.current = poller;
-      const unsub = poller.subscribe((snapshot: Map<string, EngineVitals>) => {
-        setTelemetryVitals(new Map(snapshot));
-      });
-      return () => {
-        unsub();
-        poller.stop();
-        telemetryPollerRef.current = null;
-      };
+      return startTelemetryPoller({ registry, cesarSession, activeEngines, dispatch, cesarSessionHolder: _cesarSessionRef, telemetryPollerRef, activeEnginePidsRef, activeTurnRef, activePlanRef, activeAbortRef, setRecentFallbacks, setConfigVersion, setCesarSessionWrapped, setInputQueue, setTelemetryVitals });
     >>>
 
   // ── Queue processing ──
   effect deps="replState,inputQueue"
     handler <<<
-      if (replState === 'idle' && inputQueue.length > 0) {
-        const next = inputQueue[0];
-        setInputQueue((prev: string[]) => prev.slice(1));
-        setTimeout(() => handleSubmit(next), 50);
-      }
+      runProcessInputQueue(replState, inputQueue, setInputQueue, handleSubmit);
     >>>
 
   // Sync inputValue → inputValueRef so handleInputChange can read the
@@ -1343,280 +1043,23 @@ screen name=App target=ink
   // main task. Used for the opening /btw question AND every follow-up. ──
   callback name=sendBtwMessage params="question:string" deps="buildContext,dispatch,mode,replState,outputBlocks,jobManager,btwPanel"
     handler <<<
-      const q = (question ?? '').trim();
-      if (!q) return;
-      const ctx = buildContext();
-      const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
-      let engineDef: any;
-      try { engineDef = ctx.registry.get(cesarId); } catch { /* cesar engine not registered */ }
-      if (!engineDef) {
-        dispatch({ type: 'error', message: `btw: engine ${cesarId} not available` } as any);
-        return;
-      }
-
-      // Prior side-conversation, for multi-turn continuity.
-      const priorMessages: any[] = Array.isArray(btwPanel?.messages) ? btwPanel.messages : [];
-      const convo = priorMessages
-        .slice(-8)
-        .map((m: any) => `${m.role === 'user' ? 'You' : 'Cesar'}: ${m.text}`)
-        .join('\n');
-
-      // Live runtime context — same signals the one-shot /btw used.
-      let streamCtx = '';
-      const streamEntries = Object.values(streamingTextRef.current ?? {});
-      if (streamEntries.length > 0) {
-        let latest: StreamingEntry | null = null;
-        for (const e of streamEntries) { if (!latest || e.startedAt > latest.startedAt) latest = e; }
-        if (latest && latest.content) {
-          const lines = latest.content.split('\n').filter((l: string) => l.trim());
-          streamCtx = lines.slice(-10).join('\n');
-        }
-      }
-      const transcriptCtx = outputBlocks
-        .slice(-16)
-        .map((block: any) => summarizeBtwTranscriptEvent(block?.event))
-        .filter(Boolean)
-        .slice(-8)
-        .join('\n');
-      const runningCtx = [
-        `Mode: ${mode}`,
-        `UI state: ${replState}`,
-        activePlanRef.current?.state ? `Plan state: ${activePlanRef.current.state}` : '',
-        jobManager.running().length > 0 ? `Running background jobs: ${jobManager.running().map((job: any) => job.label ?? job.id).join(', ')}` : '',
-      ].filter(Boolean).join('\n');
-
-      const prompt = `You are Cesar, answering in a /btw side-chat while Agon continues another task in the main window. This is a continuing side conversation — stay consistent with what was already said.
-
-${convo ? 'Side-chat so far:\n' + convo + '\n\n' : ''}New message from the user:
-${q}
-
-Current runtime context:
-${runningCtx || '(none)'}
-
-${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n' : ''}${transcriptCtx ? 'Recent transcript context:\n' + transcriptCtx + '\n\n' : ''}Answer directly and briefly. Do not take over, cancel, or modify the main task.`;
-
-      // Stable conversation id: a dispatch only writes back into the SAME
-      // side-chat that started it. If the user Escs (panel → null) and opens a
-      // new /btw, an orphaned earlier dispatch sees a different id and is
-      // dropped instead of cross-talking into the new conversation.
-      const btwNow = Date.now();
-      const convId = btwPanel?.id ?? `btw-${btwNow}`;
-      const btwOutputDir = join(RUNS_DIR, `${convId}-${btwNow}`);
-      try { btwAbortRef.current?.abort(); } catch { /* no prior dispatch in flight */ }
-      const btwAbort = new AbortController();
-      btwAbortRef.current = btwAbort;
-      // Append the user's turn and mark running; preserve existing id/messages.
-      setBtwPanel((prev: any) => {
-        const base = prev ?? { id: convId, engineId: cesarId, messages: [] };
-        const messages = [...(Array.isArray(base.messages) ? base.messages : []), { role: 'user', text: q }].slice(-20);
-        return { ...base, id: base.id ?? convId, engineId: cesarId, status: 'running', error: '', messages, startedAt: btwNow };
-      });
-      try { mkdirSync(btwOutputDir, { recursive: true }); } catch { /* dir already exists or parent missing */ }
-      ctx.adapter.dispatch({
-        engine: engineDef,
-        prompt,
-        cwd: resolveWorkingDir(),
-        mode: 'exec' as any,
-        timeout: 60,
-        outputDir: btwOutputDir,
-        signal: btwAbort.signal,
-      }).then((result: any) => {
-        const answer = (result.stdout || '').trim();
-        setBtwPanel((prev: any) => {
-          if (!prev || prev.id !== convId) return prev;
-          if (answer) return { ...prev, status: 'done', messages: [...(Array.isArray(prev.messages) ? prev.messages : []), { role: 'cesar', text: answer }].slice(-20) };
-          return { ...prev, status: 'empty', error: 'No response' };
-        });
-      }).catch((err: any) => {
-        if (btwAbort.signal.aborted) return;
-        setBtwPanel((prev: any) => (prev && prev.id === convId) ? { ...prev, status: 'error', error: err instanceof Error ? err.message : String(err) } : prev);
-      });
+      runSendBtwMessage({
+        buildContext, btwPanel,
+        mode, replState, outputBlocks, jobManager, streamingTextRef, activePlanRef,
+        btwAbortRef, setBtwPanel, dispatch,
+      }, question);
     >>>
 
   callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef"
     handler <<<
-      inputEpochRef.current += 1;
-      let input = cleanSubmitValue(value);
-      // User is submitting a turn — allow the next await to ring again.
-      pendingBellRef.current = false;
-      awaitingPlanAnnouncedRef.current = '';
-      if (!input) return;
-      // Bare "/" → open slash picker flyout, don't dump text list
-      if (input === '/') {
-        if (planModeQueued) setPlanModeQueued(false);
-        setSlashPickerOpen(true);
-        return;
-      }
-      input = expandPastePlaceholders(input, pasteHashesRef.current);
-      pasteHashesRef.current.clear();
-      pendingPasteTransformRef.current = false;
-      inputValueRef.current = '';
-      setInputValue('');
-      setInputHistory((prev: string[]) => {
-        const next = appendInputHistory(prev, input, COMPOSER_HISTORY_LIMIT);
-        saveComposerInputHistory(next);
-        return next;
-      });
-      setHistoryIndex(-1);
-
-      const autoControl = parseAutoModeCommand(input);
-      if (autoControl) {
-        if (autoControl === 'status') {
-          dispatch({ type: 'info', message: autoModeQueued ? 'AUTO is ON by default — plain tasks may self-escalate through Cesar.' : 'AUTO is OFF by default.' } as any);
-          return;
-        }
-        const nextAutoModeQueued = autoControl === 'toggle' ? !autoModeQueued : autoControl === 'on';
-        setPlanModeQueued(false);
-        setPersistentAutoMode(nextAutoModeQueued);
-        dispatch({
-          type: 'info',
-          message: nextAutoModeQueued
-            ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Use /auto off or Ctrl+A to disable.'
-            : 'AUTO OFF by default.',
-        } as any);
-        return;
-      }
-
-      // While the BTW side-chat panel is open, a plain (non-slash) submit is a
-      // follow-up turn in that side conversation — Cesar answers it in the
-      // panel without touching the main task. Esc leaves the side-chat.
-      if (btwPanel && input.trim() && !input.startsWith('/')) {
-        if (btwPanel.status === 'running') {
-          dispatch({ type: 'info', message: 'Side-chat is still answering — one turn at a time.' } as any);
-          return;
-        }
-        sendBtwMessage(input.trim());
-        return;
-      }
-
-      if (!input.startsWith('/') && activePlanRef.current?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
-        input = '/approve';
-      }
-
-      // When the user moves forward from a pinned plan proposal, demote it
-      // from the live pane into scrollback history (Claude-style) so this
-      // turn's output is the bottom-most content instead of being buried
-      // under the plan. The chat-route approval ("go sounds legit") never
-      // emits plan-execution, so this turn boundary is the reliable hook.
-      // Exclusions, so an input that is NOT a response to the plan can't
-      // falsely retire it:
-      //   - side-channel slash commands (/btw, /status, /clear, …) — and
-      //     /cancel, which keeps its own plan-cancelled path (no history block)
-      //   - status/progress queries are questions about the plan, not responses
-      const dismissLower = input.trim().toLowerCase();
-      const isSlashNonApprove = dismissLower.startsWith('/') && dismissLower !== '/approve';
-      if (
-        activePlanRef.current?.state === 'awaiting_approval' &&
-        !isSlashNonApprove &&
-        !isCesarPlanStatusInput(input)
-      ) {
-        dispatch({ type: 'plan-dismiss' } as any);
-      }
-
-      // /btw <question> — side-channel question during active dispatch
-      const btwLower = input.trim().toLowerCase();
-      if (btwLower === '/btw') {
-        dispatch({ type: 'info', message: 'Usage: /btw <question> — ask something while engines work.' } as any);
-        return;
-      }
-      if (btwLower.startsWith('/btw ')) {
-        const btwQuestion = input.trim().slice(5).trim();
-        if (!btwQuestion) {
-          dispatch({ type: 'info', message: 'Usage: /btw <question>' } as any);
-          return;
-        }
-        // Opening a side-chat needs active main work to talk "alongside"; once
-        // the panel is open, follow-ups are handled earlier as plain submits.
-        const activeWorkForBtw = hasBtwSideChannelTarget({
-          replState,
-          activePlanState: activePlanRef.current?.state ?? null,
-          runningJobCount: jobManager.running().length,
-        });
-        if (!btwPanel && !activeWorkForBtw) {
-          dispatch({ type: 'info', message: 'No active work for /btw. Ask normally without the /btw prefix.' } as any);
-          return;
-        }
-        sendBtwMessage(btwQuestion);
-        return;
-      }
-      const isPlanAwaitingControl = activePlanRef.current?.state === 'awaiting_approval'
-        && (input === '/approve' || input === '/cancel');
-      if (replState !== 'idle' && !jobManager.running().length && !isPlanAwaitingControl) {
-        setInputQueue((prev: string[]) => [...prev, input]);
-        dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '\u2026' : input}` } as any);
-        return;
-      }
-      if (planModeQueued && input.trim() && !input.startsWith('/')) {
-        setPlanModeQueued(false);
-        handleSubmit(`/plan ${input}`);
-        return;
-      }
-      const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
-      if (planModeQueued) setPlanModeQueued(false);
-      transition(startCommandReplState);
-      pendingBellRef.current = false;
-      setWindowTitle('\u25cf agon \u2014 running');
-      dispatch({ type: 'separator' } as any);
-      dispatch({ type: 'user-message', content: input } as any);
-      const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
-      const allImages = [...pendingImages, ...detectedImages];
-      let intent = detectIntent(cleanInput || input, commandRegistry);
-      if (intent.type === 'status') {
-        setStatusDashboardOpen(true);
-        dispatch({ type: 'info', message: 'Status dashboard open. Press q or Esc to close.' } as any);
-        transition(finishReplState);
-        return;
-      }
-      const ctx = buildContext();
-      (ctx as any).autoModeQueued = autoModeForTurn;
-      const cesarEngineForTurn = String((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
-      activeTurnRef.current = (!input.startsWith('/') && mode === 'chat')
-        ? { input, engineId: cesarEngineForTurn, retried: false }
-        : null;
-      const cb: DispatchCallbacks = {
-        dispatch, ctx, commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
-        runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
-          const job = jobManager.create(type, label);
-          chatStartTimeRef.current = Date.now();
-          setJobList([...jobManager.list()]);
-          dispatch({ type: 'info', message: `Started background job [${job.id}] ${type}: ${label || type}` } as any);
-          // Transition to idle so user can submit new commands while job runs
-          // Strip stays active via jobList.some(j => j.state === 'running') check
-          setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
-          fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); bell(); setWindowTitle('agon'); })
-            .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); bell(); setWindowTitle('agon'); });
-        },
-        setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
-        setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups,
-        allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
-        explorationMode, setExplorationMode,
-        neroMode, setNeroMode,
-        setActivePlan: setActivePlanWrapped,
-      };
-      if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
-        if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
-      }
-      if (intent.type === 'unknown' && mode !== 'chat') {
-        switch (mode) {
-          case 'campfire': intent = { type: 'campfire', topic: input } as any; break;
-          case 'brainstorm': intent = { type: 'brainstorm', question: input } as any; break;
-          case 'tribunal': intent = { type: 'tribunal', question: input } as any; break;
-        }
-      }
-      try {
-        const result = await dispatchIntent(intent, input, cb);
-        if (result.ranAsJob) return;
-      } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
-      finally {
-        if (activeTurnRef.current?.input === input) activeTurnRef.current = null;
-        // Route through transition() so a normally-completed turn rings the
-        // done-bell. A direct setReplState here bypassed transition's bell hook,
-        // so the MAIN completion path (every non-job turn) was silent — only the
-        // status-dashboard / empty-mode-switch edge cases rang. transition's own
-        // `next==='idle' && prev!=='idle'` guard makes this a no-op (no bell) for
-        // job turns that already went idle at the runAsJob handoff above.
-        transition(finishReplState);
-      }
+      runHandleSubmit({
+        inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, chatStartTimeRef,
+        replState, mode, planModeQueued, autoModeQueued, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills, lastUndoToken, sessionStartTime, explorationMode, neroMode,
+        jobManager, commandRegistry, eventBus, loadedExtensions,
+        setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
+        setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups, setExplorationMode, setNeroMode,
+        dispatch, buildContext, sendBtwMessage, handleSubmit, transition, setActivePlanWrapped, askQuestion, bell,
+      }, value);
     >>>
 
   callback name=handleReviewActionCb params="action:'apply'|'edit'|'reject'|'copy'" deps="reviewEvent,dispatch"
@@ -1902,399 +1345,60 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
 
   callback name=handleCancelOrExit deps="questionState,replState,inputValue,dispatch"
     handler <<<
-      if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); setSelectedChoiceIndex(0); setQuestionOtherActive(false); }
-      if (replState !== 'idle') {
-        interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
-        return;
-      }
-
-      const now = Date.now();
-      if (inputValue) {
-        _lastSigintAt.value = now;
-        setInputValue('');
-        dispatch({ type: 'info', message: 'Input cleared. Press Ctrl+C again to exit.' } as any);
-        return;
-      }
-
-      if (now - _lastSigintAt.value < 1200) {
-        process.exit(0);
-      }
-
-      _lastSigintAt.value = now;
-      dispatch({ type: 'info', message: 'Press Ctrl+C again to exit.' } as any);
+      runHandleCancelOrExit({
+        questionState, replState, inputValue, activeAbortRef,
+        setQuestionState, setQuestionAnswer, setSelectedChoiceIndex, setQuestionOtherActive,
+        interruptActiveRun, setInputValue, dispatch,
+      });
     >>>
 
   callback name=handleComposerCtrlShortcut params="shortcut:string" deps="handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry"
     handler <<<
-      nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
-      switch (shortcut) {
-        case 'b':
-          ctrlKeyHandledRef.current = true;
-          setExecutionRailOpen(false);
-          setFileRailOpen((prev: boolean) => !prev);
-          return;
-        case 'c':
-          ctrlKeyHandledRef.current = true;
-          handleCancelOrExit();
-          return;
-        case 'e':
-          ctrlKeyHandledRef.current = true;
-          setToolOutputExpanded((prev: boolean) => !prev);
-          return;
-        case 'g':
-        case 'i':
-        case 't':
-          ctrlKeyHandledRef.current = true;
-          setFileRailOpen(false);
-          setFileRailExpandedPath(null);
-          setExecutionRailOpen((prev: boolean) => !prev);
-          return;
-        case 'o':
-          ctrlKeyHandledRef.current = true;
-          openLatestToolDetail();
-          return;
-        case 'l':
-          ctrlKeyHandledRef.current = true;
-          handleSubmit('/clear');
-          return;
-        case 'r':
-          ctrlKeyHandledRef.current = true;
-          openResultsPager();
-          return;
-        case 'y':
-          ctrlKeyHandledRef.current = true;
-          draftLatestFailedToolRetry();
-          return;
-        case 'j':
-          ctrlKeyHandledRef.current = true;
-          setInputValue((prev: string) => prev + '\n');
-          return;
-        default:
-          return;
-      }
+      runHandleComposerCtrlShortcut({
+        nestedCtrlShortcutRef, ctrlKeyHandledRef,
+        setExecutionRailOpen, setFileRailOpen, setFileRailExpandedPath, setToolOutputExpanded, setInputValue,
+        handleCancelOrExit, handleSubmit, openLatestToolDetail, openResultsPager, draftLatestFailedToolRetry,
+      }, shortcut);
     >>>
 
   // ── Register cancel callback for SIGINT ──
   effect deps="setActiveAbort,outputActions"
     handler <<<
-      _cancelCallback.fn = () => {
-        for (const abort of _activeAborts) abort.abort();
-        _activeAborts.clear();
-        activeAbortRef.current = null;
-        setActiveAbort(null);
-        setLiveSpinner(null);
-        setLiveProgress(null);
-        // Commit any in-flight streams before wiping — see interruptActiveRun.
-        outputActions.flushStream();
-        agentProgressRef.current = {};
-        setAgentProgress({});
-        clearPermissionQueue();
-        clearThinkingBuffer();
-        setQuestionState(null);
-        setQuestionAnswer('');
-        setPendingPlanProposal(null);
-        setSlashPickerOpen(false);
-        setEnginePickerOpen(false);
-        setModelPickerOpen(false);
-        setCesarPickerOpen(false);
-        setReviewEvent(null);
-        setToolDetailEvent(null);
-        const pendingPlan = activePlanRef.current;
-        if (pendingPlan && ['planning', 'awaiting_approval'].includes(String(pendingPlan.state ?? ''))) {
-          try { saveCesarPlan(cancelCesarPlan(pendingPlan)); } catch (_err) {}
-          activePlanRef.current = null;
-          setActivePlan(null);
-        }
-        setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
-      };
+      _cancelCallback.fn = buildCancelCallback({
+        activeAbortRef, activePlanRef, setActiveAbort, setActivePlan,
+        setLiveSpinner, setLiveProgress, outputActions,
+        agentProgressRef, setAgentProgress,
+        setQuestionState, setQuestionAnswer, setPendingPlanProposal,
+        setSlashPickerOpen, setEnginePickerOpen, setModelPickerOpen,
+        setCesarPickerOpen, setReviewEvent, setToolDetailEvent,
+        setReplState,
+      });
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
   callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId"
     handler <<<
-      if (isTerminalFocusReport(input)) return;
-      if (key?.paste) return;
-
-      const keyName = typeof key?.name === 'string' ? key.name.toLowerCase() : '';
-      const globalCtrlInputMap = {
-        '\x01': 'a',
-        '\x03': 'c',
-        '\x05': 'e',
-        '\x07': 'g',
-        '\x0f': 'o',
-        '\x0a': 'j',
-        '\x0b': 'k',
-        '\x0c': 'l',
-        '\x12': 'r',
-        '\x14': 't',
-        '\x15': 'u',
-        '\x17': 'w',
-        '\x02': 'b',
-        ...(key.ctrl ? { '\x09': 'i' } : {}),
-      } as Record<string, string>;
-      const globalCtrlInput = globalCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
-      const hasGlobalCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
-      if (btwPanel && (key.escape || input === '\x1b')) {
-        try { btwAbortRef.current?.abort(); } catch { /* nothing in flight */ }
-        btwAbortRef.current = null;
-        setBtwPanel(null);
-        return;
-      }
-      const textInputOwnsReservedShortcut = !statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices);
-      if (hasGlobalCtrlSignal && globalCtrlInput === 'e' && !textInputOwnsReservedShortcut) {
-        const nested = nestedCtrlShortcutRef.current;
-        if (nested.key === 'e' && Date.now() - nested.at < 120) {
-          nestedCtrlShortcutRef.current = { key: '', at: 0 };
-          return;
-        }
-        nestedCtrlShortcutRef.current = { key: 'e', at: Date.now() };
-        ctrlKeyHandledRef.current = true;
-        setToolOutputExpanded((prev: boolean) => !prev);
-        return;
-      }
-
-      if (statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
-        if (key.escape || input === 'q' || input === 'Q' || (key.ctrl && input === '\x03')) {
-          setStatusDashboardOpen(false);
-          return;
-        }
-        if (input === 'a' || input === 'A') {
-          setStatusDashboardFilter('all');
-          return;
-        }
-        if (input === 'p' || input === 'P') {
-          setStatusDashboardFilter('problem');
-          return;
-        }
-        return;
-      }
-
-      // ScrollBox keyboard shortcuts (only when fullscreen owns the viewport and no modal is open).
-      if (terminalMode === 'fullscreen' && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
-        if (key.shift && key.name === 'pageup') {
-          scrollBoxRef.current?.scrollBy(-Math.max(1, Math.floor(currentVisibleRowBudget / 2)));
-          return;
-        }
-        if (key.shift && key.name === 'pagedown') {
-          scrollBoxRef.current?.scrollBy(Math.max(1, Math.floor(currentVisibleRowBudget / 2)));
-          return;
-        }
-        if (key.name === 'home') {
-          scrollBoxRef.current?.scrollTo(0);
-          return;
-        }
-        if (key.name === 'end') {
-          scrollBoxRef.current?.scrollToBottom?.();
-          return;
-        }
-      }
-
-      const normalizedCtrlInputMap = {
-        '\x01': 'a',
-        '\x03': 'c',
-        '\x05': 'e',
-        '\x07': 'g',
-        '\x0f': 'o',
-        '\x0a': 'j',
-        '\x0b': 'k',
-        '\x0c': 'l',
-        '\x12': 'r',
-        '\x14': 't',
-        '\x15': 'u',
-        '\x17': 'w',
-        '\x02': 'b',
-        ...(key.ctrl ? { '\x09': 'i' } : {}),
-      } as Record<string, string>;
-      const normalizedCtrlInput = normalizedCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
-      const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
-      if (hasCtrlSignal && normalizedCtrlInput) {
-        const nested = nestedCtrlShortcutRef.current;
-        if (nested.key === normalizedCtrlInput && Date.now() - nested.at < 120) {
-          nestedCtrlShortcutRef.current = { key: '', at: 0 };
-          return;
-        }
-      }
-
-      const action = resolveKeyboardInput({
-        input, key,
-        textInputActive: !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices),
+      runHandleKeyboardInput({
         modelPickerOpen, cesarPickerOpen, slashPickerOpen, enginePickerOpen,
-        reviewEventOpen: !!reviewEvent,
-        toolDetailOpen: !!toolDetailEvent,
-        questionState, questionChoiceIndex: selectedChoiceIndex, questionOtherActive,
-        updateInfo,
+        reviewEvent, toolDetailEvent, btwPanel, statusDashboardOpen,
+        questionState, selectedChoiceIndex, questionOtherActive,
         replState, inputValue, inputHistory, historyIndex,
-        planModeQueued, autoModeQueued, activePlanState: activePlanRef.current?.state ?? null,
-        planApprovalIndex,
-        outputBlockCount: outputBlocks.length,
-        commands: allSlashCommands,
-        engineIds: availableEngines,
-        fileRailFocused: fileRailOpen && inputValue.trim().length === 0,
-        fileRailExpanded: fileRailExpandedPath !== null,
-        executionRailFocused: executionRailOpen && inputValue.trim().length === 0,
-        liveToolStreamCount: Object.keys(liveToolStreamsRef.current ?? {}).length,
-      });
-
-      switch (action.type) {
-        case 'none': return;
-        case 'exit': process.exit(0); return;
-        case 'resolveChoice':
-          questionState.resolve(action.choiceKey);
-          setQuestionState(null); setQuestionAnswer('');
-          setSelectedChoiceIndex(0); setQuestionOtherActive(false); return;
-        case 'cancelChoice':
-          questionState.resolve('n');
-          setQuestionState(null); setQuestionAnswer('');
-          setSelectedChoiceIndex(0); setQuestionOtherActive(false); return;
-        case 'moveChoice':
-          setSelectedChoiceIndex(action.index); return;
-        case 'enterOther': {
-          // Seat the cursor on the __other row so the inline editor renders even
-          // when Other was picked by its number (instant), not by arrowing to it.
-          // No __other row → nothing to edit; don't enter Other mode (else the hint
-          // would wrongly flip to "Esc returns to options").
-          const _otherIdx = Array.isArray(questionState?.choices)
-            ? questionState.choices.findIndex((c: any) => c && c.key === '__other')
-            : -1;
-          if (_otherIdx < 0) return;
-          setSelectedChoiceIndex(_otherIdx);
-          setQuestionOtherActive(true); setQuestionAnswer(''); return;
-        }
-        case 'exitOther':
-          setQuestionOtherActive(false); setQuestionAnswer(''); return;
-        case 'swallow': return;
-        case 'ghostComplete':
-          setInputValue(inputValue + action.ghost + ' ');
-          return;
-        case 'togglePlanQueued':
-          setPlanModeQueued((prev: boolean) => !prev); return;
-        case 'toggleAutoQueued':
-          const nextAutoModeQueued = !autoModeQueued;
-          setPlanModeQueued(false);
-          setPersistentAutoMode(nextAutoModeQueued);
-          dispatch({
-            type: 'info',
-            message: nextAutoModeQueued
-              ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Ctrl+A toggles it off.'
-              : 'AUTO OFF by default.',
-          } as any);
-          return;
-        case 'submit':
-          handleSubmit(action.value); return;
-        case 'planControl':
-          // Swallow the Enter/key so PromptTextInput does not insert it
-          // into the composer after we route the approval.
-          ctrlKeyHandledRef.current = true;
-          setPlanApprovalIndex(0);
-          if (action.action === 'revise') {
-            // Drop the proposal from the live pane but leave the plan in
-            // activePlanRef so /cancel on the next turn is a no-op. Pre-fill
-            // the composer with a revision prompt; pressing Enter routes the
-            // message to Cesar, who (per session.kern RULE 9) will see the
-            // pending plan and ProposePlan again with the user's changes.
-            setPendingPlanProposal(null);
-            setInputValue('Revise the plan: ');
-            dispatch({ type: 'info', message: 'Type your revision and press Enter (Esc clears).' } as any);
-            return;
-          }
-          handleSubmit(action.action === 'approve' ? '/approve' : '/cancel');
-          return;
-        case 'movePlanApproval':
-          setPlanApprovalIndex(action.index); return;
-        case 'updateBanner':
-          // Route the keyboard shortcut from the in-app update banner.
-          // `update` opens the choice prompt; `changelog` jumps straight to
-          // the release page; `dismiss` hides the banner and remembers the
-          // version so we don't nag again for this release.
-          if (action.action === 'update') {
-            triggerUpdatePrompt();
-          } else if (action.action === 'changelog') {
-            try { spawnSync('open', ['https://github.com/KERNlang/agon/releases'], { stdio: 'ignore' }); } catch { /* ignore */ }
-          } else {
-            dismissUpdateBanner();
-          }
-          return;
-        case 'toggleToolExpand':
-          ctrlKeyHandledRef.current = true;
-          setToolOutputExpanded((prev: boolean) => !prev); return;
-        case 'openToolDetail':
-          openLatestToolDetail(); return;
-        case 'retryFailedTool':
-          draftLatestFailedToolRetry(); return;
-        case 'openResults':
-          openResultsPager(); return;
-        case 'toggleFileRail':
-          setExecutionRailOpen(false);
-          setFileRailOpen((prev: boolean) => !prev);
-          return;
-        case 'toggleExecutionRail':
-          setFileRailOpen(false);
-          setFileRailExpandedPath(null);
-          setExecutionRailOpen((prev: boolean) => !prev);
-          return;
-        case 'toggleLiveToolTail':
-          ctrlKeyHandledRef.current = true;
-          if (!newestLiveToolStreamId) return;
-          setLiveToolTailFrozen((prev: Record<string, boolean>) => ({
-            ...prev,
-            [newestLiveToolStreamId]: !prev[newestLiveToolStreamId],
-          }));
-          return;
-        case 'fileRailSelectPrev': {
-          const files = listFiles();
-          const last = Math.max(0, files.length - 1);
-          setFileRailSelectedIdx((i: number) => Math.max(0, Math.min(last, i) - 1));
-          return;
-        }
-        case 'fileRailSelectNext': {
-          const files = listFiles();
-          const last = Math.max(0, files.length - 1);
-          setFileRailSelectedIdx((i: number) => Math.min(last, Math.max(0, i) + 1));
-          return;
-        }
-        case 'fileRailToggleExpand': {
-          const files = listFiles();
-          if (files.length === 0) return;
-          const idx = Math.max(0, Math.min(files.length - 1, fileRailSelectedIdx));
-          const target = files[idx];
-          setFileRailExpandedPath((prev: string|null) => prev === target.path ? null : target.path);
-          return;
-        }
-        case 'fileRailClose':
-          setFileRailOpen(false);
-          setFileRailExpandedPath(null);
-          return;
-        case 'executionRailClose':
-          setExecutionRailOpen(false);
-          return;
-        case 'unqueuePlan':
-          setPlanModeQueued(false); return;
-        case 'unqueueAuto':
-          setPersistentAutoMode(false);
-          dispatch({ type: 'info', message: 'AUTO OFF by default.' } as any);
-          return;
-        case 'closeSlash':
-          setSlashPickerOpen(false); return;
-        case 'closeEnginePicker':
-          setEnginePickerOpen(false); return;
-        case 'cancelQuestion':
-          if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
-          return;
-        case 'interrupt':
-          interruptActiveRun('Interrupted.', false); return;
-        case 'clearInput':
-          setInputValue(''); return;
-        case 'insertNewline':
-          setInputValue((prev: string) => prev + '\n'); return;
-        case 'historySet':
-          setHistoryIndex(action.index);
-          // value is always a string — empty string means "return to blank composer".
-          setInputValue(action.value);
-          return;
-        case 'cancelOrExit':
-          handleCancelOrExit();
-          return;
-      }
+        planModeQueued, autoModeQueued, planApprovalIndex,
+        outputBlocks, allSlashCommands, availableEngines, updateInfo, terminalMode,
+        newestLiveToolStreamId, fileRailOpen, fileRailExpandedPath, fileRailSelectedIdx,
+        executionRailOpen, currentVisibleRowBudget, startupOnly,
+        nestedCtrlShortcutRef, ctrlKeyHandledRef, btwAbortRef, scrollBoxRef,
+        liveToolStreamsRef, activePlanRef,
+        setBtwPanel, setStatusDashboardOpen, setStatusDashboardFilter,
+        setSlashPickerOpen, setEnginePickerOpen, setPendingPlanProposal,
+        setQuestionState, setQuestionAnswer, setSelectedChoiceIndex, setQuestionOtherActive,
+        setInputValue, setHistoryIndex, setPlanModeQueued, setPersistentAutoMode, setPlanApprovalIndex,
+        setToolOutputExpanded, setLiveToolTailFrozen, setExecutionRailOpen, setFileRailOpen,
+        setFileRailExpandedPath, setFileRailSelectedIdx,
+        handleSubmit, interruptActiveRun, handleCancelOrExit,
+        openLatestToolDetail, openResultsPager, draftLatestFailedToolRetry,
+        triggerUpdatePrompt, dismissUpdateBanner, dispatch,
+      }, input, key);
     >>>
 
   // ── Render ──
@@ -2345,32 +1449,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
           </Box>
         )}
         {livePaneVisible && !railTakeover && (
-          <>
-            <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} liveToolTailFrozen={liveToolTailFrozen} />
-            {Object.keys(agentProgress).length > 0 && (
-              <Box flexDirection="column">
-                {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (
-                  <AgentProgressView
-                    key={snap.engineId}
-                    engineId={snap.engineId}
-                    turnIndex={snap.turnIndex}
-                    phase={snap.phase}
-                    userPrompt={snap.userPrompt}
-                    toolCalls={snap.toolCalls}
-                    lastTool={snap.lastTool}
-                    lastToolStatus={snap.lastToolStatus}
-                    tokensUsed={snap.tokensUsed}
-                    elapsedMs={snap.elapsedMs}
-                    turnsRemaining={snap.turnsRemaining}
-                    maxTurns={snap.maxTurns}
-                    tokensRemaining={snap.tokensRemaining}
-                    maxTokens={snap.maxTokens}
-                    error={snap.error}
-                  />
-                ))}
-              </Box>
-            )}
-          </>
+          <LiveStreamSection activeStream={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} liveToolTailFrozen={liveToolTailFrozen} agentProgress={agentProgress} />
         )}
         {pendingPlanProposal && (
           <PlanProposalView
@@ -2380,39 +1459,7 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
           />
         )}
         {btwPanel && (
-          <Box flexDirection="column" borderStyle="round" borderColor="#22d3ee" paddingX={1} marginY={1}>
-            <Box justifyContent="space-between">
-              <Text bold color="#22d3ee">{`BTW · side-chat${btwPanel.engineId ? ' · ' + btwPanel.engineId : ''}`}</Text>
-              <Text dimColor>{btwPanel.status === 'running' ? 'thinking…' : 'type to continue · Esc to leave'}</Text>
-            </Box>
-            {(() => {
-              const msgs = Array.isArray(btwPanel.messages) ? btwPanel.messages : [];
-              const shown = msgs.slice(-2);
-              const baseIdx = msgs.length - shown.length;
-              const hidden = baseIdx;
-              return (<>
-                {hidden > 0 && <Text dimColor>{`… ${hidden} earlier turn${hidden === 1 ? '' : 's'}`}</Text>}
-                {shown.map((m: any, i: number) => {
-                  const isUser = m.role === 'user';
-                  const raw = String(m.text ?? '').split('\n').filter((l: string) => l.trim()).slice(0, isUser ? 2 : 8);
-                  const displayLines = raw.length > 0 ? raw : [''];
-                  return (
-                    <Box key={baseIdx + i} flexDirection="column">
-                      {displayLines.map((line: string, j: number) => (
-                        <Text key={j} color={isUser ? '#fbbf24' : undefined} dimColor={isUser}>{j === 0 ? (isUser ? '› ' : `${btwPanel.engineId ?? 'cesar'}: `) : '  '}{line}</Text>
-                      ))}
-                    </Box>
-                  );
-                })}
-              </>);
-            })()}
-            {btwPanel.status === 'running' && (
-              <Text color="#fbbf24">{'Answering in a side channel; main work continues.'}</Text>
-            )}
-            {btwPanel.error && btwPanel.status !== 'running' && (
-              <Text color="#ef4444">{btwPanel.error}</Text>
-            )}
-          </Box>
+          <BtwSidePanel btwPanel={btwPanel} />
         )}
         {toolDetailView && (
           <ToolDetailBlock
@@ -2597,102 +1644,76 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
             }}
             onCancel={() => setCesarPickerOpen(false)} />
         )}
-        {railTakeover && showFileRail && (
-          <FileRail files={fileRailFiles} maxRows={sideRailMaxRows} width={Math.max(20, termWidth - 2)} focused={fileRailOpen} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen} />
-        )}
-        {railTakeover && showExecutionRail && (
-          <ExecutionRailPanel
-            spinner={liveSpinner}
-            engines={liveProgress}
-            activePlanState={activePlan?.state ?? null}
-            activePlan={activePlan}
-            lastTool={latestToolEvent}
-            recentFallbacks={recentFallbacks}
-            stats={executionRailStats}
-            toolOutputExpanded={toolOutputExpanded}
-            startTime={chatStartTimeRef.current || 0}
-            isActive={replState !== 'idle' || runningJobs.length > 0}
-            width={Math.max(20, termWidth - 2)}
-            maxRows={sideRailMaxRows}
-            focused={executionRailOpen} />
-        )}
         {railTakeover && (
-          <Box paddingX={1}><Text dimColor>{showFileRail ? '↑↓ navigate · Tab expand · Esc to return to chat' : 'Esc to return to chat'}</Text></Box>
+          <RailTakeoverPanel
+            showFileRail={showFileRail}
+            showExecutionRail={showExecutionRail}
+            fileRailFiles={fileRailFiles}
+            sideRailMaxRows={sideRailMaxRows}
+            termWidth={termWidth}
+            fileRailOpen={fileRailOpen}
+            fileRailSelectedIdx={fileRailSelectedIdx}
+            fileRailExpandedPath={fileRailExpandedPath}
+            liveSpinner={liveSpinner}
+            liveProgress={liveProgress}
+            activePlan={activePlan}
+            latestToolEvent={latestToolEvent}
+            recentFallbacks={recentFallbacks}
+            executionRailStats={executionRailStats}
+            toolOutputExpanded={toolOutputExpanded}
+            chatStartTime={chatStartTimeRef.current || 0}
+            isActive={replState !== 'idle' || runningJobs.length > 0}
+            executionRailOpen={executionRailOpen} />
         )}
         {liveSpinner && mode !== 'chat' && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
         {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && !railTakeover && (
-          <Box flexDirection="column" paddingX={1} marginTop={1}>
-            {/* ── Update-available banner ──
-                Sits between the picker row and the composer. Renders ONLY when
-                updateInfo is populated; otherwise nothing is emitted (zero-cost
-                when the user is up-to-date). The banner is keyboard-driven via
-                the global 'u' shortcut (handleKeyboardInput) — see KEY_MAP
-                below for the full surface (u / Enter / x / Esc). */}
-            {updateInfo && updateInfo.latestVersion && !questionState && (
-              <Box flexDirection="row" borderStyle="round" borderColor="#fbbf24" paddingX={1} marginBottom={1}>
-                <Box flexDirection="column" flexGrow={1}>
-                  <Box>
-                    <Text color="#fbbf24" bold>{'⤴ '}</Text>
-                    <Text bold>Agon v{updateInfo.latestVersion}</Text>
-                    <Text>{' is available (you\'re on v'}{updateInfo.currentVersion || VERSION}{')'}</Text>
-                  </Box>
-                  <Box>
-                    <Text dimColor>{'Press '}</Text>
-                    <Text color="#fbbf24" bold>{'u'}</Text>
-                    <Text dimColor>{' to update · '}</Text>
-                    <Text dimColor>{'l'}</Text>
-                    <Text dimColor>{' to view changelog · '}</Text>
-                    <Text dimColor>{'x'}</Text>
-                    <Text dimColor>{' to dismiss for v'}{updateInfo.latestVersion}</Text>
-                  </Box>
-                </Box>
-                {updateChecking && <Text dimColor>{' · checking'}</Text>}
-              </Box>
-            )}
-            {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
-            {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
-            {liveSpinner && mode === 'chat' && !questionState && (
-              <Box paddingLeft={1}>
-                <Text color="#fbbf24">{liveSpinner.message}</Text>
-              </Box>
-            )}
-            {statusDashboardOpen ? (
-              <StatusDashboard telemetryVitals={telemetryVitals} recentFallbacks={recentFallbacks} width={termWidth} height={termHeight} filter={statusDashboardFilter} />
-            ) : (
-              <ComposerView
-                mode={mode}
-                replState={replState}
-                planModeQueued={planModeQueued}
-                autoModeQueued={autoModeQueued}
-                activePlanState={activePlan?.state ?? null}
-                slashPickerOpen={slashPickerOpen}
-                inputValue={inputValue}
-                handleInputChange={handleInputChange}
-                handlePasteInput={handlePasteInput}
-                handleSubmit={handleSubmit}
-                allSlashCommands={allSlashCommands}
-                availableEngines={availableEngines}
-                onSlashSelect={handleSlashSelect}
-                onSlashCancel={handleSlashCancel}
-                questionState={questionState}
-                questionAnswer={questionAnswer}
-                selectedChoiceIndex={selectedChoiceIndex}
-                questionOtherActive={questionOtherActive}
-                onQuestionAnswerChange={setQuestionAnswer}
-                onQuestionAnswerSubmit={handleQuestionAnswer}
-                updateBannerActive={!!(updateInfo && updateInfo.latestVersion) && !questionState && !modelPickerOpen && !cesarPickerOpen && !slashPickerOpen && !enginePickerOpen && !toolDetailEvent && !reviewEvent}
-                termWidth={termWidth}
-                termHeight={termHeight}
-                onCtrlShortcut={handleComposerCtrlShortcut} />
-            )}
-            {(() => {
-              const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-              return (<>
-                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
-                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} telemetryVitals={telemetryVitals} />}
-              </>);
-            })()}
-          </Box>
+          <BottomChromeSection
+            updateInfo={updateInfo}
+            updateChecking={updateChecking}
+            questionState={questionState}
+            pendingImages={pendingImages}
+            inputQueue={inputQueue}
+            liveSpinner={liveSpinner}
+            mode={mode}
+            statusDashboardOpen={statusDashboardOpen}
+            telemetryVitals={telemetryVitals}
+            recentFallbacks={recentFallbacks}
+            termWidth={termWidth}
+            termHeight={termHeight}
+            statusDashboardFilter={statusDashboardFilter}
+            replState={replState}
+            planModeQueued={planModeQueued}
+            autoModeQueued={autoModeQueued}
+            activePlan={activePlan}
+            slashPickerOpen={slashPickerOpen}
+            inputValue={inputValue}
+            handleInputChange={handleInputChange}
+            handlePasteInput={handlePasteInput}
+            handleSubmit={handleSubmit}
+            allSlashCommands={allSlashCommands}
+            availableEngines={availableEngines}
+            onSlashSelect={handleSlashSelect}
+            onSlashCancel={handleSlashCancel}
+            questionAnswer={questionAnswer}
+            selectedChoiceIndex={selectedChoiceIndex}
+            questionOtherActive={questionOtherActive}
+            onQuestionAnswerChange={setQuestionAnswer}
+            onQuestionAnswerSubmit={handleQuestionAnswer}
+            updateBannerActive={!!(updateInfo && updateInfo.latestVersion) && !questionState && !modelPickerOpen && !cesarPickerOpen && !slashPickerOpen && !enginePickerOpen && !toolDetailEvent && !reviewEvent}
+            onCtrlShortcut={handleComposerCtrlShortcut}
+            cesarId={(config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude'}
+            cesarConfidence={cesarConfidence}
+            cesarContext={cesarContext}
+            liveProgress={liveProgress}
+            runningJobs={runningJobs}
+            chatStartTime={chatStartTimeRef.current || 0}
+            streamSnippet={streamSnippet}
+            statusStats={statusStats}
+            statusCwd={statusCwd}
+            statusBranch={statusBranch}
+            explorationMode={explorationMode}
+            toolOutputExpanded={toolOutputExpanded}
+            fullscreenEnabled={terminalMode === 'fullscreen'} />
         )}
       </Box>
       );
@@ -2751,29 +1772,7 @@ fn name=startRepl async=true returns="Promise<void>"
   handler <<<
     ensureAgonHome();
     ensureCurrentWorkspace(process.cwd());
-    process.on('SIGINT', () => {
-      const now = Date.now();
-      if (now - _lastSigintAt.value < 1200) {
-        if (_cesarSessionRef.session) { try { _cesarSessionRef.session.close(); } catch { /* session already closed or errored */ } _cesarSessionRef.session = null; }
-        process.exit(0);
-      }
-      if (_pauseState.value?.active) {
-        // Second Ctrl+C during pause — hard cancel
-        _pauseState.value = dismissPauseState();
-        for (const abort of _activeAborts) abort.abort();
-        _activeAborts.clear();
-        _lastSigintAt.value = now;
-        if (_cancelCallback.fn) _cancelCallback.fn();
-        return;
-      }
-      if (_activeAborts.size > 0) {
-        // First Ctrl+C — enter pause state instead of immediate abort
-        _pauseState.value = createPauseState();
-        _lastSigintAt.value = now;
-        return;
-      }
-      _lastSigintAt.value = now;
-    });
+    process.on('SIGINT', () => handleSigint(_cesarSessionRef));
     // Client/server split M1: flush any buffered EventLog batches on exit. The
     // coalesce timer is unref'd, so the final ~50ms window would otherwise be
     // lost on a clean exit. resetEventLogState() flushes synchronously (and the

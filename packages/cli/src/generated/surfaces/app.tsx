@@ -6,7 +6,7 @@ import { Box, Static, Text, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, appendMessage, getAgonHome, tracker, planCostEstimator, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, appendMessage, getAgonHome, tracker, planCostEstimator, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@kernlang/agon-core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
@@ -18,7 +18,7 @@ import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
 import type { EngineAdapter } from '@kernlang/agon-core';
 
-import { detectIntent, SLASH_COMMANDS } from '../signals/intent.js';
+import { SLASH_COMMANDS } from '../signals/intent.js';
 
 import { runsStore } from '../signals/runs-store.js';
 
@@ -40,7 +40,7 @@ import type { OutputEvent, HandlerContext } from '../../handlers/types.js';
 
 import { codeBlockBuffer } from '../../code-buffer.js';
 
-import { startCommandReplState, finishReplState } from '../signals/app-state.js';
+import { finishReplState } from '../signals/app-state.js';
 
 import type { ReplStateState } from '../signals/app-state.js';
 
@@ -48,11 +48,7 @@ import type { Scoreboard } from '../cesar/scoreboard.js';
 
 import type { ModeRationale } from '../cesar/mode-rationale.js';
 
-import { processPasteContent, expandPastePlaceholders, recordPastePlaceholder } from '../signals/paste-handler.js';
-
-import { dispatchIntent, handleModeSwitch, isCesarPlanApprovalInput, isCesarPlanStatusInput } from '../signals/dispatch.js';
-
-import type { DispatchCallbacks } from '../signals/dispatch.js';
+import { processPasteContent, recordPastePlaceholder } from '../signals/paste-handler.js';
 
 import { createTelemetryPoller, TelemetryPoller } from '../cesar/telemetry-poller.js';
 
@@ -66,7 +62,7 @@ import { teeOutputEvent } from '../signals/event-log-tee.js';
 
 import { resetEventLogState } from '@kernlang/agon-core';
 
-import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange, hasBtwSideChannelTarget, navigateHistory, parseAutoModeCommand, resolveEscapeAction, shouldQueuePlanModeOnTab } from '../signals/app-input.js';
+import { cleanInputValue, findInputChange, navigateHistory, resolveEscapeAction, shouldQueuePlanModeOnTab } from '../signals/app-input.js';
 
 import { makeBlockArchivePath, appendBlockWithCap, nextStaticEpoch } from '../signals/block-archive.js';
 
@@ -132,7 +128,7 @@ import { checkForUpdate, loadDismissedVersion, saveDismissedVersion, isLinkedDev
 
 import { bell, setWindowTitle } from '../lib/terminal-notify.js';
 
-import { COMPOSER_HISTORY_LIMIT, loadComposerInputHistory, saveComposerInputHistory } from './app-composer.js';
+import { loadComposerInputHistory } from './app-composer.js';
 
 import { toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView } from './app-tool-detail.js';
 
@@ -144,7 +140,7 @@ import { normalizeTextSelection } from './app-selection.js';
 
 import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinnedLiveRows } from './app-layout.js';
 
-import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, appendTranscriptBlock, summarizeBtwTranscriptEvent } from './app-blocks.js';
+import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, appendTranscriptBlock } from './app-blocks.js';
 
 import { buildExecutionRailStats, buildTranscriptRows, clearBlockRowCache } from './app-rendering.js';
 
@@ -156,11 +152,13 @@ import { _cancelCallback, runTrackAbort, runInterruptActiveRun, buildCancelCallb
 
 import { runHandleCancelOrExit, runHandleComposerCtrlShortcut, runHandleKeyboardInput } from './app-keyboard.js';
 
+import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-submit.js';
+
 // ── Module: AppHelperExports ──
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:99
+// @kern-source: app:98
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -1020,279 +1018,22 @@ export function App() {
   }, [slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued,livePaneVisible,pendingBellRef]);
 
   const sendBtwMessage = useCallback((question:string) => {
-    const q = (question ?? '').trim();
-          if (!q) return;
-          const ctx = buildContext();
-          const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
-          let engineDef: any;
-          try { engineDef = ctx.registry.get(cesarId); } catch { /* cesar engine not registered */ }
-          if (!engineDef) {
-            dispatch({ type: 'error', message: `btw: engine ${cesarId} not available` } as any);
-            return;
-          }
-
-          // Prior side-conversation, for multi-turn continuity.
-          const priorMessages: any[] = Array.isArray(btwPanel?.messages) ? btwPanel.messages : [];
-          const convo = priorMessages
-            .slice(-8)
-            .map((m: any) => `${m.role === 'user' ? 'You' : 'Cesar'}: ${m.text}`)
-            .join('\n');
-
-          // Live runtime context — same signals the one-shot /btw used.
-          let streamCtx = '';
-          const streamEntries = Object.values(streamingTextRef.current ?? {});
-          if (streamEntries.length > 0) {
-            let latest: StreamingEntry | null = null;
-            for (const e of streamEntries) { if (!latest || e.startedAt > latest.startedAt) latest = e; }
-            if (latest && latest.content) {
-              const lines = latest.content.split('\n').filter((l: string) => l.trim());
-              streamCtx = lines.slice(-10).join('\n');
-            }
-          }
-          const transcriptCtx = outputBlocks
-            .slice(-16)
-            .map((block: any) => summarizeBtwTranscriptEvent(block?.event))
-            .filter(Boolean)
-            .slice(-8)
-            .join('\n');
-          const runningCtx = [
-            `Mode: ${mode}`,
-            `UI state: ${replState}`,
-            activePlanRef.current?.state ? `Plan state: ${activePlanRef.current.state}` : '',
-            jobManager.running().length > 0 ? `Running background jobs: ${jobManager.running().map((job: any) => job.label ?? job.id).join(', ')}` : '',
-          ].filter(Boolean).join('\n');
-
-          const prompt = `You are Cesar, answering in a /btw side-chat while Agon continues another task in the main window. This is a continuing side conversation — stay consistent with what was already said.
-
-    ${convo ? 'Side-chat so far:\n' + convo + '\n\n' : ''}New message from the user:
-    ${q}
-
-    Current runtime context:
-    ${runningCtx || '(none)'}
-
-    ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n' : ''}${transcriptCtx ? 'Recent transcript context:\n' + transcriptCtx + '\n\n' : ''}Answer directly and briefly. Do not take over, cancel, or modify the main task.`;
-
-          // Stable conversation id: a dispatch only writes back into the SAME
-          // side-chat that started it. If the user Escs (panel → null) and opens a
-          // new /btw, an orphaned earlier dispatch sees a different id and is
-          // dropped instead of cross-talking into the new conversation.
-          const btwNow = Date.now();
-          const convId = btwPanel?.id ?? `btw-${btwNow}`;
-          const btwOutputDir = join(RUNS_DIR, `${convId}-${btwNow}`);
-          try { btwAbortRef.current?.abort(); } catch { /* no prior dispatch in flight */ }
-          const btwAbort = new AbortController();
-          btwAbortRef.current = btwAbort;
-          // Append the user's turn and mark running; preserve existing id/messages.
-          setBtwPanel((prev: any) => {
-            const base = prev ?? { id: convId, engineId: cesarId, messages: [] };
-            const messages = [...(Array.isArray(base.messages) ? base.messages : []), { role: 'user', text: q }].slice(-20);
-            return { ...base, id: base.id ?? convId, engineId: cesarId, status: 'running', error: '', messages, startedAt: btwNow };
-          });
-          try { mkdirSync(btwOutputDir, { recursive: true }); } catch { /* dir already exists or parent missing */ }
-          ctx.adapter.dispatch({
-            engine: engineDef,
-            prompt,
-            cwd: resolveWorkingDir(),
-            mode: 'exec' as any,
-            timeout: 60,
-            outputDir: btwOutputDir,
-            signal: btwAbort.signal,
-          }).then((result: any) => {
-            const answer = (result.stdout || '').trim();
-            setBtwPanel((prev: any) => {
-              if (!prev || prev.id !== convId) return prev;
-              if (answer) return { ...prev, status: 'done', messages: [...(Array.isArray(prev.messages) ? prev.messages : []), { role: 'cesar', text: answer }].slice(-20) };
-              return { ...prev, status: 'empty', error: 'No response' };
-            });
-          }).catch((err: any) => {
-            if (btwAbort.signal.aborted) return;
-            setBtwPanel((prev: any) => (prev && prev.id === convId) ? { ...prev, status: 'error', error: err instanceof Error ? err.message : String(err) } : prev);
-          });
+    runSendBtwMessage({
+      buildContext, btwPanel,
+      mode, replState, outputBlocks, jobManager, streamingTextRef, activePlanRef,
+      btwAbortRef, setBtwPanel, dispatch,
+    }, question);
   }, [buildContext,dispatch,mode,replState,outputBlocks,jobManager,btwPanel]);
 
   const handleSubmit = useCallback(async (value:string) => {
-    inputEpochRef.current += 1;
-    let input = cleanSubmitValue(value);
-    // User is submitting a turn — allow the next await to ring again.
-    pendingBellRef.current = false;
-    awaitingPlanAnnouncedRef.current = '';
-    if (!input) return;
-    // Bare "/" → open slash picker flyout, don't dump text list
-    if (input === '/') {
-      if (planModeQueued) setPlanModeQueued(false);
-      setSlashPickerOpen(true);
-      return;
-    }
-    input = expandPastePlaceholders(input, pasteHashesRef.current);
-    pasteHashesRef.current.clear();
-    pendingPasteTransformRef.current = false;
-    inputValueRef.current = '';
-    setInputValue('');
-    setInputHistory((prev: string[]) => {
-      const next = appendInputHistory(prev, input, COMPOSER_HISTORY_LIMIT);
-      saveComposerInputHistory(next);
-      return next;
-    });
-    setHistoryIndex(-1);
-
-    const autoControl = parseAutoModeCommand(input);
-    if (autoControl) {
-      if (autoControl === 'status') {
-        dispatch({ type: 'info', message: autoModeQueued ? 'AUTO is ON by default — plain tasks may self-escalate through Cesar.' : 'AUTO is OFF by default.' } as any);
-        return;
-      }
-      const nextAutoModeQueued = autoControl === 'toggle' ? !autoModeQueued : autoControl === 'on';
-      setPlanModeQueued(false);
-      setPersistentAutoMode(nextAutoModeQueued);
-      dispatch({
-        type: 'info',
-        message: nextAutoModeQueued
-          ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Use /auto off or Ctrl+A to disable.'
-          : 'AUTO OFF by default.',
-      } as any);
-      return;
-    }
-
-    // While the BTW side-chat panel is open, a plain (non-slash) submit is a
-    // follow-up turn in that side conversation — Cesar answers it in the
-    // panel without touching the main task. Esc leaves the side-chat.
-    if (btwPanel && input.trim() && !input.startsWith('/')) {
-      if (btwPanel.status === 'running') {
-        dispatch({ type: 'info', message: 'Side-chat is still answering — one turn at a time.' } as any);
-        return;
-      }
-      sendBtwMessage(input.trim());
-      return;
-    }
-
-    if (!input.startsWith('/') && activePlanRef.current?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
-      input = '/approve';
-    }
-
-    // When the user moves forward from a pinned plan proposal, demote it
-    // from the live pane into scrollback history (Claude-style) so this
-    // turn's output is the bottom-most content instead of being buried
-    // under the plan. The chat-route approval ("go sounds legit") never
-    // emits plan-execution, so this turn boundary is the reliable hook.
-    // Exclusions, so an input that is NOT a response to the plan can't
-    // falsely retire it:
-    //   - side-channel slash commands (/btw, /status, /clear, …) — and
-    //     /cancel, which keeps its own plan-cancelled path (no history block)
-    //   - status/progress queries are questions about the plan, not responses
-    const dismissLower = input.trim().toLowerCase();
-    const isSlashNonApprove = dismissLower.startsWith('/') && dismissLower !== '/approve';
-    if (
-      activePlanRef.current?.state === 'awaiting_approval' &&
-      !isSlashNonApprove &&
-      !isCesarPlanStatusInput(input)
-    ) {
-      dispatch({ type: 'plan-dismiss' } as any);
-    }
-
-    // /btw <question> — side-channel question during active dispatch
-    const btwLower = input.trim().toLowerCase();
-    if (btwLower === '/btw') {
-      dispatch({ type: 'info', message: 'Usage: /btw <question> — ask something while engines work.' } as any);
-      return;
-    }
-    if (btwLower.startsWith('/btw ')) {
-      const btwQuestion = input.trim().slice(5).trim();
-      if (!btwQuestion) {
-        dispatch({ type: 'info', message: 'Usage: /btw <question>' } as any);
-        return;
-      }
-      // Opening a side-chat needs active main work to talk "alongside"; once
-      // the panel is open, follow-ups are handled earlier as plain submits.
-      const activeWorkForBtw = hasBtwSideChannelTarget({
-        replState,
-        activePlanState: activePlanRef.current?.state ?? null,
-        runningJobCount: jobManager.running().length,
-      });
-      if (!btwPanel && !activeWorkForBtw) {
-        dispatch({ type: 'info', message: 'No active work for /btw. Ask normally without the /btw prefix.' } as any);
-        return;
-      }
-      sendBtwMessage(btwQuestion);
-      return;
-    }
-    const isPlanAwaitingControl = activePlanRef.current?.state === 'awaiting_approval'
-      && (input === '/approve' || input === '/cancel');
-    if (replState !== 'idle' && !jobManager.running().length && !isPlanAwaitingControl) {
-      setInputQueue((prev: string[]) => [...prev, input]);
-      dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '\u2026' : input}` } as any);
-      return;
-    }
-    if (planModeQueued && input.trim() && !input.startsWith('/')) {
-      setPlanModeQueued(false);
-      handleSubmit(`/plan ${input}`);
-      return;
-    }
-    const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
-    if (planModeQueued) setPlanModeQueued(false);
-    transition(startCommandReplState);
-    pendingBellRef.current = false;
-    setWindowTitle('\u25cf agon \u2014 running');
-    dispatch({ type: 'separator' } as any);
-    dispatch({ type: 'user-message', content: input } as any);
-    const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
-    const allImages = [...pendingImages, ...detectedImages];
-    let intent = detectIntent(cleanInput || input, commandRegistry);
-    if (intent.type === 'status') {
-      setStatusDashboardOpen(true);
-      dispatch({ type: 'info', message: 'Status dashboard open. Press q or Esc to close.' } as any);
-      transition(finishReplState);
-      return;
-    }
-    const ctx = buildContext();
-    (ctx as any).autoModeQueued = autoModeForTurn;
-    const cesarEngineForTurn = String((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
-    activeTurnRef.current = (!input.startsWith('/') && mode === 'chat')
-      ? { input, engineId: cesarEngineForTurn, retried: false }
-      : null;
-    const cb: DispatchCallbacks = {
-      dispatch, ctx, commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
-      runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
-        const job = jobManager.create(type, label);
-        chatStartTimeRef.current = Date.now();
-        setJobList([...jobManager.list()]);
-        dispatch({ type: 'info', message: `Started background job [${job.id}] ${type}: ${label || type}` } as any);
-        // Transition to idle so user can submit new commands while job runs
-        // Strip stays active via jobList.some(j => j.state === 'running') check
-        setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
-        fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); bell(); setWindowTitle('agon'); })
-          .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); bell(); setWindowTitle('agon'); });
-      },
-      setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
-      setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups,
-      allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
-      explorationMode, setExplorationMode,
-      neroMode, setNeroMode,
-      setActivePlan: setActivePlanWrapped,
-    };
-    if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
-      if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
-    }
-    if (intent.type === 'unknown' && mode !== 'chat') {
-      switch (mode) {
-        case 'campfire': intent = { type: 'campfire', topic: input } as any; break;
-        case 'brainstorm': intent = { type: 'brainstorm', question: input } as any; break;
-        case 'tribunal': intent = { type: 'tribunal', question: input } as any; break;
-      }
-    }
-    try {
-      const result = await dispatchIntent(intent, input, cb);
-      if (result.ranAsJob) return;
-    } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
-    finally {
-      if (activeTurnRef.current?.input === input) activeTurnRef.current = null;
-      // Route through transition() so a normally-completed turn rings the
-      // done-bell. A direct setReplState here bypassed transition's bell hook,
-      // so the MAIN completion path (every non-job turn) was silent — only the
-      // status-dashboard / empty-mode-switch edge cases rang. transition's own
-      // `next==='idle' && prev!=='idle'` guard makes this a no-op (no bell) for
-      // job turns that already went idle at the runAsJob handoff above.
-      transition(finishReplState);
-    }
+    runHandleSubmit({
+      inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, chatStartTimeRef,
+      replState, mode, planModeQueued, autoModeQueued, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills, lastUndoToken, sessionStartTime, explorationMode, neroMode,
+      jobManager, commandRegistry, eventBus, loadedExtensions,
+      setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
+      setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups, setExplorationMode, setNeroMode,
+      dispatch, buildContext, sendBtwMessage, handleSubmit, transition, setActivePlanWrapped, askQuestion, bell,
+    }, value);
   }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped,outputBlocks,btwPanel,sendBtwMessage,pendingBellRef,awaitingPlanAnnouncedRef]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
@@ -1846,11 +1587,7 @@ export function App() {
   }, [registry,cesarSession,activeEngines]);
 
   useEffect(() => {
-    if (replState === 'idle' && inputQueue.length > 0) {
-      const next = inputQueue[0];
-      setInputQueue((prev: string[]) => prev.slice(1));
-      setTimeout(() => handleSubmit(next), 50);
-    }
+    runProcessInputQueue(replState, inputQueue, setInputQueue, handleSubmit);
   }, [replState,inputQueue]);
 
   useEffect(() => {
@@ -2333,10 +2070,10 @@ export function App() {
   );
 }
 
-// @kern-source: app:97
+// @kern-source: app:96
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:2121
+// @kern-source: app:1859
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

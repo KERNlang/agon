@@ -812,7 +812,7 @@ screen name=BottomChromeSection target=ink memo=true
   prop name=liveSpinner type="any"
   prop name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'"
   prop name=statusDashboardOpen type="boolean"
-  prop name=telemetryVitals type="any"
+  prop name=telemetryVitals type="Map<string, any>"
   prop name=recentFallbacks type="any[]"
   prop name=termWidth type="number"
   prop name=termHeight type="number"

@@ -4,7 +4,7 @@
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,Static,render"
 import from="@kernlang/terminal/runtime" names="ScrollBox,AlternateScreen"
-import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,seedChatSessionFromThread,loadOrCreateActiveThread,getRatings,getActiveWorkspace,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,getAuthKey,setAuthKey,appendMessage,getAgonHome,tracker,planCostEstimator,listCesarPlans,loadCesarPlan,cesarPlanJsonPath"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,seedChatSessionFromThread,loadOrCreateActiveThread,getRatings,getActiveWorkspace,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,getAuthKey,setAuthKey,getAgonHome,tracker,planCostEstimator,listCesarPlans"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@kernlang/agon-core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
@@ -12,10 +12,10 @@ import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
 import from="@kernlang/agon-core" names="EngineAdapter" types=true
 import from="../signals/intent.js" names="SLASH_COMMANDS"
 import from="../signals/runs-store.js" names="runsStore"
-import from="@kernlang/agon-core" names="CommandRegistry,registerBuiltinCommands,initExtensions,EventBus,bridgeShellHooks"
+import from="@kernlang/agon-core" names="CommandRegistry,registerBuiltinCommands,EventBus,bridgeShellHooks"
 import from="../signals/job-manager.js" names="JobManager"
 import from="../signals/job-manager.js" names="Job" types=true
-import from="../blocks/output-format.js" names="ENGINE_COLORS,shortToolPath,isCesarTelemetryLine,formatConfidenceToolLabel"
+import from="../blocks/output-format.js" names="shortToolPath,isCesarTelemetryLine,formatConfidenceToolLabel"
 import from="../signals/icons.js" names="icons"
 import from="../blocks/markdown.js" names="cleanEngineOutput,parseMarkdownBlocks,truncateCodeLine"
 import from="../blocks/engine-helpers.js" names="extractPatchText,parsePatchPreview"
@@ -26,14 +26,12 @@ import from="../signals/app-state.js" names="ReplStateState" types=true
 import from="../cesar/scoreboard.js" names="Scoreboard" types=true
 import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
 import from="../signals/paste-handler.js" names="processPasteContent,recordPastePlaceholder"
-import from="../cesar/telemetry-poller.js" names="createTelemetryPoller,TelemetryPoller"
-import from="../cesar/telemetry.js" names="EngineVitals" types=true
 import from="../signals/output.js" names="handleOutputEvent"
 import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry" types=true
 import from="../signals/event-log-tee.js" names="teeOutputEvent"
 import from="@kernlang/agon-core" names="resetEventLogState"
-import from="../signals/app-input.js" names="cleanInputValue,findInputChange,navigateHistory,resolveEscapeAction,shouldQueuePlanModeOnTab"
-import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap,nextStaticEpoch"
+import from="../signals/app-input.js" names="cleanInputValue,findInputChange"
+import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
 import from="../signals/input-perf.js" names="perfNow,recordKeystrokeLatency"
 import from="../blocks/review.js" names="handleReviewAction"
 import from="../blocks/engine.js" names="DashboardView,OutputBlockView"
@@ -51,9 +49,9 @@ import from="../signals/file-tracker.js" names="recordToolCall,listFiles,getFile
 import from="../blocks/file-rail.js" names="FileRail"
 import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
 import from="../../generated/blocks/controls.js" names="ReviewEvent" types=true
-import from="node:path" names="join,dirname"
+import from="node:path" names="join"
 import from="node:url" names="fileURLToPath"
-import from="node:fs" names="readdirSync,readFileSync,writeFileSync,mkdirSync,unlinkSync,statSync"
+import from="node:fs" names="readdirSync,readFileSync,writeFileSync,mkdirSync,unlinkSync"
 import from="node:os" names="tmpdir,totalmem,cpus"
 import from="node:child_process" names="spawnSync"
 import from="../models/session-results.js" names="sessionResultStore"
@@ -61,17 +59,16 @@ import from="../blocks/results-formatter.js" names="formatSessionResults,formatC
 import from="@kernlang/agon-core" names="loadSkills"
 import from="../../stable-input.js" names="useStableInput"
 import from="../blocks/rich-text.js" names="parseProseToRichLines"
-import from="../services/update-check.js" names="checkForUpdate,loadDismissedVersion,saveDismissedVersion,isLinkedDevInstall"
+import from="../services/update-check.js" names="saveDismissedVersion"
 import from="../lib/terminal-notify.js" names="bell,setWindowTitle"
 // ── Domain-specific helper imports (refactored from monolithic app-helpers) ──
 import from="./app-composer.js" names="loadComposerInputHistory"
 import from="./app-tool-detail.js" names="toolDetailViewportRows,findLatestToolDetailEvent,findLatestToolEvent,findLatestFailedToolEvent,buildFailedToolRetryDraft,buildToolDetailView"
-import from="./app-telemetry.js" names="probeEngineVitals"
 import from="./app-terminal.js" names="createInitialRegistry,drainStdinBuffer,normalizeTerminalMode,fileRailWidthForTerminal,fileRailMaxRowsForTerminal"
 import from="./app-selection.js" names="normalizeTextSelection"
 import from="./app-layout.js" names="estimateVisibleBlockBudget,estimateBottomChromeExtraRows,estimatePinnedLiveRows"
-import from="./app-blocks.js" names="buildDashboardBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount,appendTranscriptBlock"
-import from="./app-rendering.js" names="buildExecutionRailStats,buildTranscriptRows,clearBlockRowCache"
+import from="./app-blocks.js" names="buildDashboardBlock,coalesceToolCallBlocks,effectiveNativeArchiveBlockCount,historyBlocksForTranscript,nativeTranscriptBlocksForStatic,nativeArchiveBlockCount"
+import from="./app-rendering.js" names="buildExecutionRailStats,buildTranscriptRows"
 import from="./app-lifecycle.js" names="loadExtensionsForWorkspace,startPlanSyncWatcher,startUpdateCheck,subscribeOrchestrationResults,startTelemetryPoller"
 import from="./app-output-bridge.js" names="buildOutputActions"
 import from="./app-interrupt.js" names="_cancelCallback,runTrackAbort,runInterruptActiveRun,buildCancelCallback,handleSigint"

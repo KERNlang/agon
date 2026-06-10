@@ -6,7 +6,7 @@ import { Box, Static, Text, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, appendMessage, getAgonHome, tracker, planCostEstimator, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, getAgonHome, tracker, planCostEstimator, listCesarPlans } from '@kernlang/agon-core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
@@ -22,13 +22,13 @@ import { SLASH_COMMANDS } from '../signals/intent.js';
 
 import { runsStore } from '../signals/runs-store.js';
 
-import { CommandRegistry, registerBuiltinCommands, initExtensions, EventBus, bridgeShellHooks } from '@kernlang/agon-core';
+import { CommandRegistry, registerBuiltinCommands, EventBus, bridgeShellHooks } from '@kernlang/agon-core';
 
 import { JobManager } from '../signals/job-manager.js';
 
 import type { Job } from '../signals/job-manager.js';
 
-import { ENGINE_COLORS, shortToolPath, isCesarTelemetryLine, formatConfidenceToolLabel } from '../blocks/output-format.js';
+import { shortToolPath, isCesarTelemetryLine, formatConfidenceToolLabel } from '../blocks/output-format.js';
 
 import { icons } from '../signals/icons.js';
 
@@ -50,10 +50,6 @@ import type { ModeRationale } from '../cesar/mode-rationale.js';
 
 import { processPasteContent, recordPastePlaceholder } from '../signals/paste-handler.js';
 
-import { createTelemetryPoller, TelemetryPoller } from '../cesar/telemetry-poller.js';
-
-import type { EngineVitals } from '../cesar/telemetry.js';
-
 import { handleOutputEvent } from '../signals/output.js';
 
 import type { OutputActions, OutputState, AgentProgressSnapshot, StreamingEntry } from '../signals/output.js';
@@ -62,9 +58,9 @@ import { teeOutputEvent } from '../signals/event-log-tee.js';
 
 import { resetEventLogState } from '@kernlang/agon-core';
 
-import { cleanInputValue, findInputChange, navigateHistory, resolveEscapeAction, shouldQueuePlanModeOnTab } from '../signals/app-input.js';
+import { cleanInputValue, findInputChange } from '../signals/app-input.js';
 
-import { makeBlockArchivePath, appendBlockWithCap, nextStaticEpoch } from '../signals/block-archive.js';
+import { makeBlockArchivePath, appendBlockWithCap } from '../signals/block-archive.js';
 
 import { perfNow, recordKeystrokeLatency } from '../signals/input-perf.js';
 
@@ -100,11 +96,11 @@ import type { OutputBlock } from '../../generated/blocks/engine.js';
 
 import type { ReviewEvent } from '../../generated/blocks/controls.js';
 
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 
 import { fileURLToPath } from 'node:url';
 
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 
 import { tmpdir, totalmem, cpus } from 'node:os';
 
@@ -120,7 +116,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-import { checkForUpdate, loadDismissedVersion, saveDismissedVersion, isLinkedDevInstall } from '../services/update-check.js';
+import { saveDismissedVersion } from '../services/update-check.js';
 
 import { bell, setWindowTitle } from '../lib/terminal-notify.js';
 
@@ -128,17 +124,15 @@ import { loadComposerInputHistory } from './app-composer.js';
 
 import { toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView } from './app-tool-detail.js';
 
-import { probeEngineVitals } from './app-telemetry.js';
-
 import { createInitialRegistry, drainStdinBuffer, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal } from './app-terminal.js';
 
 import { normalizeTextSelection } from './app-selection.js';
 
 import { estimateVisibleBlockBudget, estimateBottomChromeExtraRows, estimatePinnedLiveRows } from './app-layout.js';
 
-import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, appendTranscriptBlock } from './app-blocks.js';
+import { buildDashboardBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount } from './app-blocks.js';
 
-import { buildExecutionRailStats, buildTranscriptRows, clearBlockRowCache } from './app-rendering.js';
+import { buildExecutionRailStats, buildTranscriptRows } from './app-rendering.js';
 
 import { loadExtensionsForWorkspace, startPlanSyncWatcher, startUpdateCheck, subscribeOrchestrationResults, startTelemetryPoller } from './app-lifecycle.js';
 
@@ -154,7 +148,7 @@ import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:96
+// @kern-source: app:93
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -1983,10 +1977,10 @@ export function App() {
   );
 }
 
-// @kern-source: app:94
+// @kern-source: app:91
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1774
+// @kern-source: app:1771
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

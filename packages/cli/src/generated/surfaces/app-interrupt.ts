@@ -14,6 +14,8 @@ import { clearPermissionQueue, clearThinkingBuffer } from '../signals/output.js'
 
 import { cancelReplState, finishReplState } from '../signals/app-state.js';
 
+import type { ReplStateState } from '../signals/app-state.js';
+
 // ── Module: AppInterrupt ──
 
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
@@ -54,7 +56,7 @@ export interface InterruptRunDeps {
   setModelPickerOpen: (val:boolean) => void;
   setCesarPickerOpen: (val:boolean) => void;
   setReviewEvent: (val:any) => void;
-  replState: any;
+  replState: ReplStateState;
   dispatch: (event:any) => void;
   setReplState: (updater:(prev:any) => any) => void;
   pendingBellRef: {current: boolean};

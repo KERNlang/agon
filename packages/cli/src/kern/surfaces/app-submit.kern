@@ -60,7 +60,7 @@ import from="../signals/paste-handler.js" names="expandPastePlaceholders"
 import from="../signals/output.js" names="StreamingEntry" types=true
 import from="./app-composer.js" names="COMPOSER_HISTORY_LIMIT,saveComposerInputHistory"
 import from="./app-blocks.js" names="summarizeBtwTranscriptEvent"
-import from="../lib/terminal-notify.js" names="bell,setWindowTitle"
+import from="../lib/terminal-notify.js" names="setWindowTitle"
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 

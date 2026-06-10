@@ -24,7 +24,7 @@ import { COMPOSER_HISTORY_LIMIT, saveComposerInputHistory } from './app-composer
 
 import { summarizeBtwTranscriptEvent } from './app-blocks.js';
 
-import { bell, setWindowTitle } from '../lib/terminal-notify.js';
+import { setWindowTitle } from '../lib/terminal-notify.js';
 
 import { join } from 'node:path';
 

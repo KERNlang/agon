@@ -35,6 +35,7 @@ import from="../cesar/pause-state.js" names="PauseState" types=true
 import from="../signals/output.js" names="OutputActions,AgentProgressSnapshot" types=true
 import from="../signals/output.js" names="clearPermissionQueue,clearThinkingBuffer"
 import from="../signals/app-state.js" names="cancelReplState,finishReplState"
+import from="../signals/app-state.js" names="ReplStateState" types=true
 
 module name=AppInterrupt
 
@@ -86,7 +87,7 @@ module name=AppInterrupt
     field name=setCesarPickerOpen type="(val:boolean) => void"
     field name=setReviewEvent type="(val:any) => void"
     // ── Repl state + notification (warning dispatch, repl reset, bell/title) ──
-    field name=replState type=any
+    field name=replState type="ReplStateState"
     field name=dispatch type="(event:any) => void"
     field name=setReplState type="(updater:(prev:any) => any) => void"
     field name=pendingBellRef type="{current: boolean}"

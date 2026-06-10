@@ -322,7 +322,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // visibly picked up. Returns the (possibly augmented) message to send — the
         // unchanged carrier when nothing is queued. Called ONLY at the boundary
         // between a tool result and the next send — never mid-stream.
-        const drainSteeringIntoSend = (carrier: string): string => {
+        // `source` labels which boundary the steering was injected at, for telemetry:
+        // 'xml' = the text/XML tool-loop + eager-continuation paths, 'exec' = the
+        // mutation-unlock execution loop, 'auto' = the auto-continuation tool loop.
+        const drainSteeringIntoSend = (carrier: string, source: 'xml' | 'exec' | 'auto'): string => {
           const pending = drainSteering(_turnId);
           if (pending.length === 0) return carrier;
           const blocks: string[] = [];
@@ -333,7 +336,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             dispatch({ type: 'user-message', content: text } as any);
             appendMessage(ctx.chatSession, { role: 'user', content: text, timestamp: new Date().toISOString() });
             blocks.push(text);
-            recordTimeline({ event: 'steering_injected', engineId: cesarEngineId, cwd: _turnCwd, source: 'xml', input: { text } });
+            recordTimeline({ event: 'steering_injected', engineId: cesarEngineId, cwd: _turnCwd, source, input: { text } });
           }
           if (blocks.length === 0) return carrier;
           // Make it unmistakable to the engine that this is a fresh instruction
@@ -1106,7 +1109,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             const repairResults: ToolCallResult[] = [];
             // Tool boundary (eager path): append any mid-turn user steering to the
             // tool-result continuation before sending it back.
-            const contGen = session.send({ message: drainSteeringIntoSend(formatted), signal: abort.signal });
+            const contGen = session.send({ message: drainSteeringIntoSend(formatted, 'xml'), signal: abort.signal });
             for await (const chunk of contGen) {
               if (chunk.type === 'text') continuation += chunk.content;
               if (chunk.type === 'tool_call') {
@@ -1378,7 +1381,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 if (!session.alive || abort.signal.aborted) return '';
                 // Tool boundary: append any mid-turn user steering to the outgoing
                 // tool-result continuation before it is sent.
-                const sendMessage = drainSteeringIntoSend(message);
+                const sendMessage = drainSteeringIntoSend(message, 'xml');
                 dispatch({ type: 'spinner-start', message: 'Cesar processing results…', color });
                 // Reset per send: _engineErrored must reflect the LATEST send, not
                 // "ever errored this turn". A transient error in an early tool-loop
@@ -1679,7 +1682,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
                   if (!session.alive || abort.signal.aborted) return '';
                   // Tool boundary (exec path): inject any mid-turn user steering.
-                  const sendMessage = drainSteeringIntoSend(message);
+                  const sendMessage = drainSteeringIntoSend(message, 'exec');
                   dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
                   let nextResponse = '';
                   const gen = session.send({
@@ -2096,7 +2099,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                       if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
                       if (!session.alive || abort.signal.aborted) return '';
                       // Tool boundary (auto-continuation path): inject steering.
-                      const sendMessage = drainSteeringIntoSend(message);
+                      const sendMessage = drainSteeringIntoSend(message, 'auto');
                       dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
                       // Reset per send (see initial tool loop): flag tracks the
                       // latest send's outcome, not a sticky turn-level latch.

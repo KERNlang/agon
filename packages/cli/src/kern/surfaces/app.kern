@@ -72,6 +72,7 @@ import from="./app-rendering.js" names="buildExecutionRailStats,buildTranscriptR
 import from="./app-lifecycle.js" names="loadExtensionsForWorkspace,startPlanSyncWatcher,startUpdateCheck,subscribeOrchestrationResults,startTelemetryPoller"
 import from="./app-output-bridge.js" names="buildOutputActions"
 import from="./app-interrupt.js" names="_cancelCallback,runTrackAbort,runInterruptActiveRun,buildCancelCallback,handleSigint"
+import from="../cesar/steering.js" names="onSteeringChange"
 import from="./app-keyboard.js" names="runHandleCancelOrExit,runHandleComposerCtrlShortcut,runHandleKeyboardInput"
 import from="./app-submit.js" names="runProcessInputQueue,runSendBtwMessage,runHandleSubmit"
 
@@ -649,6 +650,16 @@ screen name=App target=ink
   effect deps="eventBus,dispatch,chatSession"
     handler <<<
       return subscribeOrchestrationResults(eventBus, dispatch, chatSession);
+    >>>
+
+  // Mirror the steering-buffer count into React so the composer hint re-renders
+  // whenever the count changes — including when the brain DRAINS the queue
+  // mid-turn (not only on idle). onSteeringChange fires on push / drain / clear /
+  // release; returns the unsubscribe for effect cleanup (same idiom as
+  // subscribeOrchestrationResults above).
+  effect deps=""
+    handler <<<
+      return onSteeringChange((count: number) => setSteeringCount(count));
     >>>
 
   callback name=transition params="fn:any" deps="bell,setWindowTitle,pendingBellRef"

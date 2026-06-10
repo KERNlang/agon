@@ -10,6 +10,7 @@ import {
   releaseSteeringTurn,
   drainLeftoverSteering,
   clearSteering,
+  onSteeringChange,
 } from '../../packages/cli/src/generated/cesar/steering.js';
 
 describe('Cesar steering buffer', () => {
@@ -106,6 +107,72 @@ describe('Cesar steering buffer', () => {
       expect(drainLeftoverSteering()).toEqual([]);
       // Marker released: pushes are dropped until a new turn is marked.
       expect(pushSteering('after-interrupt')).toBe(false);
+    });
+  });
+
+  describe('onSteeringChange (count-change notification — UI mirror)', () => {
+    it('fires with the active-turn count on push and on (mid-turn) drain', () => {
+      const counts: number[] = [];
+      const off = onSteeringChange((n) => counts.push(n));
+      markSteeringTurn('t1');
+      counts.length = 0; // ignore the mark notification; focus on push/drain
+      pushSteering('a');
+      pushSteering('b');
+      // Each push notifies with the running count.
+      expect(counts).toEqual([1, 2]);
+      // Mid-turn drain (what the brain does) must notify so the hint clears —
+      // this is the stale-hint fix: the count drops to 0 on drain, not on idle.
+      const drained = drainSteering('t1').map((m) => m.input);
+      expect(drained).toEqual(['a', 'b']);
+      expect(counts[counts.length - 1]).toBe(0);
+      off();
+    });
+
+    it('fires on clearSteering (count → 0)', () => {
+      const counts: number[] = [];
+      markSteeringTurn('t1');
+      pushSteering('x');
+      const off = onSteeringChange((n) => counts.push(n));
+      clearSteering();
+      expect(counts[counts.length - 1]).toBe(0);
+      off();
+    });
+
+    it('fires on releaseSteeringTurn — active count reads 0 once the marker is gone', () => {
+      const counts: number[] = [];
+      markSteeringTurn('t1');
+      pushSteering('leftover');
+      const off = onSteeringChange((n) => counts.push(n));
+      releaseSteeringTurn('t1');
+      // peekSteeringCount returns 0 when no turn is active, so the mirror is 0
+      // even though a leftover entry survives for the idle drain.
+      expect(counts[counts.length - 1]).toBe(0);
+      expect(drainLeftoverSteering().map((m) => m.input)).toEqual(['leftover']);
+      off();
+    });
+
+    it('unsubscribe stops further notifications', () => {
+      const counts: number[] = [];
+      const off = onSteeringChange((n) => counts.push(n));
+      markSteeringTurn('t1');
+      pushSteering('one');
+      const seen = counts.length;
+      off();
+      pushSteering('two');
+      // No new notifications after unsubscribe.
+      expect(counts.length).toBe(seen);
+    });
+
+    it('a throwing listener does not break steering or other listeners', () => {
+      const ok: number[] = [];
+      const offBad = onSteeringChange(() => { throw new Error('boom'); });
+      const offOk = onSteeringChange((n) => ok.push(n));
+      markSteeringTurn('t1');
+      // Push must still succeed and the well-behaved listener must still fire.
+      expect(pushSteering('survives')).toBe(true);
+      expect(ok[ok.length - 1]).toBe(1);
+      offBad();
+      offOk();
     });
   });
 });

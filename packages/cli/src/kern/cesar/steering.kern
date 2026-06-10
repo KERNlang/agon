@@ -11,6 +11,15 @@
 // runToolLoop sendFns + the eager-continuation send), and the interrupt path
 // clears it (runInterruptActiveRun).
 //
+// Count-change notification (so the composer hint never goes stale): every
+// count-mutating path (markSteeringTurn / push / drainSteering /
+// drainLeftoverSteering / clearSteering) calls _notify(), which fans out to a
+// tiny listener list. app.kern subscribes via onSteeringChange in an effect and
+// mirrors peekSteeringCount() into setSteeringCount — the same return-unsubscribe
+// effect idiom app.kern already uses for subscribeOrchestrationResults. This is
+// what fixes the stale "Queued (N)" hint when the brain drains the queue
+// mid-turn: the React mirror updates on the drain, not only on idle.
+//
 // Turn-scoping: there is only ever ONE active Cesar chat turn at a time (the
 // brain's busy-guard enforces it), so a SINGLE global active-turn buffer keyed
 // by the brain's turnId is the correct idiom (same shape as _activeAborts — one
@@ -53,9 +62,43 @@ module name=CesarSteering
 
   const name=_activeTurnId type="{ value: string | null }" export=true value={{ { value: null } }}
 
+  // ── _listeners: count-change subscribers (UI mirror) ──
+  // Tiny listener list so the React composer hint never goes stale. Every
+  // count-mutating fn calls _notify() after it changes _queue/_activeTurnId; the
+  // app subscribes via onSteeringChange (effect) and mirrors peekSteeringCount()
+  // into its setSteeringCount. Module-level singleton like the rest of this file.
+  const name=_listeners type="Array<(count: number) => void>" export=true value={{ [] }}
+
+  // ── _notify: fan out the current active-turn count to all listeners ──
+  // Called by every count-changing path. Computes the same value peekSteeringCount
+  // returns (entries owned by the active turn; 0 when no turn is active) so the UI
+  // mirror is always consistent with peekSteeringCount().
+  fn name=_notify returns=void export=true
+    handler <<<
+      const active = _activeTurnId.value;
+      let n = 0;
+      if (active) for (const entry of _queue) if (entry.turnId === active) n++;
+      for (const cb of _listeners) {
+        try { cb(n); } catch { /* a listener throwing must not break steering */ }
+      }
+    >>>
+
+  // ── onSteeringChange: subscribe to count changes; returns an unsubscribe fn ──
+  // The app registers a listener in an effect and returns the unsubscribe for
+  // cleanup (mirrors subscribeOrchestrationResults' effect idiom). Fires on push,
+  // drainSteering, drainLeftoverSteering, clearSteering, and markSteeringTurn.
+  fn name=onSteeringChange params="cb:(count: number) => void" returns="() => void" export=true
+    handler <<<
+      _listeners.push(cb);
+      return () => {
+        const i = _listeners.indexOf(cb);
+        if (i >= 0) _listeners.splice(i, 1);
+      };
+    >>>
+
   // ── markSteeringTurn: brain claims the active turn ──
   // Called once at the start of a draining-eligible Cesar turn. Clears any stale
-  // entries left over from a previous turn (defensive — endSteeringTurn /
+  // entries left over from a previous turn (defensive — releaseSteeringTurn /
   // clearSteering normally already drained them) and records this turn's id.
   fn name=markSteeringTurn params="turnId:string" returns=void export=true
     handler lang="kern"
@@ -63,6 +106,7 @@ module name=CesarSteering
       comment raw="// Drop entries that belonged to any earlier turn — a new turn never"
       comment raw="// inherits an old turn's unconsumed steering through this channel."
       assign target="_queue.length" value="0"
+      do value="_notify()"
 
   // ── pushSteering: app buffers a steering message ──
   // Buffers ONLY while a turn is active. The app passes the turnId it believes
@@ -75,6 +119,7 @@ module name=CesarSteering
       if cond="!active"
         return value="false"
       do value="_queue.push({ turnId: active, input, images })"
+      do value="_notify()"
       return value="true"
 
   // ── drainSteering: brain pops this turn's buffered messages (FIFO) ──
@@ -91,6 +136,7 @@ module name=CesarSteering
       }
       _queue.length = 0;
       for (const entry of rest) _queue.push(entry);
+      _notify();
       return mine;
     >>>
 
@@ -114,6 +160,7 @@ module name=CesarSteering
     handler lang="kern"
       if cond="_activeTurnId.value === turnId"
         assign target="_activeTurnId.value" value="null"
+        do value="_notify()"
 
   // ── drainLeftoverSteering: app pulls all remaining entries on idle ──
   // Called from runProcessInputQueue when the repl returns to idle. Returns +
@@ -124,6 +171,7 @@ module name=CesarSteering
     handler <<<
       const all = _queue.map((e) => ({ input: e.input, images: e.images }));
       _queue.length = 0;
+      _notify();
       return all;
     >>>
 
@@ -134,3 +182,4 @@ module name=CesarSteering
     handler lang="kern"
       assign target="_queue.length" value="0"
       assign target="_activeTurnId.value" value="null"
+      do value="_notify()"

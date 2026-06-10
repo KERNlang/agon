@@ -97,6 +97,10 @@ screen name=App target=ink
   state name=inputValue type=string initial="''" safe=false
   state name=inputHistory type="string[]" initial="loadComposerInputHistory()"
   state name=inputQueue type="string[]" initial="[]"
+  // Count of messages steered into the RUNNING Cesar turn (buffered in the
+  // steering singleton, injected at the next tool boundary). Mirrors the
+  // singleton into React so the composer hint re-renders; reset to 0 on idle.
+  state name=steeringCount type=number initial=0
   state name=historyIndex type=number initial=-1 safe=false
   state name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   state name=sessionStartTime type=number initial="Date.now()"
@@ -951,7 +955,7 @@ screen name=App target=ink
   // ── Queue processing ──
   effect deps="replState,inputQueue"
     handler <<<
-      runProcessInputQueue(replState, inputQueue, setInputQueue, handleSubmit);
+      runProcessInputQueue(replState, inputQueue, setInputQueue, handleSubmit, setSteeringCount);
     >>>
 
   // Sync inputValue → inputValueRef so handleInputChange can read the
@@ -1056,7 +1060,7 @@ screen name=App target=ink
         inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, chatStartTimeRef,
         replState, mode, planModeQueued, autoModeQueued, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills, lastUndoToken, sessionStartTime, explorationMode, neroMode,
         jobManager, commandRegistry, eventBus, loadedExtensions,
-        setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
+        setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSteeringCount, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
         setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups, setExplorationMode, setNeroMode,
         dispatch, buildContext, sendBtwMessage, handleSubmit, transition, setActivePlanWrapped, askQuestion, bell,
       }, value);
@@ -1673,6 +1677,7 @@ screen name=App target=ink
             questionState={questionState}
             pendingImages={pendingImages}
             inputQueue={inputQueue}
+            steeringCount={steeringCount}
             liveSpinner={liveSpinner}
             mode={mode}
             statusDashboardOpen={statusDashboardOpen}

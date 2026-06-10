@@ -164,6 +164,8 @@ export function App() {
   const setInputHistory = useMemo(() => __inkSafe(_setInputHistoryRaw), [_setInputHistoryRaw]);
   const [inputQueue, _setInputQueueRaw] = useState<string[]>([]);
   const setInputQueue = useMemo(() => __inkSafe(_setInputQueueRaw), [_setInputQueueRaw]);
+  const [steeringCount, _setSteeringCountRaw] = useState<number>(0);
+  const setSteeringCount = useMemo(() => __inkSafe(_setSteeringCountRaw), [_setSteeringCountRaw]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [mode, _setModeRaw] = useState<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const setMode = useMemo(() => __inkSafe(_setModeRaw), [_setModeRaw]);
@@ -1020,7 +1022,7 @@ export function App() {
       inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, chatStartTimeRef,
       replState, mode, planModeQueued, autoModeQueued, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills, lastUndoToken, sessionStartTime, explorationMode, neroMode,
       jobManager, commandRegistry, eventBus, loadedExtensions,
-      setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
+      setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSteeringCount, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
       setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups, setExplorationMode, setNeroMode,
       dispatch, buildContext, sendBtwMessage, handleSubmit, transition, setActivePlanWrapped, askQuestion, bell,
     }, value);
@@ -1577,7 +1579,7 @@ export function App() {
   }, [registry,cesarSession,activeEngines]);
 
   useEffect(() => {
-    runProcessInputQueue(replState, inputQueue, setInputQueue, handleSubmit);
+    runProcessInputQueue(replState, inputQueue, setInputQueue, handleSubmit, setSteeringCount);
   }, [replState,inputQueue]);
 
   useEffect(() => {
@@ -1883,6 +1885,7 @@ export function App() {
         questionState={questionState}
         pendingImages={pendingImages}
         inputQueue={inputQueue}
+        steeringCount={steeringCount}
         liveSpinner={liveSpinner}
         mode={mode}
         statusDashboardOpen={statusDashboardOpen}
@@ -1980,7 +1983,7 @@ export function App() {
 // @kern-source: app:91
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1771
+// @kern-source: app:1776
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

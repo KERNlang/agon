@@ -1,0 +1,136 @@
+// ── Cesar steering buffer (app→brain mid-turn channel) ───────────────────
+// "Steering while Cesar works": typing + submitting during a running Cesar
+// chat turn is NOT rejected — the message is QUEUED here, and the brain drains
+// it INTO the running turn at the next tool boundary (after a tool result
+// completes, before the next engine continuation is sent). NEVER mid-stream.
+//
+// Plumbing choice (mirrors app-interrupt.kern's exported-singleton pattern):
+// the brain runs in the SAME process as the React app, so a module-level
+// singleton FIFO is the clean cross-cutting channel. The app pushes into it
+// (runHandleSubmit), the brain drains it at boundaries (handleCesarBrain's
+// runToolLoop sendFns + the eager-continuation send), and the interrupt path
+// clears it (runInterruptActiveRun).
+//
+// Turn-scoping: there is only ever ONE active Cesar chat turn at a time (the
+// brain's busy-guard enforces it), so a SINGLE global active-turn buffer keyed
+// by the brain's turnId is the correct idiom (same shape as _activeAborts — one
+// shared instance per process). The brain stamps `_activeTurnId` when it begins
+// draining-eligible work; pushSteering only buffers while a turn is active AND
+// records that turn's id, and drainSteering only returns entries the CURRENT
+// turn owns. A stale push from a torn-down turn can never bleed into a new one.
+//
+// Lifecycle:
+//   markSteeringTurn(turnId)   — brain, at turn start: claim the active turn.
+//   pushSteering(msg)           — app: buffer a steering message for the active
+//                                 turn (no-op when no turn is active).
+//   drainSteering(turnId)       — brain, at a tool boundary: pop+return FIFO
+//                                 entries this turn owns (consumes them).
+//   peekSteeringCount()         — UI: how many are queued for the active turn.
+//   releaseSteeringTurn(turnId) — brain, at normal turn end: release the active
+//                                 turn marker but LEAVE any unconsumed entries in
+//                                 the buffer for the app-side idle drain.
+//   drainLeftoverSteering()     — app, on idle: pull ALL remaining entries (any
+//                                 turn) so they can flow into the inputQueue.
+//   clearSteering()             — interrupt: DROP everything (no carryover).
+//
+// Spec point 3: on a NORMAL turn end the brain calls releaseSteeringTurn (marker
+// cleared, leftovers kept); the app's existing idle effect (runProcessInputQueue)
+// calls drainLeftoverSteering and pushes leftovers into the inputQueue, which it
+// already drains one-by-one back through handleSubmit. On INTERRUPT the app calls
+// clearSteering — the queue is dropped, no silent carryover.
+
+import from="@kernlang/agon-core" names="ImageAttachment" types=true
+
+module name=CesarSteering
+
+  // ── Module-level steering singletons ──
+  // Shared by the React app (pushes) AND the brain (drains) — single instance
+  // per process, exactly like app-interrupt.kern's _activeAborts. _queue is the
+  // FIFO of buffered steering messages; _activeTurnId marks which brain turn is
+  // currently eligible to receive them (null = no turn running, so pushes are
+  // dropped rather than leaking into a future turn).
+  const name=_queue type="Array<{ turnId: string; input: string; images?: ImageAttachment[] }>" export=true value={{ [] }}
+
+  const name=_activeTurnId type="{ value: string | null }" export=true value={{ { value: null } }}
+
+  // ── markSteeringTurn: brain claims the active turn ──
+  // Called once at the start of a draining-eligible Cesar turn. Clears any stale
+  // entries left over from a previous turn (defensive — endSteeringTurn /
+  // clearSteering normally already drained them) and records this turn's id.
+  fn name=markSteeringTurn params="turnId:string" returns=void export=true
+    handler lang="kern"
+      assign target="_activeTurnId.value" value="turnId"
+      comment raw="// Drop entries that belonged to any earlier turn — a new turn never"
+      comment raw="// inherits an old turn's unconsumed steering through this channel."
+      assign target="_queue.length" value="0"
+
+  // ── pushSteering: app buffers a steering message ──
+  // Buffers ONLY while a turn is active. The app passes the turnId it believes
+  // is active (or omits it to target whatever turn is active now); we stamp the
+  // entry with the CURRENT active turn so drainSteering can scope correctly.
+  // Returns true if buffered, false if dropped (no active turn).
+  fn name=pushSteering params="input:string, images?:ImageAttachment[]" returns=boolean export=true
+    handler lang="kern"
+      let name=active value="_activeTurnId.value"
+      if cond="!active"
+        return value="false"
+      do value="_queue.push({ turnId: active, input, images })"
+      return value="true"
+
+  // ── drainSteering: brain pops this turn's buffered messages (FIFO) ──
+  // Called at a tool boundary. Returns + removes all entries the given turn
+  // owns, in FIFO order. Entries belonging to other (stale) turns are left
+  // untouched (there should be none, but this keeps scoping airtight).
+  fn name=drainSteering params="turnId:string" returns="Array<{ input: string; images?: ImageAttachment[] }>" export=true
+    handler <<<
+      const mine: Array<{ input: string; images?: ImageAttachment[] }> = [];
+      const rest: Array<{ turnId: string; input: string; images?: ImageAttachment[] }> = [];
+      for (const entry of _queue) {
+        if (entry.turnId === turnId) mine.push({ input: entry.input, images: entry.images });
+        else rest.push(entry);
+      }
+      _queue.length = 0;
+      for (const entry of rest) _queue.push(entry);
+      return mine;
+    >>>
+
+  // ── peekSteeringCount: how many messages are queued for the active turn ──
+  // Used by the UI hint (it only matters while a turn is active).
+  fn name=peekSteeringCount returns=number export=true
+    handler <<<
+      const active = _activeTurnId.value;
+      if (!active) return 0;
+      let n = 0;
+      for (const entry of _queue) if (entry.turnId === active) n++;
+      return n;
+    >>>
+
+  // ── releaseSteeringTurn: brain releases the turn marker, keeps leftovers ──
+  // Called on NORMAL turn end. Clears the active-turn marker (so no new pushes
+  // attach to a dead turn) but LEAVES any unconsumed entries in the buffer — the
+  // app's idle drain (drainLeftoverSteering → inputQueue) carries them to the
+  // next turn via the existing runProcessInputQueue path.
+  fn name=releaseSteeringTurn params="turnId:string" returns=void export=true
+    handler lang="kern"
+      if cond="_activeTurnId.value === turnId"
+        assign target="_activeTurnId.value" value="null"
+
+  // ── drainLeftoverSteering: app pulls all remaining entries on idle ──
+  // Called from runProcessInputQueue when the repl returns to idle. Returns +
+  // removes EVERY buffered entry (regardless of turn id) in FIFO order so the
+  // app can push them into the inputQueue, which it then drains one-by-one back
+  // through handleSubmit (the existing next-turn path).
+  fn name=drainLeftoverSteering returns="Array<{ input: string; images?: ImageAttachment[] }>" export=true
+    handler <<<
+      const all = _queue.map((e) => ({ input: e.input, images: e.images }));
+      _queue.length = 0;
+      return all;
+    >>>
+
+  // ── clearSteering: interrupt path drops everything (no carryover) ──
+  // Called from runInterruptActiveRun. On Esc/cancel the queue is DROPPED —
+  // unconsumed steering is NOT silently carried into the next turn.
+  fn name=clearSteering returns=void export=true
+    handler lang="kern"
+      assign target="_queue.length" value="0"
+      assign target="_activeTurnId.value" value="null"

@@ -809,6 +809,7 @@ screen name=BottomChromeSection target=ink memo=true
   prop name=questionState type="any"
   prop name=pendingImages type="any[]"
   prop name=inputQueue type="string[]"
+  prop name=steeringCount type="number"
   prop name=liveSpinner type="any"
   prop name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'"
   prop name=statusDashboardOpen type="boolean"
@@ -866,6 +867,10 @@ screen name=BottomChromeSection target=ink memo=true
           )}
           {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
           {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
+          {/* Mid-turn steering hint: a message was typed while Cesar works and
+              will be injected at the next tool boundary. One dim line; shows the
+              count when more than one is queued. Only while a turn is running. */}
+          {replState !== 'idle' && steeringCount > 0 && (<Box><Text dimColor>{'▎'}{'Queued'}{steeringCount > 1 ? ` (${steeringCount})` : ''}{' — injects at next step · esc to interrupt'}</Text></Box>)}
           {liveSpinner && mode === 'chat' && !questionState && (
             <Box paddingLeft={1}>
               <Text color="#fbbf24">{liveSpinner.message}</Text>

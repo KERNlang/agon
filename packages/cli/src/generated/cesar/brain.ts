@@ -34,9 +34,11 @@ import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
 
 import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
 
+import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering.js';
+
 import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
 
-// @kern-source: brain:20
+// @kern-source: brain:21
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -67,7 +69,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:46
+// @kern-source: brain:47
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -98,10 +100,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:71
+// @kern-source: brain:72
 export const _noBriefNudged: Set<string> = new Set<string>();
 
-// @kern-source: brain:73
+// @kern-source: brain:74
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -259,12 +261,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           ctx.cesar!.queue = null;
           ctx.cesar!.abortSignal = null;
         } else {
-          // Follow-ups while busy → show elapsed status, don't queue
-          if (_isFollowUp) {
-            const elapsed = Math.round((Date.now() - busySince) / 1000);
-            dispatch({ type: 'info', message: `Cesar still working… ${elapsed}s` });
-            return { delegated: false, responded: true };
-          }
+          // Steering, not rejection: input that reaches the brain while a turn is
+          // running is NEVER rejected. (The primary steering channel is app-side —
+          // see runHandleSubmit, which buffers typed-while-busy input into the
+          // steering singleton for mid-turn injection. This brain-level guard is
+          // the fallback for programmatic re-entry; it queues rather than rejecting
+          // with the old "Cesar still working… Ns" message.)
           const existing = ctx.cesar!.queue;
           if (existing) {
             existing.input = existing.input + '\n\n' + input;
@@ -293,6 +295,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       ctx.cesar!.searchNudged = false;
       ctx.cesar!.turnId = _turnId;
       ctx.cesar!.planDispatch = dispatch;
+      // Claim the steering channel for this turn: messages typed while Cesar works
+      // are buffered there (app side) and injected at the tool boundaries below.
+      markSteeringTurn(_turnId);
       const _brainStartMs = Date.now();
       if (ctx.eventBus) await ctx.eventBus.emit('pre:cesar-brain', { input });
 
@@ -308,6 +313,34 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
 
         const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
         _actualCesarEngineId = cesarEngineId;
+        // ── Steering injection at a tool boundary ──
+        // Drain any messages the user typed while this turn was running (buffered
+        // in the steering singleton) and append them to the OUTGOING tool-result
+        // continuation, so the engine sees the steering with full context of the
+        // tool result it just produced. FIFO; each is rendered as a normal
+        // user-message block in the transcript + appended to chat history so it is
+        // visibly picked up. Returns the (possibly augmented) message to send — the
+        // unchanged carrier when nothing is queued. Called ONLY at the boundary
+        // between a tool result and the next send — never mid-stream.
+        const drainSteeringIntoSend = (carrier: string): string => {
+          const pending = drainSteering(_turnId);
+          if (pending.length === 0) return carrier;
+          const blocks: string[] = [];
+          for (const msg of pending) {
+            const text = (msg.input ?? '').trim();
+            if (!text) continue;
+            // Visible pickup: render as the normal user-message block + persist.
+            dispatch({ type: 'user-message', content: text } as any);
+            appendMessage(ctx.chatSession, { role: 'user', content: text, timestamp: new Date().toISOString() });
+            blocks.push(text);
+            recordTimeline({ event: 'steering_injected', engineId: cesarEngineId, cwd: _turnCwd, source: 'xml', input: { text } });
+          }
+          if (blocks.length === 0) return carrier;
+          // Make it unmistakable to the engine that this is a fresh instruction
+          // layered on top of the tool result it is being handed.
+          const steer = blocks.map((b) => `[User steering — injected mid-turn]\n${b}`).join('\n\n');
+          return carrier ? `${carrier}\n\n${steer}` : steer;
+        };
         recordTimeline({
           event: 'turn_start',
           engineId: cesarEngineId,
@@ -1071,7 +1104,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             const failedTools = eagerFailedToolNames(eagerResults);
             const repairUsed: string[] = [];
             const repairResults: ToolCallResult[] = [];
-            const contGen = session.send({ message: formatted, signal: abort.signal });
+            // Tool boundary (eager path): append any mid-turn user steering to the
+            // tool-result continuation before sending it back.
+            const contGen = session.send({ message: drainSteeringIntoSend(formatted), signal: abort.signal });
             for await (const chunk of contGen) {
               if (chunk.type === 'text') continuation += chunk.content;
               if (chunk.type === 'tool_call') {
@@ -1341,6 +1376,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               async (message: string) => {
                 if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
                 if (!session.alive || abort.signal.aborted) return '';
+                // Tool boundary: append any mid-turn user steering to the outgoing
+                // tool-result continuation before it is sent.
+                const sendMessage = drainSteeringIntoSend(message);
                 dispatch({ type: 'spinner-start', message: 'Cesar processing results…', color });
                 // Reset per send: _engineErrored must reflect the LATEST send, not
                 // "ever errored this turn". A transient error in an early tool-loop
@@ -1350,7 +1388,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 _engineErrorMsg = '';
                 let nextResponse = '';
                 const gen = session.send({
-                  message,
+                  message: sendMessage,
                   signal: abort.signal,
                   toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
                   toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
@@ -1640,10 +1678,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 async (message: string) => {
                   if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
                   if (!session.alive || abort.signal.aborted) return '';
+                  // Tool boundary (exec path): inject any mid-turn user steering.
+                  const sendMessage = drainSteeringIntoSend(message);
                   dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
                   let nextResponse = '';
                   const gen = session.send({
-                    message,
+                    message: sendMessage,
                     signal: abort.signal,
                     toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
                     toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
@@ -2055,6 +2095,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     async (message: string) => {
                       if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
                       if (!session.alive || abort.signal.aborted) return '';
+                      // Tool boundary (auto-continuation path): inject steering.
+                      const sendMessage = drainSteeringIntoSend(message);
                       dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
                       // Reset per send (see initial tool loop): flag tracks the
                       // latest send's outcome, not a sticky turn-level latch.
@@ -2062,7 +2104,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                       _engineErrorMsg = '';
                       let nextResp = '';
                       const gen = session.send({
-                        message,
+                        message: sendMessage,
                         signal: abort.signal,
                         toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
                         toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
@@ -2396,6 +2438,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           ctx.cesar!.abortSignal = null;
           ctx.cesar!.turnId = undefined;
           ctx.setActiveAbort(null);
+
+          // Release the steering channel for this turn. On a NORMAL end the marker
+          // is cleared but any unconsumed steering stays buffered for the app-side
+          // idle drain (runProcessInputQueue → inputQueue → next turn). On an
+          // interrupt the app already called clearSteering (drop, no carryover);
+          // this is then a harmless idempotent marker release.
+          releaseSteeringTurn(_turnId);
 
           // Auto-drain queue. Runs only after the generator is provably dead (the
           // safe point to reuse the persistent session), so a message queued

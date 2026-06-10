@@ -2,7 +2,7 @@
 
 import { initExtensions, appendMessage, loadCesarPlan, cesarPlanJsonPath, configSet } from '@kernlang/agon-core';
 
-import type { EngineRegistry, CommandRegistry, EventBus, ChatSession, PersistentSession, Skill, LoadedExtension } from '@kernlang/agon-core';
+import type { EngineRegistry, CommandRegistry, EventBus, ChatSession, PersistentSession, Skill, LoadedExtension, CesarPlan } from '@kernlang/agon-core';
 
 import { checkForUpdate, loadDismissedVersion, isLinkedDevInstall } from '../services/update-check.js';
 
@@ -28,7 +28,7 @@ export function loadExtensionsForWorkspace(workspacePath: string, commandRegistr
   });
 }
 
-export function startPlanSyncWatcher(activePlan: any, setActivePlanWrapped: (plan:any) => void, planWatcherTimerRef: any, planWatcherDebounceTimerRef: any, planWatcherStatMtimeRef: any, activePlanRef: any): any {
+export function startPlanSyncWatcher(activePlan: CesarPlan | null, setActivePlanWrapped: (plan:CesarPlan) => void, planWatcherTimerRef: {current: ReturnType<typeof setInterval> | null}, planWatcherDebounceTimerRef: {current: ReturnType<typeof setTimeout> | null}, planWatcherStatMtimeRef: {current: number}, activePlanRef: {current: CesarPlan | null}): (() => void) | undefined {
   if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
   if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
   if (!activePlan?.id) return;
@@ -82,7 +82,7 @@ export function startPlanSyncWatcher(activePlan: any, setActivePlanWrapped: (pla
   };
 }
 
-export function startUpdateCheck(version: string, setUpdateChecking: (v:boolean) => void, setUpdateInfo: (info:any) => void): any {
+export function startUpdateCheck(version: string, setUpdateChecking: (v:boolean) => void, setUpdateInfo: (info:any) => void): (() => void) | undefined {
   // On a linked/dev checkout the global `agon` IS this build (via npm link),
   // so an npm-update banner would offer to install OVER the link and clobber
   // it. Never auto-check on a dev build — real npm installs still get it.
@@ -110,7 +110,7 @@ export function startUpdateCheck(version: string, setUpdateChecking: (v:boolean)
   return () => clearTimeout(boot);
 }
 
-export function subscribeOrchestrationResults(eventBus: EventBus, dispatch: (event:any) => void, chatSession: ChatSession): any {
+export function subscribeOrchestrationResults(eventBus: EventBus, dispatch: (event:any) => void, chatSession: ChatSession): (() => void) | undefined {
   if (!eventBus) return;
   const modes = ['brainstorm', 'forge', 'tribunal', 'campfire'] as const;
   const listeners: Array<{ mode: string; handler: () => void }> = [];
@@ -153,14 +153,31 @@ export function subscribeOrchestrationResults(eventBus: EventBus, dispatch: (eve
   };
 }
 
-export function startTelemetryPoller(registry: EngineRegistry, cesarSession: PersistentSession|null, activeEngines: () => string[], dispatch: (event:any) => void, cesarSessionRef: any, telemetryPollerRef: any, activeEnginePidsRef: any, activeTurnRef: any, activePlanRef: any, activeAbortRef: any, setRecentFallbacks: (fn:any) => void, setConfigVersion: (fn:any) => void, setCesarSessionWrapped: (session:any) => void, setInputQueue: (fn:any) => void, setTelemetryVitals: (map:any) => void): any {
+export function startTelemetryPoller(opts: {registry:EngineRegistry, cesarSession:PersistentSession|null, activeEngines:() => string[], dispatch: (event:any) => void, cesarSessionHolder: {session: PersistentSession | null}, telemetryPollerRef: {current: any}, activeEnginePidsRef: {current: Map<string,number>}, activeTurnRef: {current: {input:string; engineId:string; retried:boolean} | null}, activePlanRef: {current: CesarPlan | null}, activeAbortRef: {current: AbortController | null}, setRecentFallbacks: (fn:any) => void, setConfigVersion: (fn:any) => void, setCesarSessionWrapped: (session:any) => void, setInputQueue: (fn:any) => void, setTelemetryVitals: (map:any) => void}): (() => void) | undefined {
+  const {
+    registry,
+    cesarSession,
+    activeEngines,
+    dispatch,
+    cesarSessionHolder,
+    telemetryPollerRef,
+    activeEnginePidsRef,
+    activeTurnRef,
+    activePlanRef,
+    activeAbortRef,
+    setRecentFallbacks,
+    setConfigVersion,
+    setCesarSessionWrapped,
+    setInputQueue,
+    setTelemetryVitals,
+  } = opts;
   if (telemetryPollerRef.current) {
     telemetryPollerRef.current.stop();
     telemetryPollerRef.current = null;
   }
   const poller = createTelemetryPoller({
     registry,
-    probe: async (id: string) => probeEngineVitals(registry, id, cesarSessionRef.session, activeEnginePidsRef.current),
+    probe: async (id: string) => probeEngineVitals(registry, id, cesarSessionHolder.session, activeEnginePidsRef.current),
     intervalMs: 5000,
     stallThresholdMs: 30000,
     probeTimeoutMs: 2500,

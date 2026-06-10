@@ -2284,7 +2284,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    return startTelemetryPoller(registry, cesarSession, activeEngines, dispatch, _cesarSessionRef, telemetryPollerRef, activeEnginePidsRef, activeTurnRef, activePlanRef, activeAbortRef, setRecentFallbacks, setConfigVersion, setCesarSessionWrapped, setInputQueue, setTelemetryVitals);
+    return startTelemetryPoller({ registry, cesarSession, activeEngines, dispatch, cesarSessionHolder: _cesarSessionRef, telemetryPollerRef, activeEnginePidsRef, activeTurnRef, activePlanRef, activeAbortRef, setRecentFallbacks, setConfigVersion, setCesarSessionWrapped, setInputQueue, setTelemetryVitals });
   }, [registry,cesarSession,activeEngines]);
 
   useEffect(() => {

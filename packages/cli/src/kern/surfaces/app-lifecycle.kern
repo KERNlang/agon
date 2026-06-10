@@ -4,8 +4,14 @@
 // callbacks) instead of closing over component scope, and returns whatever the
 // original effect returned (a cleanup function, or void). The thin `effect`
 // declarations stay in app.kern and simply call into these.
+//
+// Convention: effect-body fns return the cleanup function or undefined; name
+// start*/subscribe*/load* by cleanup shape; params are explicit (options object
+// above ~6); keep a // Source: breadcrumb per fn.
+// Note: startTelemetryPoller lives here (not app-telemetry.kern) deliberately —
+// it's effect orchestration, not probing.
 import from="@kernlang/agon-core" names="initExtensions,appendMessage,loadCesarPlan,cesarPlanJsonPath,configSet"
-import from="@kernlang/agon-core" names="EngineRegistry,CommandRegistry,EventBus,ChatSession,PersistentSession,Skill,LoadedExtension" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,CommandRegistry,EventBus,ChatSession,PersistentSession,Skill,LoadedExtension,CesarPlan" types=true
 import from="../services/update-check.js" names="checkForUpdate,loadDismissedVersion,isLinkedDevInstall"
 import from="../cesar/telemetry-poller.js" names="createTelemetryPoller"
 import from="../cesar/telemetry.js" names="EngineVitals" types=true
@@ -31,7 +37,7 @@ module name=AppLifecycle
   // ── Plan sync watcher ──
   // Source: app.kern effect deps="activePlan,setActivePlanWrapped".
   // Returns the effect cleanup function.
-  fn name=startPlanSyncWatcher params="activePlan:any, setActivePlanWrapped:(plan:any) => void, planWatcherTimerRef:any, planWatcherDebounceTimerRef:any, planWatcherStatMtimeRef:any, activePlanRef:any" returns=any
+  fn name=startPlanSyncWatcher params="activePlan:CesarPlan | null, setActivePlanWrapped:(plan:CesarPlan) => void, planWatcherTimerRef:{current: ReturnType<typeof setInterval> | null}, planWatcherDebounceTimerRef:{current: ReturnType<typeof setTimeout> | null}, planWatcherStatMtimeRef:{current: number}, activePlanRef:{current: CesarPlan | null}" returns="(() => void) | undefined"
     handler <<<
       if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
       if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
@@ -88,7 +94,7 @@ module name=AppLifecycle
 
   // ── Startup: non-blocking update check ──
   // Source: app.kern effect deps="". Returns the effect cleanup function.
-  fn name=startUpdateCheck params="version:string, setUpdateChecking:(v:boolean) => void, setUpdateInfo:(info:any) => void" returns=any
+  fn name=startUpdateCheck params="version:string, setUpdateChecking:(v:boolean) => void, setUpdateInfo:(info:any) => void" returns="(() => void) | undefined"
     handler <<<
       // On a linked/dev checkout the global `agon` IS this build (via npm link),
       // so an npm-update banner would offer to install OVER the link and clobber
@@ -120,7 +126,7 @@ module name=AppLifecycle
   // ── Feed orchestration results back to Cesar's chat history ──
   // Source: app.kern effect deps="eventBus,dispatch,chatSession".
   // Returns the effect cleanup function (or void when there's no eventBus).
-  fn name=subscribeOrchestrationResults params="eventBus:EventBus, dispatch:(event:any) => void, chatSession:ChatSession" returns=any
+  fn name=subscribeOrchestrationResults params="eventBus:EventBus, dispatch:(event:any) => void, chatSession:ChatSession" returns="(() => void) | undefined"
     handler <<<
       if (!eventBus) return;
       const modes = ['brainstorm', 'forge', 'tribunal', 'campfire'] as const;
@@ -166,17 +172,34 @@ module name=AppLifecycle
 
   // ── Telemetry poller lifecycle ──
   // Source: app.kern effect deps="registry,cesarSession,activeEngines".
-  // `cesarSessionRef` is app.kern's module-level { session } holder.
+  // `cesarSessionHolder` is app.kern's module-level { session } holder.
   // Returns the effect cleanup function.
-  fn name=startTelemetryPoller params="registry:EngineRegistry, cesarSession:PersistentSession|null, activeEngines:() => string[], dispatch:(event:any) => void, cesarSessionRef:any, telemetryPollerRef:any, activeEnginePidsRef:any, activeTurnRef:any, activePlanRef:any, activeAbortRef:any, setRecentFallbacks:(fn:any) => void, setConfigVersion:(fn:any) => void, setCesarSessionWrapped:(session:any) => void, setInputQueue:(fn:any) => void, setTelemetryVitals:(map:any) => void" returns=any
+  fn name=startTelemetryPoller params="opts:{registry:EngineRegistry, cesarSession:PersistentSession|null, activeEngines:() => string[], dispatch:(event:any) => void, cesarSessionHolder:{session: PersistentSession | null}, telemetryPollerRef:{current: any}, activeEnginePidsRef:{current: Map<string,number>}, activeTurnRef:{current: {input:string; engineId:string; retried:boolean} | null}, activePlanRef:{current: CesarPlan | null}, activeAbortRef:{current: AbortController | null}, setRecentFallbacks:(fn:any) => void, setConfigVersion:(fn:any) => void, setCesarSessionWrapped:(session:any) => void, setInputQueue:(fn:any) => void, setTelemetryVitals:(map:any) => void}" returns="(() => void) | undefined"
     handler <<<
+      const {
+        registry,
+        cesarSession,
+        activeEngines,
+        dispatch,
+        cesarSessionHolder,
+        telemetryPollerRef,
+        activeEnginePidsRef,
+        activeTurnRef,
+        activePlanRef,
+        activeAbortRef,
+        setRecentFallbacks,
+        setConfigVersion,
+        setCesarSessionWrapped,
+        setInputQueue,
+        setTelemetryVitals,
+      } = opts;
       if (telemetryPollerRef.current) {
         telemetryPollerRef.current.stop();
         telemetryPollerRef.current = null;
       }
       const poller = createTelemetryPoller({
         registry,
-        probe: async (id: string) => probeEngineVitals(registry, id, cesarSessionRef.session, activeEnginePidsRef.current),
+        probe: async (id: string) => probeEngineVitals(registry, id, cesarSessionHolder.session, activeEnginePidsRef.current),
         intervalMs: 5000,
         stallThresholdMs: 30000,
         probeTimeoutMs: 2500,

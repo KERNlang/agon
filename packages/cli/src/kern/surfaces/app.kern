@@ -1063,7 +1063,7 @@ screen name=App target=ink
   // ── Telemetry poller lifecycle ──
   effect deps="registry,cesarSession,activeEngines"
     handler <<<
-      return startTelemetryPoller(registry, cesarSession, activeEngines, dispatch, _cesarSessionRef, telemetryPollerRef, activeEnginePidsRef, activeTurnRef, activePlanRef, activeAbortRef, setRecentFallbacks, setConfigVersion, setCesarSessionWrapped, setInputQueue, setTelemetryVitals);
+      return startTelemetryPoller({ registry, cesarSession, activeEngines, dispatch, cesarSessionHolder: _cesarSessionRef, telemetryPollerRef, activeEnginePidsRef, activeTurnRef, activePlanRef, activeAbortRef, setRecentFallbacks, setConfigVersion, setCesarSessionWrapped, setInputQueue, setTelemetryVitals });
     >>>
 
   // ── Queue processing ──

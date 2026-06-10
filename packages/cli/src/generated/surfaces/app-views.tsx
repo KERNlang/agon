@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import { EngineProgressView, BRAND } from '../../generated/blocks/engine.js';
+import { EngineProgressView, BRAND, VERSION } from '../../generated/blocks/engine.js';
 
 import { RenderedSegments, contentWidth, engineColor, RichLineView, DiffLine, SyntaxLine, AnsiLine, GradientLine } from '../../generated/blocks/rendering.js';
 
@@ -22,7 +22,17 @@ import { loadConfig } from '@kernlang/agon-core';
 
 import { icons } from '../signals/icons.js';
 
-// @kern-source: app-views:80
+import { AgentProgressView } from '../../generated/surfaces/agent.js';
+
+import { SpinnerBlock, StatusBar, CesarStatusStrip, StatusDashboard, ExecutionRailPanel } from '../../generated/surfaces/status.js';
+
+import { ComposerView } from '../../generated/blocks/composer.js';
+
+import { FileRail } from '../blocks/file-rail.js';
+
+import type { AgentProgressSnapshot } from '../signals/output.js';
+
+// @kern-source: app-views:86
 const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, replState, runningJobs, planModeQueued, autoModeQueued, activePlanState, activePlan }: { mode:string; cwdLabel:string; engineCount:number; replState:string; runningJobs:Job[]; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any }) {
   const planChrome = buildPlanChromeSummary(activePlan, activePlanState, planModeQueued, autoModeQueued);
   const planRow = planChrome.visible ? (
@@ -68,7 +78,7 @@ const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, r
 });
 export { ChromeBar };
 
-// @kern-source: app-views:136
+// @kern-source: app-views:142
 const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:any }) {
   const borderPrefix = row.borderColor ? <Text color={row.borderColor}>{'\u2502 '}</Text> : null;
   const selectionRail = <Text color={row.selected ? '#60a5fa' : '#2b2b2b'}>{row.selected ? '\u258c' : ' '}</Text>;
@@ -200,7 +210,7 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
 });
 export { TranscriptRowView };
 
-// @kern-source: app-views:270
+// @kern-source: app-views:276
 export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisibleRows, onClose }: { title:string; subtitle:string; accentColor:string; rows:any[]; maxVisibleRows:number; onClose:() => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -277,7 +287,7 @@ export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisible
   );
 }
 
-// @kern-source: app-views:360
+// @kern-source: app-views:366
 const StreamingView = React.memo(function StreamingView({ streamingText, mode, liveProgress, liveToolStreams, liveToolTailFrozen }: { streamingText:{engineId:string,content:string,draft?:boolean} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,any>; liveToolTailFrozen?:Record<string,boolean> }) {
   const frozenToolOutputRef = useRef<Record<string, string>>({});
 
@@ -533,7 +543,192 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
 });
 export { StreamingView };
 
-// @kern-source: app-views:19
+// @kern-source: app-views:632
+const LiveStreamSection = React.memo(function LiveStreamSection({ activeStream, mode, liveProgress, liveToolStreams, liveToolTailFrozen, agentProgress }: { activeStream:{engineId:string,content:string,draft?:boolean} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,any>; liveToolTailFrozen?:Record<string,boolean>; agentProgress:Record<string,AgentProgressSnapshot> }) {
+  return (
+    <>
+      <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} liveToolTailFrozen={liveToolTailFrozen} />
+      {Object.keys(agentProgress).length > 0 && (
+        <Box flexDirection="column">
+          {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (
+            <AgentProgressView
+              key={snap.engineId}
+              engineId={snap.engineId}
+              turnIndex={snap.turnIndex}
+              phase={snap.phase}
+              userPrompt={snap.userPrompt}
+              toolCalls={snap.toolCalls}
+              lastTool={snap.lastTool}
+              lastToolStatus={snap.lastToolStatus}
+              tokensUsed={snap.tokensUsed}
+              elapsedMs={snap.elapsedMs}
+              turnsRemaining={snap.turnsRemaining}
+              maxTurns={snap.maxTurns}
+              tokensRemaining={snap.tokensRemaining}
+              maxTokens={snap.maxTokens}
+              error={snap.error}
+            />
+          ))}
+        </Box>
+      )}
+    </>
+  );
+});
+export { LiveStreamSection };
+
+// @kern-source: app-views:675
+const BtwSidePanel = React.memo(function BtwSidePanel({ btwPanel }: { btwPanel:any }) {
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor="#22d3ee" paddingX={1} marginY={1}>
+      <Box justifyContent="space-between">
+        <Text bold color="#22d3ee">{`BTW · side-chat${btwPanel.engineId ? ' · ' + btwPanel.engineId : ''}`}</Text>
+        <Text dimColor>{btwPanel.status === 'running' ? 'thinking…' : 'type to continue · Esc to leave'}</Text>
+      </Box>
+      {(() => {
+        const msgs = Array.isArray(btwPanel.messages) ? btwPanel.messages : [];
+        const shown = msgs.slice(-2);
+        const baseIdx = msgs.length - shown.length;
+        const hidden = baseIdx;
+        return (<>
+          {hidden > 0 && <Text dimColor>{`… ${hidden} earlier turn${hidden === 1 ? '' : 's'}`}</Text>}
+          {shown.map((m: any, i: number) => {
+            const isUser = m.role === 'user';
+            const raw = String(m.text ?? '').split('\n').filter((l: string) => l.trim()).slice(0, isUser ? 2 : 8);
+            const displayLines = raw.length > 0 ? raw : [''];
+            return (
+              <Box key={baseIdx + i} flexDirection="column">
+                {displayLines.map((line: string, j: number) => (
+                  <Text key={j} color={isUser ? '#fbbf24' : undefined} dimColor={isUser}>{j === 0 ? (isUser ? '› ' : `${btwPanel.engineId ?? 'cesar'}: `) : '  '}{line}</Text>
+                ))}
+              </Box>
+            );
+          })}
+        </>);
+      })()}
+      {btwPanel.status === 'running' && (
+        <Text color="#fbbf24">{'Answering in a side channel; main work continues.'}</Text>
+      )}
+      {btwPanel.error && btwPanel.status !== 'running' && (
+        <Text color="#ef4444">{btwPanel.error}</Text>
+      )}
+    </Box>
+  );
+});
+export { BtwSidePanel };
+
+// @kern-source: app-views:720
+const RailTakeoverPanel = React.memo(function RailTakeoverPanel({ showFileRail, showExecutionRail, fileRailFiles, sideRailMaxRows, termWidth, fileRailOpen, fileRailSelectedIdx, fileRailExpandedPath, liveSpinner, liveProgress, activePlan, latestToolEvent, recentFallbacks, executionRailStats, toolOutputExpanded, chatStartTime, isActive, executionRailOpen }: { showFileRail:boolean; showExecutionRail:boolean; fileRailFiles:any[]; sideRailMaxRows:number; termWidth:number; fileRailOpen:boolean; fileRailSelectedIdx:number; fileRailExpandedPath:string|null; liveSpinner:any; liveProgress:EngineProgress[] | null; activePlan:any; latestToolEvent:any; recentFallbacks:any[]; executionRailStats:any; toolOutputExpanded:boolean; chatStartTime:number; isActive:boolean; executionRailOpen:boolean }) {
+  return (
+    <>
+      {showFileRail && (
+        <FileRail files={fileRailFiles} maxRows={sideRailMaxRows} width={Math.max(20, termWidth - 2)} focused={fileRailOpen} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen} />
+      )}
+      {showExecutionRail && (
+        <ExecutionRailPanel
+          spinner={liveSpinner}
+          engines={liveProgress}
+          activePlanState={activePlan?.state ?? null}
+          activePlan={activePlan}
+          lastTool={latestToolEvent}
+          recentFallbacks={recentFallbacks}
+          stats={executionRailStats}
+          toolOutputExpanded={toolOutputExpanded}
+          startTime={chatStartTime}
+          isActive={isActive}
+          width={Math.max(20, termWidth - 2)}
+          maxRows={sideRailMaxRows}
+          focused={executionRailOpen} />
+      )}
+      <Box paddingX={1}><Text dimColor>{showFileRail ? '↑↓ navigate · Tab expand · Esc to return to chat' : 'Esc to return to chat'}</Text></Box>
+    </>
+  );
+});
+export { RailTakeoverPanel };
+
+// @kern-source: app-views:771
+const UpdateBanner = React.memo(function UpdateBanner({ updateInfo, updateChecking }: { updateInfo:any; updateChecking:boolean }) {
+  return (
+    <Box flexDirection="row" borderStyle="round" borderColor="#fbbf24" paddingX={1} marginBottom={1}>
+      <Box flexDirection="column" flexGrow={1}>
+        <Box>
+          <Text color="#fbbf24" bold>{'⤴ '}</Text>
+          <Text bold>Agon v{updateInfo.latestVersion}</Text>
+          <Text>{' is available (you\'re on v'}{updateInfo.currentVersion || VERSION}{')'}</Text>
+        </Box>
+        <Box>
+          <Text dimColor>{'Press '}</Text>
+          <Text color="#fbbf24" bold>{'u'}</Text>
+          <Text dimColor>{' to update · '}</Text>
+          <Text dimColor>{'l'}</Text>
+          <Text dimColor>{' to view changelog · '}</Text>
+          <Text dimColor>{'x'}</Text>
+          <Text dimColor>{' to dismiss for v'}{updateInfo.latestVersion}</Text>
+        </Box>
+      </Box>
+      {updateChecking && <Text dimColor>{' · checking'}</Text>}
+    </Box>
+  );
+});
+export { UpdateBanner };
+
+// @kern-source: app-views:806
+const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo, updateChecking, questionState, pendingImages, inputQueue, liveSpinner, mode, statusDashboardOpen, telemetryVitals, recentFallbacks, termWidth, termHeight, statusDashboardFilter, replState, planModeQueued, autoModeQueued, activePlan, slashPickerOpen, inputValue, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, updateBannerActive, onCtrlShortcut, cesarId, cesarConfidence, cesarContext, liveProgress, runningJobs, chatStartTime, streamSnippet, statusStats, statusCwd, statusBranch, explorationMode, toolOutputExpanded, fullscreenEnabled }: { updateInfo:any; updateChecking:boolean; questionState:any; pendingImages:any[]; inputQueue:string[]; liveSpinner:any; mode:'chat'|'campfire'|'brainstorm'|'tribunal'; statusDashboardOpen:boolean; telemetryVitals:any; recentFallbacks:any[]; termWidth:number; termHeight:number; statusDashboardFilter:any; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlan:any; slashPickerOpen:boolean; inputValue:string; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; updateBannerActive:boolean; onCtrlShortcut:(shortcut:string) => void; cesarId:string; cesarConfidence:any; cesarContext:any; liveProgress:EngineProgress[] | null; runningJobs:Job[]; chatStartTime:number; streamSnippet:any; statusStats:any; statusCwd:string; statusBranch:string; explorationMode:any; toolOutputExpanded:boolean; fullscreenEnabled:boolean }) {
+  const isActive = replState !== 'idle' || runningJobs.length > 0;
+  return (
+    <Box flexDirection="column" paddingX={1} marginTop={1}>
+      {/* ── Update-available banner ──
+          Sits between the picker row and the composer. Renders ONLY when
+          updateInfo is populated; otherwise nothing is emitted (zero-cost
+          when the user is up-to-date). The banner is keyboard-driven via
+          the global 'u' shortcut (handleKeyboardInput) — see KEY_MAP
+          below for the full surface (u / Enter / x / Esc). */}
+      {updateInfo && updateInfo.latestVersion && !questionState && (
+        <UpdateBanner updateInfo={updateInfo} updateChecking={updateChecking} />
+      )}
+      {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
+      {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
+      {liveSpinner && mode === 'chat' && !questionState && (
+        <Box paddingLeft={1}>
+          <Text color="#fbbf24">{liveSpinner.message}</Text>
+        </Box>
+      )}
+      {statusDashboardOpen ? (
+        <StatusDashboard telemetryVitals={telemetryVitals} recentFallbacks={recentFallbacks} width={termWidth} height={termHeight} filter={statusDashboardFilter} />
+      ) : (
+        <ComposerView
+          mode={mode}
+          replState={replState}
+          planModeQueued={planModeQueued}
+          autoModeQueued={autoModeQueued}
+          activePlanState={activePlan?.state ?? null}
+          slashPickerOpen={slashPickerOpen}
+          inputValue={inputValue}
+          handleInputChange={handleInputChange}
+          handlePasteInput={handlePasteInput}
+          handleSubmit={handleSubmit}
+          allSlashCommands={allSlashCommands}
+          availableEngines={availableEngines}
+          onSlashSelect={onSlashSelect}
+          onSlashCancel={onSlashCancel}
+          questionState={questionState}
+          questionAnswer={questionAnswer}
+          selectedChoiceIndex={selectedChoiceIndex}
+          questionOtherActive={questionOtherActive}
+          onQuestionAnswerChange={onQuestionAnswerChange}
+          onQuestionAnswerSubmit={onQuestionAnswerSubmit}
+          updateBannerActive={updateBannerActive}
+          termWidth={termWidth}
+          termHeight={termHeight}
+          onCtrlShortcut={onCtrlShortcut} />
+      )}
+      <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={streamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
+      {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={fullscreenEnabled} telemetryVitals={telemetryVitals} />}
+    </Box>
+  );
+});
+export { BottomChromeSection };
+
+// @kern-source: app-views:25
 export function renderSelectedText(text: string, start: number, end: number, keyPrefix: string): any {
   const safeText = String(text ?? '');
   const startIndex = Math.max(0, Math.min(safeText.length, Number.isFinite(start) ? start : 0));
@@ -553,7 +748,7 @@ export function renderSelectedText(text: string, start: number, end: number, key
 /**
  * Compact sticky plan chip for the top chrome. Keeps plan progress out of the noisy bottom status strip.
  */
-// @kern-source: app-views:36
+// @kern-source: app-views:42
 export function buildPlanChromeSummary(activePlan: any, activePlanState?: string|null, planModeQueued?: boolean, autoModeQueued?: boolean): any {
   const gauge = buildPlanPhaseGauge(activePlan, 8);
   const displayState = (gauge.visible && gauge.phase === 'complete') ? 'done' : String(activePlanState ?? '');
@@ -591,7 +786,7 @@ export function buildPlanChromeSummary(activePlan: any, activePlanState?: string
   return { visible: true, label: label, color: gauge.visible ? gauge.color : '#c084fc', shortId: gauge.shortId ?? '', bar: gauge.bar ?? '', pct: Number(gauge.pct ?? 0), stepLabel: gauge.label ?? '', current: gauge.current ?? '', failed: failed, action: action };
 }
 
-// @kern-source: app-views:347
+// @kern-source: app-views:353
 export function contextualizeSlicedMarkdown(prefix: string, slicedText: string): string {
   const parts = prefix.split('```');
   if (parts.length % 2 === 0) {

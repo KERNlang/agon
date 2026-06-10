@@ -6,7 +6,7 @@
 import from="react" default="React"
 import from="react" names="useEffect,useMemo,useState,useRef"
 import from="ink" names="Box,Text,useInput"
-import from="../../generated/blocks/engine.js" names="EngineProgressView,BRAND"
+import from="../../generated/blocks/engine.js" names="EngineProgressView,BRAND,VERSION"
 import from="../../generated/blocks/rendering.js" names="RenderedSegments,contentWidth,engineColor,RichLineView,DiffLine,SyntaxLine,AnsiLine,GradientLine"
 import from="./status-helpers.js" names="buildPlanPhaseGauge"
 import from="../../handlers/types.js" names="EngineProgress" types=true
@@ -15,6 +15,12 @@ import from="../blocks/markdown.js" names="parseMarkdownBlocks,cleanEngineOutput
 import from="../blocks/narration-fold.js" names="foldNarrationLines"
 import from="@kernlang/agon-core" names="loadConfig"
 import from="../signals/icons.js" names="icons"
+// ── Imports for the folded render-block sections (Task S7) ──
+import from="../../generated/surfaces/agent.js" names="AgentProgressView"
+import from="../../generated/surfaces/status.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,StatusDashboard,ExecutionRailPanel"
+import from="../../generated/blocks/composer.js" names="ComposerView"
+import from="../blocks/file-rail.js" names="FileRail"
+import from="../signals/output.js" names="AgentProgressSnapshot" types=true
 
 fn name=renderSelectedText params="text:string,start:number,end:number,keyPrefix:string" returns="any"
   handler <<<
@@ -615,5 +621,287 @@ screen name=StreamingView target=ink memo=true
           )}
           {liveProgress && <EngineProgressView engines={liveProgress} mode={mode} />}
         </>
+      );
+    >>>
+
+// ── LiveStreamSection — pinned live streaming + per-agent progress ──
+// Source: app.kern render block, the `livePaneVisible && !railTakeover` region.
+// Pure data-driven JSX (no hooks); StreamingView keeps its own internal hooks.
+// Composed in app.kern guarded by `livePaneVisible && !railTakeover` so the
+// conditional mounting and StreamingView's mount/unmount identity are preserved.
+screen name=LiveStreamSection target=ink memo=true
+  prop name=activeStream type="{engineId:string,content:string,draft?:boolean} | null"
+  prop name=mode type="string"
+  prop name=liveProgress type="EngineProgress[] | null"
+  prop name=liveToolStreams type="Record<string,any>" optional=true
+  prop name=liveToolTailFrozen type="Record<string,boolean>" optional=true
+  prop name=agentProgress type="Record<string,AgentProgressSnapshot>"
+  render
+    handler <<<
+      return (
+        <>
+          <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} liveToolTailFrozen={liveToolTailFrozen} />
+          {Object.keys(agentProgress).length > 0 && (
+            <Box flexDirection="column">
+              {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (
+                <AgentProgressView
+                  key={snap.engineId}
+                  engineId={snap.engineId}
+                  turnIndex={snap.turnIndex}
+                  phase={snap.phase}
+                  userPrompt={snap.userPrompt}
+                  toolCalls={snap.toolCalls}
+                  lastTool={snap.lastTool}
+                  lastToolStatus={snap.lastToolStatus}
+                  tokensUsed={snap.tokensUsed}
+                  elapsedMs={snap.elapsedMs}
+                  turnsRemaining={snap.turnsRemaining}
+                  maxTurns={snap.maxTurns}
+                  tokensRemaining={snap.tokensRemaining}
+                  maxTokens={snap.maxTokens}
+                  error={snap.error}
+                />
+              ))}
+            </Box>
+          )}
+        </>
+      );
+    >>>
+
+// ── BtwSidePanel — collapsed BTW side-chat card ──
+// Source: app.kern render block, the `btwPanel && (...)` region. Pure JSX over
+// the btwPanel snapshot; the inline IIFE that slices recent turns is preserved
+// verbatim (it is a render-time computation, not a hook).
+screen name=BtwSidePanel target=ink memo=true
+  prop name=btwPanel type="any"
+  render
+    handler <<<
+      return (
+        <Box flexDirection="column" borderStyle="round" borderColor="#22d3ee" paddingX={1} marginY={1}>
+          <Box justifyContent="space-between">
+            <Text bold color="#22d3ee">{`BTW · side-chat${btwPanel.engineId ? ' · ' + btwPanel.engineId : ''}`}</Text>
+            <Text dimColor>{btwPanel.status === 'running' ? 'thinking…' : 'type to continue · Esc to leave'}</Text>
+          </Box>
+          {(() => {
+            const msgs = Array.isArray(btwPanel.messages) ? btwPanel.messages : [];
+            const shown = msgs.slice(-2);
+            const baseIdx = msgs.length - shown.length;
+            const hidden = baseIdx;
+            return (<>
+              {hidden > 0 && <Text dimColor>{`… ${hidden} earlier turn${hidden === 1 ? '' : 's'}`}</Text>}
+              {shown.map((m: any, i: number) => {
+                const isUser = m.role === 'user';
+                const raw = String(m.text ?? '').split('\n').filter((l: string) => l.trim()).slice(0, isUser ? 2 : 8);
+                const displayLines = raw.length > 0 ? raw : [''];
+                return (
+                  <Box key={baseIdx + i} flexDirection="column">
+                    {displayLines.map((line: string, j: number) => (
+                      <Text key={j} color={isUser ? '#fbbf24' : undefined} dimColor={isUser}>{j === 0 ? (isUser ? '› ' : `${btwPanel.engineId ?? 'cesar'}: `) : '  '}{line}</Text>
+                    ))}
+                  </Box>
+                );
+              })}
+            </>);
+          })()}
+          {btwPanel.status === 'running' && (
+            <Text color="#fbbf24">{'Answering in a side channel; main work continues.'}</Text>
+          )}
+          {btwPanel.error && btwPanel.status !== 'running' && (
+            <Text color="#ef4444">{btwPanel.error}</Text>
+          )}
+        </Box>
+      );
+    >>>
+
+// ── RailTakeoverPanel — native full-width file/execution rail overlay ──
+// Source: app.kern render block, the three `railTakeover && (...)` regions plus
+// their shared hint row. Composed in app.kern guarded by `railTakeover` so the
+// overlay's mount identity matches the original conditional exactly. Pure JSX.
+screen name=RailTakeoverPanel target=ink memo=true
+  prop name=showFileRail type="boolean"
+  prop name=showExecutionRail type="boolean"
+  prop name=fileRailFiles type="any[]"
+  prop name=sideRailMaxRows type="number"
+  prop name=termWidth type="number"
+  prop name=fileRailOpen type="boolean"
+  prop name=fileRailSelectedIdx type="number"
+  prop name=fileRailExpandedPath type="string|null"
+  prop name=liveSpinner type="any"
+  prop name=liveProgress type="EngineProgress[] | null"
+  prop name=activePlan type="any"
+  prop name=latestToolEvent type="any"
+  prop name=recentFallbacks type="any[]"
+  prop name=executionRailStats type="any"
+  prop name=toolOutputExpanded type="boolean"
+  prop name=chatStartTime type="number"
+  prop name=isActive type="boolean"
+  prop name=executionRailOpen type="boolean"
+  render
+    handler <<<
+      return (
+        <>
+          {showFileRail && (
+            <FileRail files={fileRailFiles} maxRows={sideRailMaxRows} width={Math.max(20, termWidth - 2)} focused={fileRailOpen} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen} />
+          )}
+          {showExecutionRail && (
+            <ExecutionRailPanel
+              spinner={liveSpinner}
+              engines={liveProgress}
+              activePlanState={activePlan?.state ?? null}
+              activePlan={activePlan}
+              lastTool={latestToolEvent}
+              recentFallbacks={recentFallbacks}
+              stats={executionRailStats}
+              toolOutputExpanded={toolOutputExpanded}
+              startTime={chatStartTime}
+              isActive={isActive}
+              width={Math.max(20, termWidth - 2)}
+              maxRows={sideRailMaxRows}
+              focused={executionRailOpen} />
+          )}
+          <Box paddingX={1}><Text dimColor>{showFileRail ? '↑↓ navigate · Tab expand · Esc to return to chat' : 'Esc to return to chat'}</Text></Box>
+        </>
+      );
+    >>>
+
+// ── UpdateBanner — "Agon vX is available" banner ──
+// Source: app.kern render block, the `updateInfo && updateInfo.latestVersion &&
+// !questionState` banner inside the bottom-chrome column. Pure JSX. Mounted by
+// the caller behind the same guard so it stays zero-cost when up-to-date.
+screen name=UpdateBanner target=ink memo=true
+  prop name=updateInfo type="any"
+  prop name=updateChecking type="boolean"
+  render
+    handler <<<
+      return (
+        <Box flexDirection="row" borderStyle="round" borderColor="#fbbf24" paddingX={1} marginBottom={1}>
+          <Box flexDirection="column" flexGrow={1}>
+            <Box>
+              <Text color="#fbbf24" bold>{'⤴ '}</Text>
+              <Text bold>Agon v{updateInfo.latestVersion}</Text>
+              <Text>{' is available (you\'re on v'}{updateInfo.currentVersion || VERSION}{')'}</Text>
+            </Box>
+            <Box>
+              <Text dimColor>{'Press '}</Text>
+              <Text color="#fbbf24" bold>{'u'}</Text>
+              <Text dimColor>{' to update · '}</Text>
+              <Text dimColor>{'l'}</Text>
+              <Text dimColor>{' to view changelog · '}</Text>
+              <Text dimColor>{'x'}</Text>
+              <Text dimColor>{' to dismiss for v'}{updateInfo.latestVersion}</Text>
+            </Box>
+          </Box>
+          {updateChecking && <Text dimColor>{' · checking'}</Text>}
+        </Box>
+      );
+    >>>
+
+// ── BottomChromeSection — banner + composer/dashboard + status strips ──
+// Source: app.kern render block, the `!enginePickerOpen && !modelPickerOpen &&
+// !cesarPickerOpen && !railTakeover` bottom column. Composed in app.kern behind
+// that same guard so its mount identity matches the original. Pure data+callback
+// props; ComposerView/StatusDashboard/CesarStatusStrip/StatusBar keep their own
+// internal hooks. `cesarId` is resolved by the caller (the original inline IIFE
+// read `config`); everything else is passed through verbatim.
+screen name=BottomChromeSection target=ink memo=true
+  prop name=updateInfo type="any"
+  prop name=updateChecking type="boolean"
+  prop name=questionState type="any"
+  prop name=pendingImages type="any[]"
+  prop name=inputQueue type="string[]"
+  prop name=liveSpinner type="any"
+  prop name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'"
+  prop name=statusDashboardOpen type="boolean"
+  prop name=telemetryVitals type="any"
+  prop name=recentFallbacks type="any[]"
+  prop name=termWidth type="number"
+  prop name=termHeight type="number"
+  prop name=statusDashboardFilter type="any"
+  prop name=replState type="string"
+  prop name=planModeQueued type="boolean"
+  prop name=autoModeQueued type="boolean"
+  prop name=activePlan type="any"
+  prop name=slashPickerOpen type="boolean"
+  prop name=inputValue type="string"
+  prop name=handleInputChange type="(value:string) => void"
+  prop name=handlePasteInput type="(raw:string) => string"
+  prop name=handleSubmit type="(value:string) => void"
+  prop name=allSlashCommands type="any[]"
+  prop name=availableEngines type="string[]"
+  prop name=onSlashSelect type="(cmd:string) => void"
+  prop name=onSlashCancel type="() => void"
+  prop name=questionAnswer type="string"
+  prop name=selectedChoiceIndex type="number"
+  prop name=questionOtherActive type="boolean"
+  prop name=onQuestionAnswerChange type="(value:string) => void"
+  prop name=onQuestionAnswerSubmit type="(value:string) => void"
+  prop name=updateBannerActive type="boolean"
+  prop name=onCtrlShortcut type="(shortcut:string) => void"
+  prop name=cesarId type="string"
+  prop name=cesarConfidence type="any"
+  prop name=cesarContext type="any"
+  prop name=liveProgress type="EngineProgress[] | null"
+  prop name=runningJobs type="Job[]"
+  prop name=chatStartTime type="number"
+  prop name=streamSnippet type="any"
+  prop name=statusStats type="any"
+  prop name=statusCwd type="string"
+  prop name=statusBranch type="string"
+  prop name=explorationMode type="any"
+  prop name=toolOutputExpanded type="boolean"
+  prop name=fullscreenEnabled type="boolean"
+  render
+    handler <<<
+      const isActive = replState !== 'idle' || runningJobs.length > 0;
+      return (
+        <Box flexDirection="column" paddingX={1} marginTop={1}>
+          {/* ── Update-available banner ──
+              Sits between the picker row and the composer. Renders ONLY when
+              updateInfo is populated; otherwise nothing is emitted (zero-cost
+              when the user is up-to-date). The banner is keyboard-driven via
+              the global 'u' shortcut (handleKeyboardInput) — see KEY_MAP
+              below for the full surface (u / Enter / x / Esc). */}
+          {updateInfo && updateInfo.latestVersion && !questionState && (
+            <UpdateBanner updateInfo={updateInfo} updateChecking={updateChecking} />
+          )}
+          {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
+          {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
+          {liveSpinner && mode === 'chat' && !questionState && (
+            <Box paddingLeft={1}>
+              <Text color="#fbbf24">{liveSpinner.message}</Text>
+            </Box>
+          )}
+          {statusDashboardOpen ? (
+            <StatusDashboard telemetryVitals={telemetryVitals} recentFallbacks={recentFallbacks} width={termWidth} height={termHeight} filter={statusDashboardFilter} />
+          ) : (
+            <ComposerView
+              mode={mode}
+              replState={replState}
+              planModeQueued={planModeQueued}
+              autoModeQueued={autoModeQueued}
+              activePlanState={activePlan?.state ?? null}
+              slashPickerOpen={slashPickerOpen}
+              inputValue={inputValue}
+              handleInputChange={handleInputChange}
+              handlePasteInput={handlePasteInput}
+              handleSubmit={handleSubmit}
+              allSlashCommands={allSlashCommands}
+              availableEngines={availableEngines}
+              onSlashSelect={onSlashSelect}
+              onSlashCancel={onSlashCancel}
+              questionState={questionState}
+              questionAnswer={questionAnswer}
+              selectedChoiceIndex={selectedChoiceIndex}
+              questionOtherActive={questionOtherActive}
+              onQuestionAnswerChange={onQuestionAnswerChange}
+              onQuestionAnswerSubmit={onQuestionAnswerSubmit}
+              updateBannerActive={updateBannerActive}
+              termWidth={termWidth}
+              termHeight={termHeight}
+              onCtrlShortcut={onCtrlShortcut} />
+          )}
+          <CesarStatusStrip cesarId={cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTime} streamSnippet={streamSnippet} isActive={isActive} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
+          {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={fullscreenEnabled} telemetryVitals={telemetryVitals} />}
+        </Box>
       );
     >>>

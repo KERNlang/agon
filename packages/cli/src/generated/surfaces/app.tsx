@@ -82,19 +82,15 @@ import { clearTodos } from '../signals/todos.js';
 
 import { saveCesarConversationSnapshot } from '../cesar/session.js';
 
-import { SpinnerBlock, StatusBar, CesarStatusStrip, BackgroundJobRail, StatusDashboard, ExecutionRailPanel } from '../../generated/surfaces/status.js';
+import { SpinnerBlock, BackgroundJobRail, ExecutionRailPanel } from '../../generated/surfaces/status.js';
 
 import { EnginePicker, ModelPicker, ReviewBlock, CesarPicker } from '../../generated/blocks/controls.js';
-
-import { ComposerView } from '../../generated/blocks/composer.js';
-
-import { AgentProgressView } from '../../generated/surfaces/agent.js';
 
 import { contentWidth, withContentWidthOverride, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from '../../generated/blocks/rendering.js';
 
 import { LOGO_LINES, VERSION, BRAND } from '../../generated/blocks/engine.js';
 
-import { ChromeBar, StreamingView, ToolDetailBlock, TranscriptRowView } from './app-views.js';
+import { ChromeBar, ToolDetailBlock, TranscriptRowView, LiveStreamSection, BtwSidePanel, RailTakeoverPanel, BottomChromeSection } from './app-views.js';
 
 import { recordToolCall, listFiles, getFileTrackerVersion, clearFileTracker } from '../signals/file-tracker.js';
 
@@ -158,7 +154,7 @@ import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:98
+// @kern-source: app:96
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -1669,32 +1665,7 @@ export function App() {
       </Box>
     )}
     {livePaneVisible && !railTakeover && (
-      <>
-        <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} liveToolTailFrozen={liveToolTailFrozen} />
-        {Object.keys(agentProgress).length > 0 && (
-          <Box flexDirection="column">
-            {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (
-              <AgentProgressView
-                key={snap.engineId}
-                engineId={snap.engineId}
-                turnIndex={snap.turnIndex}
-                phase={snap.phase}
-                userPrompt={snap.userPrompt}
-                toolCalls={snap.toolCalls}
-                lastTool={snap.lastTool}
-                lastToolStatus={snap.lastToolStatus}
-                tokensUsed={snap.tokensUsed}
-                elapsedMs={snap.elapsedMs}
-                turnsRemaining={snap.turnsRemaining}
-                maxTurns={snap.maxTurns}
-                tokensRemaining={snap.tokensRemaining}
-                maxTokens={snap.maxTokens}
-                error={snap.error}
-              />
-            ))}
-          </Box>
-        )}
-      </>
+      <LiveStreamSection activeStream={activeStream} mode={mode} liveProgress={liveProgress} liveToolStreams={liveToolStreams} liveToolTailFrozen={liveToolTailFrozen} agentProgress={agentProgress} />
     )}
     {pendingPlanProposal && (
       <PlanProposalView
@@ -1704,39 +1675,7 @@ export function App() {
       />
     )}
     {btwPanel && (
-      <Box flexDirection="column" borderStyle="round" borderColor="#22d3ee" paddingX={1} marginY={1}>
-        <Box justifyContent="space-between">
-          <Text bold color="#22d3ee">{`BTW · side-chat${btwPanel.engineId ? ' · ' + btwPanel.engineId : ''}`}</Text>
-          <Text dimColor>{btwPanel.status === 'running' ? 'thinking…' : 'type to continue · Esc to leave'}</Text>
-        </Box>
-        {(() => {
-          const msgs = Array.isArray(btwPanel.messages) ? btwPanel.messages : [];
-          const shown = msgs.slice(-2);
-          const baseIdx = msgs.length - shown.length;
-          const hidden = baseIdx;
-          return (<>
-            {hidden > 0 && <Text dimColor>{`… ${hidden} earlier turn${hidden === 1 ? '' : 's'}`}</Text>}
-            {shown.map((m: any, i: number) => {
-              const isUser = m.role === 'user';
-              const raw = String(m.text ?? '').split('\n').filter((l: string) => l.trim()).slice(0, isUser ? 2 : 8);
-              const displayLines = raw.length > 0 ? raw : [''];
-              return (
-                <Box key={baseIdx + i} flexDirection="column">
-                  {displayLines.map((line: string, j: number) => (
-                    <Text key={j} color={isUser ? '#fbbf24' : undefined} dimColor={isUser}>{j === 0 ? (isUser ? '› ' : `${btwPanel.engineId ?? 'cesar'}: `) : '  '}{line}</Text>
-                  ))}
-                </Box>
-              );
-            })}
-          </>);
-        })()}
-        {btwPanel.status === 'running' && (
-          <Text color="#fbbf24">{'Answering in a side channel; main work continues.'}</Text>
-        )}
-        {btwPanel.error && btwPanel.status !== 'running' && (
-          <Text color="#ef4444">{btwPanel.error}</Text>
-        )}
-      </Box>
+      <BtwSidePanel btwPanel={btwPanel} />
     )}
     {toolDetailView && (
       <ToolDetailBlock
@@ -1921,102 +1860,76 @@ export function App() {
         }}
         onCancel={() => setCesarPickerOpen(false)} />
     )}
-    {railTakeover && showFileRail && (
-      <FileRail files={fileRailFiles} maxRows={sideRailMaxRows} width={Math.max(20, termWidth - 2)} focused={fileRailOpen} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen} />
-    )}
-    {railTakeover && showExecutionRail && (
-      <ExecutionRailPanel
-        spinner={liveSpinner}
-        engines={liveProgress}
-        activePlanState={activePlan?.state ?? null}
-        activePlan={activePlan}
-        lastTool={latestToolEvent}
-        recentFallbacks={recentFallbacks}
-        stats={executionRailStats}
-        toolOutputExpanded={toolOutputExpanded}
-        startTime={chatStartTimeRef.current || 0}
-        isActive={replState !== 'idle' || runningJobs.length > 0}
-        width={Math.max(20, termWidth - 2)}
-        maxRows={sideRailMaxRows}
-        focused={executionRailOpen} />
-    )}
     {railTakeover && (
-      <Box paddingX={1}><Text dimColor>{showFileRail ? '↑↓ navigate · Tab expand · Esc to return to chat' : 'Esc to return to chat'}</Text></Box>
+      <RailTakeoverPanel
+        showFileRail={showFileRail}
+        showExecutionRail={showExecutionRail}
+        fileRailFiles={fileRailFiles}
+        sideRailMaxRows={sideRailMaxRows}
+        termWidth={termWidth}
+        fileRailOpen={fileRailOpen}
+        fileRailSelectedIdx={fileRailSelectedIdx}
+        fileRailExpandedPath={fileRailExpandedPath}
+        liveSpinner={liveSpinner}
+        liveProgress={liveProgress}
+        activePlan={activePlan}
+        latestToolEvent={latestToolEvent}
+        recentFallbacks={recentFallbacks}
+        executionRailStats={executionRailStats}
+        toolOutputExpanded={toolOutputExpanded}
+        chatStartTime={chatStartTimeRef.current || 0}
+        isActive={replState !== 'idle' || runningJobs.length > 0}
+        executionRailOpen={executionRailOpen} />
     )}
     {liveSpinner && mode !== 'chat' && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
     {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && !railTakeover && (
-      <Box flexDirection="column" paddingX={1} marginTop={1}>
-        {/* ── Update-available banner ──
-            Sits between the picker row and the composer. Renders ONLY when
-            updateInfo is populated; otherwise nothing is emitted (zero-cost
-            when the user is up-to-date). The banner is keyboard-driven via
-            the global 'u' shortcut (handleKeyboardInput) — see KEY_MAP
-            below for the full surface (u / Enter / x / Esc). */}
-        {updateInfo && updateInfo.latestVersion && !questionState && (
-          <Box flexDirection="row" borderStyle="round" borderColor="#fbbf24" paddingX={1} marginBottom={1}>
-            <Box flexDirection="column" flexGrow={1}>
-              <Box>
-                <Text color="#fbbf24" bold>{'⤴ '}</Text>
-                <Text bold>Agon v{updateInfo.latestVersion}</Text>
-                <Text>{' is available (you\'re on v'}{updateInfo.currentVersion || VERSION}{')'}</Text>
-              </Box>
-              <Box>
-                <Text dimColor>{'Press '}</Text>
-                <Text color="#fbbf24" bold>{'u'}</Text>
-                <Text dimColor>{' to update · '}</Text>
-                <Text dimColor>{'l'}</Text>
-                <Text dimColor>{' to view changelog · '}</Text>
-                <Text dimColor>{'x'}</Text>
-                <Text dimColor>{' to dismiss for v'}{updateInfo.latestVersion}</Text>
-              </Box>
-            </Box>
-            {updateChecking && <Text dimColor>{' · checking'}</Text>}
-          </Box>
-        )}
-        {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
-        {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
-        {liveSpinner && mode === 'chat' && !questionState && (
-          <Box paddingLeft={1}>
-            <Text color="#fbbf24">{liveSpinner.message}</Text>
-          </Box>
-        )}
-        {statusDashboardOpen ? (
-          <StatusDashboard telemetryVitals={telemetryVitals} recentFallbacks={recentFallbacks} width={termWidth} height={termHeight} filter={statusDashboardFilter} />
-        ) : (
-          <ComposerView
-            mode={mode}
-            replState={replState}
-            planModeQueued={planModeQueued}
-            autoModeQueued={autoModeQueued}
-            activePlanState={activePlan?.state ?? null}
-            slashPickerOpen={slashPickerOpen}
-            inputValue={inputValue}
-            handleInputChange={handleInputChange}
-            handlePasteInput={handlePasteInput}
-            handleSubmit={handleSubmit}
-            allSlashCommands={allSlashCommands}
-            availableEngines={availableEngines}
-            onSlashSelect={handleSlashSelect}
-            onSlashCancel={handleSlashCancel}
-            questionState={questionState}
-            questionAnswer={questionAnswer}
-            selectedChoiceIndex={selectedChoiceIndex}
-            questionOtherActive={questionOtherActive}
-            onQuestionAnswerChange={setQuestionAnswer}
-            onQuestionAnswerSubmit={handleQuestionAnswer}
-            updateBannerActive={!!(updateInfo && updateInfo.latestVersion) && !questionState && !modelPickerOpen && !cesarPickerOpen && !slashPickerOpen && !enginePickerOpen && !toolDetailEvent && !reviewEvent}
-            termWidth={termWidth}
-            termHeight={termHeight}
-            onCtrlShortcut={handleComposerCtrlShortcut} />
-        )}
-        {(() => {
-          const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-          return (<>
-            <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} context={cesarContext} spinner={liveSpinner} engines={liveProgress} jobs={runningJobs} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
-            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} telemetryVitals={telemetryVitals} />}
-          </>);
-        })()}
-      </Box>
+      <BottomChromeSection
+        updateInfo={updateInfo}
+        updateChecking={updateChecking}
+        questionState={questionState}
+        pendingImages={pendingImages}
+        inputQueue={inputQueue}
+        liveSpinner={liveSpinner}
+        mode={mode}
+        statusDashboardOpen={statusDashboardOpen}
+        telemetryVitals={telemetryVitals}
+        recentFallbacks={recentFallbacks}
+        termWidth={termWidth}
+        termHeight={termHeight}
+        statusDashboardFilter={statusDashboardFilter}
+        replState={replState}
+        planModeQueued={planModeQueued}
+        autoModeQueued={autoModeQueued}
+        activePlan={activePlan}
+        slashPickerOpen={slashPickerOpen}
+        inputValue={inputValue}
+        handleInputChange={handleInputChange}
+        handlePasteInput={handlePasteInput}
+        handleSubmit={handleSubmit}
+        allSlashCommands={allSlashCommands}
+        availableEngines={availableEngines}
+        onSlashSelect={handleSlashSelect}
+        onSlashCancel={handleSlashCancel}
+        questionAnswer={questionAnswer}
+        selectedChoiceIndex={selectedChoiceIndex}
+        questionOtherActive={questionOtherActive}
+        onQuestionAnswerChange={setQuestionAnswer}
+        onQuestionAnswerSubmit={handleQuestionAnswer}
+        updateBannerActive={!!(updateInfo && updateInfo.latestVersion) && !questionState && !modelPickerOpen && !cesarPickerOpen && !slashPickerOpen && !enginePickerOpen && !toolDetailEvent && !reviewEvent}
+        onCtrlShortcut={handleComposerCtrlShortcut}
+        cesarId={(config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude'}
+        cesarConfidence={cesarConfidence}
+        cesarContext={cesarContext}
+        liveProgress={liveProgress}
+        runningJobs={runningJobs}
+        chatStartTime={chatStartTimeRef.current || 0}
+        streamSnippet={streamSnippet}
+        statusStats={statusStats}
+        statusCwd={statusCwd}
+        statusBranch={statusBranch}
+        explorationMode={explorationMode}
+        toolOutputExpanded={toolOutputExpanded}
+        fullscreenEnabled={terminalMode === 'fullscreen'} />
     )}
   </Box>
   );
@@ -2070,10 +1983,10 @@ export function App() {
   );
 }
 
-// @kern-source: app:96
+// @kern-source: app:94
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1859
+// @kern-source: app:1774
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -171,6 +171,28 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           input,
         });
       };
+      // Claude Code-style tool-call duration tracking. Tool events flow
+      // running→done/error keyed by tool name (the same tool/input pair within a
+      // turn correlates by name in practice). Record the start time when a tool
+      // goes 'running' and attach durationMs to the matching done/error event so
+      // the renderer can show e.g. "→ 12 lines · 1.4s". Done/error events with no
+      // preceding 'running' (signal/MCP side-channel dispatches that complete
+      // instantly) simply carry no durationMs — the renderer omits the suffix.
+      const _toolStartMs = new Map<string, number>();
+      const dispatchToolCall = (evt: { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running' | 'done' | 'error'; output?: string }): void => {
+        const key = String(evt.tool || 'tool');
+        let durationMs: number | undefined;
+        if (evt.status === 'running') {
+          _toolStartMs.set(key, Date.now());
+        } else {
+          const startedAt = _toolStartMs.get(key);
+          if (startedAt !== undefined) {
+            durationMs = Date.now() - startedAt;
+            _toolStartMs.delete(key);
+          }
+        }
+        dispatch({ ...evt, ...(durationMs !== undefined ? { durationMs } : {}) } as any);
+      };
       const normalizeConfidenceReasoning = (value: unknown): string => {
         return String(value ?? '').replace(/\s+/g, ' ').trim();
       };
@@ -594,7 +616,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 const status = done.status === 'error' ? 'error' : 'done';
                 const toolInput = typeof done.args === 'string' ? done.args : JSON.stringify(done.args ?? {});
                 recordToolUse(String(done.tool ?? 'tool'), 'mcp', toolInput, status);
-                dispatch({
+                dispatchToolCall({
                   type: 'tool-call',
                   engineId: cesarEngineId,
                   tool: String(done.tool ?? 'tool'),
@@ -767,21 +789,21 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
 
               if (meta.input && STREAM_ORCH.has(toolName)) {
                 if (cesarFastPath) {
-                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` } as any);
+                  dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` } as any);
                   continue;
                 }
                 if (!ctx.cesar!.pendingDelegation) {
                   ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
                   ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: `stream-${toolStatus}` }).catch(() => {});
                 }
-                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+                dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
                 continue;
               }
 
               if (toolStatus === 'done') {
-                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+                dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
               } else if (toolStatus === 'native') {
-                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
+                dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
               } else if (toolStatus === 'running' && meta.input && toolRegistry && !ctx.cesar!.hasNativeTools) {
                 // Codex review fix (P2): after orchestration delegation has been
                 // set, suppress ALL subsequent tool calls in the same stream — not
@@ -790,7 +812,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 // workspace before the delegated job starts, racing the agents'
                 // worktrees and triggering permission prompts.
                 if (ctx.cesar!.pendingDelegation) {
-                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
+                  dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
                   continue;
                 }
                 // Intercept orchestration signal tools — don't execute as workspace tools.
@@ -799,12 +821,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 const EAGER_ORCH = STREAM_ORCH;
                 if (EAGER_ORCH.has(toolName)) {
                   if (cesarFastPath) {
-                    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` } as any);
+                    dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` } as any);
                     continue;
                   }
                   ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
                   ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: 'stream' }).catch(() => {});
-                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
+                  dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
                   // RT-24: do NOT break the stream. Let it drain naturally so the model can
                   // emit any post-tool-call narration (the "I'm delegating because..." hand-off
                   // context). The dedup-and-suppress guard above gates ALL further tool calls
@@ -812,11 +834,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   // race the delegated job.
                   continue;
                 }
-                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
+                dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
                 if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
                 eagerPromises.push(executeEagerTool(toolName, meta, toolRegistry, eagerToolCtx, dispatch, cesarEngineId));
               } else {
-                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+                dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any);
               }
               continue;
             }
@@ -1053,9 +1075,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   continue;
                 }
                 if (toolStatus !== 'running' && toolStatus !== 'native') {
-                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+                  dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any);
                 } else if (failedTools.includes(toolName)) {
-                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Repair retry already used for this tool in this turn.' } as any);
+                  dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Repair retry already used for this tool in this turn.' } as any);
                 }
               }
               if (chunk.type === 'done' || chunk.type === 'error') break;
@@ -1074,7 +1096,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
                     const toolName = chunk.content || 'tool';
                     const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
-                    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Tool repair loop is one retry per failed tool; further tool calls were not executed automatically.' } as any);
+                    dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Tool repair loop is one retry per failed tool; further tool calls were not executed automatically.' } as any);
                   }
                   if (chunk.type === 'done' || chunk.type === 'error') break;
                 }
@@ -1142,7 +1164,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 if (cesarFastPath && FAST_PATH_BLOCKED_TOOLS.includes(signal.tool)) {
                   const toolInput = JSON.stringify(signal.args ?? {});
                   recordToolUse(signal.tool, 'mcp', toolInput, 'error');
-                  dispatch({
+                  dispatchToolCall({
                     type: 'tool-call',
                     engineId: cesarEngineId,
                     tool: signal.tool,
@@ -1184,7 +1206,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   // fresh ProposePlan to supersede it. Only running/paused/planning
                   // (a genuinely active plan) blocks a nested proposal.
                   if (activePlan && ['planning', 'running', 'paused'].includes(activePlan.state)) {
-                    dispatch({
+                    dispatchToolCall({
                       type: 'tool-call',
                       engineId: cesarEngineId,
                       tool: 'ProposePlan',
@@ -1213,7 +1235,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
                   try {
                     const exitResult = handleExitPlanMode(String((signal.args as any)?.reason ?? ''), planDispatch, ctx);
-                    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: 'ExitPlanMode', input: JSON.stringify(signal.args ?? {}), status: 'done', output: exitResult } as any);
+                    dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: 'ExitPlanMode', input: JSON.stringify(signal.args ?? {}), status: 'done', output: exitResult } as any);
                   } catch (err) {
                     console.warn(`[agon] ExitPlanMode via MCP signal failed: ${err instanceof Error ? err.message : String(err)}`);
                   }
@@ -1418,7 +1440,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // ProposePlan to supersede it. Only running/paused/planning (a
             // genuinely active plan) blocks a nested proposal.
             if (activePlan && ['planning', 'running', 'paused'].includes(activePlan.state)) {
-              dispatch({
+              dispatchToolCall({
                 type: 'tool-call',
                 engineId: cesarEngineId,
                 tool: 'ProposePlan',
@@ -1455,7 +1477,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             const { handleExitPlanMode } = await import('../handlers/plan-mode.js');
             const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
             const exitResult = handleExitPlanMode(String((epArgs as any)?.reason ?? ''), planDispatch, ctx);
-            dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: 'ExitPlanMode', input: JSON.stringify(epArgs ?? {}), status: 'done', output: exitResult } as any);
+            dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: 'ExitPlanMode', input: JSON.stringify(epArgs ?? {}), status: 'done', output: exitResult } as any);
           } catch (err) {
             console.warn(`[agon] ExitPlanMode via tool loop failed: ${err instanceof Error ? err.message : String(err)}`);
           }

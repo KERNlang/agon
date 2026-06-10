@@ -120,6 +120,8 @@ union name=OutputEvent discriminant=type
     field name=input type=string
     field name=status type="'running'|'done'|'error'"
     field name=output type=string optional=true
+    doc "Wall-clock duration of the tool call (running→done/error), set by the brain dispatcher. Rendered as a dim suffix on the result line (e.g. '→ 12 lines · 1.4s'). Absent for instant signal/MCP completions that had no preceding 'running' event."
+    field name=durationMs type=number optional=true
   variant name=tool-call-group
     doc "A compacted group of consecutive tool-call blocks, committed to Static as a single summary row a-la Claude Code. Built by output.kern's pending buffer on non-tool events or /clear."
     field name=blocks type="any[]"

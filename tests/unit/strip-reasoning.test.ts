@@ -1,5 +1,30 @@
 import { describe, it, expect } from 'vitest';
-import { stripReasoning, stripTuiChrome } from '../../packages/cli/src/generated/blocks/engine-helpers.js';
+import { stripReasoning, stripTuiChrome, formatDuration } from '../../packages/cli/src/generated/blocks/engine-helpers.js';
+
+describe('formatDuration', () => {
+  it('renders sub-second durations as milliseconds', () => {
+    expect(formatDuration(420)).toBe('420ms');
+    expect(formatDuration(0)).toBe('0ms');
+    expect(formatDuration(999)).toBe('999ms');
+  });
+
+  it('renders one-decimal seconds for 1s..<60s', () => {
+    expect(formatDuration(1000)).toBe('1.0s');
+    expect(formatDuration(1400)).toBe('1.4s');
+    expect(formatDuration(59_900)).toBe('59.9s');
+  });
+
+  it('renders minutes + whole seconds at >=60s', () => {
+    expect(formatDuration(60_000)).toBe('1m 0s');
+    expect(formatDuration(72_000)).toBe('1m 12s');
+    expect(formatDuration(3_661_000)).toBe('61m 1s');
+  });
+
+  it('clamps negative/NaN to 0ms', () => {
+    expect(formatDuration(-5)).toBe('0ms');
+    expect(formatDuration(Number.NaN)).toBe('0ms');
+  });
+});
 
 describe('stripReasoning', () => {
   it('removes a leaked <think> block (MiniMax)', () => {

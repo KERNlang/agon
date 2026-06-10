@@ -68,6 +68,18 @@ fn name=parsePatchPreview params="rawInput:string, parsed:any" returns="{ files:
     return { files, lines, additions, deletions };
   >>>
 
+fn name=formatDuration params="ms:number" returns=string export=true
+  doc "Claude Code-style compact wall-clock duration for tool-call result lines. <1s → milliseconds ('420ms'), ≥1s → one-decimal seconds ('1.4s'), ≥60s → minutes+whole seconds ('1m 12s'). Negative/NaN inputs clamp to '0ms'. Used both per-tool (durationMs suffix) and in the ToolCallGroup aggregate so both render identically."
+  handler <<<
+    if (!Number.isFinite(ms) || ms < 0) return '0ms';
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+    const totalSeconds = Math.round(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}m ${seconds}s`;
+  >>>
+
 fn name=extractSummary params="text:string, maxLen:number" returns=string
   handler lang="kern"
     let name=s kind=let value="text.replace(/<think>[\\s\\S]*?<\\/think>\\s*/gi, '')"

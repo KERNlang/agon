@@ -13,7 +13,7 @@ import from="./rendering.js" names="contentWidth,color256toHex,engineColor,Rende
 import from="./markdown.js" names="truncateCodeLine"
 import from="./arena.js" names="ForgeArena,BrainstormStorm,CampfireFire,TribunalCourt"
 import from="./plan-view.js" names="PlanProposalView,PlanExecutionView"
-import from="./engine-helpers.js" names="parseToolInputPayload,extractPatchText,parsePatchPreview,extractSummary"
+import from="./engine-helpers.js" names="parseToolInputPayload,extractPatchText,parsePatchPreview,extractSummary,formatDuration"
 import from="node:module" names="createRequire"
 import from="node:fs" names="readFileSync,existsSync"
 import from="node:path" names="dirname,join"
@@ -640,6 +640,16 @@ screen name=OutputBlockView target=ink memo=true
           // <Static> once finalized — so a per-block "Ctrl+E expand" hint
           // would be misleading (Ink cannot re-render past Static items).
           const collapsedHint = null;
+          // Claude Code-style compact duration suffix for the result summary
+          // line — e.g. "→ 12 lines · 1.4s". Only present on terminal events
+          // (done/error) that carried a durationMs from the brain dispatcher;
+          // running events and instant signal completions render no suffix.
+          const durTextRaw = typeof event.durationMs === 'number' && event.status !== 'running'
+            ? formatDuration(event.durationMs)
+            : '';
+          const durSuffix = durTextRaw
+            ? <Text dimColor>{' · '}{durTextRaw}</Text>
+            : null;
 
           if (toolKey === 'reportconfidence') {
             return (
@@ -671,6 +681,7 @@ screen name=OutputBlockView target=ink memo=true
                     {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'Bash'}</Text></Text>
                     <Text dimColor>{desc ? ' \u00b7 ' : ' $ '}{cmdPreview}{cmdPreview.length >= 60 ? '\u2026' : ''}</Text>
                     {outputLines > 0 && event.status !== 'running' && <Text dimColor>{' \u2192 '}{outputLines}{' lines'}</Text>}
+                    {durSuffix}
                     {collapsedHint}
                   </Text>
                 </Box>
@@ -732,7 +743,7 @@ screen name=OutputBlockView target=ink memo=true
               return (
                 <Box paddingLeft={2}>
                   <Text>
-                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{' '}<Text dimColor>\u00b7 </Text><Text color="#ef4444">-{removedCount}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{addedCount}</Text>{' lines'}<Text dimColor>{''}</Text>
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{' '}<Text dimColor>\u00b7 </Text><Text color="#ef4444">-{removedCount}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{addedCount}</Text>{' lines'}{durSuffix}<Text dimColor>{''}</Text>
                   </Text>
                 </Box>
               );
@@ -782,7 +793,7 @@ screen name=OutputBlockView target=ink memo=true
               return (
                 <Box paddingLeft={2}>
                   <Text>
-                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{lineCount > 0 && <><Text dimColor>{' \u00b7 '}</Text><Text color="#4ade80">+{lineCount}</Text><Text dimColor>{' lines'}</Text></>}<Text dimColor>{''}</Text>
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{lineCount > 0 && <><Text dimColor>{' \u00b7 '}</Text><Text color="#4ade80">+{lineCount}</Text><Text dimColor>{' lines'}</Text></>}{durSuffix}<Text dimColor>{''}</Text>
                   </Text>
                 </Box>
               );
@@ -850,6 +861,7 @@ screen name=OutputBlockView target=ink memo=true
                     {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().read + ' Read'}</Text></Text>
                     {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
                     {lineCount > 0 && event.status === 'done' && <Text dimColor>{' '}{lineCount}{' lines'}</Text>}
+                    {durSuffix}
                     {collapsedHint}
                   </Text>
                 </Box>
@@ -878,6 +890,7 @@ screen name=OutputBlockView target=ink memo=true
                     {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().search + ' Search'}</Text></Text>
                     {' '}<Text color="#a78bfa">{pattern}</Text>
                     {matchCount > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{matchCount}{' matches'}</Text>}
+                    {durSuffix}
                     {collapsedHint}
                   </Text>
                 </Box>
@@ -904,6 +917,7 @@ screen name=OutputBlockView target=ink memo=true
                     {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().find + ' Find'}</Text></Text>
                     {' '}<Text color="#a78bfa">{pattern}</Text>
                     {fileCount > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{fileCount}{' files'}</Text>}
+                    {durSuffix}
                     {collapsedHint}
                   </Text>
                 </Box>
@@ -933,7 +947,7 @@ screen name=OutputBlockView target=ink memo=true
             const outLines = event.output ? event.output.split('\n').length : 0;
             return (
               <Box paddingLeft={2}>
-                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{label}</Text></Text>{' '}<Text dimColor>{inputPreview}</Text>{outLines > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{outLines}{' lines'}</Text>}{collapsedHint}</Text>
+                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{label}</Text></Text>{' '}<Text dimColor>{inputPreview}</Text>{outLines > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{outLines}{' lines'}</Text>}{durSuffix}{collapsedHint}</Text>
               </Box>
             );
           }
@@ -1123,7 +1137,7 @@ screen name=ToolCallGroup target=ink memo=true
         metaEngine,
         `${blocks.length} tool${blocks.length === 1 ? '' : 's'}`,
         `changed ${changedFiles.length} file${changedFiles.length === 1 ? '' : 's'}`,
-        metaElapsedMs > 0 ? `${(metaElapsedMs / 1000).toFixed(1)}s` : '',
+        metaElapsedMs > 0 ? formatDuration(metaElapsedMs) : '',
         totalOutputBytes > 0 ? `${Math.ceil(totalOutputBytes / 1024)}kb` : '',
       ].filter(Boolean);
 

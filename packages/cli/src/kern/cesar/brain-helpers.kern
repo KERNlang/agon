@@ -11,7 +11,7 @@ const name=yieldToInk type="() => Promise<void>" value={{ () => new Promise<void
 const name=splitBeforeToolMarkup type="(text:string) => { visible:string, hasToolMarkup:boolean }" export=true
   handler <<<
     (text: string) => {
-      const markers = ['<tool ', '<invoke ', '<tool_call', '<toolcall', '<tool_call_tool>', '<function=', '[TOOL_CALLS]'];
+      const markers = ['<tool ', '<invoke ', '<tool_call', '<toolcall', '<tool_call_tool>', '<function=', '[TOOL_CALLS]', '[TODOS]'];
       const lower = text.toLowerCase();
       let idx = -1;
       for (const marker of markers) {

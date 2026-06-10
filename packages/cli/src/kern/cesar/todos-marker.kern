@@ -1,0 +1,83 @@
+// ── Cesar Live Todos: parse the [TODOS]…[/TODOS] checklist marker ──────
+// A LIVE (non-plan) Cesar turn declares its rolling checklist by emitting a
+// [TODOS] … [/TODOS] block in its response text. The brain parses it (this
+// module) and dispatches todos-set / todos-update events with source:'live'
+// DIRECTLY — there is NO engine round-trip and NO new MCP/XML tool (the
+// settled design's "no new tool" rule: the brain owns the parse, the model
+// just writes text). This mirrors the [SUGGEST:mode] marker idiom in
+// suggestion.kern: a structured signal extracted from the brain's own text,
+// stripped from the user-visible output.
+//
+// FORMAT (one JSON array per block; the model re-emits the WHOLE block each
+// time state changes, so the latest block is the authoritative list):
+//   [TODOS]
+//   [{"id":"1","text":"Read brain.kern","state":"done"},
+//    {"id":"2","text":"Patch the parser","state":"running"},
+//    {"id":"3","text":"Run tests","state":"pending"}]
+//   [/TODOS]
+//
+// Robustness contract: malformed input is IGNORED silently (returns todos:[]
+// with the marker still located so it can be stripped). The brain must never
+// crash on a bad todo block — a model that emits garbage just gets no list.
+
+import from="../signals/todos.js" names="Todo" types=true
+
+interface name=TodosMarkerResult export=true
+  field name=todos type="Todo[]"
+  doc "Parsed live todos (source forced to 'live'). Empty when absent/malformed."
+  field name=found type=boolean
+  doc "True when a [TODOS]…[/TODOS] block was located (even if its body was malformed) — so the caller knows to strip it."
+  field name=rest type=string
+  doc "Response text with every [TODOS]…[/TODOS] block removed, ready to display."
+
+fn name=parseLiveTodos params="response:string" returns="TodosMarkerResult" export=true
+  doc "Extract live todos from a [TODOS]…[/TODOS] block. Ignores malformed bodies silently; strips all blocks from rest. Forces source:'live' and dedupes ids (last wins)."
+  handler <<<
+    const blockRe = /\[TODOS\]([\s\S]*?)\[\/TODOS\]/gi;
+    let found = false;
+    let lastBody: string | null = null;
+    let rest = response;
+    // Walk every block; the LAST well-formed one wins (latest state snapshot).
+    // Strip all blocks from the visible text regardless of body validity.
+    const matches = response.match(blockRe);
+    if (!matches || matches.length === 0) {
+      return { todos: [], found: false, rest: response };
+    }
+    found = true;
+    rest = response.replace(blockRe, '').trim();
+    // Re-scan to capture the last body (match() above loses capture groups).
+    let m: RegExpExecArray | null;
+    const re2 = /\[TODOS\]([\s\S]*?)\[\/TODOS\]/gi;
+    while ((m = re2.exec(response)) !== null) {
+      lastBody = m[1];
+    }
+    if (lastBody === null) return { todos: [], found, rest };
+
+    const allowed = new Set(['pending', 'running', 'done', 'failed', 'cancelled']);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(lastBody.trim());
+    } catch {
+      // Malformed JSON — ignore silently (no crash), still strip the block.
+      return { todos: [], found, rest };
+    }
+    if (!Array.isArray(parsed)) return { todos: [], found, rest };
+
+    // Build, validating each item; skip anything without a usable id+text.
+    // Dedupe by id (last occurrence wins) while preserving first-seen order.
+    const order: string[] = [];
+    const byId = new Map<string, Todo>();
+    for (const raw of parsed as unknown[]) {
+      if (!raw || typeof raw !== 'object') continue;
+      const r = raw as Record<string, unknown>;
+      const id = r.id !== undefined && r.id !== null ? String(r.id) : '';
+      const text = r.text !== undefined && r.text !== null ? String(r.text) : '';
+      if (!id || !text) continue;
+      const state = (allowed.has(String(r.state)) ? String(r.state) : 'pending') as Todo['state'];
+      const note = r.note !== undefined && r.note !== null ? String(r.note) : undefined;
+      if (!byId.has(id)) order.push(id);
+      byId.set(id, { id, text, state, note, source: 'live' });
+    }
+    const todos = order.map((id) => byId.get(id)!).filter(Boolean);
+    return { todos, found, rest };
+  >>>

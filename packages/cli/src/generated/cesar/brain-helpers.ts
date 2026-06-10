@@ -9,7 +9,7 @@ export const yieldToInk: () => Promise<void> = () => new Promise<void>(resolve =
 
 // @kern-source: brain-helpers:11
 export const splitBeforeToolMarkup: (text:string) => { visible:string, hasToolMarkup:boolean } = (text: string) => {
-  const markers = ['<tool ', '<invoke ', '<tool_call', '<toolcall', '<tool_call_tool>', '<function=', '[TOOL_CALLS]'];
+  const markers = ['<tool ', '<invoke ', '<tool_call', '<toolcall', '<tool_call_tool>', '<function=', '[TOOL_CALLS]', '[TODOS]'];
   const lower = text.toLowerCase();
   let idx = -1;
   for (const marker of markers) {

@@ -80,7 +80,8 @@ union name=OutputEvent discriminant=type
     field name=state type=string
     field name=note type=string optional=true
   variant name=todos-clear
-    doc "Wipe the rolling todo list."
+    doc "Wipe the rolling todo list. With scope:'live' only live-sourced items are dropped (plan items survive); omit scope to wipe everything."
+    field name=scope type="'live'" optional=true
   variant name=scoreboard
     field name=title type=string
     field name=winner type=string optional=true

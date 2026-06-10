@@ -12,7 +12,7 @@ import { loadConfig, configSet } from '@kernlang/agon-core';
 
 import type { Todo } from './todos.js';
 
-import { setTodos, updateTodoState, clearTodos } from './todos.js';
+import { setTodos, updateTodoState, clearTodos, clearLiveTodos } from './todos.js';
 
 /**
  * Live state for a running autonomous agent session. Fed by agent-* OutputEvents, rendered by surfaces/agent.kern::AgentProgressView. teamId groups members of a single AgentTeam run for explicit clear-by-team. completedAt is set by agent-step-end and consumed by the TTL pruner in app.kern.
@@ -436,7 +436,12 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       return;
     }
     case 'todos-clear': {
-      actions.setTodos(clearTodos());
+      const scope = (event as any).scope as string | undefined;
+      if (scope === 'live') {
+        actions.setTodos((prev) => clearLiveTodos(prev));
+      } else {
+        actions.setTodos(clearTodos());
+      }
       return;
     }
     case 'clear':

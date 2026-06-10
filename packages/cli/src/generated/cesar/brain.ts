@@ -18,6 +18,8 @@ import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge } from './confidence
 
 import { parseSuggestion } from './suggestion.js';
 
+import { parseLiveTodos } from './todos-marker.js';
+
 import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend } from './session.js';
 
 import { enforceContextBudget } from './context-budget.js';
@@ -38,7 +40,7 @@ import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering
 
 import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
 
-// @kern-source: brain:21
+// @kern-source: brain:22
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -69,7 +71,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:47
+// @kern-source: brain:48
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -100,10 +102,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:72
+// @kern-source: brain:73
 export const _noBriefNudged: Set<string> = new Set<string>();
 
-// @kern-source: brain:74
+// @kern-source: brain:75
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -134,6 +136,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       let _narratedToolStalls = 0;
       let _autoToolExecutions = 0;
       let _confidenceToolUsed = false;
+      // Live-todo telemetry: did this live turn emit at least one [TODOS] block?
+      // The design wants the later-gated metric "multi-tool turns that emitted
+      // zero todos" — we record the boolean here and let the consumer cross it
+      // with toolCallTurns (already tracked) downstream.
+      let _liveTodosEmitted = false;
       let _actualCesarEngineId = '';
       let _actualCesarBackend = 'unknown';
       let _actualHasNativeTools = false;
@@ -208,6 +215,29 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         }
         dispatch({ ...evt, ...(durationMs !== undefined ? { durationMs } : {}) } as any);
       };
+      // ── Live todo emission (non-plan turns) ──
+      // Parse a [TODOS]…[/TODOS] block out of the brain's text and dispatch a
+      // todos-set with source:'live' so the pinned checklist ticks as the turn
+      // progresses. No engine round-trip, no new tool — the brain owns the parse
+      // (todos-marker.kern), exactly like the [SUGGEST:mode] marker. Skip entirely
+      // when a plan is active: plan mode owns the rolling list (plan-executor
+      // dispatches source-less todos), and a live block must not clobber it.
+      // Returns the response with every [TODOS] block stripped, ready to display.
+      const emitLiveTodos = (text: string): string => {
+        const planActive = !!(ctx.activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(ctx.activePlan.state));
+        if (planActive) return text;
+        const parsed = parseLiveTodos(text);
+        if (!parsed.found) return text;
+        // A non-empty list replaces the live checklist; an empty/cleared block
+        // (model emitted [TODOS][]) wipes it. Either way the block is stripped.
+        if (parsed.todos.length > 0) {
+          _liveTodosEmitted = true;
+          dispatch({ type: 'todos-set', todos: parsed.todos } as any);
+        } else {
+          dispatch({ type: 'todos-clear' } as any);
+        }
+        return parsed.rest;
+      };
       const normalizeConfidenceReasoning = (value: unknown): string => {
         return String(value ?? '').replace(/\s+/g, ' ').trim();
       };
@@ -235,6 +265,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         narratedToolStalls: _narratedToolStalls,
         autoToolExecutions: _autoToolExecutions,
         confidenceToolUsed: _confidenceToolUsed,
+        liveTodosEmitted: _liveTodosEmitted,
       });
 
       // Short follow-ups bypass escalation/delegation — they're conversation continuations
@@ -367,6 +398,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // "Cesar was just interrupted" — without a listener (cleared in finally).
         ctx.cesar!.abortSignal = abort.signal;
         ctx.cesar!.lastDispatch = dispatch;
+        // Clear any live (non-plan) todo checklist left pinned by the PREVIOUS
+        // live turn so it never lingers stale into this one. Scope:'live' leaves
+        // an active plan's rolling list untouched (plan owns its own lifecycle).
+        dispatch({ type: 'todos-clear', scope: 'live' } as any);
         dispatch({ type: 'confidence-update', value: null });
         dispatch({ type: 'spinner-start', message: 'Cesar thinking…', color });
         await yieldToInk();
@@ -479,9 +514,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         let parsedConfidence: number | null = null;
         let confidenceParsed = false;
         let insideThinkBlock = false;
+        let insideTodosBlock = false;  // streaming: between [TODOS] and [/TODOS]
         let suppressXmlToolDisplay = false;
         let sawStreamingXmlToolCall = false;
         let xmlDisplayHold = '';
+        let _todosDisplayHold = '';  // partial trailing '[TODOS' guard (native path)
         let hadToolActivity = false; // tracks if native tool calls were shown to user
         // Engine-failure tracking: when a send yields an `error` chunk or returns
         // empty (overflow, rate limit, content filter, dead session), capture the
@@ -534,6 +571,49 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const visible = combined.slice(0, combined.length - hold);
           xmlDisplayHold = combined.slice(combined.length - hold);
           return visible;
+        };
+        // Strip [TODOS]…[/TODOS] blocks from a NATIVE-tool streaming chunk so the
+        // live checklist marker never leaks into the visible/committed answer.
+        // The XML path is already covered by splitBeforeToolMarkup (which now
+        // lists '[TODOS]' as markup) + takeXmlSafeDisplayChunk's suppression. This
+        // mirrors the <think> incremental handling: complete blocks are removed,
+        // an open block suppresses display until '[/TODOS]', and a partial trailing
+        // '[TODOS' is held back so a marker split across chunks isn't shown.
+        const stripTodosForDisplay = (chunkText: string, force = false): string => {
+          let combined = _todosDisplayHold + chunkText;
+          _todosDisplayHold = '';
+          let out = '';
+          // Walk, toggling on [TODOS] / off at [/TODOS].
+          while (combined.length > 0) {
+            if (insideTodosBlock) {
+              const end = combined.toLowerCase().indexOf('[/todos]');
+              if (end < 0) { combined = ''; break; }  // still inside — drop the rest
+              insideTodosBlock = false;
+              combined = combined.slice(end + '[/todos]'.length);
+              continue;
+            }
+            const start = combined.toLowerCase().indexOf('[todos]');
+            if (start < 0) break;
+            out += combined.slice(0, start);
+            insideTodosBlock = true;
+            combined = combined.slice(start + '[todos]'.length);
+          }
+          if (!insideTodosBlock) {
+            // Guard a partial trailing '[TODOS' (or shorter prefix) split mid-marker.
+            if (!force) {
+              const lower = combined.toLowerCase();
+              const tail = '[todos]';
+              for (let n = Math.min(tail.length - 1, combined.length); n > 0; n--) {
+                if (lower.slice(combined.length - n) === tail.slice(0, n)) {
+                  _todosDisplayHold = combined.slice(combined.length - n);
+                  combined = combined.slice(0, combined.length - n);
+                  break;
+                }
+              }
+            }
+            out += combined;
+          }
+          return out;
         };
         let routingHints = deriveRoutingHints(input, ctx);
         const answerFastPath = routingHints.intakeKind === 'chat'
@@ -1002,6 +1082,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   const split = splitBeforeToolMarkup(cleanFirst);
                   cleanFirst = split.visible;
                   if (split.hasToolMarkup) suppressXmlToolDisplay = true;
+                } else {
+                  cleanFirst = stripTodosForDisplay(cleanFirst);
                 }
                 if (cleanFirst.trim()) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanFirst });
               } else {
@@ -1011,6 +1093,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 if (!ctx.cesar!.hasNativeTools) {
                   displayChunk = takeXmlSafeDisplayChunk(displayChunk);
                   if (!displayChunk) continue;
+                } else {
+                  // Native path: XML markup suppression doesn't run, so strip the
+                  // live-todos marker here before it reaches the display dispatch.
+                  displayChunk = stripTodosForDisplay(displayChunk);
+                  if (!displayChunk && !insideThinkBlock) continue;
                 }
                 if (insideThinkBlock) {
                   // Dispatch thinking content as it streams
@@ -1093,6 +1180,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (ctx.cesar!.hasNativeTools) {
           response = response.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
         }
+        // Live-todo emission: parse the [TODOS] block out of the response, dispatch
+        // the source:'live' checklist, and keep only the stripped text. Safe no-op
+        // when no block is present or a plan is active (emitLiveTodos guards both).
+        response = emitLiveTodos(response);
 
         // ── Await eager tool results ──
         if (eagerPromises.length > 0 && !ctx.cesar!.hasNativeTools && session.alive && !abort.signal.aborted) {
@@ -1155,7 +1246,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               }
             }
             dispatch({ type: 'spinner-stop' });
-            if (continuation.trim()) response = continuation.trim();
+            if (continuation.trim()) response = emitLiveTodos(continuation.trim());
           }
         }
 
@@ -2072,7 +2163,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               break;
             }
             dispatch({ type: 'spinner-stop' });
-            const cleanCont = contResponse.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+            const cleanCont = emitLiveTodos(contResponse.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim());
             // Engine failed to produce a continuation (overflow / rate limit / dead
             // session). Surface the REAL reason and stop — don't keep nudging into
             // the misleading canned "paused mid-task" closure (the spin bug).
@@ -2292,6 +2383,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             narratedToolStalls: toolTelemetry.narratedToolStalls, autoToolExecutions: toolTelemetry.autoToolExecutions,
             confidenceToolUsed: toolTelemetry.confidenceToolUsed, hasNativeTools: toolTelemetry.hasNativeTools,
             delegated: false,
+            // Live-todo telemetry: emitted? + whether this was a multi-tool turn
+            // (toolCallTurns>1) — the later-gated metric is multi-tool turns that
+            // emitted ZERO todos, derivable from these two fields.
+            liveTodosEmitted: toolTelemetry.liveTodosEmitted,
+            multiToolTurn: toolTelemetry.toolCallTurns > 1,
             confidence: parsedConfidence,
             tokens: tokenUsage ? { prompt: tokenUsage.promptTokens, response: tokenUsage.responseTokens, cost: tokenUsage.costUsd } : undefined,
           }) + '\n');

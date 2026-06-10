@@ -6,7 +6,7 @@ import { Box, Text } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { PromptTextInput } from '../../generated/blocks/prompt-input.js';
 
-import { SlashPicker } from '../../generated/blocks/controls.js';
+import { SlashPicker, AtFilePicker } from '../../generated/blocks/controls.js';
 
 import { icons } from '../signals/icons.js';
 
@@ -15,7 +15,7 @@ import { getGhostCompletion } from '../../ghost-text.js';
 import { truncateCodeLine } from './markdown.js';
 
 // @kern-source: composer:26
-const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, autoModeQueued, activePlanState, slashPickerOpen, inputValue, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, onCtrlShortcut, updateBannerActive, termWidth, termHeight }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; inputValue:string; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; onCtrlShortcut:(shortcut:string) => void; updateBannerActive:boolean; termWidth:number; termHeight:number }) {
+const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, autoModeQueued, activePlanState, slashPickerOpen, atPickerOpen, atPickerFiles, atPickerPrefix, atPickerQuery, onAtSelect, onAtCancel, inputValue, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, onCtrlShortcut, updateBannerActive, termWidth, termHeight }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; atPickerOpen:boolean; atPickerFiles:string[]; atPickerPrefix:string; atPickerQuery:string; onAtSelect:(path:string) => void; onAtCancel:(typed:string) => void; inputValue:string; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; onCtrlShortcut:(shortcut:string) => void; updateBannerActive:boolean; termWidth:number; termHeight:number }) {
   const placeholder = replState === 'idle'
     ? (mode === 'chat'
         ? ''
@@ -84,6 +84,7 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
   return (
     <>
       {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={onSlashSelect} onCancel={onSlashCancel} />}
+      {atPickerOpen && <AtFilePicker files={atPickerFiles} prefix={atPickerPrefix} initialQuery={atPickerQuery} onSelect={onAtSelect} onCancel={onAtCancel} />}
       {!questionState && (
         <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
           {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' \u2502 '}</Text></Text>)}
@@ -91,6 +92,8 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
           <Box flexGrow={1}>
             {slashPickerOpen ? (
               <Text dimColor>{inputValue || '/'}</Text>
+            ) : atPickerOpen ? (
+              <Text dimColor>{atPickerPrefix}{'@'}</Text>
             ) : (
               <PromptTextInput
                 value={inputValue}

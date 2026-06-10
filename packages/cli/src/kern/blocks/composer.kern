@@ -12,7 +12,7 @@
 import from="react" default="React"
 import from="ink" names="Box,Text"
 import from="../../generated/blocks/prompt-input.js" names="PromptTextInput"
-import from="../../generated/blocks/controls.js" names="SlashPicker"
+import from="../../generated/blocks/controls.js" names="SlashPicker,AtFilePicker"
 import from="../signals/icons.js" names="icons"
 import from="../../ghost-text.js" names="getGhostCompletion"
 import from="./markdown.js" names="truncateCodeLine"
@@ -30,6 +30,12 @@ screen name=ComposerView target=ink memo=true
   prop name=autoModeQueued type=boolean
   prop name=activePlanState type="string|null"
   prop name=slashPickerOpen type=boolean
+  prop name=atPickerOpen type=boolean
+  prop name=atPickerFiles type="string[]"
+  prop name=atPickerPrefix type=string
+  prop name=atPickerQuery type=string
+  prop name=onAtSelect type="(path:string) => void"
+  prop name=onAtCancel type="(typed:string) => void"
   prop name=inputValue type=string
   prop name=handleInputChange type="(value:string) => void"
   prop name=handlePasteInput type="(raw:string) => string"
@@ -118,6 +124,7 @@ screen name=ComposerView target=ink memo=true
       return (
         <>
           {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={onSlashSelect} onCancel={onSlashCancel} />}
+          {atPickerOpen && <AtFilePicker files={atPickerFiles} prefix={atPickerPrefix} initialQuery={atPickerQuery} onSelect={onAtSelect} onCancel={onAtCancel} />}
           {!questionState && (
             <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
               {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' \u2502 '}</Text></Text>)}
@@ -125,6 +132,8 @@ screen name=ComposerView target=ink memo=true
               <Box flexGrow={1}>
                 {slashPickerOpen ? (
                   <Text dimColor>{inputValue || '/'}</Text>
+                ) : atPickerOpen ? (
+                  <Text dimColor>{atPickerPrefix}{'@'}</Text>
                 ) : (
                   <PromptTextInput
                     value={inputValue}

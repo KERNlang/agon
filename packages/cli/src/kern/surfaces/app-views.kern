@@ -822,6 +822,12 @@ screen name=BottomChromeSection target=ink memo=true
   prop name=autoModeQueued type="boolean"
   prop name=activePlan type="any"
   prop name=slashPickerOpen type="boolean"
+  prop name=atPickerOpen type="boolean"
+  prop name=atPickerFiles type="string[]"
+  prop name=atPickerPrefix type="string"
+  prop name=atPickerQuery type="string"
+  prop name=onAtSelect type="(path:string) => void"
+  prop name=onAtCancel type="(typed:string) => void"
   prop name=inputValue type="string"
   prop name=handleInputChange type="(value:string) => void"
   prop name=handlePasteInput type="(raw:string) => string"
@@ -881,6 +887,12 @@ screen name=BottomChromeSection target=ink memo=true
               autoModeQueued={autoModeQueued}
               activePlanState={activePlan?.state ?? null}
               slashPickerOpen={slashPickerOpen}
+              atPickerOpen={atPickerOpen}
+              atPickerFiles={atPickerFiles}
+              atPickerPrefix={atPickerPrefix}
+              atPickerQuery={atPickerQuery}
+              onAtSelect={onAtSelect}
+              onAtCancel={onAtCancel}
               inputValue={inputValue}
               handleInputChange={handleInputChange}
               handlePasteInput={handlePasteInput}

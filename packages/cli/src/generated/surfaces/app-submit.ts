@@ -26,11 +26,63 @@ import { summarizeBtwTranscriptEvent } from './app-blocks.js';
 
 import { setWindowTitle } from '../lib/terminal-notify.js';
 
-import { join } from 'node:path';
+import { extractFileMentions } from '../signals/app-input.js';
 
-import { mkdirSync } from 'node:fs';
+import { join, resolve, relative, sep, isAbsolute } from 'node:path';
+
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
 
 // ── Module: AppSubmit ──
+
+export const MENTION_MAX_FILE_BYTES: number = 65536;
+
+export const MENTION_MAX_TOTAL_BYTES: number = 262144;
+
+export const MENTION_MAX_FILES: number = 20;
+
+export function buildMentionedFilesContext(text: string, cwd: string): string {
+  const mentions = extractFileMentions(text).slice(0, MENTION_MAX_FILES);
+  if (mentions.length === 0) return '';
+  const root = resolve(cwd);
+  const blocks: string[] = [];
+  let totalBytes = 0;
+  for (const rel of mentions) {
+    // Reject absolute paths and any path that resolves outside the project
+    // root — only project-relative mentions are attachable.
+    if (isAbsolute(rel)) continue;
+    const abs = resolve(root, rel);
+    const within = abs === root || abs.startsWith(root + sep);
+    if (!within) continue;
+    let content: string;
+    let size: number;
+    try {
+      const st = statSync(abs);
+      if (!st.isFile()) continue;
+      size = st.size;
+      content = readFileSync(abs, 'utf-8');
+    } catch {
+      // Non-existent / unreadable — leave the mention as plain text.
+      continue;
+    }
+    if (totalBytes >= MENTION_MAX_TOTAL_BYTES) break;
+    const remaining = MENTION_MAX_TOTAL_BYTES - totalBytes;
+    const perFileCap = Math.min(MENTION_MAX_FILE_BYTES, remaining);
+    let body = content;
+    let truncated = false;
+    if (body.length > perFileCap) {
+      body = body.slice(0, perFileCap);
+      truncated = true;
+    }
+    totalBytes += body.length;
+    const display = relative(root, abs) || rel;
+    const header = truncated
+      ? `@${display} (truncated to ${body.length} of ${size} bytes)`
+      : `@${display}`;
+    blocks.push(`\`\`\`\n// ${header}\n${body}\n\`\`\``);
+  }
+  if (blocks.length === 0) return '';
+  return `\n\n[Attached files referenced with @ in the message above]\n${blocks.join('\n\n')}`;
+}
 
 export function runProcessInputQueue(replState: ReplStateState, inputQueue: string[], setInputQueue: (updater:(prev:string[]) => string[]) => void, handleSubmit: (value:string) => void): void {
   if (replState === 'idle' && inputQueue.length > 0) {
@@ -343,6 +395,16 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
   opts.dispatch({ type: 'user-message', content: input } as any);
   const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
   const allImages = [...opts.pendingImages, ...detectedImages];
+  // @-file mentions: the transcript (user-message above) keeps the raw "@path"
+  // the user typed (Claude-Code style); the ENGINE prompt gets each resolved
+  // file's content appended as a fenced block so it sees the code without a
+  // manual paste. Slash commands parse their args literally, so they are never
+  // augmented. activeTurnRef below keeps the ORIGINAL input so retry/dedup
+  // matches what the user typed, not the file-expanded prompt.
+  const mentionContext = input.startsWith('/')
+    ? ''
+    : buildMentionedFilesContext(input, resolveWorkingDir());
+  const dispatchInput = mentionContext ? input + mentionContext : input;
   let intent = detectIntent(cleanInput || input, opts.commandRegistry);
   if (intent.type === 'status') {
     opts.setStatusDashboardOpen(true);
@@ -381,13 +443,13 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
   }
   if (intent.type === 'unknown' && opts.mode !== 'chat') {
     switch (opts.mode) {
-      case 'campfire': intent = { type: 'campfire', topic: input } as any; break;
-      case 'brainstorm': intent = { type: 'brainstorm', question: input } as any; break;
-      case 'tribunal': intent = { type: 'tribunal', question: input } as any; break;
+      case 'campfire': intent = { type: 'campfire', topic: dispatchInput } as any; break;
+      case 'brainstorm': intent = { type: 'brainstorm', question: dispatchInput } as any; break;
+      case 'tribunal': intent = { type: 'tribunal', question: dispatchInput } as any; break;
     }
   }
   try {
-    const result = await dispatchIntent(intent, input, cb);
+    const result = await dispatchIntent(intent, dispatchInput, cb);
     if (result.ranAsJob) return;
   } catch (err: any) { opts.dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
   finally {

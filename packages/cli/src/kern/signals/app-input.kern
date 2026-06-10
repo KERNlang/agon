@@ -3,6 +3,7 @@
 
 import from="./ghost-text.js" names="getGhostCompletion"
 import from="../../input-utils.js" names="stripBracketedPasteMarkers"
+import from="@kernlang/agon-core" names="collectSourceFiles"
 
 fn name=cleanInputValue params="value:string" returns=string expr={{ return stripBracketedPasteMarkers(value); }}
   doc "Strip bracketed paste escapes from input while preserving pasted content."
@@ -132,3 +133,125 @@ fn name=shouldQueuePlanModeOnTab params="opts:{replState:string,inputValue:strin
     if cond="opts.activePlanState && ['planning', 'awaiting_approval', 'running', 'paused'].includes(opts.activePlanState)"
       return value="false"
     return value="true"
+
+// ── @-file mentions ─────────────────────────────────────────────────
+// Claude-Code-style "@" in the composer opens a fuzzy file picker; on submit,
+// each @path that resolves to a real file is read into the turn context so the
+// engine sees its content without the user pasting it. The picker reuses the
+// codebase map's file walk (collectSourceFiles) as the file source.
+//
+// Mention syntax rule (email-safe): a mention is "@" at the START of the input
+// or immediately after WHITESPACE, followed by one or more non-whitespace path
+// chars. So "@src/foo.ts", "@README.md", "@Makefile" are mentions; "user@host"
+// and "dev@company.com" are NOT (the "@" is preceded by a word char). The path
+// itself stops at the first whitespace, but a trailing "@" boundary punctuation
+// (comma / period / semicolon / closing bracket) is trimmed so "see @a.ts." or
+// "@a.ts," mention "a.ts", not "a.ts." / "a.ts,".
+
+// Path chars that may end a mention as sentence/clause punctuation and should be
+// stripped from the captured path (not part of the filename in normal prose).
+const name=MENTION_TRAILING_PUNCT type="string" value="',.;:!?)]}>\\'\"'"
+
+fn name=stripMentionTrailingPunct params="path:string" returns=string export=true
+  doc "Trim sentence/clause punctuation from the end of a captured @-mention path so trailing prose punctuation isn't read as part of the filename."
+  handler <<<
+    let end = path.length;
+    while (end > 0 && MENTION_TRAILING_PUNCT.includes(path[end - 1])) end--;
+    return path.slice(0, end);
+  >>>
+
+fn name=extractFileMentions params="text:string" returns="string[]" export=true
+  doc "Extract @-mentioned relative paths from submitted composer text. A mention is '@<path>' where '@' is at string start or follows whitespace (so user@host emails are NOT matched). Trailing prose punctuation is trimmed. Returns de-duplicated paths in first-seen order; never includes the leading '@'."
+  handler <<<
+    const out: string[] = [];
+    const seen = new Set<string>();
+    // (^|\s)@ ensures the @ is a fresh token, not the @ inside an email.
+    const re = /(^|\s)@([^\s]+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const raw = stripMentionTrailingPunct(m[2]);
+      if (!raw) continue;
+      // Reject mentions that smell like an email local-part artifact (a bare "@"
+      // already excluded above) or that contain another "@" — paths don't.
+      if (raw.includes('@')) continue;
+      if (seen.has(raw)) continue;
+      seen.add(raw);
+      out.push(raw);
+    }
+    return out;
+  >>>
+
+fn name=parseActiveAtMention params="value:string" returns="{ query: string } | null" export=true
+  doc "Given the current composer value, return the active trailing @-mention fragment the picker should filter on, or null if the caret (assumed end-of-input) is not inside a mention. Active means: the last '@' in the value is a valid mention boundary (start or after whitespace) AND no whitespace follows it. The query is the text typed after that '@' (may be empty right after typing '@')."
+  handler <<<
+    const at = value.lastIndexOf('@');
+    if (at < 0) return null;
+    // Boundary check: '@' must start the value or follow whitespace.
+    if (at > 0 && !/\s/.test(value[at - 1])) return null;
+    const after = value.slice(at + 1);
+    // A space after the '@' means the mention is finished — picker closes.
+    if (/\s/.test(after)) return null;
+    return { query: after };
+  >>>
+
+fn name=fuzzyFileScore params="query:string, candidate:string" returns="number" export=true
+  doc "Subsequence fuzzy score of query against a candidate path (case-insensitive). Returns -1 when query is not a subsequence. Higher is better: contiguous runs, basename hits, and matches near a path segment boundary score higher; earlier matches score higher. Empty query scores all candidates 0 (caller keeps source order)."
+  handler <<<
+    if (!query) return 0;
+    const q = query.toLowerCase();
+    const c = candidate.toLowerCase();
+    // Fast path: contiguous substring — strongly preferred, basename hit best.
+    const subIdx = c.indexOf(q);
+    let score = 0;
+    let qi = 0;
+    let prevMatch = -2;
+    let lastSep = -1;
+    for (let ci = 0; ci < c.length && qi < q.length; ci++) {
+      const ch = c[ci];
+      if (ch === '/' ) lastSep = ci;
+      if (ch === q[qi]) {
+        // Contiguous run bonus.
+        if (ci === prevMatch + 1) score += 5; else score += 1;
+        // Segment-boundary bonus: matching the first char of a path segment.
+        if (ci === 0 || ci === lastSep + 1) score += 3;
+        // Earlier matches preferred.
+        score += Math.max(0, 4 - Math.floor(ci / 8));
+        prevMatch = ci;
+        qi++;
+      }
+    }
+    if (qi < q.length) return -1;
+    if (subIdx >= 0) score += 8;
+    // Basename hit: the contiguous substring sits in the final path segment.
+    const slash = c.lastIndexOf('/');
+    if (subIdx > slash) score += 6;
+    return score;
+  >>>
+
+fn name=rankFileMatches params="query:string, files:string[], limit?:number" returns="string[]" export=true
+  doc "Rank project file paths against a fuzzy query (subsequence). Non-matches are dropped; ties break on shorter path then lexicographic. Empty query returns the first `limit` files in source order. Capped at `limit` (default 50)."
+  handler <<<
+    const cap = Math.max(1, Math.floor(limit ?? 50));
+    if (!query.trim()) return files.slice(0, cap);
+    const scored: { path: string; score: number }[] = [];
+    for (const f of files) {
+      const s = fuzzyFileScore(query, f);
+      if (s >= 0) scored.push({ path: f, score: s });
+    }
+    scored.sort((a, b) =>
+      b.score - a.score ||
+      a.path.length - b.path.length ||
+      (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
+    );
+    return scored.slice(0, cap).map((e) => e.path);
+  >>>
+
+fn name=safeCollectSourceFiles params="cwd:string" returns="string[]" export=true
+  doc "collectSourceFiles wrapped so a bad cwd / fs error never throws into the keystroke path — returns [] instead. Used to lazily populate the @-file picker on first '@'."
+  handler <<<
+    try {
+      return collectSourceFiles(cwd);
+    } catch {
+      return [];
+    }
+  >>>

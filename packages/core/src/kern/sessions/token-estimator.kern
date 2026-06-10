@@ -1,0 +1,130 @@
+import from="../models/types.js" names="SessionBudget" types=true
+
+comment raw="// Default chars-per-token divisor. Code/JSON-heavy agent history tokenizes"
+comment raw="// denser than prose (~3.3-3.9 chars/token), so a conservative-LOW divisor"
+comment raw="// slightly OVER-counts — the safe side, fires compaction a touch early"
+comment raw="// rather than overflowing the window. Mirrors the API-path estimator in"
+comment raw="// session-resume.kern."
+const name=DEFAULT_CHARS_PER_TOKEN type=number value={{ 3.9 }}
+
+comment raw="// Reserve headroom (output + tool-call overhead) subtracted from the raw"
+comment raw="// context window before thresholds apply. Floor so a tiny window can't lose"
+comment raw="// its entire budget to reserve."
+const name=MIN_RESERVE_TOKENS type=number value={{ 8000 }}
+const name=RESERVE_WINDOW_FRACTION type=number value={{ 0.15 }}
+
+interface name=EstimatorMessage
+  field name=role type=string optional=true
+  field name=content type="any" optional=true
+  field name=tool_calls type="any[]" optional=true
+
+interface name=PtyAccumulation
+  doc "What the ORCHESTRATOR knows it sent to a PTY/CLI brain that does NOT expose a structured message history. We estimate from the inputs we control — system prompt + every user turn + tool results + continuity/memory snapshots — NOT the TUI scrape (which is output-biased and unreliable). Each field is the raw character length of that category for the session so far."
+  field name=systemPromptChars type=number optional=true
+  field name=userTurnsChars type=number optional=true
+  field name=toolResultsChars type=number optional=true
+  field name=continuityChars type=number optional=true
+  field name=pendingInputChars type=number optional=true
+    doc "The about-to-be-sent turn's input length, included so the gate accounts for the turn it is gating."
+
+fn name=resolveCharsPerToken params="budget?:SessionBudget|null" returns=number export=true
+  doc "The configured chars-per-token divisor, falling back to the conservative default. Guards against zero/negative/NaN config (which would make estimates explode or go negative)."
+  handler <<<
+    const v = budget?.charsPerToken;
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v;
+    return DEFAULT_CHARS_PER_TOKEN;
+  >>>
+
+fn name=effectiveWindow params="budget:SessionBudget" returns=number export=true
+  doc "Usable token budget = contextWindow minus reserve. reserve = explicit reserveTokens, else max(15% of window, 8k). Never returns below 1 (a degenerate tiny window still yields a positive denominator for the ratio)."
+  handler <<<
+    const window = Number(budget.contextWindow);
+    if (!Number.isFinite(window) || window <= 0) return 1;
+    const reserve = (typeof budget.reserveTokens === 'number' && Number.isFinite(budget.reserveTokens) && budget.reserveTokens >= 0)
+      ? budget.reserveTokens
+      : Math.max(MIN_RESERVE_TOKENS, Math.round(window * RESERVE_WINDOW_FRACTION));
+    const usable = Math.floor(window - reserve);
+    return usable > 0 ? usable : 1;
+  >>>
+
+fn name=estimateMessageTokens params="msg:EstimatorMessage, charsPerToken:number" returns=number export=true
+  doc "Tokens for a single structured message. String content → chars/divisor. Tool-call-only assistant messages → sum of stringified args + a fixed 100-token envelope (matches the API-path heuristic). Anything else → a small constant floor."
+  handler <<<
+    const cpt = charsPerToken > 0 ? charsPerToken : DEFAULT_CHARS_PER_TOKEN;
+    const content = msg?.content;
+    if (typeof content === 'string') return Math.ceil(content.length / cpt);
+    if ((content === null || content === undefined) && Array.isArray(msg?.tool_calls)) {
+      return msg.tool_calls.reduce((s: number, tc: any) => {
+        const args = tc?.function?.arguments ?? tc?.arguments ?? '';
+        const argStr = typeof args === 'string' ? args : JSON.stringify(args ?? '');
+        return s + Math.ceil(argStr.length / cpt);
+      }, 100);
+    }
+    if (content && typeof content === 'object') {
+      try { return Math.ceil(JSON.stringify(content).length / cpt); } catch { return 50; }
+    }
+    return 50;
+  >>>
+
+fn name=estimateMessageHistoryTokens params="messages:EstimatorMessage[], budget?:SessionBudget|null" returns=number export=true
+  doc "Sum the token estimate across a structured message history (API engines). Pure — no caching/mutation of the input messages."
+  handler <<<
+    if (!Array.isArray(messages) || messages.length === 0) return 0;
+    const cpt = resolveCharsPerToken(budget);
+    let total = 0;
+    for (const m of messages) total += estimateMessageTokens(m, cpt);
+    return total;
+  >>>
+
+fn name=estimatePtyTokens params="acc:PtyAccumulation, budget?:SessionBudget|null" returns=number export=true
+  doc "Estimate tokens for a PTY/CLI brain from the orchestrator-known accumulations (system prompt + user turns + tool results + continuity snapshots + the pending turn). Output-side TUI text is deliberately NOT counted — it's an unreliable, output-biased scrape."
+  handler <<<
+    const cpt = resolveCharsPerToken(budget);
+    const chars =
+      Math.max(0, acc?.systemPromptChars ?? 0) +
+      Math.max(0, acc?.userTurnsChars ?? 0) +
+      Math.max(0, acc?.toolResultsChars ?? 0) +
+      Math.max(0, acc?.continuityChars ?? 0) +
+      Math.max(0, acc?.pendingInputChars ?? 0);
+    return Math.ceil(chars / cpt);
+  >>>
+
+interface name=SessionTokenInputs
+  doc "Either a structured message history (API engines) OR a PTY accumulation (CLI/PTY brain). When both are present, messageHistory wins (it's the more accurate, structured source)."
+  field name=messageHistory type="EstimatorMessage[]" optional=true
+  field name=pty type=PtyAccumulation optional=true
+
+fn name=estimateFlatHistoryTokens params="messages:EstimatorMessage[], budget?:SessionBudget|null" returns=number export=true
+  doc "Flat 'chars-per-token' estimate over a message history: sum every message's stringified content length / divisor, ignoring per-message tool-call envelopes. Cheaper and slightly lower than the structured estimate; selected by budget.estimator === 'chars-per-token'."
+  handler <<<
+    if (!Array.isArray(messages) || messages.length === 0) return 0;
+    const cpt = resolveCharsPerToken(budget);
+    let chars = 0;
+    for (const m of messages) {
+      const c = m?.content;
+      if (typeof c === 'string') chars += c.length;
+      else if (c && typeof c === 'object') { try { chars += JSON.stringify(c).length; } catch { chars += 200; } }
+      if (Array.isArray((m as any)?.tool_calls)) {
+        for (const tc of (m as any).tool_calls) {
+          const args = tc?.function?.arguments ?? tc?.arguments ?? '';
+          chars += (typeof args === 'string' ? args : JSON.stringify(args ?? '')).length;
+        }
+      }
+    }
+    return Math.ceil(chars / cpt);
+  >>>
+
+fn name=estimateSessionTokens params="inputs:SessionTokenInputs, budget?:SessionBudget|null" returns=number export=true
+  doc "Single entry point. API engines pass {messageHistory}; the PTY brain passes {pty}. Returns an estimated token count for the session as-it-will-be-sent. Source: messageHistory wins when present. METHOD over a history is selected by budget.estimator: 'chars-per-token' = flat char sum; 'message-history' (default) = structured per-message counting with tool-call envelopes. The PTY accumulation always uses the char-sum (no structured history). budget supplies charsPerToken. Thresholds are applied separately by checkSessionBudget."
+  handler <<<
+    if (Array.isArray(inputs?.messageHistory) && inputs.messageHistory.length > 0) {
+      if (budget?.estimator === 'chars-per-token') {
+        return estimateFlatHistoryTokens(inputs.messageHistory, budget);
+      }
+      return estimateMessageHistoryTokens(inputs.messageHistory, budget);
+    }
+    if (inputs?.pty) {
+      return estimatePtyTokens(inputs.pty, budget);
+    }
+    return 0;
+  >>>

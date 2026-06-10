@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildConsensus, inferConfidence, normSeverity, clusterKey, clampConfidence,
+  engineBadges, formatConsensusRow,
 } from '../../packages/cli/src/generated/blocks/consensus.js';
 import type { RawFinding, EngineOutcome } from '../../packages/cli/src/generated/blocks/consensus.js';
 
@@ -227,5 +228,143 @@ describe('buildConsensus — dedup & ordering', () => {
   it('honors custom thresholds', () => {
     const r = buildConsensus([ok('claude', [f({ confidence: 0.8 })])], 0.75, 0.6);
     expect(r.autoBlock).toBe(true); // 0.8 >= custom 0.75
+  });
+});
+
+describe('buildConsensus — per-engine severity reconciliation', () => {
+  it('reconciledSeverity is the MAX over per-engine stances (blocking wins over important)', () => {
+    const r = buildConsensus([
+      ok('claude', [f({ severity: 'important', confidence: 0.72 })]),
+      ok('codex', [f({ engine: 'codex', severity: 'blocking', confidence: 0.75 })]),
+    ]);
+    const cluster = r.findings[0];
+    expect(cluster.reconciledSeverity).toBe('blocking');
+    expect(cluster.severity).toBe('blocking'); // legacy field stays in lockstep
+  });
+
+  it('carries each contributing engine\'s reported severity in perEngineSeverity', () => {
+    const r = buildConsensus([
+      ok('claude', [f({ severity: 'important', confidence: 0.72 })]),
+      ok('codex', [f({ engine: 'codex', severity: 'blocking', confidence: 0.75 })]),
+    ]);
+    const byEngine = Object.fromEntries(r.findings[0].perEngineSeverity.map((s) => [s.engine, s.stance]));
+    expect(byEngine).toEqual({ claude: 'important', codex: 'blocking' });
+  });
+
+  it('keeps an engine\'s WORST stance when it reports the same cluster twice', () => {
+    const r = buildConsensus([
+      ok('claude', [f({ severity: 'nit', confidence: 0.3 }), f({ severity: 'blocking', confidence: 0.9 })]),
+    ]);
+    const claude = r.findings[0].perEngineSeverity.find((s) => s.engine === 'claude');
+    expect(claude?.stance).toBe('blocking');
+  });
+});
+
+describe('buildConsensus — dispute detection', () => {
+  it('marks a cluster DISPUTED when engines materially disagree (blocking vs nit on the SAME finding)', () => {
+    const r = buildConsensus([
+      ok('claude', [f({ severity: 'blocking', confidence: 0.9 })]),
+      ok('codex', [f({ engine: 'codex', severity: 'nit', confidence: 0.4 })]),
+    ]);
+    const cluster = r.findings[0];
+    expect(cluster.consensusLevel).toBe('disputed');
+    expect(cluster.conflictDetails.map((c) => `${c.engine}:${c.stance}`).sort())
+      .toEqual(['claude:blocking', 'codex:nit']);
+  });
+
+  it('does NOT dispute when severities are uniform (agreed)', () => {
+    const r = buildConsensus([
+      ok('claude', [f({ severity: 'blocking', confidence: 0.72 })]),
+      ok('codex', [f({ engine: 'codex', severity: 'blocking', confidence: 0.75 })]),
+    ]);
+    const cluster = r.findings[0];
+    expect(cluster.consensusLevel).toBe('agreed');
+    expect(cluster.conflictDetails).toEqual([]);
+  });
+
+  it('does NOT dispute a one-rank spread (blocking vs important is normal wobble)', () => {
+    const r = buildConsensus([
+      ok('claude', [f({ severity: 'blocking', confidence: 0.72 })]),
+      ok('codex', [f({ engine: 'codex', severity: 'important', confidence: 0.75 })]),
+    ]);
+    expect(r.findings[0].consensusLevel).toBe('agreed');
+  });
+
+  it('never disputes a lone-engine cluster (silence is not a stance)', () => {
+    const r = buildConsensus([ok('claude', [f({ severity: 'blocking', confidence: 0.9 })])]);
+    expect(r.findings[0].consensusLevel).toBe('agreed');
+    expect(r.findings[0].conflictDetails).toEqual([]);
+  });
+});
+
+describe('engineBadges', () => {
+  it('renders short-form badges from contributing engines', () => {
+    expect(engineBadges(['codex', 'kimi-for-coding-k2p6'])).toBe('[codex][kimi]');
+    expect(engineBadges(['minimax-coding-plan-minimax-m3'])).toBe('[minimax]');
+  });
+  it('returns empty string for an empty list (caller falls back to ×N)', () => {
+    expect(engineBadges([])).toBe('');
+  });
+});
+
+describe('formatConsensusRow', () => {
+  it('renders compact engine badges and the reconciled severity instead of ×N', () => {
+    const r = buildConsensus([
+      ok('claude', [f({ severity: 'important', confidence: 0.72 })]),
+      ok('codex', [f({ engine: 'codex', severity: 'blocking', confidence: 0.75 })]),
+    ]);
+    const out = formatConsensusRow(r.findings[0]);
+    expect(out[0]).toContain('[claude]');
+    expect(out[0]).toContain('[codex]');
+    // reconciled severity is 'blocking'; confidence is the cluster max (0.75 here,
+    // but assert on shape not the exact value so the test survives data reshuffling).
+    expect(out[0]).toMatch(/\[blocking 0\.\d{2} \[claude\]\[codex\]/);
+    expect(out[0]).not.toContain('×');
+  });
+
+  it('renders each disputing engine\'s own wording on the stance line when it differs', () => {
+    // Same file+line + same first-8 problem words → one cluster; the engines'
+    // FULL wordings differ past word 8, so each stance line shows its own detail.
+    // clusterKey uses the first 8 normalized problem words, so keep those eight
+    // identical and let the wording DIVERGE only from word 9 onward — the two
+    // findings then merge into one cluster but carry distinct per-engine detail.
+    const prefix = 'null deref on user object in handler before guard'; // 8 words
+    const r = buildConsensus([
+      ok('claude', [f({ severity: 'blocking', confidence: 0.9, problem: `${prefix} causes a real crash` })]),
+      ok('codex', [f({ engine: 'codex', severity: 'nit', confidence: 0.4, problem: `${prefix} but it is dead code` })]),
+    ]);
+    const cluster = r.findings[0];
+    expect(cluster.consensusLevel).toBe('disputed');
+    const stances = formatConsensusRow(cluster).slice(1).join('\n');
+    expect(stances).toMatch(/↳ codex: nit — .*dead code/); // codex's differing wording is shown
+  });
+
+  it('honors a custom indent for the row and stance lines', () => {
+    const r = buildConsensus([
+      ok('claude', [f({ severity: 'blocking', confidence: 0.9 })]),
+      ok('codex', [f({ engine: 'codex', severity: 'nit', confidence: 0.4 })]),
+    ]);
+    const out = formatConsensusRow(r.findings[0], '    '); // 4-space pad
+    expect(out[0].startsWith('    • ')).toBe(true);
+    expect(out[1].startsWith('        ↳ ')).toBe(true); // pad + 4 extra
+  });
+
+  it('prefixes disputed rows with ⚠ DISPUTED and lists per-engine stances underneath', () => {
+    const r = buildConsensus([
+      ok('claude', [f({ severity: 'blocking', confidence: 0.9 })]),
+      ok('codex', [f({ engine: 'codex', severity: 'nit', confidence: 0.4 })]),
+    ]);
+    const out = formatConsensusRow(r.findings[0]);
+    expect(out[0]).toContain('⚠ DISPUTED');
+    const stanceLines = out.slice(1).join('\n');
+    expect(stanceLines).toContain('↳ claude: blocking');
+    expect(stanceLines).toContain('↳ codex: nit');
+  });
+
+  it('agreed rows have no DISPUTED prefix and no stance lines', () => {
+    const r = buildConsensus([ok('claude', [f({ severity: 'blocking', confidence: 0.9 })])]);
+    const out = formatConsensusRow(r.findings[0]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).not.toContain('DISPUTED');
   });
 });

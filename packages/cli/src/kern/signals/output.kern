@@ -35,6 +35,8 @@ interface name=StreamingEntry
   field name=engineId type=string
   field name=content type=string
   field name=startedAt type=number
+  doc "True when this entry holds ONLY a SPECULATIVE preview draft (from a PTY 'preview' chunk), never authoritative engine text. A draft-only entry is NEVER committed to the transcript at streaming-end (it is dropped), and the first authoritative streaming-chunk REPLACES the draft content rather than appending to it. This is the contamination firewall: a speculative preview can update the live pane but can never become — or prefix — the committed answer."
+  field name=draft type=boolean optional=true
 
 interface name=OutputState
   field name=liveSpinner type="{message:string,color?:number,engineId?:string}|null"
@@ -257,7 +259,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       'spinner-start', 'spinner-stop', 'spinner-update',
       'progress-update', 'progress-clear',
       'confidence-update', 'context-usage',
-      'streaming-chunk', 'streaming-start',
+      'streaming-chunk', 'streaming-start', 'streaming-preview',
       'thinking-chunk', 'thinking-start', 'thinking-stop',
       'tool-stream-start', 'tool-stream-chunk', 'tool-stream-end',
     ]);
@@ -303,6 +305,31 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         }
         return;
       }
+      case 'streaming-preview': {
+        // SPECULATIVE live draft (PTY 'preview' chunk). REPLACE the engine's
+        // live-pane content with the sanitized draft and mark it draft=true so it
+        // can never be committed. content is the full draft-so-far, so replace —
+        // never append (the source already accumulates + growth-gates frames).
+        const eid = event.engineId;
+        const draftText = (event as any).content as string;
+        actions.setStreamingText((prev) => {
+          const existing = prev[eid];
+          // If authoritative text is already streaming (entry exists and is NOT a
+          // draft), the answer has begun — ignore any late preview so it can never
+          // overwrite real output. Previews only ever precede the authoritative text.
+          if (existing && !existing.draft) return prev;
+          return {
+            ...prev,
+            [eid]: {
+              engineId: eid,
+              content: draftText,
+              startedAt: existing ? existing.startedAt : Date.now(),
+              draft: true,
+            },
+          };
+        });
+        return;
+      }
       case 'streaming-chunk': {
         // Functional setter form: read-modify-write happens atomically inside the
         // action setter, so concurrent dispatches from N engines don't clobber each
@@ -311,11 +338,16 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         const chunk = event.chunk;
         actions.setStreamingText((prev) => {
           const existing = prev[eid];
+          // Contamination firewall: a streaming-chunk is AUTHORITATIVE engine text.
+          // If the existing entry is a speculative preview draft, DROP the draft and
+          // start fresh from this chunk — the authoritative answer never inherits or
+          // prefixes the preview. Real text always wins and clears draft=true.
+          const base = existing && !existing.draft ? existing.content : '';
           return {
             ...prev,
             [eid]: {
               engineId: eid,
-              content: existing ? existing.content + chunk : chunk,
+              content: base + chunk,
               startedAt: existing ? existing.startedAt : Date.now(),
             },
           };
@@ -326,6 +358,17 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         const eid = event.engineId;
         const st = state.streamingText[eid];
         if (st) {
+          // Contamination firewall: a still-draft entry holds ONLY a speculative
+          // preview (no authoritative streaming-chunk ever landed). Drop it from the
+          // live pane WITHOUT committing — a preview must never reach the transcript.
+          if (st.draft) {
+            actions.setStreamingText((prev) => {
+              const next: Record<string, StreamingEntry> = { ...prev };
+              delete next[eid];
+              return next;
+            });
+            return;
+          }
           const color = actions.getEngineColor(st.engineId);
           const cleaned = cleanEngineOutput(st.content);
           // Remove only this engine's entry; other engines' in-flight streams stay.

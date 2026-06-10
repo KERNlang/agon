@@ -20,6 +20,7 @@ export type OutputEvent =
   | { type: 'text'; content: string }
   | { type: 'engine-block'; engineId: string; color: number; content: string; actingNote?: string; foldedSteps?: number }
   | { type: 'streaming-chunk'; engineId: string; chunk: string }
+  | { type: 'streaming-preview'; engineId: string; content: string }
   | { type: 'thinking-chunk'; engineId: string; chunk: string }
   | { type: 'streaming-end'; engineId: string }
   | { type: 'spinner-start'; message: string; color?: number }
@@ -73,7 +74,7 @@ export type OutputEvent =
   | { type: 'agent-routing'; mode: 'solo'|'team'; engines: string[]; reason: string }
   | { type: 'agent-team-complete'; teamId: string; winner: string|null; synthesizedPatch?: string|null; synthesizedAnalysis?: string|null; memberOutcomes: Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>; teamCostUsd: number; teamDurationMs: number; synthesisRan?: boolean; synthesisChanged?: boolean; synthesisCostUsd?: number; synthesisFitnessRegressed?: boolean };
 
-// @kern-source: handler-types:239
+// @kern-source: handler-types:243
 export interface PendingDelegation {
   action: string;
   task?: string;
@@ -111,10 +112,10 @@ export interface PendingDelegation {
   createdAt: number;
 }
 
-// @kern-source: handler-types:275
+// @kern-source: handler-types:279
 export type CesarLiveMode = 'self' | 'self-nero' | 'delegate' | 'forge' | 'forge-slice' | 'team-forge' | 'brainstorm' | 'team-brainstorm' | 'campfire' | 'tribunal' | 'team-tribunal' | 'pipeline' | 'goal' | 'conquer' | 'review' | 'agent' | 'team-agent' | 'plan';
 
-// @kern-source: handler-types:277
+// @kern-source: handler-types:281
 export interface CesarTurnOutcome {
   mode?: CesarLiveMode;
   delegated: boolean;
@@ -144,7 +145,7 @@ export interface CesarTurnOutcome {
   awaitingUserInput?: boolean;
 }
 
-// @kern-source: handler-types:305
+// @kern-source: handler-types:309
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -161,6 +162,7 @@ export interface CesarState {
   confidenceBlockCount?: number;
   searchToolCount?: number;
   searchNudged?: boolean;
+  budgetWarned?: boolean;
   quickNeroRequested?: boolean;
   autoNero: boolean;
   advisorPending: boolean;
@@ -174,7 +176,7 @@ export interface CesarState {
   autoModeQueued?: boolean;
 }
 
-// @kern-source: handler-types:333
+// @kern-source: handler-types:338
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

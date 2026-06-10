@@ -5,9 +5,93 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import type { PersistentSessionConfig, PersistentSession, SessionChunk, SessionSendOptions } from './persistent-session.js';
 
 /**
- * Persistent interactive Claude brain over the kern-engines PTY subscription daemon (@kernlang/agon-engines), NOT `claude --print`. Honors the hard rule that the claude brain bills via the subscription TUI. Cesar orchestration is preserved by injecting the agon-orchestration MCP server (config.mcpServers → --mcp-config + --strict-mcp-config) with native writes disabled (--disallowedTools) and only Read/Grep/Glob + mcp__agon-orchestration allowed. The engine's FINAL answer is read from the DeliverAnswer answer-channel file (config.answerChannelPath) — authoritative and reliable — instead of scraping the TUI text (which is flaky for short tool-answers: the ⏺ marker collides with spinner glyphs and short answers fuse with status chrome on one row). The scraped extract is kept only as a fallback when the engine didn't call DeliverAnswer.
+ * A scraped TUI extract with fewer than this many visible (trimmed) chars is treated as non-substantive (empty / chrome-like noise / a fused status row) and triggers the DeliverAnswer retry-nudge. Conservative on purpose: a real one-word answer is delivered over the answer-channel, so a short SCRAPE is the unreliable case we want to re-ask, not suppress.
  */
 // @kern-source: session-pty:4
+export const SUBSTANTIVE_SCRAPE_MIN_CHARS: number = 20;
+
+/**
+ * Bounded wait for the answer-channel file (or settle) after sending the one-and-only DeliverAnswer retry-nudge. Kept short — the engine only has to re-emit an answer it already computed via the tool.
+ */
+// @kern-source: session-pty:7
+export const NUDGE_TIMEOUT_MS: number = 8000;
+
+/**
+ * Hard ceiling passed to askStream for the nudge PTY turn itself (NOT the 15-min TURN_TIMEOUT_MS). The caller only awaits NUDGE_TIMEOUT_MS, but pendingDrain holds the nudge driver until it resolves — so this bound is what keeps the NEXT send() from ever blocking on a zombie nudge turn.
+ */
+// @kern-source: session-pty:10
+export const NUDGE_TURN_TIMEOUT_MS: number = 20000;
+
+/**
+ * Explicit tier-5 fallback returned as the turn text when, even after the retry-nudge, no answer-channel file landed and neither scrape was substantive. Replaces the old flaky-raw-text path: the turn is marked incomplete rather than silently returning chrome/garbage.
+ */
+// @kern-source: session-pty:13
+export const TURN_INCOMPLETE_MARKER: string = "[turn incomplete — the engine did not deliver an answer]";
+
+/**
+ * A speculative live preview frame must have at least this many visible (trimmed) chars to be emitted — same conservative floor as SUBSTANTIVE_SCRAPE_MIN_CHARS. Below it, a frame is treated as chrome/noise and suppressed: the preview is purely cosmetic and must never flicker garbage at the user.
+ */
+// @kern-source: session-pty:16
+export const PREVIEW_MIN_CHARS: number = 20;
+
+/**
+ * Minimum interval between emitted preview chunks. The PTY daemon redraws the TUI many times per second; the preview is best-effort, so we coalesce to at most one growth-gated frame per ~500ms to keep the live pane calm and cheap.
+ */
+// @kern-source: session-pty:19
+export const PREVIEW_THROTTLE_MS: number = 500;
+
+/**
+ * Hard cap on the in-memory preview accumulation buffer. The daemon emits thousands of TUI redraws over a long turn; the preview only needs the recent tail (the live pane tails it anyway), so the buffer is sliced to its last PREVIEW_ACCUM_CAP chars. Prevents unbounded memory growth on a long PTY turn. Generous enough that the growth-gate plateau it eventually causes is rare in practice.
+ */
+// @kern-source: session-pty:22
+export const PREVIEW_ACCUM_CAP: number = 8000;
+
+/**
+ * A frame matching this pattern is TUI chrome — spinner glyphs (⏺ ⠋ ⠹), status dots/ellipsis (· …), box-drawing rails (│ ┌ ─ └), block/shade glyphs, the 'Osmosing…' / 'Esc to interrupt' / token-counter status rows. Such a frame is never emitted as preview prose. Conservative on purpose: a false-suppress just drops a cosmetic draft, while a false-emit would flicker garbage.
+ */
+// @kern-source: session-pty:25
+export const PREVIEW_CHROME_RE: RegExp = /[⏺·…•│┌─└█░▒▓⠋⠹]|Osmosing|Esc to interrupt|tokens|^\s*[✓✗●○]\s*$/i;
+
+/**
+ * Pure, testable gate for a single SPECULATIVE preview frame. Returns the sanitized frame text to emit, or null to suppress. Suppresses when: empty/missing; fewer than PREVIEW_MIN_CHARS visible chars after trim; the frame looks like TUI chrome (PREVIEW_CHROME_RE); or it did NOT grow past the previously-emitted preview (growth-gated — `prev` is the last emitted preview text, so a redraw of the same content is dropped). No side effects, no I/O. The preview is best-effort and must NEVER contaminate the authoritative answer, so every ambiguous case suppresses.
+ */
+// @kern-source: session-pty:28
+export function sanitizePreviewFrame(text: string|null|undefined, prev: string): string|null {
+  if (text == null) {
+    return null;
+  }
+  const trimmed = String(text).trim();
+  if (trimmed.length < PREVIEW_MIN_CHARS) {
+    return null;
+  }
+  if (PREVIEW_CHROME_RE.test(trimmed)) {
+    return null;
+  }
+  // Growth gate: only emit when this frame is strictly longer than the last
+  // emitted preview (the PTY stream accumulates, so a real new draft grows).
+  // A redraw at the same/shorter length is a repaint — drop it.
+  if (trimmed.length <= prev.trim().length) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
+ * Pure, testable heuristic: is a scraped TUI extract a real answer (true) vs empty / chrome-like noise (false)? Conservative — requires SUBSTANTIVE_SCRAPE_MIN_CHARS visible chars after trim. No side effects.
+ */
+// @kern-source: session-pty:45
+export function isSubstantiveScrape(text: string|null|undefined): boolean {
+  if (text == null) {
+    return false;
+  }
+  const trimmed = String(text).trim();
+  return trimmed.length >= SUBSTANTIVE_SCRAPE_MIN_CHARS;
+}
+
+/**
+ * Persistent interactive Claude brain over the kern-engines PTY subscription daemon (@kernlang/agon-engines), NOT `claude --print`. Honors the hard rule that the claude brain bills via the subscription TUI. Cesar orchestration is preserved by injecting the agon-orchestration MCP server (config.mcpServers → --mcp-config + --strict-mcp-config) with native writes disabled (--disallowedTools) and only Read/Grep/Glob + mcp__agon-orchestration allowed. The engine's FINAL answer is read from the DeliverAnswer answer-channel file (config.answerChannelPath) — authoritative and reliable — instead of scraping the TUI text (which is flaky for short tool-answers: the ⏺ marker collides with spinner glyphs and short answers fuse with status chrome on one row). The scraped extract is kept only as a fallback when the engine didn't call DeliverAnswer.
+ */
+// @kern-source: session-pty:53
 export function createPtySession(config: PersistentSessionConfig): PersistentSession {
   let claudeSession: any = null;
   let alive = false;
@@ -64,6 +148,24 @@ export function createPtySession(config: PersistentSessionConfig): PersistentSes
     const p = config.answerChannelPath;
     if (!p) return;
     try { rmSync(p, { force: true }); } catch { /* best-effort */ }
+  }
+  // Diagnostic: nudge fired / outcome, gated on AGON_DEBUG so the normal
+  // (engine called DeliverAnswer) path stays silent. Mirrors the gated
+  // console.error diagnostic pattern used elsewhere in core.
+  function debug(msg: string): void {
+    if (process.env.AGON_DEBUG) { try { console.error(`[cesar:pty] ${msg}`); } catch { /* ignore */ } }
+  }
+  // Race the DeliverAnswer channel file appearing vs the turn settling, with a
+  // bounded ceiling. Resolves as soon as either the channel file exists or the
+  // driver finishes (or the timeout elapses). Reused by the first turn and the
+  // retry-nudge so the wait semantics stay identical.
+  function raceAnswerOrSettle(isSettled: () => boolean, timeoutMs: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => { if (done) return; done = true; clearInterval(tick); clearTimeout(cap); resolve(); };
+      const tick = setInterval(() => { if (isSettled() || readAnswer() !== null) finish(); }, 100);
+      const cap = setTimeout(finish, timeoutMs);
+    });
   }
 
   const session: PersistentSession = {
@@ -122,13 +224,46 @@ export function createPtySession(config: PersistentSessionConfig): PersistentSes
         // single-flight lock clears for the next turn. It NEVER rejects — the
         // scraped extract / error are captured for the fallback path. Tracked
         // in pendingDrain from creation so it can't orphan the daemon.
+        //
+        // SPECULATIVE PREVIEW: each intermediate frame the daemon yields (a noisy
+        // TUI redraw — normally discarded) is run through the pure
+        // sanitizePreviewFrame gate and, when it passes, queued as a best-effort
+        // live-draft. These NEVER feed the final answer (which comes from the
+        // DeliverAnswer channel or the scrape fallback below) — they only update
+        // the dynamic streaming pane while the user waits. Off when AGON_NO_PREVIEW.
         let scrapedFinal = '';
         let driverError: unknown = null;
+        const previewsEnabled = !process.env.AGON_NO_PREVIEW;
+        const previewQueue: string[] = [];
+        let previewAccum = '';
+        let lastEmittedPreview = '';
+        let lastPreviewAt = 0;
+        const considerPreviewFrame = (delta: unknown) => {
+          if (!previewsEnabled) return;
+          // The daemon's deltas accumulate into the redraw buffer; gate on the
+          // running accumulation so the growth check matches the real draft.
+          // Bound the buffer: over a long PTY turn the daemon emits thousands of
+          // TUI redraws; the preview only ever needs the recent tail, so cap
+          // previewAccum to PREVIEW_ACCUM_CAP chars (the live pane tails it
+          // anyway). Without this, previewAccum would grow unbounded in memory.
+          previewAccum += typeof delta === 'string' ? delta : '';
+          if (previewAccum.length > PREVIEW_ACCUM_CAP) previewAccum = previewAccum.slice(-PREVIEW_ACCUM_CAP);
+          const now = Date.now();
+          if (now - lastPreviewAt < PREVIEW_THROTTLE_MS) return;
+          const frame = sanitizePreviewFrame(previewAccum, lastEmittedPreview);
+          if (frame === null) return;
+          lastEmittedPreview = frame;
+          lastPreviewAt = now;
+          previewQueue.push(frame);
+        };
         const it = claudeSession.askStream(composed, TURN_TIMEOUT_MS);
         const driver: Promise<void> = (async () => {
           try {
             let res = await it.next();
-            while (!res.done) { res = await it.next(); }
+            while (!res.done) {
+              considerPreviewFrame(res.value);
+              res = await it.next();
+            }
             scrapedFinal = typeof res.value === 'string' ? res.value : '';
           } catch (e) { driverError = e; }
         })();
@@ -139,12 +274,35 @@ export function createPtySession(config: PersistentSessionConfig): PersistentSes
         // Race: the DeliverAnswer channel file appearing (normal turn — return
         // the instant Claude delivers, skipping the idle-settle wait) vs the
         // driver completing (orchestration STOP turn with no answer, or error).
-        await new Promise<void>((resolve) => {
-          const tick = setInterval(() => {
-            if (driverDone || readAnswer() !== null) { clearInterval(tick); resolve(); }
-          }, 100);
-          void driver.finally(() => { clearInterval(tick); resolve(); });
-        });
+        // While waiting, drain any queued preview frames out to the dynamic pane.
+        // The 100ms poll cadence (same as raceAnswerOrSettle) bounds preview
+        // latency without a second timer. The preview yields are speculative and
+        // tagged so downstream can ONLY ever update the live pane with them.
+        {
+          let settled = false;
+          // raceAnswerOrSettle is documented never to reject, but flip `settled`
+          // on any rejection too so the drain loop can never spin forever.
+          const racePromise = raceAnswerOrSettle(() => driverDone, TURN_TIMEOUT_MS).then(() => { settled = true; }, () => { settled = true; });
+          // Yield true while it's still OK to emit previews (kill on abort/disable).
+          const previewsOk = () => previewsEnabled && !aborted && !opts.signal?.aborted;
+          while (!settled) {
+            // Flush every queued preview to the dynamic pane. Speculative + tagged,
+            // so downstream can ONLY update the live pane with them.
+            while (previewQueue.length > 0 && previewsOk()) {
+              yield { type: 'preview' as const, content: previewQueue.shift() as string, metadata: { draft: true } };
+            }
+            if (settled) break;
+            await new Promise<void>((r) => setTimeout(r, 100));
+          }
+          await racePromise;
+          // Final drain: a frame queued during the last sleep would otherwise be
+          // stranded. Harmless either way (the authoritative text below + the
+          // downstream firewall overwrite/drop any draft), but flushing keeps the
+          // pane's last draft fresh right up to the answer landing.
+          while (previewQueue.length > 0 && previewsOk()) {
+            yield { type: 'preview' as const, content: previewQueue.shift() as string, metadata: { draft: true } };
+          }
+        }
 
         opts.signal?.removeEventListener('abort', onAbort);
 
@@ -163,17 +321,146 @@ export function createPtySession(config: PersistentSessionConfig): PersistentSes
         }
 
         // No channel answer — the driver has finished (orchestration STOP turn,
-        // or Claude didn't deliver). Surface an error or fall back to scrape.
+        // or Claude didn't deliver). Surface an error first.
         await driver;
-        pendingDrain = null;
         if (driverError) {
+          pendingDrain = null;
           alive = false; claudeSession = null;
           yield { type: 'error' as const, content: `claude PTY turn failed: ${driverError instanceof Error ? driverError.message : String(driverError)}` };
           return;
         }
-        if (scrapedFinal && scrapedFinal.trim()) {
-          yield { type: 'text' as const, content: scrapedFinal };
+
+        // Snapshot the FIRST turn's scrape now; the nudge reassigns scrapedFinal.
+        const firstScrape = scrapedFinal;
+
+        // Re-check cancellation: an abort landing during `await driver` (after
+        // the first race removed onAbort) neither sets `aborted` nor closes the
+        // session — addEventListener on an already-aborted signal never fires —
+        // so check the signal itself before deciding to nudge.
+        if (aborted || opts.signal?.aborted) {
+          yield { type: 'done' as const, content: 'cancelled' }; return;
         }
+
+        // A channel answer that landed while the driver settled is authoritative
+        // and outranks ANY scrape — fallback tier 2 over tiers 3/4 — so consult
+        // the channel before the scrape short-circuit.
+        const settledAnswer = readAnswer();
+        if (settledAnswer !== null && settledAnswer.length > 0) {
+          debug('late first-turn DeliverAnswer landed while the driver settled');
+          pendingDrain = null;
+          yield { type: 'text' as const, content: settledAnswer };
+          yield { type: 'done' as const, content: 'end_turn' };
+          return;
+        }
+
+        // ── Completion guard: exactly ONE DeliverAnswer retry-nudge ──────────
+        // Fire only when ALL hold: the turn settled with no channel file, the
+        // first scrape is non-substantive (empty / chrome-like noise), and the
+        // turn wasn't aborted. A substantive scrape short-circuits — no nudge.
+        if (isSubstantiveScrape(firstScrape)) {
+          pendingDrain = null;
+          yield { type: 'text' as const, content: firstScrape };
+          yield { type: 'done' as const, content: 'end_turn' };
+          return;
+        }
+
+        if (settledAnswer === null) {
+          // Final re-read INSTEAD of clearing: a first-turn DeliverAnswer can
+          // land in the window after the check above, and clearAnswer() here
+          // would DELETE that valid authoritative answer. The turn already
+          // started from a cleared channel, so any file present now is fresh —
+          // return it as the (late) tier-2 answer and skip the nudge entirely.
+          const lateFirstAnswer = readAnswer();
+          if (lateFirstAnswer !== null && lateFirstAnswer.length > 0) {
+            debug('late first-turn DeliverAnswer landed just before the nudge — no nudge needed');
+            pendingDrain = null;
+            yield { type: 'text' as const, content: lateFirstAnswer };
+            yield { type: 'done' as const, content: 'end_turn' };
+            return;
+          }
+          debug('nudge fired — first turn settled with no DeliverAnswer and a non-substantive scrape');
+          // ONE follow-up through the same session asking for DeliverAnswer.
+          let nudgeScrape = '';
+          let nudgeError: unknown = null;
+          const nudgeMsg = 'Your previous turn did not call DeliverAnswer. Call DeliverAnswer now with your complete final answer — output nothing else.';
+          // The nudge PTY turn gets its own SHORT ceiling, not TURN_TIMEOUT_MS:
+          // we only await it for NUDGE_TIMEOUT_MS, and pendingDrain must never
+          // make the NEXT send() block on a 15-minute zombie nudge turn.
+          // Re-arm abort BEFORE starting the nudge pump: an async generator
+          // body runs synchronously inside the first next() call, so arming
+          // after askStream would miss an abort that fires in that first
+          // execution slice.
+          opts.signal?.addEventListener('abort', onAbort, { once: true });
+          const nit = claudeSession.askStream(nudgeMsg, NUDGE_TURN_TIMEOUT_MS);
+          let nudgeDone = false;
+          const nudgeDriver: Promise<void> = (async () => {
+            try {
+              let r = await nit.next();
+              while (!r.done) { r = await nit.next(); }
+              nudgeScrape = typeof r.value === 'string' ? r.value : '';
+            } catch (e) { nudgeError = e; }
+          })();
+          pendingDrain = nudgeDriver;
+          // Self-clear so a resolved drain never lingers as a stale reference.
+          void nudgeDriver.finally(() => { if (pendingDrain === nudgeDriver) pendingDrain = null; });
+          void nudgeDriver.then(() => { nudgeDone = true; });
+
+          await raceAnswerOrSettle(() => nudgeDone, NUDGE_TIMEOUT_MS);
+          opts.signal?.removeEventListener('abort', onAbort);
+
+          const nudgeAnswer = readAnswer();
+
+          if (aborted) {
+            yield { type: 'done' as const, content: 'cancelled' }; return;
+          }
+
+          // ── Strict fallback ordering after the nudge ────────────────────
+          // Tiers (1) retry channel file and (2) late first-turn channel file
+          // are BOTH satisfied by this single read: the turn started from a
+          // cleared channel and the pre-nudge re-read returned null, so any
+          // file present now is authoritative — produced either by the retry's
+          // DeliverAnswer or by a first-turn DeliverAnswer that landed during
+          // the nudge window. Single-flight + single file means they can't
+          // coexist, so one read covers both tiers in order.
+          if (nudgeAnswer !== null && nudgeAnswer.length > 0) {
+            debug('nudge outcome — retry/late DeliverAnswer landed');
+            yield { type: 'text' as const, content: nudgeAnswer };
+            yield { type: 'done' as const, content: 'end_turn' };
+            return;
+          }
+          // (3) first-turn substantive scrape is unreachable HERE: a substantive
+          // first scrape short-circuits the whole nudge (handled above, before we
+          // ever entered this block), which is strictly better than nudging when
+          // we already hold a good answer. So tier 3 is the pre-nudge short-circuit.
+          // (4) retry-turn substantive scrape
+          if (isSubstantiveScrape(nudgeScrape)) {
+            debug('nudge outcome — falling back to retry-turn scrape');
+            yield { type: 'text' as const, content: nudgeScrape };
+            yield { type: 'done' as const, content: 'end_turn' };
+            return;
+          }
+          // (5) explicit incomplete marker — never silent garbage.
+          if (nudgeError) { alive = false; claudeSession = null; }
+          debug(`nudge outcome — turn incomplete${nudgeError ? ` (nudge error: ${nudgeError instanceof Error ? nudgeError.message : String(nudgeError)})` : ''}`);
+          yield { type: 'text' as const, content: TURN_INCOMPLETE_MARKER };
+          yield { type: 'done' as const, content: 'end_turn' };
+          return;
+        }
+
+        // Reached only when settledAnswer === '' — the engine DID call
+        // DeliverAnswer but with empty text (a deliberate, authoritative
+        // empty delivery). Don't nudge it; re-read once in case a non-empty
+        // write raced in, otherwise mark the turn incomplete explicitly —
+        // never flaky raw text.
+        pendingDrain = null;
+        const lateAnswer = readAnswer();
+        if (lateAnswer !== null && lateAnswer.length > 0) {
+          debug('late first-turn DeliverAnswer landed without nudge');
+          yield { type: 'text' as const, content: lateAnswer };
+          yield { type: 'done' as const, content: 'end_turn' };
+          return;
+        }
+        yield { type: 'text' as const, content: TURN_INCOMPLETE_MARKER };
         yield { type: 'done' as const, content: 'end_turn' };
       } finally {
         turnActive = false;

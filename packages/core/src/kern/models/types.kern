@@ -42,6 +42,23 @@ interface name=EngineCliModelConfig
   field name=list type="CliModelEntry[]" optional=true
   field name=dynamicListCmd type="string[]" optional=true
 
+interface name=SessionBudget
+  doc "Proactive context-window management metadata for an engine's Cesar brain session. Engines WITHOUT this object get NO budget behavior — the pre-turn gate is inert (zero regression risk). Thresholds are fractions of the EFFECTIVE window (contextWindow minus reserveTokens). See token-estimator.kern / session-budget.kern."
+  field name=contextWindow type=number
+    doc "Total model context window in tokens (input+history+output). The single source of truth the gate sizes against; an engine.api.contextWindow may also exist for the API compaction path but this is the brain-session budget."
+  field name=reserveTokens type=number optional=true
+    doc "Headroom (output + tool overhead) to subtract from contextWindow before applying thresholds. Defaults to max(15% of window, 8000) when omitted."
+  field name=warnAt type=number optional=true
+    doc "Fraction (0..1) of the effective window at which to emit ONE quiet info nudge per session. Default 0.70."
+  field name=compactAt type=number optional=true
+    doc "Fraction (0..1) at which to auto-trigger compaction. Default 0.82."
+  field name=hardStopAt type=number optional=true
+    doc "Fraction (0..1) at which to BLOCK the turn with a clear error (compaction did not bring usage down enough). Default 0.92."
+  field name=estimator type="'chars-per-token'|'message-history'" optional=true
+    doc "How to estimate tokens. 'chars-per-token' = sum content chars / charsPerToken (cheap, default). 'message-history' = same divisor but iterates structured messages incl tool-call args. Both are conservative over-counts (compaction fires a touch early)."
+  field name=charsPerToken type=number optional=true
+    doc "Average chars per token for the estimator's division. Default 3.9 (code/JSON-heavy agent history tokenizes denser than prose; a higher divisor under-counts and risks overflow, so the default is conservative-low)."
+
 interface name=EngineDefinition
   field name=schemaVersion type="1|2|3"
   field name=id type=string
@@ -72,6 +89,8 @@ interface name=EngineDefinition
   field name=agent type=EngineModeConfig optional=true
   field name=api type="{baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, contextWindow?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number}" optional=true
   field name=companion type=CompanionConfig optional=true
+  field name=sessionBudget type=SessionBudget optional=true
+    doc "Proactive context-window budget for this engine's Cesar brain session. When present, the pre-turn gate estimates session tokens and warns/auto-compacts/hard-stops before the window overflows. When ABSENT the gate is inert (feature opt-in per engine — zero regression for engines lacking it)."
   field name=cliModels type=EngineCliModelConfig optional=true
   field name=isolationHints type="{configEnv?:string, strictMcpArgs?:string[], personalPaths?:string[], authFiles?:string[], authMarker?:string, setupHint?:string, loginArgs?:string[], supportsProjectMcp?:boolean}" optional=true
     doc "Workspace-pure isolation knobs. configEnv = env var that repoints the engine's config dir to a clean throwaway (e.g. CLAUDE_CONFIG_DIR, CODEX_HOME), dropping the user's global config/plugins/hooks/MCP. AUTH has two models: file-based engines (codex) list authFiles — credential files (relative to the real config home, personalPaths[0]) copied into the clean dir so dispatch stays logged in (codex 'auth.json'); keychain-based engines (claude on macOS) have NO copyable credential (the token is in the OS keychain, keyed to the DEFAULT config dir) so authFiles is empty and the clean dir gets its own one-time login via `agon login claude`. authMarker = the file whose presence in the clean dir means it IS authenticated (codex 'auth.json' — the seeded file; claude '.claude.json' — written by login); isolation is gated on it, falling back to inherit (never breaking a dispatch) when absent. setupHint = the one-time instruction to surface when the clean dir isn't authenticated. loginArgs = the engine CLI subcommand `agon login <id>` runs (with configEnv pointed at the clean dir) to authenticate it (claude ['auth','login'], codex ['login']). strictMcpArgs = CLI flags forcing no/limited MCP (claude '--strict-mcp-config'). personalPaths[0] = the engine's real config home. supportsProjectMcp = engine reads .mcp.json from cwd. ABSENT on API-only engines (kimi/minimax/zai): no local process, already pure."

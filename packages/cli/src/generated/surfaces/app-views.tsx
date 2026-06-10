@@ -278,7 +278,7 @@ export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisible
 }
 
 // @kern-source: app-views:360
-const StreamingView = React.memo(function StreamingView({ streamingText, mode, liveProgress, liveToolStreams, liveToolTailFrozen }: { streamingText:{engineId:string,content:string} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,any>; liveToolTailFrozen?:Record<string,boolean> }) {
+const StreamingView = React.memo(function StreamingView({ streamingText, mode, liveProgress, liveToolStreams, liveToolTailFrozen }: { streamingText:{engineId:string,content:string,draft?:boolean} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,any>; liveToolTailFrozen?:Record<string,boolean> }) {
   const frozenToolOutputRef = useRef<Record<string, string>>({});
 
   // Narration-fold policy (off|safe|aggressive) — read once per mount so a
@@ -289,8 +289,8 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
   }, []);
 
   // ── Throttled rendered state for main engine stream ──
-  const [renderedText, setRenderedText] = useState<{engineId:string;content:string} | null>(null);
-  const textRef = useRef<{engineId:string;content:string} | null>(null);
+  const [renderedText, setRenderedText] = useState<{engineId:string;content:string;draft?:boolean} | null>(null);
+  const textRef = useRef<{engineId:string;content:string;draft?:boolean} | null>(null);
   textRef.current = streamingText;
 
   useEffect(() => {
@@ -432,6 +432,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
           return (
             <Box marginY={1} paddingLeft={1}>
               <Text color={c} bold>{icons().dotOn + ' '}{renderedText.engineId}</Text>
+              {renderedText.draft ? <Text dimColor>{' (draft preview)'}</Text> : null}
               <Text dimColor>{preview ? ` ${preview}` : ' thinking…'}</Text>
             </Box>
           );
@@ -462,7 +463,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
         const stepHint = live.lastStep.length > stepLimit ? live.lastStep.slice(0, stepLimit - 1) + '\u2026' : live.lastStep;
         return (
           <Box flexDirection="column" marginY={1} paddingLeft={2}>
-            <Text color={c} bold>{'\u250c\u2500\u2500 '}{renderedText.engineId}</Text>
+            <Text color={c} bold>{'\u250c\u2500\u2500 '}{renderedText.engineId}{renderedText.draft ? <Text dimColor>{' (draft preview)'}</Text> : null}</Text>
             {live.foldedSteps > 0 ? (
               <Text color={c}>{'\u2502 '}<Text dimColor>{'\u25b8 '}{String(live.foldedSteps)}{' step'}{live.foldedSteps === 1 ? '' : 's'}{stepHint ? ` \u00b7 ${stepHint}` : ''}</Text></Text>
             ) : null}

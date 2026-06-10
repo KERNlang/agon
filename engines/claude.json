@@ -42,6 +42,10 @@
     "format": "anthropic"
   },
 
+  "sessionBudget": {
+    "contextWindow": 200000
+  },
+
   "env": {
     "ANTHROPIC_API_KEY": { "required": false }
   },

@@ -48,3 +48,4 @@ GO-LIVE-PLAN.local.md
 
 # Machine-local CLI cache (absolute user paths) - never track
 cache/
+.agon-goals/

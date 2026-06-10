@@ -24,6 +24,10 @@ union name=OutputEvent discriminant=type
   variant name=streaming-chunk
     field name=engineId type=string
     field name=chunk type=string
+  variant name=streaming-preview
+    doc "A SPECULATIVE live-draft frame (from a PTY 'preview' chunk). REPLACES the engine's live-pane content with the draft and marks the entry draft=true. It is NEVER committed to the transcript: streaming-end drops a still-draft entry, and the first authoritative streaming-chunk overwrites the draft. The renderer shows it dimmed with a 'draft preview' hint. content carries the full sanitized draft so far."
+    field name=engineId type=string
+    field name=content type=string
   variant name=thinking-chunk
     field name=engineId type=string
     field name=chunk type=string
@@ -318,6 +322,7 @@ interface name=CesarState
   field name=confidenceBlockCount type=number optional=true
   field name=searchToolCount type=number optional=true
   field name=searchNudged type=boolean optional=true
+  field name=budgetWarned type=boolean optional=true
   field name=quickNeroRequested type=boolean optional=true
   field name=autoNero type=boolean
   field name=advisorPending type=boolean

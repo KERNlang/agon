@@ -37,16 +37,32 @@ interface name=EngineOutcome export=true
   field name=note type=string optional=true
     doc "Free-text detail for a failure (error message, timeout duration)."
 
+interface name=EngineStance export=true
+  doc "One engine's reported stance on a clustered finding — its name, the severity it assigned, and a short detail (its own problem wording). Feeds the per-engine reconciliation and the conflictDetails on disputed rows; the detail, when present, is shown after the stance on a disputed row's per-engine line."
+  field name=engine type=string
+  field name=stance type=string
+    doc "Severity this engine assigned to THIS cluster: 'blocking' | 'important' | 'nit'."
+  field name=detail type=string optional=true
+    doc "This engine's own problem wording for the cluster (best-effort; the first informative copy)."
+
 interface name=ConsensusFinding export=true
   field name=key type=string
     doc "Cluster key: file + line-bucket + normalized problem words. Findings that share a key are treated as the SAME issue across engines."
   field name=engines type="string[]"
     doc "Distinct engines that reported this cluster."
+  field name=perEngineSeverity type="EngineStance[]"
+    doc "Each contributing engine's reported severity for this cluster (engine→stance, in first-seen order). reconciledSeverity is the max over these."
   field name=maxConfidence type=number
   field name=pairVotes type=number
     doc "How many distinct engines flagged this as blocking/important at confidence >= the pair threshold (drives pair-block)."
   field name=severity type=string
-    doc "Worst severity across the cluster: 'blocking' > 'important' > 'nit'."
+    doc "Worst severity across the cluster: 'blocking' > 'important' > 'nit'. Identical to reconciledSeverity; kept for backward compatibility."
+  field name=reconciledSeverity type=string
+    doc "max(perEngineSeverity) — the worst severity any engine assigned. Same value as `severity`, named explicitly for the reconciliation contract."
+  field name=consensusLevel type=string
+    doc "'agreed' when contributing engines agree (or differ by only one rank), 'disputed' when they materially disagree — the severity spread between the worst and best stance on the SAME clustered finding is >= DISPUTE_SEV_GAP (currently blocking-vs-nit). Silence is NOT a stance — an engine that never reported the cluster does not create a dispute."
+  field name=conflictDetails type="EngineStance[]"
+    doc "Non-empty only when consensusLevel==='disputed': ALL per-engine stances on the cluster (both agreeing and disagreeing engines), so the rendered dispute breakdown shows the full split, not just the dissenters."
   field name=tier type=string
     doc "'verified' | 'needs-check' | 'speculative' | 'nit'."
   field name=blocks type=boolean
@@ -79,6 +95,8 @@ interface name=ConsensusReport export=true
 const name=PAIR_THRESHOLD type=number value={{ 0.70 }}
 const name=VERIFIED_THRESHOLD type=number value={{ 0.85 }}
 const name=MEDIUM_THRESHOLD type=number value={{ 0.60 }}
+const name=DISPUTE_SEV_GAP type=number value={{ 2 }}
+  doc "How many severity ranks apart two engines must be (using blocking=2 > important=1 > nit=0) for the same clustered finding to count as MATERIALLY disputed. A gap of 2 = blocking-vs-nit; the cross-tier important/blocking-vs-nit splits the design names all clear it. A gap of 1 (blocking-vs-important, important-vs-nit) is normal severity wobble, not a dispute."
 
 fn name=clampConfidence params="raw:number" returns="number" export=true
   doc "Clamp an arbitrary number into [0,1]."
@@ -149,6 +167,12 @@ fn name=buildConsensus params="outcomes:EngineOutcome[], minVerified?:number, mi
       blockingMaxConf: number;   // confidence among severity==='blocking' only → drives solo-block
       sigConf: Map<string, number>; // per engine: max conf among its blocking|important findings → drives pair-block
       severity: string;          // worst across the cluster
+      // Per-engine reconciliation: each contributing engine's WORST severity for
+      // this cluster (first-seen order preserved), plus that engine's first
+      // informative problem wording. Drives reconciledSeverity (= max over these)
+      // and dispute detection (a material spread across these stances).
+      engineSeverity: Map<string, string>;
+      engineDetail: Map<string, string>;
       problem: string;
       minimalFix?: string;
       file?: string;
@@ -171,6 +195,8 @@ fn name=buildConsensus params="outcomes:EngineOutcome[], minVerified?:number, mi
             blockingMaxConf: 0,
             sigConf: new Map<string, number>(),
             severity: 'nit',
+            engineSeverity: new Map<string, string>(),
+            engineDetail: new Map<string, string>(),
             problem: f.problem || '',
             minimalFix: f.minimalFix,
             file: f.file,
@@ -182,6 +208,12 @@ fn name=buildConsensus params="outcomes:EngineOutcome[], minVerified?:number, mi
         if (conf > c.maxConfidence) c.maxConfidence = conf;
         if (sevRank(sev) > sevRank(c.severity)) c.severity = sev;
         if (sev === 'blocking' && conf > c.blockingMaxConf) c.blockingMaxConf = conf;
+        // Per-engine reconciliation: keep each engine's WORST severity for this
+        // cluster (a Map preserves first-seen order for stable rendering) plus
+        // its first non-empty problem wording as the stance detail.
+        const priorSev = c.engineSeverity.get(o.engine);
+        if (priorSev === undefined || sevRank(sev) > sevRank(priorSev)) c.engineSeverity.set(o.engine, sev);
+        if (!c.engineDetail.has(o.engine) && f.problem) c.engineDetail.set(o.engine, f.problem);
         if (sev === 'blocking' || sev === 'important') {
           c.sigConf.set(o.engine, Math.max(c.sigConf.get(o.engine) ?? 0, conf));
         }
@@ -217,12 +249,41 @@ fn name=buildConsensus params="outcomes:EngineOutcome[], minVerified?:number, mi
       else if (c.maxConfidence >= MEDIUM_THRESHOLD) tier = 'needs-check';
       else if (engines.length >= 2) tier = 'needs-check'; // independent agreement beats a lone sub-0.60 hunch
       else tier = 'speculative';
+
+      // Per-engine reconciliation (in first-seen engine order). The cluster's
+      // reconciledSeverity is the MAX of every engine's stance (identical to the
+      // existing `severity`, surfaced under the contract name). A cluster is
+      // DISPUTED only when the engines that ACTUALLY reported it materially
+      // disagree — the spread between the worst and best stance is >= the gap
+      // (blocking-vs-nit). Silence is not a stance: an engine that never reported
+      // this cluster is absent from perEngineSeverity and cannot create a dispute.
+      const perEngineSeverity = engines.map((e) => ({
+        engine: e,
+        stance: c.engineSeverity.get(e) ?? 'nit',
+        detail: c.engineDetail.get(e),
+      }));
+      const reconciledSeverity = c.severity;
+      let consensusLevel = 'agreed';
+      let conflictDetails: { engine: string; stance: string; detail?: string }[] = [];
+      if (perEngineSeverity.length >= 2) {
+        const ranks = perEngineSeverity.map((s) => sevRank(s.stance));
+        const spread = Math.max(...ranks) - Math.min(...ranks);
+        if (spread >= DISPUTE_SEV_GAP) {
+          consensusLevel = 'disputed';
+          conflictDetails = perEngineSeverity.map((s) => ({ engine: s.engine, stance: s.stance, detail: s.detail }));
+        }
+      }
+
       findings.push({
         key: c.key,
         engines,
+        perEngineSeverity,
         maxConfidence: c.maxConfidence,
         pairVotes,
         severity: c.severity,
+        reconciledSeverity,
+        consensusLevel,
+        conflictDetails,
         tier,
         blocks,
         problem: c.problem,
@@ -265,4 +326,50 @@ fn name=buildConsensus params="outcomes:EngineOutcome[], minVerified?:number, mi
       needsJudge,
       summary,
     };
+  >>>
+
+fn name=shortEngineId params="id:string" returns="string" export=true
+  doc "Short display form of an engine id: its leading '-'-delimited token, so `kimi-for-coding-k2p6`→`kimi` and `minimax-coding-plan-minimax-m3`→`minimax`. The single owner of the shortening so engineBadges and the stance lines stay identical. KNOWN AMBIGUITY: two distinct engines that share a leading token (e.g. `claude-opus` vs `claude-sonnet`) both short to the same token and render indistinguishably — acceptable for the current roster; revisit (two-token short or a short-name map) if such a pair is ever active."
+  handler <<<
+    const s = String(id || '').trim();
+    if (!s) return '?';
+    const head = s.split('-')[0];
+    return head || s;
+  >>>
+
+fn name=engineBadges params="engines:string[]" returns="string" export=true
+  doc "Compact engine attribution: `[codex][kimi]` from the contributing-engine list, replacing the old `×N` count. Each engine id is short-formed via shortEngineId to keep the row narrow. Empty list → '' (the caller can fall back to `×N`). Order is the cluster's first-seen engine order."
+  handler <<<
+    if (!Array.isArray(engines) || engines.length === 0) return '';
+    return engines.map((e) => `[${shortEngineId(e)}]`).join('');
+  >>>
+
+fn name=formatConsensusRow params="f:ConsensusFinding, indent?:string" returns="string[]" export=true
+  doc "Render ONE consensus finding into display lines, shared by the REPL handler and the CLI command so attribution + dispute rendering live in one place. Line 1 is the row: an optional `⚠ DISPUTED ` prefix (disputed clusters), the reconciled `[severity confidence]`, compact engine badges `[codex][kimi]` (falling back to `×N` if a badge can't be built), an optional ` pair` flag, the problem text, and the `(file:lines)` locator. Disputed rows add one indented stance line per engine underneath (`↳ codex: blocking — <that engine's wording>`, `↳ kimi: nit`) so the disagreement, and each engine's reasoning when it differs, is visible. `indent` is the leading whitespace for ALL lines (default two spaces, matching the existing summary); stance lines get four extra spaces."
+  handler <<<
+    const pad = indent ?? '  ';
+    const badges = engineBadges(f.engines);
+    const attribution = badges || `×${f.engines.length}`;
+    const disputed = f.consensusLevel === 'disputed';
+    const prefix = disputed ? '⚠ DISPUTED ' : '';
+    const pairFlag = f.pairVotes >= 2 ? ' pair' : '';
+    const locator = f.file ? ` (${f.file}${f.lines ? ':' + f.lines : ''})` : '';
+    const sev = f.reconciledSeverity || f.severity;
+    const row = `${pad}• ${prefix}[${sev} ${f.maxConfidence.toFixed(2)} ${attribution}${pairFlag}] ${f.problem}${locator}`;
+    const out: string[] = [row];
+    if (disputed) {
+      const stances = (f.conflictDetails && f.conflictDetails.length ? f.conflictDetails : f.perEngineSeverity) || [];
+      for (const s of stances) {
+        // Show each engine's own wording when it differs from the row's headline
+        // problem — that's the point of a disputed row. Trim long wording so a
+        // single stance line never blows the terminal width.
+        const detail = (s.detail || '').trim();
+        const sameAsRow = detail && detail.toLowerCase() === (f.problem || '').trim().toLowerCase();
+        const shownDetail = detail && !sameAsRow
+          ? ` — ${detail.length > 80 ? detail.slice(0, 77) + '…' : detail}`
+          : '';
+        out.push(`${pad}    ↳ ${shortEngineId(s.engine)}: ${s.stance}${shownDetail}`);
+      }
+    }
+    return out;
   >>>

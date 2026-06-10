@@ -40,15 +40,18 @@ export interface AgentProgressSnapshot {
 
 /**
  * Per-engine streaming buffer. Sharding on engineId prevents N concurrent agents from clobbering each other's in-flight tokens.
+ *
+ * True when this entry holds ONLY a SPECULATIVE preview draft (from a PTY 'preview' chunk), never authoritative engine text. A draft-only entry is NEVER committed to the transcript at streaming-end (it is dropped), and the first authoritative streaming-chunk REPLACES the draft content rather than appending to it. This is the contamination firewall: a speculative preview can update the live pane but can never become — or prefix — the committed answer.
  */
 // @kern-source: output:33
 export interface StreamingEntry {
   engineId: string;
   content: string;
   startedAt: number;
+  draft?: boolean;
 }
 
-// @kern-source: output:39
+// @kern-source: output:41
 export interface OutputState {
   liveSpinner: {message:string,color?:number,engineId?:string}|null;
   liveProgress: EngineProgress[]|null;
@@ -58,7 +61,7 @@ export interface OutputState {
   todos: Todo[];
 }
 
-// @kern-source: output:47
+// @kern-source: output:49
 export interface OutputActions {
   setLiveSpinner: (val:any) => void;
   setLiveProgress: (val:EngineProgress[]|null) => void;
@@ -82,16 +85,16 @@ export interface OutputActions {
   setTodos: (updater:Todo[] | ((prev:Todo[]) => Todo[])) => void;
 }
 
-// @kern-source: output:70
+// @kern-source: output:72
 export const _thinkingBuffer: {engineId:string,content:string} = { engineId: '', content: '' };
 
-// @kern-source: output:73
+// @kern-source: output:75
 export const _permissionQueue: Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>;
 
-// @kern-source: output:75
+// @kern-source: output:77
 export const _sessionAllowList: string[] = [] as string[];
 
-// @kern-source: output:77
+// @kern-source: output:79
 export function getSessionAllowList(): string[] {
   return _sessionAllowList;
 }
@@ -99,7 +102,7 @@ export function getSessionAllowList(): string[] {
 /**
  * Reject all queued permissions and clear the queue. Called on interrupt/cancel.
  */
-// @kern-source: output:79
+// @kern-source: output:81
 export function clearPermissionQueue(): void {
   while (_permissionQueue.length > 0) {
     const entry = _permissionQueue.shift()!;
@@ -110,31 +113,31 @@ export function clearPermissionQueue(): void {
 /**
  * Drop any buffered thinking-chunk content. Called on interrupt / clear / SIGINT so the next turn doesn't emit stale content as a fresh block.
  */
-// @kern-source: output:86
+// @kern-source: output:88
 export function clearThinkingBuffer(): void {
   _thinkingBuffer.engineId = '';
   _thinkingBuffer.content = '';
 }
 
-// @kern-source: output:98
+// @kern-source: output:100
 export const TOOL_CALL_GROUP_FLUSH_MS: number = 500;
 
-// @kern-source: output:100
+// @kern-source: output:102
 export const _pendingToolCalls: any[] = [] as any[];
 
-// @kern-source: output:102
+// @kern-source: output:104
 export const _pendingFlushTimer: { timer: any, actions: any } = ({ timer: null, actions: null }) as any;
 
-// @kern-source: output:105
+// @kern-source: output:107
 export const _liveToolStreams: Record<string,any> = {} as Record<string, any>;
 
-// @kern-source: output:110
+// @kern-source: output:112
 export const _pinnedPlan: { event: any } = ({ event: null }) as { event: any };
 
-// @kern-source: output:118
+// @kern-source: output:120
 export const _planStepActive: { on: boolean } = ({ on: false }) as { on: boolean };
 
-// @kern-source: output:120
+// @kern-source: output:122
 function toolCallKey(event: any): string {
   return [String(event?.engineId ?? ''), String(event?.tool ?? ''), String(event?.input ?? '')].join('\x00');
 }
@@ -142,7 +145,7 @@ function toolCallKey(event: any): string {
 /**
  * Emit any buffered tool-call events as a single tool-call-group block.
  */
-// @kern-source: output:124
+// @kern-source: output:126
 export function flushPendingToolCalls(actions: OutputActions): void {
   if (_pendingFlushTimer.timer) {
     clearTimeout(_pendingFlushTimer.timer);
@@ -157,7 +160,7 @@ export function flushPendingToolCalls(actions: OutputActions): void {
 /**
  * Debounce-flush pending tool-calls after a quiet period — covers turns that end on a tool-call without any trailing event.
  */
-// @kern-source: output:137
+// @kern-source: output:139
 export function schedulePendingFlush(actions: OutputActions): void {
   _pendingFlushTimer.actions = actions;
   if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
@@ -170,7 +173,7 @@ export function schedulePendingFlush(actions: OutputActions): void {
 /**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
-// @kern-source: output:148
+// @kern-source: output:150
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
@@ -190,7 +193,7 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
-// @kern-source: output:165
+// @kern-source: output:167
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -251,7 +254,7 @@ function _showNextPermission(actions: OutputActions): void {
 /**
  * Apply engine-agnostic narration folding to engine-block content per the narrationFold config (off|safe|aggressive, default safe). On a fold, records the raw in the bounded ring (for /raw) and returns { content, foldedSteps } to spread onto the engine-block; clean text folds nothing and returns just { content }. Pure backstop — runs on every engine-block, structured engines simply fold nothing. The raw is NOT returned per-event; it lives in the ring to avoid unbounded per-block memory growth.
  */
-// @kern-source: output:223
+// @kern-source: output:225
 export function foldEngineContent(content: string): { content: string, foldedSteps?: number } {
   const cfg = loadConfig();
   const policy = String((cfg as any).narrationFold ?? 'safe');
@@ -264,7 +267,7 @@ export function foldEngineContent(content: string): { content: string, foldedSte
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
-// @kern-source: output:234
+// @kern-source: output:236
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
@@ -289,7 +292,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     'spinner-start', 'spinner-stop', 'spinner-update',
     'progress-update', 'progress-clear',
     'confidence-update', 'context-usage',
-    'streaming-chunk', 'streaming-start',
+    'streaming-chunk', 'streaming-start', 'streaming-preview',
     'thinking-chunk', 'thinking-start', 'thinking-stop',
     'tool-stream-start', 'tool-stream-chunk', 'tool-stream-end',
   ]);
@@ -335,6 +338,31 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       }
       return;
     }
+    case 'streaming-preview': {
+      // SPECULATIVE live draft (PTY 'preview' chunk). REPLACE the engine's
+      // live-pane content with the sanitized draft and mark it draft=true so it
+      // can never be committed. content is the full draft-so-far, so replace —
+      // never append (the source already accumulates + growth-gates frames).
+      const eid = event.engineId;
+      const draftText = (event as any).content as string;
+      actions.setStreamingText((prev) => {
+        const existing = prev[eid];
+        // If authoritative text is already streaming (entry exists and is NOT a
+        // draft), the answer has begun — ignore any late preview so it can never
+        // overwrite real output. Previews only ever precede the authoritative text.
+        if (existing && !existing.draft) return prev;
+        return {
+          ...prev,
+          [eid]: {
+            engineId: eid,
+            content: draftText,
+            startedAt: existing ? existing.startedAt : Date.now(),
+            draft: true,
+          },
+        };
+      });
+      return;
+    }
     case 'streaming-chunk': {
       // Functional setter form: read-modify-write happens atomically inside the
       // action setter, so concurrent dispatches from N engines don't clobber each
@@ -343,11 +371,16 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       const chunk = event.chunk;
       actions.setStreamingText((prev) => {
         const existing = prev[eid];
+        // Contamination firewall: a streaming-chunk is AUTHORITATIVE engine text.
+        // If the existing entry is a speculative preview draft, DROP the draft and
+        // start fresh from this chunk — the authoritative answer never inherits or
+        // prefixes the preview. Real text always wins and clears draft=true.
+        const base = existing && !existing.draft ? existing.content : '';
         return {
           ...prev,
           [eid]: {
             engineId: eid,
-            content: existing ? existing.content + chunk : chunk,
+            content: base + chunk,
             startedAt: existing ? existing.startedAt : Date.now(),
           },
         };
@@ -358,6 +391,17 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       const eid = event.engineId;
       const st = state.streamingText[eid];
       if (st) {
+        // Contamination firewall: a still-draft entry holds ONLY a speculative
+        // preview (no authoritative streaming-chunk ever landed). Drop it from the
+        // live pane WITHOUT committing — a preview must never reach the transcript.
+        if (st.draft) {
+          actions.setStreamingText((prev) => {
+            const next: Record<string, StreamingEntry> = { ...prev };
+            delete next[eid];
+            return next;
+          });
+          return;
+        }
         const color = actions.getEngineColor(st.engineId);
         const cleaned = cleanEngineOutput(st.content);
         // Remove only this engine's entry; other engines' in-flight streams stay.

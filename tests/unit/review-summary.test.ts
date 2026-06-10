@@ -65,6 +65,34 @@ describe('buildReviewConsensusLines', () => {
     expect(lines[0]).toContain('Consensus —');
     expect(lines.join('\n')).toContain('NITS: 1.');
   });
+
+  it('attributes a verified finding with engine badges (not ×N) and keeps the tier label backward-compatible', () => {
+    // Two engines pair-block the same anchored important finding → verified row.
+    const block = (engine: string) =>
+      `review\n\n${SENTINEL}\n[{"file":"a.ts","lines":"42","severity":"important","blocking":false,"confidence":0.75,"problem":"missing null guard on user object"}]`;
+    const consensus = buildConsensus([
+      reviewOutcome('codex', block('codex'), 'ok'),
+      reviewOutcome('kimi-for-coding-k2p6', block('kimi-for-coding-k2p6'), 'ok'),
+    ] as any);
+    const text = buildReviewConsensusLines(consensus).join('\n');
+    expect(text).toContain('VERIFIED (actionable):');   // tier label unchanged
+    expect(text).toContain('[codex]');                   // engine attribution
+    expect(text).toContain('[kimi]');
+    expect(text).not.toMatch(/×\d/);                     // ×N replaced by badges
+  });
+
+  it('renders a disputed cluster with a ⚠ DISPUTED prefix and indented per-engine stances', () => {
+    const blocking = `review\n\n${SENTINEL}\n[{"file":"a.ts","lines":"42","severity":"blocking","blocking":true,"confidence":0.9,"problem":"unbounded recursion on cyclic input"}]`;
+    const nit = `review\n\n${SENTINEL}\n[{"file":"a.ts","lines":"42","severity":"nit","blocking":false,"confidence":0.4,"problem":"unbounded recursion on cyclic input"}]`;
+    const consensus = buildConsensus([
+      reviewOutcome('claude', blocking, 'ok'),
+      reviewOutcome('codex', nit, 'ok'),
+    ] as any);
+    const text = buildReviewConsensusLines(consensus).join('\n');
+    expect(text).toContain('⚠ DISPUTED');
+    expect(text).toContain('↳ claude: blocking');
+    expect(text).toContain('↳ codex: nit');
+  });
 });
 
 describe('formatReviewCounts', () => {

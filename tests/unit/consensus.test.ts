@@ -198,6 +198,62 @@ describe('buildConsensus — failures lane', () => {
     expect(r.autoBlock).toBe(true);
     expect(r.summary).toContain('fail-closed');
   });
+});
+
+describe('buildConsensus — degraded (below-quorum) honesty', () => {
+  // Build a 6-engine panel where `okN` engines return a clean verdict and the
+  // rest time out. quorum = ceil(6/2) = 3.
+  const panel = (okN: number) => {
+    const outcomes: EngineOutcome[] = [];
+    for (let i = 0; i < 6; i++) {
+      outcomes.push(i < okN
+        ? ok(`eng${i}`, [])
+        : { engine: `eng${i}`, status: 'timeout', findings: [] });
+    }
+    return buildConsensus(outcomes);
+  };
+
+  it('0/6 — no verdict at all → no degraded marker (fail-closed path owns it)', () => {
+    const r = panel(0);
+    expect(r.okCount).toBe(0);
+    expect(r.degraded).toBeUndefined();
+  });
+
+  it('1/6 — below quorum → degraded banner naming the 1/6 ratio', () => {
+    const r = panel(1);
+    expect(r.okCount).toBe(1);
+    expect(r.degraded).toBeDefined();
+    expect(r.degraded!.belowQuorum).toBe(true);
+    expect(r.degraded!.warning).toContain('degraded consensus');
+    expect(r.degraded!.warning).toContain('only 1/6 engines reviewed');
+    expect(r.degraded!.warning).toContain('single-engine opinion');
+  });
+
+  it('2/6 — still below quorum (3) → degraded', () => {
+    const r = panel(2);
+    expect(r.okCount).toBe(2);
+    expect(r.degraded).toBeDefined();
+    expect(r.degraded!.warning).toContain('only 2/6 engines reviewed');
+  });
+
+  it('3/6 — AT quorum (ceil(6/2)=3) → NOT degraded', () => {
+    const r = panel(3);
+    expect(r.okCount).toBe(3);
+    expect(r.degraded).toBeUndefined();
+  });
+
+  it('6/6 — full panel → NOT degraded', () => {
+    const r = panel(6);
+    expect(r.okCount).toBe(6);
+    expect(r.degraded).toBeUndefined();
+  });
+
+  it('a single-engine review (panelSize 1, okCount 1) is NOT degraded', () => {
+    const r = buildConsensus([ok('claude', [])]);
+    expect(r.panelSize).toBe(1);
+    expect(r.okCount).toBe(1);
+    expect(r.degraded).toBeUndefined();
+  });
 
   it('an all-clear panel does not block', () => {
     const r = buildConsensus([ok('claude', []), ok('codex', [])]);

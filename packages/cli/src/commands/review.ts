@@ -316,7 +316,11 @@ export const reviewCommand = defineCommand({
     // ×N, a `⚠ DISPUTED` prefix + indented per-engine stance lines when engines
     // materially disagree on the same clustered finding. `'  '` pad matches the
     // existing two-space indentation of the consensus block.
-    const lines: string[] = ['', `▸ Consensus — ${consensus.summary}`];
+    const lines: string[] = [''];
+    // Degraded-run honesty: fewer than quorum engines reviewed → warn BEFORE the
+    // consensus so a 1/6 run isn't read as a real consensus. Not a hard block.
+    if (consensus.degraded) lines.push(`  ${consensus.degraded.warning}`);
+    lines.push(`▸ Consensus — ${consensus.summary}`);
     if (consensus.verified.length) { lines.push('  VERIFIED (actionable):'); for (const f of consensus.verified) for (const l of formatConsensusRow(f, '  ')) lines.push(l); }
     if (consensus.needsCheck.length) { lines.push('  NEEDS-CHECK (want a second opinion):'); for (const f of consensus.needsCheck) for (const l of formatConsensusRow(f, '  ')) lines.push(l); }
     if (consensus.speculative.length) lines.push(`  SPECULATIVE: ${consensus.speculative.length} low-confidence finding(s) — likely noise.`);

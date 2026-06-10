@@ -141,22 +141,35 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       });
     };
     // Claude Code-style tool-call duration tracking. Tool events flow
-    // running→done/error keyed by tool name (the same tool/input pair within a
-    // turn correlates by name in practice). Record the start time when a tool
+    // running→done/error correlated by the tool-call id (meta.toolCallId) when
+    // present, falling back to the tool name. Record the start time when a tool
     // goes 'running' and attach durationMs to the matching done/error event so
     // the renderer can show e.g. "→ 12 lines · 1.4s". Done/error events with no
     // preceding 'running' (signal/MCP side-channel dispatches that complete
     // instantly) simply carry no durationMs — the renderer omits the suffix.
+    //
+    // The eager (streaming) tool path is special: executeEagerTool measures its
+    // own wall-clock elapsed and emits the terminal tool-call/tool-stream-end
+    // event itself (via raw dispatch, with durationMs already attached). For
+    // those we record NO start time on 'running' (eager:true) so the map entry
+    // never leaks and the more-accurate eager-computed duration is the one shown.
     const _toolStartMs = new Map<string, number>();
-    const dispatchToolCall = (evt: { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running' | 'done' | 'error'; output?: string }): void => {
-      const key = String(evt.tool || 'tool');
-      let durationMs: number | undefined;
+    const dispatchToolCall = (
+      evt: { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running' | 'done' | 'error'; output?: string; durationMs?: number },
+      opts?: { toolCallId?: string; eager?: boolean },
+    ): void => {
+      const key = String(opts?.toolCallId || evt.tool || 'tool');
+      let durationMs: number | undefined = evt.durationMs;
       if (evt.status === 'running') {
-        _toolStartMs.set(key, Date.now());
+        // Eager calls supply their own duration on the terminal event — don't
+        // record a start here (avoids a stale, never-cleared map entry).
+        if (!opts?.eager) _toolStartMs.set(key, Date.now());
       } else {
         const startedAt = _toolStartMs.get(key);
         if (startedAt !== undefined) {
-          durationMs = Date.now() - startedAt;
+          // A terminal event that already carries durationMs (eager path) wins;
+          // either way clear the entry so it never leaks.
+          if (durationMs === undefined) durationMs = Date.now() - startedAt;
           _toolStartMs.delete(key);
         }
       }
@@ -770,9 +783,9 @@ ${reviewFollowup.prompt}`;
             }
 
             if (toolStatus === 'done') {
-              dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+              dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any, { toolCallId: meta.toolCallId as string | undefined });
             } else if (toolStatus === 'native') {
-              dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
+              dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any, { toolCallId: meta.toolCallId as string | undefined });
             } else if (toolStatus === 'running' && meta.input && toolRegistry && !ctx.cesar!.hasNativeTools) {
               // Codex review fix (P2): after orchestration delegation has been
               // set, suppress ALL subsequent tool calls in the same stream — not
@@ -781,7 +794,7 @@ ${reviewFollowup.prompt}`;
               // workspace before the delegated job starts, racing the agents'
               // worktrees and triggering permission prompts.
               if (ctx.cesar!.pendingDelegation) {
-                dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
+                dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any, { toolCallId: meta.toolCallId as string | undefined });
                 continue;
               }
               // Intercept orchestration signal tools — don't execute as workspace tools.
@@ -803,11 +816,11 @@ ${reviewFollowup.prompt}`;
                 // race the delegated job.
                 continue;
               }
-              dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
+              dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any, { toolCallId: meta.toolCallId as string | undefined, eager: true });
               if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
               eagerPromises.push(executeEagerTool(toolName, meta, toolRegistry, eagerToolCtx, dispatch, cesarEngineId));
             } else {
-              dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+              dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any, { toolCallId: meta.toolCallId as string | undefined });
             }
             continue;
           }

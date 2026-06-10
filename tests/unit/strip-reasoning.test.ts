@@ -20,6 +20,13 @@ describe('formatDuration', () => {
     expect(formatDuration(3_661_000)).toBe('61m 1s');
   });
 
+  it('rolls the 59_950..59_999ms boundary into the minutes branch (no "60.0s")', () => {
+    // Without the 59_950 cutoff these would render "60.0s" via toFixed(1).
+    expect(formatDuration(59_949)).toBe('59.9s');
+    expect(formatDuration(59_950)).toBe('1m 0s');
+    expect(formatDuration(59_999)).toBe('1m 0s');
+  });
+
   it('clamps negative/NaN to 0ms', () => {
     expect(formatDuration(-5)).toBe('0ms');
     expect(formatDuration(Number.NaN)).toBe('0ms');

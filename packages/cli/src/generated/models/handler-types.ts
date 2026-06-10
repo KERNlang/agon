@@ -56,7 +56,7 @@ export type OutputEvent =
   | { type: 'tool-call-group'; blocks: any[] }
   | { type: 'tool-stream-start'; streamId: string; engineId: string; tool: string; input: string }
   | { type: 'tool-stream-chunk'; streamId: string; chunk: string }
-  | { type: 'tool-stream-end'; streamId: string; status: 'done'|'error'; output?: string; engineId?: string; tool?: string; input?: string }
+  | { type: 'tool-stream-end'; streamId: string; status: 'done'|'error'; output?: string; engineId?: string; tool?: string; input?: string; durationMs?: number }
   | { type: 'user-message'; content: string }
   | { type: 'response-meta'; engineId: string; elapsed: number; inputTokens?: number; outputTokens?: number; cost?: number }
   | { type: 'confidence-update'; value: number|null }
@@ -74,7 +74,7 @@ export type OutputEvent =
   | { type: 'agent-routing'; mode: 'solo'|'team'; engines: string[]; reason: string }
   | { type: 'agent-team-complete'; teamId: string; winner: string|null; synthesizedPatch?: string|null; synthesizedAnalysis?: string|null; memberOutcomes: Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>; teamCostUsd: number; teamDurationMs: number; synthesisRan?: boolean; synthesisChanged?: boolean; synthesisCostUsd?: number; synthesisFitnessRegressed?: boolean };
 
-// @kern-source: handler-types:245
+// @kern-source: handler-types:247
 export interface PendingDelegation {
   action: string;
   task?: string;
@@ -112,10 +112,10 @@ export interface PendingDelegation {
   createdAt: number;
 }
 
-// @kern-source: handler-types:281
+// @kern-source: handler-types:283
 export type CesarLiveMode = 'self' | 'self-nero' | 'delegate' | 'forge' | 'forge-slice' | 'team-forge' | 'brainstorm' | 'team-brainstorm' | 'campfire' | 'tribunal' | 'team-tribunal' | 'pipeline' | 'goal' | 'conquer' | 'review' | 'agent' | 'team-agent' | 'plan';
 
-// @kern-source: handler-types:283
+// @kern-source: handler-types:285
 export interface CesarTurnOutcome {
   mode?: CesarLiveMode;
   delegated: boolean;
@@ -145,7 +145,7 @@ export interface CesarTurnOutcome {
   awaitingUserInput?: boolean;
 }
 
-// @kern-source: handler-types:311
+// @kern-source: handler-types:313
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -176,7 +176,7 @@ export interface CesarState {
   autoModeQueued?: boolean;
 }
 
-// @kern-source: handler-types:340
+// @kern-source: handler-types:342
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

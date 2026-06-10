@@ -77,20 +77,22 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
 }
 
 /**
- * Claude Code-style compact wall-clock duration for tool-call result lines. <1s → milliseconds ('420ms'), ≥1s → one-decimal seconds ('1.4s'), ≥60s → minutes+whole seconds ('1m 12s'). Negative/NaN inputs clamp to '0ms'. Used both per-tool (durationMs suffix) and in the ToolCallGroup aggregate so both render identically.
+ * Claude Code-style compact wall-clock duration for tool-call result lines. <1s → milliseconds ('420ms'), ≥1s → one-decimal seconds ('1.4s'), ≥~60s → minutes+whole seconds ('1m 12s'). The seconds branch cuts off at 59_950ms (not 60_000) so values that would round to '60.0s' instead roll to '1m 0s'. Negative/NaN inputs clamp to '0ms'. Used both per-tool (durationMs suffix) and in the ToolCallGroup aggregate so both render identically.
  */
 // @kern-source: engine-helpers:71
 export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return '0ms';
   if (ms < 1000) return `${Math.round(ms)}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  // Boundary: 59_950–59_999ms rounds to "60.0s" via toFixed(1); roll those into
+  // the minutes branch so they render "1m 0s" instead.
+  if (ms < 59_950) return `${(ms / 1000).toFixed(1)}s`;
   const totalSeconds = Math.round(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}m ${seconds}s`;
 }
 
-// @kern-source: engine-helpers:83
+// @kern-source: engine-helpers:85
 export function extractSummary(text: string, maxLen: number): string {
   let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   s = s.replace(/^#+\s+.+\n/gm, '');
@@ -105,7 +107,7 @@ export function extractSummary(text: string, maxLen: number): string {
 /**
  * Remove reasoning-scaffolding blocks (<think>/<thinking>/<reasoning>) that reasoning models (MiniMax, DeepSeek, Qwen) emit before their real answer and sometimes leak into persisted output. Strips CLOSED blocks only — the common leak case — using a backreference so the open and close tags must match. Engine-agnostic: apply wherever raw engine output is persisted or parsed so scaffolding never reaches users or a structured-findings parser.
  */
-// @kern-source: engine-helpers:94
+// @kern-source: engine-helpers:96
 export function stripReasoning(text: string): string {
   return text.replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>\s*/gi, '').trim();
 }
@@ -113,7 +115,7 @@ export function stripReasoning(text: string): string {
 /**
  * Strip claude TUI thinking-animation chrome that leaks into pty-captured output. The animation redraws on one line, so ANSI-stripping flattens its frames into a glyph/label/counter soup ('·✢✳✶✻✽…This one needs a moment…Working through it…95%…Review …'). Spinner glyph frames and the input-bar prompt char (❯) are NEVER legitimate content, so they're always removed. The …-terminated spinner labels (claude invents endless ones — 'Cogitating…', 'Untangling some thoughts…' — so enumerating them is hopeless) and the leading token/elapsed counter residue are removed ONLY when glyph frames were present, i.e. proof this is TUI chrome. That glyph-gate means API engines (kimi/zai — no TUI) never have real content touched.
  */
-// @kern-source: engine-helpers:100
+// @kern-source: engine-helpers:102
 export function stripTuiChrome(text: string): string {
   const hadChrome = /[·✢✳✶✻✽⎿]/.test(text);
   let s = text.replace(/[·✢✳✴✵✶✷✸✹✺✻✼✽✾⎿]/g, '').replace(/❯/g, '');

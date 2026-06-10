@@ -140,6 +140,8 @@ union name=OutputEvent discriminant=type
     field name=engineId type=string optional=true
     field name=tool type=string optional=true
     field name=input type=string optional=true
+    doc "Wall-clock duration of the streamed tool call, measured by executeToolCall in the eager path. Passed through to the synthetic tool-call block in output.kern so the renderer shows the '· 1.4s' suffix for streaming tools too."
+    field name=durationMs type=number optional=true
   variant name=user-message
     field name=content type=string
   variant name=response-meta

@@ -783,6 +783,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
         input: e.input ?? existing.input ?? '',
         status: e.status,
         output,
+        ...(e.durationMs !== undefined ? { durationMs: e.durationMs } : {}),
       };
       const key = toolCallKey(toolCallEvent);
       if (e.status === 'done' || e.status === 'error') {

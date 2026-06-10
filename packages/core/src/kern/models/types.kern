@@ -312,8 +312,8 @@ config name=AgonConfig
     doc "Min ELO spread between top two engines for a task class. Below this, engines are too close to call — speculation is worthwhile. Above it, the leader is clear enough to skip speculation."
   field name=autoCredit type=boolean default=true
     doc "When true, append 'Co-authored-by: Agon AI <agon@local>' to commits where Agon generated the commit message. Set to false to disable."
-  field name=commitCoAuthor type=string default=""
-    doc "Co-Authored-By identity appended to commits agon itself creates, e.g. 'Cesar (agon) <12345+cesar-agon@users.noreply.github.com>'. Unset = no trailer."
+  field name=commitCoAuthor type=string default="agon (KERN) <noreply@kernlang.dev>"
+    doc "Co-Authored-By identity appended to commits agon creates. ON by default; set to \"\" to disable (machine-wide in ~/.agon/config.json or per-project in .agon.json)."
 
 
 interface name=ScoutBid

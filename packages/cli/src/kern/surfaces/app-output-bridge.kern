@@ -6,16 +6,19 @@
 // buffers, the transcript output-block append/replace/clear funnel, the live
 // preview tail-bounding, and the flush-to-transcript commit. It closes over the
 // component's setState fns and refs, so the builder takes them ALL explicitly
-// (options object, well above the ~6-param threshold) and returns OutputActions.
+// (named OutputBridgeDeps interface, well above the ~6-param threshold) and
+// returns OutputActions.
 //
 // IDENTITY: the app.kern memo carries deps="" — the actions object is created
 // ONCE for the component's lifetime. This builder MUST preserve that: the thin
 // `memo` in app.kern calls buildOutputActions exactly once and the result is
 // stable. Do not add per-render allocation here.
 //
-// Convention (mirrors app-lifecycle.kern): explicit params via options object,
-// typed refs as inline {current: T | null} shapes, typed return (OutputActions,
-// never any), // Source: breadcrumb. Raw `<<<` is used deliberately — this is a
+// Convention (mirrors app-lifecycle.kern): params above ~6 fields = a named
+// `<Name>Deps` interface with grouped, documented fields; refs are typed with
+// their real shape ({current: T} when non-nullable, {current: T | null} only
+// where the ref genuinely holds null); typed return (OutputActions, never any);
+// // Source: breadcrumb. Raw `<<<` is used deliberately — this is a
 // setState-closure actions object that does not structure into if/let/return.
 import from="../../handlers/types.js" names="OutputEvent,EngineProgress" types=true
 import from="../signals/output.js" names="OutputActions,AgentProgressSnapshot,StreamingEntry" types=true
@@ -30,10 +33,42 @@ import from="./app-rendering.js" names="clearBlockRowCache"
 
 module name=AppOutputBridge
 
+  // ── Closed-over deps for buildOutputActions ──
+  // Every setState fn and ref the actions object needs, supplied explicitly
+  // instead of closed over from component scope. Grouped by responsibility.
+  interface name=OutputBridgeDeps
+    doc "Explicit dependencies for buildOutputActions — the component's setState fns and refs, passed in rather than captured. Refs carry their real shape; only chatStartTimeRef-style mutable scalars and the genuinely-nullable members use a nullable type."
+    // ── Stream buffers / refs (live spinner, progress, streaming text, tool streams) ──
+    field name=setLiveSpinner type="(val:any) => void"
+    field name=setLiveProgress type="(val:EngineProgress[]|null) => void"
+    field name=streamingTextRef type="{current: Record<string,StreamingEntry>}"
+    field name=setStreamingText type="(val:Record<string,StreamingEntry>) => void"
+    field name=liveToolStreamsRef type="{current: Record<string,any>}"
+    field name=setLiveToolStreams type="(val:Record<string,any>) => void"
+    // ── Transcript blocks (append/replace/clear funnel + archive bookkeeping) ──
+    field name=setOutputBlocks type="(updater:OutputBlock[] | ((prev:OutputBlock[]) => OutputBlock[])) => void"
+    field name=blockArchivePathRef type="{current: string}"
+    field name=setClearEpoch type="(updater:(epoch:number) => number) => void"
+    field name=setNativeArchiveCount type="(val:number) => void"
+    // ── Modal / pending state (plan proposal, review, question, chat start) ──
+    field name=setPendingPlanProposal type="(val:OutputEvent | null) => void"
+    field name=setReviewEvent type="(val:any) => void"
+    field name=setQuestionState type="(val:any) => void"
+    field name=chatStartTimeRef type="{current: number}"
+    // ── Cesar telemetry (confidence, context gauge, scoreboard, rationale) ──
+    field name=setCesarConfidence type="(val:number|null) => void"
+    field name=setCesarContext type="(val:{pct:number,used:number,limit:number,compacted:number,cached:number}|null) => void"
+    field name=setLiveScoreboard type="(val:Scoreboard | null) => void"
+    field name=setLiveRationale type="(val:ModeRationale | null) => void"
+    // ── Agent progress / todos (multi-agent snapshots + todo list) ──
+    field name=agentProgressRef type="{current: Record<string,AgentProgressSnapshot>}"
+    field name=setAgentProgress type="(val:Record<string,AgentProgressSnapshot>) => void"
+    field name=setTodos type="(updater:Todo[] | ((prev:Todo[]) => Todo[])) => void"
+
   // ── Build the engine-output → React-state bridge actions object ──
   // Source: app.kern memo name=outputActions deps="".
   // Returns the stable OutputActions object (created once by the deps="" memo).
-  fn name=buildOutputActions params="opts:{setLiveSpinner:(val:any) => void, setLiveProgress:(val:EngineProgress[]|null) => void, streamingTextRef:{current: Record<string,StreamingEntry>}, setStreamingText:(val:Record<string,StreamingEntry>) => void, liveToolStreamsRef:{current: Record<string,any>}, setLiveToolStreams:(val:Record<string,any>) => void, setOutputBlocks:(updater:OutputBlock[] | ((prev:OutputBlock[]) => OutputBlock[])) => void, blockArchivePathRef:{current: string}, setClearEpoch:(updater:(epoch:number) => number) => void, setNativeArchiveCount:(val:number) => void, setPendingPlanProposal:(val:OutputEvent | null) => void, setReviewEvent:(val:any) => void, setQuestionState:(val:any) => void, chatStartTimeRef:{current: number}, setCesarConfidence:(val:number|null) => void, setCesarContext:(val:{pct:number,used:number,limit:number,compacted:number,cached:number}|null) => void, setLiveScoreboard:(val:Scoreboard | null) => void, setLiveRationale:(val:ModeRationale | null) => void, agentProgressRef:{current: Record<string,AgentProgressSnapshot>}, setAgentProgress:(val:Record<string,AgentProgressSnapshot>) => void, setTodos:(updater:Todo[] | ((prev:Todo[]) => Todo[])) => void}" returns="OutputActions"
+  fn name=buildOutputActions params="opts:OutputBridgeDeps" returns="OutputActions"
     handler <<<
       const {
         setLiveSpinner,

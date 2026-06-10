@@ -22,7 +22,34 @@ import { clearBlockRowCache } from './app-rendering.js';
 
 // ── Module: AppOutputBridge ──
 
-export function buildOutputActions(opts: {setLiveSpinner:(val:any) => void, setLiveProgress: (val:EngineProgress[]|null) => void, streamingTextRef: {current: Record<string,StreamingEntry>}, setStreamingText: (val:Record<string,StreamingEntry>) => void, liveToolStreamsRef: {current: Record<string,any>}, setLiveToolStreams: (val:Record<string,any>) => void, setOutputBlocks: (updater:OutputBlock[] | ((prev:OutputBlock[]) => OutputBlock[])) => void, blockArchivePathRef: {current: string}, setClearEpoch: (updater:(epoch:number) => number) => void, setNativeArchiveCount: (val:number) => void, setPendingPlanProposal: (val:OutputEvent | null) => void, setReviewEvent: (val:any) => void, setQuestionState: (val:any) => void, chatStartTimeRef: {current: number}, setCesarConfidence: (val:number|null) => void, setCesarContext: (val:{pct:number,used:number,limit:number,compacted:number,cached:number}|null) => void, setLiveScoreboard: (val:Scoreboard | null) => void, setLiveRationale: (val:ModeRationale | null) => void, agentProgressRef: {current: Record<string,AgentProgressSnapshot>}, setAgentProgress: (val:Record<string,AgentProgressSnapshot>) => void, setTodos: (updater:Todo[] | ((prev:Todo[]) => Todo[])) => void}): OutputActions {
+/**
+ * Explicit dependencies for buildOutputActions — the component's setState fns and refs, passed in rather than captured. Refs carry their real shape; only chatStartTimeRef-style mutable scalars and the genuinely-nullable members use a nullable type.
+ */
+export interface OutputBridgeDeps {
+  setLiveSpinner: (val:any) => void;
+  setLiveProgress: (val:EngineProgress[]|null) => void;
+  streamingTextRef: {current: Record<string,StreamingEntry>};
+  setStreamingText: (val:Record<string,StreamingEntry>) => void;
+  liveToolStreamsRef: {current: Record<string,any>};
+  setLiveToolStreams: (val:Record<string,any>) => void;
+  setOutputBlocks: (updater:OutputBlock[] | ((prev:OutputBlock[]) => OutputBlock[])) => void;
+  blockArchivePathRef: {current: string};
+  setClearEpoch: (updater:(epoch:number) => number) => void;
+  setNativeArchiveCount: (val:number) => void;
+  setPendingPlanProposal: (val:OutputEvent | null) => void;
+  setReviewEvent: (val:any) => void;
+  setQuestionState: (val:any) => void;
+  chatStartTimeRef: {current: number};
+  setCesarConfidence: (val:number|null) => void;
+  setCesarContext: (val:{pct:number,used:number,limit:number,compacted:number,cached:number}|null) => void;
+  setLiveScoreboard: (val:Scoreboard | null) => void;
+  setLiveRationale: (val:ModeRationale | null) => void;
+  agentProgressRef: {current: Record<string,AgentProgressSnapshot>};
+  setAgentProgress: (val:Record<string,AgentProgressSnapshot>) => void;
+  setTodos: (updater:Todo[] | ((prev:Todo[]) => Todo[])) => void;
+}
+
+export function buildOutputActions(opts: OutputBridgeDeps): OutputActions {
   const {
     setLiveSpinner,
     setLiveProgress,

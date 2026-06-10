@@ -6,14 +6,16 @@
 // declarations stay in app.kern and simply call into these.
 //
 // Convention: effect-body fns return the cleanup function or undefined; name
-// start*/subscribe*/load* by cleanup shape; params are explicit (options object
-// above ~6); keep a // Source: breadcrumb per fn.
+// start*/subscribe*/load* by cleanup shape; params above ~6 fields = a named
+// `<Name>Deps` interface with grouped, documented fields; keep a // Source:
+// breadcrumb per fn.
 // Note: startTelemetryPoller lives here (not app-telemetry.kern) deliberately —
 // it's effect orchestration, not probing.
 import from="@kernlang/agon-core" names="initExtensions,appendMessage,loadCesarPlan,cesarPlanJsonPath,configSet"
 import from="@kernlang/agon-core" names="EngineRegistry,CommandRegistry,EventBus,ChatSession,PersistentSession,Skill,LoadedExtension,CesarPlan" types=true
 import from="../services/update-check.js" names="checkForUpdate,loadDismissedVersion,isLinkedDevInstall"
 import from="../cesar/telemetry-poller.js" names="createTelemetryPoller"
+import from="../cesar/telemetry-poller.js" names="TelemetryPoller" types=true
 import from="../cesar/telemetry.js" names="EngineVitals" types=true
 import from="./app-telemetry.js" names="probeEngineVitals"
 import from="../models/session-results.js" names="sessionResultStore"
@@ -170,11 +172,35 @@ module name=AppLifecycle
       };
     >>>
 
+  // ── Closed-over deps for startTelemetryPoller ──
+  // The registry, session handles, refs, and setState fns the poller effect
+  // needs, supplied explicitly instead of closed over. Grouped by role.
+  interface name=TelemetryPollerDeps
+    doc "Explicit dependencies for startTelemetryPoller — the telemetry poller effect's registry/session handles, active-turn refs, and state setters, passed in rather than captured from component scope."
+    // ── Poller construction (registry, sessions, engine list, dispatch, holder, poller ref) ──
+    field name=registry type=EngineRegistry
+    field name=cesarSession type="PersistentSession|null"
+    field name=activeEngines type="() => string[]"
+    field name=dispatch type="(event:any) => void"
+    field name=cesarSessionHolder type="{session: PersistentSession | null}"
+    field name=telemetryPollerRef type="{current: TelemetryPoller | null}"
+    // ── Active turn / plan / abort tracking (consulted on auto-fallback) ──
+    field name=activeEnginePidsRef type="{current: Map<string,number>}"
+    field name=activeTurnRef type="{current: {input:string; engineId:string; retried:boolean} | null}"
+    field name=activePlanRef type="{current: CesarPlan | null}"
+    field name=activeAbortRef type="{current: AbortController | null}"
+    // ── State setters (fallbacks, config version, session, input queue, vitals) ──
+    field name=setRecentFallbacks type="(fn:any) => void"
+    field name=setConfigVersion type="(fn:any) => void"
+    field name=setCesarSessionWrapped type="(session:any) => void"
+    field name=setInputQueue type="(fn:any) => void"
+    field name=setTelemetryVitals type="(map:any) => void"
+
   // ── Telemetry poller lifecycle ──
   // Source: app.kern effect deps="registry,cesarSession,activeEngines".
   // `cesarSessionHolder` is app.kern's module-level { session } holder.
   // Returns the effect cleanup function.
-  fn name=startTelemetryPoller params="opts:{registry:EngineRegistry, cesarSession:PersistentSession|null, activeEngines:() => string[], dispatch:(event:any) => void, cesarSessionHolder:{session: PersistentSession | null}, telemetryPollerRef:{current: any}, activeEnginePidsRef:{current: Map<string,number>}, activeTurnRef:{current: {input:string; engineId:string; retried:boolean} | null}, activePlanRef:{current: CesarPlan | null}, activeAbortRef:{current: AbortController | null}, setRecentFallbacks:(fn:any) => void, setConfigVersion:(fn:any) => void, setCesarSessionWrapped:(session:any) => void, setInputQueue:(fn:any) => void, setTelemetryVitals:(map:any) => void}" returns="(() => void) | undefined"
+  fn name=startTelemetryPoller params="opts:TelemetryPollerDeps" returns="(() => void) | undefined"
     handler <<<
       const {
         registry,

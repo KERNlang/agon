@@ -8,6 +8,8 @@ import { checkForUpdate, loadDismissedVersion, isLinkedDevInstall } from '../ser
 
 import { createTelemetryPoller } from '../cesar/telemetry-poller.js';
 
+import type { TelemetryPoller } from '../cesar/telemetry-poller.js';
+
 import type { EngineVitals } from '../cesar/telemetry.js';
 
 import { probeEngineVitals } from './app-telemetry.js';
@@ -153,7 +155,28 @@ export function subscribeOrchestrationResults(eventBus: EventBus, dispatch: (eve
   };
 }
 
-export function startTelemetryPoller(opts: {registry:EngineRegistry, cesarSession:PersistentSession|null, activeEngines:() => string[], dispatch: (event:any) => void, cesarSessionHolder: {session: PersistentSession | null}, telemetryPollerRef: {current: any}, activeEnginePidsRef: {current: Map<string,number>}, activeTurnRef: {current: {input:string; engineId:string; retried:boolean} | null}, activePlanRef: {current: CesarPlan | null}, activeAbortRef: {current: AbortController | null}, setRecentFallbacks: (fn:any) => void, setConfigVersion: (fn:any) => void, setCesarSessionWrapped: (session:any) => void, setInputQueue: (fn:any) => void, setTelemetryVitals: (map:any) => void}): (() => void) | undefined {
+/**
+ * Explicit dependencies for startTelemetryPoller — the telemetry poller effect's registry/session handles, active-turn refs, and state setters, passed in rather than captured from component scope.
+ */
+export interface TelemetryPollerDeps {
+  registry: EngineRegistry;
+  cesarSession: PersistentSession|null;
+  activeEngines: () => string[];
+  dispatch: (event:any) => void;
+  cesarSessionHolder: {session: PersistentSession | null};
+  telemetryPollerRef: {current: TelemetryPoller | null};
+  activeEnginePidsRef: {current: Map<string,number>};
+  activeTurnRef: {current: {input:string; engineId:string; retried:boolean} | null};
+  activePlanRef: {current: CesarPlan | null};
+  activeAbortRef: {current: AbortController | null};
+  setRecentFallbacks: (fn:any) => void;
+  setConfigVersion: (fn:any) => void;
+  setCesarSessionWrapped: (session:any) => void;
+  setInputQueue: (fn:any) => void;
+  setTelemetryVitals: (map:any) => void;
+}
+
+export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | undefined {
   const {
     registry,
     cesarSession,

@@ -1,0 +1,148 @@
+// ── SessionHost — the read-side seam over the EventLog ledger ─────────────
+//
+// Milestone 2 of Agon's client/server split. M1 made the per-session ledger
+// (event-log.kern) the SOURCE OF TRUTH and teed every REPL OutputEvent into it.
+// M2 puts a NAMED INTERFACE in front of that ledger — the contract a future
+// `agond` daemon will speak over a socket, and the contract `agon attach`
+// consumes today in-process. The point of M2 is to prove the seam is real and
+// the replay path works WITHOUT a daemon: InProcessSessionHost reads the same
+// on-disk ledger the REPL writes, so attaching to a SECOND running agon shows
+// its events streaming in.
+//
+//   REPL (writer) ──tee──▶ EventLog (NDJSON on disk) ◀──read── SessionHost
+//                                                              ▲
+//                                              agon attach ────┘ (M2)
+//                                              agond socket ───┘ (M3)
+//
+// M3 TRAJECTORY (deliberately NOT in this interface yet — see SessionHost doc):
+// the WRITE side (sendCommand) and the interactive side (resolveApproval) are
+// out of scope for M2's read-only proof. They land with the daemon, where a
+// remote attach client must be able to drive a session, not just observe it.
+
+import from="./event-log.js" names="replay as logReplay,latestSeq as logLatestSeq,listSessions as logListSessions,readMeta as logReadMeta"
+import from="./event-log.js" names="LoggedEvent" types=true
+
+// ── Descriptor & subscribe types ─────────────────────────────────────────
+
+interface name=SessionDescriptor
+  doc "A one-line summary of a session, cheap to compute for a `agon attach` picker. `id` is the on-disk (sanitized) session id. `createdAt` is the ISO string from meta.json (or '' if meta is missing). `kind` distinguishes a live REPL session ('repl') from a future replay/daemon kind. `lastSeq` is the highest seq known (0 = empty session). `active` is best-effort liveness — UNKNOWN to a pure-disk host (always false here), reserved for M3 when the daemon tracks live attachments; an in-process reader can't tell a crashed session from an idle one without a heartbeat."
+  field name=id type=string
+  field name=createdAt type=string
+  field name=kind type=string
+  field name=lastSeq type=number
+  field name=active type=boolean optional=true
+
+interface name=SubscribeOptions
+  doc "Tuning knobs for subscribe(). `pollMs` overrides the ledger-poll interval (default SUBSCRIBE_POLL_MS) — tests drive a tiny interval to assert delivery without sleeping for the production cadence."
+  field name=pollMs type=number optional=true
+
+// ── The interface — the wire contract a daemon will eventually speak ──────
+
+interface name=SessionHost
+  doc "Read-side host over the per-session EventLog. EVERYTHING here is read-only: list, replay history, ask the latest seq, and follow live events. This is the M2 surface — enough to prove a thin attach client can reconstruct and then tail a session purely from the ledger, no daemon required. \n\nDELIBERATELY NOT HERE YET (M3, with the daemon): \n  • sendCommand(sessionId, input): drive a session remotely — submit user input / a slash command into the running REPL. The write side needs the daemon to own the single live REPL process; an in-process read-only host has no writer to forward to. \n  • resolveApproval(sessionId, requestId, approved): answer a permission-ask / question that replayed as a dead callback. function-valued fields are stripped at ledger-write time (see event-log.kern safeStringifyEvent), so a replayed approval has no `resolve` to call — the daemon must re-issue the prompt against the LIVE session and route the answer back. \nThese are the WRITE/INTERACTIVE half of the split; M2 ships the READ half so the seam's trajectory is explicit without pulling the daemon forward."
+  field name=listSessions type="() => SessionDescriptor[]"
+  field name=replay type="(sessionId: string, fromSeq?: number) => LoggedEvent[]"
+  field name=latestSeq type="(sessionId: string) => number"
+  field name=subscribe type="(sessionId: string, fromSeq: number, onEvent: (event: LoggedEvent) => void, opts?: SubscribeOptions) => () => void"
+
+// ── Constants ─────────────────────────────────────────────────────────────
+
+const name=SUBSCRIBE_POLL_MS type=number value=250
+  doc "Default ledger-poll cadence for subscribe(). M2 polls the on-disk ledger rather than wiring an in-process event bus on purpose: polling proves the LEDGER ALONE is sufficient to follow a session (the daemon attach has no shared memory with the REPL, only the disk). An in-process bus is an M3 latency optimization, not a correctness requirement."
+
+// ── InProcessSessionHost — backed entirely by the M1 EventLog ─────────────
+
+service name=InProcessSessionHost implements=SessionHost singleton=true
+  doc "The M2 implementation: every read delegates to the on-disk EventLog (the same ledger the live REPL writes through its tee). listSessions/replay/latestSeq are thin pass-throughs; subscribe POLLS the ledger every ~pollMs from the cursor and fires onEvent for each newly-appended event, returning an unsubscribe that stops the poll. No daemon, no socket, no shared memory — correctness comes from the disk ledger being the single source of truth."
+
+  constructor
+    handler lang="kern"
+      assign target="this.listSessions" value="this.listSessions.bind(this)"
+      assign target="this.replay" value="this.replay.bind(this)"
+      assign target="this.latestSeq" value="this.latestSeq.bind(this)"
+      assign target="this.subscribe" value="this.subscribe.bind(this)"
+
+  method name=listSessions returns="SessionDescriptor[]"
+    doc "Every session that has a sessions/<id>/ dir, enriched with meta (createdAt/kind) and lastSeq. Order is the ledger's filesystem order; callers that want recency sort by createdAt themselves (the attach command does). `active` is always false here — a pure-disk reader can't observe liveness (reserved for M3's daemon)."
+    handler <<<
+      const out: SessionDescriptor[] = [];
+      for (const id of logListSessions()) {
+        // Fault-isolate per session: a single corrupt dir / unreadable segment
+        // (logLatestSeq does a disk scan that could EACCES) must not blank the
+        // whole picker. logReadMeta already swallows its own errors; this guards
+        // logLatestSeq so one bad session degrades to a lastSeq:0 row, not a throw.
+        try {
+          const meta = logReadMeta(id);
+          out.push({
+            id,
+            createdAt: meta?.createdAt ?? '',
+            kind: meta?.kind ?? 'repl',
+            lastSeq: logLatestSeq(id),
+            active: false,
+          });
+        } catch {
+          out.push({ id, createdAt: '', kind: 'unknown', lastSeq: 0, active: false });
+        }
+      }
+      return out;
+    >>>
+
+  method name=replay params="sessionId:string, fromSeq?:number" returns="LoggedEvent[]"
+    doc "Every logged event with seq > fromSeq (default 0 = all), in seq order. Pure delegation to the ledger's replay — which already reads rotated segments + the active file + the live in-memory buffer and tolerates a truncated final line."
+    handler lang="kern"
+      return value="logReplay(sessionId, fromSeq)"
+
+  method name=latestSeq params="sessionId:string" returns="number"
+    doc "Highest seq known for a session (0 for an unknown/empty session). Delegates to the ledger, which uses the in-memory counter for a live session and a disk scan otherwise."
+    handler lang="kern"
+      return value="logLatestSeq(sessionId)"
+
+  method name=subscribe params="sessionId:string, fromSeq:number, onEvent:(event: LoggedEvent) => void, opts?:SubscribeOptions" returns="() => void"
+    doc "Follow live events. Polls the ledger every ~pollMs from a moving cursor (initialized to fromSeq): each tick replays everything with seq > cursor, fires onEvent per event in seq order, and advances the cursor to the last delivered seq. Returns an unsubscribe that clears the timer and stops all further delivery. \n\nThe timer is unref'd so a lone subscriber never keeps the process alive past the caller's own work — the attach command holds the process open with its OWN stdin/SIGINT, not this poll. A re-entrancy guard skips a tick still draining the previous one (a slow onEvent must not stack overlapping polls). After unsubscribe, no callback fires even if a tick was already armed."
+    handler <<<
+      // Number.isFinite, not just typeof — `typeof NaN === 'number'` passes the
+      // weak check but a NaN cursor makes `ev.seq > cursor` always false, so the
+      // subscriber would silently receive nothing. A NaN/±Infinity fromSeq (e.g.
+      // a lastSeq computed off a corrupt entry) snaps to 0 = replay-from-start.
+      const cursorStart = Number.isFinite(fromSeq) ? fromSeq : 0;
+      const state: { cursor: number; stopped: boolean; draining: boolean; timer: ReturnType<typeof setInterval> | null } = { cursor: cursorStart, stopped: false, draining: false, timer: null };
+      const pollMs = typeof opts?.pollMs === 'number' && Number.isFinite(opts.pollMs) && opts.pollMs > 0 ? opts.pollMs : SUBSCRIBE_POLL_MS;
+      const tick = (): void => {
+        if (state.stopped || state.draining) return;
+        state.draining = true;
+        try {
+          const fresh = logReplay(sessionId, state.cursor);
+          for (const ev of fresh) {
+            // Re-check the latch every iteration so an unsubscribe mid-batch
+            // stops delivery immediately rather than draining the whole batch.
+            if (state.stopped) break;
+            if (typeof ev.seq === 'number' && ev.seq > state.cursor) {
+              try { onEvent(ev); } catch { /* a consumer throw never wedges the poll */ }
+              state.cursor = ev.seq;
+            }
+          }
+        } catch {
+          // A transient read failure (e.g. mid-rotation) is swallowed; the next
+          // tick re-reads from the same cursor, so no event is lost.
+        } finally {
+          state.draining = false;
+        }
+      };
+      const timer = setInterval(tick, pollMs);
+      state.timer = timer;
+      if (typeof (timer as any).unref === 'function') (timer as any).unref();
+      return () => {
+        state.stopped = true;
+        if (state.timer) { clearInterval(state.timer); state.timer = null; }
+      };
+    >>>
+
+// ── Singleton accessor ────────────────────────────────────────────────────
+
+const name=inProcessSessionHost value={{ new InProcessSessionHost() }}
+  doc "Process-wide InProcessSessionHost. The M2 attach command uses this; M3 will swap in a RemoteSessionHost (socket client) behind the same SessionHost interface, so callers depend on the interface, not this concrete singleton."
+
+fn name=getSessionHost returns="SessionHost" export=true
+  doc "The active SessionHost for this process. Returns the in-process (disk-ledger-backed) host in M2; M3 will return a socket-backed RemoteSessionHost when AGON_DAEMON is set, transparently to callers — they hold a SessionHost, never the concrete class."
+  handler lang="kern"
+    return value="inProcessSessionHost"

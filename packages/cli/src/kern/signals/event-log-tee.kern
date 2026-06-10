@@ -1,0 +1,83 @@
+// ── EventLog tee — fire-and-forget bridge from the REPL dispatch to the ledger ──
+//
+// Client/server split, Milestone 1. The REPL's central dispatch (surfaces/app.kern)
+// pours EVERY OutputEvent through handleOutputEvent; we additively tee each event
+// into the core append-only EventLog so a future `agond` daemon + attach client can
+// replay the transcript after a TUI crash.
+//
+// Hard requirements (this is in the render path):
+//   • NEVER throw into the UI — every call is try/caught.
+//   • NEVER await — core's append() buffers in memory and flushes on a ~50ms timer,
+//     so this is a synchronous enqueue, not a write syscall per event.
+//   • Disable-after-N-failures latch — if the log starts failing (full disk, bad
+//     perms) we stop calling it so we don't spam the same failure every keystroke.
+//   • Default ON, opt out with AGON_NO_EVENT_LOG=1 (re-read at call time so a test
+//     or a user can flip it without a restart — the cost is one env read per event,
+//     negligible vs the work handleOutputEvent already does).
+
+import from="@kernlang/agon-core" names="eventLogAppend,eventLogFlush,eventLogWriteFailures"
+
+const name=MAX_TEE_FAILURES type=number value=3 export=false
+
+// Module-level latch (mirrors the _pendingFlushTimer mutable-field idiom).
+// `failures` counts synchronous append() failures; `seenWriteFailures` snapshots
+// core's deferred-flush failure counter so we can detect NEW disk-write failures
+// that surface only inside flush() (never in append()), and fold them into the
+// same disable-after-N latch.
+const name=_teeState type="{ failures: number; disabled: boolean; seenWriteFailures: number }" value={{ ({ failures: 0, disabled: false, seenWriteFailures: 0 }) as { failures: number; disabled: boolean; seenWriteFailures: number } }} export=false
+
+fn name=eventLogEnabled returns="boolean"
+  doc "True unless opted out via AGON_NO_EVENT_LOG=1 or the failure latch has tripped. Also folds in core's deferred-flush write failures: append() can't observe a disk-write failure (the write is deferred to flush()), so we poll eventLogWriteFailures() and trip the SAME disable-after-N latch when new flush failures accrue. Read at call time so both the opt-out and the disk signal are live."
+  handler <<<
+    if (_teeState.disabled) return false;
+    // Fold deferred-flush (disk-write) failures into the latch. core's counter
+    // is monotonic; we count only the DELTA since we last looked so a burst of
+    // flush failures trips disable-after-N just like synchronous append errors.
+    const writeFailures = eventLogWriteFailures();
+    if (writeFailures > _teeState.seenWriteFailures) {
+      _teeState.failures += (writeFailures - _teeState.seenWriteFailures);
+      _teeState.seenWriteFailures = writeFailures;
+      if (_teeState.failures >= MAX_TEE_FAILURES) {
+        _teeState.disabled = true;
+        try { console.warn('[agon] event-log tee disabled after repeated disk-write failures'); } catch { /* best-effort */ }
+        return false;
+      }
+    }
+    return process.env.AGON_NO_EVENT_LOG !== '1';
+  >>>
+
+fn name=teeOutputEvent params="sessionId:string, event:unknown" returns="void" export=true
+  doc "Tee one OutputEvent into the per-session EventLog. Fire-and-forget: bounded by a try/catch and a disable-after-N-failures latch so a failing log can never break the UI. No-op when disabled (AGON_NO_EVENT_LOG=1) or after the latch trips, or for an empty sessionId."
+  handler <<<
+    if (!sessionId) return;
+    if (!eventLogEnabled()) return;
+    try {
+      eventLogAppend(sessionId, event, { kind: 'repl' });
+      // A success resets the failure streak so a transient blip doesn't
+      // eventually trip the latch over a long session.
+      if (_teeState.failures > 0) _teeState.failures = 0;
+    } catch {
+      _teeState.failures += 1;
+      if (_teeState.failures >= MAX_TEE_FAILURES) {
+        _teeState.disabled = true;
+        // One warning on the way down; silent thereafter.
+        try { console.warn('[agon] event-log tee disabled after repeated failures'); } catch { /* best-effort */ }
+      }
+    }
+  >>>
+
+fn name=flushEventLogTee params="sessionId:string" returns="void" export=true
+  doc "Force a synchronous drain of the session's buffered events. Called on clean shutdown / idle so the last ~50ms window isn't lost. Bounded by try/catch and the same enabled gate — never throws."
+  handler <<<
+    if (!sessionId) return;
+    if (_teeState.disabled) return;
+    try { eventLogFlush(sessionId); } catch { /* best-effort */ }
+  >>>
+
+fn name=resetEventLogTee returns="void" export=true
+  doc "Reset the failure latch (synchronous + deferred-flush counters). For tests that exercise the disable-after-N path in isolation. NOTE: this only resets the tee's view; pair it with core resetEventLogState() to also zero core's write-failure counter."
+  handler <<<
+    _teeState.failures = 0;
+    _teeState.disabled = false;
+    _teeState.seenWriteFailures = 0;
+  >>>

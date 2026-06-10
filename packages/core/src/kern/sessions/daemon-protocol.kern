@@ -1,0 +1,138 @@
+// ── Daemon wire protocol — the newline-JSON frames agond speaks ──────────────
+//
+// Milestone 3 of Agon's client/server split. The daemon (a long-lived process
+// that OWNS a session) accepts client requests over a unix socket and replies
+// over the same connection. This module is the PURE, TRANSPORT-AGNOSTIC seed of
+// that wire protocol: the message union plus encode/parse helpers. It does NOT
+// open sockets or touch the EventLog — daemon.kern (the CLI) wires those in. By
+// keeping the frame shape + (de)serialization here as exported pure fns, the
+// protocol is unit-testable without a running daemon and is the contract a
+// future M4 remote-attach client will share.
+//
+//   client ──{type:'prompt',text}──▶  agond  ──{type:'ack',seq}──▶ client
+//          ──{type:'ping'}─────────▶        ──{type:'pong',...}──▶
+//          ──{type:'shutdown'}─────▶        ──{type:'bye'}───────▶
+//
+// Wire format: ONE JSON object per line (`\n`-terminated). Newline-delimited so
+// a stream socket can frame messages without a length prefix; a client/server
+// buffers bytes and splits on '\n'. Parsing is TOLERANT — a blank line yields
+// null (skip it), a malformed line yields an { type:'error' } request/response
+// rather than throwing, so one corrupt frame never wedges the connection.
+
+// ── Request messages (client → daemon) ──────────────────────────────────────
+
+union name=DaemonRequest discriminant=type export=true
+  doc "A message a client sends to the daemon over the socket. `prompt` runs one headless turn (the configured cesarEngine answers; all OutputEvents land in the session ledger). `ping` is a cheap liveness probe. `shutdown` asks the daemon to exit cleanly. `error` is what parseDaemonRequest yields for a malformed/unknown line so the server can reply with a clean error instead of crashing on bad input."
+  variant name=prompt
+    field name=text type=string
+  variant name=ping
+  variant name=shutdown
+  variant name=error
+    field name=message type=string
+
+// ── Response messages (daemon → client) ─────────────────────────────────────
+
+union name=DaemonResponse discriminant=type export=true
+  doc "A message the daemon sends back. `ack` confirms a prompt turn ran and carries the highest ledger seq written (so a client can replay from there). `pong` answers a ping with the owned sessionId + uptime ms. `busy` rejects a prompt that arrived while a turn was already running (one turn at a time). `bye` confirms a shutdown is in progress. `error` carries a human-readable failure (bad request, turn threw, etc.)."
+  variant name=ack
+    field name=seq type=number
+  variant name=pong
+    field name=sessionId type=string
+    field name=uptime type=number
+  variant name=busy
+  variant name=bye
+  variant name=error
+    field name=message type=string
+
+// ── Encode — one message → one newline-terminated JSON line ──────────────────
+
+fn name=encodeDaemonRequest params="msg:DaemonRequest" returns="string" export=true
+  doc "Serialize a request to a single newline-terminated JSON line for the wire. The trailing '\\n' IS the frame delimiter — every encoded message ends with exactly one newline so the peer's line-splitter frames it correctly."
+  handler <<<
+    return JSON.stringify(msg) + '\n';
+  >>>
+
+fn name=encodeDaemonResponse params="msg:DaemonResponse" returns="string" export=true
+  doc "Serialize a response to a single newline-terminated JSON line for the wire. Same framing contract as encodeDaemonRequest: exactly one trailing newline."
+  handler <<<
+    return JSON.stringify(msg) + '\n';
+  >>>
+
+// ── Parse — one line → a typed message, tolerant of garbage ──────────────────
+
+fn name=parseDaemonRequest params="line:string" returns="DaemonRequest | null" export=true
+  doc "Parse one wire line into a typed DaemonRequest. Returns null for a blank/whitespace-only line (frame splitting yields trailing empties — the caller skips them). A non-JSON line, a non-object, or an unknown/missing `type` collapses to { type: 'error', message } so the server replies cleanly instead of throwing on hostile input. Known request types ('prompt'|'ping'|'shutdown') are returned with their fields normalized (text coerced to string)."
+  handler <<<
+    if (!line || !line.trim()) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      return { type: 'error', message: 'malformed JSON' };
+    }
+    if (!parsed || typeof parsed !== 'object') {
+      return { type: 'error', message: 'not an object' };
+    }
+    const type = String((parsed as { type?: unknown }).type ?? '');
+    switch (type) {
+      case 'prompt': {
+        const text = (parsed as { text?: unknown }).text;
+        return { type: 'prompt', text: typeof text === 'string' ? text : String(text ?? '') };
+      }
+      case 'ping':
+        return { type: 'ping' };
+      case 'shutdown':
+        return { type: 'shutdown' };
+      default:
+        return { type: 'error', message: `unknown request type: ${type || '(none)'}` };
+    }
+  >>>
+
+fn name=parseDaemonResponse params="line:string" returns="DaemonResponse | null" export=true
+  doc "Parse one wire line into a typed DaemonResponse (the client side of the protocol). Mirrors parseDaemonRequest's tolerance: null for blank lines, { type: 'error' } for malformed/unknown frames. Known response types ('ack'|'pong'|'busy'|'bye') are returned with numeric fields coerced via Number so a stringified seq/uptime never breaks a comparison."
+  handler <<<
+    if (!line || !line.trim()) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      return { type: 'error', message: 'malformed JSON' };
+    }
+    if (!parsed || typeof parsed !== 'object') {
+      return { type: 'error', message: 'not an object' };
+    }
+    const type = String((parsed as { type?: unknown }).type ?? '');
+    switch (type) {
+      case 'ack': {
+        const seq = Number((parsed as { seq?: unknown }).seq);
+        return { type: 'ack', seq: Number.isFinite(seq) ? seq : 0 };
+      }
+      case 'pong': {
+        const sessionId = String((parsed as { sessionId?: unknown }).sessionId ?? '');
+        const uptime = Number((parsed as { uptime?: unknown }).uptime);
+        return { type: 'pong', sessionId, uptime: Number.isFinite(uptime) ? uptime : 0 };
+      }
+      case 'busy':
+        return { type: 'busy' };
+      case 'bye':
+        return { type: 'bye' };
+      case 'error': {
+        const message = String((parsed as { message?: unknown }).message ?? 'error');
+        return { type: 'error', message };
+      }
+      default:
+        return { type: 'error', message: `unknown response type: ${type || '(none)'}` };
+    }
+  >>>
+
+// ── Frame splitter — accumulate stream bytes, yield complete lines ───────────
+
+fn name=splitFrames params="buffer:string" returns="{ lines: string[]; rest: string }" export=true
+  doc "Split a stream-accumulated buffer into complete newline-terminated frames plus the trailing partial. A socket delivers bytes in arbitrary chunks, so a reader appends each chunk to a buffer and calls this: `lines` are the complete frames (without their '\\n'), `rest` is the unterminated tail to carry into the next read. When the buffer has no newline, lines is empty and rest is the whole buffer. This is the framing primitive both the daemon's connection handler and the client use."
+  handler <<<
+    const parts = buffer.split('\n');
+    // The last element is the tail after the final '\n' (or the whole buffer if
+    // there was no newline) — it may be a partial frame, so carry it forward.
+    const rest = parts.pop() ?? '';
+    return { lines: parts, rest };
+  >>>

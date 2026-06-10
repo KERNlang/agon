@@ -38,7 +38,7 @@ import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline
 
 import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering.js';
 
-import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
+import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
 
 // @kern-source: brain:22
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
@@ -234,7 +234,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           _liveTodosEmitted = true;
           dispatch({ type: 'todos-set', todos: parsed.todos } as any);
         } else {
-          dispatch({ type: 'todos-clear' } as any);
+          dispatch({ type: 'todos-clear', scope: 'live' } as any);
         }
         return parsed.rest;
       };
@@ -514,11 +514,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         let parsedConfidence: number | null = null;
         let confidenceParsed = false;
         let insideThinkBlock = false;
-        let insideTodosBlock = false;  // streaming: between [TODOS] and [/TODOS]
         let suppressXmlToolDisplay = false;
         let sawStreamingXmlToolCall = false;
         let xmlDisplayHold = '';
-        let _todosDisplayHold = '';  // partial trailing '[TODOS' guard (native path)
+        // Per-turn native-path [TODOS] display stripper (state encapsulated in the
+        // factory closure: hold buffer + insideBlock). Flushed at stream end.
+        const stripTodosForDisplay = createTodosDisplayStripper();
         let hadToolActivity = false; // tracks if native tool calls were shown to user
         // Engine-failure tracking: when a send yields an `error` chunk or returns
         // empty (overflow, rate limit, content filter, dead session), capture the
@@ -571,49 +572,6 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const visible = combined.slice(0, combined.length - hold);
           xmlDisplayHold = combined.slice(combined.length - hold);
           return visible;
-        };
-        // Strip [TODOS]…[/TODOS] blocks from a NATIVE-tool streaming chunk so the
-        // live checklist marker never leaks into the visible/committed answer.
-        // The XML path is already covered by splitBeforeToolMarkup (which now
-        // lists '[TODOS]' as markup) + takeXmlSafeDisplayChunk's suppression. This
-        // mirrors the <think> incremental handling: complete blocks are removed,
-        // an open block suppresses display until '[/TODOS]', and a partial trailing
-        // '[TODOS' is held back so a marker split across chunks isn't shown.
-        const stripTodosForDisplay = (chunkText: string, force = false): string => {
-          let combined = _todosDisplayHold + chunkText;
-          _todosDisplayHold = '';
-          let out = '';
-          // Walk, toggling on [TODOS] / off at [/TODOS].
-          while (combined.length > 0) {
-            if (insideTodosBlock) {
-              const end = combined.toLowerCase().indexOf('[/todos]');
-              if (end < 0) { combined = ''; break; }  // still inside — drop the rest
-              insideTodosBlock = false;
-              combined = combined.slice(end + '[/todos]'.length);
-              continue;
-            }
-            const start = combined.toLowerCase().indexOf('[todos]');
-            if (start < 0) break;
-            out += combined.slice(0, start);
-            insideTodosBlock = true;
-            combined = combined.slice(start + '[todos]'.length);
-          }
-          if (!insideTodosBlock) {
-            // Guard a partial trailing '[TODOS' (or shorter prefix) split mid-marker.
-            if (!force) {
-              const lower = combined.toLowerCase();
-              const tail = '[todos]';
-              for (let n = Math.min(tail.length - 1, combined.length); n > 0; n--) {
-                if (lower.slice(combined.length - n) === tail.slice(0, n)) {
-                  _todosDisplayHold = combined.slice(combined.length - n);
-                  combined = combined.slice(0, combined.length - n);
-                  break;
-                }
-              }
-            }
-            out += combined;
-          }
-          return out;
         };
         let routingHints = deriveRoutingHints(input, ctx);
         const answerFastPath = routingHints.intakeKind === 'chat'
@@ -1136,6 +1094,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const trailingXmlSafe = takeXmlSafeDisplayChunk('', true);
           if (streaming && trailingXmlSafe.trim()) {
             dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: trailingXmlSafe });
+          }
+          // Native path: flush any held partial-marker tail from the todos stripper
+          // (force=true bypasses holds, returns held text verbatim) so a final chunk
+          // ending in a legit prefix like "… see [" isn't silently dropped.
+          if (ctx.cesar!.hasNativeTools) {
+            const trailingTodosSafe = stripTodosForDisplay('', true);
+            if (streaming && trailingTodosSafe.trim()) {
+              dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: trailingTodosSafe });
+            }
           }
         } catch (err) {
           clearInterval(heartbeat);

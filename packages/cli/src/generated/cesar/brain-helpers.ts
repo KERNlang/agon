@@ -24,9 +24,74 @@ export const splitBeforeToolMarkup: (text:string) => { visible:string, hasToolMa
 export const XML_TOOL_MARKUP_HOLD_CHARS: number = 24;
 
 /**
+ * Factory for the native-path [TODOS]…[/TODOS] incremental display stripper. Returns a stateful strip fn (chunk, force?) => string closing over its own hold buffer + insideBlock flag — one instance per turn. force=true flushes any held tail verbatim (bypassing holds) for the stream-end flush; force=false holds partial-marker prefixes (open '[todos]' AND close '[/todos]') across chunks so a marker split mid-stream neither leaks nor latches the block open forever.
+ */
+// @kern-source: brain-helpers:46
+export const createTodosDisplayStripper: () => ((chunk: string, force?: boolean) => string) = () => {
+  let insideBlock = false;  // between [TODOS] and [/TODOS]
+  let hold = '';            // partial trailing marker prefix carried to next chunk
+  const OPEN = '[todos]';
+  const CLOSE = '[/todos]';
+  // Longest suffix of `combined` that is a strict prefix of `marker` (len < marker.length).
+  const trailingPrefixLen = (combined: string, marker: string): number => {
+    const lower = combined.toLowerCase();
+    for (let n = Math.min(marker.length - 1, combined.length); n > 0; n--) {
+      if (lower.slice(combined.length - n) === marker.slice(0, n)) return n;
+    }
+    return 0;
+  };
+  return (chunk: string, force = false): string => {
+    let combined = hold + chunk;
+    hold = '';
+    // Force flush: bypass all holds, return held+combined verbatim. We do NOT
+    // suppress here — a half-open block at true stream end is malformed text the
+    // committed transcript keeps anyway, and dropping it loses real content.
+    if (force) {
+      insideBlock = false;
+      return combined;
+    }
+    let out = '';
+    // Walk, toggling on [TODOS] / off at [/TODOS].
+    while (combined.length > 0) {
+      if (insideBlock) {
+        const end = combined.toLowerCase().indexOf(CLOSE);
+        if (end < 0) {
+          // Still inside: hold a trailing partial-prefix of [/TODOS] so an
+          // end-tag split across chunks (…"[/TO" | "DOS]"…) survives to the
+          // next chunk instead of being dropped and latching the block open
+          // forever. Drop the rest of the in-block body (it's marker payload).
+          const p = trailingPrefixLen(combined, CLOSE);
+          if (p > 0) hold = combined.slice(combined.length - p);
+          combined = '';
+          break;
+        }
+        insideBlock = false;
+        combined = combined.slice(end + CLOSE.length);
+        continue;
+      }
+      const start = combined.toLowerCase().indexOf(OPEN);
+      if (start < 0) break;
+      out += combined.slice(0, start);
+      insideBlock = true;
+      combined = combined.slice(start + OPEN.length);
+    }
+    if (!insideBlock) {
+      // Guard a partial trailing '[todos]' (or shorter prefix) split mid-marker.
+      const p = trailingPrefixLen(combined, OPEN);
+      if (p > 0) {
+        hold = combined.slice(combined.length - p);
+        combined = combined.slice(0, combined.length - p);
+      }
+      out += combined;
+    }
+    return out;
+  };
+};
+
+/**
  * True when the last line of a Cesar turn is a question directed at the USER — either keyword-addressed (which/should/want/your call/…) OR an either/or fork ('A, or B?'). Auto-continuation uses this to STOP and wait for the user instead of treating the question as a mid-task stall and re-prompting Cesar (which caused fork questions like 'plan it all, or start with X?' to loop).
  */
-// @kern-source: brain-helpers:28
+// @kern-source: brain-helpers:111
 export function isUserDirectedQuestion(lastLine: string): boolean {
   const last = String(lastLine ?? '').trim();
   if (!/\?\s*$/.test(last)) return false;
@@ -40,7 +105,7 @@ export function isUserDirectedQuestion(lastLine: string): boolean {
 /**
  * Return the nearest user-directed question in the TAIL of a Cesar turn (last 6 non-empty lines), or null. Unlike checking only the LAST line, this catches the common 'ask, then advise' shape — a question FOLLOWED BY a recommendation / rationale / confidence line (esp. minimax) — so auto-continuation recognizes it as the user's turn instead of barreling through it ('asked but never got a chance to answer'). Bounded to the last 6 non-empty lines so a question buried mid-narration does NOT stop the loop; reuses isUserDirectedQuestion for the per-line test. NOTE: we deliberately do NOT try to detect 'the model proceeded past its own question' (matching done / I'll / 'I renamed …') — every anchored attempt produced false positives ('ill', 'I'll wait for your input', 'this is not done yet') that SUPPRESS real questions and reintroduce the very bug this fixes. A stale trailing question merely STOPS the auto-continuation loop when the model is already done, which is benign — the done/effect logic in _detectTurnState already classifies genuine completions. (2 rounds of multi-engine agon review, 2026-06-07.)
  */
-// @kern-source: brain-helpers:40
+// @kern-source: brain-helpers:123
 export function findTrailingUserQuestion(text: string): string | null {
   const lines = String(text ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const TAIL = 6;
@@ -54,7 +119,7 @@ export function findTrailingUserQuestion(text: string): string | null {
 /**
  * True when a Cesar turn ENDS awaiting user input — either a trailing user-directed question (findTrailingUserQuestion) OR a 'holding / awaiting your approval / greenlight' STATEMENT in the tail (which has no '?'). PLAN EXECUTION uses this to pause an approved plan to idle when the brain stalls asking for input it cannot receive mid-run (the weak-brain 'I'll hold for your greenlight' re-ask of already-granted approval). Scoped to plan execution only; a false positive merely causes a recoverable pause (the one-shot executor override + /plan resume recover it), so the statement pattern is tuned to catch that shape without firing on ordinary completion text.
  */
-// @kern-source: brain-helpers:52
+// @kern-source: brain-helpers:135
 export function detectAwaitingUserInput(text: string): boolean {
   const body = String(text ?? '');
   if (findTrailingUserQuestion(body)) return true;
@@ -90,7 +155,7 @@ export function detectAwaitingUserInput(text: string): boolean {
 /**
  * Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling.
  */
-// @kern-source: brain-helpers:86
+// @kern-source: brain-helpers:169
 export function detectNarratedToolStall(text: string): boolean {
   const body = String(text ?? '').trim();
   if (!body) {
@@ -108,7 +173,7 @@ export function detectNarratedToolStall(text: string): boolean {
 /**
  * Detect a 'false read-only hand-back': the orchestrator narrated intent to change files (apply/edit/the patch) AND claimed it cannot write / offered to delegate the write to an agent / asked the user to paste-or-apply it — WITHOUT emitting a mutating tool call. That is the stall that leaves Cesar's Phase-1 mutation un-deferred, so the execution-phase unlock never fires and the turn dead-ends. The caller uses this to force the unlock so Cesar writes directly instead of narrating a wall.
  */
-// @kern-source: brain-helpers:100
+// @kern-source: brain-helpers:183
 export function detectMutationIntentStall(text: string): boolean {
   const body = String(text ?? '').trim();
   if (!body) return false;
@@ -123,7 +188,7 @@ export function detectMutationIntentStall(text: string): boolean {
 /**
  * Detect a response that CLAIMS an async review/forge/tribunal/brainstorm/agent or background job was dispatched or is now running — e.g. 'review delegated to codex, claude, agy', 'three reviewers are reading the diff in parallel', 'I kicked off the review', "I'll get back when they report". The caller pairs this with 'no delegation was actually emitted this turn' (ctx.cesar.pendingDelegation is null) to catch the confabulation where a weak engine narrates a dispatch it never made. Requires BOTH a delegable target AND a dispatch/running claim, so a plain answer that merely mentions the word 'review' does not trip it.
  */
-// @kern-source: brain-helpers:113
+// @kern-source: brain-helpers:196
 export function detectFabricatedDelegation(text: string): boolean {
   const body = String(text ?? '').trim();
   if (!body) return false;
@@ -138,7 +203,7 @@ export function detectFabricatedDelegation(text: string): boolean {
 /**
  * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
  */
-// @kern-source: brain-helpers:126
+// @kern-source: brain-helpers:209
 export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
   const names: string[] = [];
   for (const result of results ?? []) {
@@ -156,7 +221,7 @@ export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
 /**
  * Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch.
  */
-// @kern-source: brain-helpers:138
+// @kern-source: brain-helpers:221
 export function shouldRunEagerRepairTool(toolName: string, meta: any, failedToolNames: string[], usedToolNames: string[]): boolean {
   const name = String(toolName ?? '').trim();
   if (!name) return false;
@@ -171,7 +236,7 @@ export function shouldRunEagerRepairTool(toolName: string, meta: any, failedTool
 /**
  * Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet.
  */
-// @kern-source: brain-helpers:151
+// @kern-source: brain-helpers:234
 export function shouldStopAfterXmlToolCall(toolName: string): boolean {
   const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan', 'ExitPlanMode']);
   return HANDOFF_TOOLS.has(String(toolName ?? ''));
@@ -180,7 +245,7 @@ export function shouldStopAfterXmlToolCall(toolName: string): boolean {
 /**
  * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
  */
-// @kern-source: brain-helpers:157
+// @kern-source: brain-helpers:240
 export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
   const trimmed = input.trim();
   const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
@@ -201,7 +266,7 @@ export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): {
   return { matched: true, prompt: prompt };
 }
 
-// @kern-source: brain-helpers:176
+// @kern-source: brain-helpers:259
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;

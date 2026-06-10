@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseLiveTodos } from '../../packages/cli/src/generated/cesar/todos-marker.js';
+import { createTodosDisplayStripper } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 import {
   updateTodoState,
   clearLiveTodos,
@@ -88,6 +89,66 @@ describe('parseLiveTodos — live [TODOS] marker parser', () => {
     const r = parseLiveTodos('[todos][{"id":"1","text":"x","state":"failed","note":"oops"}][/todos]');
     expect(r.found).toBe(true);
     expect(r.todos[0]).toMatchObject({ state: 'failed', note: 'oops' });
+  });
+
+  it('caps parsed items at 50 (runaway/garbage array bounded)', () => {
+    const items = Array.from({ length: 120 }, (_, i) => `{"id":"${i}","text":"t${i}","state":"pending"}`);
+    const r = parseLiveTodos(`[TODOS][${items.join(',')}][/TODOS]`);
+    expect(r.found).toBe(true);
+    expect(r.todos).toHaveLength(50);
+    // Cap is applied to the FIRST 50 raw items.
+    expect(r.todos[0].id).toBe('0');
+    expect(r.todos[49].id).toBe('49');
+  });
+});
+
+describe('createTodosDisplayStripper — native-path incremental [TODOS] stripper', () => {
+  it('open tag split across chunks holds the prefix, never leaking the marker', () => {
+    const strip = createTodosDisplayStripper();
+    // "[TODO" is a partial prefix of "[todos]" → held, not shown.
+    expect(strip('before [TODO')).toBe('before ');
+    // Completes the open marker, body suppressed, close consumed, after shown.
+    expect(strip('S][{"id":"1","text":"x"}][/TODOS] after')).toBe(' after');
+  });
+
+  it('END tag split across chunks: text after [/TODOS] renders, nothing suppressed after', () => {
+    const strip = createTodosDisplayStripper();
+    // Chunk 1: open + body + partial close prefix "[/TO" (must be held, not dropped).
+    expect(strip('[TODOS]body[/TO')).toBe('');
+    // Chunk 2: completes "[/TODOS]" then trailing text — block closes, text renders.
+    expect(strip('DOS] after')).toBe(' after');
+    // Subsequent plain text is NOT suppressed (block did not latch open forever).
+    expect(strip('more text')).toBe('more text');
+  });
+
+  it('final chunk ending in a partial marker prefix is returned on force flush (no loss)', () => {
+    const strip = createTodosDisplayStripper();
+    // "… see [" is a legit prefix of "[todos]" → held during streaming.
+    expect(strip('all done, see [')).toBe('all done, see ');
+    // Stream-end force flush returns the held tail verbatim.
+    expect(strip('', true)).toBe('[');
+  });
+
+  it('complete [TODOS]…[/TODOS] within one chunk: before/after text renders', () => {
+    const strip = createTodosDisplayStripper();
+    expect(strip('pre [TODOS][{"id":"1","text":"x"}][/TODOS] post')).toBe('pre  post');
+  });
+
+  it('plain text containing a literal "[" is unharmed', () => {
+    const strip = createTodosDisplayStripper();
+    expect(strip('an array a[0] and a [list] of things')).toBe('an array a[0] and a [list] of things');
+  });
+
+  it('force flush with empty hold returns ""', () => {
+    const strip = createTodosDisplayStripper();
+    expect(strip('plain text')).toBe('plain text');
+    expect(strip('', true)).toBe('');
+  });
+
+  it('a bare "[" at chunk end is held then flushed verbatim on force', () => {
+    const strip = createTodosDisplayStripper();
+    expect(strip('tail [')).toBe('tail ');
+    expect(strip('', true)).toBe('[');
   });
 });
 

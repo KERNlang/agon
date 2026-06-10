@@ -65,9 +65,13 @@ fn name=parseLiveTodos params="response:string" returns="TodosMarkerResult" expo
 
     // Build, validating each item; skip anything without a usable id+text.
     // Dedupe by id (last occurrence wins) while preserving first-seen order.
+    // Cap parsed items at 50: a live checklist never has hundreds of entries,
+    // and the cap bounds the work (and the dispatched payload) on a model that
+    // emits a runaway/garbage array. Applied to the raw items BEFORE dedupe.
+    const MAX_LIVE_TODOS = 50;
     const order: string[] = [];
     const byId = new Map<string, Todo>();
-    for (const raw of parsed as unknown[]) {
+    for (const raw of (parsed as unknown[]).slice(0, MAX_LIVE_TODOS)) {
       if (!raw || typeof raw !== 'object') continue;
       const r = raw as Record<string, unknown>;
       const id = r.id !== undefined && r.id !== null ? String(r.id) : '';

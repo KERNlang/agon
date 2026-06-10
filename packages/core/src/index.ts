@@ -157,6 +157,9 @@ export {
   EVENT_LOG_FLUSH_MS, EVENT_LOG_ROTATE_BYTES,
 } from './generated/sessions/event-log.js';
 export type { LoggedEvent, SessionMeta as EventLogSessionMeta, AppendOptions as EventLogAppendOptions } from './generated/sessions/event-log.js';
+// ── SessionHost — read-side seam over the EventLog ledger (client/server split M2) ──
+export { InProcessSessionHost, inProcessSessionHost, getSessionHost, SUBSCRIBE_POLL_MS } from './generated/sessions/session-host.js';
+export type { SessionHost, SessionDescriptor, SubscribeOptions } from './generated/sessions/session-host.js';
 export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
 export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';
 export { apiDispatch, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';

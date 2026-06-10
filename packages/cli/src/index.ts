@@ -28,6 +28,7 @@ import { neroCommand } from './commands/nero.js';
 import { councilCommand } from './commands/council.js';
 import { conquerCommand } from './commands/conquer.js';
 import { worktreeCommand } from './commands/worktree.js';
+import { attachCommand } from './commands/attach.js';
 import { loginCommand } from './commands/login.js';
 import { updateCommand } from './commands/update.js';
 import { startRepl } from './repl.js';
@@ -200,6 +201,7 @@ const main = defineCommand({
     conquer: conquerCommand,
     worktree: worktreeCommand,
     wt: worktreeCommand,
+    attach: attachCommand,
     login: loginCommand,
     update: updateCommand,
     upgrade: updateCommand,

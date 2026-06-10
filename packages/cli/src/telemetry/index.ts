@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { tracker } from '@kernlang/agon-core';
+import { runsStore } from '../generated/signals/runs-store.js';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -204,6 +205,12 @@ export function recordRun(result: OrchestrationResult): RunRecord {
     costEstimateUsd: stats?.totalCostUsd ?? undefined,
   };
   defaultLedger.append(record);
+  // A run record was written — forge also writes a ${forgeId}.json into
+  // ~/.agon/runs around this point. Refresh the dashboard's cached runs
+  // snapshot (debounced; coalesces forge's incremental writes) so the count
+  // stays fresh without a render-path readdirSync. Best-effort: never let a
+  // refresh failure affect recording.
+  try { runsStore.scheduleRefresh(); } catch { /* non-critical */ }
   return record;
 }
 

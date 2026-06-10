@@ -688,11 +688,104 @@ export function cachedMarkdownRows(baseKey: string, text: string, wrapWidth: num
   return rows;
 }
 
-export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
+export const _blockRowCache = new Map<string, any[]>();
+
+export const _BLOCK_ROW_CACHE_MAX: number = 1500;
+
+export function blockWantsLeadingGap(eventType: string): boolean {
+  return eventType === 'user-message'
+    || eventType === 'engine-block'
+    || eventType === 'kern-draft'
+    || eventType === 'debate-round';
+}
+
+export const _CACHEABLE_BLOCK_TYPES = new Set<string>([
+    'text', 'user-message', 'engine-block', 'separator', 'header',
+    'success', 'warning', 'info', 'error', 'permission-ask',
+    'thinking-chunk', 'streaming-chunk', 'kern-draft', 'debate-round',
+    'verdict',
+  ]);
+
+export function isCacheableBlockType(eventType: string): boolean {
+  return _CACHEABLE_BLOCK_TYPES.has(eventType);
+}
+
+export function blockRowFingerprint(event: any, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean, proseWidth: number, chatWidth: number, engineWidth: number): string {
+  // Cheap content signature so an in-place mutation (status/output update on
+  // a non-tool block, or any event field change) busts the cache. Widths
+  // encode terminal width (contentWidth reads process.stdout.columns), so
+  // including them flushes the entry on resize — exactly like _mdRowCache.
+  const type = String(event?.type ?? '');
+  // Primary payload across every cacheable event variant. permission-ask
+  // carries its diff in `command`; tool/title/position carry the rest. Any
+  // field a variant renders from MUST be in this signature or two different
+  // blocks that share an id (ids are reused freely in tests, and in prod a
+  // /clear can repeat them) would collide on a stale cache entry.
+  const content = String(event?.content ?? event?.message ?? event?.summary ?? event?.argument ?? event?.title ?? event?.chunk ?? event?.markdown ?? event?.command ?? '');
+  const status = String(event?.status ?? '');
+  const engineId = String(event?.engineId ?? '');
+  const tool = String(event?.tool ?? '');
+  const folded = String(event?.foldedSteps ?? '');
+  // Render-affecting secondary fields per cacheable variant: engine-block
+  // reads `color` (accent), kern-draft reads `critique`, debate-round reads
+  // `position`. Adding a type to the allowlist? Add EVERY field its renderer
+  // reads here first (e.g. tool output would need `output`).
+  const extra = `${String(event?.color ?? '')}|${String(event?.critique ?? '')}|${String(event?.position ?? '')}`;
+  const widths = `${proseWidth}.${chatWidth}.${engineWidth}`;
+  const flags = `${mode}|${toolOutputExpanded ? 1 : 0}|${thinkingExpanded ? 1 : 0}`;
+  // Head AND tail slices: same-prefix same-length bodies (padded logs, JSON
+  // with a shared head) must not collide on a recycled id.
+  return `${type}|${engineId}|${tool}|${status}|${folded}|${extra}|${content.length}|${content.slice(0, 120)}|${content.slice(-40)}|${widths}|${flags}`;
+}
+
+export function cachedBlockOwnRows(block: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean, proseWidth: number, chatWidth: number, engineWidth: number): any[] {
+  const event = block.event as any;
+  const type = String(event?.type ?? '');
+  if (!isCacheableBlockType(type)) {
+    return renderBlockOwnRows(block, mode, toolOutputExpanded, thinkingExpanded, proseWidth, chatWidth, engineWidth);
+  }
+  const fingerprint = blockRowFingerprint(event, mode, toolOutputExpanded, thinkingExpanded, proseWidth, chatWidth, engineWidth);
+  const key = `${block.id}|${fingerprint}`;
+  const hit = _blockRowCache.get(key);
+  if (hit) {
+    // True LRU: re-insert on hit so hot entries survive the oldest-20%
+    // eviction. Return a shallow copy so a caller can never mutate the
+    // cached array (the row objects inside are treated as immutable).
+    _blockRowCache.delete(key);
+    _blockRowCache.set(key, hit);
+    return hit.slice();
+  }
+  const rows = renderBlockOwnRows(block, mode, toolOutputExpanded, thinkingExpanded, proseWidth, chatWidth, engineWidth);
+  // At the cap, evict the least-recently-used 20% (hits re-insert above, so
+  // Map order ≈ recency) — amortized, never a full flush (which would force
+  // a cold rebuild of all committed rows).
+  if (_blockRowCache.size >= _BLOCK_ROW_CACHE_MAX) {
+    const evictCount = Math.floor(_BLOCK_ROW_CACHE_MAX * 0.2);
+    const it = _blockRowCache.keys();
+    for (let i = 0; i < evictCount; i++) {
+      const oldest = it.next().value;
+      if (oldest === undefined) break;
+      _blockRowCache.delete(oldest);
+    }
+  }
+  _blockRowCache.set(key, rows);
+  return rows.slice();
+}
+
+/**
+ * Drop every cached block row. Called from the clearBlocks reset funnel so a /clear (which can recycle block ids in replay paths) can never serve rows rendered for a previous transcript.
+ */
+export function clearBlockRowCache(): void {
+  _blockRowCache.clear();
+}
+
+/**
+ * Render the intrinsic rows for ONE transcript block, independent of its neighbors and of its position in the transcript (no leading positional spacer — that is prepended by buildTranscriptRows). Tool-call grouping is NOT handled here.
+ */
+export function renderBlockOwnRows(block: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean, proseWidth: number, chatWidth: number, engineWidth: number): any[] {
   const rows: any[] = [];
-  const proseWidth = contentWidth(4);
-  const chatWidth = contentWidth(2);
-  const engineWidth = contentWidth(8);
+  const event = block.event as any;
+  const baseKey = `block-${block.id}`;
   const pushSpacer = (key: string) => {
     rows.push({ key, kind: 'spacer' });
   };
@@ -712,29 +805,12 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
     });
   };
 
-  let skippedUntil = -1;
-  blocks.forEach((block: OutputBlock, blockIndex: number) => {
-    if (blockIndex < skippedUntil) return;
-    const event = block.event as any;
-    const baseKey = `block-${block.id}`;
-
-    if (!toolOutputExpanded && event.type === 'tool-call') {
-      const groupedEvents = [event];
-      let nextIndex = blockIndex + 1;
-      while (nextIndex < blocks.length) {
-        const nextEvent = blocks[nextIndex].event as any;
-        if (nextEvent.type !== 'tool-call') break;
-        groupedEvents.push(nextEvent);
-        nextIndex += 1;
-      }
-
-      if (groupedEvents.length > 1) {
-        rows.push(...buildCollapsedToolGroupRows(baseKey, groupedEvents));
-        skippedUntil = nextIndex;
-        return;
-      }
-    }
-
+  // The switch below was lifted verbatim from buildTranscriptRows; its many
+  // `return;` statements bail out of THIS inner closure (not the whole fn),
+  // accumulating into the closed-over `rows`. The leading positional spacer
+  // for gap-wanting types is intentionally a no-op here (rows is empty at
+  // entry) — buildTranscriptRows prepends the real gap.
+  (() => {
     switch (event.type) {
       case 'text':
         pushRichText(baseKey, event.content, 2, proseWidth);
@@ -949,50 +1025,13 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         return;
       }
       case 'tool-call':
-        rows.push(...buildToolCallRows(baseKey, event, toolOutputExpanded));
+      case 'tool-call-group':
+        // Tool-call rendering is neighbor-dependent (adjacent tool blocks
+        // coalesce) and content-unstable (mutates while running), so it is
+        // handled entirely by buildTranscriptRows on the uncached path and
+        // never routed here. This branch is unreachable; kept as a no-op so
+        // the default fallback can't mis-render a tool block if it ever is.
         return;
-      case 'tool-call-group': {
-        const groupBlocks = Array.isArray((event as any).blocks) ? (event as any).blocks : [];
-        // Expanded: unpack every inner tool call so Ctrl+E reveals full
-        // output. Collapsed (default): one compact summary row, matching
-        // the Static-era ToolCallGroup renderer — preserves the bundling
-        // that output.kern emits (codex review P3).
-        if (toolOutputExpanded) {
-          groupBlocks.forEach((child: any, index: number) => {
-            const childEvent = child?.event;
-            if (childEvent && childEvent.type === 'tool-call') {
-              rows.push(...buildToolCallRows(`${baseKey}-g-${index}`, childEvent, toolOutputExpanded));
-            }
-          });
-          return;
-        }
-        const groupedEvents: any[] = [];
-        const appendGroup = (blocksToAppend: any[]) => {
-          blocksToAppend.forEach((child: any) => {
-            const childEvent = child?.event;
-            if (childEvent && childEvent.type === 'tool-call') groupedEvents.push(childEvent);
-          });
-        };
-        appendGroup(groupBlocks);
-        let nextIndex = blockIndex + 1;
-        while (nextIndex < blocks.length) {
-          const nextEvent = blocks[nextIndex].event as any;
-          if (nextEvent?.type === 'tool-call-group') {
-            appendGroup(Array.isArray(nextEvent.blocks) ? nextEvent.blocks : []);
-            nextIndex += 1;
-            continue;
-          }
-          if (nextEvent?.type === 'tool-call') {
-            groupedEvents.push(nextEvent);
-            nextIndex += 1;
-            continue;
-          }
-          break;
-        }
-        rows.push(...buildCollapsedToolGroupRows(baseKey, groupedEvents));
-        skippedUntil = nextIndex;
-        return;
-      }
       case 'response-meta': {
         const totalTokens = (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
         const parts = [
@@ -1186,6 +1225,102 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
       default:
         pushSegmentsRow(`${baseKey}-fallback`, 2, [{ text: `[${event.type}]`, dimColor: true }]);
     }
+  })();
+
+  return rows;
+}
+
+export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
+  const rows: any[] = [];
+  const proseWidth = contentWidth(4);
+  const chatWidth = contentWidth(2);
+  const engineWidth = contentWidth(8);
+
+  let skippedUntil = -1;
+  blocks.forEach((block: OutputBlock, blockIndex: number) => {
+    if (blockIndex < skippedUntil) return;
+    const event = block.event as any;
+    const baseKey = `block-${block.id}`;
+
+    // ── Neighbor-dependent tool grouping (UNCACHED) ──────────────────
+    // Collapsed adjacent tool-call blocks coalesce into one summary; this
+    // depends on the following blocks, so it can never be a per-block cache
+    // hit. Tool blocks also mutate in place while running.
+    if (!toolOutputExpanded && event.type === 'tool-call') {
+      const groupedEvents = [event];
+      let nextIndex = blockIndex + 1;
+      while (nextIndex < blocks.length) {
+        const nextEvent = blocks[nextIndex].event as any;
+        if (nextEvent.type !== 'tool-call') break;
+        groupedEvents.push(nextEvent);
+        nextIndex += 1;
+      }
+
+      if (groupedEvents.length > 1) {
+        rows.push(...buildCollapsedToolGroupRows(baseKey, groupedEvents));
+        skippedUntil = nextIndex;
+        return;
+      }
+    }
+
+    if (event.type === 'tool-call') {
+      rows.push(...buildToolCallRows(baseKey, event, toolOutputExpanded));
+      return;
+    }
+
+    if (event.type === 'tool-call-group') {
+      const groupBlocks = Array.isArray((event as any).blocks) ? (event as any).blocks : [];
+      // Expanded: unpack every inner tool call so Ctrl+E reveals full
+      // output. Collapsed (default): one compact summary row, matching
+      // the Static-era ToolCallGroup renderer — preserves the bundling
+      // that output.kern emits (codex review P3).
+      if (toolOutputExpanded) {
+        groupBlocks.forEach((child: any, index: number) => {
+          const childEvent = child?.event;
+          if (childEvent && childEvent.type === 'tool-call') {
+            rows.push(...buildToolCallRows(`${baseKey}-g-${index}`, childEvent, toolOutputExpanded));
+          }
+        });
+        return;
+      }
+      const groupedEvents: any[] = [];
+      const appendGroup = (blocksToAppend: any[]) => {
+        blocksToAppend.forEach((child: any) => {
+          const childEvent = child?.event;
+          if (childEvent && childEvent.type === 'tool-call') groupedEvents.push(childEvent);
+        });
+      };
+      appendGroup(groupBlocks);
+      let nextIndex = blockIndex + 1;
+      while (nextIndex < blocks.length) {
+        const nextEvent = blocks[nextIndex].event as any;
+        if (nextEvent?.type === 'tool-call-group') {
+          appendGroup(Array.isArray(nextEvent.blocks) ? nextEvent.blocks : []);
+          nextIndex += 1;
+          continue;
+        }
+        if (nextEvent?.type === 'tool-call') {
+          groupedEvents.push(nextEvent);
+          nextIndex += 1;
+          continue;
+        }
+        break;
+      }
+      rows.push(...buildCollapsedToolGroupRows(baseKey, groupedEvents));
+      skippedUntil = nextIndex;
+      return;
+    }
+
+    // ── All other (neighbor-independent) blocks: CACHED per-block ─────
+    const ownRows = cachedBlockOwnRows(block, mode, toolOutputExpanded, thinkingExpanded, proseWidth, chatWidth, engineWidth);
+    if (ownRows.length === 0) return;
+    // Leading positional spacer: depends on transcript position (not block
+    // content), so it lives here, outside the cache. renderBlockOwnRows
+    // omits it.
+    if (rows.length > 0 && blockWantsLeadingGap(String(event?.type ?? ''))) {
+      rows.push({ key: `${baseKey}-gap`, kind: 'spacer' });
+    }
+    for (const row of ownRows) rows.push(row);
   });
 
   return rows;

@@ -196,6 +196,19 @@ module name=AppRendering
       if (event.status === 'error') {
         collapsedHint.push({ text: ' · Ctrl+Y retry', color: '#fbbf24' });
       }
+      // Global transcript expand affordance. The compact summary already states
+      // WHAT was produced (e.g. "→ N lines"); this dim segment tells the user HOW
+      // to see it — Ctrl+E flips the global toolOutputExpanded toggle that this
+      // very function reads. It is rendered ONLY here in the live (re-renderable)
+      // tool-row path, NOT in the <Static>-committed engine.kern path, because
+      // sealed scrollback rows cannot repaint when the toggle flips (so a hint
+      // there would lie). Gated on a TERMINAL status (done/error) so it never
+      // appears on a still-streaming result whose output is not yet materialized.
+      // K (the hidden line count) is the adjacent "→ N lines" the summary already
+      // prints, so we surface the affordance without duplicating the number.
+      if (collapsed && (event.status === 'done' || event.status === 'error') && event.output) {
+        collapsedHint.push({ text: ' · ctrl+e to expand', dimColor: true });
+      }
       const nestSegment = { text: ' ⏿ ', color: eColor };
       const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 2) => {
         rows.push({ key: `${baseKey}-${suffix}`, kind: 'segments', paddingLeft, segments });

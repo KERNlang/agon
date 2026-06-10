@@ -579,9 +579,15 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       } catch { /* not JSON — rawInput used as fallback */ }
       const toolKey = event.tool.toLowerCase();
       const forceExpanded = ['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey);
-      // Tool blocks are committed into native terminal scrollback via
-      // <Static> once finalized — so a per-block "Ctrl+E expand" hint
-      // would be misleading (Ink cannot re-render past Static items).
+      // Tool blocks rendered through OutputBlockView are committed into
+      // native terminal scrollback via <Static> once finalized — Ink cannot
+      // re-render past Static items, so a "ctrl+e to expand" hint HERE would
+      // lie (flipping the toggle can never repaint a sealed row). The expand
+      // affordance therefore lives only in the live (re-renderable) tool-row
+      // path: buildToolCallRows in app-rendering.kern. This stays null by
+      // design. Ctrl+E is the global compact↔expanded transcript toggle
+      // (toolOutputExpanded); the latest tool-call island is kept live so it
+      // honours the flip — see effectiveNativeArchiveBlockCount.
       const collapsedHint = null;
       // Claude Code-style compact duration suffix for the result summary
       // line — e.g. "→ 12 lines · 1.4s". Only present on terminal events
@@ -956,7 +962,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:1017
+// @kern-source: engine:1023
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -1101,7 +1107,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1168
+// @kern-source: engine:1174
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1127,7 +1133,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1197
+// @kern-source: engine:1203
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (

@@ -636,9 +636,15 @@ screen name=OutputBlockView target=ink memo=true
           } catch { /* not JSON — rawInput used as fallback */ }
           const toolKey = event.tool.toLowerCase();
           const forceExpanded = ['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey);
-          // Tool blocks are committed into native terminal scrollback via
-          // <Static> once finalized — so a per-block "Ctrl+E expand" hint
-          // would be misleading (Ink cannot re-render past Static items).
+          // Tool blocks rendered through OutputBlockView are committed into
+          // native terminal scrollback via <Static> once finalized — Ink cannot
+          // re-render past Static items, so a "ctrl+e to expand" hint HERE would
+          // lie (flipping the toggle can never repaint a sealed row). The expand
+          // affordance therefore lives only in the live (re-renderable) tool-row
+          // path: buildToolCallRows in app-rendering.kern. This stays null by
+          // design. Ctrl+E is the global compact↔expanded transcript toggle
+          // (toolOutputExpanded); the latest tool-call island is kept live so it
+          // honours the flip — see effectiveNativeArchiveBlockCount.
           const collapsedHint = null;
           // Claude Code-style compact duration suffix for the result summary
           // line — e.g. "→ 12 lines · 1.4s". Only present on terminal events

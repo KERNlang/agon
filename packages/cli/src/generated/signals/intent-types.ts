@@ -52,6 +52,7 @@ export type Intent =
   | { type: 'focus'; jobId?: string }
   | { type: 'explore' }
   | { type: 'permissions' }
+  | { type: 'nogate' }
   | { type: 'nero' }
   | { type: 'chats-resume'; sessionId: string }
   | { type: 'suggest-brainstorm'; input: string; question?: string }

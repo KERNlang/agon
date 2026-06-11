@@ -207,6 +207,22 @@ export async function dispatchMetaIntent(intent: any, input: string, cb: Dispatc
       break;
     }
 
+    // ── Verify-before-done gate nudge toggle ──
+    case 'nogate': {
+      if (!cb.ctx.cesar) {
+        cb.dispatch({ type: 'info', message: 'No active Cesar session — gate nudge applies once you start a turn.' });
+        break;
+      }
+      const waived = !cb.ctx.cesar.gateWaived;
+      cb.ctx.cesar.gateWaived = waived;
+      if (waived) {
+        cb.dispatch({ type: 'success', message: 'Verify-before-done gate OFF for this session — Cesar will not be nudged to run the gate. Use /nogate again to re-enable.' });
+      } else {
+        cb.dispatch({ type: 'success', message: 'Verify-before-done gate ON — Cesar will be reminded to run the gate when it claims done without it.' });
+      }
+      break;
+    }
+
     // ── Nero mode toggle ──
     case 'nero': {
       const newNero = !cb.neroMode;

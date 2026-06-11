@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@kernlang/agon-core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, hasProjectBrief, parsePermissionRuleSet, parseToolHooks, evaluatePermissionRules, evaluateToolRules } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, hasProjectBrief, discoverGate, bashRanGate, isGateSkipSignal, parsePermissionRuleSet, parseToolHooks, evaluatePermissionRules, evaluateToolRules } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -14,13 +14,13 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import type { Dispatch, HandlerContext, PendingDelegation, CesarTurnOutcome } from '../../handlers/types.js';
 
-import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge } from './confidence.js';
+import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge, extractStrictConfidence, buildEscalationSuggestionLine, ESCALATION_SUGGESTION_THRESHOLD } from './confidence.js';
 
 import { parseSuggestion } from './suggestion.js';
 
 import { parseLiveTodos, parsePreamble } from './todos-marker.js';
 
-import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend } from './session.js';
+import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend, renderToolPermissionCommand } from './session.js';
 
 import { enforceContextBudget } from './context-budget.js';
 
@@ -40,7 +40,7 @@ import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline
 
 import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering.js';
 
-import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
+import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName } from './brain-helpers.js';
 
 // @kern-source: brain:23
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
@@ -129,6 +129,44 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       } catch { /* nudge is best-effort — never block a turn */ }
       const _toolsUsed: string[] = [];
       const _toolUseKeys = new Set<string>();
+      // ── Verify-before-done gate (Phase C) ──
+      // Discover the project's verification gate ONCE per turn (cheap read of
+      // package.json + a project brief). discoveredGate.command === '' means
+      // gateAbsent → never nudge. Cache the discovery on CesarState so a user
+      // skip-signal can waive it for the whole session, but re-discover each turn
+      // so a newly-added test script / fitness: line is picked up live.
+      const _gate = discoverGate(_turnCwd);
+      if (ctx.cesar) ctx.cesar.discoveredGate = _gate;
+      // NB: a gate-less turn is NOT a permanent waiver — _shouldGateNudge already
+      // returns false on an empty command/matchers, and the discovery above re-runs
+      // every turn (per the comment above), so an empty dir / non-node project this
+      // turn must not disable the feature once a package.json/fitness: line appears.
+      // A user skip-signal ("skip it / no need to run the gate") in the message
+      // IMMEDIATELY AFTER a nudge makes the waiver sticky for the session — stop
+      // re-nudging once they've said the gate doesn't apply. The window is narrow on
+      // purpose: we evaluate the skip-signal against the PREVIOUS turn's gateNudgedClaim
+      // (set only when a nudge fired last turn) and then CLEAR it, so a skip-phrase many
+      // turns later (e.g. "we'll do docs later") no longer permanently kills the feature.
+      if (ctx.cesar?.gateNudgedClaim && isGateSkipSignal(input)) ctx.cesar.gateWaived = true;
+      if (ctx.cesar) ctx.cesar.gateNudgedClaim = undefined;
+      // Per-turn flag: did Cesar actually run something matching the gate this turn?
+      let _ranGate = false;
+      // Tool names arrive on TWO paths with DIFFERENT spellings: the native/XML loop
+      // uses bare names ('Bash'/'Edit'/'Write'/...), while the default companion/MCP
+      // path surfaces the orchestration aliases ('AgonBash'/'AgonEdit'/'AgonWrite')
+      // — done.tool on the MCP completion is the ORIGINAL alias, not the mapped kern
+      // tool (see agon-orchestration.kern handleWriteToolCall: writeToolCompletion is
+      // called with `name`, not `kernTool`). A strict bare-name check silently missed
+      // every MCP write/bash, so the verify-before-done gate never armed on the default
+      // path. isBashToolName/isWriteToolName (brain-helpers, unit-tested) strip the
+      // 'Agon' alias prefix + normalize case so BOTH paths classify identically.
+      const _noteBashForGate = (toolName: string, rawInput?: string) => {
+        if (_ranGate || !_gate.matchers.length) return;
+        if (!isBashToolName(toolName)) return;
+        let cmd = String(rawInput ?? '');
+        try { const parsed = JSON.parse(cmd); if (parsed && typeof parsed.command === 'string') cmd = parsed.command; } catch { /* not JSON — match the raw string */ }
+        if (bashRanGate(cmd, _gate.matchers)) _ranGate = true;
+      };
       let _toolEventCount = 0;
       let _readToolEventCount = 0;
       let _toolCallTurns = 0;
@@ -155,6 +193,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       };
       const recordToolUse = (name: string, source: 'native'|'mcp'|'xml'|'eager'|'auto'|'signal', input?: string, status?: string) => {
         const toolName = String(name || 'tool');
+        // Verify-before-done: flag when a Bash call loosely matches the discovered
+        // gate. Done from the central record point so EVERY tool path (native/mcp/
+        // xml/eager + both tool loops + continuations) counts uniformly.
+        _noteBashForGate(toolName, input);
         const normalizedSource = source === 'eager' ? 'xml' : source === 'auto' ? 'native' : source;
         const key = `${normalizedSource}:${toolName}:${String(input ?? '').slice(0, 500)}`;
         _toolEventCount++;
@@ -574,6 +616,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         let _engineErrorMsg = '';
       let secondOpinionPromise: Promise<any> | null = null;
       let usedQuickNero = false;
+      // C4: once-per-turn guard for the soft in-flow escalation-suggestion line.
+      let _escalationSuggested = false;
         const eagerPromises: Promise<ToolCallResult>[] = [];
         let eagerToolCtx: ToolContext | null = null;
         const shouldInterruptForXmlTool = () => {
@@ -862,12 +906,18 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               // proposed change) so the user approves the actual change, not just
               // a truncated path/command. Other tools keep the command preview.
               logMcpApproval('prompted', 'mcp.user-prompt', 'Cesar wants to execute');
+              // Merge of C (behavior) + B (editing): SaveMemory shows the memory
+              // line + section via the shared renderToolPermissionCommand (all
+              // permission paths render identically), AND file-mutating tools get
+              // the structured diff preview threaded into the ask.
+              const askCommand = renderToolPermissionCommand(reqTool, reqArgs);
+              const askReason = reqTool === 'SaveMemory' ? 'Cesar wants to save a durable project memory' : 'Cesar wants to execute';
               let permDiffPreview: any = undefined;
               if (approvalToolIsFileMutating(req.tool)) {
                 try { permDiffPreview = buildApprovalDiffPreview(String(req.tool), reqArgs); }
                 catch { /* diff is best-effort — fall back to command preview */ }
               }
-              dispatch({ type: 'permission-ask', tool: req.tool, command: String(req.args?.command ?? req.args?.file_path ?? JSON.stringify(req.args)), reason: `Cesar wants to execute`, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
+              dispatch({ type: 'permission-ask', tool: req.tool, command: askCommand, reason: askReason, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
                 const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : approved;
                 logMcpApproval(wasApproved ? 'approved' : 'denied', 'mcp.user-prompt', wasApproved ? 'user approved' : 'user denied');
                 // Handle "Always" — persist to config
@@ -1649,7 +1699,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   return new Promise<boolean>((resolve) => {
                     const lastInput = _lastToolInputs[tool] ?? '{}';
                     let command = '';
-                    try { command = JSON.parse(lastInput).command ?? JSON.parse(lastInput).file_path ?? lastInput; } catch { command = lastInput; }
+                    try { command = renderToolPermissionCommand(tool, JSON.parse(lastInput)); } catch { command = lastInput; }
                     dispatch({ type: 'permission-ask', tool, command, reason: message, resolve } as any);
                   });
                 },
@@ -1744,8 +1794,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           }
         }
 
-        // ── Quick Nero: structured self-check before Cesar commits to staying local ──
-        // Auto-gate fires on uncertainty-family signals OR when Cesar calls QuickNero() himself.
+        // ── Quick Nero: structured self-check ONLY when Cesar explicitly called QuickNero() ──
+        // C4 (escalation softening): the AUTO uncertainty-family interrupt is GONE.
+        // It used to fire a full same-session self-challenge round-trip + a
+        // **Self-challenge:** block, and could RETURN early to take over the turn —
+        // a modal-ish interruption on every 'challenge'/'tradeoff'/sub-86%-impl turn.
+        // That auto path is now replaced by a soft, in-flow one-liner (below), and
+        // fireQuickNero fires ONLY when Cesar DELIBERATELY requested it via QuickNero().
         const shouldQuickNero = parsedConfidence !== null
           && !cesarFastPath
           && !secondOpinionPromise
@@ -1753,13 +1808,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           && !_isFollowUp
           && !abort.signal.aborted
           && !ctx.cesar!.pendingDelegation
-          && (
-            ctx.cesar!.quickNeroRequested === true
-            || routingHints.uncertaintyFamily === 'challenge'
-            || routingHints.uncertaintyFamily === 'tradeoff'
-            || (routingHints.uncertaintyFamily === 'implementation' && parsedConfidence < 86)
-            || (mutationDeferred && parsedConfidence < 90)
-          );
+          && ctx.cesar!.quickNeroRequested === true;
         // Consume the flag whether or not we fire — follow-up/aborted cases clear it too
         if (ctx.cesar!.quickNeroRequested) ctx.cesar!.quickNeroRequested = false;
         if (shouldQuickNero) {
@@ -1811,6 +1860,28 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               reasoning: `User context: ${escalationContext}`,
               decisionReason: 'quick-nero-escalation',
             };
+          }
+        }
+
+        // ── C4: soft in-flow escalation suggestion (replaces the auto QuickNero interrupt) ──
+        // When Cesar's turn carries a STRICT `CONFIDENCE: NN%` anchor below the
+        // threshold, render ONE dim one-liner inline with the turn — no modal, no
+        // round-trip, no early return — suggesting a nero/tribunal. Fail toward
+        // silence: no anchor → no line; anchor ≥ threshold → no line; once per turn.
+        // Skipped when the turn already escalated/delegated, when Cesar fired its own
+        // QuickNero (it spoke for itself above), on fast-path/follow-up turns, and
+        // when aborted. The actual nero/tribunal dispatch still works when the user
+        // takes the suggestion — they just type /nero or /tribunal (or Cesar does).
+        if (!_escalationSuggested
+            && !usedQuickNero
+            && !cesarFastPath
+            && !_isFollowUp
+            && !abort.signal.aborted
+            && !ctx.cesar!.pendingDelegation) {
+          const _strictConf = extractStrictConfidence(response);
+          if (_strictConf !== null && _strictConf < ESCALATION_SUGGESTION_THRESHOLD) {
+            _escalationSuggested = true;
+            dispatch({ type: 'info', message: buildEscalationSuggestionLine(_strictConf) });
           }
         }
 
@@ -2106,7 +2177,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // or a completion signal, nudge the engine to keep going. Re-enter the tool
         // pipeline so XML-tool engines (Kimi/Z.AI) actually execute, not just plan.
         // Source: campfire 2026-05-19 + multi-engine review (codex/gemini/...).
-        const _AUTO_CONT_WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+        // Write-work detection uses the path-agnostic isWriteToolName helper
+        // (brain-helpers, unit-tested) so it counts both bare names (Edit/Write/...) and
+        // the MCP orchestration aliases (AgonEdit/AgonWrite). SaveMemory excluded by design.
         const _AUTO_CONT_LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer']);
         // Continue-intent words signal multi-step work in progress; if present alongside
         // a write tool, treat as still-going rather than done. Catches gemini-review #4.
@@ -2119,7 +2192,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // Initial-turn writes alone are too weak a "done" signal: engine could have
         // edited 1 of 3 needed files and stopped (minimax/zai review consensus).
         const _detectTurnState = (resp: string, baselineToolCount: number): 'asks-user' | 'done' | 'stuck' => {
-          const wroteSinceBaseline = _toolsUsed.slice(baselineToolCount).some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
+          const wroteSinceBaseline = _toolsUsed.slice(baselineToolCount).some((t: string) => isWriteToolName(t));
           // A question directed at the user (keyword-addressed OR an either/or fork)
           // means it's THEIR turn — stop, don't auto-continue. Scan the TAIL, not just
           // the literal last line: engines (esp. minimax) routinely ask the question and
@@ -2136,6 +2209,30 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           // Read-only investigation that produced a real answer (codex-review P2-1)
           if (_AUTO_CONT_READONLY_DONE_RE.test(resp)) return 'done';
           return 'stuck';
+        };
+        // ── Verify-before-done nudge ──
+        // Fires ONCE per distinct done-claim when Cesar declared done but never ran
+        // the discovered gate this turn. Structural-only: prose can't observe that
+        // the gate wasn't executed. Fails toward silence — suppressed when there's
+        // no gate, the session waived it, or this exact claim was already nudged.
+        // Returns true if it injected a nudge (caller continues the loop so Cesar
+        // can run the gate or explain the skip).
+        const _doneClaimSignature = (resp: string): string => {
+          // Tie the claim to the work done + the response tail so a SECOND, genuinely
+          // new done-claim (more tools, different closing) gets its own nudge, while a
+          // repeated/identical "done" within the same loop does not re-nudge.
+          return `${_toolsUsed.length}:${resp.trim().slice(-200)}`;
+        };
+        const _shouldGateNudge = (resp: string): boolean => {
+          const g = ctx.cesar?.discoveredGate;
+          if (!g || !g.command || !g.matchers.length) return false; // gateAbsent
+          if (ctx.cesar?.gateWaived) return false;
+          if (_ranGate) return false;
+          // Only nudge when real WRITE work happened — a pure read-only "done" answer
+          // has nothing to verify and must not be dragged into a gate nudge.
+          if (!_toolsUsed.some((t: string) => isWriteToolName(t))) return false;
+          if (ctx.cesar?.gateNudgedClaim === _doneClaimSignature(resp)) return false; // already nudged THIS claim
+          return true;
         };
         // Build a runToolLoop options object that mirrors the main tool loop —
         // critical: handoff intercept, shouldStopAfterToolCall, and rich permission UI.
@@ -2173,7 +2270,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             return new Promise<boolean>((resolve) => {
               const lastInput = _lastToolInputs[tool] ?? '{}';
               let command = '';
-              try { command = JSON.parse(lastInput).command ?? JSON.parse(lastInput).file_path ?? lastInput; } catch { command = lastInput; }
+              try { command = renderToolPermissionCommand(tool, JSON.parse(lastInput)); } catch { command = lastInput; }
               dispatch({ type: 'permission-ask', tool, command, reason: message, resolve } as any);
             });
           },
@@ -2212,11 +2309,90 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             && !ctx.cesar!.pendingDelegation
           ) {
             const state = _detectTurnState(response, _loopStartToolCount);
-            if (state === 'asks-user' || state === 'done') break;
+            if (state === 'asks-user') break;
+            if (state === 'done') {
+              // Verify-before-done: Cesar claims done. If it made edits but never ran
+              // the discovered gate, inject ONE nudge and give it a continuation to
+              // run the gate (or say why it's skipped). Otherwise the done-claim
+              // stands — break as before.
+              if (_shouldGateNudge(response)) {
+                if (ctx.cesar) ctx.cesar.gateNudgedClaim = _doneClaimSignature(response);
+                const _g = ctx.cesar!.discoveredGate!;
+                const _gateNudge = `[SYSTEM] You claimed the task is done but never ran the project's verification gate (${_g.command}) this turn. Run it now to confirm the change is green, or tell me in one sentence why it should be skipped.`;
+                _continuations++;
+                dispatch({ type: 'warning', message: `Cesar claimed done without running the gate (${_g.command}) — nudging to verify (${_continuations}/${MAX_CONTINUATIONS}).` });
+                dispatch({ type: 'spinner-start', message: `${cesarEngineId} verifying…`, color });
+                let _gateResp = '';
+                try {
+                  const _gateGen = session.send({
+                    message: _gateNudge,
+                    signal: abort.signal,
+                    toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
+                    toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
+                  });
+                  for await (const _c of _gateGen) {
+                    if (abort.signal.aborted) break;
+                    if (_c.type === 'text') _gateResp += _c.content;
+                    if (_c.type === 'error' && !_gateResp.trim()) { _engineErrored = true; _engineErrorMsg = String(_c.content ?? '').slice(0, 300); }
+                    if (_c.type === 'done' || _c.type === 'error') break;
+                  }
+                } catch (gateErr) {
+                  dispatch({ type: 'spinner-stop' });
+                  _engineErrored = true;
+                  _engineErrorMsg = gateErr instanceof Error ? gateErr.message : String(gateErr);
+                  break;
+                }
+                dispatch({ type: 'spinner-stop' });
+                if (_engineErrored) break;
+                const _cleanGate = _gateResp.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+                // If Cesar emitted gate-running tool calls, re-enter the tool loop so
+                // they actually execute (recordToolUse will flip _ranGate). Otherwise
+                // append the text (its explanation of why the gate is skipped).
+                try {
+                  const _parsedGate = parseToolCalls(_cleanGate);
+                  if (_parsedGate.hasToolCalls && toolRegistry) {
+                    const _gateResult = await runToolLoop(
+                      async (message: string) => {
+                        if (!session.alive || abort.signal.aborted) return '';
+                        _engineErrored = false; _engineErrorMsg = '';
+                        let _nr = '';
+                        const _g2 = session.send({ message, signal: abort.signal, toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined, toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined });
+                        for await (const _ch of _g2) {
+                          if (_ch.type === 'text') _nr += _ch.content;
+                          if (_ch.type === 'error' && !_nr.trim()) { _engineErrored = true; _engineErrorMsg = String(_ch.content ?? '').slice(0, 300); }
+                          if (_ch.type === 'done' || _ch.type === 'error') break;
+                        }
+                        return _nr.trim() || (_engineErrorMsg ? `[Engine error: ${_engineErrorMsg}]` : '[No response from engine]');
+                      },
+                      _cleanGate, toolCtx, toolRegistry, _buildContToolLoopOpts(),
+                    );
+                    response = response + '\n\n' + (_gateResult.finalText?.trim() ?? '');
+                    _toolCallTurns += _gateResult.turns ?? 0;
+                  } else if (_cleanGate) {
+                    dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _cleanGate });
+                    response = response + '\n\n' + _cleanGate;
+                  }
+                } catch {
+                  if (_cleanGate) { dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _cleanGate }); response = response + '\n\n' + _cleanGate; }
+                }
+                _prevToolCount = _toolsUsed.length;
+                // Re-stamp the claim signature AGAINST THE MUTATED response/toolCount.
+                // The nudge handler appended Cesar's reply (its skip-explanation, or the
+                // gate-loop's finalText) to `response` and may have grown _toolsUsed — so
+                // the signature recorded at inject time (pre-mutation) no longer matches
+                // _doneClaimSignature(response). Without this re-stamp, a re-entry that is
+                // still the SAME done-claim ("Skipping: docs-only change.") would compute a
+                // fresh signature, miss the guard, and re-nudge up to MAX_CONTINUATIONS. A
+                // genuinely NEW later claim (different toolCount/tail) still nudges.
+                if (ctx.cesar) ctx.cesar.gateNudgedClaim = _doneClaimSignature(response);
+                continue; // re-evaluate turn state; this exact claim won't re-nudge (sig re-stamped above).
+              }
+              break;
+            }
             // State-rich nudge — name the files Cesar mentioned but didn't touch.
             // File path regex requires a path prefix (./ ../ / ~/ or src/test/etc dir)
             // to reduce false positives like "version 1.0.ts" (minimax review #6).
-            const wroteFiles = _toolsUsed.some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
+            const wroteFiles = _toolsUsed.some((t: string) => isWriteToolName(t));
             const filePathRe = /(?:^|\s|`)((?:\.{1,2}\/|~\/|\/|(?:packages|src|tests|scripts|kern)\/)[\w./-]+\.(?:ts|tsx|kern|js|jsx|py|md|json|yaml|yml|toml|sh|css|scss|html))\b/g;
             const filesMentioned = Array.from(new Set(Array.from(response.matchAll(filePathRe), (m: RegExpMatchArray) => m[1]))).slice(0, 3);
             let nudge: string;

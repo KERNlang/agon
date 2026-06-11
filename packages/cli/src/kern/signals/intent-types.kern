@@ -104,6 +104,7 @@ union name=Intent discriminant=type
     field name=jobId type=string optional=true
   variant name=explore
   variant name=permissions
+  variant name=nogate
   variant name=nero
   variant name=chats-resume
     field name=sessionId type=string

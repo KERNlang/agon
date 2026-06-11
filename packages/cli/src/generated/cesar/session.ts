@@ -14,7 +14,7 @@ import { createRequire } from 'node:module';
 
 import type { PersistentSession, PersistentSessionConfig } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, parsePermissionRuleSet, parseToolHooks, evaluatePermissionRules, evaluateToolRules, PERMISSION_DENIED_MESSAGE } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, buildProjectMemoryBlock, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, parsePermissionRuleSet, parseToolHooks, evaluatePermissionRules, evaluateToolRules, PERMISSION_DENIED_MESSAGE } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -156,6 +156,7 @@ RULE 4b — MODE PURPOSE (don't mix them up — and don't always default to brai
   Your code will be auto-reviewed after implementation — write carefully the first time.
 RULE 4c — REVIEW: Use Review(target?, engine?, engines?) to delegate read-only code review. Default target is "uncommitted". Targets: "uncommitted", "branch:NAME", "commit:SHA". Specify engine ONLY when the user explicitly names one via "with <engine>"; if they name multiple reviewers, specify engines:["codex","claude"] or the named set and Agon will run them in parallel. Otherwise choose two diverse engines for high-stakes reviews or omit engine/engines and let Agon auto-select. If the user asks to review AND fix, do NOT stop at Review; call Pipeline(task, fitnessCmd?, engines?) so the findings are fixed immediately through Agon's agent harness.
 RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash. For shell commands use AgonBash (MCP tool), for edits use AgonEdit, for new files use AgonWrite. The user will see a Y/N/Always prompt for write operations. If they choose "Always", that command is auto-approved going forward. When the user says "commit", call AgonBash with the git commands. Don't say "I can't" or "I need permission" — call the tool and the permission system handles it.
+RULE 5b — DURABLE MEMORY: Call SaveMemory(memory, section) to record a fact that should survive into FUTURE sessions — and ONLY for that. section is one of Decisions / Constraints / Conventions / Session Notes. Use it when a real, durable fact is established: an architectural decision ("we chose session tokens over JWT"), a hard constraint ("Node 20 floor", "no top-level await"), or a project convention ("commits use conventional format"). Do NOT save transient/session state, the current TODO, things obvious from the code, or speculation — that is noise next session. One fact per call, no date (it is added automatically); the user confirms each memory. Saved memory comes back as a [PROJECT MEMORY] block at the top of your context in later sessions, so don't re-save what is already there.
 RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline/Review/Agent, STOP. Do not continue responding. The orchestrator handles the rest. After calling Delegate, WAIT for the result — do NOT stop. Incorporate the delegated result into your response.
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.
 RULE 7b — LIVE TODO CHECKLIST (the sanctioned exception to RULE 7): For multi-step work — more than 2 distinct steps — pin a live checklist so the user can watch progress without you narrating it. Emit a [TODOS] block: one JSON array, each item {"id","text","state"} where state is pending|running|done|failed. It is INVISIBLE to the user (the runtime strips it and renders a pinned checklist instead) — never describe it in prose. Re-emit the WHOLE block (latest snapshot) whenever a step's state changes — typically right after a tool finishes — so items tick from running to done as you work. OPTIONAL: skip it for single-step or chat turns. Example for "refactor the parser and add a test":
@@ -181,12 +182,17 @@ RULE 10 — TURN CLOSURE: End every turn with one clear closing line so the user
 
   FORBIDDEN closure shapes: "Standing by — awaiting your call on: 1. Commit? 2. Tests? 3. Both?" — that reads as still-thinking, not a closure. "Or move on to something else." trailing line — that's filler. A menu of next-steps you could simply do yourself — that is not a genuine fork. Stopping after only a recap with no done/asking/fork line — forbidden, always.
 
-  CONFIDENCE REFRESH: If your confidence changed materially during the turn (e.g. started at 40% "need to verify" and verified successfully → real confidence is now 95%), call ReportConfidence again with the new number BEFORE the closing line. Stale initial confidence in the recap misleads the user about what state you're in.`;
+  LEAD WITH FINDINGS: Your FIRST sentence answers what happened or what you found — the conclusion, not the preamble. Supporting detail comes after. Use prose for a simple answer; reach for bullets only when the content is genuinely a list. No filler openers ("Great question", "Let me explain", "Sure!"). Don't bury the lede under a recap of what you did.
+    GOOD: "The leak is in brain.kern — the drain timer never clears on early return. Added the cleanup at line 793; typecheck green."
+    BAD: "Great question! So I went and looked into this. There are a few things going on here. First, let me walk through the architecture. The session has a drain timer..."
+
+  CONFIDENCE REFRESH: If your confidence changed materially during the turn (e.g. started at 40% "need to verify" and verified successfully → real confidence is now 95%), call ReportConfidence again with the new number BEFORE the closing line. Stale initial confidence in the recap misleads the user about what state you're in.
+  If you END the turn still below ~85%, write CONFIDENCE: NN% once near your closing line — the UI uses that exact shape to offer the user an escalation (nero/tribunal).`;
 
 /**
  * Build the full Cesar system prompt with project context, engine list, and mode flags.
  */
-// @kern-source: session:170
+// @kern-source: session:176
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -232,6 +238,18 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       const commitCoAuthor = (config.commitCoAuthor || '').replace(/[`\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
       if (commitCoAuthor) {
         systemParts.push(`COMMIT ATTRIBUTION: When you create a git commit yourself via Bash, end the commit message with a trailer line \`Co-Authored-By: ${commitCoAuthor}\`. This attribution is configurable (config.commitCoAuthor) and is ON by default.\n- If the user asks to REMOVE/DISABLE the commit logo/attribution, first ask whether to disable it for THIS PROJECT or MACHINE-WIDE, then disable it: machine-wide, run \`agon config set commitCoAuthor ""\` (writes ~/.agon/config.json); per-project, safely edit ./.agon.json with your file tools (read the JSON if it exists, set/merge the key \`"commitCoAuthor": ""\`, write it back — never clobber other keys). Confirm once done.\n- If the user asks to CHANGE the identity instead, set the new value the same way (\`agon config set commitCoAuthor "<value>"\` machine-wide, or merge it into ./.agon.json per-project).`);
+      }
+      // Durable project memory (the SaveMemory tool's .agon/project.md sections),
+      // rendered as a [PROJECT MEMORY] block ABOVE session memory so cross-session
+      // facts lead. This is OPT-IN durable memory the user confirmed each entry of
+      // — distinct from the stale auto-bleed the note below warns against. The full
+      // project.md is also injected by scanProjectContext; this block re-surfaces
+      // just the Decisions/Constraints/Conventions so they read as durable memory.
+      try {
+        const projectMemory = buildProjectMemoryBlock(cesarCwd);
+        if (projectMemory) systemParts.push(projectMemory);
+      } catch (err) {
+        console.warn(`[agon] project memory block skipped: ${err instanceof Error ? err.message : String(err)}`);
       }
       // Inject only in-process/session memory. Cross-session persistent memory is
       // intentionally not fed back into normal Cesar turns — it causes stale,
@@ -378,28 +396,40 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:363
+// @kern-source: session:381
 export const CESAR_SNAPSHOT_MSG_CHAR_CAP: number = 4000;
 
-// @kern-source: session:365
+// @kern-source: session:383
 export const CONFIDENCE_BLOCK_LIMIT: number = 2;
 
-// @kern-source: session:367
+// @kern-source: session:385
 export const SEARCH_NUDGE_THRESHOLD: number = 40;
 
 /**
  * Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it.
  */
-// @kern-source: session:369
+// @kern-source: session:387
 export function capSnapshotMessageContent(content: string): string {
   if (content.length <= CESAR_SNAPSHOT_MSG_CHAR_CAP) return content;
   return `${content.slice(0, CESAR_SNAPSHOT_MSG_CHAR_CAP)}\n… [${content.length - CESAR_SNAPSHOT_MSG_CHAR_CAP} chars truncated for Cesar context]`;
 }
 
 /**
+ * Render the `command` string shown in a Cesar permission prompt for a tool call. SaveMemory renders the human-readable '[<section>] <memory>' (the durable fact the user is confirming) instead of an opaque JSON args blob; every other tool keeps the existing precedence: args.command -> args.file_path -> JSON.stringify(args). Shared across the API-native and both XML-loop permission builders so they render identically (the MCP watcher in brain.kern already special-cases SaveMemory the same way). Pure; tolerant of non-object args.
+ */
+// @kern-source: session:394
+export function renderToolPermissionCommand(tool: string, args: unknown): string {
+  const a = (args && typeof args === 'object') ? (args as Record<string, unknown>) : {};
+  if (tool === 'SaveMemory') {
+    return `[${String(a.section ?? '')}] ${String(a.memory ?? '')}`.trim();
+  }
+  return String(a.command ?? a.file_path ?? JSON.stringify(args ?? {}));
+}
+
+/**
  * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched.
  */
-// @kern-source: session:376
+// @kern-source: session:404
 export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const directHistory = session?.getMessageHistory?.() ?? [];
   if (directHistory.length > 0) {
@@ -432,7 +462,7 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
 /**
  * Persist the active Cesar conversation before the session is discarded.
  */
-// @kern-source: session:401
+// @kern-source: session:429
 export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
   if (!session) return;
   const snapshot = buildCesarConversationSnapshot(session, chatSession);
@@ -447,7 +477,7 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
-// @kern-source: session:414
+// @kern-source: session:442
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -708,7 +738,9 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
         return new Promise<boolean>((resolve) => {
           const d = ctx.cesar!.lastDispatch;
           if (d) {
-            const cmd = (args as any).command ?? (args as any).file_path ?? JSON.stringify(args);
+            // Merge of C (behavior) + B (editing): friendly command render
+            // (SaveMemory → "[Section] <line>") AND the diff-preview threading.
+            const cmd = renderToolPermissionCommand(tool, args);
             // Finding 1: API-class engines (engine.api: zai/kimi/minimax/GPT)
             // run Edit/Write through executeToolCall, hitting THIS approval
             // dispatch — which previously carried no diff. This site has the
@@ -743,7 +775,14 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       const diag = buildToolErrorDiagnostic(name, args as Record<string, unknown>, result.result.error);
       const retryKey = `${name}:${JSON.stringify(args)}`;
       const used = nativeToolErrorRetries.get(retryKey) ?? 0;
-      if (used <= 0) {
+      // A user-denied permission is a deliberate choice, NOT a malformed-input
+      // error: never wrap it in [RETRYABLE_TOOL_ERROR] (which would invite an
+      // immediate re-prompt of the very tool the user just refused, e.g. a denied
+      // SaveMemory). Surface the denial verbatim so Cesar accepts it and moves on.
+      const isPermissionDenial = typeof result.result.error === 'string' && result.result.error.includes(PERMISSION_DENIED_MESSAGE);
+      if (isPermissionDenial) {
+        output = result.result.error as string;
+      } else if (used <= 0) {
         nativeToolErrorRetries.set(retryKey, 1);
         output = `[RETRYABLE_TOOL_ERROR] ${diag}\nRetry this ${name} call ONCE with corrected input that matches the tool's schema. Do not narrate before retrying.`;
       } else {
@@ -778,7 +817,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:743
+// @kern-source: session:780
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -991,7 +1030,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:957
+// @kern-source: session:994
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -1025,7 +1064,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:991
+// @kern-source: session:1028
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -1049,7 +1088,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:1015
+// @kern-source: session:1052
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -1061,7 +1100,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:1022
+// @kern-source: session:1059
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -1081,7 +1120,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
-// @kern-source: session:1040
+// @kern-source: session:1077
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
   const raw = fromUrl ?? import.meta.url;
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
@@ -1115,7 +1154,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:1072
+// @kern-source: session:1109
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1140,7 +1179,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1098
+// @kern-source: session:1135
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

@@ -1,4 +1,4 @@
-import from="@kernlang/agon-core" names="EngineRegistry,EngineAdapter,Plan,AgonConfig,ChatSession,PersistentSession,CesarMemory,EventBus,ToolRegistry" types=true
+import from="@kernlang/agon-core" names="EngineRegistry,EngineAdapter,Plan,AgonConfig,ChatSession,PersistentSession,CesarMemory,EventBus,ToolRegistry,DiscoveredGate" types=true
 import from="../cesar/telemetry.js" names="EngineVitals" types=true
 
 interface name=EngineProgress
@@ -347,6 +347,9 @@ interface name=CesarState
   field name=turnId type="string | undefined" optional=true
   field name=sessionMcpServers type="Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>"
   field name=autoModeQueued type=boolean optional=true
+  field name=discoveredGate type="DiscoveredGate | undefined" optional=true doc="The verification gate discovered for the current turn's cwd (command + loose matchers). command==='' means gateAbsent."
+  field name=gateWaived type=boolean optional=true doc="Session-sticky: when true, the verify-before-done gate nudge is suppressed for the rest of the session. Set on /nogate, on a user skip-signal after a nudge, or when no gate could be discovered (gateAbsent)."
+  field name=gateNudgedClaim type="string | undefined" optional=true doc="Signature of the most recent done-claim that already received a gate nudge — guards one nudge per distinct claim so a repeated/identical 'done' doesn't re-nudge, while a NEW done-claim (different signature) can."
 
 interface name=HandlerContext
   field name=registry type=EngineRegistry

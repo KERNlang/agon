@@ -5,11 +5,15 @@ import from="../models/tool-types.js" names="ToolDefinition,ToolCall,ToolCallRes
 import from="../tools/tool-hooks.js" names="runPreToolUseHooks,runPostToolUseHooks,hasToolHooks"
 
 // ── Permission-denial marker ──────────────────────────────────────────
-// Stable, typed prefix on the error message produced when a tool is denied
-// (by a deny rule or deny-all). Callers that wrap tool errors with a retry
-// nudge (e.g. the CLI native tool loop) MUST exempt errors carrying this
-// prefix: a permission denial is terminal, not a malformed-input retry.
-const name=PERMISSION_DENIED_MESSAGE type=string value={{ 'PERMISSION_DENIED' }} export=true
+// Canonical, typed denial marker — BOTH the message produced when the user
+// declines a tool-call permission ask (executeToolCall deny path) AND the
+// prefix on rule/deny-all denials from the inline tool gates. Callers that
+// wrap tool errors with a retry nudge (the CLI native tool loop) MUST exempt
+// errors carrying this string: a permission denial is terminal, not a
+// malformed-input retry. Exported so producers and detectors stay in
+// lock-step instead of coupling on a hardcoded substring. (Merged from the
+// behavior + rails branches, which introduced it independently.)
+const name=PERMISSION_DENIED_MESSAGE type=string value={{ 'User denied permission' }} export=true
 
 service name=ToolRegistry singleton=true
   field name=tools type="Map<string, ToolHandler>"
@@ -118,7 +122,7 @@ fn name=executeToolCall async=true params="call:ToolCall, ctx:ToolContext, regis
           return {
             toolCallId: call.id,
             toolName: call.name,
-            result: { ok: false, content: '', error: 'User denied permission' },
+            result: { ok: false, content: '', error: PERMISSION_DENIED_MESSAGE },
             durationMs: Date.now() - start,
           };
         }

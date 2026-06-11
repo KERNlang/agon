@@ -21,20 +21,46 @@ fn name=readPresenceRaw params="roomId:string" returns="Record<string, PresenceE
   >>>
 
 fn name=recordPresence params="roomId:string, actor:RoomActor, lastReadSeq:number, auto:boolean" returns="void" export=true
-  doc "Mark an actor present now. Advisory: written without a lock (last-write-wins is fine for presence)."
+  doc "Mark an actor present now. Advisory: written without a lock (last-write-wins is fine for presence). lastReadSeq is clamp-max — a re-join (which passes 0) must never rewind a member's read cursor."
   handler <<<
     mkdirSync(roomDir(roomId), { recursive: true });
     const map = readPresenceRaw(roomId);
+    const prior = map[actor.callsign];
     map[actor.callsign] = {
       callsign: actor.callsign,
       actorId: actor.actorId,
       status: 'here',
       lastSeenAt: new Date().toISOString(),
-      lastReadSeq,
+      lastReadSeq: Math.max(lastReadSeq, prior?.lastReadSeq ?? 0),
       auto,
       cli: actor.cli,
     };
     writeFileSync(presencePath(roomId), JSON.stringify(map, null, 2) + '\n');
+  >>>
+
+fn name=advanceReadCursor params="roomId:string, actor:RoomActor, seq:number" returns="void" export=true
+  doc "Advance a member's read cursor to seq (clamp-max — never rewinds) and refresh their presence, preserving the member's auto flag. Reading the room IS the acknowledgement: this is what unread counts are derived from."
+  handler <<<
+    mkdirSync(roomDir(roomId), { recursive: true });
+    const map = readPresenceRaw(roomId);
+    const prior = map[actor.callsign];
+    map[actor.callsign] = {
+      callsign: actor.callsign,
+      actorId: actor.actorId,
+      status: 'here',
+      lastSeenAt: new Date().toISOString(),
+      lastReadSeq: Math.max(seq, prior?.lastReadSeq ?? 0),
+      auto: prior?.auto ?? false,
+      cli: actor.cli,
+    };
+    writeFileSync(presencePath(roomId), JSON.stringify(map, null, 2) + '\n');
+  >>>
+
+fn name=getReadCursor params="roomId:string, callsign:string" returns="number" export=true
+  doc "A member's lastReadSeq; 0 (everything unread) when the member has no presence entry yet."
+  handler <<<
+    const entry = readPresenceRaw(roomId)[callsign];
+    return entry ? (entry.lastReadSeq ?? 0) : 0;
   >>>
 
 fn name=removePresence params="roomId:string, callsign:string" returns="void" export=true

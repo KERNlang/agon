@@ -506,12 +506,23 @@ interface name=BrainstormGroup
   field name=representative type=string
   field name=similarity type=number
 
+// One panel-health record per multi-engine run: how many seats were requested,
+// how many actually responded (after the one auto-retry), and the banner every
+// surface MUST print when notes exist — a silent 3/6 committee is the failure.
+interface name=PanelHealth
+  field name=requested type=number
+  field name=responded type=number
+  field name=degraded type=boolean
+  field name=notes type="string[]"
+  field name=banner type="string | null"
+
 interface name=BrainstormResult
   field name=question type=string
   field name=bids type="BrainstormBid[]"
   field name=winner type=string
   field name=response type=string
   field name=groups type="BrainstormGroup[]" optional=true
+  field name=panelHealth type=PanelHealth optional=true
 
 interface name=BreakerArtifact
   field name=engineId type=string

@@ -128,15 +128,51 @@ describe('bashRanGate — loose matching', () => {
   it('returns false when there are no matchers (gateAbsent)', () => {
     expect(bashRanGate('npm test', [])).toBe(false);
   });
+
+  // F3: bare single-word matchers ('test'/'build'/'lint'/runner tokens) must match
+  // ONLY as a standalone token in COMMAND POSITION — not when they appear as an
+  // argument or substring — so the nudge isn't silently suppressed by everyday
+  // commands that merely mention the word.
+  describe('F3 — bare matchers only count in command position', () => {
+    const m = ['npm run test', 'test', 'npm test', 'vitest', 'build', 'lint', 'tsc'];
+
+    it('POSITIVES: real gate invocations still count', () => {
+      expect(bashRanGate('npm test', m)).toBe(true);
+      expect(bashRanGate('npm run test && echo ok', m)).toBe(true);
+      expect(bashRanGate('yarn lint', m)).toBe(true);
+      expect(bashRanGate('yarn test', m)).toBe(true);
+      expect(bashRanGate('pnpm run build', m)).toBe(true);
+      expect(bashRanGate('vitest run', m)).toBe(true); // bare runner as the command
+      expect(bashRanGate('tsc --noEmit', m)).toBe(true);
+    });
+
+    it('NEGATIVES: the alias as an argument/substring does NOT count', () => {
+      expect(bashRanGate('ls tests/', m)).toBe(false);
+      expect(bashRanGate('git commit -m "add tests"', m)).toBe(false);
+      expect(bashRanGate('cat latest.log', m)).toBe(false);
+      expect(bashRanGate('grep test foo', m)).toBe(false);
+      expect(bashRanGate('npm testify', m)).toBe(false);
+    });
+  });
 });
 
 describe('isGateSkipSignal — user waiver phrases', () => {
-  it('detects skip/no-need/later phrasing', () => {
+  it('detects gate/test/verification skip phrasing', () => {
     expect(isGateSkipSignal('skip it')).toBe(true);
     expect(isGateSkipSignal('no need to run the tests')).toBe(true);
     expect(isGateSkipSignal("don't bother with the gate")).toBe(true);
-    expect(isGateSkipSignal('later')).toBe(true);
     expect(isGateSkipSignal('skip the gate')).toBe(true);
+    expect(isGateSkipSignal('no need to test this')).toBe(true);
+    expect(isGateSkipSignal('skip verification')).toBe(true);
+  });
+
+  // F4: bare 'later' (and other unanchored phrases) dropped — they let an unrelated
+  // "we'll do docs later" permanently waive the gate.
+  it('does NOT fire on bare "later" or unrelated phrases', () => {
+    expect(isGateSkipSignal('later')).toBe(false);
+    expect(isGateSkipSignal("we'll do docs later")).toBe(false);
+    expect(isGateSkipSignal('nevermind')).toBe(false);
+    expect(isGateSkipSignal('leave it for now')).toBe(false);
   });
 
   it('does NOT fire on normal task input', () => {
@@ -211,8 +247,98 @@ describe('verify-before-done nudge decision', () => {
   it('a user skip-signal after a nudge sets the sticky waiver', () => {
     const session: GateSession = { gateNudgedClaim: 'sig' };
     // Mirror brain.kern: skip-signal honored only once a nudge has fired
-    if (session.gateNudgedClaim && isGateSkipSignal('no need, skip it')) session.gateWaived = true;
+    if (session.gateNudgedClaim && isGateSkipSignal('skip the gate')) session.gateWaived = true;
     expect(session.gateWaived).toBe(true);
     expect(shouldGateNudge(gate, session, { ranGate: false, wroteFiles: true, toolCount: 3, resp: 'Done.' })).toBe(false);
+  });
+});
+
+// ── F1: re-nudge loop — signature re-stamp against the MUTATED response ───────
+// brain.kern records gateNudgedClaim at inject time (pre-mutation), then the nudge
+// handler APPENDS Cesar's reply to `response` before the loop's `continue`. Without
+// the F1 re-stamp, the re-entry computes a fresh signature (new tail), misses the
+// one-nudge guard, and re-nudges. This models that lifecycle.
+describe('F1 — claim signature re-stamped after response mutation', () => {
+  const gate: DiscoveredGate = { command: 'npm run test', matchers: ['npm run test', 'test', 'vitest'], source: 'package-scripts' };
+
+  it('a same-claim re-entry does NOT re-nudge once the signature is re-stamped', () => {
+    const session: GateSession = {};
+    let response = 'Done with the docs change.';
+    const toolCount = 3;
+    // 1) First evaluation: nudge fires.
+    expect(shouldGateNudge(gate, session, { ranGate: false, wroteFiles: true, toolCount, resp: response })).toBe(true);
+    // (inject-time stamp, as the OLD code did — pre-mutation)
+    session.gateNudgedClaim = claimSignature(toolCount, response);
+    // 2) Nudge handler appends Cesar's skip-explanation to `response` (no new tools).
+    response = response + '\n\n' + 'Skipping: docs-only change.';
+    // OLD behavior (no re-stamp): the stale inject-time sig no longer matches → re-nudge.
+    expect(shouldGateNudge(gate, session, { ranGate: false, wroteFiles: true, toolCount, resp: response })).toBe(true);
+    // F1 FIX: re-stamp the signature against the MUTATED response before continue.
+    session.gateNudgedClaim = claimSignature(toolCount, response);
+    // 3) Re-entry with the same (mutated) claim → suppressed, no second nudge.
+    expect(shouldGateNudge(gate, session, { ranGate: false, wroteFiles: true, toolCount, resp: response })).toBe(false);
+  });
+
+  it('a genuinely NEW claim (different toolCount) still nudges after a re-stamp', () => {
+    const session: GateSession = {};
+    let response = 'Done with the first change.';
+    session.gateNudgedClaim = claimSignature(3, response);
+    response = response + '\n\nSkipping: trivial.';
+    session.gateNudgedClaim = claimSignature(3, response); // F1 re-stamp
+    expect(shouldGateNudge(gate, session, { ranGate: false, wroteFiles: true, toolCount: 3, resp: response })).toBe(false);
+    // Later, Cesar does more work and claims done again with more tools → nudges.
+    const newClaim = { ranGate: false, wroteFiles: true, toolCount: 6, resp: 'Done with the second change.' };
+    expect(shouldGateNudge(gate, session, newClaim)).toBe(true);
+  });
+});
+
+// ── F2 + F4: per-turn skip-signal window (turn-start lifecycle) ───────────────
+// brain.kern turn-start: (F2) a gate-less turn no longer flips gateWaived; (F4) a
+// skip-signal is evaluated against the PREVIOUS turn's gateNudgedClaim, then the
+// claim is CLEARED — narrowing the waiver to the message immediately after a nudge.
+function applyTurnStart(session: GateSession, gate: DiscoveredGate, input: string): void {
+  // F2: NO `if (!gate.command) gateWaived = true` here anymore.
+  if (session.gateNudgedClaim && isGateSkipSignal(input)) session.gateWaived = true;
+  session.gateNudgedClaim = undefined; // F4: clear after evaluating
+}
+
+describe('F2 — a gate-less turn does not permanently waive', () => {
+  const gate: DiscoveredGate = { command: 'npm run test', matchers: ['npm run test', 'test', 'vitest'], source: 'package-scripts' };
+
+  it('after a gate-less turn, nudge eligibility is restored when a gate reappears', () => {
+    const session: GateSession = {};
+    // Turn 1: empty dir / non-node project — gateAbsent. With F2, no gateWaived flip.
+    applyTurnStart(session, { command: '', matchers: [], source: 'none' }, 'add a feature');
+    expect(session.gateWaived).toBeFalsy();
+    // Turn 2: a package.json appears → gate present, Cesar claims done w/o running it.
+    applyTurnStart(session, gate, 'now finish it');
+    expect(shouldGateNudge(gate, session, { ranGate: false, wroteFiles: true, toolCount: 3, resp: 'Done.' })).toBe(true);
+  });
+});
+
+describe('F4 — skip-signal waiver window is one message after a nudge', () => {
+  const gate: DiscoveredGate = { command: 'npm run test', matchers: ['npm run test', 'test', 'vitest'], source: 'package-scripts' };
+
+  it('a skip-reply in the message RIGHT AFTER a nudge → waived', () => {
+    const session: GateSession = {};
+    // A nudge fired last turn → gateNudgedClaim is set entering this turn.
+    session.gateNudgedClaim = claimSignature(3, 'Done.');
+    applyTurnStart(session, gate, 'no need to run the tests');
+    expect(session.gateWaived).toBe(true);
+  });
+
+  it('an unrelated message TWO turns after a nudge does NOT waive', () => {
+    const session: GateSession = {};
+    // Turn A: a nudge fired → claim set.
+    session.gateNudgedClaim = claimSignature(3, 'Done.');
+    // Turn A start: user replies with a non-skip message → no waiver, claim cleared.
+    applyTurnStart(session, gate, 'looks good, keep going');
+    expect(session.gateWaived).toBeFalsy();
+    expect(session.gateNudgedClaim).toBeUndefined();
+    // Turn B: user says "we'll do docs later" — but no nudge is pending now → NOT waived.
+    applyTurnStart(session, gate, "we'll do docs later");
+    expect(session.gateWaived).toBeFalsy();
+    // Eligibility intact: a fresh done-claim still nudges.
+    expect(shouldGateNudge(gate, session, { ranGate: false, wroteFiles: true, toolCount: 4, resp: 'Done.' })).toBe(true);
   });
 });

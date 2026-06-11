@@ -112,19 +112,60 @@ fn name=discoverGate params="cwd:string" returns="DiscoveredGate" export=true
   >>>
 
 fn name=bashRanGate params="bashCommand:string, matchers:string[]" returns=boolean export=true
-  doc "True if a Bash invocation loosely matches the discovered gate — i.e. the lowercased command CONTAINS any matcher substring. Positive: 'npm test', 'npx vitest run x' (matcher 'vitest'). Negative: 'ls', 'git status'. Empty matchers -> false (no gate to run)."
+  doc "True if a Bash invocation loosely matches the discovered gate. Two matcher classes: MULTI-WORD matchers ('npm run test', 'npm test', 'npx vitest run') match as a boundary-delimited substring anywhere — already specific, but boundary-checked so 'npm test' does NOT match 'npm testify'. BARE single-token matchers ('test','build','lint','vitest','tsc') match ONLY as a standalone shell token in COMMAND POSITION of a &&/;/|/newline-delimited segment — the leading token, or the script right after a package-runner ('npm'|'pnpm'|'yarn'|'bun'|'npx', optionally 'run'). So 'ls tests/', 'git commit -m \"add tests\"', 'cat latest.log', 'grep test foo' and 'npm testify' do NOT spuriously count as having run the gate, while 'npm test', 'yarn test', 'npm run test && echo ok', 'npx vitest run' do. Empty matchers -> false (no gate to run)."
   handler <<<
     const lower = String(bashCommand ?? '').toLowerCase();
     if (!lower.trim()) return false;
+    // Multi-word matchers match anywhere, but boundary-checked on each side so the
+    // matcher is a whole run of shell tokens (not a prefix of a longer word like
+    // 'npm test' inside 'npm testify'). Bare single-token matchers are collected
+    // for command-position token matching below.
+    const isWord = (ch: string | undefined): boolean => ch !== undefined && /[a-z0-9_-]/.test(ch);
+    const matchesBounded = (hay: string, needle: string): boolean => {
+      let from = 0;
+      for (;;) {
+        const idx = hay.indexOf(needle, from);
+        if (idx === -1) return false;
+        const before = idx > 0 ? hay[idx - 1] : undefined;
+        const after = idx + needle.length < hay.length ? hay[idx + needle.length] : undefined;
+        if (!isWord(before) && !isWord(after)) return true;
+        from = idx + 1;
+      }
+    };
+    const bare = new Set<string>();
     for (const m of matchers) {
       const mm = String(m ?? '').toLowerCase().trim();
-      if (mm && lower.includes(mm)) return true;
+      if (!mm) continue;
+      if (/\s/.test(mm)) { if (matchesBounded(lower, mm)) return true; }
+      else bare.add(mm);
+    }
+    if (bare.size === 0) return false;
+    // Split the command into &&/;/|/newline-delimited segments; a bare matcher counts
+    // only in COMMAND POSITION of a segment: either the leading token itself (the bare
+    // runner 'vitest'/'tsc'/'make ...'), or the script name right after a package-runner
+    // prefix ('npm'|'pnpm'|'yarn'|'bun'|'npx', optionally 'run') — i.e. 'npm test',
+    // 'yarn test', 'npm run test'. This admits the real gate invocations while rejecting
+    // an alias that merely appears as an ARGUMENT: 'grep test foo', 'ls tests/',
+    // 'git commit -m "add tests"', 'cat latest.log'.
+    const RUNNER = new Set(['npm', 'pnpm', 'yarn', 'bun', 'npx']);
+    const segments = lower.split(/&&|\|\||;|\n/);
+    for (const seg of segments) {
+      const tokens = seg.trim().split(/\s+/).filter(Boolean);
+      if (tokens.length === 0) continue;
+      // (1) bare matcher AS the command (e.g. 'vitest run', 'tsc --noEmit', 'make test').
+      if (bare.has(tokens[0])) return true;
+      // (2) bare matcher as the script after a package-runner prefix, skipping 'run'.
+      if (RUNNER.has(tokens[0])) {
+        let i = 1;
+        if (tokens[i] === 'run') i++;
+        if (tokens[i] !== undefined && bare.has(tokens[i])) return true;
+      }
     }
     return false;
   >>>
 
-const name=GATE_SKIP_SIGNAL_RE type=RegExp value={{ /\b(?:skip(?:\s+it)?|no need|don'?t bother|not? necessary|nevermind|never mind|leave it|forget it|later|skip the (?:gate|tests?)|no test|without (?:the )?(?:gate|tests?))\b/i }}
-  doc "User skip-signal after a gate nudge — turns gateWaived sticky for the session so Cesar stops re-nudging once the user has said the gate doesn't apply this session."
+const name=GATE_SKIP_SIGNAL_RE type=RegExp value={{ /\b(?:skip\s+(?:it|(?:the\s+)?(?:gate|tests?|build|lint|checks?|verification|verifying|testing))|don'?t\s+bother(?:\s+\w+){0,3}\s+(?:gate|tests?|build|lint|checks?|verification)|don'?t\s+run\s+(?:the\s+)?(?:gate|tests?|build|lint|checks?|verification)|no\s+need\s+to\s+(?:run|test|verify|build|lint)|not?\s+necessary\s+to\s+(?:run|test|verify)|no\s+(?:gate|tests?|verification)|without\s+(?:the\s+)?(?:gate|tests?|verification))\b/i }}
+  doc "User skip-signal IN THE MESSAGE RIGHT AFTER a gate nudge — turns gateWaived sticky for the session so Cesar stops re-nudging once the user has said the gate doesn't apply. Only phrases that clearly reference skipping the gate/tests/verification qualify; deliberately NOT bare 'later'/'nevermind'/'leave it' (those caused 'we'll do docs later' to permanently kill the feature)."
 
 fn name=isGateSkipSignal params="userInput:string" returns=boolean export=true expr={{ return GATE_SKIP_SIGNAL_RE.test(String(userInput ?? '')); }}
   doc "True if the user's message reads as 'skip the gate / no need / later' — used to make gateWaived sticky after a nudge."

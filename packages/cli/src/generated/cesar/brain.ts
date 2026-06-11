@@ -131,13 +131,18 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       // so a newly-added test script / fitness: line is picked up live.
       const _gate = discoverGate(_turnCwd);
       if (ctx.cesar) ctx.cesar.discoveredGate = _gate;
-      // gateAbsent is a permanent waiver: no gate exists to run, so never nudge.
-      if (!_gate.command && ctx.cesar) ctx.cesar.gateWaived = true;
-      // A user skip-signal ("skip it / no need / later") AFTER a prior nudge makes
-      // the waiver sticky for the session — stop re-nudging once they've said the
-      // gate doesn't apply. Only honor it once a nudge has actually fired, so a
-      // first-message "no need to test X" doesn't pre-disable the whole feature.
-      if (ctx.cesar?.gateNudgedClaim && isGateSkipSignal(input) && ctx.cesar) ctx.cesar.gateWaived = true;
+      // NB: a gate-less turn is NOT a permanent waiver — _shouldGateNudge already
+      // returns false on an empty command/matchers, and the discovery above re-runs
+      // every turn (per the comment above), so an empty dir / non-node project this
+      // turn must not disable the feature once a package.json/fitness: line appears.
+      // A user skip-signal ("skip it / no need to run the gate") in the message
+      // IMMEDIATELY AFTER a nudge makes the waiver sticky for the session — stop
+      // re-nudging once they've said the gate doesn't apply. The window is narrow on
+      // purpose: we evaluate the skip-signal against the PREVIOUS turn's gateNudgedClaim
+      // (set only when a nudge fired last turn) and then CLEAR it, so a skip-phrase many
+      // turns later (e.g. "we'll do docs later") no longer permanently kills the feature.
+      if (ctx.cesar?.gateNudgedClaim && isGateSkipSignal(input)) ctx.cesar.gateWaived = true;
+      if (ctx.cesar) ctx.cesar.gateNudgedClaim = undefined;
       // Per-turn flag: did Cesar actually run something matching the gate this turn?
       let _ranGate = false;
       const _noteBashForGate = (toolName: string, rawInput?: string) => {
@@ -2073,7 +2078,16 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   if (_cleanGate) { dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _cleanGate }); response = response + '\n\n' + _cleanGate; }
                 }
                 _prevToolCount = _toolsUsed.length;
-                continue; // re-evaluate turn state; if still 'done' it won't re-nudge (same claim sig).
+                // Re-stamp the claim signature AGAINST THE MUTATED response/toolCount.
+                // The nudge handler appended Cesar's reply (its skip-explanation, or the
+                // gate-loop's finalText) to `response` and may have grown _toolsUsed — so
+                // the signature recorded at inject time (pre-mutation) no longer matches
+                // _doneClaimSignature(response). Without this re-stamp, a re-entry that is
+                // still the SAME done-claim ("Skipping: docs-only change.") would compute a
+                // fresh signature, miss the guard, and re-nudge up to MAX_CONTINUATIONS. A
+                // genuinely NEW later claim (different toolCount/tail) still nudges.
+                if (ctx.cesar) ctx.cesar.gateNudgedClaim = _doneClaimSignature(response);
+                continue; // re-evaluate turn state; this exact claim won't re-nudge (sig re-stamped above).
               }
               break;
             }

@@ -146,34 +146,75 @@ export function discoverGate(cwd: string): DiscoveredGate {
 }
 
 /**
- * True if a Bash invocation loosely matches the discovered gate — i.e. the lowercased command CONTAINS any matcher substring. Positive: 'npm test', 'npx vitest run x' (matcher 'vitest'). Negative: 'ls', 'git status'. Empty matchers -> false (no gate to run).
+ * True if a Bash invocation loosely matches the discovered gate. Two matcher classes: MULTI-WORD matchers ('npm run test', 'npm test', 'npx vitest run') match as a boundary-delimited substring anywhere — already specific, but boundary-checked so 'npm test' does NOT match 'npm testify'. BARE single-token matchers ('test','build','lint','vitest','tsc') match ONLY as a standalone shell token in COMMAND POSITION of a &&/;/|/newline-delimited segment — the leading token, or the script right after a package-runner ('npm'|'pnpm'|'yarn'|'bun'|'npx', optionally 'run'). So 'ls tests/', 'git commit -m "add tests"', 'cat latest.log', 'grep test foo' and 'npm testify' do NOT spuriously count as having run the gate, while 'npm test', 'yarn test', 'npm run test && echo ok', 'npx vitest run' do. Empty matchers -> false (no gate to run).
  */
 // @kern-source: context-scanner:114
 export function bashRanGate(bashCommand: string, matchers: string[]): boolean {
   const lower = String(bashCommand ?? '').toLowerCase();
   if (!lower.trim()) return false;
+  // Multi-word matchers match anywhere, but boundary-checked on each side so the
+  // matcher is a whole run of shell tokens (not a prefix of a longer word like
+  // 'npm test' inside 'npm testify'). Bare single-token matchers are collected
+  // for command-position token matching below.
+  const isWord = (ch: string | undefined): boolean => ch !== undefined && /[a-z0-9_-]/.test(ch);
+  const matchesBounded = (hay: string, needle: string): boolean => {
+    let from = 0;
+    for (;;) {
+      const idx = hay.indexOf(needle, from);
+      if (idx === -1) return false;
+      const before = idx > 0 ? hay[idx - 1] : undefined;
+      const after = idx + needle.length < hay.length ? hay[idx + needle.length] : undefined;
+      if (!isWord(before) && !isWord(after)) return true;
+      from = idx + 1;
+    }
+  };
+  const bare = new Set<string>();
   for (const m of matchers) {
     const mm = String(m ?? '').toLowerCase().trim();
-    if (mm && lower.includes(mm)) return true;
+    if (!mm) continue;
+    if (/\s/.test(mm)) { if (matchesBounded(lower, mm)) return true; }
+    else bare.add(mm);
+  }
+  if (bare.size === 0) return false;
+  // Split the command into &&/;/|/newline-delimited segments; a bare matcher counts
+  // only in COMMAND POSITION of a segment: either the leading token itself (the bare
+  // runner 'vitest'/'tsc'/'make ...'), or the script name right after a package-runner
+  // prefix ('npm'|'pnpm'|'yarn'|'bun'|'npx', optionally 'run') — i.e. 'npm test',
+  // 'yarn test', 'npm run test'. This admits the real gate invocations while rejecting
+  // an alias that merely appears as an ARGUMENT: 'grep test foo', 'ls tests/',
+  // 'git commit -m "add tests"', 'cat latest.log'.
+  const RUNNER = new Set(['npm', 'pnpm', 'yarn', 'bun', 'npx']);
+  const segments = lower.split(/&&|\|\||;|\n/);
+  for (const seg of segments) {
+    const tokens = seg.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) continue;
+    // (1) bare matcher AS the command (e.g. 'vitest run', 'tsc --noEmit', 'make test').
+    if (bare.has(tokens[0])) return true;
+    // (2) bare matcher as the script after a package-runner prefix, skipping 'run'.
+    if (RUNNER.has(tokens[0])) {
+      let i = 1;
+      if (tokens[i] === 'run') i++;
+      if (tokens[i] !== undefined && bare.has(tokens[i])) return true;
+    }
   }
   return false;
 }
 
 /**
- * User skip-signal after a gate nudge — turns gateWaived sticky for the session so Cesar stops re-nudging once the user has said the gate doesn't apply this session.
+ * User skip-signal IN THE MESSAGE RIGHT AFTER a gate nudge — turns gateWaived sticky for the session so Cesar stops re-nudging once the user has said the gate doesn't apply. Only phrases that clearly reference skipping the gate/tests/verification qualify; deliberately NOT bare 'later'/'nevermind'/'leave it' (those caused 'we'll do docs later' to permanently kill the feature).
  */
-// @kern-source: context-scanner:126
-export const GATE_SKIP_SIGNAL_RE: RegExp = /\b(?:skip(?:\s+it)?|no need|don'?t bother|not? necessary|nevermind|never mind|leave it|forget it|later|skip the (?:gate|tests?)|no test|without (?:the )?(?:gate|tests?))\b/i;
+// @kern-source: context-scanner:167
+export const GATE_SKIP_SIGNAL_RE: RegExp = /\b(?:skip\s+(?:it|(?:the\s+)?(?:gate|tests?|build|lint|checks?|verification|verifying|testing))|don'?t\s+bother(?:\s+\w+){0,3}\s+(?:gate|tests?|build|lint|checks?|verification)|don'?t\s+run\s+(?:the\s+)?(?:gate|tests?|build|lint|checks?|verification)|no\s+need\s+to\s+(?:run|test|verify|build|lint)|not?\s+necessary\s+to\s+(?:run|test|verify)|no\s+(?:gate|tests?|verification)|without\s+(?:the\s+)?(?:gate|tests?|verification))\b/i;
 
 /**
  * True if the user's message reads as 'skip the gate / no need / later' — used to make gateWaived sticky after a nudge.
  */
-// @kern-source: context-scanner:129
+// @kern-source: context-scanner:170
 export function isGateSkipSignal(userInput: string): boolean {
   return GATE_SKIP_SIGNAL_RE.test(String(userInput ?? ''));
 }
 
-// @kern-source: context-scanner:132
+// @kern-source: context-scanner:173
 export function isKernProject(cwd: string): boolean {
   if (existsSync(join(cwd, 'kern.config.ts'))) return true;
   try {
@@ -201,7 +242,7 @@ export function isKernProject(cwd: string): boolean {
 /**
  * Read-only file tree, 2 levels deep, excluding noise directories.
  */
-// @kern-source: context-scanner:157
+// @kern-source: context-scanner:198
 function buildFileTree(cwd: string, maxDepth?: number): string {
   const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage', '.kern-gaps', '.kern']);
   const depth = maxDepth ?? 2;
@@ -235,7 +276,7 @@ function buildFileTree(cwd: string, maxDepth?: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: context-scanner:192
+// @kern-source: context-scanner:233
 function detectProjectType(cwd: string): string {
   const markers: string[] = [];
   try {
@@ -255,7 +296,7 @@ function detectProjectType(cwd: string): string {
   return markers.join(', ') || 'unknown';
 }
 
-// @kern-source: context-scanner:212
+// @kern-source: context-scanner:253
 export function scanProjectContext(cwd: string, extraContext?: string, format?: ContextFormat): string {
   const MAX_CHARS = 6000;
   const sections: string[] = [];
@@ -335,7 +376,7 @@ export function scanProjectContext(cwd: string, extraContext?: string, format?: 
   return result;
 }
 
-// @kern-source: context-scanner:292
+// @kern-source: context-scanner:333
 export interface SpineCacheEntry {
   fp: string;
   ts: number;
@@ -345,25 +386,25 @@ export interface SpineCacheEntry {
 /**
  * Memo lifetime for a cwd's kern-context spine. Bounds how stale the navigational map can get from uncommitted builder edits within a single HEAD (see KERN_SPINE_CACHE).
  */
-// @kern-source: context-scanner:297
+// @kern-source: context-scanner:338
 export const KERN_SPINE_TTL_MS: number = 5 * 60 * 1000;
 
 /**
  * Per-cwd memo for buildKernContextSpine. The spine is a whole-project ts-morph pass (seconds); conquer/goal drive the builder for many turns per run, so an un-memoized rebuild every turn would dominate wall-clock. Keyed by cwd; invalidated when HEAD moves or after KERN_SPINE_TTL_MS. Deliberately HEAD-only (NOT a working-tree fingerprint): the map is navigational structure that changes slowly versus line-edits, so reusing it across uncommitted edits is the intended trade — keying on a dirty fingerprint would invalidate every turn and defeat the memo. Stores Promise<string> so parallel dispatches share one spawn.
  */
-// @kern-source: context-scanner:300
+// @kern-source: context-scanner:341
 export const KERN_SPINE_CACHE: Map<string, SpineCacheEntry> = new Map();
 
 /**
  * cwds already warned about a genuine spine failure (under AGON_DEBUG) — keeps the best-effort fallback diagnosable without spamming a warning every turn.
  */
-// @kern-source: context-scanner:303
+// @kern-source: context-scanner:344
 export const KERN_SPINE_WARNED: Set<string> = new Set();
 
 /**
  * The actual spine build behind buildKernContextSpine's memo. Spawns the released `kern context` CLI and renders the compact <kern-map>. Never throws — returns '' on any failure (best-effort).
  */
-// @kern-source: context-scanner:306
+// @kern-source: context-scanner:347
 async function computeKernContextSpine(cwd: string): Promise<string> {
   const debugFail = (msg: string): void => {
     if (process.env.AGON_DEBUG && !KERN_SPINE_WARNED.has(cwd)) {
@@ -429,7 +470,7 @@ async function computeKernContextSpine(cwd: string): Promise<string> {
 /**
  * Compact <kern-map> cross-file usage spine for a target repo, rendered from the released `kern context` CLI (TypeScript sources). Prepended to a build engine's context (forge/conquer/goal) so it starts with whole-project structure — which symbols exist and who calls/uses each (blast radius) — instead of cold-reading files. Memoized per cwd by HEAD sha + a 5-min TTL so a multi-turn conquer/goal run pays the ts-morph pass once, not per turn; concurrent dispatches share one spawn. Best-effort: returns '' for non-TS targets, when the kern CLI isn't resolvable, on timeout, or on any error, so a build run is never blocked. AGON_NO_KERN_CONTEXT=1 disables; AGON_KERN_CONTEXT_TIMEOUT_MS / AGON_KERN_CONTEXT_BUDGET tune it.
  */
-// @kern-source: context-scanner:370
+// @kern-source: context-scanner:411
 export async function buildKernContextSpine(cwd: string): Promise<string> {
   if (process.env.AGON_NO_KERN_CONTEXT) return '';
   let fp = 'nogit';

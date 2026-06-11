@@ -114,8 +114,11 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
     case 'status': {
       const registry = cb.ctx.registry;
       const ids = registry.listIds();
+      // Prefer the live poller read: telemetryVitals (React state) is
+      // repaint-deduped and may lag by a signature bucket between commits.
+      const liveVitals = cb.ctx.telemetrySnapshot?.() ?? cb.ctx.telemetryVitals;
       const engines = ids.map((id: string) => {
-        const v = cb.ctx.telemetryVitals?.get(id);
+        const v = liveVitals?.get(id);
         if (v) return v;
         return createEngineVitals(id);
       });

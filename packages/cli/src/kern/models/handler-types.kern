@@ -381,4 +381,5 @@ interface name=HandlerContext
   field name=setSessionMcpServers type="((servers: Array<Record<string,unknown>>) => void) | undefined" optional=true
   field name=autoModeQueued type=boolean optional=true
   field name=telemetryVitals type="Map<string, EngineVitals> | undefined" optional=true
+  field name=telemetrySnapshot type="(() => Map<string, EngineVitals>) | undefined" optional=true doc="Live read of the telemetry poller's current vitals map. telemetryVitals (React state) is repaint-deduped and may lag by a signature bucket while the /status dashboard is closed; on-demand consumers (the /status text snapshot) should prefer this getter."
   field name=recentFallbacks type="{from:string,to:string,reason:string,at:number}[] | undefined" optional=true

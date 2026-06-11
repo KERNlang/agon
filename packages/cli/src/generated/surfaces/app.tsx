@@ -935,6 +935,7 @@ export function App() {
       extensionPromptFragments,
       sessionMcpServers, setSessionMcpServers,
       telemetryVitals,
+      telemetrySnapshot: () => telemetryPollerRef.current?.snapshot?.() ?? telemetryVitals,
       recentFallbacks,
     };
   }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped]);
@@ -1625,6 +1626,11 @@ export function App() {
 
   useEffect(() => {
     statusDashboardOpenRef.current = statusDashboardOpen;
+    // First paint must be live, not the last deduped commit: push the
+    // poller's current vitals into state the moment the dashboard opens.
+    if (statusDashboardOpen && telemetryPollerRef.current?.snapshot) {
+      setTelemetryVitals(new Map(telemetryPollerRef.current.snapshot()));
+    }
   }, [statusDashboardOpen]);
 
   useEffect(() => {
@@ -2042,7 +2048,7 @@ export function App() {
 // @kern-source: app:92
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1851
+// @kern-source: app:1857
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

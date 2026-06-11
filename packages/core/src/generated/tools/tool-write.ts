@@ -72,7 +72,8 @@ export function createWriteTool(): ToolHandler {
       if (ruleDecision === 'deny') {
         return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: Write ${filePath} blocked by a deny rule in .agon.json permissions`, reason: 'permission_rule_deny' };
       }
-      if (ruleDecision === 'allow') {
+      // deny-all kill-switch outranks an allow RULE (only rule-DENY sits above it).
+      if (ruleDecision === 'allow' && ctx.permissionMode !== 'deny-all') {
         return { behavior: 'allow' };
       }
     }

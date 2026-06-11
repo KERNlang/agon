@@ -98,7 +98,8 @@ export function createBashTool(): ToolHandler {
       if (ruleDecision === 'deny') {
         return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: Bash (${command.slice(0, 80)}) blocked by a deny rule in .agon.json permissions`, reason: 'permission_rule_deny' };
       }
-      if (ruleDecision === 'allow') {
+      // deny-all kill-switch outranks an allow RULE (only rule-DENY sits above it).
+      if (ruleDecision === 'allow' && _ctx.permissionMode !== 'deny-all') {
         return { behavior: 'allow' };
       }
     }

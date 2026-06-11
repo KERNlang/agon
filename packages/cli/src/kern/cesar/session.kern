@@ -677,7 +677,9 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       // does not burn a [RETRYABLE_TOOL_ERROR] retry on an unrecoverable block.
       const isPermissionDenial = !result.result.ok
         && typeof result.result.error === 'string'
-        && result.result.error.includes(PERMISSION_DENIED_MESSAGE);
+        && (result.result.error.includes(PERMISSION_DENIED_MESSAGE)
+          || result.result.error.includes('User denied permission')
+          || result.result.error.startsWith('DENIED:'));
       if (!result.result.ok && !isPermissionDenial) {
         // #1 error surfacing: include the tool name + a redacted input snippet so
         // Cesar can see WHAT input was rejected and self-correct, instead of a bare

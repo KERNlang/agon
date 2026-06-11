@@ -143,7 +143,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
   const toolHooks = (ctx as any).toolHooks;
   const hooksActive = hasToolHooks(toolHooks);
   if (hooksActive) {
-    const pre = await runPreToolUseHooks(call.name, call.input, toolHooks);
+    const pre = await runPreToolUseHooks(call.name, call.input, toolHooks, ctx.cwd);
     if (pre.warning && typeof ctx.onProgress === 'function') {
       try { ctx.onProgress(pre.warning); } catch { /* never let a status line break a tool call */ }
     }
@@ -169,7 +169,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
     // Phase 4: PostToolUse hooks — never block, result ignored except logging.
     if (hooksActive) {
       const responsePayload = result.ok ? result.content : { error: result.error ?? '' };
-      await runPostToolUseHooks(call.name, call.input, responsePayload, toolHooks);
+      await runPostToolUseHooks(call.name, call.input, responsePayload, toolHooks, ctx.cwd);
     }
 
     return {

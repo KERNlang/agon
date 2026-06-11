@@ -113,7 +113,7 @@ fn name=_matches params="def:ToolHookDef, toolName:string" returns=boolean expor
 
 // Run a single hook command with a CC-shaped JSON payload on stdin.
 // Returns { exitCode, stderr, timedOut, spawnFailed }. Never throws.
-fn name=_runHookCommand params="command:string, payload:unknown, timeoutSec:number" returns="{exitCode:number, stderr:string, stdout:string, timedOut:boolean, spawnFailed:boolean}" export=false
+fn name=_runHookCommand params="command:string, payload:unknown, timeoutSec:number, cwd:string|undefined" returns="{exitCode:number, stderr:string, stdout:string, timedOut:boolean, spawnFailed:boolean}" export=false
   handler <<<
     const timeout = Math.max(1, timeoutSec) * 1000;
     try {
@@ -123,6 +123,7 @@ fn name=_runHookCommand params="command:string, payload:unknown, timeoutSec:numb
       const stdout = execSync(command, {
         input,
         timeout,
+        cwd: cwd || undefined,
         stdio: ['pipe', 'pipe', 'pipe'],
         encoding: 'utf-8',
       });
@@ -143,7 +144,7 @@ fn name=_runHookCommand params="command:string, payload:unknown, timeoutSec:numb
     }
   >>>
 
-fn name=runPreToolUseHooks async=true params="toolName:string, toolInput:unknown, hooks:ParsedToolHooks|undefined" returns="Promise<PreHookOutcome>" export=true
+fn name=runPreToolUseHooks async=true params="toolName:string, toolInput:unknown, hooks:ParsedToolHooks|undefined, cwd:string|undefined" returns="Promise<PreHookOutcome>" export=true
   doc "Run all matching PreToolUse hooks BEFORE a tool executes. Exit 2 → block (stderr is the engine-visible refusal). Exit 0 → proceed. Any other exit / timeout / spawn failure → fail-OPEN (proceed) with a one-time warning. Hooks run in declared order; the FIRST exit-2 blocks and short-circuits."
   handler <<<
     if (!hooks || hooks.preToolUse.length === 0) return { block: false };
@@ -151,7 +152,7 @@ fn name=runPreToolUseHooks async=true params="toolName:string, toolInput:unknown
     for (const def of hooks.preToolUse) {
       if (!_matches(def, toolName)) continue;
       const payload = { tool_name: toolName, tool_input: toolInput };
-      const r = _runHookCommand(def.command, payload, def.timeout ?? 10);
+      const r = _runHookCommand(def.command, payload, def.timeout ?? 10, cwd);
       if (r.exitCode === 2) {
         // Cap the refusal: a misbehaving hook spewing 100KB to stderr must not
         // flood the engine-visible tool result / prompt context.
@@ -169,14 +170,14 @@ fn name=runPreToolUseHooks async=true params="toolName:string, toolInput:unknown
     return { block: false, warning };
   >>>
 
-fn name=runPostToolUseHooks async=true params="toolName:string, toolInput:unknown, toolResponse:unknown, hooks:ParsedToolHooks|undefined" returns="Promise<void>" export=true
+fn name=runPostToolUseHooks async=true params="toolName:string, toolInput:unknown, toolResponse:unknown, hooks:ParsedToolHooks|undefined, cwd:string|undefined" returns="Promise<void>" export=true
   doc "Run all matching PostToolUse hooks AFTER a tool executes, with {tool_name, tool_input, tool_response} on stdin. Result is ignored except a one-time fail warning; post-hooks can never block."
   handler <<<
     if (!hooks || hooks.postToolUse.length === 0) return;
     for (const def of hooks.postToolUse) {
       if (!_matches(def, toolName)) continue;
       const payload = { tool_name: toolName, tool_input: toolInput, tool_response: toolResponse };
-      const r = _runHookCommand(def.command, payload, def.timeout ?? 10);
+      const r = _runHookCommand(def.command, payload, def.timeout ?? 10, cwd);
       if (r.exitCode !== 0) {
         const cause = r.timedOut ? 'timed out' : r.spawnFailed ? 'failed to spawn' : `exited ${r.exitCode}`;
         _warnOnceToolHook(`post:${def.command}:${cause}`, `[agon] PostToolUse hook for ${toolName} ${cause} — ignored (post-hooks never block)`);

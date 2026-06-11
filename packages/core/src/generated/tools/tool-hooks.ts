@@ -99,7 +99,7 @@ function _matches(def: ToolHookDef, toolName: string): boolean {
 }
 
 // @kern-source: tool-hooks:116
-function _runHookCommand(command: string, payload: unknown, timeoutSec: number): {exitCode:number, stderr:string, stdout:string, timedOut:boolean, spawnFailed:boolean} {
+function _runHookCommand(command: string, payload: unknown, timeoutSec: number, cwd: string|undefined): {exitCode:number, stderr:string, stdout:string, timedOut:boolean, spawnFailed:boolean} {
   const timeout = Math.max(1, timeoutSec) * 1000;
   try {
     // Stringify INSIDE the try: a non-serializable payload (circular/BigInt)
@@ -108,6 +108,7 @@ function _runHookCommand(command: string, payload: unknown, timeoutSec: number):
     const stdout = execSync(command, {
       input,
       timeout,
+      cwd: cwd || undefined,
       stdio: ['pipe', 'pipe', 'pipe'],
       encoding: 'utf-8',
     });
@@ -131,14 +132,14 @@ function _runHookCommand(command: string, payload: unknown, timeoutSec: number):
 /**
  * Run all matching PreToolUse hooks BEFORE a tool executes. Exit 2 → block (stderr is the engine-visible refusal). Exit 0 → proceed. Any other exit / timeout / spawn failure → fail-OPEN (proceed) with a one-time warning. Hooks run in declared order; the FIRST exit-2 blocks and short-circuits.
  */
-// @kern-source: tool-hooks:146
-export async function runPreToolUseHooks(toolName: string, toolInput: unknown, hooks: ParsedToolHooks|undefined): Promise<PreHookOutcome> {
+// @kern-source: tool-hooks:147
+export async function runPreToolUseHooks(toolName: string, toolInput: unknown, hooks: ParsedToolHooks|undefined, cwd: string|undefined): Promise<PreHookOutcome> {
   if (!hooks || hooks.preToolUse.length === 0) return { block: false };
   let warning: string | undefined;
   for (const def of hooks.preToolUse) {
     if (!_matches(def, toolName)) continue;
     const payload = { tool_name: toolName, tool_input: toolInput };
-    const r = _runHookCommand(def.command, payload, def.timeout ?? 10);
+    const r = _runHookCommand(def.command, payload, def.timeout ?? 10, cwd);
     if (r.exitCode === 2) {
       // Cap the refusal: a misbehaving hook spewing 100KB to stderr must not
       // flood the engine-visible tool result / prompt context.
@@ -159,13 +160,13 @@ export async function runPreToolUseHooks(toolName: string, toolInput: unknown, h
 /**
  * Run all matching PostToolUse hooks AFTER a tool executes, with {tool_name, tool_input, tool_response} on stdin. Result is ignored except a one-time fail warning; post-hooks can never block.
  */
-// @kern-source: tool-hooks:172
-export async function runPostToolUseHooks(toolName: string, toolInput: unknown, toolResponse: unknown, hooks: ParsedToolHooks|undefined): Promise<void> {
+// @kern-source: tool-hooks:173
+export async function runPostToolUseHooks(toolName: string, toolInput: unknown, toolResponse: unknown, hooks: ParsedToolHooks|undefined, cwd: string|undefined): Promise<void> {
   if (!hooks || hooks.postToolUse.length === 0) return;
   for (const def of hooks.postToolUse) {
     if (!_matches(def, toolName)) continue;
     const payload = { tool_name: toolName, tool_input: toolInput, tool_response: toolResponse };
-    const r = _runHookCommand(def.command, payload, def.timeout ?? 10);
+    const r = _runHookCommand(def.command, payload, def.timeout ?? 10, cwd);
     if (r.exitCode !== 0) {
       const cause = r.timedOut ? 'timed out' : r.spawnFailed ? 'failed to spawn' : `exited ${r.exitCode}`;
       _warnOnceToolHook(`post:${def.command}:${cause}`, `[agon] PostToolUse hook for ${toolName} ${cause} — ignored (post-hooks never block)`);

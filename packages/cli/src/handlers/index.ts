@@ -29,7 +29,7 @@ export {
   handleCancel,
   handleApplyPatch,
 } from './plan-handlers.js';
-export { handleCp } from './cp.js';
+export { handleCp, handleCpLast } from './cp.js';
 export { handleBuild } from './build.js';
 export { handleRun } from './run.js';
 export { routeViaCesar } from './cesar.js';

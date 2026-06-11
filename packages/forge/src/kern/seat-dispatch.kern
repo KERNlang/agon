@@ -1,0 +1,84 @@
+// ── Seat dispatch with one auto-retry + loud panel health ──────────────
+// Field failure this fixes: "I dispatch 6 engines, codex times out in round 1,
+// zai parse-fails — and the run quietly completes as 3/4." One retry per failed
+// seat (shorter timeout) fixes most transient flake; whatever still fails must
+// be REPORTED, not silently folded into a smaller committee. Every panel mode
+// (brainstorm/tribunal/council) dispatches seats through here.
+
+import from="@kernlang/agon-core" names="EngineAdapter,DispatchResult" types=true
+
+interface name=SeatOutcome export=true
+  field name=engineId type=string
+  field name=ok type=boolean
+  field name=text type=string
+  field name=attempts type=number
+  field name=failure type="'timeout' | 'empty' | 'error' | null"
+  field name=note type="string | null"
+
+const name=RETRY_MIN_TIMEOUT_SEC type=number value=30
+
+fn name=classifySeatFailure params="result:DispatchResult" returns="'timeout' | 'empty' | 'error' | null" export=true
+  doc "null = usable response. timeout/empty/error are the transient-shaped failures worth one retry."
+  handler <<<
+    if (result.timedOut) return 'timeout';
+    if (result.exitCode !== 0) return 'error';
+    if (!String(result.stdout ?? '').trim()) return 'empty';
+    return null;
+  >>>
+
+fn name=dispatchSeatWithRetry async=true params="adapter:EngineAdapter, opts:{engineId:string, engine:any, prompt:string, systemPrompt?:string, cwd:string, mode:string, timeout:number, outputDir:string, signal?:AbortSignal, extract?:(result:DispatchResult)=>string}" returns="Promise<SeatOutcome>" export=true
+  doc "Dispatch one panel seat; on a transient failure (timeout/empty/error) retry ONCE with ~half the timeout. Never retries a user abort. opts.extract lets a mode keep its own text-extraction (e.g. tribunal's <think> salvage) — an extract throw counts as an 'empty' failure. The outcome note feeds the panel-health banner so degradation is loud."
+  handler <<<
+    const attemptOnce = async (timeoutSec: number): Promise<{ failure: 'timeout' | 'empty' | 'error' | null; text: string }> => {
+      try {
+        const result = await adapter.dispatch({
+          engine: opts.engine,
+          prompt: opts.prompt,
+          systemPrompt: opts.systemPrompt,
+          cwd: opts.cwd,
+          mode: opts.mode,
+          timeout: timeoutSec,
+          outputDir: opts.outputDir,
+          signal: opts.signal,
+        } as any);
+        const failure = classifySeatFailure(result);
+        if (failure) return { failure, text: '' };
+        if (!opts.extract) return { failure: null, text: String(result.stdout ?? '') };
+        try {
+          return { failure: null, text: opts.extract(result) };
+        } catch {
+          return { failure: 'empty', text: '' };
+        }
+      } catch {
+        return { failure: 'error', text: '' };
+      }
+    };
+
+    const first = await attemptOnce(opts.timeout);
+    if (!first.failure) {
+      return { engineId: opts.engineId, ok: true, text: first.text, attempts: 1, failure: null, note: null };
+    }
+    // A user abort is a decision, not flake — respect it immediately.
+    if (opts.signal?.aborted) {
+      return { engineId: opts.engineId, ok: false, text: '', attempts: 1, failure: first.failure, note: `${opts.engineId} aborted` };
+    }
+    const retryTimeout = Math.max(RETRY_MIN_TIMEOUT_SEC, Math.floor(opts.timeout / 2));
+    const second = await attemptOnce(retryTimeout);
+    if (!second.failure) {
+      return { engineId: opts.engineId, ok: true, text: second.text, attempts: 2, failure: null, note: `${opts.engineId} ${first.failure} → retried OK` };
+    }
+    return { engineId: opts.engineId, ok: false, text: '', attempts: 2, failure: second.failure, note: `${opts.engineId} ${first.failure} → retry ${second.failure}, dropped` };
+  >>>
+
+fn name=buildPanelHealth params="outcomes:SeatOutcome[]" returns="{ requested: number; responded: number; degraded: boolean; notes: string[]; banner: string | null }" export=true
+  doc "Fold seat outcomes into the structured panel-health record + the one-line banner every surface must print when degraded ('panel degraded: codex timeout → retried OK; zai empty → dropped (5/6 responded)')."
+  handler <<<
+    const requested = outcomes.length;
+    const responded = outcomes.filter((o) => o.ok).length;
+    const notes = outcomes.map((o) => o.note).filter((n): n is string => !!n);
+    const degraded = responded < requested;
+    const banner = notes.length === 0
+      ? null
+      : `panel ${degraded ? 'degraded' : 'recovered'}: ${notes.join('; ')} (${responded}/${requested} responded)`;
+    return { requested, responded, degraded, notes, banner };
+  >>>

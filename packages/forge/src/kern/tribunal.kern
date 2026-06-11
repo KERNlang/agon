@@ -4,6 +4,8 @@ import from="@kernlang/agon-core" names="EngineRegistry,buildTribunalPrompt,crea
 import from="./tribunal-modes.js" names="TribunalMode,TribunalModeConfig" types=true
 import from="./tribunal-modes.js" names="getModeConfig,buildModePrompt,buildModeSummaryPrompt"
 import from="./health-check.js" names="preflightHealthFilter"
+import from="./seat-dispatch.js" names="dispatchSeatWithRetry,buildPanelHealth"
+import from="./seat-dispatch.js" names="SeatOutcome" types=true
 
 interface name=TribunalPosition
   field name=engineId type=string
@@ -20,6 +22,7 @@ interface name=TribunalResult
   field name=positions type="TribunalPosition[]"
   field name=summary type=string
   field name=mode type=string optional=true
+  field name=panelHealth type="{ requested: number; responded: number; degraded: boolean; notes: string[]; banner: string | null }" optional=true
 
 fn name=buildFallbackSummary params="positions:TribunalPosition[]" returns="string"
   handler lang="kern"
@@ -107,6 +110,9 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
     });
     sidechain.log('tribunal:init', undefined, { question, mode, engines, rounds: effectiveRounds });
     const allRounds: TribunalRound[] = [];
+    // One SeatOutcome per engine-round; folded into panelHealth at the end so a
+    // seat that flaked (or was rescued by the auto-retry) is reported loudly.
+    const seatOutcomes: SeatOutcome[] = [];
 
     for (let round = 1; round <= effectiveRounds; round++) {
       // Doppelganger fix: respect cancellation between rounds. Without
@@ -144,31 +150,27 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
           data: { round, position: pos.position, mode },
         });
 
-        try {
-          const result = await adapter.dispatch({
-            engine,
-            prompt,
-            systemPrompt: 'You are a debate participant. Respond directly with your argument as plain text. Do NOT use tools, read files, or run commands.',
-            cwd: process.cwd(),
-            mode: 'exec',
-            timeout,
-            outputDir,
-            signal,
-          });
-          const cleaned = requireNonEmptyDispatchText(result, `tribunal ${pos.engineId} round ${round}`);
-          return { engineId: pos.engineId, argument: cleaned };
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          const snippet = (err as any)?.stdout
-            ? String((err as any).stdout).slice(0, 200).replace(/\s+/g, ' ').trim()
-            : (err as any)?.stderr
-              ? String((err as any).stderr).slice(0, 200).replace(/\s+/g, ' ').trim()
-              : '';
-          const detail = snippet ? `${message} | snippet: ${snippet}${(err as any)?.stdout?.length > 200 || (err as any)?.stderr?.length > 200 ? '…' : ''}` : message;
-          console.warn(`[agon] tribunal dispatch (${pos.engineId}) round ${round} failed: ${detail}`);
-          opts.onEvent?.({ type: 'engine:failed' as any, engineId: pos.engineId, data: { engineId: pos.engineId, phase: `tribunal-round-${round}`, error: detail } });
+        // One auto-retry per seat-round (shorter timeout); the engine's own
+        // text-extraction (<think> salvage) runs inside each attempt via extract.
+        const seat = await dispatchSeatWithRetry(adapter, {
+          engineId: `${pos.engineId} r${round}`,
+          engine,
+          prompt,
+          systemPrompt: 'You are a debate participant. Respond directly with your argument as plain text. Do NOT use tools, read files, or run commands.',
+          cwd: process.cwd(),
+          mode: 'exec',
+          timeout,
+          outputDir,
+          signal,
+          extract: (result) => requireNonEmptyDispatchText(result, `tribunal ${pos.engineId} round ${round}`),
+        });
+        seatOutcomes.push(seat);
+        if (!seat.ok) {
+          console.warn(`[agon] tribunal dispatch (${pos.engineId}) round ${round} failed after ${seat.attempts} attempt(s): ${seat.failure}`);
+          opts.onEvent?.({ type: 'engine:failed' as any, engineId: pos.engineId, data: { engineId: pos.engineId, phase: `tribunal-round-${round}`, error: seat.failure ?? 'failed' } });
           return { engineId: pos.engineId, argument: '(failed to respond)' };
         }
+        return { engineId: pos.engineId, argument: seat.text };
       });
 
       // Sequential protocol: wait for each in order
@@ -230,11 +232,15 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
       summary = buildFallbackSummary(positions);
     }
 
+    const panelHealth = buildPanelHealth(seatOutcomes);
+    if (panelHealth.banner) console.warn(`[agon] tribunal ${panelHealth.banner}`);
+
     sidechain.log('tribunal:done', undefined, {
       rounds: allRounds.length,
       engines: engines.length,
       mode,
       summaryLength: summary.length,
+      panelHealth,
     });
 
     opts.onEvent?.({
@@ -263,5 +269,5 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
       }
     }
 
-    return { question, rounds: allRounds, positions, summary, mode };
+    return { question, rounds: allRounds, positions, summary, mode, panelHealth };
   >>>

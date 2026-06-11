@@ -7,7 +7,7 @@ import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import type { BrainstormBid } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { runBrainstorm } from '@kernlang/agon-forge';
-import { header, info, table, bold, green } from '../output.js';
+import { header, info, warn, table, bold, green } from '../output.js';
 import { icons } from '../icons.js';
 import { filterDefaultOrchestrationEngines } from '../generated/handlers/engine-filter.js';
 
@@ -92,7 +92,7 @@ export const brainstormCommand = defineCommand({
       startedAt,
       endedAt: new Date().toISOString(),
       engines: engineStatuses,
-      summary: `${okCount}/${available.length} bid; winner=${result.winner}`,
+      summary: `${okCount}/${available.length} bid; winner=${result.winner}${result.panelHealth?.banner ? `; ${result.panelHealth.banner}` : ''}`,
       ok: okCount === available.length,
     };
     writeRunStatus(outputDir, status);
@@ -100,6 +100,13 @@ export const brainstormCommand = defineCommand({
     if (quiet) {
       printRunSummary(status);
       return;
+    }
+
+    // Panel health is non-negotiable output: a retried or dropped seat must be
+    // visible in the final render, not just in mid-run console.warn noise.
+    if (result.panelHealth?.banner) {
+      console.log('');
+      warn(result.panelHealth.banner);
     }
 
     console.log('');

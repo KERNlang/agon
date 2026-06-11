@@ -72,3 +72,5 @@ export {
   ESCAPING_OPS, DONE_SENTINEL, ASK_SENTINEL,
 } from './conquer.js';
 export type { StuckSignals, ConquerCaps, ConquerState, ConquerTurn, ConquerOptions, ConquerResult, DoneOracleInput, SandboxOps, FalsifierResult } from './conquer.js';
+export { dispatchSeatWithRetry, buildPanelHealth, classifySeatFailure } from './generated/seat-dispatch.js';
+export type { SeatOutcome } from './generated/seat-dispatch.js';

@@ -238,6 +238,12 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   let step = 0;
   let totalToolCalls = 0;
   let finalResponse = '';
+  // Last visible assistant narration seen across steps. finalResponse is only
+  // set on the terminal no-tool-call answer, so on the silent return paths
+  // below (hidden-reasoning / empty output) it is always ''. This retains the
+  // most recent narration that DID accompany a tool call, so the degrade can
+  // surface real partial work instead of a bare error string.
+  let lastVisibleText = '';
   let emptyDispatchRetries = 0;
 
   while (step < MAX_STEPS) {
@@ -349,8 +355,12 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
           });
           continue;
         }
+        // Graceful degrade: if earlier steps produced visible work, surface it
+        // (mirrors the timeout-bail `finalResponse || …` above) instead of
+        // discarding it for a bare error string. Stays failed:true + keeps
+        // errorReason so the caller still classifies this as an error turn.
         return {
-          response: 'Error: API engine produced hidden reasoning but no visible answer or tool calls after retry.',
+          response: finalResponse || lastVisibleText || 'Error: API engine produced hidden reasoning but no visible answer or tool calls after retry.',
           toolCalls: totalToolCalls,
           steps: step,
           failed: true,
@@ -366,7 +376,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
           continue;
         }
         return {
-          response: 'Error: API engine produced no visible answer or tool calls.',
+          response: finalResponse || lastVisibleText || 'Error: API engine produced no visible answer or tool calls.',
           toolCalls: totalToolCalls,
           steps: step,
           failed: true,
@@ -387,6 +397,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
 
     if (extractedCalls.length > 0) {
       const cleanText = [parsedToolCalls.textBefore, parsedToolCalls.textAfter].filter(Boolean).join('\n\n').trim();
+      if (cleanText) lastVisibleText = cleanText;
       pushHistory({
         role: 'assistant', content: cleanText || null,
         tool_calls: extractedCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments } })),

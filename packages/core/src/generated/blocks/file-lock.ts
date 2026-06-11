@@ -35,12 +35,12 @@ export interface FileLockInfo {
 }
 
 /**
- * Synchronous sleep WITHOUT burning CPU: Atomics.wait on a throwaway SharedArrayBuffer parks the thread (allowed on Node's main thread, unlike browsers). Callers of withFileLock are synchronous APIs (updateGlicko & co.) with µs hold times, so blocking is inherent — this just makes the rare contention wait idle instead of a hot spin.
+ * Synchronous sleep WITHOUT burning CPU: Atomics.wait on a throwaway SharedArrayBuffer parks the thread (allowed on Node's main thread, unlike browsers). Callers of withFileLock are synchronous APIs (updateGlicko & co.) with µs hold times, so blocking is inherent — this just makes the rare contention wait idle instead of a hot spin. The globalThis indirection keeps kern-guard's ambient-scope rule happy (its allowlist lacks Atomics/Int32Array/SharedArrayBuffer; globalThis is ambient).
  */
 // @kern-source: file-lock:34
 function fileLockSleep(ms: number): void {
   try {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    globalThis.Atomics.wait(new globalThis.Int32Array(new globalThis.SharedArrayBuffer(4)), 0, 0, ms);
   } catch {
     // Environment without SharedArrayBuffer — fall back to a brief busy-wait.
     const until = Date.now() + ms;

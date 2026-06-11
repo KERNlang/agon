@@ -31,6 +31,8 @@ export {
   gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff,
   absoluteGitDir, branchExists, worktreeAddOnBranch, hydrateWorktreeBuildArtifacts,
   coAuthorTrailer, appendCoAuthor,
+  AGON_ATTRIBUTION, appendAttribution, appendPrAttribution,
+  normalizeGitHubRemote, githubRepoUrl, defaultBaseBranch, prefilledPrUrl,
 } from './git.js';
 export {
   createSessionWorktree, listSessionWorktrees, findSessionWorktree,

@@ -319,7 +319,7 @@ config name=AgonConfig
   field name=autoCredit type=boolean default=true
     doc "When true, append 'Co-authored-by: Agon AI <agon@local>' to commits where Agon generated the commit message. Set to false to disable."
   field name=commitCoAuthor type=string default="agon (KERN) <noreply@kernlang.dev>"
-    doc "Co-Authored-By identity appended to commits agon creates. ON by default; set to \"\" to disable (machine-wide in ~/.agon/config.json or per-project in .agon.json)."
+    doc "Co-Authored-By identity for commits agon creates — and the SINGLE opt-out switch for agon's whole attribution block (mirrors Claude Code's includeCoAuthoredBy): when set (the default), agon-made commits end with a '🤖 Generated with [Agon](…)' paragraph + this Co-Authored-By trailer, and agon-written PR bodies end with the same Generated-with line. Set to \"\" to disable ALL of it (machine-wide in ~/.agon/config.json or per-project in .agon.json). NOTE: GitHub only renders the co-author as a real contributor avatar when this email belongs to a GitHub account — point it at your bot account's noreply address for graph credit."
 
 
 interface name=ScoutBid

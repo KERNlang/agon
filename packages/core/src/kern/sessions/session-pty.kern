@@ -171,7 +171,7 @@ fn name=createPtySession params="config:PersistentSessionConfig" returns="Persis
           // honest "not sent" status instead — mirrors the skip-status every other
           // session path emits. Full PTY vision is a deferred kern-engines follow-up.
           if (opts.images?.length) {
-            yield { type: 'status' as const, content: `${opts.images.length} image(s) not sent — the claude subscription (PTY) brain has no vision channel yet; use an API engine or AGON_CLAUDE_PRINT for image input` };
+            yield { type: 'status' as const, content: `${opts.images.length} image(s) not sent — the claude subscription (PTY) brain has no vision channel yet; use an API engine (e.g. zai/kimi) or codex for image input` };
           }
           // Claude's TUI has no --system-prompt; prepend it on the first turn only
           // (the persistent session retains it in conversation context thereafter).

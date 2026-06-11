@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { detectIntent } from '../../packages/cli/src/intent.js';
 import { handleRun } from '../../packages/cli/src/generated/handlers/run.js';
-import { buildMentionedFilesContext } from '../../packages/cli/src/generated/surfaces/app-submit.js';
+import { buildMentionedFilesContext, isLiteralCommandLine } from '../../packages/cli/src/generated/surfaces/app-submit.js';
+import { extractImagesFromInput } from '@kernlang/agon-core';
 import { startChatSession } from '@kernlang/agon-core';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -48,6 +49,28 @@ describe('B4 — `! <cmd>` inline-bash intent trigger', () => {
     expect((slash as any).input).toBe('npm test');
     // and a normal slash command is unaffected by the bang branch
     expect(detectIntent('/forge fix the bug').type).toBe('forge');
+  });
+});
+
+describe('B4 — `! <cmd>` is exempt from plan-mode + BTW side-chat capture', () => {
+  // runHandleSubmit gates BOTH the plan-mode rewrite (`/plan ${input}`) and the
+  // open-BTW-panel follow-up capture on `… && !input.startsWith('! ')`, so a bang
+  // line runs the shell directly even in plan mode / with the side panel open
+  // (Claude-Code parity — bash is exempt like slash commands). These pin the
+  // one-token exemption predicate the router uses at both call sites.
+  const planModeWouldWrap = (input: string) => input.trim().length > 0 && !input.startsWith('/') && !input.startsWith('! ');
+  const btwWouldCapture = (input: string) => input.trim().length > 0 && !input.startsWith('/') && !input.startsWith('! ');
+
+  it('plan mode does NOT wrap a `! <cmd>` line into /plan', () => {
+    expect(planModeWouldWrap('! npm test')).toBe(false);   // bash runs directly
+    expect(planModeWouldWrap('fix the bug')).toBe(true);   // normal prose still wraps
+    expect(planModeWouldWrap('/forge x')).toBe(false);     // slash still exempt
+  });
+
+  it('an open BTW panel does NOT capture a `! <cmd>` line as a side-chat turn', () => {
+    expect(btwWouldCapture('! ls -la')).toBe(false);       // bash escapes the side-chat
+    expect(btwWouldCapture('what about caching?')).toBe(true); // normal prose is captured
+    expect(btwWouldCapture('/clear')).toBe(false);         // slash still exempt
   });
 });
 
@@ -115,19 +138,44 @@ describe('B4 — `! <cmd>` lines are NOT @-mention-expanded', () => {
     expect(ctx).toContain('SECRET = 42');
   });
 
-  // The submit pipeline gates buildMentionedFilesContext on
-  // !(startsWith('/') || startsWith('! ')); these pin the bang half of that gate
-  // by asserting the caller would skip expansion. (A `! grep @secret.ts` line
-  // routes to /run, where the @path must stay a literal shell arg.)
-  it('a `! ` line is recognized as a bang-bash line (skips mention expansion)', () => {
-    const line = '! grep SECRET @secret.ts';
-    const isBang = line.startsWith('/') || line.startsWith('! ');
-    expect(isBang).toBe(true);
+  // The submit pipeline gates BOTH image extraction and buildMentionedFilesContext
+  // on isLiteralCommandLine(input); these pin the bang/slash halves of that REAL
+  // exported gate (not an inline re-implementation). A `! grep @secret.ts` line
+  // routes to /run, where the @path must stay a literal shell arg.
+  it('a `! ` line is a literal-command line (skips image/mention expansion)', () => {
+    expect(isLiteralCommandLine('! grep SECRET @secret.ts')).toBe(true);
   });
 
-  it('a normal line is NOT a bang-bash line (expansion runs)', () => {
-    const line = 'review @secret.ts';
-    const isBang = line.startsWith('/') || line.startsWith('! ');
-    expect(isBang).toBe(false);
+  it('a slash command is a literal-command line', () => {
+    expect(isLiteralCommandLine('/run cp /tmp/shot.png docs/')).toBe(true);
+  });
+
+  it('a normal chat line is NOT a literal-command line (expansion runs)', () => {
+    expect(isLiteralCommandLine('review @secret.ts')).toBe(false);
+    // A bare `!` (no space) is plain text, not a bang-bash line.
+    expect(isLiteralCommandLine('!important fix the layout')).toBe(false);
+  });
+
+  // B4: an existing image path inside a `! <cmd>` line must NOT be extracted —
+  // doing so would STRIP it from the shell command (corrupting it) and silently
+  // attach it as a pending image. The submit pipeline guards extractImagesFromInput
+  // behind isLiteralCommandLine; this asserts the discrimination: the raw extractor
+  // WOULD strip the path, but the gate flips the pipeline onto the no-extract path.
+  it('a `! ` line with an existing image path: extractor would strip it, but the gate skips extraction', () => {
+    writeFileSync(join(dir, 'shot.png'), 'PNGDATA');
+    const bangLine = `! cp ${join(dir, 'shot.png')} docs/`;
+    // Control: the raw extractor pulls the path OUT of the text + attaches it.
+    const raw = extractImagesFromInput(bangLine, dir);
+    expect(raw.images.length).toBe(1);
+    expect(raw.text).not.toContain('shot.png');
+    // The gate marks this a literal-command line, so the pipeline keeps the input
+    // verbatim and attaches no image (mirrors the `literalCommandLine ? …` branch).
+    expect(isLiteralCommandLine(bangLine)).toBe(true);
+    const { text, images } = isLiteralCommandLine(bangLine)
+      ? { text: bangLine, images: [] }
+      : extractImagesFromInput(bangLine, dir);
+    expect(text).toBe(bangLine);
+    expect(text).toContain('shot.png'); // path preserved in the command
+    expect(images.length).toBe(0);      // nothing attached
   });
 });

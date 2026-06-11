@@ -16,7 +16,7 @@ import type { Dispatch } from '../../../handlers/types.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handlePermissions, handleUse, handleCesar, handleTokens, handleRaw, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleRun } from '../../../handlers/index.js';
+import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handlePermissions, handleUse, handleCesar, handleTokens, handleRaw, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCpLast, handleCommit, handleFlowReport, handleFlowAnalysis, handleRun } from '../../../handlers/index.js';
 
 import { handleProvider } from '../../handlers/provider.js';
 
@@ -278,7 +278,11 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
     case 'retry': await handleRetry(cb.dispatch, cb.ctx); break;
     case 'cancel': handleCancel(cb.dispatch, cb.ctx); break;
     case 'apply': await handleApplyPatch(cb.dispatch, cb.ctx, intent.patchPath, intent.force); break;
-    case 'cp': handleCp(intent.index, cb.dispatch); break;
+    case 'cp': {
+      if (intent.last) handleCpLast(cb.ctx.chatSession, cb.dispatch);
+      else handleCp(intent.index, cb.dispatch);
+      break;
+    }
     case 'commit': await handleCommit(intent.input, cb.dispatch, cb.ctx); break;
 
     default: return null;

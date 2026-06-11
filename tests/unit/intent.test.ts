@@ -408,6 +408,23 @@ describe('Intent Detection — Slash Commands', () => {
     if (r.type === 'cp') expect(r.index).toBe(1);
   });
 
+  it('/cp last copies the last response', () => {
+    const r = detectIntent('/cp last');
+    expect(r.type).toBe('cp');
+    if (r.type === 'cp') {
+      expect(r.last).toBe(true);
+      expect(r.index).toBeUndefined();
+    }
+  });
+
+  it('/copy last alias and case-insensitive variants', () => {
+    for (const input of ['/copy last', '/cp LAST', '/cp msg', '/cp response']) {
+      const r = detectIntent(input);
+      expect(r.type).toBe('cp');
+      if (r.type === 'cp') expect(r.last).toBe(true);
+    }
+  });
+
   it('/img parses path', () => {
     const r = detectIntent('/img /tmp/screenshot.png');
     expect(r.type).toBe('img');

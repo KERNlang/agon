@@ -115,3 +115,37 @@ const name=STALL_THRESHOLD_MS type=number export=true value=30000
 fn name=shouldAutoFallback params="v:EngineVitals,thresholdMs:number" returns=boolean export=true expr={{ return v.state === 'stalled' && (v.stallDurationMs ?? 0) >= thresholdMs; }}
 
 fn name=buildFallbackToast params="from:string,to:string,reason:string" returns=string export=true expr={{ return `\u26a0  ${from} stalled \u2192 fallback to ${to} (${reason})`; }}
+
+// \u2500\u2500 Render signature (repaint dedupe) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+fn name=vitalsRenderSignature params="engines:EngineVitals[]" returns=string export=true
+  doc "Coarse fingerprint of a vitals snapshot for repaint dedupe while only the one-line StatusBar is visible (it renders just per-state counts and fallback markers). Volatile fields are excluded (lastHeartbeatAt) or bucketed (cpu/mem to 5%, latency to health bands, stall duration to 10s) so probe jitter does not retrigger renders \u2014 an Ink repaint clears the user's terminal text selection, so an idle screen must stay byte-for-byte still. Deliberately COARSER than the /status dashboard's 1%/1ms rows: while that dashboard is open the subscriber bypasses this dedupe entirely (see startTelemetryPoller)."
+  handler <<<
+    const bucket = (value: number | null | undefined, size: number): string =>
+      typeof value === 'number' && Number.isFinite(value) ? String(Math.round(value / size)) : '-';
+    const latencyBand = (ms: number | null | undefined): string => {
+      if (typeof ms !== 'number' || !Number.isFinite(ms)) return '-';
+      if (ms < 100) return 'a';
+      if (ms < 300) return 'b';
+      if (ms < 800) return 'c';
+      if (ms < 1500) return 'd';
+      return 'e';
+    };
+    return engines
+      .slice()
+      .sort((a, b) => a.engineId.localeCompare(b.engineId))
+      .map((v) => [
+        v.engineId,
+        v.state,
+        v.network ?? '-',
+        v.task ?? '-',
+        v.taskDetail ?? '-',
+        v.fallbackTo ?? '-',
+        v.fallbackReason ?? '-',
+        bucket(v.cpuPercent, 5),
+        bucket(v.memPercent, 5),
+        latencyBand(v.latencyMs),
+        bucket(v.stallDurationMs, 10000),
+      ].join('|'))
+      .join('\n');
+  >>>

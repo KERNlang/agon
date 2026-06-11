@@ -31,7 +31,7 @@ export {
   gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff,
   absoluteGitDir, branchExists, worktreeAddOnBranch, hydrateWorktreeBuildArtifacts,
   coAuthorTrailer, appendCoAuthor,
-  AGON_ATTRIBUTION, appendAttribution, appendPrAttribution,
+  AGON_ATTRIBUTION, AGON_ATTRIBUTION_PR, appendAttribution, appendPrAttribution,
   normalizeGitHubRemote, githubRepoUrl, defaultBaseBranch, prefilledPrUrl,
 } from './git.js';
 export {

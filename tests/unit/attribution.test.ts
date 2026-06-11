@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { AGON_ATTRIBUTION, appendAttribution, appendPrAttribution } from '../../packages/core/src/git.js';
+import { AGON_ATTRIBUTION, AGON_ATTRIBUTION_PR, appendAttribution, appendPrAttribution } from '../../packages/core/src/git.js';
 
 const id = 'agon (KERN) <noreply@kernlang.dev>';
 
@@ -31,15 +31,24 @@ describe('appendAttribution (commit footer, Claude Code layout)', () => {
 
   it('trims trailing whitespace from the message before appending', () => {
     const out = appendAttribution('feat: do thing\n\n', { commitCoAuthor: id });
-    expect(out.startsWith('feat: do thing\n\n🤖')).toBe(true);
+    expect(out.startsWith('feat: do thing\n\n⚔️')).toBe(true);
+  });
+
+  it('commit footer is plain text (no markdown image — commit messages render as text)', () => {
+    expect(AGON_ATTRIBUTION).not.toContain('<img');
   });
 });
 
 describe('appendPrAttribution (PR-body footer)', () => {
   it('appends only the Generated-with line — no Co-Authored-By in PR bodies', () => {
     const out = appendPrAttribution('## Summary\nstuff', { commitCoAuthor: id });
-    expect(out).toBe(`## Summary\nstuff\n\n${AGON_ATTRIBUTION}`);
+    expect(out).toBe(`## Summary\nstuff\n\n${AGON_ATTRIBUTION_PR}`);
     expect(out).not.toContain('Co-Authored-By');
+  });
+
+  it('PR footer shows the AGON logo via the KERN-Agon avatar URL (markdown context)', () => {
+    expect(AGON_ATTRIBUTION_PR).toContain('https://github.com/KERN-Agon.png');
+    expect(AGON_ATTRIBUTION_PR).toContain('[Agon](https://github.com/KERNlang/agon)');
   });
 
   it('is a no-op when opted out', () => {

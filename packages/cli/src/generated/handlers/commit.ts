@@ -89,7 +89,7 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
       agonGenerated = false;
     }
   }
-  // Attribution honesty: the '🤖 Generated with Agon' banner ONLY when agon wrote the message (agonGenerated); a user-typed/edited message gets just the Co-Authored-By trailer — agon co-authored the commit mechanics, it did not generate the text. Both are no-ops when commitCoAuthor is unset (the single opt-out switch).
+  // Attribution honesty: the '⚔️ Forged by Agon' banner ONLY when agon wrote the message (agonGenerated); a user-typed/edited message gets just the Co-Authored-By trailer — agon co-authored the commit mechanics, it did not write the text. Both are no-ops when commitCoAuthor is unset (the single opt-out switch).
   // The underlying trailer append stays paragraph-aware: a user-supplied message already ending in a trailer block keeps its trailers parseable.
   const config = loadConfig(cwd);
   const commitCoAuthor = (config.commitCoAuthor ?? '').trim();

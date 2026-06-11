@@ -26,11 +26,99 @@ import { summarizeBtwTranscriptEvent } from './app-blocks.js';
 
 import { setWindowTitle } from '../lib/terminal-notify.js';
 
-import { join } from 'node:path';
+import { extractFileMentions } from '../signals/app-input.js';
 
-import { mkdirSync } from 'node:fs';
+import { join, resolve, relative, sep, isAbsolute } from 'node:path';
+
+import { mkdirSync, readFileSync, statSync, realpathSync, openSync, readSync, closeSync } from 'node:fs';
 
 // ── Module: AppSubmit ──
+
+export const MENTION_MAX_FILE_BYTES: number = 65536;
+
+export const MENTION_MAX_TOTAL_BYTES: number = 262144;
+
+export const MENTION_MAX_FILES: number = 20;
+
+export function isLiteralCommandLine(input: string): boolean {
+  return input.startsWith('/') || input.startsWith('! ');
+}
+
+export function buildMentionedFilesContext(text: string, cwd: string): string {
+  const allMentions = extractFileMentions(text);
+  const mentions = allMentions.slice(0, MENTION_MAX_FILES);
+  if (mentions.length === 0) return '';
+  const root = resolve(cwd);
+  // Confinement is checked against the REAL (symlink-resolved) root so a
+  // symlink inside the tree can't be used to read outside it.
+  let realRoot: string;
+  try { realRoot = realpathSync(root); } catch { realRoot = root; }
+  const blocks: string[] = [];
+  let totalBytes = 0;
+  // Anything we couldn't include because a cap was hit. Surfaced as a final
+  // note so the engine (and user) know the attachment set is incomplete
+  // rather than silently short — mentions past MENTION_MAX_FILES plus any
+  // file dropped once the total byte cap is exhausted.
+  let dropped = allMentions.length - mentions.length;
+  for (const rel of mentions) {
+    // Reject absolute paths and any path that lexically resolves outside the
+    // project root — only project-relative mentions are attachable.
+    if (isAbsolute(rel)) continue;
+    const abs = resolve(root, rel);
+    const within = abs === root || abs.startsWith(root + sep);
+    if (!within) continue;
+    // Total-cap reached: this and every remaining mention is dropped.
+    if (totalBytes >= MENTION_MAX_TOTAL_BYTES) { dropped++; continue; }
+    const remaining = MENTION_MAX_TOTAL_BYTES - totalBytes;
+    const perFileCap = Math.min(MENTION_MAX_FILE_BYTES, remaining);
+    let size: number;
+    let body: string;
+    let truncated = false;
+    try {
+      const st = statSync(abs);
+      if (!st.isFile()) continue;
+      // Re-resolve symlinks and re-check confinement against the real root:
+      // statSync/readFileSync FOLLOW symlinks, so a symlinked path that
+      // passed the lexical check above could still point outside the tree.
+      const real = realpathSync(abs);
+      if (real !== realRoot && !real.startsWith(realRoot + sep)) continue;
+      size = st.size;
+      if (size > perFileCap) {
+        // Read only the cap rather than buffering the whole file — a huge
+        // file would otherwise be fully loaded (and >~512MB throws, dropping
+        // it silently) just to slice it back down.
+        const fd = openSync(abs, 'r');
+        try {
+          const buf = Buffer.alloc(perFileCap);
+          const bytesRead = readSync(fd, buf, 0, perFileCap, 0);
+          body = buf.toString('utf-8', 0, bytesRead);
+        } finally {
+          closeSync(fd);
+        }
+        truncated = true;
+      } else {
+        body = readFileSync(abs, 'utf-8');
+        // A multibyte tail can push a small file just over the cap once
+        // decoded; clamp defensively.
+        if (body.length > perFileCap) { body = body.slice(0, perFileCap); truncated = true; }
+      }
+    } catch {
+      // Non-existent / unreadable — leave the mention as plain text.
+      continue;
+    }
+    totalBytes += body.length;
+    const display = relative(root, abs) || rel;
+    const header = truncated
+      ? `@${display} (truncated to ${body.length} of ${size} bytes)`
+      : `@${display}`;
+    blocks.push(`\`\`\`\n// ${header}\n${body}\n\`\`\``);
+  }
+  if (blocks.length === 0) return '';
+  const note = dropped > 0
+    ? `\n\n[${dropped} more @-mentioned file${dropped === 1 ? '' : 's'} omitted: caps reached]`
+    : '';
+  return `\n\n[Attached files referenced with @ in the message above]\n${blocks.join('\n\n')}${note}`;
+}
 
 export function runProcessInputQueue(replState: ReplStateState, inputQueue: string[], setInputQueue: (updater:(prev:string[]) => string[]) => void, handleSubmit: (value:string) => void): void {
   if (replState === 'idle' && inputQueue.length > 0) {
@@ -263,7 +351,10 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
   // While the BTW side-chat panel is open, a plain (non-slash) submit is a
   // follow-up turn in that side conversation — Cesar answers it in the
   // panel without touching the main task. Esc leaves the side-chat.
-  if (opts.btwPanel && input.trim() && !input.startsWith('/')) {
+  // A `! <cmd>` inline-bash line runs the shell directly (it routes to /run),
+  // so it is NOT captured as a side-chat follow-up even while the /btw panel is
+  // open — same one-token exemption slash commands already get.
+  if (opts.btwPanel && input.trim() && !input.startsWith('/') && !input.startsWith('! ')) {
     if (opts.btwPanel.status === 'running') {
       opts.dispatch({ type: 'info', message: 'Side-chat is still answering — one turn at a time.' } as any);
       return;
@@ -329,7 +420,10 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
     opts.dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '…' : input}` } as any);
     return;
   }
-  if (opts.planModeQueued && input.trim() && !input.startsWith('/')) {
+  // A `! <cmd>` inline-bash line runs the shell directly even in plan mode
+  // (Claude Code parity — bash is exempt from the plan wrapper, same as slash
+  // commands), so don't rewrite it to `/plan ! <cmd>`.
+  if (opts.planModeQueued && input.trim() && !input.startsWith('/') && !input.startsWith('! ')) {
     opts.setPlanModeQueued(false);
     opts.handleSubmit(`/plan ${input}`);
     return;
@@ -341,8 +435,32 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
   setWindowTitle('● agon — running');
   opts.dispatch({ type: 'separator' } as any);
   opts.dispatch({ type: 'user-message', content: input } as any);
-  const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
+  // Image extraction is gated by the SAME literal-command exemption as @-file
+  // mentions below: a slash command (e.g. `/run cp /tmp/shot.png docs/`) and a
+  // `! <cmd>` inline-bash line are literal shell/command text — an existing
+  // image path inside them is an ARGUMENT, not an attach. Running the extractor
+  // would STRIP that path out of the command (corrupting it) and silently
+  // attach it as a pending image. So for `/` and `! ` lines we skip extraction
+  // and keep the path in the command verbatim. (This also fixes the pre-existing
+  // gap for /run-with-an-image-path — the path now stays in the /run command,
+  // which is the correct Claude-Code-parity behavior.)
+  const literalCommandLine = isLiteralCommandLine(input);
+  const { text: cleanInput, images: detectedImages } = literalCommandLine
+    ? { text: input, images: [] as ImageAttachment[] }
+    : extractImagesFromInput(input, resolveWorkingDir());
   const allImages = [...opts.pendingImages, ...detectedImages];
+  // @-file mentions: the transcript (user-message above) keeps the raw "@path"
+  // the user typed (Claude-Code style); the ENGINE prompt gets each resolved
+  // file's content appended as a fenced block so it sees the code without a
+  // manual paste. Slash commands parse their args literally, so they are never
+  // augmented; a `! <cmd>` inline-bash line is likewise a literal shell command
+  // (it routes to /run, not Cesar), so an "@path" inside it stays a shell arg
+  // and is NOT expanded. activeTurnRef below keeps the ORIGINAL input so
+  // retry/dedup matches what the user typed, not the file-expanded prompt.
+  const mentionContext = literalCommandLine
+    ? ''
+    : buildMentionedFilesContext(input, resolveWorkingDir());
+  const dispatchInput = mentionContext ? input + mentionContext : input;
   let intent = detectIntent(cleanInput || input, opts.commandRegistry);
   if (intent.type === 'status') {
     opts.setStatusDashboardOpen(true);
@@ -381,13 +499,13 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
   }
   if (intent.type === 'unknown' && opts.mode !== 'chat') {
     switch (opts.mode) {
-      case 'campfire': intent = { type: 'campfire', topic: input } as any; break;
-      case 'brainstorm': intent = { type: 'brainstorm', question: input } as any; break;
-      case 'tribunal': intent = { type: 'tribunal', question: input } as any; break;
+      case 'campfire': intent = { type: 'campfire', topic: dispatchInput } as any; break;
+      case 'brainstorm': intent = { type: 'brainstorm', question: dispatchInput } as any; break;
+      case 'tribunal': intent = { type: 'tribunal', question: dispatchInput } as any; break;
     }
   }
   try {
-    const result = await dispatchIntent(intent, input, cb);
+    const result = await dispatchIntent(intent, dispatchInput, cb);
     if (result.ranAsJob) return;
   } catch (err: any) { opts.dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
   finally {

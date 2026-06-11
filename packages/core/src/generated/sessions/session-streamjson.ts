@@ -164,6 +164,16 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
       }
       if (!proc) { yield { type: 'error' as const, content: 'proc null after reconnect' }; return; }
 
+      // Vision: claude vision is intentionally NOT wired on this `claude --print`
+      // stream-json escape hatch (AGON_CLAUDE_PRINT=1) — content is sent as plain
+      // text below. claude DOES declare the `vision` capability, so a silent drop
+      // would mislead the user into thinking the model saw the paste. Surface an
+      // honest "not sent" status instead — mirrors the skip-status the PTY brain
+      // and every other session path emits.
+      if (opts.images?.length) {
+        yield { type: 'status' as const, content: `${opts.images.length} image(s) not sent — the claude stream-json path has no vision channel; use an API engine (e.g. zai/kimi) or codex for image input` };
+      }
+
       const chunks: SessionChunk[] = [];
       let turnDone = false;
       let resolveWait: (() => void) | null = null;

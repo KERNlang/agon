@@ -32,11 +32,13 @@ import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCe
 
 import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
 
+import { approvalToolIsFileMutating, buildApprovalDiffPreview } from './approval-diff.js';
+
 import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
 
 import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
 
-// @kern-source: brain:20
+// @kern-source: brain:21
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -67,7 +69,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:46
+// @kern-source: brain:47
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -98,10 +100,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:71
+// @kern-source: brain:72
 export const _noBriefNudged: Set<string> = new Set<string>();
 
-// @kern-source: brain:73
+// @kern-source: brain:74
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -384,7 +386,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // Surface a health hint when adapter has quarantined this engine — the user
             // needs to see why retries won't help so they can /cesar to a working engine.
             const health = engineHealth.get(cesarEngineId);
-            if (health && (health.status === 'auth-failed' || health.status === 'unreachable')) {
+            if (health && (health.status === 'auth-failed' || health.status === 'unreachable' || health.status === 'binary-missing')) {
               dispatch({ type: 'warning', message: `Engine ${cesarEngineId} marked ${health.status} — run /cesar to switch to a healthy engine, or /engines to fix credentials.` });
             }
             return { delegated: false, responded: false };
@@ -703,9 +705,17 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   continue;
                 }
               }
-              // Dispatch permission-ask to UI
+              // Dispatch permission-ask to UI. For file-mutating tools, compute a
+              // unified diff from the tool input (old content from disk + the
+              // proposed change) so the user approves the actual change, not just
+              // a truncated path/command. Other tools keep the command preview.
               logMcpApproval('prompted', 'mcp.user-prompt', 'Cesar wants to execute');
-              dispatch({ type: 'permission-ask', tool: req.tool, command: String(req.args?.command ?? req.args?.file_path ?? JSON.stringify(req.args)), reason: `Cesar wants to execute`, resolve: (approved: boolean | string) => {
+              let permDiffPreview: any = undefined;
+              if (approvalToolIsFileMutating(req.tool)) {
+                try { permDiffPreview = buildApprovalDiffPreview(String(req.tool), reqArgs); }
+                catch { /* diff is best-effort — fall back to command preview */ }
+              }
+              dispatch({ type: 'permission-ask', tool: req.tool, command: String(req.args?.command ?? req.args?.file_path ?? JSON.stringify(req.args)), reason: `Cesar wants to execute`, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
                 const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : approved;
                 logMcpApproval(wasApproved ? 'approved' : 'denied', 'mcp.user-prompt', wasApproved ? 'user approved' : 'user denied');
                 // Handle "Always" — persist to config

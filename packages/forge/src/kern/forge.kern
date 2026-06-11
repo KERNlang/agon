@@ -309,10 +309,10 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
           droppedEngines.push({ id, reason: 'not-available: registry.isAvailable returned false (binary missing, API key missing, or engine disabled)' });
           return false;
         }
-        // Skip engines previously quarantined this session for auth/unreachable failures.
+        // Skip engines previously quarantined this session for auth/unreachable/binary-missing failures.
         // Timeouts and generic failures stay in rotation — they may be transient.
         const health = engineHealth.get(id);
-        if (health && (health.status === 'auth-failed' || health.status === 'unreachable')) {
+        if (health && (health.status === 'auth-failed' || health.status === 'unreachable' || health.status === 'binary-missing')) {
           skippedQuarantine.push({ id, reason: health.reason, status: health.status });
           return false;
         }

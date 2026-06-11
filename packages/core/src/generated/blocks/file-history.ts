@@ -35,9 +35,13 @@ export interface HistoryEntry {
   cwd: string;
   files: FileSnapshot[];
   createdAt: string;
+  seq?: number;
 }
 
-// @kern-source: file-history:29
+// @kern-source: file-history:33
+const _snapshotSeq: { value: number, seeded: boolean } = ({ value: 0, seeded: false }) as { value: number, seeded: boolean };
+
+// @kern-source: file-history:35
 function ensureSnapshotsDir(): void {
   ensureAgonHome();
   mkdirSync(snapshotsDir(), { recursive: true });
@@ -46,7 +50,7 @@ function ensureSnapshotsDir(): void {
 /**
  * Snapshot files before modification. Returns entry that can be used for undo.
  */
-// @kern-source: file-history:34
+// @kern-source: file-history:40
 export function takeSnapshot(label: string, cwd: string, filePaths: string[]): HistoryEntry {
   ensureSnapshotsDir();
 
@@ -66,12 +70,30 @@ export function takeSnapshot(label: string, cwd: string, filePaths: string[]): H
     }
   }
 
+  // Seed the monotonic counter from disk on first use so a restart stays
+  // strictly increasing and never collides with an existing snapshot's seq.
+  if (!_snapshotSeq.seeded) {
+    let maxSeq = 0;
+    try {
+      for (const f of readdirSync(snapshotsDir()).filter((n: string) => n.endsWith('.json'))) {
+        try {
+          const prior = JSON.parse(readFileSync(join(snapshotsDir(), f), 'utf-8')) as HistoryEntry;
+          if (typeof prior.seq === 'number' && prior.seq > maxSeq) maxSeq = prior.seq;
+        } catch { /* skip corrupt */ }
+      }
+    } catch { /* no dir yet */ }
+    _snapshotSeq.value = maxSeq;
+    _snapshotSeq.seeded = true;
+  }
+  _snapshotSeq.value += 1;
+
   const entry: HistoryEntry = {
     id: randomUUID().slice(0, 8),
     label,
     cwd,
     files,
     createdAt: new Date().toISOString(),
+    seq: _snapshotSeq.value,
   };
 
   const entryPath = join(snapshotsDir(), `${entry.id}.json`);
@@ -86,7 +108,7 @@ export function takeSnapshot(label: string, cwd: string, filePaths: string[]): H
 /**
  * Revert files to a snapshot state. Deletes files that didn't exist before.
  */
-// @kern-source: file-history:72
+// @kern-source: file-history:96
 export function revertSnapshot(id: string): {ok:boolean, error?:string, filesReverted:number} {
   ensureSnapshotsDir();
   const entryPath = join(snapshotsDir(), `${id}.json`);
@@ -128,7 +150,7 @@ export function revertSnapshot(id: string): {ok:boolean, error?:string, filesRev
   return { ok: true, filesReverted: reverted };
 }
 
-// @kern-source: file-history:115
+// @kern-source: file-history:139
 export function listSnapshots(): HistoryEntry[] {
   ensureSnapshotsDir();
   try {
@@ -143,7 +165,9 @@ export function listSnapshots(): HistoryEntry[] {
     entries.sort((a, b) => {
       const aTime = Date.parse(a.createdAt ?? '') || 0;
       const bTime = Date.parse(b.createdAt ?? '') || 0;
-      return bTime - aTime;
+      if (bTime !== aTime) return bTime - aTime;
+      // Same-millisecond tie (multiple edits in one turn): newest seq first.
+      return (b.seq ?? 0) - (a.seq ?? 0);
     });
     return entries.slice(0, 10);
   } catch {
@@ -151,7 +175,7 @@ export function listSnapshots(): HistoryEntry[] {
   }
 }
 
-// @kern-source: file-history:138
+// @kern-source: file-history:164
 function pruneSnapshots(): void {
   try {
     const files = readdirSync(snapshotsDir()).filter((f: string) => f.endsWith('.json'));
@@ -172,7 +196,7 @@ function pruneSnapshots(): void {
   } catch (err) { console.warn('[file-history] failed to save snapshot:', (err as Error).message ?? err); }
 }
 
-// @kern-source: file-history:159
+// @kern-source: file-history:185
 export function getLatestSnapshotId(): string|null {
   ensureSnapshotsDir();
   try {

@@ -134,6 +134,31 @@ describe('createPtySession — answer channel', () => {
     expect((out.text ?? []).join('')).toBe('SCRAPED ONLY BUT SUBSTANTIVE');
   });
 
+  it('B5: yields an honest "image(s) not sent" status when images are passed (PTY has no vision channel)', async () => {
+    const { createPtySession } = await import('../../packages/core/src/generated/sessions/session-pty.js');
+    const session = createPtySession(claudeConfig({ answerChannelPath: join(tmp, 'cesar-1-answer.json') }) as any);
+    await session.start();
+    ptyState.onAsk = () => ({ scraped: 'a substantive scraped answer body' });
+    const out = await collect(session.send({ message: 'whats in this screenshot?', images: ['/tmp/shot.png', '/tmp/two.png'] } as any) as any);
+    const statuses = out.status ?? [];
+    expect(statuses.some((s) => /2 image\(s\) not sent/.test(s))).toBe(true);
+    expect(statuses.some((s) => /no vision channel/i.test(s))).toBe(true);
+    // The text turn still completes normally — images don't abort the turn.
+    expect((out.text ?? []).join('')).toContain('substantive scraped answer');
+    // And the image paths are NOT smuggled into the prompt sent to the TUI.
+    expect(ptyState.prompts.join('\n')).not.toContain('/tmp/shot.png');
+  });
+
+  it('B5: emits no image status on a normal (image-less) turn', async () => {
+    const { createPtySession } = await import('../../packages/core/src/generated/sessions/session-pty.js');
+    const session = createPtySession(claudeConfig({ answerChannelPath: join(tmp, 'cesar-1-answer.json') }) as any);
+    await session.start();
+    ptyState.onAsk = () => ({ scraped: 'a substantive scraped answer body' });
+    const out = await collect(session.send({ message: 'plain question' }) as any);
+    const statuses = out.status ?? [];
+    expect(statuses.some((s) => /image\(s\) not sent/.test(s))).toBe(false);
+  });
+
   it('prepends the system prompt on the first turn only', async () => {
     const { createPtySession } = await import('../../packages/core/src/generated/sessions/session-pty.js');
     const session = createPtySession(claudeConfig({ answerChannelPath: join(tmp, 'cesar-1-answer.json') }) as any);
@@ -563,5 +588,24 @@ describe('createPersistentSession — claude routing', () => {
     expect(spawnMock).toHaveBeenCalled();           // stream-json spawned claude
     const args = spawnMock.mock.calls[0][1] as string[];
     expect(args).toContain('--print');
+  });
+
+  it('B5: the --print (stream-json) path ALSO yields an honest "image(s) not sent" status', async () => {
+    process.env.AGON_CLAUDE_PRINT = '1';
+    spawnMock.mockImplementation(() => fakePrintProc());
+    const { createPersistentSession } = await import('../../packages/core/src/persistent-session.js');
+    const session = createPersistentSession(claudeConfig() as any);
+    await session.start();
+    // The skip-status is yielded BEFORE any proc I/O; a pre-aborted signal then
+    // ends the turn cleanly so the test never blocks on the stub proc's stdout.
+    const ac = new AbortController();
+    ac.abort();
+    const out = await collect(session.send({ message: 'whats in this screenshot?', images: ['/tmp/shot.png'], signal: ac.signal } as any) as any);
+    const statuses = out.status ?? [];
+    expect(statuses.some((s) => /1 image\(s\) not sent/.test(s))).toBe(true);
+    expect(statuses.some((s) => /no vision channel/i.test(s))).toBe(true);
+    // The image path is never written to the claude stdin envelope.
+    const proc = spawnMock.mock.results[0]?.value;
+    expect(proc).toBeTruthy();
   });
 });

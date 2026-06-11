@@ -95,7 +95,9 @@ export function detailViewerSupportsEvent(event: any): boolean {
   }
   if (event.type === 'permission-ask') {
     const command = String(event.command ?? '');
-    return command.split('\n').length > 4 || command.length > 180;
+    const hasDiffPreview = Array.isArray(event.diffPreview?.files) && event.diffPreview.files.length > 0;
+    const hasFallbackNote = typeof event.fallbackNote === 'string' && event.fallbackNote.trim().length > 0;
+    return hasDiffPreview || hasFallbackNote || command.split('\n').length > 4 || command.length > 180;
   }
   return toolCallSupportsDetailView(event);
 }
@@ -242,7 +244,38 @@ export function buildToolDetailView(event: any): any {
         });
       });
     }
-    if (isMutatingToolCall(previewEvent)) {
+    // Finding 1: prefer the structured diffPreview/fallbackNote that B1 attaches
+    // to permission-ask events (the ACTUAL change computed at approval time)
+    // over reconstructing a preview from the truncated command string.
+    const diffFiles = Array.isArray(event.diffPreview?.files) ? event.diffPreview.files as any[] : [];
+    const fallbackNote = typeof event.fallbackNote === 'string' ? event.fallbackNote.trim() : '';
+    if (diffFiles.length > 0) {
+      pushSegmentsRow('permission-preview-label', [{ text: 'Preview', color: '#22d3ee', bold: true }]);
+      diffFiles.slice(0, 4).forEach((file: any, fileIndex: number) => {
+        pushSegmentsRow(`permission-diff-head-${fileIndex}`, [
+          { text: `Δ ${String(file.relPath ?? file.path ?? '')}`, color: '#22d3ee' },
+          file.status === 'created' ? { text: ' (new file)', color: '#4ade80' } : null,
+          { text: ` +${Number(file.additions ?? 0)} -${Number(file.deletions ?? 0)}`, dimColor: true },
+        ].filter(Boolean));
+        (Array.isArray(file.lines) ? file.lines : []).forEach((line: string, lineIndex: number) => {
+          rows.push({
+            key: `tool-detail-permission-diff-${fileIndex}-${lineIndex}`,
+            kind: 'segments',
+            paddingLeft: 1,
+            segments: [{
+              text: `    ${truncateCodeLine(line, codeWidth)}`,
+              color: line.startsWith('+') ? '#4ade80' : line.startsWith('-') ? '#ef4444' : '#fbbf24',
+              dimColor: line.startsWith('@@'),
+            }],
+          });
+        });
+        if (Number(file.omitted ?? 0) > 0) {
+          pushSegmentsRow(`permission-diff-omitted-${fileIndex}`, [{ text: `    … +${Number(file.omitted)} more lines`, dimColor: true }]);
+        }
+      });
+    } else if (fallbackNote) {
+      pushSegmentsRow('permission-fallback-note', [{ text: fallbackNote, dimColor: true }]);
+    } else if (isMutatingToolCall(previewEvent)) {
       pushSegmentsRow('permission-preview-label', [{ text: 'Preview', color: '#22d3ee', bold: true }]);
       rows.push(...buildToolCallRows('tool-detail-permission-preview', previewEvent, false));
     }

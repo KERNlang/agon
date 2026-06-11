@@ -13,6 +13,7 @@ import from="../signals/output.js" names="getSessionAllowList"
 import from="./routing.js" names="buildRoutingContext"
 import from="./brain-helpers.js" names="extractDelegation"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval,approvalArgsFromCommand"
+import from="./approval-diff.js" names="approvalToolIsFileMutating,buildApprovalDiffPreview"
 import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence,buildToolErrorDiagnostic"
 
 const name=CESAR_SYSTEM_PROMPT type=string
@@ -201,7 +202,10 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export
     // agon's own commit paths. When the user opts out (commitCoAuthor === ''),
     // emit no attribution section at all — and give Cesar the deactivation contract
     // so it can honor "remove the logo/attribution" requests itself.
-    const commitCoAuthor = (config.commitCoAuthor || '').trim();
+    // Sanitize: this value is interpolated into a backtick-delimited trailer in
+    // the system prompt — strip newlines/backticks (collapse to single spaces) so
+    // a malformed config value can't break out of the template or inject text.
+    const commitCoAuthor = (config.commitCoAuthor || '').replace(/[`\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
     if (commitCoAuthor) {
       systemParts.push(`COMMIT ATTRIBUTION: When you create a git commit yourself via Bash, end the commit message with a trailer line \`Co-Authored-By: ${commitCoAuthor}\`. This attribution is configurable (config.commitCoAuthor) and is ON by default.\n- If the user asks to REMOVE/DISABLE the commit logo/attribution, first ask whether to disable it for THIS PROJECT or MACHINE-WIDE, then disable it: machine-wide, run \`agon config set commitCoAuthor ""\` (writes ~/.agon/config.json); per-project, safely edit ./.agon.json with your file tools (read the JSON if it exists, set/merge the key \`"commitCoAuthor": ""\`, write it back — never clobber other keys). Confirm once done.\n- If the user asks to CHANGE the identity instead, set the new value the same way (\`agon config set commitCoAuthor "<value>"\` machine-wide, or merge it into ./.agon.json per-project).`);
     }
@@ -664,7 +668,18 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
             const d = ctx.cesar!.lastDispatch;
             if (d) {
               const cmd = (args as any).command ?? (args as any).file_path ?? JSON.stringify(args);
-              d({ type: 'permission-ask', tool, command: cmd, reason: message, resolve } as any);
+              // Finding 1: API-class engines (engine.api: zai/kimi/minimax/GPT)
+              // run Edit/Write through executeToolCall, hitting THIS approval
+              // dispatch — which previously carried no diff. This site has the
+              // FULL args object, so thread the same diff preview the MCP watcher
+              // (brain.kern) and command-string buildOnApproval path use. args is
+              // truthful here (no command-string reparse needed).
+              let permDiffPreview: any = undefined;
+              if (approvalToolIsFileMutating(tool)) {
+                try { permDiffPreview = buildApprovalDiffPreview(String(tool), args as Record<string, unknown>); }
+                catch { /* diff is best-effort — fall back to command preview */ }
+              }
+              d({ type: 'permission-ask', tool, command: cmd, reason: message, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve } as any);
             } else {
               resolve(true);
             }
@@ -913,7 +928,14 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
         const dispatch = ctx.cesar!.lastDispatch;
         if (dispatch) {
           logApproval('prompted', 'user-prompt', `Cesar (${engineId}) wants to execute`);
-          dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engineId}) wants to execute`, resolve: (approved: boolean | string) => {
+          // File-mutating tools carry a unified diff (computed from the tool
+          // input before execution) so the approval shows the real change.
+          let permDiffPreview: any = undefined;
+          if (approvalToolIsFileMutating(agonTool)) {
+            try { permDiffPreview = buildApprovalDiffPreview(agonTool, approvalArgsFromCommand(agonTool, command)); }
+            catch { /* diff is best-effort — fall back to command preview */ }
+          }
+          dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engineId}) wants to execute`, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
             const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved;
             logApproval(wasApproved ? 'approved' : 'denied', 'user-prompt', wasApproved ? 'user approved' : 'user denied');
             resolve(wasApproved);

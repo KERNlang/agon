@@ -38,8 +38,8 @@ export class CliAdapter implements EngineAdapter {
     // Prefer CLI binary when available — API is fallback for binary-less engines
     const binaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
     if (!binaryPath) {
-      // No CLI binary — use API if available, otherwise fail
-      if (options.engine.api) {
+      // No CLI binary — use API ONLY when a usable key is present, otherwise fail. Gating on the key (not just the api block) is what keeps binary-missing + no-key from mis-reporting as "Missing API key" for codex/claude/agy (which all declare an api block): without a key it falls through to the EngineNotFoundError(missingBinary) throw, while binary-missing + valid key still uses the api fallback (a feature). A possibly-absent apiKeyEnv → process.env[undefined] → undefined (falsy), correctly treated as no usable key.
+      if (options.engine.api && process.env[options.engine.api.apiKeyEnv]) {
         const resolvedModel = resolveModel(options.engine, options.cwd);
         const apiConfig = { ...options.engine.api, ...resolvedModel ? { model: resolvedModel } : {}, ...options.maxTokens ? { maxTokens: options.maxTokens } : {} };
         // Inject project context for API engines so they know the codebase
@@ -58,7 +58,8 @@ export class CliAdapter implements EngineAdapter {
         recordDispatchHealth(options.engine.id, result);
         return result;
       }
-      throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
+      // No CLI binary AND no API fallback. If a binary was DECLARED but absent from PATH, say so explicitly — a missing binary must never surface as an env/API-key problem (the codex incident). Env-var checks below only run once a binary is present.
+      throw new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary);
     }
     const envError = checkEnvVars(options.engine);
     if (envError) {
@@ -159,7 +160,8 @@ export class CliAdapter implements EngineAdapter {
     const binaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
 
     if (!binaryPath) {
-      if (options.engine.api) {
+      // API fallback ONLY when a usable key is present — binary-missing + no-key falls through to EngineNotFoundError(missingBinary) instead of mis-reporting "Missing API key". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)
+      if (options.engine.api && process.env[options.engine.api.apiKeyEnv]) {
         const resolvedModel = resolveModel(options.engine, options.cwd);
         const apiConfig = { ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) };
         const gen = apiStreamDispatch(apiConfig, options.prompt, options.timeout, options.signal, options.systemPrompt);
@@ -174,7 +176,8 @@ export class CliAdapter implements EngineAdapter {
         writeFileSync(outputPath, result.stdout);
         return result;
       }
-      throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
+      // No CLI binary AND no API fallback — report the missing binary, not a key.
+      throw new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary);
     }
 
     // Resolve system prompt for CLI: native flag if available, else prepend
@@ -259,9 +262,9 @@ export class CliAdapter implements EngineAdapter {
         return { ...ptyResult, diff: diff, diffLines: lines, filesChanged: files };
       }
     }
-    // API fallback: use API agent loop when binary is declared but not installed
+    // API fallback: use API agent loop when binary is declared but not installed AND a usable key is present. Without a key, fall through to the EngineNotFoundError(missingBinary) throw below rather than mis-reporting "Missing API key". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)
     const agentBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
-    if (options.engine.api && !agentBinaryPath) {
+    if (options.engine.api && !agentBinaryPath && process.env[options.engine.api.apiKeyEnv]) {
       const resolvedModel = resolveModel(options.engine, options.cwd);
       const apiConfig = { ...options.engine.api, ...resolvedModel ? { model: resolvedModel } : {}, ...options.maxTokens ? { maxTokens: options.maxTokens } : {} };
       const cwd = options.cwd || resolveWorkingDir();
@@ -300,7 +303,8 @@ export class CliAdapter implements EngineAdapter {
     }
     const binaryPath = this.registry.findBinary(options.engine);
     if (!binaryPath) {
-      throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
+      // Binary check BEFORE env-var check: a missing binary must never report as a missing key.
+      throw new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary);
     }
     const envError = checkEnvVars(options.engine);
     if (envError) {
@@ -424,7 +428,8 @@ export class CliAdapter implements EngineAdapter {
     }
 
     const streamBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
-    if (options.engine.api && !streamBinaryPath) {
+    // API-only-stream notice ONLY when a usable key is present — binary-missing + no-key falls through to EngineNotFoundError(missingBinary) instead of mis-reporting "Missing API key". (Absent apiKeyEnv → process.env[undefined] → undefined → no usable key.)
+    if (options.engine.api && !streamBinaryPath && process.env[options.engine.api.apiKeyEnv]) {
       yield `Engine "${options.engine.id}" is API-only and does not support streaming agent mode. Use non-streaming dispatch or install the CLI binary.`;
       return {
         exitCode: 1,
@@ -440,7 +445,8 @@ export class CliAdapter implements EngineAdapter {
 
     const binaryPath = this.registry.findBinary(options.engine);
     if (!binaryPath) {
-      throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
+      // Missing binary, not a key — report the binary by name with an install hint.
+      throw new EngineNotFoundError(options.engine.id, options.engine.installHint, options.engine.binary);
     }
 
     const { command, args } = buildCommand(

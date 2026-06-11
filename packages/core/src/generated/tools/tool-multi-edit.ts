@@ -22,6 +22,7 @@ function normalizeCurlyQuotesME(text: string): string {
 
 // @kern-source: tool-multi-edit:24
 function countOccurrencesME(haystack: string, needle: string): number {
+  if (!needle) return 0;
   let count = 0;
   let pos = 0;
   while (true) {
@@ -36,7 +37,7 @@ function countOccurrencesME(haystack: string, needle: string): number {
 /**
  * Factory for the MultiEdit tool — an ordered, atomic batch of exact string replacements to one file.
  */
-// @kern-source: tool-multi-edit:37
+// @kern-source: tool-multi-edit:38
 export function createMultiEditTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'MultiEdit',

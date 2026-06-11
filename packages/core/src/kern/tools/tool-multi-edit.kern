@@ -23,6 +23,7 @@ fn name=normalizeCurlyQuotesME params="text:string" returns=string export=false
 
 fn name=countOccurrencesME params="haystack:string, needle:string" returns=number export=false
   handler <<<
+    if (!needle) return 0;
     let count = 0;
     let pos = 0;
     while (true) {

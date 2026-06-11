@@ -880,7 +880,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: true }));
                 continue;
               }
-              if (reqTool === 'Edit' || reqTool === 'Write') {
+              if (reqTool === 'Edit' || reqTool === 'Write' || reqTool === 'MultiEdit') {
                 const approvalCwd = resolveWorkingDir();
                 const approvalCache = getProjectFileStateCache(approvalCwd);
                 const activePlan = ctx.activePlan;

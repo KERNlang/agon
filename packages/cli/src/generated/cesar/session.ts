@@ -510,7 +510,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     // they can open a permission prompt that captures "go"/"yes".
     const activePlan = ctx.activePlan;
     if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
-      const BLOCKED_IN_PLAN = ['Forge', 'Pipeline', 'Agent', 'Goal', 'Edit', 'Write'];
+      const BLOCKED_IN_PLAN = ['Forge', 'Pipeline', 'Agent', 'Goal', 'Edit', 'Write', 'MultiEdit'];
       if (BLOCKED_IN_PLAN.includes(name)) {
         return `[BLOCKED] Tool "${name}" is not available in plan mode. Use ProposePlan to propose your execution strategy.`;
       }
@@ -794,7 +794,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     // Cache read-only results. Invalidate on writes.
     if (CACHEABLE_TOOLS.has(name)) {
       toolResultCache.set(cacheKey, output);
-    } else if (['Edit', 'Write', 'Bash'].includes(name)) {
+    } else if (['Edit', 'Write', 'MultiEdit', 'Bash'].includes(name)) {
       toolResultCache.clear();
       ctx.cesar!.blockedOnConfidence = null;
     }
@@ -877,7 +877,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
 
     // Block writes during exploration mode
     if (ctx.explorationMode) {
-      const WRITE_TOOLS = ['Edit', 'Write', 'Bash'];
+      const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'Bash'];
       if (WRITE_TOOLS.includes(agonTool)) {
         logApproval('blocked', 'policy.exploration', 'exploration mode is read-only');
         return 'BLOCKED: Exploration mode is read-only. Use Read, Grep, Glob tools only. Do not narrate around this. Either keep investigating, or wait for the user to disable exploration mode before retrying the same tool.';
@@ -896,7 +896,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
         logApproval('blocked', 'policy.plan-mode', 'plan mode blocks mutating Bash');
         return 'BLOCKED: Plan mode — mutating Bash is not allowed before approval. Use Read/Grep/Glob or read-only Bash for investigation, call ProposePlan, then wait for the user to type go/yes before retrying this command.';
       }
-      const WRITE_TOOLS = ['Edit', 'Write'];
+      const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit'];
       if (WRITE_TOOLS.includes(agonTool)) {
         logApproval('blocked', 'policy.plan-mode', 'plan mode blocks file writes');
         return 'BLOCKED: Plan mode — no code changes allowed. Call ProposePlan with the execution plan now, then wait for approval before retrying the same tool. Do not narrate instead of acting.';
@@ -915,7 +915,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     // R1 enforcement for companion engines: block file writes until confidence is reported
     // Bash commands flow through to the normal permission UI — user's settings.json controls approval
     if (!ctx.cesar!.confidenceSatisfied) {
-      const WRITE_TOOLS = ['Edit', 'Write'];
+      const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit'];
       if (WRITE_TOOLS.includes(agonTool)) {
         const blocks = (ctx.cesar!.confidenceBlockCount ?? 0) + 1;
         ctx.cesar!.confidenceBlockCount = blocks;
@@ -952,7 +952,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     // in the project cache do not need to interrupt the stream for another
     // Y/N prompt. This intentionally runs after exploration/plan/confidence
     // gates and explicit denies, and before the generic ask-mode fallback.
-    if (agonTool === 'Edit' || agonTool === 'Write') {
+    if (agonTool === 'Edit' || agonTool === 'Write' || agonTool === 'MultiEdit') {
       const approvalCwd = resolveWorkingDir();
       const approvalCache = getProjectFileStateCache(approvalCwd);
       const approvalArgs = approvalArgsFromCommand(agonTool, command);

@@ -349,11 +349,11 @@ export function evaluateFilePathRules(tool: string, filePath: string, cwd: strin
 }
 
 /**
- * The security-correct gate consulted by every approval seam. Dispatches Bash (arg = the command) to evaluateBashRules (F2 compound splitting) and the file tools Edit/Write/Read (arg = the file_path) to evaluateFilePathRules (F3 path resolution). Any other tool uses the simple single-token matcher. deny ALWAYS wins; allow auto-approves; null falls through to the normal ask flow.
+ * The security-correct gate consulted by every approval seam. Dispatches Bash (arg = the command) to evaluateBashRules (F2 compound splitting) and the file tools Edit/Write/MultiEdit/Read (arg = the file_path) to evaluateFilePathRules (F3 path resolution). Any other tool uses the simple single-token matcher. deny ALWAYS wins; allow auto-approves; null falls through to the normal ask flow.
  */
 export function evaluateToolRules(tool: string, arg: string, cwd: string, rules: PermissionRuleSet): 'allow'|'deny'|null {
   if (tool === 'Bash') return evaluateBashRules(arg, rules);
-  if (tool === 'Edit' || tool === 'Write' || tool === 'Read') {
+  if (tool === 'Edit' || tool === 'Write' || tool === 'MultiEdit' || tool === 'Read') {
     return evaluateFilePathRules(tool, arg, cwd, rules);
   }
   return evaluatePermissionRules(tool, arg, rules);

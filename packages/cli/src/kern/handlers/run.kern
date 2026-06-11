@@ -1,5 +1,7 @@
-import from="@kernlang/agon-core" names="spawnWithTimeout"
+import from="@kernlang/agon-core" names="spawnWithTimeout,appendMessage"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+
+const name=RUN_CONTEXT_OUTPUT_CAP type=number value={{ 4000 }}
 
 const name=RUN_DANGEROUS type="readonly string[]" value={{ ['rm -rf /', 'dd if=', 'mkfs', '> /dev/', 'chmod 777', 'curl | sh', 'wget | sh'] }}
 
@@ -61,6 +63,22 @@ fn name=handleRun params="command:string, dispatch:Dispatch, ctx:HandlerContext"
         status: result.exitCode === 0 ? 'done' : 'error',
         output: output || '(no output)',
       } as any);
+
+      // Feed the command + its (capped) output into the conversation so Cesar
+      // SEES it next turn — Claude-Code's `!`/`/run` output joins the context,
+      // not just the visible transcript. Mirrors /review's chatSession appends:
+      // a `user` turn records what was run, an `engine` turn (id 'run') carries
+      // the result. Bounded to RUN_CONTEXT_OUTPUT_CAP so a noisy command can't
+      // flood the next prompt (the human transcript above still shows it full).
+      if (ctx.chatSession) {
+        const ts = new Date().toISOString();
+        const captured = output || '(no output)';
+        const cappedOutput = captured.length > RUN_CONTEXT_OUTPUT_CAP
+          ? captured.slice(0, RUN_CONTEXT_OUTPUT_CAP) + `\n[... ${captured.length - RUN_CONTEXT_OUTPUT_CAP} chars truncated ...]`
+          : captured;
+        appendMessage(ctx.chatSession, { role: 'user', content: `! ${command}`, timestamp: ts });
+        appendMessage(ctx.chatSession, { role: 'engine', engineId: 'run', content: `\`\`\`\n$ ${command}\n[${exitInfo}]\n${cappedOutput}\n\`\`\``, timestamp: ts });
+      }
     } catch (err) {
       dispatch({ type: 'spinner-stop' });
       dispatch({ type: 'error', message: `Failed: ${err instanceof Error ? err.message : String(err)}` });

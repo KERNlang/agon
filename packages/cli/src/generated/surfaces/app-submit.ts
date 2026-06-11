@@ -431,9 +431,11 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
   // the user typed (Claude-Code style); the ENGINE prompt gets each resolved
   // file's content appended as a fenced block so it sees the code without a
   // manual paste. Slash commands parse their args literally, so they are never
-  // augmented. activeTurnRef below keeps the ORIGINAL input so retry/dedup
-  // matches what the user typed, not the file-expanded prompt.
-  const mentionContext = input.startsWith('/')
+  // augmented; a `! <cmd>` inline-bash line is likewise a literal shell command
+  // (it routes to /run, not Cesar), so an "@path" inside it stays a shell arg
+  // and is NOT expanded. activeTurnRef below keeps the ORIGINAL input so
+  // retry/dedup matches what the user typed, not the file-expanded prompt.
+  const mentionContext = (input.startsWith('/') || input.startsWith('! '))
     ? ''
     : buildMentionedFilesContext(input, resolveWorkingDir());
   const dispatchInput = mentionContext ? input + mentionContext : input;

@@ -317,7 +317,7 @@ agon goal "Close all KERN gaps" \
 | `--oracle-gate` | Pre-flight oracle red-team (`off`\|`warn`\|`strict`): the panel tries to GAME each task's `verify`; `strict` refuses to launch if any is gameable | `off` |
 | `--max-attempts` | Attempts per task before park | `3` |
 | `--max-hours` / `--budget` | Wall-clock and/or USD ceiling — either, both, or neither | off (`0`) |
-| `--push` / `--pr` | Push the goal branch per task / open a PR at the end (never `main`) | off |
+| `--push` / `--pr` | Push the goal branch per task / open a PR via `gh` at the end (never `main`). With `--push`, the run ends with an engine-written PR title/body and a **prefilled GitHub PR link** — click it and the form is already filled (no `gh`/token needed) | off |
 | `--resume` / `--status` / `--dry-run` | Resume from journal / print a run's digest / plan only | — |
 
 Read a run's digest from any session with `agon goal --status --id close-all-kern-gaps`. Reachable from external CLIs via `agon call goal "<intent>" --queue <dir> --gate "<cmd>"`. _(Roadmap: hermetic gate isolation, detached delegation + async callback.)_
@@ -339,7 +339,7 @@ agon conquer "..." --push                           # on success, commit + push 
 
 - **Cesar consults on forks.** When the builder hits a genuine fork it emits `CONQUER_ASK: <question>`; Cesar classifies it and convenes the _cheapest sufficient_ panel — `nero` (quick), `tribunal` (a choice), `brainstorm` (open), `council` (high-stakes) — then feeds back a compact verdict. A normal agent loop re-prompts itself with the same blind spots; conquer brings the whole heterogeneous panel to bear.
 - **A layered done-oracle, not a self-claim.** On `CONQUER_DONE: <claim>` the cheap deterministic layers run first — the `--gate` command (L0), a diff acceptance-drift check that blocks weakened/rewritten existing tests (L1), and an empty-claim guard (L2). Only when those pass does the **evidence-based falsifier** run (L4/L5): a _tool-enabled_ critic clones the working tree into a throwaway sandbox, reads the real code and runs commands to hunt a counterexample, then Cesar **mechanically re-runs** that counterexample in the sandbox and blocks "done" _only_ when it actually reproduces a failure — never on a bare opinion or confidence score. The adversary's findings are surfaced to your merge gate whether or not they blocked. A red gate, a weakened/tampered test, or a _verified_ counterexample blocks "done."
-- **Stops at a human merge gate.** conquer never auto-merges to main. By default it leaves the builder's changes in the working tree for you to review; `--push` commits + pushes the branch so you merge the PR. The done-oracle is irreducible for open-ended work, so the human merge gate is load-bearing — it holds the original product intent no automated layer can reconstruct.
+- **Stops at a human merge gate.** conquer never auto-merges to main. By default it leaves the builder's changes in the working tree for you to review; `--push` commits + pushes the branch, then prints an **engine-written PR title/body** (from the real branch diff) and a **prefilled GitHub PR link** (`…/compare/…?quick_pull=1&title=…&body=…`) — click it, the form is already filled, review + merge. No `gh` CLI or token needed. The done-oracle is irreducible for open-ended work, so the human merge gate is load-bearing — it holds the original product intent no automated layer can reconstruct.
 
 _(Roadmap: per-session git-worktree isolation, a frozen-oracle hash, and OS-level sandbox/network isolation for the falsifier's auto-exec. Interactive `/conquer` in the REPL and `agon call conquer` for external CLIs have shipped.)_
 
@@ -543,6 +543,20 @@ If you want manual control, you can easily override Cesar's routing:
 ## Configuration
 
 Global configuration, engine selection, model preferences, and telemetry settings are managed via your personal config file located at `~/.agon/AGON.md`. Project-specific settings can be defined in a local `AGON.md` within your repository.
+
+### Commit attribution & PR text
+
+Every commit agon itself creates (`conquer --push`, each `goal` task commit, the REPL's `/commit`) ends with a Claude-Code-style attribution block, and every PR body agon writes ends with the same Generated-with line:
+
+```
+🤖 Generated with [Agon](https://github.com/KERNlang/agon)
+
+Co-Authored-By: agon (KERN) <noreply@kernlang.dev>
+```
+
+- **One opt-out switch:** set `commitCoAuthor` to `""` (machine-wide in `~/.agon/config.json` or per-project in `.agon.json`) to disable the whole block — banner and trailer, commits and PR bodies. Mirrors Claude Code's `includeCoAuthoredBy`.
+- **Contributor-graph credit:** GitHub renders the co-author as a real contributor avatar only when the trailer email belongs to a GitHub account. Point `commitCoAuthor` at your bot account's noreply address (`<id>+<login>@users.noreply.github.com`) if you want agon on the graph.
+- **PR text:** after a `--push`, one engine call turns the branch's actual diff + commits into a clean PR title/body (Summary / Changes / Verification), printed in the terminal and baked into a prefilled GitHub compare link — clicking it opens the new-PR form already filled in. If the engine call misses, agon falls back to its templated digest; the push itself never depends on it.
 
 ## Architecture
 

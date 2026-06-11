@@ -597,7 +597,7 @@ fn name=buildStepExecutors params="ctx:HandlerContext, liveDispatch?:Dispatch" r
         const startTime = Date.now();
         const before = snapshotTokens();
         try {
-          const { diff, label } = resolveReviewTarget('uncommitted', cwd);
+          const { diff, label } = resolveReviewTarget('uncommitted', cwd, undefined);
           if (!diff.trim()) {
             const after = snapshotTokens();
             return {

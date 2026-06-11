@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@kernlang/agon-core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, hasProjectBrief } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, hasProjectBrief, discoverGate, bashRanGate, isGateSkipSignal } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -123,6 +123,30 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       } catch { /* nudge is best-effort — never block a turn */ }
       const _toolsUsed: string[] = [];
       const _toolUseKeys = new Set<string>();
+      // ── Verify-before-done gate (Phase C) ──
+      // Discover the project's verification gate ONCE per turn (cheap read of
+      // package.json + a project brief). discoveredGate.command === '' means
+      // gateAbsent → never nudge. Cache the discovery on CesarState so a user
+      // skip-signal can waive it for the whole session, but re-discover each turn
+      // so a newly-added test script / fitness: line is picked up live.
+      const _gate = discoverGate(_turnCwd);
+      if (ctx.cesar) ctx.cesar.discoveredGate = _gate;
+      // gateAbsent is a permanent waiver: no gate exists to run, so never nudge.
+      if (!_gate.command && ctx.cesar) ctx.cesar.gateWaived = true;
+      // A user skip-signal ("skip it / no need / later") AFTER a prior nudge makes
+      // the waiver sticky for the session — stop re-nudging once they've said the
+      // gate doesn't apply. Only honor it once a nudge has actually fired, so a
+      // first-message "no need to test X" doesn't pre-disable the whole feature.
+      if (ctx.cesar?.gateNudgedClaim && isGateSkipSignal(input) && ctx.cesar) ctx.cesar.gateWaived = true;
+      // Per-turn flag: did Cesar actually run something matching the gate this turn?
+      let _ranGate = false;
+      const _noteBashForGate = (toolName: string, rawInput?: string) => {
+        if (_ranGate || !_gate.matchers.length) return;
+        if (String(toolName).toLowerCase() !== 'bash') return;
+        let cmd = String(rawInput ?? '');
+        try { const parsed = JSON.parse(cmd); if (parsed && typeof parsed.command === 'string') cmd = parsed.command; } catch { /* not JSON — match the raw string */ }
+        if (bashRanGate(cmd, _gate.matchers)) _ranGate = true;
+      };
       let _toolEventCount = 0;
       let _readToolEventCount = 0;
       let _toolCallTurns = 0;
@@ -144,6 +168,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       };
       const recordToolUse = (name: string, source: 'native'|'mcp'|'xml'|'eager'|'auto'|'signal', input?: string, status?: string) => {
         const toolName = String(name || 'tool');
+        // Verify-before-done: flag when a Bash call loosely matches the discovered
+        // gate. Done from the central record point so EVERY tool path (native/mcp/
+        // xml/eager + both tool loops + continuations) counts uniformly.
+        _noteBashForGate(toolName, input);
         const normalizedSource = source === 'eager' ? 'xml' : source === 'auto' ? 'native' : source;
         const key = `${normalizedSource}:${toolName}:${String(input ?? '').slice(0, 500)}`;
         _toolEventCount++;
@@ -1879,6 +1907,30 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           if (_AUTO_CONT_READONLY_DONE_RE.test(resp)) return 'done';
           return 'stuck';
         };
+        // ── Verify-before-done nudge ──
+        // Fires ONCE per distinct done-claim when Cesar declared done but never ran
+        // the discovered gate this turn. Structural-only: prose can't observe that
+        // the gate wasn't executed. Fails toward silence — suppressed when there's
+        // no gate, the session waived it, or this exact claim was already nudged.
+        // Returns true if it injected a nudge (caller continues the loop so Cesar
+        // can run the gate or explain the skip).
+        const _doneClaimSignature = (resp: string): string => {
+          // Tie the claim to the work done + the response tail so a SECOND, genuinely
+          // new done-claim (more tools, different closing) gets its own nudge, while a
+          // repeated/identical "done" within the same loop does not re-nudge.
+          return `${_toolsUsed.length}:${resp.trim().slice(-200)}`;
+        };
+        const _shouldGateNudge = (resp: string): boolean => {
+          const g = ctx.cesar?.discoveredGate;
+          if (!g || !g.command || !g.matchers.length) return false; // gateAbsent
+          if (ctx.cesar?.gateWaived) return false;
+          if (_ranGate) return false;
+          // Only nudge when real WRITE work happened — a pure read-only "done" answer
+          // has nothing to verify and must not be dragged into a gate nudge.
+          if (!_toolsUsed.some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t))) return false;
+          if (ctx.cesar?.gateNudgedClaim === _doneClaimSignature(resp)) return false; // already nudged THIS claim
+          return true;
+        };
         // Build a runToolLoop options object that mirrors the main tool loop —
         // critical: handoff intercept, shouldStopAfterToolCall, and rich permission UI.
         // (gemini-review A, codex-review P2-2, old-gemini-review #1: all converged on this).
@@ -1954,7 +2006,77 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             && !ctx.cesar!.pendingDelegation
           ) {
             const state = _detectTurnState(response, _loopStartToolCount);
-            if (state === 'asks-user' || state === 'done') break;
+            if (state === 'asks-user') break;
+            if (state === 'done') {
+              // Verify-before-done: Cesar claims done. If it made edits but never ran
+              // the discovered gate, inject ONE nudge and give it a continuation to
+              // run the gate (or say why it's skipped). Otherwise the done-claim
+              // stands — break as before.
+              if (_shouldGateNudge(response)) {
+                if (ctx.cesar) ctx.cesar.gateNudgedClaim = _doneClaimSignature(response);
+                const _g = ctx.cesar!.discoveredGate!;
+                const _gateNudge = `[SYSTEM] You claimed the task is done but never ran the project's verification gate (${_g.command}) this turn. Run it now to confirm the change is green, or tell me in one sentence why it should be skipped.`;
+                _continuations++;
+                dispatch({ type: 'warning', message: `Cesar claimed done without running the gate (${_g.command}) — nudging to verify (${_continuations}/${MAX_CONTINUATIONS}).` });
+                dispatch({ type: 'spinner-start', message: `${cesarEngineId} verifying…`, color });
+                let _gateResp = '';
+                try {
+                  const _gateGen = session.send({
+                    message: _gateNudge,
+                    signal: abort.signal,
+                    toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
+                    toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
+                  });
+                  for await (const _c of _gateGen) {
+                    if (abort.signal.aborted) break;
+                    if (_c.type === 'text') _gateResp += _c.content;
+                    if (_c.type === 'error' && !_gateResp.trim()) { _engineErrored = true; _engineErrorMsg = String(_c.content ?? '').slice(0, 300); }
+                    if (_c.type === 'done' || _c.type === 'error') break;
+                  }
+                } catch (gateErr) {
+                  dispatch({ type: 'spinner-stop' });
+                  _engineErrored = true;
+                  _engineErrorMsg = gateErr instanceof Error ? gateErr.message : String(gateErr);
+                  break;
+                }
+                dispatch({ type: 'spinner-stop' });
+                if (_engineErrored) break;
+                const _cleanGate = _gateResp.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+                // If Cesar emitted gate-running tool calls, re-enter the tool loop so
+                // they actually execute (recordToolUse will flip _ranGate). Otherwise
+                // append the text (its explanation of why the gate is skipped).
+                try {
+                  const _parsedGate = parseToolCalls(_cleanGate);
+                  if (_parsedGate.hasToolCalls && toolRegistry) {
+                    const _gateResult = await runToolLoop(
+                      async (message: string) => {
+                        if (!session.alive || abort.signal.aborted) return '';
+                        _engineErrored = false; _engineErrorMsg = '';
+                        let _nr = '';
+                        const _g2 = session.send({ message, signal: abort.signal, toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined, toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined });
+                        for await (const _ch of _g2) {
+                          if (_ch.type === 'text') _nr += _ch.content;
+                          if (_ch.type === 'error' && !_nr.trim()) { _engineErrored = true; _engineErrorMsg = String(_ch.content ?? '').slice(0, 300); }
+                          if (_ch.type === 'done' || _ch.type === 'error') break;
+                        }
+                        return _nr.trim() || (_engineErrorMsg ? `[Engine error: ${_engineErrorMsg}]` : '[No response from engine]');
+                      },
+                      _cleanGate, toolCtx, toolRegistry, _buildContToolLoopOpts(),
+                    );
+                    response = response + '\n\n' + (_gateResult.finalText?.trim() ?? '');
+                    _toolCallTurns += _gateResult.turns ?? 0;
+                  } else if (_cleanGate) {
+                    dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _cleanGate });
+                    response = response + '\n\n' + _cleanGate;
+                  }
+                } catch {
+                  if (_cleanGate) { dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: _cleanGate }); response = response + '\n\n' + _cleanGate; }
+                }
+                _prevToolCount = _toolsUsed.length;
+                continue; // re-evaluate turn state; if still 'done' it won't re-nudge (same claim sig).
+              }
+              break;
+            }
             // State-rich nudge — name the files Cesar mentioned but didn't touch.
             // File path regex requires a path prefix (./ ../ / ~/ or src/test/etc dir)
             // to reduce false positives like "version 1.0.ts" (minimax review #6).

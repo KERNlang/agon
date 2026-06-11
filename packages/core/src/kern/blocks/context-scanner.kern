@@ -35,6 +35,100 @@ fn name=hasProjectBrief params="cwd:string" returns=boolean export=true
     return false;
   >>>
 
+interface name=DiscoveredGate export=true
+  field name=command type=string doc="The verification command to run (e.g. 'npm test' or 'npm run typecheck && npm test'). Empty string when no gate could be discovered."
+  field name=matchers type="string[]" doc="Lowercased substrings that loosely identify a Bash invocation as 'ran the gate' (e.g. ['npm test','vitest','tsc']). Empty when no gate."
+  field name=source type="'fitness-override'|'package-scripts'|'none'" doc="Where the gate came from: an explicit fitness: line in a brief, package.json scripts, or nothing."
+
+const name=GATE_SCRIPT_PRIORITY type="string[]" value={{ ['fitness', 'test', 'typecheck', 'build', 'lint'] }}
+  doc "Order in which package.json scripts are considered the project's verification gate. fitness/test first (the canonical fitness command), then typecheck, build, lint as fallbacks. First present script wins as the command; ALL present scripts contribute matchers so any of them counts as 'ran the gate'."
+
+const name=GATE_RUNNER_TOKENS type="string[]" value={{ ['vitest', 'jest', 'mocha', 'pytest', 'tsc', 'eslint', 'playwright', 'ava', 'tap', 'cargo test', 'go test', 'pnpm test', 'yarn test', 'make test'] }}
+  doc "Well-known test/check runner tokens. If a discovered package.json script body invokes one of these, the runner token is added as an extra loose matcher so Cesar running the bare tool (e.g. 'npx vitest run x') still counts as ranGate even if it didn't type the npm-script alias."
+
+fn name=parseFitnessOverride params="cwd:string" returns="string | null" export=false
+  doc "Read the FIRST recognized project-brief file and extract an explicit `fitness: <cmd>` override line (case-insensitive, leading whitespace / markdown bullet tolerated). Returns the trimmed command or null. First brief in the cascade that EXISTS is authoritative — an existing brief without a fitness: line returns null (no fall-through to a later brief), mirroring scanProjectContext's first-match-wins."
+  handler <<<
+    for (const file of PROJECT_BRIEF_FILES) {
+      try {
+        const path = join(cwd, file);
+        const st = existsSync(path) ? statSync(path) : null;
+        if (!st || !st.isFile() || st.size === 0) continue;
+        if (st.size > MAX_PROJECT_BRIEF_BYTES) return null;
+        const content = readFileSync(path, "utf-8");
+        // `fitness: <cmd>` anywhere on a line; tolerate a leading markdown bullet/quote.
+        const m = content.match(/^[ \t>*-]*fitness:[ \t]*(.+?)[ \t]*$/im);
+        return m ? m[1].trim() || null : null;
+      } catch { /* unreadable brief — keep scanning the cascade */ }
+    }
+    return null;
+  >>>
+
+fn name=gateMatchersForCommand params="command:string" returns="string[]" export=false
+  doc "Derive loose lowercased matchers from a gate command string: the npm-script aliases it invokes (e.g. 'npm run typecheck' -> 'npm run typecheck' + 'typecheck') plus any well-known runner tokens (vitest/tsc/...) that appear in it. Dedupes; used so a Bash call loosely matching ANY part counts as having run the gate."
+  handler <<<
+    const out = new Set<string>();
+    const lower = String(command ?? '').toLowerCase().trim();
+    if (!lower) return [];
+    // Split on shell sequencing so each sub-command contributes its own matchers.
+    const parts = lower.split(/\s*(?:&&|\|\||;)\s*/).map((p: string) => p.trim()).filter(Boolean);
+    for (const part of parts) {
+      out.add(part);
+      // `npm run <script>` / `npm test` / `pnpm <script>` -> the script alias alone.
+      const runMatch = part.match(/^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?([a-z0-9:_-]+)/);
+      if (runMatch && runMatch[1] !== 'run') out.add(runMatch[1]);
+    }
+    for (const token of GATE_RUNNER_TOKENS) {
+      if (lower.includes(token)) out.add(token);
+    }
+    return Array.from(out);
+  >>>
+
+fn name=discoverGate params="cwd:string" returns="DiscoveredGate" export=true
+  doc "Discover the project's verification gate at session/turn time. Precedence: (1) an explicit `fitness: <cmd>` line in the first project-brief file wins outright; else (2) package.json scripts in GATE_SCRIPT_PRIORITY order — first present script is the command, ALL present scripts + their runner tokens become loose matchers. Returns a DiscoveredGate; an empty command + empty matchers means gateAbsent (no scripts, no override) — callers treat that as 'never nudge'. Pure read-only; swallows all IO errors toward silence."
+  handler <<<
+    const override = parseFitnessOverride(cwd);
+    if (override) {
+      return { command: override, matchers: gateMatchersForCommand(override), source: 'fitness-override' };
+    }
+    let scripts: Record<string, unknown> = {};
+    try {
+      const pkg = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf-8'));
+      if (pkg && typeof pkg.scripts === 'object' && pkg.scripts) scripts = pkg.scripts as Record<string, unknown>;
+    } catch { /* no/invalid package.json -> gateAbsent */ }
+    const present = GATE_SCRIPT_PRIORITY.filter((name: string) => typeof scripts[name] === 'string' && String(scripts[name]).trim().length > 0);
+    if (present.length === 0) return { command: '', matchers: [], source: 'none' };
+    const primary = present[0];
+    const command = `npm run ${primary}`;
+    const matchers = new Set<string>();
+    for (const name of present) {
+      matchers.add(`npm run ${name}`);
+      matchers.add(name);
+      // `npm test`/`npm run test` are interchangeable; add the bare form for the test script.
+      if (name === 'test') matchers.add('npm test');
+      for (const t of gateMatchersForCommand(String(scripts[name]))) matchers.add(t);
+    }
+    return { command, matchers: Array.from(matchers), source: 'package-scripts' };
+  >>>
+
+fn name=bashRanGate params="bashCommand:string, matchers:string[]" returns=boolean export=true
+  doc "True if a Bash invocation loosely matches the discovered gate — i.e. the lowercased command CONTAINS any matcher substring. Positive: 'npm test', 'npx vitest run x' (matcher 'vitest'). Negative: 'ls', 'git status'. Empty matchers -> false (no gate to run)."
+  handler <<<
+    const lower = String(bashCommand ?? '').toLowerCase();
+    if (!lower.trim()) return false;
+    for (const m of matchers) {
+      const mm = String(m ?? '').toLowerCase().trim();
+      if (mm && lower.includes(mm)) return true;
+    }
+    return false;
+  >>>
+
+const name=GATE_SKIP_SIGNAL_RE type=RegExp value={{ /\b(?:skip(?:\s+it)?|no need|don'?t bother|not? necessary|nevermind|never mind|leave it|forget it|later|skip the (?:gate|tests?)|no test|without (?:the )?(?:gate|tests?))\b/i }}
+  doc "User skip-signal after a gate nudge — turns gateWaived sticky for the session so Cesar stops re-nudging once the user has said the gate doesn't apply this session."
+
+fn name=isGateSkipSignal params="userInput:string" returns=boolean export=true expr={{ return GATE_SKIP_SIGNAL_RE.test(String(userInput ?? '')); }}
+  doc "True if the user's message reads as 'skip the gate / no need / later' — used to make gateWaived sticky after a nudge."
+
 fn name=isKernProject params="cwd:string" returns=boolean
   handler <<<
     if (existsSync(join(cwd, 'kern.config.ts'))) return true;

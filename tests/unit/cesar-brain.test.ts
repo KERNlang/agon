@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall } from '../../packages/cli/src/handlers/cesar-brain.js';
+import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall, extractStrictConfidence, buildEscalationSuggestionLine, ESCALATION_SUGGESTION_THRESHOLD } from '../../packages/cli/src/handlers/cesar-brain.js';
 // Source of truth for these helpers is packages/cli/src/kern/cesar/brain-helpers.kern;
 // the generated/*.js below is regenerated from it (npm run kern:compile) — do not edit by hand.
 import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall, detectFabricatedDelegation } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
+// Rigid DECISION/CONFIDENCE parser for ACTUALLY-FIRED nero/advisor results — C4
+// must leave this untouched (downstream escalation routing depends on it).
+import { parseQuickNeroDecision } from '../../packages/cli/src/generated/cesar/escalation.js';
 
 describe('Cesar Brain', () => {
   describe('splitBeforeToolMarkup', () => {
@@ -486,6 +489,91 @@ describe('Cesar Brain', () => {
     });
   });
 
+  // ── C4: escalation softening — strict-anchored confidence + soft suggestion line ──
+  describe('extractStrictConfidence (strict CONFIDENCE: NN% anchor only)', () => {
+    it('extracts from a CONFIDENCE: NN% anchor', () => {
+      expect(extractStrictConfidence('CONFIDENCE: 72%')).toBe(72);
+      expect(extractStrictConfidence('Here is the plan.\nCONFIDENCE: 84%')).toBe(84);
+    });
+
+    it('is case-insensitive and tolerates ~ and inner spacing', () => {
+      expect(extractStrictConfidence('confidence: 80%')).toBe(80);
+      expect(extractStrictConfidence('CONFIDENCE: ~66 %')).toBe(66);
+    });
+
+    it('does NOT scrape loose prose like "72% sure"', () => {
+      expect(extractStrictConfidence("I'm 72% sure this is right.")).toBeNull();
+      expect(extractStrictConfidence('about 72% of the way there')).toBeNull();
+      expect(extractStrictConfidence('~72% — leading marker, not the anchor')).toBeNull();
+      expect(extractStrictConfidence('Confidence: 0.72 here')).toBeNull(); // decimal form is not the strict anchor
+    });
+
+    it('returns null for no anchor / empty / out-of-range', () => {
+      expect(extractStrictConfidence('Here is a normal response.')).toBeNull();
+      expect(extractStrictConfidence('')).toBeNull();
+      expect(extractStrictConfidence(undefined as unknown as string)).toBeNull();
+      expect(extractStrictConfidence('CONFIDENCE: 250%')).toBeNull();
+    });
+  });
+
+  describe('ESCALATION_SUGGESTION_THRESHOLD + suggestion-line gating', () => {
+    it('threshold is 85 (below ~85% earns a line)', () => {
+      expect(ESCALATION_SUGGESTION_THRESHOLD).toBe(85);
+    });
+
+    // The brain.kern gate is `strictConf < ESCALATION_SUGGESTION_THRESHOLD`.
+    // 84 → line, 85/90 → none (fail toward silence at/above threshold).
+    it('84 is below threshold (line); 85 and 90 are not (no line)', () => {
+      expect(extractStrictConfidence('CONFIDENCE: 84%')! < ESCALATION_SUGGESTION_THRESHOLD).toBe(true);
+      expect(extractStrictConfidence('CONFIDENCE: 85%')! < ESCALATION_SUGGESTION_THRESHOLD).toBe(false);
+      expect(extractStrictConfidence('CONFIDENCE: 90%')! < ESCALATION_SUGGESTION_THRESHOLD).toBe(false);
+    });
+
+    it('no anchor means no line (fail toward silence)', () => {
+      // A turn with only prose confidence never crosses the strict gate.
+      expect(extractStrictConfidence("I'm 70% sure but no anchor.")).toBeNull();
+    });
+  });
+
+  describe('buildEscalationSuggestionLine (dim in-flow one-liner)', () => {
+    it('renders a dim line offering nero/tribunal with the percent', () => {
+      const line = buildEscalationSuggestionLine(72);
+      expect(line).toContain('72% — want a nero/tribunal on this?');
+      expect(line).toContain('\x1b[2m'); // dim
+      expect(line).toContain('\x1b[0m'); // reset
+    });
+
+    it('has no modal/menu framing — it is just the suggestion text', () => {
+      const line = buildEscalationSuggestionLine(80);
+      expect(line).not.toMatch(/\b(y\/n|press|choose|option|\[1\.)/i);
+    });
+  });
+
+  // C4 guardrail: the rigid DECISION/CONFIDENCE parser for FIRED nero/advisor
+  // results must stay intact — softening only changed the AUTO-interrupt path.
+  describe('parseQuickNeroDecision (fired-result parser — must stay untouched)', () => {
+    it('still parses a structured self-check verdict', () => {
+      const out = parseQuickNeroDecision([
+        'CONFIDENCE: ~70%',
+        'DECISION: tribunal',
+        'BREADTH: team',
+        'FORGE_SCOPE: none',
+        'WHY: real tradeoff between session tokens and JWT',
+        'CHECK: token-revocation story is unproven',
+      ].join('\n'));
+      expect(out.decision).toBe('tribunal');
+      expect(out.team).toBe(true);
+      expect(out.scope).toBe('none');
+      expect(out.rationale).toContain('tradeoff');
+    });
+
+    it('defaults to self when no DECISION line is present', () => {
+      const out = parseQuickNeroDecision('Looks fine to me, no structured verdict here.');
+      expect(out.decision).toBe('self');
+      expect(out.team).toBe(false);
+    });
+  });
+
   describe('CESAR_SYSTEM_PROMPT', () => {
     it('references ReportConfidence tool', () => {
       expect(CESAR_SYSTEM_PROMPT).toContain('ReportConfidence');
@@ -506,6 +594,15 @@ describe('Cesar Brain', () => {
     it('mentions team and hardened variants', () => {
       expect(CESAR_SYSTEM_PROMPT).toContain('team=true');
       expect(CESAR_SYSTEM_PROMPT).toContain('hardened=true');
+    });
+
+    // C3: concise-output contract lives inside the TURN CLOSURE section.
+    it('carries the LEAD WITH FINDINGS concise-output principle', () => {
+      expect(CESAR_SYSTEM_PROMPT).toContain('LEAD WITH FINDINGS');
+      expect(CESAR_SYSTEM_PROMPT).toContain('FIRST sentence');
+      // GOOD/BAD example pair present
+      expect(CESAR_SYSTEM_PROMPT).toMatch(/GOOD:/);
+      expect(CESAR_SYSTEM_PROMPT).toMatch(/BAD:/);
     });
   });
 

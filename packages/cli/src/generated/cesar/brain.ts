@@ -14,7 +14,7 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import type { Dispatch, HandlerContext, PendingDelegation, CesarTurnOutcome } from '../../handlers/types.js';
 
-import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge } from './confidence.js';
+import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge, extractStrictConfidence, buildEscalationSuggestionLine, ESCALATION_SUGGESTION_THRESHOLD } from './confidence.js';
 
 import { parseSuggestion } from './suggestion.js';
 
@@ -453,6 +453,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         let _engineErrorMsg = '';
       let secondOpinionPromise: Promise<any> | null = null;
       let usedQuickNero = false;
+      // C4: once-per-turn guard for the soft in-flow escalation-suggestion line.
+      let _escalationSuggested = false;
         const eagerPromises: Promise<ToolCallResult>[] = [];
         let eagerToolCtx: ToolContext | null = null;
         const shouldInterruptForXmlTool = () => {
@@ -1527,8 +1529,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           }
         }
 
-        // ── Quick Nero: structured self-check before Cesar commits to staying local ──
-        // Auto-gate fires on uncertainty-family signals OR when Cesar calls QuickNero() himself.
+        // ── Quick Nero: structured self-check ONLY when Cesar explicitly called QuickNero() ──
+        // C4 (escalation softening): the AUTO uncertainty-family interrupt is GONE.
+        // It used to fire a full same-session self-challenge round-trip + a
+        // **Self-challenge:** block, and could RETURN early to take over the turn —
+        // a modal-ish interruption on every 'challenge'/'tradeoff'/sub-86%-impl turn.
+        // That auto path is now replaced by a soft, in-flow one-liner (below), and
+        // fireQuickNero fires ONLY when Cesar DELIBERATELY requested it via QuickNero().
         const shouldQuickNero = parsedConfidence !== null
           && !cesarFastPath
           && !secondOpinionPromise
@@ -1536,13 +1543,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           && !_isFollowUp
           && !abort.signal.aborted
           && !ctx.cesar!.pendingDelegation
-          && (
-            ctx.cesar!.quickNeroRequested === true
-            || routingHints.uncertaintyFamily === 'challenge'
-            || routingHints.uncertaintyFamily === 'tradeoff'
-            || (routingHints.uncertaintyFamily === 'implementation' && parsedConfidence < 86)
-            || (mutationDeferred && parsedConfidence < 90)
-          );
+          && ctx.cesar!.quickNeroRequested === true;
         // Consume the flag whether or not we fire — follow-up/aborted cases clear it too
         if (ctx.cesar!.quickNeroRequested) ctx.cesar!.quickNeroRequested = false;
         if (shouldQuickNero) {
@@ -1594,6 +1595,28 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               reasoning: `User context: ${escalationContext}`,
               decisionReason: 'quick-nero-escalation',
             };
+          }
+        }
+
+        // ── C4: soft in-flow escalation suggestion (replaces the auto QuickNero interrupt) ──
+        // When Cesar's turn carries a STRICT `CONFIDENCE: NN%` anchor below the
+        // threshold, render ONE dim one-liner inline with the turn — no modal, no
+        // round-trip, no early return — suggesting a nero/tribunal. Fail toward
+        // silence: no anchor → no line; anchor ≥ threshold → no line; once per turn.
+        // Skipped when the turn already escalated/delegated, when Cesar fired its own
+        // QuickNero (it spoke for itself above), on fast-path/follow-up turns, and
+        // when aborted. The actual nero/tribunal dispatch still works when the user
+        // takes the suggestion — they just type /nero or /tribunal (or Cesar does).
+        if (!_escalationSuggested
+            && !usedQuickNero
+            && !cesarFastPath
+            && !_isFollowUp
+            && !abort.signal.aborted
+            && !ctx.cesar!.pendingDelegation) {
+          const _strictConf = extractStrictConfidence(response);
+          if (_strictConf !== null && _strictConf < ESCALATION_SUGGESTION_THRESHOLD) {
+            _escalationSuggested = true;
+            dispatch({ type: 'info', message: buildEscalationSuggestionLine(_strictConf) });
           }
         }
 

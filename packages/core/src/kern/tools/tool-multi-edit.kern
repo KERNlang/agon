@@ -1,0 +1,291 @@
+// ── MultiEdit Tool ───────────────────────────────────────────────────
+// Applies an ORDERED batch of exact string replacements to a SINGLE file
+// in one transaction. Edits fold sequentially over an in-memory buffer —
+// each edit operates on the RESULT of the prior one (Claude-Code parity).
+// ATOMIC: the whole batch is validated + applied in memory first; the file
+// is written exactly ONCE only if every edit succeeds, so a mid-batch
+// failure never leaves a partially-edited file on disk. Reuses Edit's
+// guards: one read-before-write check, one staleness check, one snapshot,
+// one cache update for the entire batch. For NEW files use Write — an
+// empty old_string is rejected (no file-creation mode here).
+
+import from="node:fs" names="readFileSync,writeFileSync,statSync,existsSync"
+import from="node:path" names="resolve,relative"
+import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolHandler,ToolDefinition,PermissionDecision" types=true
+import from="../blocks/file-history.js" names="takeSnapshot"
+import from="./tool-permissions.js" names="evaluateFilePathRules"
+import from="../signals/tool-registry.js" names="PERMISSION_DENIED_MESSAGE"
+
+fn name=normalizeCurlyQuotesME params="text:string" returns=string export=false
+  doc "Replace curly/smart quotes with straight ASCII equivalents (MultiEdit copy)."
+  handler lang="kern"
+    return value="text .replace(/[\\u2018\\u2019]/g, \"'\") .replace(/[\\u201C\\u201D]/g, '\"')"
+
+fn name=countOccurrencesME params="haystack:string, needle:string" returns=number export=false
+  handler <<<
+    let count = 0;
+    let pos = 0;
+    while (true) {
+      pos = haystack.indexOf(needle, pos);
+      if (pos === -1) break;
+      count++;
+      pos += needle.length;
+    }
+    return count;
+  >>>
+
+fn name=createMultiEditTool returns=ToolHandler
+  doc "Factory for the MultiEdit tool — an ordered, atomic batch of exact string replacements to one file."
+  handler <<<
+    const definition: ToolDefinition = {
+      name: 'MultiEdit',
+      description: 'Apply an ordered list of exact string replacements to a single file in ONE atomic transaction. The file must have been read first. Edits apply SEQUENTIALLY — each edit operates on the result of the previous one, so a later edit can target text an earlier edit produced. If ANY edit fails (text not found, not unique without replace_all, etc.) nothing is written and the failing edit index is reported. Use replace_all per-edit for repeated text. For creating a NEW file, use Write instead (an empty old_string is rejected here). Tip: when edits target different regions, order them so earlier edits do not unintentionally match the new_string of a later edit.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file_path: { type: 'string', description: 'Path to the file to edit' },
+          edits: {
+            type: 'array',
+            description: 'Ordered list of edits applied sequentially over the same file buffer',
+            items: {
+              type: 'object',
+              properties: {
+                old_string: { type: 'string', description: 'The exact text to find and replace (must be non-empty)' },
+                new_string: { type: 'string', description: 'The replacement text' },
+                replace_all: { type: 'boolean', description: 'Replace all occurrences of old_string in the current buffer (default false)', default: false },
+              },
+              required: ['old_string', 'new_string'],
+            },
+          },
+        },
+        required: ['file_path', 'edits'],
+      },
+      maxResultSizeChars: 100000,
+      isReadOnly: false,
+      isConcurrencySafe: false,
+    };
+
+    const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+      if (!input.file_path || typeof input.file_path !== 'string') {
+        return 'Missing required parameter: file_path';
+      }
+      if (!Array.isArray(input.edits) || input.edits.length === 0) {
+        return 'Missing or empty required parameter: edits (must be a non-empty array)';
+      }
+      const edits = input.edits as Array<Record<string, unknown>>;
+      for (let i = 0; i < edits.length; i++) {
+        const e = edits[i];
+        if (!e || typeof e !== 'object') {
+          return `edits[${i}] must be an object with old_string and new_string`;
+        }
+        if (typeof e.old_string !== 'string') {
+          return `edits[${i}]: missing required parameter old_string`;
+        }
+        if (typeof e.new_string !== 'string') {
+          return `edits[${i}]: missing required parameter new_string`;
+        }
+        if (e.old_string === '') {
+          return `edits[${i}]: old_string is empty. MultiEdit cannot create files or insert at an ambiguous point — use the Write tool for new files.`;
+        }
+        if (e.old_string === e.new_string) {
+          return `edits[${i}]: old_string and new_string are identical — no change to make`;
+        }
+      }
+      return null;
+    };
+
+    const checkPermission = (input: Record<string, unknown>, ctx: ToolContext): PermissionDecision => {
+      // Exploration mode blocks all writes
+      if ((ctx as any).explorationMode) {
+        return {
+          behavior: 'deny',
+          message: 'MultiEdit blocked: exploration mode is active (read-only)',
+          reason: 'exploration-mode',
+        };
+      }
+
+      const filePath = resolve(ctx.cwd, input.file_path as string);
+      const rel = relative(ctx.cwd, filePath);
+
+      if (rel.startsWith('..') || resolve(ctx.cwd, rel) !== filePath) {
+        return {
+          behavior: 'deny',
+          message: `MultiEdit denied: ${filePath} is outside the working directory`,
+          reason: 'path-outside-cwd',
+        };
+      }
+
+      // CC-parity allow/deny rules (.agon.json permissions): deny FIRST, allow
+      // before any ask. F3 path-aware (../ / symlink escapes resolved first).
+      if ((ctx as any).permissionRules) {
+        const ruleDecision = evaluateFilePathRules('MultiEdit', input.file_path as string, ctx.cwd, (ctx as any).permissionRules);
+        if (ruleDecision === 'deny') {
+          return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: MultiEdit ${filePath} blocked by a deny rule in .agon.json permissions`, reason: 'permission_rule_deny' };
+        }
+        // deny-all kill-switch outranks an allow RULE (only rule-DENY sits above it).
+        if (ruleDecision === 'allow' && ctx.permissionMode !== 'deny-all') {
+          return { behavior: 'allow' };
+        }
+      }
+
+      // Auto-allow edits within CWD — agent mode (like Claude Code default)
+      return { behavior: 'allow' };
+    };
+
+    // Apply ONE edit to the in-memory buffer. Returns the new buffer on success,
+    // or an { error } describing why the edit at `index` could not be applied.
+    // Exact match first; if that misses, a curly-quote-normalized fallback
+    // matches against a NORMALIZED VIEW of the buffer but splices the ORIGINAL
+    // buffer positionally — so smart quotes OUTSIDE the matched region survive
+    // untouched. (normalizeCurlyQuotesME is a 1:1 char swap, so indices/length
+    // are preserved between the buffer and its normalized view.)
+    const applyOneEdit = (buffer: string, oldString: string, newString: string, replaceAll: boolean, index: number): { content: string } | { error: string } => {
+      // 1. Exact match against the live buffer — only the matched region changes.
+      if (buffer.includes(oldString)) {
+        if (!replaceAll) {
+          const occurrences = countOccurrencesME(buffer, oldString);
+          if (occurrences > 1) {
+            return { error: `edits[${index}]: old_string matches ${occurrences} locations in the current buffer. Provide more context to make it unique, or set replace_all:true for this edit.` };
+          }
+        }
+        return {
+          content: replaceAll ? buffer.split(oldString).join(newString) : buffer.replace(oldString, newString),
+        };
+      }
+
+      // 2. Curly-quote fallback: find on the normalized view, splice the original.
+      const normBuf = normalizeCurlyQuotesME(buffer);
+      const normSearch = normalizeCurlyQuotesME(oldString);
+      if (!normBuf.includes(normSearch)) {
+        const preview = oldString.length > 80 ? oldString.slice(0, 80) + '...' : oldString;
+        return { error: `edits[${index}]: old_string not found in the current file buffer. Searched for: "${preview}"` };
+      }
+      if (!replaceAll) {
+        const occurrences = countOccurrencesME(normBuf, normSearch);
+        if (occurrences > 1) {
+          return { error: `edits[${index}]: old_string matches ${occurrences} locations in the current buffer. Provide more context to make it unique, or set replace_all:true for this edit.` };
+        }
+      }
+      if (replaceAll) {
+        let result = '';
+        let last = 0;
+        let idx = normBuf.indexOf(normSearch);
+        while (idx !== -1) {
+          result += buffer.slice(last, idx) + newString;
+          last = idx + normSearch.length;
+          idx = normBuf.indexOf(normSearch, last);
+        }
+        result += buffer.slice(last);
+        return { content: result };
+      }
+      const at = normBuf.indexOf(normSearch);
+      return { content: buffer.slice(0, at) + newString + buffer.slice(at + normSearch.length) };
+    };
+
+    const execute = async (input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> => {
+      const filePath = resolve(ctx.cwd, input.file_path as string);
+      const edits = (input.edits as Array<Record<string, unknown>>).map((e) => ({
+        oldString: e.old_string as string,
+        newString: e.new_string as string,
+        replaceAll: (e.replace_all as boolean) ?? false,
+      }));
+
+      // Phase E v2: route through VirtualFS overlay when present.
+      if (ctx.virtualFs) {
+        const currentContent = ctx.virtualFs.read(filePath);
+        if (currentContent === null) {
+          return { ok: false, content: '', error: `File not found in VirtualFS: ${filePath}` };
+        }
+        let working = currentContent;
+        for (let i = 0; i < edits.length; i++) {
+          const res = applyOneEdit(working, edits[i].oldString, edits[i].newString, edits[i].replaceAll, i);
+          if ('error' in res) {
+            return { ok: false, content: '', error: res.error };
+          }
+          working = res.content;
+        }
+        ctx.virtualFs.write(filePath, working);
+        return { ok: true, content: `Applied ${edits.length} edit${edits.length !== 1 ? 's' : ''} to ${filePath} in VirtualFS` };
+      }
+
+      // File must exist
+      if (!existsSync(filePath)) {
+        return { ok: false, content: '', error: `File not found: ${filePath}` };
+      }
+
+      // Read-before-write check: file must have been read via Read tool first
+      const cache = ctx.readFileState;
+      if (!cache.has(filePath)) {
+        return {
+          ok: false,
+          content: '',
+          error: 'File has not been read yet. Use the Read tool first before editing.',
+        };
+      }
+
+      // Staleness check: compare current mtime vs cached timestamp (once, up front)
+      let mtime: number;
+      try {
+        const stat = statSync(filePath);
+        mtime = stat.mtimeMs;
+      } catch (err) {
+        return { ok: false, content: '', error: `Cannot stat file: ${err instanceof Error ? err.message : String(err)}` };
+      }
+
+      const cachedState = cache.get(filePath);
+      if (!cachedState || mtime > cachedState.timestamp) {
+        return {
+          ok: false,
+          content: '',
+          error: 'File has been modified since last read. Re-read the file before editing.',
+        };
+      }
+
+      // Read current content
+      let content: string;
+      try {
+        content = readFileSync(filePath, 'utf-8');
+      } catch (err) {
+        return { ok: false, content: '', error: `Cannot read file: ${err instanceof Error ? err.message : String(err)}` };
+      }
+
+      // ── Atomic in-memory fold: apply every edit before touching disk ──
+      let working = content;
+      for (let i = 0; i < edits.length; i++) {
+        const res = applyOneEdit(working, edits[i].oldString, edits[i].newString, edits[i].replaceAll, i);
+        if ('error' in res) {
+          // Nothing has been written — the file on disk is untouched.
+          return { ok: false, content: '', error: res.error };
+        }
+        working = res.content;
+      }
+
+      // Take snapshot before modification (one checkpoint for the whole batch)
+      const relPath = relative(ctx.cwd, filePath);
+      const snapshot = takeSnapshot(`MultiEdit: ${relPath} (${edits.length} edits)`, ctx.cwd, [relPath]);
+
+      // Write file once
+      try {
+        writeFileSync(filePath, working, 'utf-8');
+      } catch (err) {
+        return { ok: false, content: '', error: `Failed to write file: ${err instanceof Error ? err.message : String(err)}` };
+      }
+
+      // Update cache with new content and fresh mtime
+      const newMtime = statSync(filePath).mtimeMs;
+      cache.set(filePath, {
+        content: working,
+        timestamp: newMtime,
+        offset: undefined,
+        limit: undefined,
+        isPartialView: false,
+        lastTouchedBy: ctx.source === 'orchestrator' ? 'cesar' : (ctx.source ?? 'tool'),
+        lastTouchedAt: Date.now(),
+      });
+
+      const summary = `Applied ${edits.length} edit${edits.length !== 1 ? 's' : ''} to ${relPath}`;
+      return { ok: true, content: `${summary} · checkpoint ${snapshot.id}` };
+    };
+
+    return { definition, validate, checkPermission, execute };
+  >>>

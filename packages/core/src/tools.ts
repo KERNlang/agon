@@ -1,6 +1,7 @@
 // ── Tool Implementations — KERN-sourced ──────────────────────────
 export { createReadTool } from './generated/tools/tool-read.js';
 export { createEditTool } from './generated/tools/tool-edit.js';
+export { createMultiEditTool } from './generated/tools/tool-multi-edit.js';
 export { createWriteTool } from './generated/tools/tool-write.js';
 export { createBashTool } from './generated/tools/tool-bash.js';
 export { createGrepTool } from './generated/tools/tool-grep.js';

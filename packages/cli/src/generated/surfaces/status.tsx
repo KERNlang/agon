@@ -92,10 +92,9 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
         {branch ? <Text dimColor>{' on '}<Text color="#34d399">{branch}</Text></Text> : null}
       </Text>
       <Text>
-        {ctx ? <Text dimColor>{' | '}</Text> : null}
         {ctx ? <TokenGauge tokens={ctx.used} maxTokens={ctx.limit} /> : null}
         {ctx && ctx.source === 'estimate' ? <Text dimColor>{'~'}</Text> : null}
-        {tokens > 0 ? <Text dimColor>{` | ${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
+        {tokens > 0 ? <Text dimColor>{`${ctx ? ' | ' : ''}${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
         {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
         {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
         {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 '}{toolOutputExpanded ? 'tools expanded (' : 'tools collapsed ('}</Text>}
@@ -139,7 +138,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
   );
 }
 
-// @kern-source: status:193
+// @kern-source: status:192
 const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height, filter }: { telemetryVitals:Map<string, any>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number; filter?:'all'|'problem' }) {
   const vitals = Array.from(telemetryVitals?.values?.() ?? []);
   const severity: Record<string, number> = { stalled: 5, fallback: 4, offline: 3, busy: 2, idle: 1 };
@@ -198,7 +197,7 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
 });
 export { StatusDashboard };
 
-// @kern-source: status:259
+// @kern-source: status:258
 const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
   const planGauge = buildPlanPhaseGauge(activePlan, 10);
   const now = Date.now();
@@ -302,7 +301,7 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
 });
 export { ExecutionRail };
 
-// @kern-source: status:373
+// @kern-source: status:372
 const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive, width, maxRows, focused }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean; width?:number; maxRows?:number; focused?:boolean }) {
   const safeWidth = Math.max(32, Math.floor(Number(width ?? 42)));
   const safeRows = Math.max(8, Math.floor(Number(maxRows ?? 12)));
@@ -413,7 +412,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
 });
 export { ExecutionRailPanel };
 
-// @kern-source: status:499
+// @kern-source: status:498
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -448,7 +447,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:528
+// @kern-source: status:527
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -467,7 +466,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:550
+// @kern-source: status:549
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

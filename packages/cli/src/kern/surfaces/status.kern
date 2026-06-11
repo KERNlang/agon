@@ -141,10 +141,9 @@ screen name=StatusBar target=ink
             {branch ? <Text dimColor>{' on '}<Text color="#34d399">{branch}</Text></Text> : null}
           </Text>
           <Text>
-            {ctx ? <Text dimColor>{' | '}</Text> : null}
             {ctx ? <TokenGauge tokens={ctx.used} maxTokens={ctx.limit} /> : null}
             {ctx && ctx.source === 'estimate' ? <Text dimColor>{'~'}</Text> : null}
-            {tokens > 0 ? <Text dimColor>{` | ${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
+            {tokens > 0 ? <Text dimColor>{`${ctx ? ' | ' : ''}${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
             {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
             {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
             {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 '}{toolOutputExpanded ? 'tools expanded (' : 'tools collapsed ('}</Text>}

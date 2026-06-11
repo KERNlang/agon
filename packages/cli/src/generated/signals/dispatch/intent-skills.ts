@@ -201,6 +201,9 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
           const pctOf = (n: number) => res!.limit > 0 ? Math.max(0, Math.round((n / res!.limit) * 100)) : 0;
           cb.setMode('chat');
           cb.dispatch({ type: 'success', message: `Compacted context in place: ${pctOf(res.beforeTokens)}% → ${pctOf(res.afterTokens)}% of the window (${res.method === 'llm' ? 'older turns summarized by the engine' : 'older turns folded into a structured summary'}). The session continues — nothing to re-warm.` });
+          // Refresh the gauge immediately so the strip matches the message
+          // instead of showing the stale pre-compaction pct until next turn.
+          cb.dispatch({ type: 'context-usage', pct: pctOf(res.afterTokens), used: res.afterTokens, limit: res.limit, compacted: 1, cached: 0, source: 'projected' } as any);
           break;
         }
         if (res && res.method === 'none') {

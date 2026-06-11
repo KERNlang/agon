@@ -138,10 +138,14 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
       let method: 'llm' | 'regex' = 'regex';
       if (config.engine.api && process.env.AGON_DISABLE_LLM_COMPACTION !== '1') {
         try {
+          // Summarize ONLY the `old` segment being replaced — the kept tail
+          // stays verbatim, so re-summarizing it both wastes budget and (under
+          // the total cap, which keeps the NEWEST lines) biases the summary
+          // toward exactly the messages that don't need summarizing.
           // The summarization request CONTAINS the transcript — cap it so the
           // request fits the window with headroom even at 95% occupancy
           // (chars ≈ tokens × 3.5; budget ≈ 60% of window in tokens).
-          const transcript = buildSummarizationContext(messageHistory as any[], {
+          const transcript = buildSummarizationContext(old as any[], {
             perMessageChars: 6000,
             perToolChars: 1500,
             totalChars: Math.floor(CONTEXT_LIMIT * 2.1),

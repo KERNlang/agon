@@ -131,13 +131,20 @@ fn name=enforceContextBudget async=true params="ctx:HandlerContext, session:Pers
     // ~85% of the raw window that keeps the recent tail and CONTINUES the same
     // session. The legacy effective-window thresholds below (compact fires at
     // ~70% of raw) reboot far too early for a session that can fold itself.
+    // Gate the raw-window branch on REAL-anchored usage only ('api'/'projected').
+    // A cold or freshly-restored session reports source:'estimate' — that goes
+    // through the established checkSessionBudget() path below until its first
+    // dispatch anchors real numbers (codex review: don't run the late raw
+    // thresholds on a chars guess).
     const live = (session && typeof (session as any).getContextUsage === 'function') ? (session as any).getContextUsage() : null;
-    const canCompactInPlace = !!(backend === 'api' && session && typeof (session as any).compact === 'function' && live && Number(live.limit) > 0);
+    const canCompactInPlace = !!(backend === 'api' && session && typeof (session as any).compact === 'function' && live && Number(live.limit) > 0 && live.source !== 'estimate');
     if (canCompactInPlace) {
       const limit = Number(live.limit);
-      const softLimit = (Number.isFinite(Number(live.softLimit)) && Number(live.softLimit) > 0) ? Number(live.softLimit) : Math.floor(limit * 0.85);
-      const hardLimit = Math.floor(limit * 0.95);
       const warnLimit = Math.floor(limit * 0.70);
+      // Clamp above warnLimit so an engine-supplied low softLimit can never
+      // invert/empty the warn band (the pre-compaction heads-up).
+      const softLimit = Math.max(warnLimit + 1, (Number.isFinite(Number(live.softLimit)) && Number(live.softLimit) > 0) ? Number(live.softLimit) : Math.floor(limit * 0.85));
+      const hardLimit = Math.floor(limit * 0.95);
       const pendingTokens = pendingInput
         ? estimateSessionTokens({ messageHistory: [{ role: 'user', content: pendingInput }] as any }, budget)
         : 0;
@@ -159,6 +166,9 @@ fn name=enforceContextBudget async=true params="ctx:HandlerContext, session:Pers
       try { res = await (session as any).compact(); } catch { res = null; }
       if (res && res.ok) {
         dispatch({ type: 'info', message: `Compacted context in place: ${pctOf(res.beforeTokens)}% → ${pctOf(res.afterTokens)}% of ${engineId}'s window (${res.method === 'llm' ? 'older turns summarized by the engine' : 'older turns folded into a structured summary'}). The session continues.` });
+        // Refresh the gauge immediately — otherwise the strip shows the stale
+        // pre-compaction pct next to the message that just said it dropped.
+        dispatch({ type: 'context-usage', pct: pctOf(res.afterTokens), used: res.afterTokens, limit, compacted: 1, cached: 0, source: 'projected' } as any);
         if (res.afterTokens + pendingTokens < hardLimit) {
           return { proceed: true, compacted: true };
         }

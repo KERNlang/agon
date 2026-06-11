@@ -386,7 +386,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // Surface a health hint when adapter has quarantined this engine — the user
             // needs to see why retries won't help so they can /cesar to a working engine.
             const health = engineHealth.get(cesarEngineId);
-            if (health && (health.status === 'auth-failed' || health.status === 'unreachable')) {
+            if (health && (health.status === 'auth-failed' || health.status === 'unreachable' || health.status === 'binary-missing')) {
               dispatch({ type: 'warning', message: `Engine ${cesarEngineId} marked ${health.status} — run /cesar to switch to a healthy engine, or /engines to fix credentials.` });
             }
             return { delegated: false, responded: false };

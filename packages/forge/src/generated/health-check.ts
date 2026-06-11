@@ -93,8 +93,8 @@ export async function healthCheckEngine(engineId: string, registry: EngineRegist
     try { rmSync(scratchDir, { recursive: true, force: true }); } catch { /* ignore */ }
     const message = err instanceof Error ? err.message : String(err);
     const status = classifyDispatchFailure({ errorMessage: message });
-    // Persist auth/unreachable so the wider preflight quarantine sees it too.
-    if (status === 'auth-failed' || status === 'unreachable') {
+    // Persist auth/unreachable/binary-missing so the wider preflight quarantine sees it too.
+    if (status === 'auth-failed' || status === 'unreachable' || status === 'binary-missing') {
       engineHealth.mark(engineId, status, message);
     }
     return {
@@ -118,7 +118,7 @@ export async function healthCheckEngine(engineId: string, registry: EngineRegist
   }
   if (exitCode !== 0) {
     const status = classifyDispatchFailure({ stderr, exitCode, errorMessage: stderr });
-    if (status === 'auth-failed' || status === 'unreachable') {
+    if (status === 'auth-failed' || status === 'unreachable' || status === 'binary-missing') {
       engineHealth.mark(engineId, status, stderr || `exit-${exitCode}`);
     }
     return {
@@ -218,7 +218,7 @@ export async function preflightHealthFilter(opts: { engineIds:string[], registry
   const afterQuarantine: string[] = [];
   for (const id of engineIds) {
     const health = engineHealth.get(id);
-    if (health && (health.status === 'auth-failed' || health.status === 'unreachable')) {
+    if (health && (health.status === 'auth-failed' || health.status === 'unreachable' || health.status === 'binary-missing')) {
       skipped.push({ engineId: id, status: health.status, reason: health.reason || 'quarantined this session' });
     } else {
       afterQuarantine.push(id);

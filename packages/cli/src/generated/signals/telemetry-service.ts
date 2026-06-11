@@ -192,11 +192,11 @@ export class TelemetryService {
     const staticallyAvailable = hasBinary || hasApiKey || (!engine?.binary && !engine?.api);
 
     // Engine-health overlay: an engine that's statically available but has been
-    // quarantined this session for auth-failed or unreachable should show as
-    // offline in the status bar, not 'idle' — otherwise the user thinks
-    // qwen/minimax is healthy when they have expired tokens.
+    // quarantined this session for auth-failed, unreachable, or binary-missing
+    // should show as offline in the status bar, not 'idle' — otherwise the user
+    // thinks qwen/minimax is healthy when they have expired tokens / no binary.
     const healthRecord = engineHealth.get(engineId);
-    const quarantined = healthRecord && (healthRecord.status === 'auth-failed' || healthRecord.status === 'unreachable');
+    const quarantined = healthRecord && (healthRecord.status === 'auth-failed' || healthRecord.status === 'unreachable' || healthRecord.status === 'binary-missing');
     const available = staticallyAvailable && !quarantined;
 
     let state: EngineVitalState = available ? (assignment ? 'busy' as EngineVitalState : 'idle' as EngineVitalState) : 'offline' as EngineVitalState;

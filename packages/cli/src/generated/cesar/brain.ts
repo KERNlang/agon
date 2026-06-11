@@ -18,6 +18,8 @@ import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge } from './confidence
 
 import { parseSuggestion } from './suggestion.js';
 
+import { parseLiveTodos, parsePreamble } from './todos-marker.js';
+
 import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend } from './session.js';
 
 import { enforceContextBudget } from './context-budget.js';
@@ -36,9 +38,11 @@ import { approvalToolIsFileMutating, buildApprovalDiffPreview } from './approval
 
 import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
 
-import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
+import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering.js';
 
-// @kern-source: brain:21
+import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
+
+// @kern-source: brain:23
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -69,7 +73,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:47
+// @kern-source: brain:49
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -100,10 +104,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:72
+// @kern-source: brain:74
 export const _noBriefNudged: Set<string> = new Set<string>();
 
-// @kern-source: brain:74
+// @kern-source: brain:76
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -134,6 +138,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       let _narratedToolStalls = 0;
       let _autoToolExecutions = 0;
       let _confidenceToolUsed = false;
+      // Live-todo telemetry: did this live turn emit at least one [TODOS] block?
+      // The design wants the later-gated metric "multi-tool turns that emitted
+      // zero todos" — we record the boolean here and let the consumer cross it
+      // with toolCallTurns (already tracked) downstream.
+      let _liveTodosEmitted = false;
       let _actualCesarEngineId = '';
       let _actualCesarBackend = 'unknown';
       let _actualHasNativeTools = false;
@@ -173,6 +182,89 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           input,
         });
       };
+      // Claude Code-style tool-call duration tracking. Tool events flow
+      // running→done/error correlated by the tool-call id (meta.toolCallId) when
+      // present, falling back to the tool name. Record the start time when a tool
+      // goes 'running' and attach durationMs to the matching done/error event so
+      // the renderer can show e.g. "→ 12 lines · 1.4s". Done/error events with no
+      // preceding 'running' (signal/MCP side-channel dispatches that complete
+      // instantly) simply carry no durationMs — the renderer omits the suffix.
+      //
+      // The eager (streaming) tool path is special: executeEagerTool measures its
+      // own wall-clock elapsed and emits the terminal tool-call/tool-stream-end
+      // event itself (via raw dispatch, with durationMs already attached). For
+      // those we record NO start time on 'running' (eager:true) so the map entry
+      // never leaks and the more-accurate eager-computed duration is the one shown.
+      const _toolStartMs = new Map<string, number>();
+      const dispatchToolCall = (
+        evt: { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running' | 'done' | 'error'; output?: string; durationMs?: number },
+        opts?: { toolCallId?: string; eager?: boolean; standalone?: boolean },
+      ): void => {
+        const key = String(opts?.toolCallId || evt.tool || 'tool');
+        let durationMs: number | undefined = evt.durationMs;
+        if (evt.status === 'running') {
+          // Eager calls supply their own duration on the terminal event — don't
+          // record a start here (avoids a stale, never-cleared map entry).
+          if (!opts?.eager && !opts?.standalone) _toolStartMs.set(key, Date.now());
+        } else if (opts?.standalone) {
+          // Standalone terminal events (MCP side-channel / signal-file completions
+          // from companion engines) have NO correlating 'running' in this map and
+          // carry their own timing (or none). They must NOT consume a name-keyed
+          // start entry left by an in-flight native tool of the same name — that
+          // would both mis-attribute a duration here AND wipe the native tool's
+          // pending start, corrupting its duration. Keep their own durationMs as-is.
+        } else {
+          const startedAt = _toolStartMs.get(key);
+          if (startedAt !== undefined) {
+            // A terminal event that already carries durationMs (eager path) wins;
+            // either way clear the entry so it never leaks.
+            if (durationMs === undefined) durationMs = Date.now() - startedAt;
+            _toolStartMs.delete(key);
+          }
+        }
+        dispatch({ ...evt, ...(durationMs !== undefined ? { durationMs } : {}) } as any);
+      };
+      // ── Live todo emission (non-plan turns) ──
+      // Parse a [TODOS]…[/TODOS] block out of the brain's text and dispatch a
+      // todos-set with source:'live' so the pinned checklist ticks as the turn
+      // progresses. No engine round-trip, no new tool — the brain owns the parse
+      // (todos-marker.kern), exactly like the [SUGGEST:mode] marker. Skip entirely
+      // when a plan is active: plan mode owns the rolling list (plan-executor
+      // dispatches source-less todos), and a live block must not clobber it.
+      // Returns the response with every [TODOS] block stripped, ready to display.
+      // ── Preamble emission (the [INTENT] marker, RULE 7c) ──
+      // Parse a START-anchored `[INTENT] <one line>` out of the brain's text and
+      // dispatch a distinct dim cesar-preamble block. Idempotent: dispatched ONCE
+      // per turn the first time the complete intent line is seen (during streaming,
+      // so it lands BEFORE tool-call blocks), then the final-cleanup call just
+      // strips the marker from the committed text. No engine round-trip, no new
+      // tool — same idiom as [TODOS]. Returns the response with the leading [INTENT]
+      // line removed, ready to display/commit. Absent marker = no block, no change.
+      let _preambleEmitted = false;
+      const emitPreamble = (text: string): string => {
+        const parsed = parsePreamble(text);
+        if (!parsed.found || !parsed.intent) return text;
+        if (!_preambleEmitted) {
+          _preambleEmitted = true;
+          dispatch({ type: 'cesar-preamble', engineId: _actualCesarEngineId || undefined, intent: parsed.intent } as any);
+        }
+        return parsed.rest;
+      };
+      const emitLiveTodos = (text: string): string => {
+        const planActive = !!(ctx.activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(ctx.activePlan.state));
+        if (planActive) return text;
+        const parsed = parseLiveTodos(text);
+        if (!parsed.found) return text;
+        // A non-empty list replaces the live checklist; an empty/cleared block
+        // (model emitted [TODOS][]) wipes it. Either way the block is stripped.
+        if (parsed.todos.length > 0) {
+          _liveTodosEmitted = true;
+          dispatch({ type: 'todos-set', todos: parsed.todos } as any);
+        } else {
+          dispatch({ type: 'todos-clear', scope: 'live' } as any);
+        }
+        return parsed.rest;
+      };
       const normalizeConfidenceReasoning = (value: unknown): string => {
         return String(value ?? '').replace(/\s+/g, ' ').trim();
       };
@@ -200,6 +292,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         narratedToolStalls: _narratedToolStalls,
         autoToolExecutions: _autoToolExecutions,
         confidenceToolUsed: _confidenceToolUsed,
+        liveTodosEmitted: _liveTodosEmitted,
       });
 
       // Short follow-ups bypass escalation/delegation — they're conversation continuations
@@ -226,12 +319,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           ctx.cesar!.queue = null;
           ctx.cesar!.abortSignal = null;
         } else {
-          // Follow-ups while busy → show elapsed status, don't queue
-          if (_isFollowUp) {
-            const elapsed = Math.round((Date.now() - busySince) / 1000);
-            dispatch({ type: 'info', message: `Cesar still working… ${elapsed}s` });
-            return { delegated: false, responded: true };
-          }
+          // Steering, not rejection: input that reaches the brain while a turn is
+          // running is NEVER rejected. (The primary steering channel is app-side —
+          // see runHandleSubmit, which buffers typed-while-busy input into the
+          // steering singleton for mid-turn injection. This brain-level guard is
+          // the fallback for programmatic re-entry; it queues rather than rejecting
+          // with the old "Cesar still working… Ns" message.)
           const existing = ctx.cesar!.queue;
           if (existing) {
             existing.input = existing.input + '\n\n' + input;
@@ -260,6 +353,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       ctx.cesar!.searchNudged = false;
       ctx.cesar!.turnId = _turnId;
       ctx.cesar!.planDispatch = dispatch;
+      // Claim the steering channel for this turn: messages typed while Cesar works
+      // are buffered there (app side) and injected at the tool boundaries below.
+      markSteeringTurn(_turnId);
       const _brainStartMs = Date.now();
       if (ctx.eventBus) await ctx.eventBus.emit('pre:cesar-brain', { input });
 
@@ -275,6 +371,51 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
 
         const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
         _actualCesarEngineId = cesarEngineId;
+        // ── Steering injection at a tool boundary ──
+        // Drain any messages the user typed while this turn was running (buffered
+        // in the steering singleton) and append them to the OUTGOING tool-result
+        // continuation, so the engine sees the steering with full context of the
+        // tool result it just produced. FIFO; each is rendered as a normal
+        // user-message block in the transcript + appended to chat history so it is
+        // visibly picked up. Returns the (possibly augmented) message to send — the
+        // unchanged carrier when nothing is queued. Called ONLY at the boundary
+        // between a tool result and the next send — never mid-stream.
+        // `source` labels which boundary the steering was injected at, for telemetry:
+        // 'xml' = the text/XML tool-loop + eager-continuation paths, 'exec' = the
+        // mutation-unlock execution loop, 'auto' = the auto-continuation tool loop.
+        // Images drained alongside the last steering injection (so a direct
+        // session.send site can forward them). drainSteeringIntoSend returns only a
+        // string — the runToolLoop send contract is string-in/string-out and has no
+        // image channel — so image-bearing steering is delivered at the eager
+        // direct-send site; any images drained at a string-only site stay null here
+        // and ride the next-turn leftover path instead. (phase-A review finding 2.)
+        let _lastDrainedSteerImages: string[] | null = null;
+        const drainSteeringIntoSend = (carrier: string, source: 'xml' | 'exec' | 'auto'): string => {
+          _lastDrainedSteerImages = null;
+          const pending = drainSteering(_turnId);
+          if (pending.length === 0) return carrier;
+          const blocks: string[] = [];
+          const drainedImages: string[] = [];
+          for (const msg of pending) {
+            const text = (msg.input ?? '').trim();
+            for (const img of (msg.images ?? [])) {
+              const p = (img as any)?.path;
+              if (typeof p === 'string' && p) drainedImages.push(p);
+            }
+            if (!text) continue;
+            // Visible pickup: render as the normal user-message block + persist.
+            dispatch({ type: 'user-message', content: text } as any);
+            appendMessage(ctx.chatSession, { role: 'user', content: text, timestamp: new Date().toISOString() });
+            blocks.push(text);
+            recordTimeline({ event: 'steering_injected', engineId: cesarEngineId, cwd: _turnCwd, source, input: { text, images: drainedImages.length || undefined } });
+          }
+          if (drainedImages.length) _lastDrainedSteerImages = drainedImages;
+          if (blocks.length === 0) return carrier;
+          // Make it unmistakable to the engine that this is a fresh instruction
+          // layered on top of the tool result it is being handed.
+          const steer = blocks.map((b) => `[User steering — injected mid-turn]\n${b}`).join('\n\n');
+          return carrier ? `${carrier}\n\n${steer}` : steer;
+        };
         recordTimeline({
           event: 'turn_start',
           engineId: cesarEngineId,
@@ -298,6 +439,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // "Cesar was just interrupted" — without a listener (cleared in finally).
         ctx.cesar!.abortSignal = abort.signal;
         ctx.cesar!.lastDispatch = dispatch;
+        // Clear any live (non-plan) todo checklist left pinned by the PREVIOUS
+        // live turn so it never lingers stale into this one. Scope:'live' leaves
+        // an active plan's rolling list untouched (plan owns its own lifecycle).
+        dispatch({ type: 'todos-clear', scope: 'live' } as any);
         dispatch({ type: 'confidence-update', value: null });
         dispatch({ type: 'spinner-start', message: 'Cesar thinking…', color });
         await yieldToInk();
@@ -413,6 +558,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         let suppressXmlToolDisplay = false;
         let sawStreamingXmlToolCall = false;
         let xmlDisplayHold = '';
+        // Per-turn native-path [TODOS] display stripper (state encapsulated in the
+        // factory closure: hold buffer + insideBlock). Flushed at stream end.
+        const stripTodosForDisplay = createTodosDisplayStripper();
+        // Per-turn native-path [INTENT] preamble display stripper. Holds the leading
+        // text until it can decide whether the response opens with an [INTENT] line,
+        // suppressing that line from the streamed display. Flushed at stream end.
+        const stripPreambleForDisplay = createPreambleStripper();
         let hadToolActivity = false; // tracks if native tool calls were shown to user
         // Engine-failure tracking: when a send yields an `error` chunk or returns
         // empty (overflow, rate limit, content filter, dead session), capture the
@@ -596,14 +748,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 const status = done.status === 'error' ? 'error' : 'done';
                 const toolInput = typeof done.args === 'string' ? done.args : JSON.stringify(done.args ?? {});
                 recordToolUse(String(done.tool ?? 'tool'), 'mcp', toolInput, status);
-                dispatch({
+                dispatchToolCall({
                   type: 'tool-call',
                   engineId: cesarEngineId,
                   tool: String(done.tool ?? 'tool'),
                   input: toolInput,
                   status,
                   output: typeof done.output === 'string' ? done.output : undefined,
-                } as any);
+                } as any, { standalone: true });
               } catch { /* malformed/stale completion — ignore */ }
             }
 
@@ -804,21 +956,21 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
 
               if (meta.input && STREAM_ORCH.has(toolName)) {
                 if (cesarFastPath) {
-                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` } as any);
+                  dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` } as any);
                   continue;
                 }
                 if (!ctx.cesar!.pendingDelegation) {
                   ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
                   ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: `stream-${toolStatus}` }).catch(() => {});
                 }
-                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+                dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
                 continue;
               }
 
               if (toolStatus === 'done') {
-                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+                dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any, { toolCallId: meta.toolCallId as string | undefined });
               } else if (toolStatus === 'native') {
-                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
+                dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any, { toolCallId: meta.toolCallId as string | undefined });
               } else if (toolStatus === 'running' && meta.input && toolRegistry && !ctx.cesar!.hasNativeTools) {
                 // Codex review fix (P2): after orchestration delegation has been
                 // set, suppress ALL subsequent tool calls in the same stream — not
@@ -827,7 +979,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 // workspace before the delegated job starts, racing the agents'
                 // worktrees and triggering permission prompts.
                 if (ctx.cesar!.pendingDelegation) {
-                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
+                  dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any, { toolCallId: meta.toolCallId as string | undefined });
                   continue;
                 }
                 // Intercept orchestration signal tools — don't execute as workspace tools.
@@ -836,12 +988,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 const EAGER_ORCH = STREAM_ORCH;
                 if (EAGER_ORCH.has(toolName)) {
                   if (cesarFastPath) {
-                    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` } as any);
+                    dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` } as any);
                     continue;
                   }
                   ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
                   ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: 'stream' }).catch(() => {});
-                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
+                  dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
                   // RT-24: do NOT break the stream. Let it drain naturally so the model can
                   // emit any post-tool-call narration (the "I'm delegating because..." hand-off
                   // context). The dedup-and-suppress guard above gates ALL further tool calls
@@ -849,11 +1001,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   // race the delegated job.
                   continue;
                 }
-                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
+                dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any, { toolCallId: meta.toolCallId as string | undefined, eager: true });
                 if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
                 eagerPromises.push(executeEagerTool(toolName, meta, toolRegistry, eagerToolCtx, dispatch, cesarEngineId));
               } else {
-                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+                dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any, { toolCallId: meta.toolCallId as string | undefined });
               }
               continue;
             }
@@ -964,19 +1116,37 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     cleanFirst = response.replace(/<think>[\s\S]*/gi, '');
                   }
                 }
+                // Dispatch the [INTENT] preamble block early (before tool work) the
+                // moment the complete leading line is available, then strip it from
+                // the streamed display so the marker never flashes. Runs on both the
+                // native and XML paths since the marker is plain leading text.
+                emitPreamble(response);
+                cleanFirst = stripPreambleForDisplay(cleanFirst);
                 if (!ctx.cesar!.hasNativeTools) {
                   const split = splitBeforeToolMarkup(cleanFirst);
                   cleanFirst = split.visible;
                   if (split.hasToolMarkup) suppressXmlToolDisplay = true;
+                } else {
+                  cleanFirst = stripTodosForDisplay(cleanFirst);
                 }
                 if (cleanFirst.trim()) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanFirst });
               } else {
                 response += chunk.content;
                 noteXmlToolDetected(true);
                 let displayChunk = chunk.content;
+                // Suppress the leading [INTENT] line from the streamed display and
+                // dispatch its block early (idempotent) once the line completes.
+                emitPreamble(response);
+                displayChunk = stripPreambleForDisplay(displayChunk);
+                if (!displayChunk) continue;
                 if (!ctx.cesar!.hasNativeTools) {
                   displayChunk = takeXmlSafeDisplayChunk(displayChunk);
                   if (!displayChunk) continue;
+                } else {
+                  // Native path: XML markup suppression doesn't run, so strip the
+                  // live-todos marker here before it reaches the display dispatch.
+                  displayChunk = stripTodosForDisplay(displayChunk);
+                  if (!displayChunk && !insideThinkBlock) continue;
                 }
                 if (insideThinkBlock) {
                   // Dispatch thinking content as it streams
@@ -1012,9 +1182,30 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               }
             }
           }
+          // Flush any leading text the preamble stripper is still holding (a marker
+          // that never saw its terminating newline before stream end). Route the
+          // flushed remainder through the same downstream stripper the live path
+          // uses so it is not double-shown nor leaked. emitPreamble already fired
+          // the block (parsePreamble matches a newline-less leading [INTENT] too).
+          const trailingPreambleSafe = stripPreambleForDisplay('', true);
+          if (streaming && trailingPreambleSafe) {
+            const routed = ctx.cesar!.hasNativeTools
+              ? stripTodosForDisplay(trailingPreambleSafe)
+              : takeXmlSafeDisplayChunk(trailingPreambleSafe);
+            if (routed.trim()) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: routed });
+          }
           const trailingXmlSafe = takeXmlSafeDisplayChunk('', true);
           if (streaming && trailingXmlSafe.trim()) {
             dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: trailingXmlSafe });
+          }
+          // Native path: flush any held partial-marker tail from the todos stripper
+          // (force=true bypasses holds, returns held text verbatim) so a final chunk
+          // ending in a legit prefix like "… see [" isn't silently dropped.
+          if (ctx.cesar!.hasNativeTools) {
+            const trailingTodosSafe = stripTodosForDisplay('', true);
+            if (streaming && trailingTodosSafe.trim()) {
+              dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: trailingTodosSafe });
+            }
           }
         } catch (err) {
           clearInterval(heartbeat);
@@ -1059,6 +1250,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (ctx.cesar!.hasNativeTools) {
           response = response.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
         }
+        // Preamble: strip the leading [INTENT] line from the committed text (and
+        // dispatch its block if streaming never did — idempotent). Run BEFORE the
+        // todos strip since the marker is the very first line.
+        response = emitPreamble(response);
+        // Live-todo emission: parse the [TODOS] block out of the response, dispatch
+        // the source:'live' checklist, and keep only the stripped text. Safe no-op
+        // when no block is present or a plan is active (emitLiveTodos guards both).
+        response = emitLiveTodos(response);
 
         // ── Await eager tool results ──
         if (eagerPromises.length > 0 && !ctx.cesar!.hasNativeTools && session.alive && !abort.signal.aborted) {
@@ -1073,7 +1272,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             const failedTools = eagerFailedToolNames(eagerResults);
             const repairUsed: string[] = [];
             const repairResults: ToolCallResult[] = [];
-            const contGen = session.send({ message: formatted, signal: abort.signal });
+            // Tool boundary (eager path): append any mid-turn user steering to the
+            // tool-result continuation before sending it back. This is a DIRECT
+            // session.send (not the string-only runToolLoop contract), so steering
+            // image attachments drained alongside the text can be forwarded here.
+            const _steerMsg = drainSteeringIntoSend(formatted, 'xml');
+            const contGen = session.send({ message: _steerMsg, signal: abort.signal, ...(_lastDrainedSteerImages ? { images: _lastDrainedSteerImages } : {}) });
             for await (const chunk of contGen) {
               if (chunk.type === 'text') continuation += chunk.content;
               if (chunk.type === 'tool_call') {
@@ -1090,9 +1294,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   continue;
                 }
                 if (toolStatus !== 'running' && toolStatus !== 'native') {
-                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+                  dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any);
                 } else if (failedTools.includes(toolName)) {
-                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Repair retry already used for this tool in this turn.' } as any);
+                  dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Repair retry already used for this tool in this turn.' } as any);
                 }
               }
               if (chunk.type === 'done' || chunk.type === 'error') break;
@@ -1111,7 +1315,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
                     const toolName = chunk.content || 'tool';
                     const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
-                    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Tool repair loop is one retry per failed tool; further tool calls were not executed automatically.' } as any);
+                    dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Tool repair loop is one retry per failed tool; further tool calls were not executed automatically.' } as any);
                   }
                   if (chunk.type === 'done' || chunk.type === 'error') break;
                 }
@@ -1119,7 +1323,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               }
             }
             dispatch({ type: 'spinner-stop' });
-            if (continuation.trim()) response = continuation.trim();
+            // Strip a leading [INTENT] preamble from the continuation too (emitPreamble
+            // before emitLiveTodos, mirroring the main commit path) so the marker never
+            // leaks into committed text on a tool-result continuation. emitPreamble is
+            // idempotent (the _preambleEmitted latch suppresses a duplicate block) and
+            // still strips the marker from the text on every call.
+            if (continuation.trim()) response = emitLiveTodos(emitPreamble(continuation.trim()));
           }
         }
 
@@ -1179,14 +1388,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 if (cesarFastPath && FAST_PATH_BLOCKED_TOOLS.includes(signal.tool)) {
                   const toolInput = JSON.stringify(signal.args ?? {});
                   recordToolUse(signal.tool, 'mcp', toolInput, 'error');
-                  dispatch({
+                  dispatchToolCall({
                     type: 'tool-call',
                     engineId: cesarEngineId,
                     tool: signal.tool,
                     input: toolInput,
                     status: 'error',
                     output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.`,
-                  } as any);
+                  } as any, { standalone: true });
                   continue;
                 }
                 if (signal.tool === 'ReportConfidence') {
@@ -1221,14 +1430,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   // fresh ProposePlan to supersede it. Only running/paused/planning
                   // (a genuinely active plan) blocks a nested proposal.
                   if (activePlan && ['planning', 'running', 'paused'].includes(activePlan.state)) {
-                    dispatch({
+                    dispatchToolCall({
                       type: 'tool-call',
                       engineId: cesarEngineId,
                       tool: 'ProposePlan',
                       input: JSON.stringify(signal.args ?? {}),
                       status: 'error',
                       output: 'A Cesar plan is already active; nested plans are blocked. Resume or cancel the current plan before proposing another.',
-                    } as any);
+                    } as any, { standalone: true });
                     continue;
                   }
                   const { handleProposePlan } = await import('../handlers/plan-mode.js');
@@ -1250,7 +1459,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
                   try {
                     const exitResult = handleExitPlanMode(String((signal.args as any)?.reason ?? ''), planDispatch, ctx);
-                    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: 'ExitPlanMode', input: JSON.stringify(signal.args ?? {}), status: 'done', output: exitResult } as any);
+                    dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: 'ExitPlanMode', input: JSON.stringify(signal.args ?? {}), status: 'done', output: exitResult } as any, { standalone: true });
                   } catch (err) {
                     console.warn(`[agon] ExitPlanMode via MCP signal failed: ${err instanceof Error ? err.message : String(err)}`);
                   }
@@ -1350,6 +1559,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               async (message: string) => {
                 if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
                 if (!session.alive || abort.signal.aborted) return '';
+                // Tool boundary: append any mid-turn user steering to the outgoing
+                // tool-result continuation before it is sent.
+                const sendMessage = drainSteeringIntoSend(message, 'xml');
                 dispatch({ type: 'spinner-start', message: 'Cesar processing results…', color });
                 // Reset per send: _engineErrored must reflect the LATEST send, not
                 // "ever errored this turn". A transient error in an early tool-loop
@@ -1359,7 +1571,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 _engineErrorMsg = '';
                 let nextResponse = '';
                 const gen = session.send({
-                  message,
+                  message: sendMessage,
                   signal: abort.signal,
                   toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
                   toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
@@ -1462,7 +1674,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // ProposePlan to supersede it. Only running/paused/planning (a
             // genuinely active plan) blocks a nested proposal.
             if (activePlan && ['planning', 'running', 'paused'].includes(activePlan.state)) {
-              dispatch({
+              dispatchToolCall({
                 type: 'tool-call',
                 engineId: cesarEngineId,
                 tool: 'ProposePlan',
@@ -1499,7 +1711,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             const { handleExitPlanMode } = await import('../handlers/plan-mode.js');
             const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
             const exitResult = handleExitPlanMode(String((epArgs as any)?.reason ?? ''), planDispatch, ctx);
-            dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: 'ExitPlanMode', input: JSON.stringify(epArgs ?? {}), status: 'done', output: exitResult } as any);
+            dispatchToolCall({ type: 'tool-call', engineId: cesarEngineId, tool: 'ExitPlanMode', input: JSON.stringify(epArgs ?? {}), status: 'done', output: exitResult } as any);
           } catch (err) {
             console.warn(`[agon] ExitPlanMode via tool loop failed: ${err instanceof Error ? err.message : String(err)}`);
           }
@@ -1649,10 +1861,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 async (message: string) => {
                   if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
                   if (!session.alive || abort.signal.aborted) return '';
+                  // Tool boundary (exec path): inject any mid-turn user steering.
+                  const sendMessage = drainSteeringIntoSend(message, 'exec');
                   dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
                   let nextResponse = '';
                   const gen = session.send({
-                    message,
+                    message: sendMessage,
                     signal: abort.signal,
                     toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
                     toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
@@ -2038,7 +2252,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               break;
             }
             dispatch({ type: 'spinner-stop' });
-            const cleanCont = contResponse.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+            // Strip a leading [INTENT] preamble (emitPreamble before emitLiveTodos,
+            // mirroring the main commit path) so the marker never leaks into the
+            // committed/displayed text on an auto-continuation turn. emitPreamble is
+            // idempotent — the _preambleEmitted latch suppresses a duplicate block.
+            const cleanCont = emitLiveTodos(emitPreamble(contResponse.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim()));
             // Engine failed to produce a continuation (overflow / rate limit / dead
             // session). Surface the REAL reason and stop — don't keep nudging into
             // the misleading canned "paused mid-task" closure (the spin bug).
@@ -2064,6 +2282,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     async (message: string) => {
                       if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
                       if (!session.alive || abort.signal.aborted) return '';
+                      // Tool boundary (auto-continuation path): inject steering.
+                      const sendMessage = drainSteeringIntoSend(message, 'auto');
                       dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
                       // Reset per send (see initial tool loop): flag tracks the
                       // latest send's outcome, not a sticky turn-level latch.
@@ -2071,7 +2291,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                       _engineErrorMsg = '';
                       let nextResp = '';
                       const gen = session.send({
-                        message,
+                        message: sendMessage,
                         signal: abort.signal,
                         toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
                         toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
@@ -2256,6 +2476,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             narratedToolStalls: toolTelemetry.narratedToolStalls, autoToolExecutions: toolTelemetry.autoToolExecutions,
             confidenceToolUsed: toolTelemetry.confidenceToolUsed, hasNativeTools: toolTelemetry.hasNativeTools,
             delegated: false,
+            // Live-todo telemetry: emitted? + whether this was a multi-tool turn
+            // (toolCallTurns>1) — the later-gated metric is multi-tool turns that
+            // emitted ZERO todos, derivable from these two fields.
+            liveTodosEmitted: toolTelemetry.liveTodosEmitted,
+            multiToolTurn: toolTelemetry.toolCallTurns > 1,
             confidence: parsedConfidence,
             tokens: tokenUsage ? { prompt: tokenUsage.promptTokens, response: tokenUsage.responseTokens, cost: tokenUsage.costUsd } : undefined,
           }) + '\n');
@@ -2405,6 +2630,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           ctx.cesar!.abortSignal = null;
           ctx.cesar!.turnId = undefined;
           ctx.setActiveAbort(null);
+
+          // Release the steering channel for this turn. On a NORMAL end the marker
+          // is cleared but any unconsumed steering stays buffered for the app-side
+          // idle drain (runProcessInputQueue → inputQueue → next turn). On an
+          // interrupt the app already called clearSteering (drop, no carryover);
+          // this is then a harmless idempotent marker release.
+          releaseSteeringTurn(_turnId);
 
           // Auto-drain queue. Runs only after the generator is provably dead (the
           // safe point to reuse the persistent session), so a message queued

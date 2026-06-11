@@ -283,7 +283,8 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
       const diffRows = diffFiles.reduce((total: number, file: any) => total + 1 + Math.min(6, Array.isArray(file.lines) ? file.lines.length : 0) + (Number(file.omitted ?? 0) > 0 ? 1 : 0), 0);
       const warningRows = Math.min(3, Array.isArray((event as any).warnings) ? (event as any).warnings.length : 0);
       const reasoningRows = (event as any).confidenceReasoning ? 1 : 0;
-      return 3 + commandRows + fileRows + checkpointRows + diffRows + warningRows + reasoningRows;
+      const todoRows = (event as any).todos && Number((event as any).todos.total ?? 0) > 0 ? 1 : 0;
+      return 3 + commandRows + fileRows + checkpointRows + diffRows + warningRows + reasoningRows + todoRows;
     }
     case 'file-changes':
       return 1 + (((event as any).files as any[])?.length ?? 0);

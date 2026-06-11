@@ -140,6 +140,8 @@ import { buildOutputActions } from './app-output-bridge.js';
 
 import { _cancelCallback, runTrackAbort, runInterruptActiveRun, buildCancelCallback, handleSigint } from './app-interrupt.js';
 
+import { onSteeringChange } from '../cesar/steering.js';
+
 import { runHandleCancelOrExit, runHandleComposerCtrlShortcut, runHandleKeyboardInput } from './app-keyboard.js';
 
 import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-submit.js';
@@ -148,7 +150,7 @@ import { runProcessInputQueue, runSendBtwMessage, runHandleSubmit } from './app-
 
 export { COMPOSER_HISTORY_LIMIT, isMutatingToolCall, probeEngineVitals, parseToolCallPayload, toolPreviewWindow, toolCallSupportsDetailView, detailViewerSupportsEvent, toolDetailViewportRows, findLatestToolDetailEvent, findLatestToolEvent, buildExecutionRailStats, composerHistoryPath, loadComposerInputHistory, saveComposerInputHistory, findLatestFailedToolEvent, buildFailedToolRetryDraft, buildToolDetailView, createInitialRegistry, drainStdinBuffer, maxScrollOffsetForRowCount, nextWheelAnimationStep, clampNumber, charDisplayWidth, stringDisplayWidth, displayColumnToStringIndex, normalizeRowSelection, normalizeTextSelection, richLineToPlainText, transcriptRowToPlainText, transcriptRowTextStartColumn, resolveTranscriptColumnFromMouse, transcriptRowsToPlainText, resolveTranscriptRowFromMouse, estimateVisibleBlockBudget, estimateWrappedRowCount, estimateQuestionReservedRows, estimateBottomChromeExtraRows, summarizeBtwTranscriptEvent, buildDashboardBlock, estimatePinnedLiveRows, estimateWrappedRows, estimateToolCallRows, estimateOutputEventRows, buildDisplayItems, isToolCallLikeBlock, coalesceToolCallBlocks, effectiveNativeArchiveBlockCount, estimateDisplayItemRows, historyBlocksForTranscript, nativeTranscriptBlocksForStatic, nativeArchiveBlockCount, isDuplicateEngineBlock, appendTranscriptBlock, normalizeTerminalMode, fileRailWidthForTerminal, fileRailMaxRowsForTerminal, buildTerminalReplaySnapshot, parseMarkdownToRows, buildToolCallRows, buildCollapsedToolGroupRows, buildTranscriptRows } from './app-helpers.js';
 
-// @kern-source: app:93
+// @kern-source: app:94
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -164,6 +166,8 @@ export function App() {
   const setInputHistory = useMemo(() => __inkSafe(_setInputHistoryRaw), [_setInputHistoryRaw]);
   const [inputQueue, _setInputQueueRaw] = useState<string[]>([]);
   const setInputQueue = useMemo(() => __inkSafe(_setInputQueueRaw), [_setInputQueueRaw]);
+  const [steeringCount, _setSteeringCountRaw] = useState<number>(0);
+  const setSteeringCount = useMemo(() => __inkSafe(_setSteeringCountRaw), [_setSteeringCountRaw]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [mode, _setModeRaw] = useState<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const setMode = useMemo(() => __inkSafe(_setModeRaw), [_setModeRaw]);
@@ -1048,7 +1052,7 @@ export function App() {
       inputEpochRef, pendingBellRef, awaitingPlanAnnouncedRef, pasteHashesRef, pendingPasteTransformRef, inputValueRef, activePlanRef, activeTurnRef, chatStartTimeRef,
       replState, mode, planModeQueued, autoModeQueued, btwPanel, pendingImages, outputBlocks, allSlashCommands, dynamicSkills, extensionSkills, lastUndoToken, sessionStartTime, explorationMode, neroMode,
       jobManager, commandRegistry, eventBus, loadedExtensions,
-      setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
+      setInputValue, setInputHistory, setHistoryIndex, setInputQueue, setSteeringCount, setSlashPickerOpen, setStatusDashboardOpen, setPlanModeQueued, setPersistentAutoMode, setMode, setWorkspacePath, setReplState, setJobList, setBtwPanel,
       setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups, setExplorationMode, setNeroMode,
       dispatch, buildContext, sendBtwMessage, handleSubmit, transition, setActivePlanWrapped, askQuestion, bell,
     }, value);
@@ -1511,6 +1515,10 @@ export function App() {
   }, [eventBus,dispatch,chatSession]);
 
   useEffect(() => {
+    return onSteeringChange((count: number) => setSteeringCount(count));
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (activePlanClearTimerRef.current) {
         clearTimeout(activePlanClearTimerRef.current);
@@ -1619,7 +1627,7 @@ export function App() {
   }, [registry,cesarSession,activeEngines]);
 
   useEffect(() => {
-    runProcessInputQueue(replState, inputQueue, setInputQueue, handleSubmit);
+    runProcessInputQueue(replState, inputQueue, setInputQueue, handleSubmit, setSteeringCount);
   }, [replState,inputQueue]);
 
   useEffect(() => {
@@ -1925,6 +1933,7 @@ export function App() {
         questionState={questionState}
         pendingImages={pendingImages}
         inputQueue={inputQueue}
+        steeringCount={steeringCount}
         liveSpinner={liveSpinner}
         mode={mode}
         statusDashboardOpen={statusDashboardOpen}
@@ -2025,10 +2034,10 @@ export function App() {
   );
 }
 
-// @kern-source: app:91
+// @kern-source: app:92
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1826
+// @kern-source: app:1842
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

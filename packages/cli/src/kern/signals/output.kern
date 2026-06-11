@@ -8,7 +8,7 @@ import from="../blocks/narration-fold.js" names="foldNarration,setLastFoldedRaw"
 import from="../../code-buffer.js" names="codeBlockBuffer"
 import from="@kernlang/agon-core" names="loadConfig,configSet"
 import from="./todos.js" names="Todo" types=true
-import from="./todos.js" names="setTodos,updateTodoState,clearTodos"
+import from="./todos.js" names="setTodos,updateTodoState,clearTodos,clearLiveTodos"
 
 interface name=AgentProgressSnapshot
   doc "Live state for a running autonomous agent session. Fed by agent-* OutputEvents, rendered by surfaces/agent.kern::AgentProgressView. teamId groups members of a single AgentTeam run for explicit clear-by-team. completedAt is set by agent-step-end and consumed by the TTL pruner in app.kern."
@@ -405,7 +405,12 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         return;
       }
       case 'todos-clear': {
-        actions.setTodos(clearTodos());
+        const scope = (event as any).scope as string | undefined;
+        if (scope === 'live') {
+          actions.setTodos((prev) => clearLiveTodos(prev));
+        } else {
+          actions.setTodos(clearTodos());
+        }
         return;
       }
       case 'clear':
@@ -754,6 +759,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
           input: e.input ?? existing.input ?? '',
           status: e.status,
           output,
+          ...(e.durationMs !== undefined ? { durationMs: e.durationMs } : {}),
         };
         const key = toolCallKey(toolCallEvent);
         if (e.status === 'done' || e.status === 'error') {

@@ -1,0 +1,129 @@
+// ── Cesar Live Todos: parse the [TODOS]…[/TODOS] checklist marker ──────
+// A LIVE (non-plan) Cesar turn declares its rolling checklist by emitting a
+// [TODOS] … [/TODOS] block in its response text. The brain parses it (this
+// module) and dispatches todos-set / todos-update events with source:'live'
+// DIRECTLY — there is NO engine round-trip and NO new MCP/XML tool (the
+// settled design's "no new tool" rule: the brain owns the parse, the model
+// just writes text). This mirrors the [SUGGEST:mode] marker idiom in
+// suggestion.kern: a structured signal extracted from the brain's own text,
+// stripped from the user-visible output.
+//
+// FORMAT (one JSON array per block; the model re-emits the WHOLE block each
+// time state changes, so the latest block is the authoritative list):
+//   [TODOS]
+//   [{"id":"1","text":"Read brain.kern","state":"done"},
+//    {"id":"2","text":"Patch the parser","state":"running"},
+//    {"id":"3","text":"Run tests","state":"pending"}]
+//   [/TODOS]
+//
+// Robustness contract: malformed input is IGNORED silently (returns todos:[]
+// with the marker still located so it can be stripped). The brain must never
+// crash on a bad todo block — a model that emits garbage just gets no list.
+
+import from="../signals/todos.js" names="Todo" types=true
+
+interface name=TodosMarkerResult export=true
+  field name=todos type="Todo[]"
+  doc "Parsed live todos (source forced to 'live'). Empty when absent/malformed."
+  field name=found type=boolean
+  doc "True when a [TODOS]…[/TODOS] block was located (even if its body was malformed) — so the caller knows to strip it."
+  field name=rest type=string
+  doc "Response text with every [TODOS]…[/TODOS] block removed, ready to display."
+
+fn name=parseLiveTodos params="response:string" returns="TodosMarkerResult" export=true
+  doc "Extract live todos from a [TODOS]…[/TODOS] block. Ignores malformed bodies silently; strips all blocks from rest. Forces source:'live' and dedupes ids (last wins)."
+  handler <<<
+    const blockRe = /\[TODOS\]([\s\S]*?)\[\/TODOS\]/gi;
+    let found = false;
+    let lastBody: string | null = null;
+    let rest = response;
+    // Walk every block; the LAST well-formed one wins (latest state snapshot).
+    // Strip all blocks from the visible text regardless of body validity.
+    const matches = response.match(blockRe);
+    if (!matches || matches.length === 0) {
+      return { todos: [], found: false, rest: response };
+    }
+    found = true;
+    rest = response.replace(blockRe, '').trim();
+    // Re-scan to capture the last body (match() above loses capture groups).
+    let m: RegExpExecArray | null;
+    const re2 = /\[TODOS\]([\s\S]*?)\[\/TODOS\]/gi;
+    while ((m = re2.exec(response)) !== null) {
+      lastBody = m[1];
+    }
+    if (lastBody === null) return { todos: [], found, rest };
+
+    const allowed = new Set(['pending', 'running', 'done', 'failed', 'cancelled']);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(lastBody.trim());
+    } catch {
+      // Malformed JSON — ignore silently (no crash), still strip the block.
+      return { todos: [], found, rest };
+    }
+    if (!Array.isArray(parsed)) return { todos: [], found, rest };
+
+    // Build, validating each item; skip anything without a usable id+text.
+    // Dedupe by id (last occurrence wins) while preserving first-seen order.
+    // Cap parsed items at 50: a live checklist never has hundreds of entries,
+    // and the cap bounds the work (and the dispatched payload) on a model that
+    // emits a runaway/garbage array. Applied to the raw items BEFORE dedupe.
+    const MAX_LIVE_TODOS = 50;
+    const order: string[] = [];
+    const byId = new Map<string, Todo>();
+    for (const raw of (parsed as unknown[]).slice(0, MAX_LIVE_TODOS)) {
+      if (!raw || typeof raw !== 'object') continue;
+      const r = raw as Record<string, unknown>;
+      const id = r.id !== undefined && r.id !== null ? String(r.id) : '';
+      const text = r.text !== undefined && r.text !== null ? String(r.text) : '';
+      if (!id || !text) continue;
+      const state = (allowed.has(String(r.state)) ? String(r.state) : 'pending') as Todo['state'];
+      const note = r.note !== undefined && r.note !== null ? String(r.note) : undefined;
+      if (!byId.has(id)) order.push(id);
+      byId.set(id, { id, text, state, note, source: 'live' });
+    }
+    const todos = order.map((id) => byId.get(id)!).filter(Boolean);
+    return { todos, found, rest };
+  >>>
+
+// ── Cesar Preamble: parse the [INTENT] <one line> marker ──────────────
+// The SECOND sanctioned marker idiom (RULE 7c): one short intent line at the
+// VERY START of the brain's response declaring what the turn is about to do,
+// e.g. `[INTENT] Tracing the dispatch path before changing timeouts`. The
+// brain renders it as a distinct dim block BEFORE any tool work, then strips
+// it from the visible/committed answer — exactly like [TODOS], but a single
+// START-anchored line with no closing tag.
+//
+// ANCHOR RULE: the marker is recognized ONLY at the start of the response
+// (after optional leading whitespace). A mid-text "[INTENT] …" is left intact
+// (it's ordinary prose, not a preamble) — this keeps the signal unambiguous
+// and prevents a stray bracketed phrase deep in an answer from being hoisted
+// into a preamble block. The intent line ends at the first newline (or end of
+// string). Malformed/empty intent (just "[INTENT]" with no text) is treated
+// as ABSENT (found:false) so a bare marker neither renders an empty block nor
+// is stripped.
+
+interface name=PreambleMarkerResult export=true
+  field name=intent type="string | null"
+  doc "The parsed one-line intent (marker stripped, trimmed), or null when no start-anchored [INTENT] line is present."
+  field name=found type=boolean
+  doc "True when a start-anchored [INTENT] <non-empty> line was located and stripped."
+  field name=rest type=string
+  doc "Response text with the leading [INTENT] line removed, ready to display."
+
+fn name=parsePreamble params="response:string" returns="PreambleMarkerResult" export=true
+  doc "Extract a START-anchored [INTENT] <one line> preamble. Only the first line (after optional leading whitespace) is considered; a mid-text [INTENT] is left intact. An empty intent (bare marker) is treated as absent. Strips the matched line (and a single following newline) from rest."
+  handler <<<
+    const text = String(response ?? '');
+    // Anchor at the start, allowing leading whitespace/newlines. The intent
+    // runs to the first newline or end of string. Case-insensitive marker.
+    const m = text.match(/^(\s*)\[INTENT\][ \t]*([^\r\n]*)(\r?\n)?/i);
+    if (!m) return { intent: null, found: false, rest: text };
+    const intent = String(m[2] ?? '').trim();
+    // Bare/empty marker → treat as absent (no block, no strip).
+    if (!intent) return { intent: null, found: false, rest: text };
+    // Strip the full matched prefix (leading ws + marker line) plus at most ONE
+    // extra blank line; deeper blank runs are the model's own formatting.
+    const rest = text.slice(m[0].length).replace(/^\r?\n/, '');
+    return { intent, found: true, rest };
+  >>>

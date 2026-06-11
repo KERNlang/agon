@@ -567,6 +567,53 @@ export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch,
   }
 }
 
+/**
+ * Render the loaded CC-parity allow/deny permission rules, their source scope file, and which scope wins. Mirrors Claude Code's /permissions inspection. deny ALWAYS wins over allow.
+ */
+export function handlePermissions(dispatch: Dispatch): void {
+  ensureAgonHome();
+  const cwd = process.cwd();
+  const readJsonSafe = (path: string): any => {
+    try { return JSON.parse(readFileSync(path, 'utf-8')); }
+    catch { return null; }
+  };
+  const globalPath = join(getAgonHome(), 'config.json');
+  const projectPath = join(cwd, '.agon.json');
+  const localPath = join(cwd, '.agon.local.json');
+  const scopes: Array<{ label: string; path: string; raw: any }> = [
+    { label: 'global', path: globalPath, raw: readJsonSafe(globalPath) },
+    { label: 'project', path: projectPath, raw: readJsonSafe(projectPath) },
+    { label: 'local', path: localPath, raw: readJsonSafe(localPath) },
+  ];
+
+  dispatch({ type: 'header', title: 'Permission Rules' });
+  dispatch({ type: 'text', content: 'Claude-Code-style allow/deny rules in .agon.json. deny ALWAYS wins over allow; an allow rule auto-approves, a deny rule refuses without prompting, everything else falls through to the normal ask flow.' });
+
+  const rows: string[][] = [];
+  for (const scope of scopes) {
+    const p = scope.raw?.permissions;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) {
+      rows.push([scope.label, scope.path, '—', '—']);
+      continue;
+    }
+    const allow = Array.isArray(p.allow) ? p.allow.filter((x: unknown) => typeof x === 'string') : [];
+    const deny = Array.isArray(p.deny) ? p.deny.filter((x: unknown) => typeof x === 'string') : [];
+    rows.push([scope.label, scope.path, deny.length ? deny.join(', ') : '—', allow.length ? allow.join(', ') : '—']);
+  }
+  dispatch({ type: 'table', headers: ['Scope', 'File', 'Deny (wins)', 'Allow'], rows });
+
+  // Effective merged set (what the gate actually consults).
+  const cfg = loadConfig(cwd);
+  const eff = (cfg as any).permissions ?? { allow: [], deny: [] };
+  const effAllow: string[] = Array.isArray(eff.allow) ? eff.allow : [];
+  const effDeny: string[] = Array.isArray(eff.deny) ? eff.deny : [];
+  if (effAllow.length === 0 && effDeny.length === 0) {
+    dispatch({ type: 'info', message: 'No permission rules configured. Add a "permissions" block with allow/deny arrays to .agon.json, e.g. { "permissions": { "allow": ["Bash(npm test:*)"], "deny": ["Bash(rm:*)"] } }' });
+  } else {
+    dispatch({ type: 'text', content: `Effective (all scopes merged): ${effDeny.length} deny, ${effAllow.length} allow. Deny rules take precedence.` });
+  }
+}
+
 export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerContext, setSessionEngines: (engines:string[]|null)=>void): void {
   if (engineIds.length === 0 || engineIds.length === 1 && engineIds[0] === 'all') {
     setSessionEngines(null);

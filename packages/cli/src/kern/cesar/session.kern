@@ -5,7 +5,7 @@ import from="node:fs" names="mkdirSync"
 import from="node:url" names="fileURLToPath,pathToFileURL"
 import from="node:module" names="createRequire"
 import from="@kernlang/agon-core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES,parsePermissionRuleSet,evaluatePermissionRules"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./tools.js" names="createCesarToolRegistry"
@@ -717,6 +717,15 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
       const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob' };
       const agonTool = toolMap[tool.toLowerCase()] ?? tool;
       const perm = perms[agonTool];
+      // CC-parity allow/deny rules (.agon.json permissions). For Bash the
+      // rule command is the shell command; for file tools it is the path
+      // argument (path-prefix rules supported via Edit(path:*)); a bare
+      // tool rule (Edit/Write) matches any invocation. deny ALWAYS wins.
+      const ruleSet = parsePermissionRuleSet((cfg as any).permissions);
+      const ruleArg = agonTool === 'Bash'
+        ? command
+        : String((approvalArgsFromCommand(agonTool, command) as any)?.file_path ?? '');
+      const ruleDecision = evaluatePermissionRules(agonTool, ruleArg, ruleSet);
       const turnId = ctx.cesar?.turnId;
       const cwd = resolveWorkingDir();
       const logApproval = (decision: 'approved'|'denied'|'prompted'|'blocked', source: string, reason?: string, args?: Record<string, unknown> | string) => {
@@ -806,10 +815,22 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
         }
       }
 
+      // CC-parity deny rule → refuse without prompting (deny ALWAYS wins).
+      if (ruleDecision === 'deny') {
+        logApproval('denied', 'settings.permissions', `${agonTool} denied by permissions rule`);
+        return `DENIED: ${agonTool}${agonTool === 'Bash' ? ` (${command})` : ''} is blocked by a deny rule in .agon.json permissions. Do not retry this — choose a different approach or ask the user to amend the rule.`;
+      }
+
       // deny → block immediately
       if (perm === 'deny' || mode === 'deny-all') {
         logApproval('denied', perm === 'deny' ? 'settings.toolPermissions' : 'settings.permissionMode', perm === 'deny' ? `${agonTool} denied in settings` : 'permissionMode=deny-all');
         return false;
+      }
+
+      // CC-parity allow rule → auto-approve without prompting.
+      if (ruleDecision === 'allow') {
+        logApproval('approved', 'settings.permissions', `${agonTool} allowed by permissions rule`);
+        return true;
       }
 
       // Cesar self-turn fast path: bounded edits/writes on files already read

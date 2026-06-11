@@ -14,7 +14,7 @@ import { createRequire } from 'node:module';
 
 import type { PersistentSession, PersistentSessionConfig } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, parsePermissionRuleSet, evaluatePermissionRules } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -753,6 +753,15 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob' };
     const agonTool = toolMap[tool.toLowerCase()] ?? tool;
     const perm = perms[agonTool];
+    // CC-parity allow/deny rules (.agon.json permissions). For Bash the
+    // rule command is the shell command; for file tools it is the path
+    // argument (path-prefix rules supported via Edit(path:*)); a bare
+    // tool rule (Edit/Write) matches any invocation. deny ALWAYS wins.
+    const ruleSet = parsePermissionRuleSet((cfg as any).permissions);
+    const ruleArg = agonTool === 'Bash'
+      ? command
+      : String((approvalArgsFromCommand(agonTool, command) as any)?.file_path ?? '');
+    const ruleDecision = evaluatePermissionRules(agonTool, ruleArg, ruleSet);
     const turnId = ctx.cesar?.turnId;
     const cwd = resolveWorkingDir();
     const logApproval = (decision: 'approved'|'denied'|'prompted'|'blocked', source: string, reason?: string, args?: Record<string, unknown> | string) => {
@@ -842,10 +851,22 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
       }
     }
 
+    // CC-parity deny rule → refuse without prompting (deny ALWAYS wins).
+    if (ruleDecision === 'deny') {
+      logApproval('denied', 'settings.permissions', `${agonTool} denied by permissions rule`);
+      return `DENIED: ${agonTool}${agonTool === 'Bash' ? ` (${command})` : ''} is blocked by a deny rule in .agon.json permissions. Do not retry this — choose a different approach or ask the user to amend the rule.`;
+    }
+
     // deny → block immediately
     if (perm === 'deny' || mode === 'deny-all') {
       logApproval('denied', perm === 'deny' ? 'settings.toolPermissions' : 'settings.permissionMode', perm === 'deny' ? `${agonTool} denied in settings` : 'permissionMode=deny-all');
       return false;
+    }
+
+    // CC-parity allow rule → auto-approve without prompting.
+    if (ruleDecision === 'allow') {
+      logApproval('approved', 'settings.permissions', `${agonTool} allowed by permissions rule`);
+      return true;
     }
 
     // Cesar self-turn fast path: bounded edits/writes on files already read
@@ -923,7 +944,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:890
+// @kern-source: session:911
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -957,7 +978,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:924
+// @kern-source: session:945
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -981,7 +1002,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:948
+// @kern-source: session:969
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -993,7 +1014,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:955
+// @kern-source: session:976
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -1013,7 +1034,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
-// @kern-source: session:973
+// @kern-source: session:994
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
   const raw = fromUrl ?? import.meta.url;
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
@@ -1047,7 +1068,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:1005
+// @kern-source: session:1026
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1072,7 +1093,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1031
+// @kern-source: session:1052
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

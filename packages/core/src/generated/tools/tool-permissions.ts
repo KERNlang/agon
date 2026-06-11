@@ -183,3 +183,120 @@ export function checkFileWritePermission(filePath: string, ctx: ToolContext): Pe
   }
   return { behavior: 'ask', message: `Write file outside workspace: ${writeResolved}` };
 }
+
+
+// @kern-source: tool-permissions:174
+export interface ParsedPermissionRule {
+  tool: string;
+  command?: string;
+  prefix: boolean;
+}
+
+// @kern-source: tool-permissions:179
+export interface PermissionRuleSet {
+  allow: ParsedPermissionRule[];
+  deny: ParsedPermissionRule[];
+}
+
+// @kern-source: tool-permissions:183
+export const _warnedMalformedRules: Set<string> = new Set();
+
+// ── Module: PermissionRules ──
+
+/**
+ * Parse a single Claude-Code-style rule string into {tool, command?, prefix}. Returns null for malformed input. e.g. 'Bash(npm test:*)' → {tool:'Bash', command:'npm test', prefix:true}; 'Edit' → {tool:'Edit', prefix:false}.
+ */
+export function parsePermissionRule(raw: unknown): ParsedPermissionRule|null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  // Tool(arg) form
+  const paren = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)\((.*)\)$/);
+  if (paren) {
+    const tool = paren[1];
+    let arg = paren[2].trim();
+    if (arg.length === 0) {
+      // Tool() — empty arg, treat as tool-level
+      return { tool, prefix: false };
+    }
+    const prefix = arg.endsWith(':*');
+    if (prefix) arg = arg.slice(0, -2).trim();
+    if (arg.length === 0) {
+      // 'Bash(:*)' — degenerate; ignore
+      return null;
+    }
+    return { tool, command: arg, prefix };
+  }
+  // Bare tool form: 'Edit', 'Write', 'Read'
+  if (/^[A-Za-z][A-Za-z0-9_-]*$/.test(trimmed)) {
+    return { tool: trimmed, prefix: false };
+  }
+  return null;
+}
+
+/**
+ * Normalize a raw permissions object into parsed allow/deny rule sets. Fail-safe: any malformed entry is skipped (warned once); a non-object input yields empty sets. Never throws.
+ */
+export function parsePermissionRuleSet(raw: unknown): PermissionRuleSet {
+  const empty: PermissionRuleSet = { allow: [], deny: [] };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty;
+  const r = raw as Record<string, unknown>;
+  const parseList = (list: unknown, kind: string): ParsedPermissionRule[] => {
+    if (!Array.isArray(list)) {
+      if (list !== undefined) {
+        const key = `list:${kind}`;
+        if (!_warnedMalformedRules.has(key)) {
+          _warnedMalformedRules.add(key);
+          console.warn(`[agon] warning: permissions.${kind} is not an array — ignoring`);
+        }
+      }
+      return [];
+    }
+    const out: ParsedPermissionRule[] = [];
+    for (const entry of list) {
+      const parsed = parsePermissionRule(entry);
+      if (parsed) {
+        out.push(parsed);
+      } else {
+        const key = `rule:${String(entry)}`;
+        if (!_warnedMalformedRules.has(key)) {
+          _warnedMalformedRules.add(key);
+          console.warn(`[agon] warning: ignoring malformed permission rule: ${JSON.stringify(entry)}`);
+        }
+      }
+    }
+    return out;
+  };
+  return { allow: parseList(r.allow, 'allow'), deny: parseList(r.deny, 'deny') };
+}
+
+/**
+ * Does a parsed rule match a (tool, command) pair? Tool name match is case-sensitive (CC uses exact tool names). A rule with no command is tool-level (matches any invocation of that tool). A prefix rule (':*' suffix) matches when the command starts with the rule command on a word boundary; a non-prefix command rule matches exactly. Bash prefix 'npm test' matches 'npm test -- --filter x' but NOT 'npm testify'.
+ */
+export function ruleMatches(rule: ParsedPermissionRule, tool: string, command: string): boolean {
+  if (rule.tool !== tool) return false;
+  // Tool-level rule (no command) matches any invocation of the tool.
+  if (rule.command === undefined) return true;
+  const cmd = command.trim();
+  const ruleCmd = rule.command.trim();
+  if (ruleCmd.length === 0) return false;
+  if (rule.prefix) {
+    // Prefix match on a word boundary: 'npm test' matches 'npm test'
+    // and 'npm test -- x' but not 'npm testify'.
+    return cmd === ruleCmd || cmd.startsWith(ruleCmd + ' ');
+  }
+  return cmd === ruleCmd;
+}
+
+/**
+ * Evaluate parsed allow/deny rule sets against a (tool, command). Returns 'deny' if ANY deny rule matches (deny always wins), else 'allow' if any allow rule matches, else null (fall through to normal ask flow).
+ */
+export function evaluatePermissionRules(tool: string, command: string, rules: PermissionRuleSet): 'allow'|'deny'|null {
+  for (const rule of rules.deny) {
+    if (ruleMatches(rule, tool, command)) return 'deny';
+  }
+  for (const rule of rules.allow) {
+    if (ruleMatches(rule, tool, command)) return 'allow';
+  }
+  return null;
+}

@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@kernlang/agon-core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, hasProjectBrief } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, hasProjectBrief, parsePermissionRuleSet, evaluatePermissionRules } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -650,6 +650,24 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   input: reqArgs,
                 });
               };
+              // CC-parity allow/deny rules (.agon.json permissions) — deny ALWAYS
+              // wins and refuses without prompting; allow auto-approves; neither
+              // falls through to allowedCommands / self-turn / UI prompt.
+              const mcpRuleSet = parsePermissionRuleSet((cfg as any).permissions);
+              const mcpRuleArg = reqTool === 'Bash'
+                ? String(req.args?.command ?? '')
+                : String(req.args?.file_path ?? '');
+              const mcpRuleDecision = evaluatePermissionRules(reqTool, mcpRuleArg, mcpRuleSet);
+              if (mcpRuleDecision === 'deny') {
+                logMcpApproval('denied', 'settings.permissions', `${reqTool} denied by permissions rule`);
+                writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: false, reason: `${reqTool} blocked by deny rule in .agon.json permissions` }));
+                continue;
+              }
+              if (mcpRuleDecision === 'allow') {
+                logMcpApproval('approved', 'settings.permissions', `${reqTool} allowed by permissions rule`);
+                writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: true }));
+                continue;
+              }
               if (cmdBase && allowed.some((a: string) => cmdBase.toLowerCase().startsWith(a.toLowerCase()))) {
                 logMcpApproval('approved', 'mcp.allowedCommands', 'command matched allowedCommands');
                 writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: true }));

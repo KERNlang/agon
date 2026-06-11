@@ -285,6 +285,8 @@ config name=AgonConfig
   field name=permissionMode type="'auto'|'smart'|'ask'|'deny-all'" default=smart
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
+  field name=permissions type="{allow?:string[],deny?:string[]}" optional=true
+    doc "Claude-Code-parity allow/deny rule strings honored by the approval gate. Rules look like `Bash(npm test:*)`, `Bash(git diff:*)`, `Edit`, `Write`, `Read`. `deny` ALWAYS wins over `allow`: a deny rule refuses without prompting, an allow rule auto-approves the matching ask, everything else falls through to the normal ask flow. Project scope lives in .agon.json (committable); personal overrides in .agon.local.json (gitignored). Malformed rules are ignored with a one-time warning, never block."
   field name=hiddenEngines type="string[]" optional=true
     doc "SOFT denylist (verb: /engines hide). Excluded from automatic rosters, rankings, batch selection and health-preflight candidates, but an explicit -e/--engines request for a hidden engine is still HONORED (with a warning). Use for engines you usually don't want but occasionally A/B-test."
   field name=removedEngines type="string[]" optional=true

@@ -20,7 +20,7 @@ export const APPROVAL_DIFF_MAX_CONTENT_CHARS: number = 262144;
 // @kern-source: approval-diff:25
 export function approvalToolIsFileMutating(tool: unknown): boolean {
   const key = String(tool ?? '').toLowerCase();
-  return key === 'edit' || key === 'write' || key === 'agonedit' || key === 'agonwrite';
+  return key === 'edit' || key === 'write' || key === 'agonedit' || key === 'agonwrite' || key === 'multiedit' || key === 'agonmultiedit';
 }
 
 /**
@@ -151,6 +151,44 @@ export function buildApprovalDiffPreview(tool: string, args: Record<string,unkno
     newContent = searchStr
       ? (replaceAll ? baseContent.split(searchStr).join(newStr) : baseContent.replace(searchStr, newStr))
       : baseContent;
+  } else if (key === 'multiedit' || key === 'agonmultiedit') {
+    const edits = Array.isArray((args as any)?.edits) ? (args as any).edits : null;
+    if (!edits || edits.length === 0) return null;
+    if (!existsSync(filePath)) return null;
+    try {
+      const st = statSync(filePath);
+      if (st.size > APPROVAL_DIFF_MAX_FILE_BYTES) {
+        return { fallback: `file is ${Math.round(st.size / 1024)}KB — diff hidden` };
+      }
+      oldContent = readFileSync(filePath, 'utf-8');
+    } catch {
+      return null;
+    }
+    // Fold the batch sequentially (mirror tool-multi-edit.kern): exact match,
+    // else a curly-quote-normalized view. If any edit would not apply, show a
+    // fallback note rather than a misleading partial diff.
+    let working = oldContent;
+    let failed = false;
+    for (let i = 0; i < edits.length; i++) {
+      const e = (edits[i] ?? {}) as Record<string, unknown>;
+      const oldStr2 = typeof e.old_string === 'string' ? e.old_string : '';
+      const newStr2 = typeof e.new_string === 'string' ? e.new_string : '';
+      const replaceAll2 = e.replace_all === true;
+      if (oldStr2 === '') { failed = true; break; }
+      let search2 = oldStr2;
+      let base2 = working;
+      if (!base2.includes(search2)) {
+        const nb = normalizeCurlyQuotes(base2);
+        const ns = normalizeCurlyQuotes(oldStr2);
+        if (nb.includes(ns)) { base2 = nb; search2 = ns; }
+        else { failed = true; break; }
+      }
+      if (!replaceAll2 && countOccurrences(base2, search2) > 1) { failed = true; break; }
+      working = replaceAll2 ? base2.split(search2).join(newStr2) : base2.replace(search2, newStr2);
+    }
+    if (failed) return { fallback: 'one or more edits will not apply — see prompt' };
+    status = 'edited';
+    newContent = working;
   } else {
     return null;
   }
@@ -179,7 +217,7 @@ export function buildApprovalDiffPreview(tool: string, args: Record<string,unkno
 /**
  * Produce one recap-shaped diff-preview file entry: a minimal LCS line diff rendered as +/- lines with a leading @@ hunk marker, capped to maxLines (and maxTotal as the hard ceiling). additions/deletions count the full diff; omitted reports how many interesting lines were dropped past the cap.
  */
-// @kern-source: approval-diff:174
+// @kern-source: approval-diff:212
 export function computeFileDiffPreview(path: string, relPath: string, status: string, oldContent: string, newContent: string, maxLines: number, maxTotal: number): any {
   const oldAll = oldContent.length === 0 ? [] : oldContent.replace(/\n$/, '').split('\n');
   const newAll = newContent.length === 0 ? [] : newContent.replace(/\n$/, '').split('\n');
@@ -291,7 +329,7 @@ export function computeFileDiffPreview(path: string, relPath: string, status: st
 /**
  * Single-line truncation for a diff body line (no leading +/- marker).
  */
-// @kern-source: approval-diff:284
+// @kern-source: approval-diff:322
 export function truncateDiffLine(line: string, max: number): string {
   const text = String(line ?? '').replace(/\t/g, '  ');
   if (text.length <= max) {

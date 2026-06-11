@@ -423,13 +423,19 @@ export function renderToolPermissionCommand(tool: string, args: unknown): string
   if (tool === 'SaveMemory') {
     return `[${String(a.section ?? '')}] ${String(a.memory ?? '')}`.trim();
   }
+  // MultiEdit carries an `edits` array, not old/new strings — render the full
+  // JSON so the command-string approval seam can JSON-parse the edits back
+  // (approvalArgsFromCommand) for self-turn approval + the diff preview.
+  if (tool === 'MultiEdit') {
+    return JSON.stringify(args ?? {});
+  }
   return String(a.command ?? a.file_path ?? JSON.stringify(args ?? {}));
 }
 
 /**
  * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched.
  */
-// @kern-source: session:404
+// @kern-source: session:410
 export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const directHistory = session?.getMessageHistory?.() ?? [];
   if (directHistory.length > 0) {
@@ -462,7 +468,7 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
 /**
  * Persist the active Cesar conversation before the session is discarded.
  */
-// @kern-source: session:429
+// @kern-source: session:435
 export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
   if (!session) return;
   const snapshot = buildCesarConversationSnapshot(session, chatSession);
@@ -477,7 +483,7 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
-// @kern-source: session:442
+// @kern-source: session:448
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -510,7 +516,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     // they can open a permission prompt that captures "go"/"yes".
     const activePlan = ctx.activePlan;
     if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
-      const BLOCKED_IN_PLAN = ['Forge', 'Pipeline', 'Agent', 'Goal', 'Edit', 'Write'];
+      const BLOCKED_IN_PLAN = ['Forge', 'Pipeline', 'Agent', 'Goal', 'Edit', 'Write', 'MultiEdit'];
       if (BLOCKED_IN_PLAN.includes(name)) {
         return `[BLOCKED] Tool "${name}" is not available in plan mode. Use ProposePlan to propose your execution strategy.`;
       }
@@ -794,7 +800,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     // Cache read-only results. Invalidate on writes.
     if (CACHEABLE_TOOLS.has(name)) {
       toolResultCache.set(cacheKey, output);
-    } else if (['Edit', 'Write', 'Bash'].includes(name)) {
+    } else if (['Edit', 'Write', 'MultiEdit', 'Bash'].includes(name)) {
       toolResultCache.clear();
       ctx.cesar!.blockedOnConfidence = null;
     }
@@ -817,7 +823,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:780
+// @kern-source: session:786
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -827,7 +833,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     const mode = (cfg as any).permissionMode ?? 'ask';
 
     // Map engine tool names to Agon tool names
-    const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob' };
+    const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', multiedit: 'MultiEdit', read: 'Read', grep: 'Grep', glob: 'Glob' };
     const agonTool = toolMap[tool.toLowerCase()] ?? tool;
     const perm = perms[agonTool];
     // CC-parity allow/deny rules (.agon.json permissions). For Bash the
@@ -877,7 +883,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
 
     // Block writes during exploration mode
     if (ctx.explorationMode) {
-      const WRITE_TOOLS = ['Edit', 'Write', 'Bash'];
+      const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'Bash'];
       if (WRITE_TOOLS.includes(agonTool)) {
         logApproval('blocked', 'policy.exploration', 'exploration mode is read-only');
         return 'BLOCKED: Exploration mode is read-only. Use Read, Grep, Glob tools only. Do not narrate around this. Either keep investigating, or wait for the user to disable exploration mode before retrying the same tool.';
@@ -896,7 +902,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
         logApproval('blocked', 'policy.plan-mode', 'plan mode blocks mutating Bash');
         return 'BLOCKED: Plan mode — mutating Bash is not allowed before approval. Use Read/Grep/Glob or read-only Bash for investigation, call ProposePlan, then wait for the user to type go/yes before retrying this command.';
       }
-      const WRITE_TOOLS = ['Edit', 'Write'];
+      const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit'];
       if (WRITE_TOOLS.includes(agonTool)) {
         logApproval('blocked', 'policy.plan-mode', 'plan mode blocks file writes');
         return 'BLOCKED: Plan mode — no code changes allowed. Call ProposePlan with the execution plan now, then wait for approval before retrying the same tool. Do not narrate instead of acting.';
@@ -915,7 +921,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     // R1 enforcement for companion engines: block file writes until confidence is reported
     // Bash commands flow through to the normal permission UI — user's settings.json controls approval
     if (!ctx.cesar!.confidenceSatisfied) {
-      const WRITE_TOOLS = ['Edit', 'Write'];
+      const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit'];
       if (WRITE_TOOLS.includes(agonTool)) {
         const blocks = (ctx.cesar!.confidenceBlockCount ?? 0) + 1;
         ctx.cesar!.confidenceBlockCount = blocks;
@@ -952,7 +958,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     // in the project cache do not need to interrupt the stream for another
     // Y/N prompt. This intentionally runs after exploration/plan/confidence
     // gates and explicit denies, and before the generic ask-mode fallback.
-    if (agonTool === 'Edit' || agonTool === 'Write') {
+    if (agonTool === 'Edit' || agonTool === 'Write' || agonTool === 'MultiEdit') {
       const approvalCwd = resolveWorkingDir();
       const approvalCache = getProjectFileStateCache(approvalCwd);
       const approvalArgs = approvalArgsFromCommand(agonTool, command);
@@ -1030,7 +1036,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:994
+// @kern-source: session:1000
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -1064,7 +1070,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:1028
+// @kern-source: session:1034
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -1088,7 +1094,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:1052
+// @kern-source: session:1058
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -1100,7 +1106,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:1059
+// @kern-source: session:1065
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -1120,7 +1126,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
-// @kern-source: session:1077
+// @kern-source: session:1083
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
   const raw = fromUrl ?? import.meta.url;
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
@@ -1154,7 +1160,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:1109
+// @kern-source: session:1115
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1179,7 +1185,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1135
+// @kern-source: session:1141
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

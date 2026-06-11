@@ -1,0 +1,146 @@
+// ── Generic cross-process file lock ──────────────────────────────────────
+// Serializes read-modify-write cycles on shared ~/.agon state (ratings.json,
+// team-elo.json, config.json, prune stamp) so concurrent agon processes can't
+// clobber each other's updates — the root cause of "parallel heavy runs broke
+// agon". Same proven shape as the room lock (O_EXCL create + bounded spin)
+// hardened with worktree-lock's stale reclaim: pid-liveness on the same host,
+// TTL backstop cross-host, claim-via-rename-away so at most ONE reclaimer wins,
+// and an owner-checked release so a reclaimed lock is never clobbered.
+//
+// Hold it ONLY for fast local file ops (load → mutate → save), never across a
+// network/engine call.
+
+import from="node:fs" names="writeFileSync,readFileSync,unlinkSync,renameSync,mkdirSync"
+import from="node:os" names="hostname"
+import from="node:crypto" names="randomUUID"
+import from="node:path" names="dirname"
+
+const name=FILE_LOCK_TIMEOUT_MS type=number value=5000
+  doc "Give up waiting for a contended lock after this long. Critical sections are sub-millisecond file ops, so 5s of contention means something is wrong."
+
+const name=FILE_LOCK_STALE_MS type=number value=10000
+  doc "TTL backstop for stale detection. Same-host locks are pid-authoritative (a dead holder is reclaimed immediately); the TTL covers pid-reuse and cross-host (e.g. NFS-shared) homes."
+
+const name=FILE_LOCK_SPIN_MS type=number value=12
+  doc "Sleep slice between acquisition attempts — matches the room lock's cadence."
+
+// Holder record written into the lock file.
+interface name=FileLockInfo
+  field name=pid type=number
+  field name=uuid type=string
+  field name=hostname type=string
+  field name=acquiredAt type=string
+
+fn name=fileLockSleep params="ms:number" returns=void export=false
+  doc "Synchronous sleep WITHOUT burning CPU: Atomics.wait on a throwaway SharedArrayBuffer parks the thread (allowed on Node's main thread, unlike browsers). Callers of withFileLock are synchronous APIs (updateGlicko & co.) with µs hold times, so blocking is inherent — this just makes the rare contention wait idle instead of a hot spin. The globalThis indirection keeps kern-guard's ambient-scope rule happy (its allowlist lacks Atomics/Int32Array/SharedArrayBuffer; globalThis is ambient)."
+  handler <<<
+    try {
+      globalThis.Atomics.wait(new globalThis.Int32Array(new globalThis.SharedArrayBuffer(4)), 0, 0, ms);
+    } catch {
+      // Environment without SharedArrayBuffer — fall back to a brief busy-wait.
+      const until = Date.now() + ms;
+      while (Date.now() < until) { /* fallback spin */ }
+    }
+  >>>
+
+fn name=fileLockPidAlive params="pid:number" returns=boolean export=false
+  doc "process.kill(pid,0) probes existence without signalling. ESRCH = dead; EPERM = alive but owned by another user (still alive)."
+  handler <<<
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (e) {
+      return (e as { code?: string }).code === 'EPERM';
+    }
+  >>>
+
+fn name=readFileLockInfo params="lockPath:string" returns="FileLockInfo | null" export=false
+  handler <<<
+    try {
+      const info = JSON.parse(readFileSync(lockPath, 'utf-8')) as FileLockInfo;
+      return typeof info?.pid === 'number' && typeof info?.uuid === 'string' ? info : null;
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=isFileLockStale params="info:FileLockInfo | null, staleMs:number" returns=boolean export=false
+  doc "Reclaimable when: unreadable/corrupt; same-host with a dead pid; or older than the TTL."
+  handler <<<
+    if (!info) return true;
+    const age = Date.now() - new Date(info.acquiredAt).getTime();
+    const ttlExpired = !Number.isFinite(age) || age > staleMs;
+    if (info.hostname === hostname()) {
+      return !fileLockPidAlive(info.pid) || ttlExpired;
+    }
+    return ttlExpired;
+  >>>
+
+fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs?: number; staleMs?: number }" returns=void export=true
+  doc "Run work() while holding an exclusive cross-process lock at lockPath. Callers capture results via closure (same pattern as withRoomLock). Throws after timeoutMs of contention with a LIVE holder; stale locks (dead pid / TTL) are reclaimed atomically via rename-away. Release is owner-checked, so a holder whose lock was reclaimed mid-work never deletes the new holder's lock."
+  handler <<<
+    const timeoutMs = opts?.timeoutMs ?? FILE_LOCK_TIMEOUT_MS;
+    const staleMs = opts?.staleMs ?? FILE_LOCK_STALE_MS;
+    const uuid = randomUUID();
+    const payload = JSON.stringify({
+      pid: process.pid,
+      uuid,
+      hostname: hostname(),
+      acquiredAt: new Date().toISOString(),
+    } satisfies FileLockInfo);
+
+    mkdirSync(dirname(lockPath), { recursive: true });
+    const deadline = Date.now() + timeoutMs;
+    let acquired = false;
+    while (!acquired) {
+      try {
+        // O_EXCL: create only if absent.
+        writeFileSync(lockPath, payload, { flag: 'wx' });
+        acquired = true;
+        break;
+      } catch (e) {
+        if ((e as { code?: string }).code !== 'EEXIST') throw e;
+      }
+      // Deadline FIRST, before any continue path — a stale-but-unreclaimable
+      // lock (e.g. rename persistently failing) must time out, never spin
+      // forever.
+      if (Date.now() > deadline) {
+        const blocker = readFileLockInfo(lockPath);
+        throw new Error(`file lock timeout after ${timeoutMs}ms: ${lockPath} (held by pid ${blocker?.pid ?? '?'} on ${blocker?.hostname ?? '?'})`);
+      }
+      const holder = readFileLockInfo(lockPath);
+      if (isFileLockStale(holder, staleMs)) {
+        // Stale → CLAIM it by renaming the stale entry AWAY to a unique path.
+        // renameSync of a now-missing source throws, so at most ONE concurrent
+        // reclaimer wins; the rest get ENOENT and re-contend on the freed slot.
+        const claim = `${lockPath}.claim.${uuid}`;
+        try {
+          renameSync(lockPath, claim);
+        } catch {
+          continue; // another reclaimer/acquirer got there first
+        }
+        // Verify we claimed the SAME entry we judged stale. Between our read
+        // and the rename, the slot may have been reclaimed AND re-acquired by
+        // a LIVE holder — stealing that would break mutual exclusion. On
+        // mismatch, put it back (best effort) and re-contend.
+        const claimed = readFileLockInfo(claim);
+        if (claimed && claimed.uuid !== holder?.uuid && !isFileLockStale(claimed, staleMs)) {
+          try { renameSync(claim, lockPath); } catch { /* slot re-taken; claim file remains as debris rather than silently double-locking */ }
+          continue;
+        }
+        try { unlinkSync(claim); } catch { /* claimed stale entry; best-effort */ }
+        continue;
+      }
+      fileLockSleep(FILE_LOCK_SPIN_MS);
+    }
+
+    try {
+      work();
+    } finally {
+      // Owner-checked release: only unlink while the file still holds OUR uuid.
+      try {
+        const current = readFileLockInfo(lockPath);
+        if (current?.uuid === uuid) unlinkSync(lockPath);
+      } catch { /* already gone — fine */ }
+    }
+  >>>

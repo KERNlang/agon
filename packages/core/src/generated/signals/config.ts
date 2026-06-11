@@ -12,10 +12,12 @@ import { DEFAULT_AGON_CONFIG } from '../models/types.js';
 
 import { ConfigError } from '../models/errors.js';
 
+import { withFileLock } from '../blocks/file-lock.js';
+
 /**
  * Resolve Agon's storage root at runtime. AGON_HOME overrides ~/.agon and is primarily used for test isolation and sandbox-safe runs.
  */
-// @kern-source: config:8
+// @kern-source: config:9
 export function getAgonHome(): string {
   const override = process.env.AGON_HOME?.trim();
   return override ? resolve(override) : join(homedir(), '.agon');
@@ -24,48 +26,48 @@ export function getAgonHome(): string {
 /**
  * Build a path inside the active Agon storage root.
  */
-// @kern-source: config:15
+// @kern-source: config:16
 export function agonPath(...parts: string[]): string {
   return join(getAgonHome(), ...parts);
 }
 
-// @kern-source: config:18
+// @kern-source: config:19
 export const AGON_HOME: string = getAgonHome();
 
-// @kern-source: config:20
+// @kern-source: config:21
 export const GLOBAL_CONFIG_PATH: string = join(AGON_HOME, 'config.json');
 
-// @kern-source: config:22
+// @kern-source: config:23
 export const ELO_PATH: string = join(AGON_HOME, 'elo.json');
 
-// @kern-source: config:24
+// @kern-source: config:25
 export const RUNS_DIR: string = join(AGON_HOME, 'runs');
 
-// @kern-source: config:26
+// @kern-source: config:27
 export const RATINGS_PATH: string = join(AGON_HOME, 'ratings.json');
 
-// @kern-source: config:28
+// @kern-source: config:29
 export const TEAM_ELO_PATH: string = join(AGON_HOME, 'team-elo.json');
 
-// @kern-source: config:30
+// @kern-source: config:31
 export const CORPUS_PATH: string = join(AGON_HOME, 'corpus.json');
 
-// @kern-source: config:32
+// @kern-source: config:33
 export const SKILLS_DIR: string = join(AGON_HOME, 'skills');
 
-// @kern-source: config:34
+// @kern-source: config:35
 export const RUN_PRUNE_KEEP_COUNT: number = 100;
 
-// @kern-source: config:36
+// @kern-source: config:37
 export const RUN_PRUNE_MIN_AGE_MS: number = 24 * 60 * 60 * 1000;
 
-// @kern-source: config:38
+// @kern-source: config:39
 export const LOCAL_CONFIG_NAME: string = '.agon.json';
 
-// @kern-source: config:40
+// @kern-source: config:41
 export const LOCAL_PRIVATE_CONFIG_NAME: string = '.agon.local.json';
 
-// @kern-source: config:42
+// @kern-source: config:43
 export function loadConfig(cwd?: string): Required<AgonConfig> {
   function readJsonSafe<T>(path: string): T | null {
     try { return JSON.parse(readFileSync(path, 'utf-8')) as T; }
@@ -132,12 +134,12 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   return merged;
 }
 
-// @kern-source: config:109
+// @kern-source: config:110
 export function configGet(key: keyof AgonConfig, cwd?: string): Required<AgonConfig>[keyof AgonConfig] {
   return loadConfig(cwd)[key];
 }
 
-// @kern-source: config:111
+// @kern-source: config:112
 export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonConfig]): void {
   if (!(key in DEFAULT_AGON_CONFIG)) {
     throw new ConfigError(`Unknown config key: ${String(key)}`);
@@ -152,19 +154,24 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
     }
   }
   // Review #10: dynamic path lookup so env override in tests is respected.
+  // The read-modify-write runs under the cross-process lock — two concurrent
+  // configSet calls (or one racing a heavy run's set) would otherwise lose
+  // whichever key the second writer didn't know about.
   const globalConfigPath = agonPath('config.json');
-  const existing = readJsonSafe<Partial<AgonConfig>>(globalConfigPath) ?? {};
-  (existing as any)[key] = value;
-  mkdirSync(dirname(globalConfigPath), { recursive: true });
-  const tmpPath = globalConfigPath + '.tmp';
-  writeFileSync(tmpPath, JSON.stringify(existing, null, 2) + '\n');
-  renameSync(tmpPath, globalConfigPath);
+  withFileLock(globalConfigPath + '.lock', () => {
+    const existing = readJsonSafe<Partial<AgonConfig>>(globalConfigPath) ?? {};
+    (existing as any)[key] = value;
+    mkdirSync(dirname(globalConfigPath), { recursive: true });
+    const tmpPath = globalConfigPath + '.tmp';
+    writeFileSync(tmpPath, JSON.stringify(existing, null, 2) + '\n');
+    renameSync(tmpPath, globalConfigPath);
+  });
 }
 
 /**
  * Remove stale run directories beyond retention limit. Fresh dirs are protected so active forge/plan worktrees are never deleted mid-run.
  */
-// @kern-source: config:135
+// @kern-source: config:141
 export function pruneRuns(): void {
   // Review #10: dynamic runs dir via agonPath() — otherwise the frozen
   // RUNS_DIR const would prune the real ~/.agon/runs even in tests that
@@ -193,7 +200,7 @@ export function pruneRuns(): void {
   } catch { /* dir doesn't exist yet — not critical */ }
 }
 
-// @kern-source: config:165
+// @kern-source: config:171
 export function ensureAgonHome(): void {
   mkdirSync(getAgonHome(), { recursive: true });
   mkdirSync(agonPath('runs'), { recursive: true });

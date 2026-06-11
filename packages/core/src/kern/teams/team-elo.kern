@@ -8,6 +8,7 @@ import from="../models/types.js" names="TaskClass" types=true
 import from="./team.js" names="TeamRole,TeamSpec,TeamMatchResult,TeamMember" types=true
 import from="./team.js" names="computeContributionWeights"
 import from="../signals/config.js" names="TEAM_ELO_PATH"
+import from="../blocks/file-lock.js" names="withFileLock"
 
 interface name=TeamCompositionRating
   field name=lineupKey type=string
@@ -95,12 +96,9 @@ fn name=predictTeamRating params="members:TeamMember[], format:string" returns=n
     return Math.round(blended);
   >>>
 
-fn name=updateTeamElo params="match:TeamMatchResult, kFactor?:number" returns=void
+fn name=applyTeamEloMatch params="record:TeamEloRecord, match:TeamMatchResult, k:number" returns=void export=false
+  doc "Apply one team match result to an in-memory record. Load/lock/save are the caller's job (mirrors applyGlickoPair)."
   handler <<<
-    if (!match.winnerTeamId) return; // draw — skip for now
-
-    const k = kFactor ?? 32;
-    const record = loadTeamElo();
     const formatKey = match.format.label;
     record.byFormat[formatKey] ??= { compositions: {}, roles: {} };
     const fmt = record.byFormat[formatKey];
@@ -158,6 +156,15 @@ fn name=updateTeamElo params="match:TeamMatchResult, kFactor?:number" returns=vo
       r.losses++;
       r.matches++;
     }
+  >>>
 
-    saveTeamElo(record);
+fn name=updateTeamElo params="match:TeamMatchResult, kFactor?:number" returns=void
+  doc "Apply a team match result. The whole read-modify-write runs under the cross-process lock so two concurrent team runs finishing together can't clobber each other's ELO updates."
+  handler <<<
+    if (!match.winnerTeamId) return; // draw — skip for now
+    withFileLock(TEAM_ELO_PATH + '.lock', () => {
+      const record = loadTeamElo();
+      applyTeamEloMatch(record, match, kFactor ?? 32);
+      saveTeamElo(record);
+    });
   >>>

@@ -6,7 +6,7 @@ import { readdir, stat, unlink } from 'node:fs/promises';
 
 import { join } from 'node:path';
 
-import { agonPath } from '@kernlang/agon-core';
+import { agonPath, withFileLock } from '@kernlang/agon-core';
 
 /**
  * Keep every run file newer than this regardless of count (7 days).
@@ -266,22 +266,29 @@ export class RunsStore {
     try {
       const force = opts?.force === true;
       const now = Date.now();
-      const lastPrune = readPruneStamp();
 
-      // Cooldown + soft cross-process lock: a recent stamp means a prune ran (or
-      // is running) within the cooldown window — skip. The stamp doubles as the
-      // lock because maybePrune() claims it (writes "now") before any deletion.
-      if (!force && lastPrune > 0 && now - lastPrune < RUN_PRUNE_COOLDOWN_MS) {
+      // Cooldown check + stamp claim run ATOMICALLY under the cross-process
+      // file lock — previously two processes could both read a cold stamp and
+      // both start scanning a 40k-file dir in lockstep. Claiming the stamp
+      // ("now") BEFORE scanning/deleting is deliberate (do not move it after
+      // the delete): the cooldown limits SCAN cost, so even a no-op scan
+      // should start the cooldown. Crash-mid-prune costs at most a 1h delay
+      // before the next attempt. A contended/wedged lock just skips this
+      // prune attempt — never throws into the background caller.
+      let claimed = false;
+      try {
+        withFileLock(pruneStampPath() + '.lock', () => {
+          const lastPrune = readPruneStamp();
+          if (!force && lastPrune > 0 && now - lastPrune < RUN_PRUNE_COOLDOWN_MS) return;
+          writePruneStamp(now);
+          claimed = true;
+        });
+      } catch {
+        return { deleted: 0, skipped: true, reason: 'lock-contended' };
+      }
+      if (!claimed) {
         return { deleted: 0, skipped: true, reason: 'cooldown' };
       }
-
-      // Claim the cross-process lock by stamping "now" BEFORE scanning/deleting.
-      // This is deliberate (do not move it after the delete): the stamp is the
-      // lock claim a concurrent PROCESS reads to back off, and the cooldown
-      // limits SCAN cost — so even a no-op scan should start the cooldown.
-      // Crash-mid-prune costs at most a 1h delay before the next attempt; that's
-      // strictly cheaper than letting N processes scan a 40k-file dir in lockstep.
-      writePruneStamp(now);
 
       const files = await listRunJsonFiles();
       const activeIds = Array.isArray(opts?.activeRunIds) ? opts!.activeRunIds! : [];
@@ -309,9 +316,13 @@ export class RunsStore {
       }
 
       // Re-stamp completion time and refresh the cached snapshot. Count-only:
-      // we just need the post-prune total, not mtimes.
+      // we just need the post-prune total, not mtimes. Stamp under the same
+      // lock as the claim so it can't clobber another process's claim (only
+      // reachable concurrently via force=true, but cheap to close).
       const finishedAt = Date.now();
-      writePruneStamp(finishedAt);
+      try {
+        withFileLock(pruneStampPath() + '.lock', () => writePruneStamp(finishedAt));
+      } catch { /* best effort — a missing completion stamp just shortens the next cooldown */ }
       const remaining = await countRunJsonFiles();
       this.snap = { count: remaining, hydratedAt: finishedAt };
 
@@ -329,5 +340,5 @@ export class RunsStore {
 /**
  * Process-wide RunsStore singleton. Import this from render + telemetry; never construct another.
  */
-// @kern-source: runs-store:319
+// @kern-source: runs-store:330
 export const runsStore = new RunsStore();

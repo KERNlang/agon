@@ -4,7 +4,7 @@
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,Static,render"
 import from="@kernlang/terminal/runtime" names="ScrollBox,AlternateScreen"
-import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,seedChatSessionFromThread,loadOrCreateActiveThread,getRatings,getActiveWorkspace,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,getAuthKey,setAuthKey,getAgonHome,tracker,planCostEstimator,listCesarPlans"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,seedChatSessionFromThread,loadOrCreateActiveThread,getRatings,getActiveWorkspace,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,getAuthKey,setAuthKey,getAgonHome,tracker,planCostEstimator,listCesarPlans,visionSupportNote"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@kernlang/agon-core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
@@ -403,6 +403,19 @@ screen name=App target=ink
   memo name=overlayActive deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent"
     handler lang="kern"
       return value="enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent || !!toolDetailEvent"
+
+  // Attach-time vision hint for the composer image chip: non-null while images
+  // are pending AND the current Cesar brain can't see them.
+  memo name=imageVisionNote deps="pendingImages, config, registry"
+    handler <<<
+      if (pendingImages.length === 0) return null;
+      try {
+        const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+        return visionSupportNote(registry.get(cesarId));
+      } catch {
+        return null;
+      }
+    >>>
 
   memo name=toolDetailView deps="toolDetailEvent, termWidth"
     handler lang="kern"
@@ -1736,6 +1749,7 @@ screen name=App target=ink
             updateChecking={updateChecking}
             questionState={questionState}
             pendingImages={pendingImages}
+            imageVisionNote={imageVisionNote}
             inputQueue={inputQueue}
             steeringCount={steeringCount}
             liveSpinner={liveSpinner}

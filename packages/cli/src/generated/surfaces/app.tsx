@@ -6,7 +6,7 @@ import { Box, Static, Text, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, getAgonHome, tracker, planCostEstimator, listCesarPlans } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, seedChatSessionFromThread, loadOrCreateActiveThread, getRatings, getActiveWorkspace, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, getAuthKey, setAuthKey, getAgonHome, tracker, planCostEstimator, listCesarPlans, visionSupportNote } from '@kernlang/agon-core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
@@ -684,6 +684,16 @@ export function App() {
   const overlayActive = useMemo(() => {
           return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !(!reviewEvent) || !(!toolDetailEvent);
   }, [enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent]);
+
+  const imageVisionNote = useMemo(() => {
+          if (pendingImages.length === 0) return null;
+          try {
+            const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+            return visionSupportNote(registry.get(cesarId));
+          } catch {
+            return null;
+          }
+  }, [pendingImages, config, registry]);
 
   const toolDetailView = useMemo(() => {
           return toolDetailEvent ? buildToolDetailView(toolDetailEvent) : null;
@@ -1932,6 +1942,7 @@ export function App() {
         updateChecking={updateChecking}
         questionState={questionState}
         pendingImages={pendingImages}
+        imageVisionNote={imageVisionNote}
         inputQueue={inputQueue}
         steeringCount={steeringCount}
         liveSpinner={liveSpinner}
@@ -2037,7 +2048,7 @@ export function App() {
 // @kern-source: app:92
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1842
+// @kern-source: app:1856
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

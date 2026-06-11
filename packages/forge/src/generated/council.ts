@@ -298,31 +298,47 @@ export async function runCouncil(opts: CouncilOptions): Promise<CouncilResult> {
   const sidechain = createSidechainLogger({ sessionId: councilId, sessionType: 'council', outputDir });
   sidechain.log('council:init', undefined, { question, chairmanId, chairmanReason, advisors: seats.map((s) => `${s.engineId}:${s.role}`) });
 
-  const dispatchText = async (engineId: string, prompt: string, sys: string, phase: string): Promise<{ text: string; ok: boolean }> => {
+  const dispatchTextOnce = async (engineId: string, prompt: string, sys: string, timeoutSec: number): Promise<{ text: string; ok: boolean; diag: string }> => {
     try {
       const engine = registry.get(engineId);
       const result: DispatchResult = await adapter.dispatch({
-        engine, prompt, systemPrompt: sys, cwd, mode: 'exec', timeout, outputDir, signal,
+        engine, prompt, systemPrompt: sys, cwd, mode: 'exec', timeout: timeoutSec, outputDir, signal,
       });
       const raw = String(result.stdout ?? '').trim();
       const cleaned = raw.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
       const dispatchOk = result.exitCode === 0 && !result.timedOut && cleaned.length > 0;
-      if (dispatchOk) return { text: cleaned, ok: true };
+      if (dispatchOk) return { text: cleaned, ok: true, diag: '' };
       // Not-ok reaches here on timeout, non-zero exit, OR a clean exit with no visible
       // output (e.g. an engine that emitted only <think>…</think>). Don't report the
       // last case as a bare "exit 0" — say "empty response" so the warning is honest.
       const diag = result.timedOut
         ? 'timed out'
         : (result.stderr?.trim() || (cleaned.length === 0 ? 'empty response (no visible output)' : `exit ${result.exitCode}`));
-      warnings.push(`${phase} (${engineId}) failed: ${diag}`);
-      opts.onEvent?.({ type: 'engine:failed', data: { engineId, phase, error: diag } });
-      return { text: cleaned, ok: false };
+      return { text: cleaned, ok: false, diag };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      warnings.push(`${phase} (${engineId}) errored: ${msg}`);
-      opts.onEvent?.({ type: 'engine:failed', data: { engineId, phase, error: msg } });
-      return { text: '', ok: false };
+      return { text: '', ok: false, diag: err instanceof Error ? err.message : String(err) };
     }
+  };
+  const dispatchText = async (engineId: string, prompt: string, sys: string, phase: string): Promise<{ text: string; ok: boolean }> => {
+    const first = await dispatchTextOnce(engineId, prompt, sys, timeout);
+    if (first.ok) return { text: first.text, ok: true };
+    // One auto-retry per seat (shorter timeout) before the seat degrades —
+    // transient flake must not quietly shrink the council. Never retry an abort.
+    if (signal?.aborted) {
+      warnings.push(`${phase} (${engineId}) aborted: ${first.diag}`);
+      opts.onEvent?.({ type: 'engine:failed', data: { engineId, phase, error: first.diag } });
+      return { text: first.text, ok: false };
+    }
+    // Half the wall clock, floored at 30s, but never LONGER than the first
+    // attempt — for sub-60s timeouts a "retry" must not raise the budget.
+    const second = await dispatchTextOnce(engineId, prompt, sys, Math.min(timeout, Math.max(30, Math.floor(timeout / 2))));
+    if (second.ok) {
+      warnings.push(`${phase} (${engineId}) ${first.diag} → retried OK`);
+      return { text: second.text, ok: true };
+    }
+    warnings.push(`${phase} (${engineId}) failed: ${first.diag} → retry: ${second.diag}`);
+    opts.onEvent?.({ type: 'engine:failed', data: { engineId, phase, error: second.diag } });
+    return { text: second.text, ok: false };
   };
 
   const ADVISOR_SYS = 'You are an expert council member. Respond directly with your analysis as plain text. Do NOT use tools, read files, or run commands.';

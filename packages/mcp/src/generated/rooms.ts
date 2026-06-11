@@ -2,7 +2,7 @@
 
 import { basename } from 'node:path';
 
-import { createRoom, listRooms, roomExists, isRoomClosed, appendEvent, readEvents, parseMentions, slugifyRoomId, recordPresence, removePresence, listPresence } from '@kernlang/agon-core';
+import { createRoom, listRooms, roomExists, isRoomClosed, appendEvent, readEvents, parseMentions, slugifyRoomId, recordPresence, removePresence, listPresence, advanceReadCursor, getReadCursor, getUnreadState, listUnreadStates, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksHeldBy } from '@kernlang/agon-core';
 
 import type { RoomActor } from '@kernlang/agon-core';
 
@@ -10,13 +10,15 @@ import type { RoomActor } from '@kernlang/agon-core';
 export const ROOM_TOOLS: Array<{name:string,description:string,inputSchema:Record<string,unknown>}> = [
   { name: 'RoomJoin', description: 'Join a shared Agon room (created if new) to chat with other live CLIs/agents over one persistent transcript. Returns the recent transcript so you have context. Human-mediated: post when prompted.', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' }, callsign: { type: 'string', description: 'Your handle in the room, e.g. codex, claude' }, engine: { type: 'string', description: 'Optional engine/CLI id (codex | claude | agy | agon); identifies you in presence. Defaults to mcp.' } }, required: ['room', 'callsign'] } },
   { name: 'RoomPost', description: 'Post a message to a room. Use @callsign to mention someone. Returns the assigned sequence number.', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' }, callsign: { type: 'string', description: 'Your handle in the room' }, text: { type: 'string', description: 'Message text (use @callsign to mention)' }, engine: { type: 'string', description: 'Optional engine/CLI id (codex | claude | agy | agon); identifies you in presence. Defaults to mcp.' } }, required: ['room', 'callsign', 'text'] } },
-  { name: 'RoomRead', description: 'Read a room transcript as JSON events after `since` (0 = all). Poll this with the last seq you saw to follow the room — MCP has no live stream.', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' }, since: { type: 'number', description: 'Only events with seq greater than this (default 0)' }, limit: { type: 'number', description: 'Max events to return (default 50)' } }, required: ['room'] } },
-  { name: 'RoomWho', description: 'List who is present in a room (here / stale / left).', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' } }, required: ['room'] } },
+  { name: 'RoomRead', description: 'Read a room transcript as JSON events after `since` (0 = all). With callsign + unreadOnly=true you get ONLY what you have not read yet, and markRead=true advances your read cursor — call this at the start of EVERY turn so you never work a stale board.', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' }, since: { type: 'number', description: 'Only events with seq greater than this (default 0)' }, limit: { type: 'number', description: 'Max events to return (default 50; unreadOnly ignores it)' }, callsign: { type: 'string', description: 'Your handle — required for unreadOnly/markRead' }, unreadOnly: { type: 'boolean', description: 'Only events after your read cursor (needs callsign)' }, markRead: { type: 'boolean', description: 'Advance your read cursor to the last returned event (needs callsign)' }, engine: { type: 'string', description: 'Optional engine/CLI id; identifies you in presence. Defaults to mcp.' } }, required: ['room'] } },
+  { name: 'RoomWho', description: 'List who is present in a room (here / stale / left), how far behind each member is (unread/mention counts), and the resource lock table.', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' } }, required: ['room'] } },
+  { name: 'RoomLock', description: 'Claim a resource lock (file, branch, task id) with a TTL so two agents never work the same thing. steal=true takes over an EXPIRED lock — audited, the stale holder is @mentioned.', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' }, callsign: { type: 'string', description: 'Your handle in the room' }, resource: { type: 'string', description: 'Resource name to lock' }, ttlMinutes: { type: 'number', description: 'Lease TTL in minutes (default 30)' }, steal: { type: 'boolean', description: 'Take over an EXPIRED lock (refused while active)' }, engine: { type: 'string', description: 'Optional engine/CLI id. Defaults to mcp.' } }, required: ['room', 'callsign', 'resource'] } },
+  { name: 'RoomRelease', description: 'Release a resource lock you hold (also works after expiry — releasing your stale lock is the polite cleanup).', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' }, callsign: { type: 'string', description: 'Your handle in the room' }, resource: { type: 'string', description: 'Resource name to release' }, engine: { type: 'string', description: 'Optional engine/CLI id. Defaults to mcp.' } }, required: ['room', 'callsign', 'resource'] } },
   { name: 'RoomLeave', description: 'Leave a room — clears your presence immediately instead of waiting for the TTL.', inputSchema: { type: 'object', properties: { room: { type: 'string', description: 'Room name or id' }, callsign: { type: 'string', description: 'Your handle in the room' }, engine: { type: 'string', description: 'Optional engine/CLI id (codex | claude | agy | agon); identifies you in presence. Defaults to mcp.' } }, required: ['room', 'callsign'] } },
   { name: 'RoomList', description: 'List all rooms.', inputSchema: { type: 'object', properties: {} } },
 ];
 
-// @kern-source: rooms:21
+// @kern-source: rooms:23
 export function isRoomTool(name: string): boolean {
   return ROOM_TOOLS.some(t => t.name === name);
 }
@@ -24,7 +26,7 @@ export function isRoomTool(name: string): boolean {
 /**
  * Execute a room MCP tool directly against the ledger and return a text/JSON result. Never throws — errors come back as 'Error: ...'.
  */
-// @kern-source: rooms:23
+// @kern-source: rooms:25
 export function handleRoomTool(name: string, args: Record<string,unknown>): string {
   try {
     if (name === 'RoomList') return JSON.stringify(listRooms(), null, 2);
@@ -35,14 +37,38 @@ export function handleRoomTool(name: string, args: Record<string,unknown>): stri
 
     if (name === 'RoomRead') {
       if (!roomExists(roomId)) return `Error: no room "${roomId}".`;
-      const since = Number(args.since ?? 0) || 0;
-      const limit = Number(args.limit ?? 50) || 50;
-      const events = readEvents(roomId, since, limit).map(e => ({ seq: e.seq, kind: e.kind, from: e.actor.callsign, body: e.body, mentions: e.mentions, at: e.createdAt }));
-      return JSON.stringify({ room: roomId, events }, null, 2);
+      const readerCallsign = String(args.callsign ?? '').trim().toLowerCase();
+      const unreadOnly = args.unreadOnly === true;
+      const markRead = args.markRead === true;
+      if ((unreadOnly || markRead) && !readerCallsign) return 'Error: unreadOnly/markRead need "callsign".';
+      const since = unreadOnly
+        ? Math.max(Number(args.since ?? 0) || 0, getReadCursor(roomId, readerCallsign))
+        : (Number(args.since ?? 0) || 0);
+      // unreadOnly returns the WHOLE backlog (no limit): the cursor advances to
+      // the last returned seq, so a tail-limit would silently skip the oldest
+      // unread — the exact stale-board failure this exists to prevent.
+      const limit = unreadOnly ? 0 : (Number(args.limit ?? 50) || 50);
+      const raw = readEvents(roomId, since, limit);
+      const events = raw.map(e => ({ seq: e.seq, kind: e.kind, from: e.actor.callsign, body: e.body, mentions: e.mentions, at: e.createdAt, ...(e.lock ? { lock: e.lock } : {}) }));
+      let cursorAdvanced = false;
+      if (markRead && raw.length > 0) {
+        // Advance ONLY when the read was gap-free from the cursor (seqs are
+        // dense): a tail-limited read of a larger backlog must not mark the
+        // skipped older events as read. unreadOnly reads are always gap-free.
+        const cursor = getReadCursor(roomId, readerCallsign);
+        if (raw[0].seq <= cursor + 1) {
+          const cli = args.engine ? String(args.engine) : 'mcp';
+          const reader: RoomActor = { actorId: `${cli}:${readerCallsign}`, callsign: readerCallsign, kind: 'external-cli', engineId: args.engine ? String(args.engine) : undefined, cli, humanOwner: process.env.USER || 'local' };
+          advanceReadCursor(roomId, reader, raw[raw.length - 1].seq);
+          cursorAdvanced = true;
+        }
+      }
+      const unread = readerCallsign ? getUnreadState(roomId, readerCallsign) : undefined;
+      return JSON.stringify({ room: roomId, events, ...(markRead ? { cursorAdvanced, ...(cursorAdvanced ? {} : { cursorNote: 'cursor NOT advanced — older unread events were outside this window; read with unreadOnly=true to catch up' }) } : {}), ...(unread ? { unread } : {}) }, null, 2);
     }
     if (name === 'RoomWho') {
       if (!roomExists(roomId)) return `Error: no room "${roomId}".`;
-      return JSON.stringify({ room: roomId, present: listPresence(roomId) }, null, 2);
+      return JSON.stringify({ room: roomId, present: listPresence(roomId), unread: listUnreadStates(roomId), locks: listRoomLocks(roomId) }, null, 2);
     }
 
     const callsign = String(args.callsign ?? '').trim().toLowerCase();
@@ -67,7 +93,24 @@ export function handleRoomTool(name: string, args: Record<string,unknown>): stri
       if (isRoomClosed(roomId)) return `Error: room "${roomId}" is closed.`;
       const ev = appendEvent(roomId, { kind: 'post', actor, body: text, mentions: parseMentions(text), replyTo: null, repoHint });
       recordPresence(roomId, actor, ev.seq, false);
-      return JSON.stringify({ posted: roomId, seq: ev.seq, mentions: ev.mentions }, null, 2);
+      const staleLocks = expiredLocksHeldBy(roomId, callsign).map(l => l.resource);
+      return JSON.stringify({ posted: roomId, seq: ev.seq, mentions: ev.mentions, ...(staleLocks.length ? { warning: `you hold EXPIRED lock(s): ${staleLocks.join(', ')} — RoomRelease them or re-claim` } : {}) }, null, 2);
+    }
+    if (name === 'RoomLock') {
+      if (!roomExists(roomId)) return `Error: no room "${roomId}". Join it first.`;
+      if (isRoomClosed(roomId)) return `Error: room "${roomId}" is closed.`;
+      const resource = String(args.resource ?? '').trim();
+      const ttlMin = Math.max(1, Number(args.ttlMinutes ?? 30) || 30);
+      const r = claimRoomLock(roomId, actor, resource, ttlMin * 60000, repoHint, args.steal === true);
+      if (!r.ok || !r.event) return `Error: ${r.reason ?? 'lock failed'}`;
+      return JSON.stringify({ locked: r.event.lock?.resource, room: roomId, seq: r.event.seq, expiresAt: r.event.lock?.expiresAt, stolen: r.event.kind === 'lock-steal' }, null, 2);
+    }
+    if (name === 'RoomRelease') {
+      if (!roomExists(roomId)) return `Error: no room "${roomId}".`;
+      const resource = String(args.resource ?? '').trim();
+      const r = releaseRoomLock(roomId, actor, resource, repoHint);
+      if (!r.ok || !r.event) return `Error: ${r.reason ?? 'release failed'}`;
+      return JSON.stringify({ released: r.event.lock?.resource, room: roomId, seq: r.event.seq }, null, 2);
     }
     if (name === 'RoomLeave') {
       if (!roomExists(roomId)) return `Error: no room "${roomId}".`;

@@ -170,10 +170,12 @@ export {
   roomsDir, roomDir, createRoom, listRooms, roomExists, closeRoom, isRoomClosed,
   appendEvent, readEvents, parseMentions, slugifyRoomId,
 } from './generated/rooms/store.js';
-export { recordPresence, removePresence, listPresence, PRESENCE_TTL_MS } from './generated/rooms/presence.js';
+export { recordPresence, removePresence, listPresence, advanceReadCursor, getReadCursor, PRESENCE_TTL_MS } from './generated/rooms/presence.js';
+export { getUnreadState, listUnreadStates, isUnreadKind } from './generated/rooms/unread.js';
+export { foldLocks, listRoomLocks, claimRoomLock, releaseRoomLock, expiredLocksHeldBy } from './generated/rooms/locks.js';
 export { acquireTurnLease, releaseTurnLease, readActiveLease } from './generated/rooms/leases.js';
 export { detectTrigger, detectPingPong, evaluateStop } from './generated/rooms/auto-policy.js';
-export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry, TurnLease, AutoConfig, AutoState, StopDecision, TriggerDecision } from './generated/rooms/types.js';
+export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry, RoomLockState, RoomUnreadState, TurnLease, AutoConfig, AutoState, StopDecision, TriggerDecision } from './generated/rooms/types.js';
 // ── EventLog — append-only per-session event ledger (client/server split M1) ──
 export {
   append as eventLogAppend, flush as eventLogFlush, replay as eventLogReplay,

@@ -22,6 +22,7 @@ interface name=RoomEvent export=true
   field name=mentions type="string[]"
   field name=replyTo type="string | null"
   field name=auto type=boolean optional=true
+  field name=lock type="{ resource: string; expiresAt: string; stolenFromSeq?: number }" optional=true
 
 interface name=RoomMeta export=true
   field name=roomId type=string
@@ -38,6 +39,26 @@ interface name=PresenceEntry export=true
   field name=lastReadSeq type=number
   field name=auto type=boolean
   field name=cli type=string
+
+// ── Resource locks — first-class claim/release/steal, derived by folding the ledger ──
+// No separate state file: the lock table is a pure fold over lock/release/lock-steal
+// events, so it can never disagree with the transcript the agents are reading.
+interface name=RoomLockState export=true
+  field name=resource type=string
+  field name=holder type=string
+  field name=actorId type=string
+  field name=seq type=number
+  field name=acquiredAt type=string
+  field name=expiresAt type=string
+  field name=status type="'active' | 'expired'"
+  field name=stolenFromSeq type=number optional=true
+
+interface name=RoomUnreadState export=true
+  field name=callsign type=string
+  field name=lastReadSeq type=number
+  field name=headSeq type=number
+  field name=unreadCount type=number
+  field name=mentionCount type=number
 
 // ── Auto-respond (Phase 3) ──
 // A turn lease is floor control: only the holder may post while it is active,

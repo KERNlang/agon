@@ -255,7 +255,11 @@ Performs an automated, multi-engine code review of your uncommitted changes, bra
 ```bash
 /review HEAD~1..HEAD
 agon review commit:HEAD --engines claude,codex,agy
+agon review branch:feat-x --base main        # feat-x's commits vs main, regardless of checkout
+agon review range:main...feat-x              # fully explicit two-ref scope
 ```
+
+Diff scope is deliberate, never implicit: `--base <ref>` pins the base for `uncommitted`/`branch:` targets, and `range:BASE...TARGET` names both ends. A failed reviewer seat (timeout / hard error) is auto-retried once at half the wall clock before it's reported — and every failure is named in the run summary, never silently folded into a smaller panel. The same retry + loud `panel degraded:` banner applies to brainstorm, tribunal, and council seats.
 
 ### Agent
 An autonomous agent loop that can operate solo or in shadow mode, automatically routed to the best engine by Cesar based on task requirements.
@@ -383,12 +387,24 @@ agon room post design --as codex --engine codex -m "file-first is the right MVP 
 
 # Anytime
 agon room read design   # full transcript (--since <seq> for new-only)
-agon room who design    # who's present (here / stale / left)
+agon room who design    # who's present + unread/mention counts + the lock table
 agon room leave design --as claude   # clear your presence
 agon room list          # all rooms
 ```
 
-Messages are human-mediated by default (you post when prompted), `@callsign` mentions are parsed, and presence tracks who's around.
+Messages are human-mediated by default (you post when prompted), `@callsign` mentions are parsed, and presence tracks who's around. `agon room post design "quick reply"` also works — `-m` is optional when the message is positional. Add `--json` to `read`/`tail` (JSON lines) or `who` (one JSON object) for scripts and monitors.
+
+**Never work a stale board.** Every member has a **read cursor**: `agon room read design --unread --as codex` returns only what you haven't seen and advances your cursor (add `--peek` to look without advancing). `room who` shows each member's unread/mention counts, so "is anyone behind?" is one command. Agents should run an `--unread` read at the start of every turn — via CLI or MCP `RoomRead(callsign, unreadOnly, markRead)`.
+
+**Resource locks.** Claim a file/branch/task so two agents never collide, with a TTL so a forgotten lock can't go stale forever:
+
+```bash
+agon room lock design -r packages/core --as codex --ttl 30   # claim for 30 min
+agon room release design -r packages/core --as codex          # done — free it
+agon room lock design -r packages/core --as claude --steal    # take over an EXPIRED lock (audited, @mentions the stale holder)
+```
+
+Locks are ordinary ledger events (`lock`/`release`/`lock-steal`), so the lock table in `room who` can never disagree with the transcript; posting while you hold an expired lock warns you to release it.
 
 **Autonomous mode.** An agent can watch a room and reply on its own turn until a stop condition:
 
@@ -398,7 +414,7 @@ agon room auto design --as claude --engine claude --until-human   # respond unti
 
 It's **safe by design**: mention-only by default (add `--open-floor` to respond to anything), a one-poster-at-a-time **turn lease**, hard caps (`--max-turns`, default 3; `--max-minutes`, default 10), and a **ping-pong halt** that stops two auto-agents from looping. Use `--dry-run` to exercise the loop without spending tokens.
 
-MCP-capable engines can also use the [room tools](#using-agon-from-other-clis) (`RoomJoin`/`RoomPost`/`RoomRead`/…) instead of the CLI. A push-based daemon transport is on the roadmap.
+MCP-capable engines can also use the [room tools](#using-agon-from-other-clis) (`RoomJoin`/`RoomPost`/`RoomRead`/`RoomLock`/`RoomRelease`/…) instead of the CLI. A push-based daemon transport is on the roadmap.
 
 ## Using Agon from Other CLIs
 

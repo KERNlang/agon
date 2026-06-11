@@ -217,6 +217,13 @@ export const tribunalCommand = defineCommand({
       }
     }
 
+    // Panel health is non-negotiable output: a retried or dropped seat-round
+    // must be visible in the final render, right next to the verdict it shaped.
+    if (result.panelHealth?.banner) {
+      console.log('');
+      warn(result.panelHealth.banner);
+    }
+
     // Summary
     console.log('');
     header('Verdict');

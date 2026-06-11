@@ -273,39 +273,96 @@ export function detectNarratedToolStall(text: string): boolean {
 }
 
 /**
- * Detect a 'false read-only hand-back': the orchestrator narrated intent to change files (apply/edit/the patch) AND claimed it cannot write / offered to delegate the write to an agent / asked the user to paste-or-apply it — WITHOUT emitting a mutating tool call. That is the stall that leaves Cesar's Phase-1 mutation un-deferred, so the execution-phase unlock never fires and the turn dead-ends. The caller uses this to force the unlock so Cesar writes directly instead of narrating a wall.
+ * Layer 1 of the watchdog pipeline (brainstorm-validated 2026-06-11): remove NON-ASSERTED spans before any guard regex runs, so quoted/demonstrated text can never read as a claim. Strips fenced code blocks, inline backtick spans, double/curly-quoted spans, and parenthesized capitalized enumerations like '(Read/Edit/Write/Bash)' — the exact shape that false-fired the guards on a description OF the harness. Carve-out: a backticked/quoted span that is ITSELF an active first-person/imperative claim ('I'll edit foo') is kept, so an engine cannot hide a real stall inside quotes. Straight single-quoted spans are deliberately NOT stripped — apostrophes in contractions (can't … don't) would pair up and delete real assertions. Pure; exported for unit tests.
  */
 // @kern-source: brain-helpers:304
-export function detectMutationIntentStall(text: string): boolean {
-  const body = String(text ?? '').trim();
-  if (!body) return false;
-  // Intent: the turn is about applying a concrete change to files.
-  const MUTATION_INTENT_RE = /\b(?:edit|write|apply|patch|implement|insert|replace|land it|commit it|the (?:change|fix|diff|patch|edit)|make the (?:edit|change)s?|ready to (?:paste|apply))\b/i;
-  // False hand-back: claims it cannot write, or routes AROUND writing instead of
-  // just doing it (delegate-to-agent / paste-it-yourself / run-it-yourself).
-  const HANDBACK_RE = /\b(?:read-?only|can'?t (?:write|edit|apply|mutate|touch)|no (?:write|edit|bash) tool|(?:edit|write|bash)(?: tool)?(?: is)? (?:not enabled|disabled|not wired|not available|unavailable)|not (?:enabled|wired|reachable) in this (?:context|session|turn)|spawn (?:an? )?agent|dispatch (?:an? )?agent|paste (?:it|this|the\b)|apply (?:it|this)\b|git apply|you (?:can )?(?:run|apply|paste)|in your terminal|hand you the (?:patch|diff|commands?)|copy[- ]?paste)\b/i;
-  return MUTATION_INTENT_RE.test(body) && HANDBACK_RE.test(body);
+export function stripNonAssertionSpans(text: string): string {
+  let body = String(text ?? '');
+  // A span that is itself a claim stays visible to the guards.
+  const KEEP_CLAIM_RE = /^(?:i(?:'ll|'m|\s+will|\s+have|\s+need\s+to|\s+want\s+to|\s+already)\b|let\s+me\b|please\s+\w+)/i;
+  // Fenced code blocks (``` … ``` , tolerate an unclosed trailing fence).
+  body = body.replace(/```[\s\S]*?(?:```|$)/g, ' ');
+  // Inline backtick spans.
+  body = body.replace(/`([^`\n]{1,300})`/g, (_m: string, inner: string) => (KEEP_CLAIM_RE.test(inner.trim()) ? ` ${inner} ` : ' '));
+  // Double / curly quoted spans.
+  body = body.replace(/["“”]([^"“”\n]{1,300})["“”]/g, (_m: string, inner: string) => (KEEP_CLAIM_RE.test(inner.trim()) ? ` ${inner} ` : ' '));
+  // Parenthesized capitalized enumerations: (Read/Edit/Write/Bash), (Forge, Tribunal).
+  body = body.replace(/\([A-Z][A-Za-z]*(?:\s*[,/&]\s*[A-Z][A-Za-z]*)+\)/g, ' ');
+  return body;
 }
 
 /**
- * Detect a response that CLAIMS an async review/forge/tribunal/brainstorm/agent or background job was dispatched or is now running — e.g. 'review delegated to codex, claude, agy', 'three reviewers are reading the diff in parallel', 'I kicked off the review', "I'll get back when they report". The caller pairs this with 'no delegation was actually emitted this turn' (ctx.cesar.pendingDelegation is null) to catch the confabulation where a weak engine narrates a dispatch it never made. Requires BOTH a delegable target AND a dispatch/running claim, so a plain answer that merely mentions the word 'review' does not trip it.
+ * Detect a 'false read-only hand-back': the orchestrator narrated a concrete change (claim-shaped: first-person intent, result-first 'patch ready', or an apply-it-yourself instruction) AND claimed it cannot write / delegated the write to an agent / pushed the apply to the user — WITHOUT emitting a mutating tool call. CLAIM-SHAPED matching (Layer 2, brainstorm-validated 2026-06-11): bare nouns like 'Edit/Write tools' or 'read-only investigation phase' in a DESCRIPTION of the harness must NOT fire — only inability/hand-back/intent CLAIMS do. Runs on stripNonAssertionSpans output so quoted failure text can't trip it. Result-first phrasing ('Patch ready. Please apply it manually; this environment is read-only.') is the recall-preserving branch — real stalls are often not first-person.
  */
-// @kern-source: brain-helpers:317
-export function detectFabricatedDelegation(text: string): boolean {
-  const body = String(text ?? '').trim();
+// @kern-source: brain-helpers:321
+export function detectMutationIntentStall(text: string): boolean {
+  const body = stripNonAssertionSpans(String(text ?? '')).trim();
   if (!body) return false;
-  // A delegable target: review / forge / tribunal / brainstorm / campfire / agents / engines / a background job.
+  // Inability CLAIMS (first-person / this-session), not the bare word 'read-only'.
+  const CANNOT_RE = /\b(?:i\s+(?:cannot|can'?t|am\s+unable\s+to)\s+(?:write|edit|apply|mutate|touch)|i'?m\s+read-?only|(?:this|the)\s+(?:session|environment|context|sandbox)\s+is\s+read-?only|i\s+have\s+no\s+(?:write|edit|bash)\s+tools?|no\s+(?:write|edit)\s+access|(?:edit|write|bash)(?:\s+tool)?\s+is\s+(?:not\s+(?:enabled|available|wired)|disabled|unavailable)|not\s+(?:enabled|wired|reachable)\s+in\s+this\s+(?:context|session|turn))\b/i;
+  // Push-the-write-to-the-user instructions.
+  const USER_APPLY_RE = /\b(?:paste\s+(?:it|this|the)\b|git\s+apply\b|apply\s+(?:it|this)\b|in\s+your\s+terminal|you\s+(?:can\s+)?(?:run|apply|paste)\b|copy[- ]?paste|hand\s+you\s+the\s+(?:patch|diff|commands?))/i;
+  // Delegate-the-write-to-an-agent escape hatch.
+  const AGENT_ESCAPE_RE = /\b(?:spawn|dispatch)\s+(?:an?\s+)?agent\b/i;
+  // First-person mutation intent ('I'll edit', 'let me apply').
+  const INTENT_RE = /\b(?:i(?:'ll|\s+will|\s+need\s+to|\s+want\s+to|'?m\s+going\s+to)|let\s+me)\s+(?:\w+\s+){0,3}?(?:edit|write|apply|commit|patch|fix|update|implement|modify|create|make)\b/i;
+  // Result-first stall ('patch ready', 'the fix is below', 'ready to paste').
+  const RESULT_FIRST_RE = /\b(?:patch|fix|change|diff|edit|update)e?s?\s+(?:is|are)?\s*(?:ready|done|complete|prepared|below|attached)\b|\bready\s+to\s+(?:paste|apply)\b/i;
+  // First-person PAST-tense mutation claim ('I made the change', 'I already updated') —
+  // the review-verified miss: a hand-back is often phrased as work-already-done.
+  const PAST_DONE_RE = /\bi(?:'ve)?\s+(?:already\s+)?(?:made|updated|edited|wrote|written|applied|changed|fixed|patched|implemented|created|prepared)\b/i;
+  // Presenting the artifact ('here is the diff', 'the patch below').
+  const PRESENTATION_RE = /\bhere(?:'s|\s+is|\s+are)\s+(?:the\s+|a\s+)?(?:full\s+)?(?:diff|patch|change|fix|edit|code)\b|\b(?:diff|patch)\s+(?:is\s+)?(?:below|above)\b/i;
+  const intentish = INTENT_RE.test(body) || RESULT_FIRST_RE.test(body) || PAST_DONE_RE.test(body) || PRESENTATION_RE.test(body);
+  if (CANNOT_RE.test(body) && (intentish || USER_APPLY_RE.test(body) || AGENT_ESCAPE_RE.test(body))) return true;
+  if (USER_APPLY_RE.test(body) && intentish) return true;
+  if (AGENT_ESCAPE_RE.test(body) && (intentish || CANNOT_RE.test(body))) return true;
+  return false;
+}
+
+/**
+ * Detect a response that CLAIMS an async review/forge/tribunal/brainstorm/agent or background job was dispatched or is now running — e.g. 'review delegated to codex, claude, agy', 'three reviewers are reading the diff in parallel', 'I kicked off the review'. CLAIM-SHAPED matching (Layer 2, brainstorm-validated 2026-06-11): descriptive prose like 'Forge dispatches engines that work in parallel and report back with a winner' must NOT fire — the dispatch/running claim must be first-person ('I kicked off…'), a delegated-to statement, a present-continuous running state adjacent to a delegable target ('the review is still running', 'background review in progress'), or a they-will-report promise. Runs on stripNonAssertionSpans output. The caller pairs this with 'no delegation was actually emitted this turn' (ctx.cesar.pendingDelegation is null).
+ */
+// @kern-source: brain-helpers:348
+export function detectFabricatedDelegation(text: string): boolean {
+  const body = stripNonAssertionSpans(String(text ?? '')).trim();
+  if (!body) return false;
+  // A delegable target must appear at all.
   const TARGET_RE = /\b(?:review(?:er)?s?|forg(?:e|ing)|tribunal|brainstorm|campfire|agents?|engines?|jobs?)\b/i;
   if (!TARGET_RE.test(body)) return false;
-  // A claim that the target was dispatched or is now running / will report back.
-  const DISPATCH_RE = /\b(?:kick(?:ed|ing)?\s*(?:it|them|that|the\s+\w+)?\s*off|fired?\s*(?:it|them|off)|dispatch(?:ed|ing)|delegat(?:ed|ing)|(?:is|are|now)\s+running|running\s+(?:in|now)|in\s+parallel|reading\s+the\s+(?:diff|changes|code)|working\s+(?:on\s+it|in\s+parallel)|in\s+progress|under\s*way|i'?ll\s+(?:get\s+back|report|let\s+you\s+know|surface|update)|report(?:s|ing)?\s+back|when\s+they\s+(?:report|land|return|finish|come\s+back)|still\s+(?:running|going|working|in\s+progress)|spun?\s+up|started\s+(?:the|a)\s+(?:review|forge|job|tribunal|brainstorm))\b/i;
-  return DISPATCH_RE.test(body);
+  // First-person dispatch claim: 'I kicked off the review', "I'm running a tribunal".
+  const FP_DISPATCH_RE = /\b(?:i(?:'ve)?\s+(?:already\s+)?(?:kick(?:ed)?\s*(?:it|them|that|the\s+\w+)?\s*off|fired\s+(?:it|them|off)|dispatch(?:ed)?|delegat(?:ed)?|started|launched|spun\s+up|queued)|i'?m\s+(?:running|dispatching|launching|starting))\b/i;
+  // Passive delegated-to: 'Review delegated to codex, claude, agy'.
+  const DELEGATED_TO_RE = /\b(?:review|forge|tribunal|brainstorm|campfire|jobs?|agents?)\s+(?:was|were|has\s+been|have\s+been)?\s*delegated\s+to\b/i;
+  // Running-state adjacent to a target, within one clause (no sentence break):
+  // 'the review is still running', 'reviewers … are reading the diff', 'background review in progress'.
+  const RUNNING_STATE_RE = /\b(?:review(?:er)?s?|forge|tribunal|brainstorm|campfire|agents?|engines?|jobs?)\b[^.!?\n]{0,60}?(?:\b(?:is|are)\s+(?:still\s+|currently\s+|each\s+|now\s+)?(?:running|working|reading|evaluating|analyzing|reviewing|on\s+it)\b|\bin\s+progress\b|\bunder\s*way\b)/i;
+  // Passive dispatch claim adjacent to a target: 'the review was queued',
+  // 'the team of reviewers has been kicked off' — review-verified misses.
+  const PASSIVE_DISPATCH_RE = /\b(?:review(?:er)?s?|forge|tribunal|brainstorm|campfire|agents?|engines?|jobs?)\b[^.!?\n]{0,60}?\b(?:was|were|has\s+been|have\s+been|is|are)\s+(?:queued|dispatched|launched|kicked\s+off|spun\s+up|fired\s+off)\b/i;
+  // They-will-report promise: "I'll get back when they report", 'when they finish'.
+  const REPORT_BACK_RE = /\bi'?ll\s+(?:get\s+back|report\s+back|let\s+you\s+know|surface|update)\b|\bwhen\s+they\s+(?:report|land|return|finish|come\s+back)\b/i;
+  return FP_DISPATCH_RE.test(body) || DELEGATED_TO_RE.test(body) || RUNNING_STATE_RE.test(body) || PASSIVE_DISPATCH_RE.test(body) || REPORT_BACK_RE.test(body);
+}
+
+/**
+ * Layer 3 of the watchdog pipeline: NEVER suppresses a guard, only converts a positive match into a visible warning WITHOUT the injected corrective nudge. True only when every available signal says conversational: router intake chat (with its 'answer' flow — chat is the router's DEFAULT bucket, so a chat intake the router escalated to any other flow does NOT de-escalate) or a positively-classified exploration intake (campfire/brainstorm/answer flows), AND no mutating tool (Write/Edit/Bash family) ran this turn. Missing/unknown signals return false → full nudge (the nero-validated answer to 'frame it as chat' bypasses). HONEST LIMIT (review finding, 0.60): chat+answer is the router's no-signal default, so a genuinely stalling work turn the router failed to classify can land here — the deliberate trade is that de-escalation is WARN-ONLY (the match is still surfaced, the claim-shaped detector already had to fire, and no nudge is injected); it can never silently swallow a stall. The confidence self-report ('informational') joins as a third positive signal once ReportConfidence carries a structured task type.
+ */
+// @kern-source: brain-helpers:371
+export function shouldDeescalateGuard(opts: {intakeKind?:string, recommendedFlow?:string, usedMutatingTool?:boolean}): boolean {
+  const kind = String(opts.intakeKind ?? '');
+  const flow = String(opts.recommendedFlow ?? '');
+  const conversational = (kind === 'chat' && flow === 'answer')
+    || (kind === 'exploration' && (flow === 'campfire' || flow === 'brainstorm' || flow === 'answer'));
+  if (!conversational) return false;
+  if (opts.usedMutatingTool !== false) return false;
+  return true;
 }
 
 /**
  * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
  */
-// @kern-source: brain-helpers:330
+// @kern-source: brain-helpers:383
 export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
   const names: string[] = [];
   for (const result of results ?? []) {
@@ -323,7 +380,7 @@ export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
 /**
  * Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch.
  */
-// @kern-source: brain-helpers:342
+// @kern-source: brain-helpers:395
 export function shouldRunEagerRepairTool(toolName: string, meta: any, failedToolNames: string[], usedToolNames: string[]): boolean {
   const name = String(toolName ?? '').trim();
   if (!name) return false;
@@ -338,7 +395,7 @@ export function shouldRunEagerRepairTool(toolName: string, meta: any, failedTool
 /**
  * Return true for XML tools that hand control back to the Agon dispatcher. These tools do not produce inline results; continuing the XML tool loop after them can make Cesar claim a delegation happened while the actual forge/brainstorm/etc. job has not started yet.
  */
-// @kern-source: brain-helpers:355
+// @kern-source: brain-helpers:408
 export function shouldStopAfterXmlToolCall(toolName: string): boolean {
   const HANDOFF_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'ProposePlan', 'ExitPlanMode']);
   return HANDOFF_TOOLS.has(String(toolName ?? ''));
@@ -347,7 +404,7 @@ export function shouldStopAfterXmlToolCall(toolName: string): boolean {
 /**
  * Strip the 'Agon' orchestration alias prefix from a tool name. The default companion/MCP path surfaces write/bash tools as AgonBash/AgonEdit/AgonWrite (the MCP completion's done.tool is the ORIGINAL alias, not the mapped kern tool — see agon-orchestration.kern handleWriteToolCall), while the native/XML loop uses the bare names. Case-insensitive prefix match; returns the un-prefixed remainder so both paths classify identically.
  */
-// @kern-source: brain-helpers:361
+// @kern-source: brain-helpers:414
 export function stripAgonToolPrefix(name: string): string {
   const n = String(name ?? '');
   return n.toLowerCase().startsWith('agon') ? n.slice(4) : n;
@@ -356,18 +413,18 @@ export function stripAgonToolPrefix(name: string): string {
 /**
  * True when a tool name denotes a shell/bash call on EITHER path — bare 'Bash' (native/XML) or 'AgonBash' (MCP). Path-agnostic so the verify-before-done gate arms on the default companion path, not only the native one.
  */
-// @kern-source: brain-helpers:367
+// @kern-source: brain-helpers:420
 export function isBashToolName(name: string): boolean {
   return stripAgonToolPrefix(name).toLowerCase() === 'bash';
 }
 
-// @kern-source: brain-helpers:372
+// @kern-source: brain-helpers:425
 export const WRITE_TOOL_NAMES: Set<string> = new Set(['edit', 'write', 'multiedit', 'notebookedit']);
 
 /**
  * True when a tool name denotes project write-work (file edit/create) on EITHER path — bare Edit/Write/MultiEdit/NotebookEdit (native/XML) or the AgonEdit/AgonWrite MCP aliases. SaveMemory is deliberately NOT write-work: it appends to .agon/project.md (durable memory), not the project tree, so the project's verification gate has nothing to verify for it.
  */
-// @kern-source: brain-helpers:374
+// @kern-source: brain-helpers:427
 export function isWriteToolName(name: string): boolean {
   return WRITE_TOOL_NAMES.has(stripAgonToolPrefix(name).toLowerCase());
 }
@@ -375,7 +432,7 @@ export function isWriteToolName(name: string): boolean {
 /**
  * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
  */
-// @kern-source: brain-helpers:379
+// @kern-source: brain-helpers:432
 export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
   const trimmed = input.trim();
   const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
@@ -396,7 +453,7 @@ export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): {
   return { matched: true, prompt: prompt };
 }
 
-// @kern-source: brain-helpers:398
+// @kern-source: brain-helpers:451
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;

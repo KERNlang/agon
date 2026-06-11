@@ -124,7 +124,8 @@ interface name=DispatchResult
   field name=durationMs type=number
   field name=timedOut type=boolean
   field name=pid type="number|null" optional=true
-  field name=usage type="{promptTokens:number,completionTokens:number,totalTokens:number,source:'sdk'|'cli-reported'|'estimated'}" optional=true
+  field name=usage type="{promptTokens:number,completionTokens:number,totalTokens:number,cachedInputTokens?:number,source:'sdk'|'cli-reported'|'estimated'}" optional=true
+    doc "promptTokens (AI SDK inputTokens) already INCLUDES cache read+write tokens, so promptTokens+completionTokens = the request's exact context occupancy. cachedInputTokens = the cache-read share, for display/cost."
   field name=parts type="Array<{kind:'text',text:string}|{kind:'reasoning',text:string}|{kind:'tool_call',toolName:string,toolCallId:string,args:Record<string,unknown>}>" optional=true
   doc "Structured parts captured at stream time. Enables compaction to fold over typed data instead of parsing strings."
 

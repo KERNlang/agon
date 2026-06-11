@@ -77,7 +77,7 @@ export interface OutputActions {
   flushStream: () => void;
   getEngineColor: (engineId:string) => number;
   setCesarConfidence: (val:number|null) => void;
-  setCesarContext: (val:{pct:number,used:number,limit:number,compacted:number,cached:number}|null) => void;
+  setCesarContext: (val:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:'api'|'projected'|'estimate'}|null) => void;
   setLiveScoreboard: (val:any) => void;
   setLiveRationale: (val:any) => void;
   setAgentProgress: (updater:Record<string,AgentProgressSnapshot> | ((prev:Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => void;
@@ -597,7 +597,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     }
     case 'context-usage': {
       const e = event as any;
-      actions.setCesarContext({ pct: e.pct, used: e.used, limit: e.limit, compacted: e.compacted ?? 0, cached: e.cached ?? 0 });
+      actions.setCesarContext({ pct: e.pct, used: e.used, limit: e.limit, compacted: e.compacted ?? 0, cached: e.cached ?? 0, source: e.source ?? 'estimate' });
       return;
     }
     case 'agent-step-start': {

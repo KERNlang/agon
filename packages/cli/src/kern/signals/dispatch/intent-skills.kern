@@ -181,6 +181,28 @@ fn name=dispatchSkillsUiIntent async=true params="intent:any, input:string, cb:D
       }
       case 'slash-list': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
       case 'compact': {
+        // ── In-place path (API brain): summarize older turns INSIDE the live
+        // session, keep the recent tail, keep the session running — Claude
+        // Code's /compact semantics. No reboot, no lost engine context.
+        const liveSession = cb.ctx.cesarSession as any;
+        if (liveSession && typeof liveSession.compact === 'function') {
+          let res: { ok: boolean; method: string; beforeTokens: number; afterTokens: number; limit: number } | null = null;
+          try { res = await liveSession.compact(); } catch { res = null; }
+          if (res && res.ok) {
+            const pctOf = (n: number) => res!.limit > 0 ? Math.max(0, Math.round((n / res!.limit) * 100)) : 0;
+            cb.setMode('chat');
+            cb.dispatch({ type: 'success', message: `Compacted context in place: ${pctOf(res.beforeTokens)}% → ${pctOf(res.afterTokens)}% of the window (${res.method === 'llm' ? 'older turns summarized by the engine' : 'older turns folded into a structured summary'}). The session continues — nothing to re-warm.` });
+            break;
+          }
+          if (res && res.method === 'none') {
+            cb.setMode('chat');
+            cb.dispatch({ type: 'info', message: 'Nothing to compact yet — the conversation is still short. The session continues unchanged.' });
+            break;
+          }
+          // deferred (send in flight) or failed → fall through to the legacy
+          // compact-and-reboot path below.
+          cb.dispatch({ type: 'info', message: 'In-place compaction unavailable right now — falling back to compact-and-reboot.' });
+        }
         const chatSession = cb.ctx.chatSession;
         const hasChatSession = !!chatSession;
         let messageCount = 0;

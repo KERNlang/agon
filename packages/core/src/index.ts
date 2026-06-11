@@ -119,6 +119,12 @@ export {
 export type {
   BudgetCheck, BudgetThresholds,
 } from './generated/sessions/session-budget.js';
+// ── Compaction primitives (pure helpers shared by session.compact() and the in-send emergency fold) ──
+export {
+  findSafeKeepStart, buildCompactionSummary, renderCompactionText,
+  buildSummarizationContext, buildCompactionPrompt,
+} from './generated/sessions/compaction.js';
+export type { CompactMessage, SummarizationCaps } from './generated/sessions/compaction.js';
 // ── Context Parts (structured message parts + StageContext) ──
 export {
   buildStageContext, renderStageContext,

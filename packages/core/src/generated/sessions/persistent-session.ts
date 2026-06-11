@@ -60,12 +60,14 @@ export interface PersistentSession {
   send: (opts: SessionSendOptions) => AsyncGenerator<SessionChunk, void, void>;
   close: () => void;
   getMessageHistory: () => Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>;
+  getContextUsage?: () => {tokens:number, limit:number, softLimit:number, source:'api'|'projected'|'estimate', cachedInputTokens:number};
+  compact?: () => Promise<{ok:boolean, method:'llm'|'regex'|'none'|'deferred', beforeTokens:number, afterTokens:number, limit:number}>;
 }
 
 /**
  * Factory: picks the right session implementation based on engine config.
  */
-// @kern-source: persistent-session:48
+// @kern-source: persistent-session:52
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   // API path: engine has API config and no binary path provided → use stateless resume session

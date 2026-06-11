@@ -161,6 +161,8 @@ union name=OutputEvent discriminant=type
     field name=limit type=number
     field name=compacted type=number optional=true
     field name=cached type=number optional=true
+    field name=source type="'api'|'projected'|'estimate'" optional=true
+      doc "Exactness of `used`: 'api' = real token usage from the last API response; 'projected' = real anchor plus a small estimated delta; 'estimate' = chars-based estimate only."
   variant name=cesar-recap
     field name=engineId type=string
     field name=mode type=string

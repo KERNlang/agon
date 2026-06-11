@@ -366,12 +366,12 @@ export function App() {
       }
     };
   }, []);
-  const [cesarContext, _setCesarContextRaw] = useState<{pct:number,used:number,limit:number,compacted:number,cached:number}|null>(null);
+  const [cesarContext, _setCesarContextRaw] = useState<{pct:number,used:number,limit:number,compacted:number,cached:number,source?:'api'|'projected'|'estimate'}|null>(null);
   const setCesarContext = useMemo(() => {
     let _lastCall = 0;
-    let _pendingValue: React.SetStateAction<{pct:number,used:number,limit:number,compacted:number,cached:number}|null>;
+    let _pendingValue: React.SetStateAction<{pct:number,used:number,limit:number,compacted:number,cached:number,source?:'api'|'projected'|'estimate'}|null>;
     let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
-    return (value: React.SetStateAction<{pct:number,used:number,limit:number,compacted:number,cached:number}|null>) => {
+    return (value: React.SetStateAction<{pct:number,used:number,limit:number,compacted:number,cached:number,source?:'api'|'projected'|'estimate'}|null>) => {
       const now = Date.now();
       const elapsed = now - _lastCall;
       if (elapsed >= 200) {

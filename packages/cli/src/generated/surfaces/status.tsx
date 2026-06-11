@@ -74,14 +74,16 @@ function AgonTip() {
 }
 
 // @kern-source: status:111
-export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, telemetryVitals }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any> }) {
+export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, telemetryVitals, context }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any>; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null }) {
   const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
   const msgs = chatMessageCount;
   const tokens = totalTokens;
-  const contextWindows: Record<string, number> = {
-    claude: 1000000, codex: 200000, agy: 1000000, opencode: 200000,
-  };
-  const contextBudget = contextWindows[cesarId] ?? 200000;
+  // Context gauge: REAL window occupancy from the session's context-usage
+  // events (last API response's token usage / anchored projection) — NOT
+  // cumulative session tokens against a guessed window. Without that data
+  // the gauge is hidden rather than shown wrong; the cumulative `tok`
+  // counter below stays (it's spend, a different axis than occupancy).
+  const ctx = context && context.limit > 0 ? context : null;
   return (
     <Box paddingTop={0} flexDirection="column">
       <Text>
@@ -90,8 +92,9 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
         {branch ? <Text dimColor>{' on '}<Text color="#34d399">{branch}</Text></Text> : null}
       </Text>
       <Text>
-        {tokens > 0 ? <Text dimColor>{' | '}</Text> : null}
-        {tokens > 0 ? <TokenGauge tokens={tokens} maxTokens={contextBudget} /> : null}
+        {ctx ? <Text dimColor>{' | '}</Text> : null}
+        {ctx ? <TokenGauge tokens={ctx.used} maxTokens={ctx.limit} /> : null}
+        {ctx && ctx.source === 'estimate' ? <Text dimColor>{'~'}</Text> : null}
         {tokens > 0 ? <Text dimColor>{` | ${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
         {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
         {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
@@ -136,7 +139,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
   );
 }
 
-// @kern-source: status:189
+// @kern-source: status:193
 const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height, filter }: { telemetryVitals:Map<string, any>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number; filter?:'all'|'problem' }) {
   const vitals = Array.from(telemetryVitals?.values?.() ?? []);
   const severity: Record<string, number> = { stalled: 5, fallback: 4, offline: 3, busy: 2, idle: 1 };
@@ -195,7 +198,7 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
 });
 export { StatusDashboard };
 
-// @kern-source: status:255
+// @kern-source: status:259
 const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
   const planGauge = buildPlanPhaseGauge(activePlan, 10);
   const now = Date.now();
@@ -299,7 +302,7 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
 });
 export { ExecutionRail };
 
-// @kern-source: status:369
+// @kern-source: status:373
 const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive, width, maxRows, focused }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean; width?:number; maxRows?:number; focused?:boolean }) {
   const safeWidth = Math.max(32, Math.floor(Number(width ?? 42)));
   const safeRows = Math.max(8, Math.floor(Number(maxRows ?? 12)));
@@ -410,7 +413,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
 });
 export { ExecutionRailPanel };
 
-// @kern-source: status:495
+// @kern-source: status:499
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -445,7 +448,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:524
+// @kern-source: status:528
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -464,8 +467,8 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:546
-const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
+// @kern-source: status:550
+const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
     return (value) => setTimeout(() => setter(value), 0);
@@ -485,7 +488,9 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   // Idle: single dimmed line (no colored nesting issues)
   if (!isActive) {
     const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
-    const ctxPart = (context && context.pct > 0) ? ` \u2502 ctx ${context.pct}%` : '';
+    // '~' marks a chars-based estimate; exact numbers (real API token
+    // usage, or real-anchored projection) render without it.
+    const ctxPart = (context && context.pct > 0) ? ` \u2502 ctx ${context.source === 'estimate' ? '~' : ''}${context.pct}%` : '';
     return (
       <Box paddingTop={0} flexDirection="column">
         <Text>
@@ -508,11 +513,12 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
 
   // Context-window gauge: green < 60%, amber 60-80%, red > 80%. A compacted
   // marker (⤵) shows when older turns have been summarized so the user knows
-  // the window was managed, not lost.
+  // the window was managed, not lost. '~' marks a chars-based estimate;
+  // exact numbers (real API token usage) render without it.
   let ctxStr = '';
   let ctxColor = '#6b7280';
   if (context && context.pct > 0) {
-    ctxStr = ` ctx ${context.pct}%${context.compacted > 0 ? '⤵' : ''}`;
+    ctxStr = ` ctx ${context.source === 'estimate' ? '~' : ''}${context.pct}%${context.compacted > 0 ? '⤵' : ''}`;
     ctxColor = context.pct >= 80 ? '#ef4444' : context.pct >= 60 ? '#fbbf24' : '#4ade80';
   }
 

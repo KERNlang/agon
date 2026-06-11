@@ -161,7 +161,7 @@ screen name=App target=ink
   state name=toolOutputExpanded type=boolean initial=false
   state name=thinkingExpanded type=boolean initial=true
   state name=cesarConfidence type="number|null" initial="null" throttle=200
-  state name=cesarContext type="{pct:number,used:number,limit:number,compacted:number,cached:number}|null" initial="null" throttle=200
+  state name=cesarContext type="{pct:number,used:number,limit:number,compacted:number,cached:number,source?:'api'|'projected'|'estimate'}|null" initial="null" throttle=200
   state name=liveScoreboard type="Scoreboard|null" initial="null"
   state name=liveRationale type="ModeRationale|null" initial="null"
   state name=agentProgress type="Record<string,AgentProgressSnapshot>" initial="{}"

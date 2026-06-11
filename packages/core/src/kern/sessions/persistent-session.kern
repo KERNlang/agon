@@ -44,6 +44,10 @@ interface name=PersistentSession
   field name=send type="(opts: SessionSendOptions) => AsyncGenerator<SessionChunk, void, void>"
   field name=close type="() => void"
   field name=getMessageHistory type="() => Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>"
+  field name=getContextUsage type="() => {tokens:number, limit:number, softLimit:number, source:'api'|'projected'|'estimate', cachedInputTokens:number}" optional=true
+    doc "API sessions only. Real-usage-anchored context occupancy: tokens = last dispatch's real prompt+completion tokens plus an estimate of messages appended since; limit = the engine's context window; softLimit = the compaction trigger line (limit minus reserve). source marks exactness: 'api' (exact), 'projected' (real anchor + estimated delta), 'estimate' (no anchor yet)."
+  field name=compact type="() => Promise<{ok:boolean, method:'llm'|'regex'|'none'|'deferred', beforeTokens:number, afterTokens:number, limit:number}>" optional=true
+    doc "API sessions only. In-place Claude-style compaction: summarize older messages (LLM first, deterministic regex fallback), keep a boundary-safe verbatim tail, CONTINUE the same session. Coalesces concurrent calls; defers ('deferred') while a send() is in flight. Policy-owned by the Cesar budget gate and /compact."
 
 fn name=createPersistentSession params="config:PersistentSessionConfig" returns="PersistentSession"
   doc "Factory: picks the right session implementation based on engine config."

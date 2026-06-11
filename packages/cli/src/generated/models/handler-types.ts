@@ -60,7 +60,7 @@ export type OutputEvent =
   | { type: 'user-message'; content: string }
   | { type: 'response-meta'; engineId: string; elapsed: number; inputTokens?: number; outputTokens?: number; cost?: number }
   | { type: 'confidence-update'; value: number|null }
-  | { type: 'context-usage'; pct: number; used: number; limit: number; compacted?: number; cached?: number }
+  | { type: 'context-usage'; pct: number; used: number; limit: number; compacted?: number; cached?: number; source?: 'api'|'projected'|'estimate' }
   | { type: 'cesar-recap'; engineId: string; mode: string; outcome: string; durationMs: number; confidence?: number|null; confidenceReasoning?: string; toolCount: number; failedTools?: number; toolSummary: string[]; commands: Array<{ label: string; command: string; status: string }>; files: Array<{ path: string; relPath: string; status: string; touchCount: number }>; todos?: { done: number; total: number } | null; checkpoints?: Array<{ id: string; label: string }>; diffPreview?: { files: Array<{ path: string; relPath: string; status: string; additions: number; deletions: number; lines: string[]; omitted: number }>; totalFiles: number }; warnings: string[] }
   | { type: 'cesar-preamble'; engineId?: string; intent: string }
   | { type: 'file-changes'; files: { path: string; status: 'modified'|'created'|'deleted'; additions: number; deletions: number }[] }
@@ -75,7 +75,7 @@ export type OutputEvent =
   | { type: 'agent-routing'; mode: 'solo'|'team'; engines: string[]; reason: string }
   | { type: 'agent-team-complete'; teamId: string; winner: string|null; synthesizedPatch?: string|null; synthesizedAnalysis?: string|null; memberOutcomes: Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>; teamCostUsd: number; teamDurationMs: number; synthesisRan?: boolean; synthesisChanged?: boolean; synthesisCostUsd?: number; synthesisFitnessRegressed?: boolean };
 
-// @kern-source: handler-types:256
+// @kern-source: handler-types:258
 export interface PendingDelegation {
   action: string;
   task?: string;
@@ -113,10 +113,10 @@ export interface PendingDelegation {
   createdAt: number;
 }
 
-// @kern-source: handler-types:292
+// @kern-source: handler-types:294
 export type CesarLiveMode = 'self' | 'self-nero' | 'delegate' | 'forge' | 'forge-slice' | 'team-forge' | 'brainstorm' | 'team-brainstorm' | 'campfire' | 'tribunal' | 'team-tribunal' | 'pipeline' | 'goal' | 'conquer' | 'review' | 'agent' | 'team-agent' | 'plan';
 
-// @kern-source: handler-types:294
+// @kern-source: handler-types:296
 export interface CesarTurnOutcome {
   mode?: CesarLiveMode;
   delegated: boolean;
@@ -146,7 +146,7 @@ export interface CesarTurnOutcome {
   awaitingUserInput?: boolean;
 }
 
-// @kern-source: handler-types:322
+// @kern-source: handler-types:324
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -180,7 +180,7 @@ export interface CesarState {
   gateNudgedClaim?: string | undefined;
 }
 
-// @kern-source: handler-types:354
+// @kern-source: handler-types:356
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

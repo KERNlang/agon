@@ -978,6 +978,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   limit: Number(_ctxMeta.limit ?? 0),
                   compacted: Number(_ctxMeta.compacted ?? 0),
                   cached: Number(_ctxMeta.cached ?? 0),
+                  source: typeof _ctxMeta.source === 'string' ? _ctxMeta.source : undefined,
                 } as any);
                 continue;
               }

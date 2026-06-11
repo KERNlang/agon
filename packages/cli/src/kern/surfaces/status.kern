@@ -121,15 +121,18 @@ screen name=StatusBar target=ink
   prop name=isActive type=boolean optional=true
   prop name=fullscreenEnabled type=boolean optional=true
   prop name=telemetryVitals type="Map<string, any>" optional=true
+  prop name=context type="{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null" optional=true
   render
     handler <<<
       const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
       const msgs = chatMessageCount;
       const tokens = totalTokens;
-      const contextWindows: Record<string, number> = {
-        claude: 1000000, codex: 200000, agy: 1000000, opencode: 200000,
-      };
-      const contextBudget = contextWindows[cesarId] ?? 200000;
+      // Context gauge: REAL window occupancy from the session's context-usage
+      // events (last API response's token usage / anchored projection) — NOT
+      // cumulative session tokens against a guessed window. Without that data
+      // the gauge is hidden rather than shown wrong; the cumulative `tok`
+      // counter below stays (it's spend, a different axis than occupancy).
+      const ctx = context && context.limit > 0 ? context : null;
       return (
         <Box paddingTop={0} flexDirection="column">
           <Text>
@@ -138,8 +141,9 @@ screen name=StatusBar target=ink
             {branch ? <Text dimColor>{' on '}<Text color="#34d399">{branch}</Text></Text> : null}
           </Text>
           <Text>
-            {tokens > 0 ? <Text dimColor>{' | '}</Text> : null}
-            {tokens > 0 ? <TokenGauge tokens={tokens} maxTokens={contextBudget} /> : null}
+            {ctx ? <Text dimColor>{' | '}</Text> : null}
+            {ctx ? <TokenGauge tokens={ctx.used} maxTokens={ctx.limit} /> : null}
+            {ctx && ctx.source === 'estimate' ? <Text dimColor>{'~'}</Text> : null}
             {tokens > 0 ? <Text dimColor>{` | ${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
             {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
             {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
@@ -546,7 +550,7 @@ screen name=BackgroundJobRail target=ink memo=true
 screen name=CesarStatusStrip target=ink memo=true export=named
   prop name=cesarId type=string
   prop name=confidence type="number|null" optional=true
-  prop name=context type="{pct:number,used:number,limit:number,compacted:number,cached:number}|null" optional=true
+  prop name=context type="{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null" optional=true
   prop name=spinner type="{ message: string; engineId?: string } | null"
   prop name=engines type="EngineProgress[]|null"
   prop name=jobs type="Job[]" optional=true
@@ -566,7 +570,9 @@ screen name=CesarStatusStrip target=ink memo=true export=named
       // Idle: single dimmed line (no colored nesting issues)
       if (!isActive) {
         const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
-        const ctxPart = (context && context.pct > 0) ? ` \u2502 ctx ${context.pct}%` : '';
+        // '~' marks a chars-based estimate; exact numbers (real API token
+        // usage, or real-anchored projection) render without it.
+        const ctxPart = (context && context.pct > 0) ? ` \u2502 ctx ${context.source === 'estimate' ? '~' : ''}${context.pct}%` : '';
         return (
           <Box paddingTop={0} flexDirection="column">
             <Text>
@@ -589,11 +595,12 @@ screen name=CesarStatusStrip target=ink memo=true export=named
 
       // Context-window gauge: green < 60%, amber 60-80%, red > 80%. A compacted
       // marker (⤵) shows when older turns have been summarized so the user knows
-      // the window was managed, not lost.
+      // the window was managed, not lost. '~' marks a chars-based estimate;
+      // exact numbers (real API token usage) render without it.
       let ctxStr = '';
       let ctxColor = '#6b7280';
       if (context && context.pct > 0) {
-        ctxStr = ` ctx ${context.pct}%${context.compacted > 0 ? '⤵' : ''}`;
+        ctxStr = ` ctx ${context.source === 'estimate' ? '~' : ''}${context.pct}%${context.compacted > 0 ? '⤵' : ''}`;
         ctxColor = context.pct >= 80 ? '#ef4444' : context.pct >= 60 ? '#fbbf24' : '#4ade80';
       }
 

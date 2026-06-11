@@ -404,7 +404,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   speculativeThresholdUsd: 0.50,
   speculativeEloSpreadThreshold: 15,
   autoCredit: true,
-  commitCoAuthor: 'agon (KERN) <noreply@kernlang.dev>',
+  commitCoAuthor: 'agon (KERN) <292465531+KERN-Agon@users.noreply.github.com>',
 };
 
 // @kern-source: types:325

@@ -551,11 +551,11 @@ Every commit agon itself creates (`conquer --push`, each `goal` task commit, the
 ```
 🤖 Generated with [Agon](https://github.com/KERNlang/agon)
 
-Co-Authored-By: agon (KERN) <noreply@kernlang.dev>
+Co-Authored-By: agon (KERN) <292465531+KERN-Agon@users.noreply.github.com>
 ```
 
 - **One opt-out switch:** set `commitCoAuthor` to `""` (machine-wide in `~/.agon/config.json` or per-project in `.agon.json`) to disable the whole block — banner and trailer, commits and PR bodies. Mirrors Claude Code's `includeCoAuthoredBy`.
-- **Contributor-graph credit:** GitHub renders the co-author as a real contributor avatar only when the trailer email belongs to a GitHub account. Point `commitCoAuthor` at your bot account's noreply address (`<id>+<login>@users.noreply.github.com`) if you want agon on the graph.
+- **Contributor-graph credit:** the default email is the [KERN-Agon](https://github.com/KERN-Agon) GitHub account's noreply address, so GitHub renders agon as a real co-author avatar on every commit it builds. To credit a different account, set `commitCoAuthor` to that bot's `<id>+<login>@users.noreply.github.com`.
 - **PR text:** after a `--push`, one engine call turns the branch's actual diff + commits into a clean PR title/body (Summary / Changes / Verification), printed in the terminal and baked into a prefilled GitHub compare link — clicking it opens the new-PR form already filled in. If the engine call misses, agon falls back to its templated digest; the push itself never depends on it.
 
 ## Architecture

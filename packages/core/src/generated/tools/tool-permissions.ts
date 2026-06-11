@@ -333,10 +333,10 @@ export function evaluatePermissionRules(tool: string, command: string, rules: Pe
 }
 
 /**
- * True if the command contains shell control operators or substitution that make single-token prefix matching unsafe: && || ; | $( ` > >>. Used to decide whether Bash rule evaluation must split into segments.
+ * True if the command contains shell control operators or substitution that make single-token prefix matching unsafe: && || ; | & (background) $( ` > >> and newlines/CR. Single & and newline ARE separators — omitting them let `npm test & rm -rf /` ride a prefix allow rule (security re-review of 7090dff8). Used to decide whether Bash rule evaluation must split into segments.
  */
 export function hasShellControl(command: string): boolean {
-  return /&&|\|\||;|\||\$\(|`|>>?/.test(command);
+  return /&&|\|\||;|\||\$\(|`|>>?|&|[\n\r]/.test(command);
 }
 
 /**
@@ -354,12 +354,12 @@ export function hasSubstitution(command: string): boolean {
 }
 
 /**
- * Split a compound shell command into its executable segments on &&, ||, ;, and | (pipe). Mirrors the splitting in isReadOnlyCommand. Command-substitution bodies $(...) / backticks are NOT executed-as-segments here; their PRESENCE alone forces ask via hasShellControl, so segment-level allow can never fire on a substituting command. Empty segments are dropped.
+ * Split a compound shell command into its executable segments on &&, ||, ; , | (pipe), single & (background), and newlines/CR. Command-substitution bodies $(...) / backticks are NOT executed-as-segments here; their PRESENCE alone forces ask via hasShellControl, so segment-level allow can never fire on a substituting command. Empty segments are dropped.
  */
 export function splitShellSegments(command: string): string[] {
   const sep = String.fromCharCode(59); // ';'
   return command
-    .replace(/&&|\|\||&(?!&)/g, sep)
+    .replace(/&&|\|\||&(?!&)|[\n\r]+/g, sep)
     .split(new RegExp('\\|' + '|' + sep))
     .map((s: string) => s.trim())
     .filter((s: string) => s.length > 0);

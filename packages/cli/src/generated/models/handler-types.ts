@@ -50,7 +50,7 @@ export type OutputEvent =
   | { type: 'debate-round'; round: number; engineId: string; position: string; argument: string }
   | { type: 'verdict'; summary: string }
   | { type: 'question'; prompt: string; resolve: (answer: string) => void }
-  | { type: 'permission-ask'; tool: string; command: string; description?: string; reason: string; resolve: (approved: boolean) => void }
+  | { type: 'permission-ask'; tool: string; command: string; description?: string; reason: string; diffPreview?: { files: Array<{ path: string; relPath: string; status: string; additions: number; deletions: number; lines: string[]; omitted: number }>; totalFiles: number }; fallbackNote?: string; resolve: (approved: boolean) => void }
   | { type: 'patch-review'; winnerId: string; patchPath: string; patchContent: string }
   | { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running'|'done'|'error'; output?: string; durationMs?: number }
   | { type: 'tool-call-group'; blocks: any[] }
@@ -75,7 +75,7 @@ export type OutputEvent =
   | { type: 'agent-routing'; mode: 'solo'|'team'; engines: string[]; reason: string }
   | { type: 'agent-team-complete'; teamId: string; winner: string|null; synthesizedPatch?: string|null; synthesizedAnalysis?: string|null; memberOutcomes: Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>; teamCostUsd: number; teamDurationMs: number; synthesisRan?: boolean; synthesisChanged?: boolean; synthesisCostUsd?: number; synthesisFitnessRegressed?: boolean };
 
-// @kern-source: handler-types:254
+// @kern-source: handler-types:256
 export interface PendingDelegation {
   action: string;
   task?: string;
@@ -113,10 +113,10 @@ export interface PendingDelegation {
   createdAt: number;
 }
 
-// @kern-source: handler-types:290
+// @kern-source: handler-types:292
 export type CesarLiveMode = 'self' | 'self-nero' | 'delegate' | 'forge' | 'forge-slice' | 'team-forge' | 'brainstorm' | 'team-brainstorm' | 'campfire' | 'tribunal' | 'team-tribunal' | 'pipeline' | 'goal' | 'conquer' | 'review' | 'agent' | 'team-agent' | 'plan';
 
-// @kern-source: handler-types:292
+// @kern-source: handler-types:294
 export interface CesarTurnOutcome {
   mode?: CesarLiveMode;
   delegated: boolean;
@@ -146,7 +146,7 @@ export interface CesarTurnOutcome {
   awaitingUserInput?: boolean;
 }
 
-// @kern-source: handler-types:320
+// @kern-source: handler-types:322
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -177,7 +177,7 @@ export interface CesarState {
   autoModeQueued?: boolean;
 }
 
-// @kern-source: handler-types:349
+// @kern-source: handler-types:351
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

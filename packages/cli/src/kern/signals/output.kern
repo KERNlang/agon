@@ -72,7 +72,7 @@ interface name=OutputActions
 const name=_thinkingBuffer type="{engineId:string,content:string}" value={{ { engineId: '', content: '' } }}
 
 // ── Permission queue — ensures prompts don't overwrite each other ────
-const name=_permissionQueue type="Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>" value={{ [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> }}
+const name=_permissionQueue type="Array<{tool:string,command:string,description?:string,reason:string,diffPreview?:any,fallbackNote?:string,resolve:(approved:boolean)=>void}>" value={{ [] as Array<{tool:string,command:string,description?:string,reason:string,diffPreview?:any,fallbackNote?:string,resolve:(approved:boolean)=>void}> }}
 
 const name=_sessionAllowList type="string[]" value={{ [] as string[] }}
 
@@ -170,7 +170,7 @@ fn name=_showNextPermission params="actions:OutputActions" returns=void export=f
     _drainAutoApproved(actions);
     if (_permissionQueue.length === 0) return;
     const next = _permissionQueue[0];
-    actions.addBlock({ type: 'permission-ask', tool: next.tool, command: next.command, description: next.description, reason: next.reason, resolve: next.resolve } as any);
+    actions.addBlock({ type: 'permission-ask', tool: next.tool, command: next.command, description: next.description, reason: next.reason, diffPreview: next.diffPreview, fallbackNote: next.fallbackNote, resolve: next.resolve } as any);
     const permResolve = next.resolve;
     const permCommand = next.command;
     actions.setQuestionState({
@@ -180,6 +180,8 @@ fn name=_showNextPermission params="actions:OutputActions" returns=void export=f
       command: permCommand,
       description: next.description,
       reason: next.reason,
+      diffPreview: next.diffPreview,
+      fallbackNote: next.fallbackNote,
       choices: [
         { key: 'y', label: 'Yes', color: '#4ade80' },
         { key: 'n', label: 'No', color: '#ef4444' },
@@ -482,6 +484,8 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
           command: (event as any).command as string,
           description: (event as any).description as string | undefined,
           reason: (event as any).reason as string,
+          diffPreview: (event as any).diffPreview,
+          fallbackNote: (event as any).fallbackNote as string | undefined,
           resolve: (event as any).resolve as (approved: boolean) => void,
         };
         _permissionQueue.push(entry);

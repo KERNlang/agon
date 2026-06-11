@@ -963,13 +963,40 @@ module name=AppRendering
               { text: '  ', dimColor: true },
               { text: '[A] Always', color: '#60a5fa', bold: true },
             ].filter(Boolean));
+            // Finding 2: prefer the structured diffPreview/fallbackNote the
+            // permission-ask event carries (the ACTUAL approval-time change) over
+            // rebuilding a synthetic preview from the truncated command string.
+            const permDiffFiles = Array.isArray(event.diffPreview?.files) ? event.diffPreview.files as any[] : [];
+            const permFallbackNote = typeof event.fallbackNote === 'string' ? event.fallbackNote.trim() : '';
             pushSegmentsRow(`${baseKey}-perm-cmd`, 1, preview
               ? [
                   { text: '  $ ', dimColor: true },
                   { text: preview, dimColor: true },
-                ]
+                  permFallbackNote && permDiffFiles.length === 0 ? { text: ` · ${permFallbackNote}`, dimColor: true } : null,
+                ].filter(Boolean)
               : [{ text: '  respond below', dimColor: true }]);
-            if (isMutatingToolCall(previewEvent)) {
+            if (permDiffFiles.length > 0) {
+              const permDiffWidth = contentWidth(26);
+              permDiffFiles.slice(0, 4).forEach((file: any, fileIndex: number) => {
+                pushSegmentsRow(`${baseKey}-perm-diff-head-${fileIndex}`, 1, [
+                  { text: `  Δ ${String(file.relPath ?? file.path ?? '')}`, color: '#22d3ee' },
+                  file.status === 'created' ? { text: ' (new file)', color: '#4ade80' } : null,
+                  { text: ` +${Number(file.additions ?? 0)} -${Number(file.deletions ?? 0)}`, dimColor: true },
+                ].filter(Boolean));
+                (Array.isArray(file.lines) ? file.lines : []).forEach((line: string, lineIndex: number) => {
+                  pushSegmentsRow(`${baseKey}-perm-diff-${fileIndex}-${lineIndex}`, 1, [{
+                    text: `    ${truncateCodeLine(line, permDiffWidth)}`,
+                    color: line.startsWith('+') ? '#4ade80' : line.startsWith('-') ? '#ef4444' : '#fbbf24',
+                    dimColor: line.startsWith('@@'),
+                  }]);
+                });
+                if (Number(file.omitted ?? 0) > 0) {
+                  pushSegmentsRow(`${baseKey}-perm-diff-omitted-${fileIndex}`, 1, [{ text: `    … +${Number(file.omitted)} more lines`, dimColor: true }]);
+                }
+              });
+            } else if (permFallbackNote) {
+              // command-string fallback already carries the note inline above.
+            } else if (isMutatingToolCall(previewEvent)) {
               rows.push(...buildToolCallRows(`${baseKey}-perm-diff`, previewEvent, false));
             }
             return;

@@ -62,10 +62,113 @@ import from="../signals/output.js" names="StreamingEntry" types=true
 import from="./app-composer.js" names="COMPOSER_HISTORY_LIMIT,saveComposerInputHistory"
 import from="./app-blocks.js" names="summarizeBtwTranscriptEvent"
 import from="../lib/terminal-notify.js" names="setWindowTitle"
-import from="node:path" names="join"
-import from="node:fs" names="mkdirSync"
+import from="../signals/app-input.js" names="extractFileMentions"
+import from="node:path" names="join,resolve,relative,sep,isAbsolute"
+import from="node:fs" names="mkdirSync,readFileSync,statSync,realpathSync,openSync,readSync,closeSync"
 
 module name=AppSubmit
+
+  // ── @-file mention attachment ───────────────────────────────────────
+  // Caps so a stray "@huge-file" or a flood of mentions can't blow the turn's
+  // token budget. Per-file is generous (most source files fit); the total cap
+  // bounds the whole injected block. Both are byte (char) counts.
+  const name=MENTION_MAX_FILE_BYTES type=number value={{ 65536 }}
+  const name=MENTION_MAX_TOTAL_BYTES type=number value={{ 262144 }}
+  const name=MENTION_MAX_FILES type=number value={{ 20 }}
+
+  // Source: new — the ONE submit-pipeline predicate that exempts a line from the
+  // Cesar-bound augmentations (image extraction + @-file mention expansion). A
+  // slash command (`/run …`) and a `! <cmd>` inline-bash line are LITERAL
+  // command/shell text — a file path inside them is an argument, not an attach or
+  // a mention. Exported so the bang/mention tests pin the real gate instead of
+  // re-implementing the startsWith check inline (a tautology). Keep both call
+  // sites pointed here so the gate can never drift between them.
+  fn name=isLiteralCommandLine params="input:string" returns=boolean export=true expr={{ return input.startsWith('/') || input.startsWith('! '); }}
+
+  // Source: new — resolve @-mentions in submitted text into a fenced context
+  // block. Each mention is resolved RELATIVE to cwd and confined to it (a path
+  // escaping the project root via ../ or an absolute path is ignored, so the
+  // engine can't be steered into reading /etc/passwd). A non-existent / unreadable
+  // / non-file path is skipped (the mention stays as plain text in the user
+  // message). Files are read size-capped with an explicit "[truncated]" marker so
+  // the engine never silently sees a clipped file. Honors a per-file and a total
+  // byte cap, and a max file count. Returns '' when nothing resolved.
+  fn name=buildMentionedFilesContext params="text:string, cwd:string" returns=string export=true
+    handler <<<
+      const allMentions = extractFileMentions(text);
+      const mentions = allMentions.slice(0, MENTION_MAX_FILES);
+      if (mentions.length === 0) return '';
+      const root = resolve(cwd);
+      // Confinement is checked against the REAL (symlink-resolved) root so a
+      // symlink inside the tree can't be used to read outside it.
+      let realRoot: string;
+      try { realRoot = realpathSync(root); } catch { realRoot = root; }
+      const blocks: string[] = [];
+      let totalBytes = 0;
+      // Anything we couldn't include because a cap was hit. Surfaced as a final
+      // note so the engine (and user) know the attachment set is incomplete
+      // rather than silently short — mentions past MENTION_MAX_FILES plus any
+      // file dropped once the total byte cap is exhausted.
+      let dropped = allMentions.length - mentions.length;
+      for (const rel of mentions) {
+        // Reject absolute paths and any path that lexically resolves outside the
+        // project root — only project-relative mentions are attachable.
+        if (isAbsolute(rel)) continue;
+        const abs = resolve(root, rel);
+        const within = abs === root || abs.startsWith(root + sep);
+        if (!within) continue;
+        // Total-cap reached: this and every remaining mention is dropped.
+        if (totalBytes >= MENTION_MAX_TOTAL_BYTES) { dropped++; continue; }
+        const remaining = MENTION_MAX_TOTAL_BYTES - totalBytes;
+        const perFileCap = Math.min(MENTION_MAX_FILE_BYTES, remaining);
+        let size: number;
+        let body: string;
+        let truncated = false;
+        try {
+          const st = statSync(abs);
+          if (!st.isFile()) continue;
+          // Re-resolve symlinks and re-check confinement against the real root:
+          // statSync/readFileSync FOLLOW symlinks, so a symlinked path that
+          // passed the lexical check above could still point outside the tree.
+          const real = realpathSync(abs);
+          if (real !== realRoot && !real.startsWith(realRoot + sep)) continue;
+          size = st.size;
+          if (size > perFileCap) {
+            // Read only the cap rather than buffering the whole file — a huge
+            // file would otherwise be fully loaded (and >~512MB throws, dropping
+            // it silently) just to slice it back down.
+            const fd = openSync(abs, 'r');
+            try {
+              const buf = Buffer.alloc(perFileCap);
+              const bytesRead = readSync(fd, buf, 0, perFileCap, 0);
+              body = buf.toString('utf-8', 0, bytesRead);
+            } finally {
+              closeSync(fd);
+            }
+            truncated = true;
+          } else {
+            body = readFileSync(abs, 'utf-8');
+            // A multibyte tail can push a small file just over the cap once
+            // decoded; clamp defensively.
+            if (body.length > perFileCap) { body = body.slice(0, perFileCap); truncated = true; }
+          }
+        } catch {
+          // Non-existent / unreadable — leave the mention as plain text.
+          continue;
+        }
+        totalBytes += body.length;
+        const display = relative(root, abs) || rel;
+        const header = truncated
+          ? `@${display} (truncated to ${body.length} of ${size} bytes)`
+          : `@${display}`;
+        blocks.push(`\`\`\`\n// ${header}\n${body}\n\`\`\``);
+      }
+      if (blocks.length === 0) return '';
+      const note = dropped > 0
+        ? `\n\n[${dropped} more @-mentioned file${dropped === 1 ? '' : 's'} omitted: caps reached]`
+        : '';
+      return `\n\n[Attached files referenced with @ in the message above]\n${blocks.join('\n\n')}${note}`;
+    >>>
 
   // ── processInputQueue: drain the next queued line once idle ──
   // Source: app.kern effect deps="replState,inputQueue". When the repl returns to
@@ -358,7 +461,10 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       // While the BTW side-chat panel is open, a plain (non-slash) submit is a
       // follow-up turn in that side conversation — Cesar answers it in the
       // panel without touching the main task. Esc leaves the side-chat.
-      if (opts.btwPanel && input.trim() && !input.startsWith('/')) {
+      // A `! <cmd>` inline-bash line runs the shell directly (it routes to /run),
+      // so it is NOT captured as a side-chat follow-up even while the /btw panel is
+      // open — same one-token exemption slash commands already get.
+      if (opts.btwPanel && input.trim() && !input.startsWith('/') && !input.startsWith('! ')) {
         if (opts.btwPanel.status === 'running') {
           opts.dispatch({ type: 'info', message: 'Side-chat is still answering — one turn at a time.' } as any);
           return;
@@ -458,7 +564,10 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
         opts.dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '…' : input}` } as any);
         return;
       }
-      if (opts.planModeQueued && input.trim() && !input.startsWith('/')) {
+      // A `! <cmd>` inline-bash line runs the shell directly even in plan mode
+      // (Claude Code parity — bash is exempt from the plan wrapper, same as slash
+      // commands), so don't rewrite it to `/plan ! <cmd>`.
+      if (opts.planModeQueued && input.trim() && !input.startsWith('/') && !input.startsWith('! ')) {
         opts.setPlanModeQueued(false);
         opts.handleSubmit(`/plan ${input}`);
         return;
@@ -470,8 +579,32 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       setWindowTitle('● agon — running');
       opts.dispatch({ type: 'separator' } as any);
       opts.dispatch({ type: 'user-message', content: input } as any);
-      const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
+      // Image extraction is gated by the SAME literal-command exemption as @-file
+      // mentions below: a slash command (e.g. `/run cp /tmp/shot.png docs/`) and a
+      // `! <cmd>` inline-bash line are literal shell/command text — an existing
+      // image path inside them is an ARGUMENT, not an attach. Running the extractor
+      // would STRIP that path out of the command (corrupting it) and silently
+      // attach it as a pending image. So for `/` and `! ` lines we skip extraction
+      // and keep the path in the command verbatim. (This also fixes the pre-existing
+      // gap for /run-with-an-image-path — the path now stays in the /run command,
+      // which is the correct Claude-Code-parity behavior.)
+      const literalCommandLine = isLiteralCommandLine(input);
+      const { text: cleanInput, images: detectedImages } = literalCommandLine
+        ? { text: input, images: [] as ImageAttachment[] }
+        : extractImagesFromInput(input, resolveWorkingDir());
       const allImages = [...opts.pendingImages, ...detectedImages];
+      // @-file mentions: the transcript (user-message above) keeps the raw "@path"
+      // the user typed (Claude-Code style); the ENGINE prompt gets each resolved
+      // file's content appended as a fenced block so it sees the code without a
+      // manual paste. Slash commands parse their args literally, so they are never
+      // augmented; a `! <cmd>` inline-bash line is likewise a literal shell command
+      // (it routes to /run, not Cesar), so an "@path" inside it stays a shell arg
+      // and is NOT expanded. activeTurnRef below keeps the ORIGINAL input so
+      // retry/dedup matches what the user typed, not the file-expanded prompt.
+      const mentionContext = literalCommandLine
+        ? ''
+        : buildMentionedFilesContext(input, resolveWorkingDir());
+      const dispatchInput = mentionContext ? input + mentionContext : input;
       let intent = detectIntent(cleanInput || input, opts.commandRegistry);
       if (intent.type === 'status') {
         opts.setStatusDashboardOpen(true);
@@ -510,13 +643,13 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       }
       if (intent.type === 'unknown' && opts.mode !== 'chat') {
         switch (opts.mode) {
-          case 'campfire': intent = { type: 'campfire', topic: input } as any; break;
-          case 'brainstorm': intent = { type: 'brainstorm', question: input } as any; break;
-          case 'tribunal': intent = { type: 'tribunal', question: input } as any; break;
+          case 'campfire': intent = { type: 'campfire', topic: dispatchInput } as any; break;
+          case 'brainstorm': intent = { type: 'brainstorm', question: dispatchInput } as any; break;
+          case 'tribunal': intent = { type: 'tribunal', question: dispatchInput } as any; break;
         }
       }
       try {
-        const result = await dispatchIntent(intent, input, cb);
+        const result = await dispatchIntent(intent, dispatchInput, cb);
         if (result.ranAsJob) return;
       } catch (err: any) { opts.dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
       finally {

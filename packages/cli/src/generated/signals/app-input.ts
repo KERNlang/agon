@@ -4,10 +4,12 @@ import { getGhostCompletion } from './ghost-text.js';
 
 import { stripBracketedPasteMarkers } from '../../input-utils.js';
 
+import { collectSourceFiles } from '@kernlang/agon-core';
+
 /**
  * Strip bracketed paste escapes from input while preserving pasted content.
  */
-// @kern-source: app-input:7
+// @kern-source: app-input:8
 export function cleanInputValue(value: string): string {
   return stripBracketedPasteMarkers(value);
 }
@@ -15,7 +17,7 @@ export function cleanInputValue(value: string): string {
 /**
  * Strip paste escapes and trim for submission.
  */
-// @kern-source: app-input:10
+// @kern-source: app-input:11
 export function cleanSubmitValue(value: string): string {
   return stripBracketedPasteMarkers(value).trim();
 }
@@ -23,7 +25,7 @@ export function cleanSubmitValue(value: string): string {
 /**
  * Find the single contiguous edit between two input values.
  */
-// @kern-source: app-input:13
+// @kern-source: app-input:14
 export function findInputChange(previous: string, next: string): {start:number, removed:string, inserted:string} {
   let start = 0;
   while (start < previous.length && start < next.length && previous[start] === next[start]) {
@@ -47,7 +49,7 @@ export function findInputChange(previous: string, next: string): {start:number, 
 /**
  * Navigate input history up/down.
  */
-// @kern-source: app-input:35
+// @kern-source: app-input:36
 export function navigateHistory(direction: 'up'|'down', currentIndex: number, history: string[]): {index:number, value:string} {
   if (direction === 'up' && history.length > 0) {
     const newIndex = (currentIndex === -1) ? (history.length - 1) : Math.max(0, currentIndex - 1);
@@ -66,7 +68,7 @@ export function navigateHistory(direction: 'up'|'down', currentIndex: number, hi
 /**
  * Append a submitted composer command with duplicate pruning and a bounded history length.
  */
-// @kern-source: app-input:48
+// @kern-source: app-input:49
 export function appendInputHistory(history: string[], input: string, maxEntries?: number): string[] {
   const max = Math.max(1, Math.floor(maxEntries ?? 200));
   const entry = String(input ?? '').trim();
@@ -80,7 +82,7 @@ export function appendInputHistory(history: string[], input: string, maxEntries?
 /**
  * Parse first-class /auto controls. /auto <task> intentionally returns null so normal autonomous task routing still works.
  */
-// @kern-source: app-input:58
+// @kern-source: app-input:59
 export function parseAutoModeCommand(input: string): 'on'|'off'|'toggle'|'status'|null {
   const trimmed = String(input ?? '').trim().toLowerCase();
   const match = trimmed.match(/^\/(?:auto|autonomous)(?:\s+(on|off|toggle|status))?$/);
@@ -93,7 +95,7 @@ export function parseAutoModeCommand(input: string): 'on'|'off'|'toggle'|'status
 /**
  * True when /btw should run as a side-channel instead of falling through to normal command dispatch.
  */
-// @kern-source: app-input:67
+// @kern-source: app-input:68
 export function hasBtwSideChannelTarget(opts: {replState:string,activePlanState?:string|null,runningJobCount?:number}): boolean {
   if (opts.replState !== 'idle') {
     return true;
@@ -105,7 +107,7 @@ export function hasBtwSideChannelTarget(opts: {replState:string,activePlanState?
   return ['planning', 'awaiting_approval', 'running', 'paused'].includes(planState);
 }
 
-// @kern-source: app-input:77
+// @kern-source: app-input:78
 export interface EscapeDecision {
   action: 'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'clear-input'|'noop';
 }
@@ -113,7 +115,7 @@ export interface EscapeDecision {
 /**
  * Resolve Esc behavior without destructive transcript clearing.
  */
-// @kern-source: app-input:80
+// @kern-source: app-input:81
 export function resolveEscapeAction(opts: {replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean}): EscapeDecision {
   if (opts.slashPickerOpen) {
     return { action: 'close-slash' };
@@ -136,7 +138,7 @@ export function resolveEscapeAction(opts: {replState:string,inputValue:string,sl
 /**
  * Get ghost text completion for current input.
  */
-// @kern-source: app-input:95
+// @kern-source: app-input:96
 export function tryGhostComplete(inputValue: string, commands: any[], engineIds: string[]): string|null {
   return getGhostCompletion(inputValue, commands, engineIds);
 }
@@ -144,7 +146,7 @@ export function tryGhostComplete(inputValue: string, commands: any[], engineIds:
 /**
  * Rank slash-command matches so prefix hits stay on top while substring hits remain reachable.
  */
-// @kern-source: app-input:98
+// @kern-source: app-input:99
 export function getSlashMatches(filter: string, commands: any[]): any[] {
   const normalizedFilter = filter.trim().toLowerCase();
   return commands
@@ -164,7 +166,7 @@ export function getSlashMatches(filter: string, commands: any[]): any[] {
 /**
  * Move a picker cursor with wrap-around.
  */
-// @kern-source: app-input:116
+// @kern-source: app-input:117
 export function movePickerCursor(direction: 'up'|'down', currentIndex: number, itemCount: number): number {
   if (itemCount <= 0) {
     return 0;
@@ -178,7 +180,7 @@ export function movePickerCursor(direction: 'up'|'down', currentIndex: number, i
 /**
  * Only queue plan mode from Tab when the composer is idle and empty.
  */
-// @kern-source: app-input:125
+// @kern-source: app-input:126
 export function shouldQueuePlanModeOnTab(opts: {replState:string,inputValue:string,activePlanState?:string|null}): boolean {
   if (opts.replState !== 'idle') {
     return false;
@@ -190,4 +192,123 @@ export function shouldQueuePlanModeOnTab(opts: {replState:string,inputValue:stri
     return false;
   }
   return true;
+}
+
+// @kern-source: app-input:159
+export const MENTION_TRAILING_PUNCT: string = [',', '.', ';', ':', '!', '?', ')', ']', '}', "'", '"'].join('');
+
+/**
+ * Trim sentence/clause punctuation from the end of a captured @-mention path so trailing prose punctuation isn't read as part of the filename.
+ */
+// @kern-source: app-input:161
+export function stripMentionTrailingPunct(path: string): string {
+  let end = path.length;
+  while (end > 0 && MENTION_TRAILING_PUNCT.includes(path[end - 1])) end--;
+  return path.slice(0, end);
+}
+
+/**
+ * Extract @-mentioned relative paths from submitted composer text. A mention is '@<path>' where '@' is at string start or follows whitespace (so user@host emails are NOT matched). Trailing prose punctuation is trimmed. Returns de-duplicated paths in first-seen order; never includes the leading '@'.
+ */
+// @kern-source: app-input:169
+export function extractFileMentions(text: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  // (^|\s)@ ensures the @ is a fresh token, not the @ inside an email.
+  const re = /(^|\s)@([^\s]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const raw = stripMentionTrailingPunct(m[2]);
+    if (!raw) continue;
+    // Reject mentions that smell like an email local-part artifact (a bare "@"
+    // already excluded above) or that contain another "@" — paths don't.
+    if (raw.includes('@')) continue;
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    out.push(raw);
+  }
+  return out;
+}
+
+/**
+ * Given the current composer value, return the active trailing @-mention fragment the picker should filter on, or null if the caret (assumed end-of-input) is not inside a mention. Active means: the last '@' in the value is a valid mention boundary (start or after whitespace) AND no whitespace follows it. The query is the text typed after that '@' (may be empty right after typing '@').
+ */
+// @kern-source: app-input:190
+export function parseActiveAtMention(value: string): { query: string } | null {
+  const at = value.lastIndexOf('@');
+  if (at < 0) return null;
+  // Boundary check: '@' must start the value or follow whitespace.
+  if (at > 0 && !/\s/.test(value[at - 1])) return null;
+  const after = value.slice(at + 1);
+  // A space after the '@' means the mention is finished — picker closes.
+  if (/\s/.test(after)) return null;
+  return { query: after };
+}
+
+/**
+ * Subsequence fuzzy score of query against a candidate path (case-insensitive). Returns -1 when query is not a subsequence. Higher is better: contiguous runs, basename hits, and matches near a path segment boundary score higher; earlier matches score higher. Empty query scores all candidates 0 (caller keeps source order).
+ */
+// @kern-source: app-input:203
+export function fuzzyFileScore(query: string, candidate: string): number {
+  if (!query) return 0;
+  const q = query.toLowerCase();
+  const c = candidate.toLowerCase();
+  // Fast path: contiguous substring — strongly preferred, basename hit best.
+  const subIdx = c.indexOf(q);
+  let score = 0;
+  let qi = 0;
+  let prevMatch = -2;
+  let lastSep = -1;
+  for (let ci = 0; ci < c.length && qi < q.length; ci++) {
+    const ch = c[ci];
+    if (ch === '/' ) lastSep = ci;
+    if (ch === q[qi]) {
+      // Contiguous run bonus.
+      if (ci === prevMatch + 1) score += 5; else score += 1;
+      // Segment-boundary bonus: matching the first char of a path segment.
+      if (ci === 0 || ci === lastSep + 1) score += 3;
+      // Earlier matches preferred.
+      score += Math.max(0, 4 - Math.floor(ci / 8));
+      prevMatch = ci;
+      qi++;
+    }
+  }
+  if (qi < q.length) return -1;
+  if (subIdx >= 0) score += 8;
+  // Basename hit: the contiguous substring sits in the final path segment.
+  const slash = c.lastIndexOf('/');
+  if (subIdx > slash) score += 6;
+  return score;
+}
+
+/**
+ * Rank project file paths against a fuzzy query (subsequence). Non-matches are dropped; ties break on shorter path then lexicographic. Empty query returns the first `limit` files in source order. Capped at `limit` (default 50).
+ */
+// @kern-source: app-input:237
+export function rankFileMatches(query: string, files: string[], limit?: number): string[] {
+  const cap = Math.max(1, Math.floor(limit ?? 50));
+  if (!query.trim()) return files.slice(0, cap);
+  const scored: { path: string; score: number }[] = [];
+  for (const f of files) {
+    const s = fuzzyFileScore(query, f);
+    if (s >= 0) scored.push({ path: f, score: s });
+  }
+  scored.sort((a, b) =>
+    b.score - a.score ||
+    a.path.length - b.path.length ||
+    (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
+  );
+  return scored.slice(0, cap).map((e) => e.path);
+}
+
+/**
+ * collectSourceFiles wrapped so a bad cwd / fs error never throws into the keystroke path — returns [] instead. Used to lazily populate the @-file picker on first '@'.
+ */
+// @kern-source: app-input:255
+export function safeCollectSourceFiles(cwd: string): string[] {
+  try {
+    return collectSourceFiles(cwd);
+  } catch {
+    return [];
+  }
 }

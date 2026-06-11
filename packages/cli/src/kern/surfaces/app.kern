@@ -30,7 +30,7 @@ import from="../signals/output.js" names="handleOutputEvent"
 import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry" types=true
 import from="../signals/event-log-tee.js" names="teeOutputEvent"
 import from="@kernlang/agon-core" names="resetEventLogState"
-import from="../signals/app-input.js" names="cleanInputValue,findInputChange"
+import from="../signals/app-input.js" names="cleanInputValue,findInputChange,parseActiveAtMention,safeCollectSourceFiles"
 import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
 import from="../signals/input-perf.js" names="perfNow,recordKeystrokeLatency"
 import from="../blocks/review.js" names="handleReviewAction"
@@ -108,6 +108,14 @@ screen name=App target=ink
   state name=liveSpinner type=any initial="null" throttle=120
   state name=liveProgress type="EngineProgress[]|null" initial="null" throttle=120
   state name=slashPickerOpen type=boolean initial=false safe=false
+  // ── @-file picker state ──
+  // Opens when the user types "@" in the composer. Files are loaded lazily on
+  // open (collectSourceFiles) and held for the picker's lifetime; prefix is the
+  // composer text before the active "@"; query is whatever was typed after it.
+  state name=atPickerOpen type=boolean initial=false safe=false
+  state name=atPickerFiles type="string[]" initial="[]" safe=false
+  state name=atPickerPrefix type=string initial="''" safe=false
+  state name=atPickerQuery type=string initial="''" safe=false
   state name=questionState type=any initial="null"
   state name=questionAnswer type=string initial="''" safe=false
   state name=selectedChoiceIndex type=number initial="0" safe=false
@@ -191,6 +199,8 @@ screen name=App target=ink
   ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   ref name=inputEpochRef type=number initial=0
   ref name=inputValueRef type=string initial="''"
+  comment raw="// Mirror of atPickerPrefix so the stable (dep-free) @-picker select/cancel callbacks can read the prefix without re-creating per render and breaking ComposerView's memo."
+  ref name=atPickerPrefixRef type=string initial="''"
   // Diagnostic: keystroke t0 captured at handleInputChange, read post-commit by
   // the AGON_PERF latency effect. 0 when not profiling (perfNow returns 0).
   ref name=keyT0Ref type=number initial=0
@@ -998,7 +1008,7 @@ screen name=App target=ink
       assign target="pendingPasteTransformRef.current" value="replacement.length > 0"
       return value="replacement"
 
-  callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued,livePaneVisible,pendingBellRef"
+  callback name=handleInputChange params="value:string" deps="slashPickerOpen,atPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued,livePaneVisible,pendingBellRef"
     handler lang="kern"
       comment raw="// Diagnostic: stamp keystroke arrival; read post-commit by the AGON_PERF effect (0 when off)."
       assign target="keyT0Ref.current" value="perfNow()"
@@ -1036,6 +1046,26 @@ screen name=App target=ink
       comment raw="// When slash picker is open, don't update inputValue — picker manages its own filter"
       if cond="slashPickerOpen"
         return
+      comment raw="// When @-picker is open, the AtFilePicker owns keystrokes via its own useInput;"
+      comment raw="// swallow any onChange so the composer value (which holds the prefix + '@') is stable."
+      if cond="atPickerOpen"
+        return
+      comment raw="// \"@\" typed at a mention boundary (start or after whitespace) opens the file"
+      comment raw="// picker. We commit the value (keeping the '@') so the prefix is preserved, then"
+      comment raw="// open. Skip pastes (multi-char) so pasting an email/snippet never pops the picker."
+      if cond="!slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !cameFromPasteTransform && change.inserted === '@'"
+        let name=mention value="parseActiveAtMention(nextValue)"
+        if cond="mention"
+          let name=files value="safeCollectSourceFiles(resolveWorkingDir())"
+          let name=atPrefix value="nextValue.slice(0, nextValue.lastIndexOf('@'))"
+          assign target="inputValueRef.current" value="nextValue"
+          assign target="atPickerPrefixRef.current" value="atPrefix"
+          do value="setInputValue(nextValue)"
+          do value="setAtPickerFiles(files)"
+          do value="setAtPickerPrefix(atPrefix)"
+          do value="setAtPickerQuery(mention.query)"
+          do value="setAtPickerOpen(true)"
+          return
       let name=looksLikePaste value="value !== nextValue || change.inserted.length > 1"
       if cond="cameFromPasteTransform || !looksLikePaste || !change.inserted"
         assign target="inputValueRef.current" value="nextValue"
@@ -1239,6 +1269,25 @@ screen name=App target=ink
     handler lang="kern"
       do value="setSlashPickerOpen(false)"
 
+  comment raw="// @-file picker accept: rewrite the composer to '<prefix>@<path> ' (trailing space"
+  comment raw="// so the caret is ready for more typing) and close. Stable/dep-free (reads the prefix"
+  comment raw="// from a ref) so ComposerView's memo isn't defeated by a fresh closure each render."
+  callback name=handleAtSelect params="path:string"
+    handler lang="kern"
+      let name=next value="atPickerPrefixRef.current + '@' + path + ' '"
+      assign target="inputValueRef.current" value="next"
+      do value="setInputValue(next)"
+      do value="setAtPickerOpen(false)"
+
+  comment raw="// @-file picker cancel: fold the picker's final typed text back into the composer as"
+  comment raw="// plain text ('@<query>', '@<query> ' on space, or '' if the '@' itself was backspaced)."
+  callback name=handleAtCancel params="typed:string"
+    handler lang="kern"
+      let name=next value="atPickerPrefixRef.current + typed"
+      assign target="inputValueRef.current" value="next"
+      do value="setInputValue(next)"
+      do value="setAtPickerOpen(false)"
+
   callback name=handleQuestionAnswer params="answer:string" deps="questionState,questionOtherActive,handleSubmit"
     handler <<<
       if (!questionState) return;
@@ -1391,10 +1440,10 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,atPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId"
     handler <<<
       runHandleKeyboardInput({
-        modelPickerOpen, cesarPickerOpen, slashPickerOpen, enginePickerOpen,
+        modelPickerOpen, cesarPickerOpen, slashPickerOpen, atPickerOpen, enginePickerOpen,
         reviewEvent, toolDetailEvent, btwPanel, statusDashboardOpen,
         questionState, selectedChoiceIndex, questionOtherActive,
         replState, inputValue, inputHistory, historyIndex,
@@ -1702,6 +1751,12 @@ screen name=App target=ink
             autoModeQueued={autoModeQueued}
             activePlan={activePlan}
             slashPickerOpen={slashPickerOpen}
+            atPickerOpen={atPickerOpen}
+            atPickerFiles={atPickerFiles}
+            atPickerPrefix={atPickerPrefix}
+            atPickerQuery={atPickerQuery}
+            onAtSelect={handleAtSelect}
+            onAtCancel={handleAtCancel}
             inputValue={inputValue}
             handleInputChange={handleInputChange}
             handlePasteInput={handlePasteInput}

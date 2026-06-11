@@ -30,9 +30,11 @@ import { extractDelegation } from './brain-helpers.js';
 
 import { applyCesarSelfTurnApproval, approvalArgsFromCommand } from './self-turn-approval.js';
 
+import { approvalToolIsFileMutating, buildApprovalDiffPreview } from './approval-diff.js';
+
 import { recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence, buildToolErrorDiagnostic } from './tool-observability.js';
 
-// @kern-source: session:18
+// @kern-source: session:19
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator.
 
 CHARACTER — the most trusted advisor who doesn't need you to like him.
@@ -184,7 +186,7 @@ RULE 10 — TURN CLOSURE: End every turn with one clear closing line so the user
 /**
  * Build the full Cesar system prompt with project context, engine list, and mode flags.
  */
-// @kern-source: session:169
+// @kern-source: session:170
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -216,6 +218,20 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       systemParts.push(`## AVAILABLE ENGINES\n${engineList}\n\nMODES vs ENGINES: the names above are ENGINES — runnable backends you delegate to (codex, claude, agy, …). MODES are commands/workflows you invoke (run /<name>): ${AGON_MODE_NAMES.join(', ')}. A mode runs ON engines — never treat a mode name (e.g. "conquer") as an engine id.`);
       if (ctx.explorationMode) {
         systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
+      }
+
+      // Commit attribution is ON by default (config.commitCoAuthor). Whenever it's
+      // active, tell Cesar to end any git commit message it writes itself (via Bash)
+      // with that trailer, so its commits carry the same authorship attribution as
+      // agon's own commit paths. When the user opts out (commitCoAuthor === ''),
+      // emit no attribution section at all — and give Cesar the deactivation contract
+      // so it can honor "remove the logo/attribution" requests itself.
+      // Sanitize: this value is interpolated into a backtick-delimited trailer in
+      // the system prompt — strip newlines/backticks (collapse to single spaces) so
+      // a malformed config value can't break out of the template or inject text.
+      const commitCoAuthor = (config.commitCoAuthor || '').replace(/[`\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (commitCoAuthor) {
+        systemParts.push(`COMMIT ATTRIBUTION: When you create a git commit yourself via Bash, end the commit message with a trailer line \`Co-Authored-By: ${commitCoAuthor}\`. This attribution is configurable (config.commitCoAuthor) and is ON by default.\n- If the user asks to REMOVE/DISABLE the commit logo/attribution, first ask whether to disable it for THIS PROJECT or MACHINE-WIDE, then disable it: machine-wide, run \`agon config set commitCoAuthor ""\` (writes ~/.agon/config.json); per-project, safely edit ./.agon.json with your file tools (read the JSON if it exists, set/merge the key \`"commitCoAuthor": ""\`, write it back — never clobber other keys). Confirm once done.\n- If the user asks to CHANGE the identity instead, set the new value the same way (\`agon config set commitCoAuthor "<value>"\` machine-wide, or merge it into ./.agon.json per-project).`);
       }
       // Inject only in-process/session memory. Cross-session persistent memory is
       // intentionally not fed back into normal Cesar turns — it causes stale,
@@ -362,19 +378,19 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:348
+// @kern-source: session:363
 export const CESAR_SNAPSHOT_MSG_CHAR_CAP: number = 4000;
 
-// @kern-source: session:350
+// @kern-source: session:365
 export const CONFIDENCE_BLOCK_LIMIT: number = 2;
 
-// @kern-source: session:352
+// @kern-source: session:367
 export const SEARCH_NUDGE_THRESHOLD: number = 40;
 
 /**
  * Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it.
  */
-// @kern-source: session:354
+// @kern-source: session:369
 export function capSnapshotMessageContent(content: string): string {
   if (content.length <= CESAR_SNAPSHOT_MSG_CHAR_CAP) return content;
   return `${content.slice(0, CESAR_SNAPSHOT_MSG_CHAR_CAP)}\n… [${content.length - CESAR_SNAPSHOT_MSG_CHAR_CAP} chars truncated for Cesar context]`;
@@ -383,7 +399,7 @@ export function capSnapshotMessageContent(content: string): string {
 /**
  * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched.
  */
-// @kern-source: session:361
+// @kern-source: session:376
 export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const directHistory = session?.getMessageHistory?.() ?? [];
   if (directHistory.length > 0) {
@@ -416,7 +432,7 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
 /**
  * Persist the active Cesar conversation before the session is discarded.
  */
-// @kern-source: session:386
+// @kern-source: session:401
 export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
   if (!session) return;
   const snapshot = buildCesarConversationSnapshot(session, chatSession);
@@ -431,7 +447,7 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
-// @kern-source: session:399
+// @kern-source: session:414
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -685,7 +701,18 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
           const d = ctx.cesar!.lastDispatch;
           if (d) {
             const cmd = (args as any).command ?? (args as any).file_path ?? JSON.stringify(args);
-            d({ type: 'permission-ask', tool, command: cmd, reason: message, resolve } as any);
+            // Finding 1: API-class engines (engine.api: zai/kimi/minimax/GPT)
+            // run Edit/Write through executeToolCall, hitting THIS approval
+            // dispatch — which previously carried no diff. This site has the
+            // FULL args object, so thread the same diff preview the MCP watcher
+            // (brain.kern) and command-string buildOnApproval path use. args is
+            // truthful here (no command-string reparse needed).
+            let permDiffPreview: any = undefined;
+            if (approvalToolIsFileMutating(tool)) {
+              try { permDiffPreview = buildApprovalDiffPreview(String(tool), args as Record<string, unknown>); }
+              catch { /* diff is best-effort — fall back to command preview */ }
+            }
+            d({ type: 'permission-ask', tool, command: cmd, reason: message, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve } as any);
           } else {
             resolve(true);
           }
@@ -735,7 +762,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:701
+// @kern-source: session:727
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -905,7 +932,14 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
       const dispatch = ctx.cesar!.lastDispatch;
       if (dispatch) {
         logApproval('prompted', 'user-prompt', `Cesar (${engineId}) wants to execute`);
-        dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engineId}) wants to execute`, resolve: (approved: boolean | string) => {
+        // File-mutating tools carry a unified diff (computed from the tool
+        // input before execution) so the approval shows the real change.
+        let permDiffPreview: any = undefined;
+        if (approvalToolIsFileMutating(agonTool)) {
+          try { permDiffPreview = buildApprovalDiffPreview(agonTool, approvalArgsFromCommand(agonTool, command)); }
+          catch { /* diff is best-effort — fall back to command preview */ }
+        }
+        dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engineId}) wants to execute`, diffPreview: permDiffPreview && Array.isArray(permDiffPreview.files) ? permDiffPreview : undefined, fallbackNote: permDiffPreview && typeof permDiffPreview.fallback === 'string' ? permDiffPreview.fallback : undefined, resolve: (approved: boolean | string) => {
           const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved;
           logApproval(wasApproved ? 'approved' : 'denied', 'user-prompt', wasApproved ? 'user approved' : 'user denied');
           resolve(wasApproved);
@@ -918,7 +952,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:885
+// @kern-source: session:918
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -952,7 +986,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:919
+// @kern-source: session:952
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -976,7 +1010,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:943
+// @kern-source: session:976
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -988,7 +1022,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:950
+// @kern-source: session:983
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -1008,7 +1042,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
-// @kern-source: session:968
+// @kern-source: session:1001
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
   const raw = fromUrl ?? import.meta.url;
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
@@ -1042,7 +1076,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:1000
+// @kern-source: session:1033
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1067,7 +1101,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1026
+// @kern-source: session:1059
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

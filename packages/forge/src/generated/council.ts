@@ -264,7 +264,7 @@ export async function runCouncil(opts: CouncilOptions): Promise<CouncilResult> {
     // burns a chair dispatch before failover (codex review 0.86).
     if (cesarId && !engines.includes(cesarId)) {
       const __ch = engineHealth.get(cesarId);
-      if (__ch && (__ch.status === 'auth-failed' || __ch.status === 'unreachable')) {
+      if (__ch && (__ch.status === 'auth-failed' || __ch.status === 'unreachable' || __ch.status === 'binary-missing')) {
         warnings.push(`Configured Cesar chair '${cesarId}' is quarantined this session (${__ch.status}); falling back to ${engines[0]} as chair.`);
         cesarId = '';
       }

@@ -72,6 +72,11 @@ interface name=ConsensusFinding export=true
   field name=file type=string optional=true
   field name=lines type=string optional=true
 
+interface name=DegradedConsensus export=true
+  doc "Honesty marker for a below-quorum consensus run (see ConsensusReport.degraded)."
+  field name=belowQuorum type=boolean
+  field name=warning type=string
+
 interface name=ConsensusReport export=true
   field name=findings type="ConsensusFinding[]"
     doc "All clusters, sorted blockers-first then by confidence."
@@ -91,6 +96,8 @@ interface name=ConsensusReport export=true
   field name=needsJudge type=boolean
     doc "There are needs-check findings to adjudicate but nothing that auto-blocks."
   field name=summary type=string
+  field name=degraded type="DegradedConsensus" optional=true
+    doc "Set when SOME but FEWER-THAN-QUORUM engines returned a verdict (0 < okCount < ceil(panelSize/2)). The findings are a single-/few-engine opinion, not a real consensus — renderers surface .warning as an honesty banner. Absent when okCount is at/above quorum (a real consensus) or zero (the fail-closed no-verdict path already blocks). NOT a hard block — behavior is unchanged, only honesty is added."
 
 const name=PAIR_THRESHOLD type=number value={{ 0.70 }}
 const name=VERIFIED_THRESHOLD type=number value={{ 0.85 }}
@@ -312,6 +319,13 @@ fn name=buildConsensus params="outcomes:EngineOutcome[], minVerified?:number, mi
       ? `no engine produced a verdict (${panelSize} on panel${failNote}) — fail-closed block`
       : `${okCount}/${panelSize} engines reviewed${failNote} · ${verified.length} verified, ${needsCheck.length} needs-check, ${speculative.length} speculative, ${nits.length} nit`;
 
+    // Degraded-run honesty: SOME but FEWER-THAN-QUORUM engines reviewed. Not a
+    // block — just a banner so a 1/6 run isn't read as a real consensus.
+    const quorum = Math.ceil(panelSize / 2);
+    const degraded = (okCount > 0 && okCount < quorum)
+      ? { belowQuorum: true, warning: `⚠ degraded consensus — only ${okCount}/${panelSize} engines reviewed; treat findings as a single-engine opinion, not a consensus` }
+      : undefined;
+
     return {
       findings,
       verified,
@@ -325,6 +339,7 @@ fn name=buildConsensus params="outcomes:EngineOutcome[], minVerified?:number, mi
       autoBlock,
       needsJudge,
       summary,
+      degraded,
     };
   >>>
 

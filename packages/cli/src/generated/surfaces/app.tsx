@@ -58,7 +58,7 @@ import { teeOutputEvent } from '../signals/event-log-tee.js';
 
 import { resetEventLogState } from '@kernlang/agon-core';
 
-import { cleanInputValue, findInputChange } from '../signals/app-input.js';
+import { cleanInputValue, findInputChange, parseActiveAtMention, safeCollectSourceFiles } from '../signals/app-input.js';
 
 import { makeBlockArchivePath, appendBlockWithCap } from '../signals/block-archive.js';
 
@@ -222,6 +222,10 @@ export function App() {
     };
   }, []);
   const [slashPickerOpen, setSlashPickerOpen] = useState<boolean>(false);
+  const [atPickerOpen, setAtPickerOpen] = useState<boolean>(false);
+  const [atPickerFiles, setAtPickerFiles] = useState<string[]>([]);
+  const [atPickerPrefix, setAtPickerPrefix] = useState<string>('');
+  const [atPickerQuery, setAtPickerQuery] = useState<string>('');
   const [questionState, _setQuestionStateRaw] = useState<any>(null);
   const setQuestionState = useMemo(() => __inkSafe(_setQuestionStateRaw), [_setQuestionStateRaw]);
   const [questionAnswer, setQuestionAnswer] = useState<string>('');
@@ -533,6 +537,7 @@ export function App() {
   const modeRef = useRef<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const inputEpochRef = useRef<number>(0);
   const inputValueRef = useRef<string>('');
+  const atPickerPrefixRef = useRef<string>('');
   const keyT0Ref = useRef<number>(0);
   const ctrlKeyHandledRef = useRef<boolean>(false);
   const pendingPasteTransformRef = useRef<boolean>(false);
@@ -990,6 +995,29 @@ export function App() {
     if (slashPickerOpen) {
       return;
     }
+    // When @-picker is open, the AtFilePicker owns keystrokes via its own useInput;
+    // swallow any onChange so the composer value (which holds the prefix + '@') is stable.
+    if (atPickerOpen) {
+      return;
+    }
+    // "@" typed at a mention boundary (start or after whitespace) opens the file
+    // picker. We commit the value (keeping the '@') so the prefix is preserved, then
+    // open. Skip pastes (multi-char) so pasting an email/snippet never pops the picker.
+    if (!slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !cameFromPasteTransform && change.inserted === '@') {
+      const mention = parseActiveAtMention(nextValue);
+      if (mention) {
+        const files = safeCollectSourceFiles(resolveWorkingDir());
+        const atPrefix = nextValue.slice(0, nextValue.lastIndexOf('@'));
+        inputValueRef.current = nextValue;
+        atPickerPrefixRef.current = atPrefix;
+        setInputValue(nextValue);
+        setAtPickerFiles(files);
+        setAtPickerPrefix(atPrefix);
+        setAtPickerQuery(mention.query);
+        setAtPickerOpen(true);
+        return;
+      }
+    }
     const looksLikePaste = value !== nextValue || change.inserted.length > 1;
     if (cameFromPasteTransform || !looksLikePaste || !change.inserted) {
       inputValueRef.current = nextValue;
@@ -1009,7 +1037,7 @@ export function App() {
     const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
     inputValueRef.current = updatedValue;
     setInputValue(updatedValue);
-  }, [slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued,livePaneVisible,pendingBellRef]);
+  }, [slashPickerOpen,atPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued,livePaneVisible,pendingBellRef]);
 
   const sendBtwMessage = useCallback((question:string) => {
     runSendBtwMessage({
@@ -1192,6 +1220,20 @@ export function App() {
     setSlashPickerOpen(false);
   }, []);
 
+  const handleAtSelect = useCallback((path:string) => {
+    const next = atPickerPrefixRef.current + '@' + path + ' ';
+    inputValueRef.current = next;
+    setInputValue(next);
+    setAtPickerOpen(false);
+  }, []);
+
+  const handleAtCancel = useCallback((typed:string) => {
+    const next = atPickerPrefixRef.current + typed;
+    inputValueRef.current = next;
+    setInputValue(next);
+    setAtPickerOpen(false);
+  }, []);
+
   const handleQuestionAnswer = useCallback((answer:string) => {
     if (!questionState) return;
     // "Other" inline answer on a choice menu: resolve the waiter with an
@@ -1295,7 +1337,7 @@ export function App() {
 
   const handleKeyboardInput = useCallback((input:string,key:any) => {
     runHandleKeyboardInput({
-      modelPickerOpen, cesarPickerOpen, slashPickerOpen, enginePickerOpen,
+      modelPickerOpen, cesarPickerOpen, slashPickerOpen, atPickerOpen, enginePickerOpen,
       reviewEvent, toolDetailEvent, btwPanel, statusDashboardOpen,
       questionState, selectedChoiceIndex, questionOtherActive,
       replState, inputValue, inputHistory, historyIndex,
@@ -1315,7 +1357,7 @@ export function App() {
       openLatestToolDetail, openResultsPager, draftLatestFailedToolRetry,
       triggerUpdatePrompt, dismissUpdateBanner, dispatch,
     }, input, key);
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,atPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,btwPanel,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen,updateInfo,triggerUpdatePrompt,dismissUpdateBanner,selectedChoiceIndex,questionOtherActive,newestLiveToolStreamId]);
 
   useEffect(() => {
     const activeIds = new Set(Object.keys(liveToolStreams ?? {}));
@@ -1905,6 +1947,12 @@ export function App() {
         autoModeQueued={autoModeQueued}
         activePlan={activePlan}
         slashPickerOpen={slashPickerOpen}
+        atPickerOpen={atPickerOpen}
+        atPickerFiles={atPickerFiles}
+        atPickerPrefix={atPickerPrefix}
+        atPickerQuery={atPickerQuery}
+        onAtSelect={handleAtSelect}
+        onAtCancel={handleAtCancel}
         inputValue={inputValue}
         handleInputChange={handleInputChange}
         handlePasteInput={handlePasteInput}
@@ -1989,7 +2037,7 @@ export function App() {
 // @kern-source: app:92
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1787
+// @kern-source: app:1842
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

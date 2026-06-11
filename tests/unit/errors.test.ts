@@ -30,4 +30,27 @@ describe('EngineNotFoundError (mode vs engine, #2)', () => {
     expect(e.message).toContain('Install: pip install aider');
     expect(e.message).not.toContain('is an Agon mode');
   });
+
+  it('reports a missing binary by name with an install hint (the codex incident)', () => {
+    const e = new EngineNotFoundError('codex', 'npm install -g @openai/codex', 'codex');
+    expect(e.message).toContain('"codex" not found');
+    expect(e.message).toContain('binary "codex" not found on PATH');
+    expect(e.message).toContain('Install: npm install -g @openai/codex');
+    // It must NOT look like an API-key / env problem.
+    expect(e.message).not.toContain('API key');
+    expect(e.message).not.toContain('environment variable');
+    expect(e.missingBinary).toBe('codex');
+  });
+
+  it('names the missing binary even with no install hint', () => {
+    const e = new EngineNotFoundError('mycli', undefined, 'mycli-bin');
+    expect(e.message).toContain('binary "mycli-bin" not found on PATH');
+    expect(e.message).not.toContain('Install:');
+  });
+
+  it('a mode-name id still takes priority over a binary hint', () => {
+    const e = new EngineNotFoundError('forge', 'irrelevant', 'forge-bin');
+    expect(e.message).toContain('is an Agon mode');
+    expect(e.message).not.toContain('binary "forge-bin"');
+  });
 });

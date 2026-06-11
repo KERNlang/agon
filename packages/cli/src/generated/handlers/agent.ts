@@ -56,12 +56,12 @@ export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerConte
     const perms = (cfg as any).toolPermissions ?? {};
     const allowed = (cfg as any).allowedCommands ?? [];
     const mode = (cfg as any).permissionMode ?? 'ask';
-    const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob' };
+    const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', multiedit: 'MultiEdit', read: 'Read', grep: 'Grep', glob: 'Glob' };
     const agonTool = toolMap[tool.toLowerCase()] ?? tool;
     const perm = perms[agonTool];
 
     if (ctx.explorationMode) {
-      const WRITE_TOOLS = ['Edit', 'Write', 'Bash'];
+      const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'Bash'];
       if (WRITE_TOOLS.includes(agonTool)) {
         return 'BLOCKED: Exploration mode is read-only. Use Read, Grep, Glob tools only.';
       }
@@ -73,7 +73,7 @@ export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerConte
         if (isReadOnlyCommand(command)) return true;
         return 'BLOCKED: Plan mode — mutating Bash is not allowed before the plan is approved.';
       }
-      const WRITE_TOOLS = ['Edit', 'Write'];
+      const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit'];
       if (WRITE_TOOLS.includes(agonTool)) {
         return 'BLOCKED: Plan mode — no code changes allowed until the plan is approved.';
       }

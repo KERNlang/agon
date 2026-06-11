@@ -11,7 +11,7 @@
 import from="citty" names="defineCommand"
 import from="node:fs" names="readFileSync,readdirSync,existsSync,statSync,writeFileSync"
 import from="node:path" names="resolve"
-import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,applyPatch,spawnWithTimeout,estimateCost"
+import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,applyPatch,spawnWithTimeout,estimateCost,worktreePruneOrphaned"
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
 import from="@kernlang/agon-forge" names="runForge,runDelegate,runGoalController,runSupervisor,loadJournal,summarizeGoal,goalDir,isTestFile,parseChangedLines,pickImplementWinner,chooseImplementRoster,runThinkChain,buildOracleCheatPrompt"
@@ -761,6 +761,11 @@ const name=goalCommand type=any
         }
         } finally {
           process.removeListener('SIGINT', onSig);
+          try {
+            worktreePruneOrphaned(repoRoot);
+          } catch (e) {
+            /* non-fatal */
+          }
         }
       },
     });

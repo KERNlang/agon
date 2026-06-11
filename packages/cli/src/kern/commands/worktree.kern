@@ -9,7 +9,7 @@
 
 import from="citty" names="defineCommand"
 import from="node:child_process" names="execFileSync"
-import from="@kernlang/agon-core" names="ensureAgonHome,repoRoot,createSessionWorktree,listSessionWorktrees,removeSessionWorktree,pruneSessionWorktrees,rehydrateSessionWorktree"
+import from="@kernlang/agon-core" names="ensureAgonHome,repoRoot,createSessionWorktree,listSessionWorktrees,removeSessionWorktree,pruneSessionWorktrees,rehydrateSessionWorktree,worktreePruneAll,worktreePruneOrphaned"
 import from="../blocks/output-format.js" names="header,success,fail,warn,info,table,bold,dim"
 
 const name=worktreeCommand type="any"
@@ -178,9 +178,21 @@ const name=worktreeCommand type="any"
             if (removed.length === 0) {
               info(`No session worktrees older than ${olderThan} (dirty worktrees are skipped unless --force).`);
             } else if (dryRun) {
-              info(`Would prune ${removed.length}: ${removed.join(', ')}`);
+              info(`Would prune ${removed.length} session worktree(s): ${removed.join(', ')}`);
             } else {
-              success(`Pruned ${removed.length}: ${removed.join(', ')}`);
+              success(`Pruned ${removed.length} session worktree(s): ${removed.join(', ')}`);
+            }
+
+            if (!dryRun) {
+              try {
+                worktreePruneAll(root, ms);
+                worktreePruneOrphaned(root);
+                success(`Pruned stale agent/competition worktrees and cleaned up registry.`);
+              } catch (e) {
+                warn(`Failed to prune agent/competition worktrees: ${e instanceof Error ? e.message : String(e)}`);
+              }
+            } else {
+              info(`Would prune stale agent/competition worktrees older than ${olderThan}`);
             }
             break;
           }

@@ -36,8 +36,16 @@ type name=CesarPlanState values="planning|awaiting_approval|running|paused|done|
 type name=CesarStepState values="pending|blocked|running|done|failed|skipped|cancelled"
 type name=CesarStepType values="self|forge|teamforge|delegate|brainstorm|campfire|tribunal|pipeline|review|agent|team-agent"
 
+// Single source of truth for the valid step types. The Record<CesarStepType,true>
+// annotation makes the compiler REJECT drift: add a CesarStepType variant above
+// and the build fails until you add it here too. CESAR_STEP_TYPES (the runtime
+// list used to validate LLM-proposed steps at the boundary) is derived from it,
+// so the two can never silently diverge.
+const name=CESAR_STEP_TYPE_TABLE type="Record<CesarStepType, true>" value={{ ({ self: true, forge: true, teamforge: true, delegate: true, brainstorm: true, campfire: true, tribunal: true, pipeline: true, review: true, agent: true, 'team-agent': true }) }}
+const name=CESAR_STEP_TYPES type="CesarStepType[]" value={{ (Object.keys(CESAR_STEP_TYPE_TABLE) as CesarStepType[]) }}
+
 interface name=CesarStepResult
-  field name=status type="'success'|'failure'"
+  field name=status type="'success'|'failure'|'paused'"
   field name=actualTokens type=number
   field name=actualCostUsd type=number
   field name=durationMs type=number
@@ -116,11 +124,18 @@ fn name=advanceCesarStep params="plan:CesarPlan,stepId:string,result:CesarStepRe
     if (stepIdx === -1) return plan;
 
     const isSuccess = result.status === 'success';
-    const stepState: CesarStepState = isSuccess ? 'done' : 'failed';
+    // 'paused' = the brain is awaiting user input on an already-approved step (NOT a
+    // failure). Leave the step PENDING so /plan resume re-runs it; plan.state still
+    // goes to 'paused' below (the !isSuccess branch) so the executor loop exits and
+    // the REPL returns to idle for the user to respond.
+    const isPaused = result.status === 'paused';
+    const stepState: CesarStepState = isSuccess ? 'done' : isPaused ? 'pending' : 'failed';
 
     const now = new Date().toISOString();
+    // Paused step is re-set to pending; do NOT attach a result (UI treats
+    // step.result !== undefined as "has run") or a completedAt (agon-review).
     let newSteps = plan.steps.map((s, i) =>
-      i === stepIdx ? { ...s, state: stepState, result, completedAt: now } : s,
+      i === stepIdx ? { ...s, state: stepState, result: isPaused ? undefined : result, completedAt: isPaused ? undefined : now } : s,
     );
 
     // Unblock dependent steps if this step succeeded

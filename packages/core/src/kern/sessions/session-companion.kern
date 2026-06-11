@@ -1,8 +1,10 @@
 import from="node:child_process" names="spawn"
 import from="node:child_process" names="ChildProcess" types=true
 import from="node:readline" names="createInterface"
+import from="node:fs" names="existsSync"
 import from="../models/types.js" names="EngineDefinition" types=true
 import from="../signals/config.js" names="loadConfig"
+import from="../blocks/image.js" names="isImagePath,mimeFromExt,MAX_DISPATCH_IMAGES,DISPATCH_VISION_MIME"
 import from="./persistent-session.js" names="PersistentSessionConfig,PersistentSession,SessionChunk,SessionSendOptions" types=true
 
 fn name=createCompanionSession params="config:PersistentSessionConfig" returns="PersistentSession"
@@ -341,10 +343,36 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
           }
           firstTurn = false;
 
+          // Vision: codex's protocol is path-native — attach each dropped image as a
+          // localImage input item (codex reads the file itself; no base64 needed).
+          // Gated by the engine's declared vision capability; existence-checked so a
+          // stale path can't abort the turn. Caps mirror the API path: ≤4 images.
+          const input: Array<Record<string, unknown>> = [{ type: 'text', text: message, text_elements: [] }];
+          if (opts.images?.length) {
+            if (config.engine.capabilities?.includes('vision')) {
+              let attached = 0;
+              const skipped: string[] = [];
+              for (const p of opts.images) {
+                if (attached >= MAX_DISPATCH_IMAGES) { skipped.push(`${p} (exceeds ${MAX_DISPATCH_IMAGES}-image limit)`); continue; }
+                if (!existsSync(p) || !isImagePath(p)) { skipped.push(`${p} (not found or not an image)`); continue; }
+                // Mirror the API path's MIME allowlist (png/jpeg/webp/gif) so a
+                // .svg/.bmp/.tiff isn't attached as a localImage codex then rejects.
+                if (!DISPATCH_VISION_MIME.has(mimeFromExt(p))) { skipped.push(`${p} (unsupported type ${mimeFromExt(p)})`); continue; }
+                input.push({ type: 'localImage', path: p }); attached++;
+              }
+              if (skipped.length) {
+                // Queued before the consume loop starts, so it's yielded first — no wake needed.
+                chunks.push({ type: 'status', content: `image(s) not sent: ${skipped.join('; ')}` });
+              }
+            } else {
+              chunks.push({ type: 'status', content: `${config.engine.id} has no vision capability — ${opts.images.length} image(s) not sent to the model` });
+            }
+          }
+
           // Start turn on existing thread
           await sendRpc('turn/start', {
             threadId,
-            input: [{ type: 'text', text: message, text_elements: [] }],
+            input,
           });
 
           // Yield chunks as they arrive

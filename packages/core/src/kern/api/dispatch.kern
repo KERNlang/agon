@@ -140,7 +140,14 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
       if (msg.role === 'system') {
         continue;
       } else if (msg.role === 'user') {
-        pushMessage({ role: 'user', content: typeof msg.content === 'string' ? msg.content : String(msg.content ?? '') });
+        // Multimodal user turns (text + {type:'image'} parts) pass through as an
+        // array so the AI SDK forwards images to the provider; everything else is
+        // coerced to a string. Array content is never merged (pushMessage only
+        // merges string+string), so image parts stay intact.
+        const userContent = Array.isArray(msg.content)
+          ? msg.content
+          : (typeof msg.content === 'string' ? msg.content : String(msg.content ?? ''));
+        pushMessage({ role: 'user', content: userContent });
       } else if (msg.role === 'assistant') {
         const parts: any[] = [];
         if (msg.content && typeof msg.content === 'string') {
@@ -262,6 +269,7 @@ fn name=apiDispatch async=true params="config:ApiConfig, prompt:string, timeout:
         promptTokens: result.usage.inputTokens ?? 0,
         completionTokens: result.usage.outputTokens ?? 0,
         totalTokens: (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
+        cachedInputTokens: result.usage.cachedInputTokens ?? 0,
         source: 'sdk' as const,
       } : undefined;
       return { exitCode: 0, stdout: text, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage };
@@ -507,6 +515,7 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
             promptTokens: finalUsage.inputTokens ?? 0,
             completionTokens: finalUsage.outputTokens ?? 0,
             totalTokens: (finalUsage.inputTokens ?? 0) + (finalUsage.outputTokens ?? 0),
+            cachedInputTokens: finalUsage.cachedInputTokens ?? 0,
             source: 'sdk' as const,
           };
         }

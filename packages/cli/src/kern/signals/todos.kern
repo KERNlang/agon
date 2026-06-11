@@ -13,6 +13,7 @@ interface name=Todo export=true
   field name=state type="'pending'|'running'|'done'|'failed'|'cancelled'"
   field name=kind type=string optional=true
   field name=note type=string optional=true
+  field name=source type="'plan'|'live'" optional=true doc="Origin discriminator, distinct from 'kind' (plan-step TYPE). 'plan' = plan-executor-driven (persisted); 'live' = a live (non-plan) Cesar turn self-declaring its checklist via a [TODOS] marker. The renderer dims 'live' rows. Absent ⇒ treated as 'plan', so the existing plan-executor path (which never sets source) renders unchanged."
 
 fn name=setTodos params="todos:Todo[]" returns="Todo[]" export=true
   doc "Replace the todo list. Returns a fresh slice so React identity changes."
@@ -34,6 +35,12 @@ fn name=clearTodos returns="Todo[]" export=true
   doc "Wipe the todo list."
   handler <<<
     return [];
+  >>>
+
+fn name=clearLiveTodos params="todos:Todo[]" returns="Todo[]" export=true
+  doc "Drop only live-sourced todos, leaving plan-sourced (or source-less = plan) items intact. Used at the start of a new live turn so a prior live turn's checklist never lingers, without disturbing an active plan's rolling list."
+  handler <<<
+    return todos.filter((t) => t.source !== 'live');
   >>>
 
 fn name=todosFromPlanSteps params="steps:any[]" returns="Todo[]" export=true

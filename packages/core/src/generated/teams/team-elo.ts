@@ -12,7 +12,9 @@ import { computeContributionWeights } from './team.js';
 
 import { TEAM_ELO_PATH } from '../signals/config.js';
 
-// @kern-source: team-elo:12
+import { withFileLock } from '../blocks/file-lock.js';
+
+// @kern-source: team-elo:13
 export interface TeamCompositionRating {
   lineupKey: string;
   rating: number;
@@ -22,7 +24,7 @@ export interface TeamCompositionRating {
   matches: number;
 }
 
-// @kern-source: team-elo:20
+// @kern-source: team-elo:21
 export interface TeamRoleRating {
   engineId: string;
   role: TeamRole;
@@ -32,23 +34,23 @@ export interface TeamRoleRating {
   matches: number;
 }
 
-// @kern-source: team-elo:28
+// @kern-source: team-elo:29
 export interface TeamEloRecord {
   byFormat: Record<string, { compositions: Record<string, TeamCompositionRating>, roles: Record<string, TeamRoleRating> }>;
   lastUpdated: string;
 }
 
-// @kern-source: team-elo:32
+// @kern-source: team-elo:33
 export function defaultCompositionRating(lineupKey: string): TeamCompositionRating {
   return { lineupKey, rating: 1500, wins: 0, losses: 0, draws: 0, matches: 0 };
 }
 
-// @kern-source: team-elo:34
+// @kern-source: team-elo:35
 export function defaultRoleRating(engineId: string, role: TeamRole): TeamRoleRating {
   return { engineId, role, rating: 1500, wins: 0, losses: 0, matches: 0 };
 }
 
-// @kern-source: team-elo:36
+// @kern-source: team-elo:37
 export function loadTeamElo(): TeamEloRecord {
   try {
     return JSON.parse(readFileSync(TEAM_ELO_PATH, 'utf-8')) as TeamEloRecord;
@@ -60,7 +62,7 @@ export function loadTeamElo(): TeamEloRecord {
   }
 }
 
-// @kern-source: team-elo:48
+// @kern-source: team-elo:49
 export function saveTeamElo(record: TeamEloRecord): void {
   mkdirSync(dirname(TEAM_ELO_PATH), { recursive: true });
   record.lastUpdated = new Date().toISOString();
@@ -69,17 +71,17 @@ export function saveTeamElo(record: TeamEloRecord): void {
   renameSync(tmpPath, TEAM_ELO_PATH);
 }
 
-// @kern-source: team-elo:56
+// @kern-source: team-elo:57
 export function expectedScore(rA: number, rB: number): number {
   return 1 / (1 + 10 ** ((rB - rA) / 400));
 }
 
-// @kern-source: team-elo:58
+// @kern-source: team-elo:59
 export function getTeamElo(): TeamEloRecord {
   return loadTeamElo();
 }
 
-// @kern-source: team-elo:60
+// @kern-source: team-elo:61
 export function predictTeamRating(members: TeamMember[], format: string): number {
   const record = loadTeamElo();
   const formatData = record.byFormat[format];
@@ -117,12 +119,11 @@ export function predictTeamRating(members: TeamMember[], format: string): number
   return Math.round(blended);
 }
 
-// @kern-source: team-elo:98
-export function updateTeamElo(match: TeamMatchResult, kFactor?: number): void {
-  if (!match.winnerTeamId) return; // draw — skip for now
-
-  const k = kFactor ?? 32;
-  const record = loadTeamElo();
+/**
+ * Apply one team match result to an in-memory record. Load/lock/save are the caller's job (mirrors applyGlickoPair).
+ */
+// @kern-source: team-elo:99
+function applyTeamEloMatch(record: TeamEloRecord, match: TeamMatchResult, k: number): void {
   const formatKey = match.format.label;
   record.byFormat[formatKey] ??= { compositions: {}, roles: {} };
   const fmt = record.byFormat[formatKey];
@@ -180,6 +181,17 @@ export function updateTeamElo(match: TeamMatchResult, kFactor?: number): void {
     r.losses++;
     r.matches++;
   }
+}
 
-  saveTeamElo(record);
+/**
+ * Apply a team match result. The whole read-modify-write runs under the cross-process lock so two concurrent team runs finishing together can't clobber each other's ELO updates.
+ */
+// @kern-source: team-elo:161
+export function updateTeamElo(match: TeamMatchResult, kFactor?: number): void {
+  if (!match.winnerTeamId) return; // draw — skip for now
+  withFileLock(TEAM_ELO_PATH + '.lock', () => {
+    const record = loadTeamElo();
+    applyTeamEloMatch(record, match, kFactor ?? 32);
+    saveTeamElo(record);
+  });
 }

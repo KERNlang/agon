@@ -45,9 +45,44 @@ export function buildPlanPhaseGauge(plan: any, width: number = 12): any {
 }
 
 /**
- * Build compact live rail rows from plan, tool, engine, and fallback state. Kept pure so the rail can evolve without baking logic into JSX.
+ * Render the configurable Cesar one-line status (engine/model · context % · git branch). Pure so tests verify placeholder substitution without rendering Ink. `config`: falsy/'' = off (returns null); true/'default' = standard line; any other string = format with {engine},{model},{context},{branch},{cwd} placeholders. Unknown placeholders pass through literally; a missing/empty value renders empty so a failed git-branch read just leaves {branch} blank (never crashes).
  */
 // @kern-source: status-helpers:39
+export function formatStatusLine(config: string|boolean|null|undefined, parts: {engine?:string,model?:string,context?:string,branch?:string,cwd?:string}): string|null {
+  if (config === false || config === null || config === undefined || config === '') return null;
+
+  const safe = (value: any) => {
+    const text = value === null || value === undefined ? '' : String(value);
+    return text.replace(/\s+/g, ' ').trim();
+  };
+  const engine = safe(parts?.engine);
+  const model = safe(parts?.model);
+  const context = safe(parts?.context);
+  const branch = safe(parts?.branch);
+  const cwd = safe(parts?.cwd);
+  const values: Record<string, string> = { engine, model, context, branch, cwd };
+
+  const isDefault = config === true || config === 'default';
+  if (isDefault) {
+    const enginePart = engine ? (model ? `${engine}/${model}` : engine) : '';
+    const segments = [
+      enginePart,
+      context ? `ctx ${context}` : '',
+      branch,
+    ].filter((segment) => segment.length > 0);
+    return segments.join(' · ');
+  }
+
+  // Custom format string: substitute known placeholders, leave unknown ones literal.
+  return String(config).replace(/\{(\w+)\}/g, (match, key) =>
+    Object.prototype.hasOwnProperty.call(values, key) ? values[key] : match,
+  );
+}
+
+/**
+ * Build compact live rail rows from plan, tool, engine, and fallback state. Kept pure so the rail can evolve without baking logic into JSX.
+ */
+// @kern-source: status-helpers:72
 export function buildExecutionRailTimeline(activePlan: any, lastTool: any, engines: any, recentFallbacks: any, limit: number = 5): any[] {
   const rows: any[] = [];
   const maxRows = Math.max(1, Math.min(8, Math.floor(Number(limit) || 5)));

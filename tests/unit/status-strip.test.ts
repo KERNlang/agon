@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildPlanChromeSummary } from '../../packages/cli/src/generated/surfaces/app-views.js';
 import { buildExecutionRailTimeline, buildPlanPhaseGauge } from '../../packages/cli/src/generated/surfaces/status.js';
+import { formatStatusLine } from '../../packages/cli/src/generated/surfaces/status-helpers.js';
 
 describe('buildPlanPhaseGauge', () => {
   it('shows the running step and completion percentage', () => {
@@ -91,6 +92,42 @@ describe('buildPlanChromeSummary', () => {
   it('shows approval actions without an active plan gauge', () => {
     expect(buildPlanChromeSummary(null, 'awaiting_approval', false, false).action).toBe('go/yes');
     expect(buildPlanChromeSummary(null, null, false, true).visible).toBe(false);
+  });
+});
+
+describe('formatStatusLine', () => {
+  const parts = { engine: 'claude', model: 'opus', context: '42%', branch: 'feat/x', cwd: '/repo' };
+
+  it('returns null when the status line is off (false / null / empty)', () => {
+    expect(formatStatusLine(false, parts)).toBeNull();
+    expect(formatStatusLine(null, parts)).toBeNull();
+    expect(formatStatusLine(undefined, parts)).toBeNull();
+    expect(formatStatusLine('', parts)).toBeNull();
+  });
+
+  it('renders the standard line for true / "default"', () => {
+    expect(formatStatusLine(true, parts)).toBe('claude/opus · ctx 42% · feat/x');
+    expect(formatStatusLine('default', parts)).toBe('claude/opus · ctx 42% · feat/x');
+  });
+
+  it('drops empty segments from the default line (engine only, no model/context/branch)', () => {
+    expect(formatStatusLine('default', { engine: 'codex' })).toBe('codex');
+    expect(formatStatusLine('default', { engine: 'codex', context: '10%' })).toBe('codex · ctx 10%');
+  });
+
+  it('substitutes each placeholder in a custom format string', () => {
+    expect(
+      formatStatusLine('{engine} | {model} | {context} | {branch} | {cwd}', parts),
+    ).toBe('claude | opus | 42% | feat/x | /repo');
+  });
+
+  it('renders empty for a missing/failed value (e.g. git branch read failure) without crashing', () => {
+    expect(formatStatusLine('[{branch}]', { engine: 'claude' })).toBe('[]');
+    expect(formatStatusLine('default', { engine: 'claude', branch: '' })).toBe('claude');
+  });
+
+  it('passes unknown placeholders through literally', () => {
+    expect(formatStatusLine('{engine} {bogus}', parts)).toBe('claude {bogus}');
   });
 });
 

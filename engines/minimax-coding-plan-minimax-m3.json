@@ -21,6 +21,10 @@
     "format": "openai"
   },
 
+  "sessionBudget": {
+    "contextWindow": 200000
+  },
+
   "env": {
     "MINIMAX_API_KEY": { "required": true }
   }

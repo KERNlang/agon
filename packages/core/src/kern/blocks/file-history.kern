@@ -25,6 +25,12 @@ interface name=HistoryEntry
   field name=cwd type=string
   field name=files type="FileSnapshot[]"
   field name=createdAt type=string
+  field name=seq type=number optional=true doc="Monotonic per-process tiebreak so snapshots taken in the same millisecond (multiple edits in one turn) still peel back newest-first. Seeded from disk on first use so a restart stays monotonic."
+
+// Monotonic snapshot counter. Mutable object (not a `let`) so it survives across
+// takeSnapshot calls within a process; seeded lazily from the highest seq on disk
+// so a process restart keeps ordering monotonic (mirrors event-log's seq seeding).
+const name=_snapshotSeq type="{ value: number, seeded: boolean }" value={{ ({ value: 0, seeded: false }) as { value: number, seeded: boolean } }} export=false
 
 fn name=ensureSnapshotsDir returns=void export=false
   handler lang="kern"
@@ -52,12 +58,30 @@ fn name=takeSnapshot params="label:string, cwd:string, filePaths:string[]" retur
       }
     }
 
+    // Seed the monotonic counter from disk on first use so a restart stays
+    // strictly increasing and never collides with an existing snapshot's seq.
+    if (!_snapshotSeq.seeded) {
+      let maxSeq = 0;
+      try {
+        for (const f of readdirSync(snapshotsDir()).filter((n: string) => n.endsWith('.json'))) {
+          try {
+            const prior = JSON.parse(readFileSync(join(snapshotsDir(), f), 'utf-8')) as HistoryEntry;
+            if (typeof prior.seq === 'number' && prior.seq > maxSeq) maxSeq = prior.seq;
+          } catch { /* skip corrupt */ }
+        }
+      } catch { /* no dir yet */ }
+      _snapshotSeq.value = maxSeq;
+      _snapshotSeq.seeded = true;
+    }
+    _snapshotSeq.value += 1;
+
     const entry: HistoryEntry = {
       id: randomUUID().slice(0, 8),
       label,
       cwd,
       files,
       createdAt: new Date().toISOString(),
+      seq: _snapshotSeq.value,
     };
 
     const entryPath = join(snapshotsDir(), `${entry.id}.json`);
@@ -127,7 +151,9 @@ fn name=listSnapshots returns="HistoryEntry[]"
       entries.sort((a, b) => {
         const aTime = Date.parse(a.createdAt ?? '') || 0;
         const bTime = Date.parse(b.createdAt ?? '') || 0;
-        return bTime - aTime;
+        if (bTime !== aTime) return bTime - aTime;
+        // Same-millisecond tie (multiple edits in one turn): newest seq first.
+        return (b.seq ?? 0) - (a.seq ?? 0);
       });
       return entries.slice(0, 10);
     } catch {

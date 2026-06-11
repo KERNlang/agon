@@ -73,7 +73,7 @@ export type KeyboardAction =
   | { type: 'togglePauseMenu' }
   | { type: 'movePauseCursor'; direction: 'up'|'down' }
   | { type: 'selectPauseAction' }
-  | { type: 'planControl'; action: 'approve'|'cancel' }
+  | { type: 'planControl'; action: 'approve'|'cancel'|'revise' }
   | { type: 'movePlanApproval'; index: number }
   | { type: 'updateBanner'; action: 'update'|'changelog'|'dismiss' };
 
@@ -255,15 +255,25 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     && !ctx.reviewEventOpen && !ctx.toolDetailOpen
     && !ctx.questionState
   ) {
-    const pcur = (ctx.planApprovalIndex ?? 0) === 1 ? 1 : 0;
-    if (key.upArrow || key.downArrow) return { type: 'movePlanApproval', index: pcur === 0 ? 1 : 0 };
+    // 3-option plan approval indexed in VISUAL (top-to-bottom) order:
+    // 0=Approve, 1=Other (revise / type feedback), 2=Reject. Arrow nav follows
+    // that order so ↓ moves Approve→Other→Reject. (Cesar's original 0=Approve,
+    // 1=Reject, 2=Other made ↓ from Approve jump to Reject, skipping the middle
+    // Other slot — the bug the panel review flagged.)
+    const pcur = Math.max(0, Math.min(2, ctx.planApprovalIndex ?? 0));
+    const next = pcur === 2 ? 0 : pcur + 1;   // 0→1→2→0
+    const prev = pcur === 0 ? 2 : pcur - 1;   // 0→2→1→0
+    if (key.downArrow) return { type: 'movePlanApproval', index: next };
+    if (key.upArrow) return { type: 'movePlanApproval', index: prev };
     if (key.return || input === '\r' || input === '\n') {
-      return { type: 'planControl', action: pcur === 1 ? 'cancel' : 'approve' };
+      const action = pcur === 1 ? 'revise' : pcur === 2 ? 'cancel' : 'approve';
+      return { type: 'planControl', action };
     }
     if (typeof input === 'string' && input.length === 1) {
       const lowered = input.toLowerCase();
       if (lowered === 'y' || lowered === '1') return { type: 'movePlanApproval', index: 0 };
-      if (lowered === 'n' || lowered === '2') return { type: 'movePlanApproval', index: 1 };
+      if (lowered === 'o' || lowered === '2') return { type: 'movePlanApproval', index: 1 };
+      if (lowered === 'n' || lowered === '3') return { type: 'movePlanApproval', index: 2 };
     }
   }
 

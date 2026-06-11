@@ -2,7 +2,7 @@
 // Integration smoke — exercises the compiled `classifyTask` from @kernlang/agon-core
 // to verify the regex → Python escalation chain works end-to-end.
 
-import { classifyTask } from '/Users/nicolascukas/KERN/Agon-AI/packages/core/dist/generated/blocks/task-classifier.js';
+import { classifyTask } from '../../core/dist/generated/blocks/task-classifier.js';
 
 const fixtures = [
   // Regex fast-path (no Python invoked)

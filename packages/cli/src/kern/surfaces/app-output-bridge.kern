@@ -1,0 +1,190 @@
+// ── App output-bridge builder (extracted from app.kern) ──
+// Behavior-preserving extraction of the `outputActions` memo body.
+//
+// The outputActions object is the bridge between engine OutputEvents (handled
+// by signals/output.ts::handleOutputEvent) and React state: it owns the stream
+// buffers, the transcript output-block append/replace/clear funnel, the live
+// preview tail-bounding, and the flush-to-transcript commit. It closes over the
+// component's setState fns and refs, so the builder takes them ALL explicitly
+// (named OutputBridgeDeps interface, well above the ~6-param threshold) and
+// returns OutputActions.
+//
+// IDENTITY: the app.kern memo carries deps="" — the actions object is created
+// ONCE for the component's lifetime. This builder MUST preserve that: the thin
+// `memo` in app.kern calls buildOutputActions exactly once and the result is
+// stable. Do not add per-render allocation here.
+//
+// Convention (mirrors app-lifecycle.kern): params above ~6 fields = a named
+// `<Name>Deps` interface with grouped, documented fields; refs are typed with
+// their real shape ({current: T} when non-nullable, {current: T | null} only
+// where the ref genuinely holds null); typed return (OutputActions, never any);
+// // Source: breadcrumb. Raw `<<<` is used deliberately — this is a
+// setState-closure actions object that does not structure into if/let/return.
+import from="../../handlers/types.js" names="OutputEvent,EngineProgress" types=true
+import from="../signals/output.js" names="OutputActions,AgentProgressSnapshot,StreamingEntry" types=true
+import from="../signals/todos.js" names="Todo" types=true
+import from="../signals/block-archive.js" names="nextStaticEpoch"
+import from="../blocks/output-format.js" names="ENGINE_COLORS"
+import from="../cesar/scoreboard.js" names="Scoreboard" types=true
+import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
+import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
+import from="./app-blocks.js" names="appendTranscriptBlock"
+import from="./app-rendering.js" names="clearBlockRowCache"
+
+module name=AppOutputBridge
+
+  // ── Closed-over deps for buildOutputActions ──
+  // Every setState fn and ref the actions object needs, supplied explicitly
+  // instead of closed over from component scope. Grouped by responsibility.
+  interface name=OutputBridgeDeps
+    doc "Explicit dependencies for buildOutputActions — the component's setState fns and refs, passed in rather than captured. Refs carry their real shape; only chatStartTimeRef-style mutable scalars and the genuinely-nullable members use a nullable type."
+    // ── Stream buffers / refs (live spinner, progress, streaming text, tool streams) ──
+    field name=setLiveSpinner type="(val:any) => void"
+    field name=setLiveProgress type="(val:EngineProgress[]|null) => void"
+    field name=streamingTextRef type="{current: Record<string,StreamingEntry>}"
+    field name=setStreamingText type="(val:Record<string,StreamingEntry>) => void"
+    field name=liveToolStreamsRef type="{current: Record<string,any>}"
+    field name=setLiveToolStreams type="(val:Record<string,any>) => void"
+    // ── Transcript blocks (append/replace/clear funnel + archive bookkeeping) ──
+    field name=setOutputBlocks type="(updater:OutputBlock[] | ((prev:OutputBlock[]) => OutputBlock[])) => void"
+    field name=blockArchivePathRef type="{current: string}"
+    field name=setClearEpoch type="(updater:(epoch:number) => number) => void"
+    field name=setNativeArchiveCount type="(val:number) => void"
+    // ── Modal / pending state (plan proposal, review, question, chat start) ──
+    field name=setPendingPlanProposal type="(val:OutputEvent | null) => void"
+    field name=setReviewEvent type="(val:any) => void"
+    field name=setQuestionState type="(val:any) => void"
+    field name=chatStartTimeRef type="{current: number}"
+    // ── Cesar telemetry (confidence, context gauge, scoreboard, rationale) ──
+    field name=setCesarConfidence type="(val:number|null) => void"
+    field name=setCesarContext type="(val:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:'api'|'projected'|'estimate'}|null) => void"
+    field name=setLiveScoreboard type="(val:Scoreboard | null) => void"
+    field name=setLiveRationale type="(val:ModeRationale | null) => void"
+    // ── Agent progress / todos (multi-agent snapshots + todo list) ──
+    field name=agentProgressRef type="{current: Record<string,AgentProgressSnapshot>}"
+    field name=setAgentProgress type="(val:Record<string,AgentProgressSnapshot>) => void"
+    field name=setTodos type="(updater:Todo[] | ((prev:Todo[]) => Todo[])) => void"
+
+  // ── Build the engine-output → React-state bridge actions object ──
+  // Source: app.kern memo name=outputActions deps="".
+  // Returns the stable OutputActions object (created once by the deps="" memo).
+  fn name=buildOutputActions params="opts:OutputBridgeDeps" returns="OutputActions"
+    handler <<<
+      const {
+        setLiveSpinner,
+        setLiveProgress,
+        streamingTextRef,
+        setStreamingText,
+        liveToolStreamsRef,
+        setLiveToolStreams,
+        setOutputBlocks,
+        blockArchivePathRef,
+        setClearEpoch,
+        setNativeArchiveCount,
+        setPendingPlanProposal,
+        setReviewEvent,
+        setQuestionState,
+        chatStartTimeRef,
+        setCesarConfidence,
+        setCesarContext,
+        setLiveScoreboard,
+        setLiveRationale,
+        agentProgressRef,
+        setAgentProgress,
+        setTodos,
+      } = opts;
+      return {
+        setLiveSpinner,
+        setLiveProgress,
+        setStreamingText: (updater: Record<string,StreamingEntry> | ((prev: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)) => {
+          const prev = streamingTextRef.current;
+          const next = typeof updater === 'function' ? (updater as (p: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)(prev) : updater;
+          // The ref keeps the FULL content — flushStream and streaming-end commit
+          // the complete answer from it. React state only drives the live preview,
+          // so push a bounded tail: rendering grows O(tail), not O(total) per
+          // throttled tick (a long single answer was quadratic — concat + full
+          // re-render every 33ms). Short streams reuse `next` (no extra alloc).
+          streamingTextRef.current = next;
+          const LIVE_TAIL = 4000;
+          let bounded: Record<string,StreamingEntry> = next;
+          for (const eid of Object.keys(next)) {
+            const e = next[eid];
+            if (e && typeof e.content === 'string' && e.content.length > LIVE_TAIL) {
+              if (bounded === next) bounded = { ...next };
+              bounded[eid] = { ...e, content: e.content.slice(-LIVE_TAIL) };
+            }
+          }
+          setStreamingText(bounded);
+        },
+        setLiveToolStreams: (updater: Record<string,any> | ((prev: Record<string,any>) => Record<string,any>)) => {
+          const prev = liveToolStreamsRef.current;
+          const next = typeof updater === 'function' ? (updater as (p: Record<string,any>) => Record<string,any>)(prev) : updater;
+          liveToolStreamsRef.current = next;
+          setLiveToolStreams(next);
+        },
+        addBlock: (event: any) => {
+          setOutputBlocks((prev: any) => appendTranscriptBlock(prev, event, blockArchivePathRef.current));
+        },
+        replaceBlocksOfType: (eventType: string, event: any) => {
+          setOutputBlocks((prev: any) => {
+            const filtered = prev.filter((b: any) => b.event.type !== eventType);
+            return appendTranscriptBlock(filtered, event, blockArchivePathRef.current);
+          });
+        },
+        clearBlocks: () => {
+          // Single funnel for every true transcript reset (/clear, /clean,
+          // session reset all dispatch OutputEvent {type:'clear'} → clearBlocks).
+          // Bump the epoch HERE so the <Static> remount is tied to the cause, not
+          // inferred from the array shrinking (which a cap-spill also does).
+          setOutputBlocks([]);
+          setClearEpoch((epoch: number) => nextStaticEpoch(epoch, 'reset'));
+          setNativeArchiveCount(0);
+          clearBlockRowCache();
+        },
+        setPendingPlanProposal: (val: OutputEvent | null) => setPendingPlanProposal(val),
+        setReviewEvent,
+        setQuestionState,
+        setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
+        flushStream: () => {
+          // Flush every in-flight engine's stream to the transcript. Multi-agent
+          // teams may have N concurrent streams when flush is requested (e.g.,
+          // permission-ask interrupts mid-stream).
+          const prev = streamingTextRef.current;
+          for (const eid of Object.keys(prev)) {
+            const entry = prev[eid];
+            if (!entry) continue;
+            // Contamination firewall: never flush a speculative preview draft to the
+            // transcript — it is dropped, not committed (same rule as streaming-end).
+            if (entry.draft) continue;
+            const color = ENGINE_COLORS[entry.engineId] ?? 124;
+            setOutputBlocks((blocks: any) => appendTranscriptBlock(blocks, { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } as any, blockArchivePathRef.current));
+          }
+          streamingTextRef.current = {};
+          setStreamingText({});
+          liveToolStreamsRef.current = {};
+          setLiveToolStreams({});
+        },
+        getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
+        setCesarConfidence,
+        setCesarContext,
+        setLiveScoreboard: (val: Scoreboard | null) => setLiveScoreboard(val),
+        setLiveRationale: (val: ModeRationale | null) => setLiveRationale(val),
+        setAgentProgress: (updater: Record<string,AgentProgressSnapshot> | ((prev: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => {
+          const prev = agentProgressRef.current;
+          const next = typeof updater === 'function' ? (updater as (p: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)(prev) : updater;
+          agentProgressRef.current = next;
+          setAgentProgress(next);
+        },
+        clearAgentProgressByTeam: (teamId: string) => {
+          const prev = agentProgressRef.current;
+          const next: Record<string, AgentProgressSnapshot> = {};
+          for (const eid of Object.keys(prev)) {
+            const entry = prev[eid];
+            if (entry && entry.teamId !== teamId) next[eid] = entry;
+          }
+          agentProgressRef.current = next;
+          setAgentProgress(next);
+        },
+        setTodos: (updater: Todo[] | ((prev: Todo[]) => Todo[])) => setTodos(updater as any),
+      };
+    >>>

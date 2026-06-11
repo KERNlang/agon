@@ -22,7 +22,7 @@ interface name=CesarApprovalLedgerRecord export=true
 
 interface name=CesarToolTimelineRecord export=true
   field name=turnId type=string
-  field name=event type="'turn_start'|'turn_summary'|'tool_call'|'tool_result'|'approval_decision'|'xml_interrupt'"
+  field name=event type="'turn_start'|'turn_summary'|'tool_call'|'tool_result'|'approval_decision'|'xml_interrupt'|'steering_injected'"
   field name=engineId type=string optional=true
   field name=cwd type=string optional=true
   field name=tool type=string optional=true

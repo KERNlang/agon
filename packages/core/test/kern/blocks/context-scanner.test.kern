@@ -1,0 +1,10 @@
+test name="Context scanner — fitness parse stays factored + valid" target="../../../src/kern/blocks/context-scanner.kern"
+  it name="context-scanner source stays valid KERN"
+    expect no=schemaViolations
+    expect no=semanticViolations
+    expect no=codegenErrors
+
+  it name="parseFitnessLine is a pure exported helper (behavior pinned in tests/unit/save-memory-tool.test.ts)"
+    expect node=fn name=parseFitnessLine prop=returns is="string | null"
+    expect node=fn name=parseFitnessOverride prop=returns is="string | null"
+    expect node=fn name=discoverGate prop=returns is=DiscoveredGate

@@ -1,0 +1,252 @@
+// ── App interrupt / abort machinery (extracted from app.kern) ──
+// Behavior-preserving extraction of the SIGINT / Ctrl+C / abort-all path.
+//
+// Owns the module-level mutable singletons that the interrupt path mutates:
+//   _activeAborts   — the live set of in-flight AbortControllers
+//   _cancelCallback — holder for the React-side hard-cancel fn (set by an
+//                     effect in app.kern, invoked by the SIGINT handler)
+//   _lastSigintAt   — last Ctrl+C timestamp (double-press → exit window)
+//   _pauseState     — the (currently dead — see note) pause-menu state holder
+// These MUST stay module-level singletons so the SIGINT handler (outside React)
+// and the React component share ONE instance. They are exported and imported by
+// app.kern at every reference site.
+//
+// The three logic bodies (trackAbort, interruptActiveRun, the cancel-callback
+// builder, the SIGINT handler) close over the component's setState fns / refs /
+// callbacks, so each takes them explicitly via a named `<Name>Deps` interface
+// (well above the ~6-field threshold; mirrors app-lifecycle/app-output-bridge).
+// The thin `callback`/`effect`/SIGINT-registration declarations stay in app.kern
+// and call into these.
+//
+// BEHAVIOR NOTE (do not "fix" here — Phase 0 owns it): _pauseState is created by
+// createPauseState() and dismissed by dismissPauseState() but renderPauseMenu()
+// is never wired into the render tree, so the pause menu is dead UI. Relocated
+// verbatim. process.exit semantics are likewise relocated unchanged.
+//
+// Convention (mirrors app-lifecycle.kern / app-output-bridge.kern): explicit
+// params; params above ~6 fields = a named `<Name>Deps` interface with grouped,
+// per-field-documented fields; refs typed with their real {current: T} shape;
+// typed returns (never any); // Source: breadcrumb per fn; structured KERN where
+// the body is if/let/assign, raw `<<<` only for closure-object construction.
+import from="@kernlang/agon-core" names="saveCesarPlan,cancelCesarPlan"
+import from="@kernlang/agon-core" names="PersistentSession" types=true
+import from="../cesar/pause-state.js" names="createPauseState,dismissPauseState"
+import from="../cesar/steering.js" names="clearSteering"
+import from="../cesar/pause-state.js" names="PauseState" types=true
+import from="../signals/output.js" names="OutputActions,AgentProgressSnapshot" types=true
+import from="../signals/output.js" names="clearPermissionQueue,clearThinkingBuffer"
+import from="../signals/app-state.js" names="cancelReplState,finishReplState"
+import from="../signals/app-state.js" names="ReplStateState" types=true
+
+module name=AppInterrupt
+
+  // ── Module-level interrupt singletons ──
+  // Shared by the React component AND the out-of-React SIGINT handler. Single
+  // instance per process — every importer (app.kern) sees the same objects.
+  const name=_activeAborts type="Set<AbortController>" export=true value={{ new Set<AbortController>() }}
+
+  const name=_cancelCallback type="{ fn: (() => void) | null }" export=true value={{ { fn: null } }}
+
+  const name=_lastSigintAt type="{ value: number }" export=true value={{ { value: 0 } }}
+
+  const name=_pauseState type="{ value: PauseState | null }" export=true value={{ { value: null } }}
+
+  // ── trackAbort: register/deregister the active AbortController ──
+  // Source: app.kern callback name=trackAbort.
+  // Swaps the active controller in activeAbortRef + the _activeAborts set and
+  // mirrors it into React state. Passing null clears the active controller.
+  fn name=runTrackAbort params="abort:AbortController | null, activeAbortRef:{current: AbortController | null}, setActiveAbort:(abort:AbortController | null) => void" returns=void
+    handler lang="kern"
+      if cond="activeAbortRef.current"
+        do value="_activeAborts.delete(activeAbortRef.current)"
+      assign target="activeAbortRef.current" value="abort"
+      if cond="abort"
+        do value="_activeAborts.add(abort)"
+      do value="setActiveAbort(abort)"
+
+  // ── Closed-over deps for runInterruptActiveRun ──
+  // Every ref / setState fn / callback the interrupt body needs, supplied
+  // explicitly instead of closed over from component scope. Grouped by role.
+  interface name=InterruptRunDeps
+    doc "Explicit dependencies for runInterruptActiveRun — the active-run refs, the output bridge, and the modal/repl setState fns the interrupt path resets, passed in rather than captured from component scope."
+    // ── Active run handles (abort controller + pending plan) ──
+    field name=activeAbortRef type="{current: AbortController | null}"
+    field name=activePlanRef type="{current: any}"
+    field name=setActiveAbort type="(abort:AbortController | null) => void"
+    field name=setActivePlan type="(plan:any) => void"
+    // ── Output / stream teardown (spinner, progress, in-flight stream flush) ──
+    field name=setLiveSpinner type="(val:any) => void"
+    field name=setLiveProgress type="(val:any) => void"
+    field name=outputActions type=OutputActions
+    // ── Modal / picker dismissal ──
+    field name=setQuestionState type="(val:any) => void"
+    field name=setQuestionAnswer type="(val:string) => void"
+    field name=setPendingPlanProposal type="(val:any) => void"
+    field name=setSlashPickerOpen type="(val:boolean) => void"
+    field name=setEnginePickerOpen type="(val:boolean) => void"
+    field name=setModelPickerOpen type="(val:boolean) => void"
+    field name=setCesarPickerOpen type="(val:boolean) => void"
+    field name=setReviewEvent type="(val:any) => void"
+    // ── Repl state + notification (warning dispatch, repl reset, bell/title) ──
+    field name=replState type="ReplStateState"
+    field name=dispatch type="(event:any) => void"
+    field name=setReplState type="(updater:(prev:any) => any) => void"
+    field name=pendingBellRef type="{current: boolean}"
+    field name=bell type="() => void"
+    field name=setWindowTitle type="(title:string) => void"
+
+  // ── interruptActiveRun: abort the active run and reset live/modal/repl state ──
+  // Source: app.kern callback name=interruptActiveRun.
+  // Aborts the active controller, flushes in-flight streams, dismisses all
+  // modals/pickers, cancels a pending (planning/awaiting_approval) plan, resets
+  // the repl to idle with a warning + bell, and optionally clears the chat.
+  fn name=runInterruptActiveRun params="opts:InterruptRunDeps, message:string, clearChat:boolean" returns=void
+    handler lang="kern"
+      let name=abort value="opts.activeAbortRef.current"
+      if cond="abort"
+        do value="abort.abort()"
+      do value="runTrackAbort(null, opts.activeAbortRef, opts.setActiveAbort)"
+      comment raw="// Interrupt drops any mid-turn steering — no silent carryover to the"
+      comment raw="// next turn (spec point 3). The brain's own turn-end release path is"
+      comment raw="// bypassed on an abort, so the drop must happen here."
+      do value="clearSteering()"
+      do value="opts.setLiveSpinner(null)"
+      do value="opts.setLiveProgress(null)"
+      comment raw="// Commit any in-flight streams before wiping. In main-buffer mode the"
+      comment raw="// partial text has already been written to the terminal; dropping it"
+      comment raw="// from React state without flushing causes logUpdate.eraseLines to"
+      comment raw="// wipe visible output the user was just reading."
+      do value="opts.outputActions.flushStream()"
+      do value="clearPermissionQueue()"
+      do value="clearThinkingBuffer()"
+      do value="opts.setQuestionState(null)"
+      do value="opts.setQuestionAnswer('')"
+      do value="opts.setPendingPlanProposal(null)"
+      do value="opts.setSlashPickerOpen(false)"
+      do value="opts.setEnginePickerOpen(false)"
+      do value="opts.setModelPickerOpen(false)"
+      do value="opts.setCesarPickerOpen(false)"
+      do value="opts.setReviewEvent(null)"
+      let name=pendingPlan value="opts.activePlanRef.current"
+      if cond="pendingPlan && ['planning', 'awaiting_approval'].includes(String(pendingPlan.state ?? ''))"
+        try
+          do value="saveCesarPlan(cancelCesarPlan(pendingPlan))"
+          catch name=_err
+        assign target="opts.activePlanRef.current" value="null"
+        do value="opts.setActivePlan(null)"
+      if cond="opts.replState !== 'idle'"
+        if cond="message"
+          do value="opts.dispatch({ type: 'warning', message } as any)"
+        do value="opts.setReplState((prev: any) => prev === 'idle' ? prev : cancelReplState({ state: prev }).state)"
+        if cond="!opts.pendingBellRef.current"
+          do value="opts.bell()"
+          assign target="opts.pendingBellRef.current" value="true"
+        do value="opts.setWindowTitle('agon')"
+      if cond="clearChat"
+        do value="opts.dispatch({ type: 'clear' } as any)"
+
+  // ── Closed-over deps for buildCancelCallback ──
+  // The cancel-callback hard-resets MORE than interruptActiveRun (it also wipes
+  // agent progress + tool detail and FINISHES rather than cancels the repl), so
+  // it carries its own dep set. Grouped by role.
+  interface name=CancelCallbackDeps
+    doc "Explicit dependencies for buildCancelCallback — the refs and setState fns the SIGINT hard-cancel callback resets. Distinct from InterruptRunDeps: also clears agent-progress + tool-detail and FINISHES the repl (vs cancel)."
+    // ── Active run handles (abort controller + pending plan) ──
+    field name=activeAbortRef type="{current: AbortController | null}"
+    field name=activePlanRef type="{current: any}"
+    field name=setActiveAbort type="(abort:AbortController | null) => void"
+    field name=setActivePlan type="(plan:any) => void"
+    // ── Output / stream teardown ──
+    field name=setLiveSpinner type="(val:any) => void"
+    field name=setLiveProgress type="(val:any) => void"
+    field name=outputActions type=OutputActions
+    // ── Agent progress teardown ──
+    field name=agentProgressRef type="{current: Record<string,AgentProgressSnapshot>}"
+    field name=setAgentProgress type="(val:Record<string,AgentProgressSnapshot>) => void"
+    // ── Modal / picker / tool-detail dismissal ──
+    field name=setQuestionState type="(val:any) => void"
+    field name=setQuestionAnswer type="(val:string) => void"
+    field name=setPendingPlanProposal type="(val:any) => void"
+    field name=setSlashPickerOpen type="(val:boolean) => void"
+    field name=setEnginePickerOpen type="(val:boolean) => void"
+    field name=setModelPickerOpen type="(val:boolean) => void"
+    field name=setCesarPickerOpen type="(val:boolean) => void"
+    field name=setReviewEvent type="(val:any) => void"
+    field name=setToolDetailEvent type="(val:any) => void"
+    // ── Repl reset (FINISH, not cancel) ──
+    field name=setReplState type="(updater:(prev:any) => any) => void"
+
+  // ── buildCancelCallback: build the out-of-React hard-cancel fn ──
+  // Source: app.kern effect deps="setActiveAbort,outputActions" (the
+  // `_cancelCallback.fn = () => { ... }` body). Returns the cancel fn the SIGINT
+  // handler invokes on a second Ctrl+C during pause. Aborts ALL controllers,
+  // flushes streams, wipes agent progress + tool detail, dismisses every modal,
+  // cancels a pending plan, and FINISHES the repl.
+  fn name=buildCancelCallback params="opts:CancelCallbackDeps" returns="() => void"
+    handler <<<
+      return () => {
+        for (const abort of _activeAborts) abort.abort();
+        _activeAborts.clear();
+        // Hard cancel also drops any mid-turn steering (no carryover).
+        clearSteering();
+        opts.activeAbortRef.current = null;
+        opts.setActiveAbort(null);
+        opts.setLiveSpinner(null);
+        opts.setLiveProgress(null);
+        // Commit any in-flight streams before wiping — see interruptActiveRun.
+        opts.outputActions.flushStream();
+        opts.agentProgressRef.current = {};
+        opts.setAgentProgress({});
+        clearPermissionQueue();
+        clearThinkingBuffer();
+        opts.setQuestionState(null);
+        opts.setQuestionAnswer('');
+        opts.setPendingPlanProposal(null);
+        opts.setSlashPickerOpen(false);
+        opts.setEnginePickerOpen(false);
+        opts.setModelPickerOpen(false);
+        opts.setCesarPickerOpen(false);
+        opts.setReviewEvent(null);
+        opts.setToolDetailEvent(null);
+        const pendingPlan = opts.activePlanRef.current;
+        if (pendingPlan && ['planning', 'awaiting_approval'].includes(String(pendingPlan.state ?? ''))) {
+          try { saveCesarPlan(cancelCesarPlan(pendingPlan)); } catch (_err) {}
+          opts.activePlanRef.current = null;
+          opts.setActivePlan(null);
+        }
+        opts.setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
+      };
+    >>>
+
+  // ── handleSigint: the process-level SIGINT (Ctrl+C) handler body ──
+  // Source: app.kern fn startRepl — the `process.on('SIGINT', () => { ... })`
+  // body. `cesarSessionHolder` is app.kern's module-level { session } holder
+  // (kept in app.kern; passed in here). Mutates the module-level interrupt
+  // singletons directly. Behavior verbatim: double-press within 1200ms closes
+  // the session + process.exit(0); during pause a second press hard-cancels via
+  // _cancelCallback.fn; first press with in-flight aborts enters the (dead) pause
+  // state; otherwise just records the timestamp.
+  fn name=handleSigint params="cesarSessionHolder:{session: PersistentSession | null}" returns=void
+    handler <<<
+      const now = Date.now();
+      if (now - _lastSigintAt.value < 1200) {
+        if (cesarSessionHolder.session) { try { cesarSessionHolder.session.close(); } catch { /* session already closed or errored */ } cesarSessionHolder.session = null; }
+        process.exit(0);
+      }
+      if (_pauseState.value?.active) {
+        // Second Ctrl+C during pause — hard cancel
+        _pauseState.value = dismissPauseState();
+        for (const abort of _activeAborts) abort.abort();
+        _activeAborts.clear();
+        _lastSigintAt.value = now;
+        if (_cancelCallback.fn) _cancelCallback.fn();
+        return;
+      }
+      if (_activeAborts.size > 0) {
+        // First Ctrl+C — enter pause state instead of immediate abort
+        _pauseState.value = createPauseState();
+        _lastSigintAt.value = now;
+        return;
+      }
+      _lastSigintAt.value = now;
+    >>>

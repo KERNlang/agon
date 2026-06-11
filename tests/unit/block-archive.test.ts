@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { appendBlockWithCap, archiveBlocks } from '../../packages/cli/src/generated/signals/block-archive.js';
+import { appendBlockWithCap, archiveBlocks, nextStaticEpoch } from '../../packages/cli/src/generated/signals/block-archive.js';
 
 const makeBlock = (id: number) => ({ id, event: { type: 'info', message: `msg-${id}` } as any });
 
@@ -57,5 +57,53 @@ describe('block-archive', () => {
     expect(archived).toHaveLength(101);
     expect(archived[0].id).toBe(0);
     expect(archived[100].id).toBe(100);
+  });
+});
+
+describe('nextStaticEpoch — <Static> remount epoch', () => {
+  it('a spill-shaped shrink does NOT change the epoch (no Static remount)', () => {
+    // A cap-spill front-slices outputBlocks (e.g. 500 → 400). Ink's <Static> is
+    // append-only, so the shrink renders nothing new and must NOT remount.
+    expect(nextStaticEpoch(7, 'spill')).toBe(7);
+
+    // Drive a real spill through appendBlockWithCap and confirm the epoch stays put
+    // even though the array length shrank from 500 to 400.
+    const tmpDir = mkdtempSync(join(tmpdir(), 'agon-epoch-spill-'));
+    const spillPath = join(tmpDir, 'transcript.ndjson');
+    try {
+      let state = Array.from({ length: 500 }, (_, i) => makeBlock(i));
+      const before = state.length;
+      let epoch = 3;
+      state = appendBlockWithCap(state, makeBlock(500), spillPath);
+      expect(state.length).toBeLessThan(before); // 400 — the array shrank
+      epoch = nextStaticEpoch(epoch, 'spill');
+      expect(epoch).toBe(3); // ...but the remount epoch is untouched
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('an append never changes the epoch', () => {
+    expect(nextStaticEpoch(2, 'append')).toBe(2);
+  });
+
+  it('a /clear-shaped reset bumps the epoch exactly once', () => {
+    expect(nextStaticEpoch(0, 'reset')).toBe(1);
+    // Two distinct /clear resets advance it by exactly one each.
+    let epoch = 0;
+    epoch = nextStaticEpoch(epoch, 'reset');
+    epoch = nextStaticEpoch(epoch, 'reset');
+    expect(epoch).toBe(2);
+  });
+
+  it('a session reset (same clearBlocks funnel) bumps the epoch', () => {
+    // /clear, /clean, and session reset all dispatch OutputEvent {type:'clear'} →
+    // clearBlocks → cause 'reset'. A reset after appends/spills still bumps once.
+    let epoch = 5;
+    epoch = nextStaticEpoch(epoch, 'append');
+    epoch = nextStaticEpoch(epoch, 'spill');
+    expect(epoch).toBe(5); // appends + spills left it alone
+    epoch = nextStaticEpoch(epoch, 'reset');
+    expect(epoch).toBe(6); // the session reset bumps it
   });
 });

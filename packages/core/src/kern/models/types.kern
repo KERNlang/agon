@@ -42,6 +42,23 @@ interface name=EngineCliModelConfig
   field name=list type="CliModelEntry[]" optional=true
   field name=dynamicListCmd type="string[]" optional=true
 
+interface name=SessionBudget
+  doc "Proactive context-window management metadata for an engine's Cesar brain session. Engines WITHOUT this object get NO budget behavior — the pre-turn gate is inert (zero regression risk). Thresholds are fractions of the EFFECTIVE window (contextWindow minus reserveTokens). See token-estimator.kern / session-budget.kern."
+  field name=contextWindow type=number
+    doc "Total model context window in tokens (input+history+output). The single source of truth the gate sizes against; an engine.api.contextWindow may also exist for the API compaction path but this is the brain-session budget."
+  field name=reserveTokens type=number optional=true
+    doc "Headroom (output + tool overhead) to subtract from contextWindow before applying thresholds. Defaults to max(15% of window, 8000) when omitted."
+  field name=warnAt type=number optional=true
+    doc "Fraction (0..1) of the effective window at which to emit ONE quiet info nudge per session. Default 0.70."
+  field name=compactAt type=number optional=true
+    doc "Fraction (0..1) at which to auto-trigger compaction. Default 0.82."
+  field name=hardStopAt type=number optional=true
+    doc "Fraction (0..1) at which to BLOCK the turn with a clear error (compaction did not bring usage down enough). Default 0.92."
+  field name=estimator type="'chars-per-token'|'message-history'" optional=true
+    doc "How to estimate tokens. 'chars-per-token' = sum content chars / charsPerToken (cheap, default). 'message-history' = same divisor but iterates structured messages incl tool-call args. Both are conservative over-counts (compaction fires a touch early)."
+  field name=charsPerToken type=number optional=true
+    doc "Average chars per token for the estimator's division. Default 3.9 (code/JSON-heavy agent history tokenizes denser than prose; a higher divisor under-counts and risks overflow, so the default is conservative-low)."
+
 interface name=EngineDefinition
   field name=schemaVersion type="1|2|3"
   field name=id type=string
@@ -72,6 +89,8 @@ interface name=EngineDefinition
   field name=agent type=EngineModeConfig optional=true
   field name=api type="{baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, contextWindow?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number}" optional=true
   field name=companion type=CompanionConfig optional=true
+  field name=sessionBudget type=SessionBudget optional=true
+    doc "Proactive context-window budget for this engine's Cesar brain session. When present, the pre-turn gate estimates session tokens and warns/auto-compacts/hard-stops before the window overflows. When ABSENT the gate is inert (feature opt-in per engine — zero regression for engines lacking it)."
   field name=cliModels type=EngineCliModelConfig optional=true
   field name=isolationHints type="{configEnv?:string, strictMcpArgs?:string[], personalPaths?:string[], authFiles?:string[], authMarker?:string, setupHint?:string, loginArgs?:string[], supportsProjectMcp?:boolean}" optional=true
     doc "Workspace-pure isolation knobs. configEnv = env var that repoints the engine's config dir to a clean throwaway (e.g. CLAUDE_CONFIG_DIR, CODEX_HOME), dropping the user's global config/plugins/hooks/MCP. AUTH has two models: file-based engines (codex) list authFiles — credential files (relative to the real config home, personalPaths[0]) copied into the clean dir so dispatch stays logged in (codex 'auth.json'); keychain-based engines (claude on macOS) have NO copyable credential (the token is in the OS keychain, keyed to the DEFAULT config dir) so authFiles is empty and the clean dir gets its own one-time login via `agon login claude`. authMarker = the file whose presence in the clean dir means it IS authenticated (codex 'auth.json' — the seeded file; claude '.claude.json' — written by login); isolation is gated on it, falling back to inherit (never breaking a dispatch) when absent. setupHint = the one-time instruction to surface when the clean dir isn't authenticated. loginArgs = the engine CLI subcommand `agon login <id>` runs (with configEnv pointed at the clean dir) to authenticate it (claude ['auth','login'], codex ['login']). strictMcpArgs = CLI flags forcing no/limited MCP (claude '--strict-mcp-config'). personalPaths[0] = the engine's real config home. supportsProjectMcp = engine reads .mcp.json from cwd. ABSENT on API-only engines (kimi/minimax/zai): no local process, already pure."
@@ -105,7 +124,8 @@ interface name=DispatchResult
   field name=durationMs type=number
   field name=timedOut type=boolean
   field name=pid type="number|null" optional=true
-  field name=usage type="{promptTokens:number,completionTokens:number,totalTokens:number,source:'sdk'|'cli-reported'|'estimated'}" optional=true
+  field name=usage type="{promptTokens:number,completionTokens:number,totalTokens:number,cachedInputTokens?:number,source:'sdk'|'cli-reported'|'estimated'}" optional=true
+    doc "promptTokens (AI SDK inputTokens) already INCLUDES cache read+write tokens, so promptTokens+completionTokens = the request's exact context occupancy. cachedInputTokens = the cache-read share, for display/cost."
   field name=parts type="Array<{kind:'text',text:string}|{kind:'reasoning',text:string}|{kind:'tool_call',toolName:string,toolCallId:string,args:Record<string,unknown>}>" optional=true
   doc "Structured parts captured at stream time. Enables compaction to fold over typed data instead of parsing strings."
 
@@ -262,10 +282,13 @@ config name=AgonConfig
   field name=cesarStreamingXmlTools type=boolean default=true
     doc "When true, interrupt text streaming as soon as a complete XML tool call is parsed so XML fallback tools can execute live instead of waiting for the whole response."
   field name=campfireObserverStrategy type="'lead-first'|'all-respond'" default=lead-first
-  field name=hooks type="Record<string,Array<{command:string,engines?:string[],timeout?:number}>>" optional=true
+  field name=hooks type="Record<string,Array<{command:string,engines?:string[],matcher?:string,timeout?:number}>>" optional=true
+    doc "Shell hook commands keyed by event. Dispatch-lifecycle events (pre_dispatch, post_forge, …) use {command, engines?, timeout?}. CC-parity tool-call events `preToolUse`/`postToolUse` use {matcher?, command, timeout?}: a pre-hook gets {tool_name, tool_input} on stdin and may BLOCK with exit 2 (stderr = refusal); a post-hook gets {tool_name, tool_input, tool_response} and never blocks. All hooks are fail-safe (timeout/spawn-failure/other-exit → proceed)."
   field name=permissionMode type="'auto'|'smart'|'ask'|'deny-all'" default=smart
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
+  field name=permissions type="{allow?:string[],deny?:string[]}" optional=true
+    doc "Claude-Code-parity allow/deny rule strings honored by the approval gate. Rules look like `Bash(npm test:*)`, `Bash(git diff:*)`, `Edit`, `Write`, `Read`. `deny` ALWAYS wins over `allow`: a deny rule refuses without prompting, an allow rule auto-approves the matching ask, everything else falls through to the normal ask flow. Project scope lives in .agon.json (committable); personal overrides in .agon.local.json (gitignored). Malformed rules are ignored with a one-time warning, never block."
   field name=hiddenEngines type="string[]" optional=true
     doc "SOFT denylist (verb: /engines hide). Excluded from automatic rosters, rankings, batch selection and health-preflight candidates, but an explicit -e/--engines request for a hidden engine is still HONORED (with a warning). Use for engines you usually don't want but occasionally A/B-test."
   field name=removedEngines type="string[]" optional=true
@@ -278,7 +301,11 @@ config name=AgonConfig
     doc "Internal: set true once the one-time 'engines now run workspace-pure by default' migration notice has been shown, so it isn't repeated."
   field name=terminalMode type="'native'|'fullscreen'" default=native
     doc "Terminal scroll behavior. 'native' uses the terminal's own scrollback and OS scrollbar. 'fullscreen' matches Codex/Claude-style app-captured scrolling."
+  field name=statusLine type=string default=""
+    doc "Configurable one-line status (engine/model · context % · git branch) in the Cesar TUI. '' (default/absent) = off / keep existing status chrome only. 'default' = render the standard line. Any other value is treated as a format string with {engine}, {model}, {context}, {branch}, {cwd} placeholders (unknown placeholders pass through literally; a missing value renders empty). Custom shell-command status lines (à la Claude Code's `statusLine.command`) are NOT supported yet — placeholders only."
   field name=iconTheme type="'roman'|'classic'" default=roman
+  field name=narrationFold type="'off'|'safe'|'aggressive'" default=safe
+    doc "Engine-agnostic narration folding. Collapses verbose research play-by-play (e.g. a black-box --print agent's 'I will read X… let me check Y…' transcript) into a compact '▸ N reasoning steps folded · /raw' placeholder, keeping the answer visible. 'safe' (default) folds only contiguous runs of >=2 narration sentences and never the answer tail; 'aggressive' folds single narration lines too; 'off' disables. Fold-not-delete — /raw reprints the untouched original."
   field name=autoReviewAfterForge type=boolean default=true
     doc "Auto-run review on forge winner's patch before presenting to user. Data: 79% bug catch rate."
   field name=autoReviewAfterImpl type=boolean default=true
@@ -291,6 +318,8 @@ config name=AgonConfig
     doc "Min ELO spread between top two engines for a task class. Below this, engines are too close to call — speculation is worthwhile. Above it, the leader is clear enough to skip speculation."
   field name=autoCredit type=boolean default=true
     doc "When true, append 'Co-authored-by: Agon AI <agon@local>' to commits where Agon generated the commit message. Set to false to disable."
+  field name=commitCoAuthor type=string default="agon (KERN) <noreply@kernlang.dev>"
+    doc "Co-Authored-By identity appended to commits agon creates. ON by default; set to \"\" to disable (machine-wide in ~/.agon/config.json or per-project in .agon.json)."
 
 
 interface name=ScoutBid

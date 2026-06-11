@@ -32,8 +32,26 @@ export function recordPastePlaceholder(hashMap: Map<string,string>, placeholder:
 }
 
 // @kern-source: paste-handler:34
+function sanitizeInlinePaste(text: string): string {
+  // Small (<=500 char) pastes are inserted RAW into the composer and painted by
+  // the terminal, so a surviving cursor-moving control char corrupts the paint:
+  //   - a carriage return jumps the cursor to column 0, so later text overwrites
+  //     the start of the line (the "typed text appears at the beginning, on top
+  //     of what I already wrote" bug) — handled upstream as CR -> LF,
+  //   - ANSI escapes (common when copying coloured log/terminal output) inject
+  //     colour changes and cursor moves.
+  // Tabs (\t) and newlines (\n) are preserved on purpose: \n is how the composer
+  // wraps, and \t keeps pasted-code indentation. Large pastes never hit this
+  // path — they render as a clean [Pasted Content N] placeholder.
+  return text
+    .replace(/\x1b\[[0-?]*[ -\/]*[@-~]/g, '')          // CSI sequences (incl. SGR colours)
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')  // OSC sequences (... BEL / ST)
+    .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');          // remaining C0 controls + DEL; keep \t and \n
+}
+
+// @kern-source: paste-handler:52
 export function processPasteContent(raw: string): PasteResult {
-  const normalized = raw.replace(/\r\n/g, '\n');
+  const normalized = raw.replace(/\r\n?/g, '\n');
   const content = normalized.trimEnd();
   if (!content) {
     return { type: 'empty' };
@@ -49,10 +67,10 @@ export function processPasteContent(raw: string): PasteResult {
     } catch (e) {
     }
   }
-  return { type: 'direct', content: normalized };
+  return { type: 'direct', content: sanitizeInlinePaste(normalized) };
 }
 
-// @kern-source: paste-handler:51
+// @kern-source: paste-handler:69
 export function expandPastePlaceholders(input: string, hashMap: Map<string,string>): string {
   const takeHash = (key: string): string | null => {
     const stored = hashMap.get(key);

@@ -24,12 +24,13 @@ export type {
 export { defaultFinalizeOnScoreForTask } from './generated/blocks/finalize-policy.js';
 export {
   repoRoot, headSha, worktreePrune, worktreeCreate, worktreeRemove,
-  worktreeRemoveBestEffort, worktreePruneAll, stashSnapshot,
+  worktreeRemoveBestEffort, worktreePruneAll, worktreePruneOrphaned, stashSnapshot,
   worktreeDiff, worktreeChangedDiff, worktreeChangedShortstat,
   readOnlyDiff, diffLineCount, diffFileCount, applyPatch, recentCommits,
   currentBranch, isDirty,
   gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff,
   absoluteGitDir, branchExists, worktreeAddOnBranch, hydrateWorktreeBuildArtifacts,
+  coAuthorTrailer, appendCoAuthor,
 } from './git.js';
 export {
   createSessionWorktree, listSessionWorktrees, findSessionWorktree,
@@ -41,6 +42,8 @@ export {
   acquireApplyLock, releaseApplyLock, headChanged, branchChanged,
 } from './worktree-lock.js';
 export type { ApplyLockInfo, ApplyLockResult } from './worktree-lock.js';
+export { withFileLock } from './file-lock.js';
+export type { FileLockInfo } from './file-lock.js';
 export { spawnWithTimeout, spawnStream } from './process.js';
 export type { SpawnOptions } from './process.js';
 export {
@@ -51,7 +54,8 @@ export {
 export { createLogger } from './logger.js';
 export type { Logger } from './logger.js';
 export { EngineRegistry } from './engine-registry.js';
-export { scanProjectContext, isKernProject, hasProjectBrief, buildKernContextSpine } from './context-scanner.js';
+export { scanProjectContext, isKernProject, hasProjectBrief, buildKernContextSpine, discoverGate, bashRanGate, isGateSkipSignal } from './context-scanner.js';
+export type { DiscoveredGate } from './context-scanner.js';
 export { buildCodebaseMap, collectSourceFiles, extractSymbols, clearCodebaseMapCache } from './generated/blocks/codebase-map.js';
 export {
   addWorkspace, removeWorkspace, listWorkspaces,
@@ -103,6 +107,26 @@ export {
   sessionCacheDir,
   saveConversation, loadConversation, clearConversation, stripEngineArtifacts,
 } from './session-store.js';
+// ── Session budget — proactive context-window management ──
+export {
+  estimateSessionTokens, estimateMessageHistoryTokens, estimateFlatHistoryTokens,
+  estimatePtyTokens, estimateMessageTokens, effectiveWindow, resolveCharsPerToken,
+} from './generated/sessions/token-estimator.js';
+export type {
+  EstimatorMessage, PtyAccumulation, SessionTokenInputs,
+} from './generated/sessions/token-estimator.js';
+export {
+  checkSessionBudget, resolveThresholds, budgetRatioPct,
+} from './generated/sessions/session-budget.js';
+export type {
+  BudgetCheck, BudgetThresholds,
+} from './generated/sessions/session-budget.js';
+// ── Compaction primitives (pure helpers shared by session.compact() and the in-send emergency fold) ──
+export {
+  findSafeKeepStart, buildCompactionSummary, renderCompactionText,
+  buildSummarizationContext, buildCompactionPrompt,
+} from './generated/sessions/compaction.js';
+export type { CompactMessage, SummarizationCaps } from './generated/sessions/compaction.js';
 // ── Context Parts (structured message parts + StageContext) ──
 export {
   buildStageContext, renderStageContext,
@@ -117,11 +141,13 @@ export type { ApiAgentOptions, ApiAgentResult } from './generated/api/agent-loop
 export { resolveIsolationMode, planEngineIsolation, isValidIsolationMode, ISOLATION_MODES } from './generated/signals/isolation.js';
 export type { EngineIsolationPlan } from './generated/signals/isolation.js';
 // ── Tool System ──
-export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState } from './tool-types.js';
+export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState, ParsedPermissionRule, PermissionRuleSet, ToolHookDef, ParsedToolHooks } from './tool-types.js';
+export { parseToolHooks, hasToolHooks, runPreToolUseHooks, runPostToolUseHooks } from './tool-hooks.js';
 export { FileStateCache, fileStateCache, getProjectFileStateCache, clearProjectFileStateCaches } from './file-state-cache.js';
-export { ToolRegistry, executeToolCall, executeToolCalls } from './tool-registry.js';
-export { checkBashPermission, checkFileReadPermission, checkFileWritePermission, isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
-export { createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createAgentTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, createQuickNeroTool } from './tools.js';
+export { ToolRegistry, executeToolCall, executeToolCalls, PERMISSION_DENIED_MESSAGE } from './tool-registry.js';
+export { isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
+export { parsePermissionRule, parsePermissionRuleSet, ruleMatches, evaluatePermissionRules, evaluateToolRules, evaluateBashRules, evaluateFilePathRules, hasShellControl, hasRedirection, hasSubstitution, splitShellSegments, resolveRulePath, pathRuleMatches } from './tool-permissions.js';
+export { createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createAgentTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, createQuickNeroTool } from './tools.js';
 export { formatCesarPlanMarkdown } from './generated/cesar/plan-formatter.js';
 export { generateToolPrompt, toolsToOpenAIFormat } from './generated/tools/tool-prompt.js';
 export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './generated/tools/tool-parser.js';
@@ -135,6 +161,7 @@ export type { ChatMessage as StoredChatMessage, ChatSession } from './chat-store
 export {
   isImagePath, mimeFromExt, resolveImagePath,
   buildImageAttachment, extractImagesFromInput, normalizeDroppedPath,
+  encodeImagesForDispatch,
 } from './image.js';
 // ── Agon Rooms — multi-party room ledger (file-first; CLI/MCP/daemon are adapters) ──
 export {
@@ -145,6 +172,26 @@ export { recordPresence, removePresence, listPresence, PRESENCE_TTL_MS } from '.
 export { acquireTurnLease, releaseTurnLease, readActiveLease } from './generated/rooms/leases.js';
 export { detectTrigger, detectPingPong, evaluateStop } from './generated/rooms/auto-policy.js';
 export type { RoomActor, RoomEvent, RoomMeta, PresenceEntry, TurnLease, AutoConfig, AutoState, StopDecision, TriggerDecision } from './generated/rooms/types.js';
+// ── EventLog — append-only per-session event ledger (client/server split M1) ──
+export {
+  append as eventLogAppend, flush as eventLogFlush, replay as eventLogReplay,
+  latestSeq as eventLogLatestSeq, listSessions as eventLogListSessions,
+  readMeta as eventLogReadMeta, resetEventLogState, eventLogWriteFailures,
+  sessionsRoot as eventLogSessionsRoot, sessionDir as eventLogSessionDir,
+  eventsPath as eventLogEventsPath, metaPath as eventLogMetaPath,
+  sanitizeSessionId as eventLogSanitizeSessionId,
+  EVENT_LOG_FLUSH_MS, EVENT_LOG_ROTATE_BYTES,
+} from './generated/sessions/event-log.js';
+export type { LoggedEvent, SessionMeta as EventLogSessionMeta, AppendOptions as EventLogAppendOptions } from './generated/sessions/event-log.js';
+// ── SessionHost — read-side seam over the EventLog ledger (client/server split M2) ──
+export { InProcessSessionHost, inProcessSessionHost, getSessionHost, SUBSCRIBE_POLL_MS } from './generated/sessions/session-host.js';
+export type { SessionHost, SessionDescriptor, SubscribeOptions } from './generated/sessions/session-host.js';
+// ── Daemon wire protocol — newline-JSON frames agond speaks (client/server split M3) ──
+export {
+  encodeDaemonRequest, encodeDaemonResponse,
+  parseDaemonRequest, parseDaemonResponse, splitFrames,
+} from './generated/sessions/daemon-protocol.js';
+export type { DaemonRequest, DaemonResponse } from './generated/sessions/daemon-protocol.js';
 export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
 export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';
 export { apiDispatch, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';
@@ -176,7 +223,7 @@ export { Speculator, createSpeculator } from './generated/cesar/speculator.js';
 export type {
   SpeculatorMemberConfig, SpeculatorOptions, SpeculatorResult,
 } from './generated/cesar/speculator.js';
-export { createCesarMemory } from './generated/cesar/memory.js';
+export { createCesarMemory, buildProjectMemoryBlock, extractProjectMemorySections, stripProjectMemorySections } from './generated/cesar/memory.js';
 export type { CesarMemory, MemoryEntry } from './generated/cesar/memory.js';
 export {
   ContextThread, loadOrCreateActiveThread, forkActiveThread, listThreadsForProject, deleteThread, projectHash16, projectSha8,
@@ -184,8 +231,9 @@ export {
 export type {
   ThreadMessage, ThreadCheckpoint, FileTouch, LoopMessage, ContextThreadConfig, ThreadSize,
 } from './generated/cesar/context-thread.js';
-export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath } from './generated/cesar/plan.js';
+export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, exitCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, getCesarPlansDir, cesarPlanJsonPath, cesarPlanMarkdownPath, CESAR_STEP_TYPES } from './generated/cesar/plan.js';
 export type { CesarPlan, CesarPlanStep, CesarStepResult } from './generated/cesar/plan.js';
+export { sanitizePlanSteps } from './generated/cesar/plan-validation.js';
 export { planCostEstimator } from './generated/cesar/plan-cost-estimator.js';
 export type { CostEstimate } from './generated/cesar/plan-cost-estimator.js';
 export { executePlan, getReadySteps } from './generated/cesar/plan-executor.js';

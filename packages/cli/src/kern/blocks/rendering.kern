@@ -150,7 +150,7 @@ fn name=tokenizeLine params="line:string" returns="SyntaxToken[]"
 
 // ── Screen: DiffLine ────────────────────────────────────────────────
 
-screen name=DiffLine target=ink
+screen name=DiffLine target=ink memo=true
   prop name=line type=string
   prop name=maxWidth type=number
   render
@@ -170,7 +170,7 @@ screen name=DiffLine target=ink
 
 // ── Screen: SyntaxLine ──────────────────────────────────────────────
 
-screen name=SyntaxLine target=ink
+screen name=SyntaxLine target=ink memo=true
   prop name=line type=string
   prop name=maxWidth type=number
   render
@@ -196,12 +196,21 @@ screen name=SyntaxLine target=ink
 
 // ── Screen: CodeBlockView ───────────────────────────────────────────
 
-screen name=CodeBlockView target=ink
+screen name=CodeBlockView target=ink memo=true
   prop name=segment type="ContentSegment & { type: 'code' }"
   prop name=borderColor type=string
+  prop name=wrapWidth type=number optional=true
   render
     handler <<<
-      const codeWidth = contentWidth(8);
+      // The box is `body + 8` cols wide (frame). When the parent passes the
+      // actual available content width (wrapWidth), the box must fit inside it —
+      // otherwise nesting/padding pushes the block past the available Ink width
+      // and every row wraps again. Cap the body budget at wrapWidth-8 in that
+      // case; fall back to the raw terminal budget when no width is provided.
+      const termBudget = contentWidth(8);
+      const codeWidth = (typeof wrapWidth === 'number' && wrapWidth > 0)
+        ? Math.max(8, Math.min(termBudget, wrapWidth - 8))
+        : termBudget;
       const lines = (segment.code ?? '').split('\n');
       const isDiff = segment.language === 'diff' || lines.some((l: string) => /^[+-@]/.test(l));
       const capped = lines.slice(0, MAX_CODE_LINES);
@@ -210,11 +219,20 @@ screen name=CodeBlockView target=ink
       const bc = borderColor || '#585858';
       const maxLineLen = capped.reduce((m: number, l: string) => Math.max(m, l.length), 0);
       const headerLen = (segment.language || 'code').length + (segment.index !== undefined ? ` [${segment.index}]`.length : 0);
-      const innerWidth = Math.max(maxLineLen, headerLen);
-      const boxWidth = innerWidth + 4;
-      const rule = '\u2500'.repeat(boxWidth);
+      // Single coherent inner-content width for every row. Clamp to the terminal
+      // budget so a long line truncates instead of forcing the box wider than the
+      // screen. Every row is built as: `\u2502  \u258c <content padded to body>  \u2502`
+      //   left frame  `\u2502  \u258c ` = 5 cols, right frame `  \u2502` = 3 cols \u2192 rowWidth = body + 8.
+      //   border row  `\u2502 ` + rule + ` \u2502` = rule.length + 4, so rule = body + 4.
+      // Previously the box was sized to body+2 while rows rendered at body+4..body+11,
+      // so every row overflowed and Ink wrapped it \u2014 dropping the trailing `\u2502` onto a
+      // blank row (the stray pipes + huge gaps between lines).
+      const body = Math.min(Math.max(maxLineLen, headerLen), codeWidth);
+      const rowWidth = body + 8;
+      const rule = '\u2500'.repeat(body + 4);
+      const overflowLabel = `\u2026 ${overflow} more lines`;
       return (
-        <Box flexDirection="column" width={boxWidth + 2} flexShrink={0}>
+        <Box flexDirection="column" width={rowWidth} flexShrink={0}>
           <Text color={bc}>{'\u2502 '}{rule}{' \u2502'}</Text>
           <Text>
             <Text color={bc}>{'\u2502  '}</Text>
@@ -222,7 +240,7 @@ screen name=CodeBlockView target=ink
             <Text> </Text>
             <Text dimColor>{segment.language || 'code'}</Text>
             {segment.index !== undefined && <Text color="#585858">{` [${segment.index}]`}</Text>}
-            <Text>{' '.repeat(Math.max(0, boxWidth - headerLen - 1))}</Text>
+            <Text>{' '.repeat(Math.max(0, body - headerLen))}</Text>
             <Text color={bc}>{'  \u2502'}</Text>
           </Text>
           {capped.map((line: string, i: number) => (
@@ -230,8 +248,8 @@ screen name=CodeBlockView target=ink
               <Text color={bc}>{'\u2502  '}</Text>
               <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
               <Text> </Text>
-              {isDiff ? <DiffLine line={line} maxWidth={codeWidth} /> : <SyntaxLine line={line} maxWidth={codeWidth} />}
-              <Text>{' '.repeat(Math.max(0, codeWidth - line.length - 4))}</Text>
+              {isDiff ? <DiffLine line={line} maxWidth={body} /> : <SyntaxLine line={line} maxWidth={body} />}
+              <Text>{' '.repeat(Math.max(0, body - line.length))}</Text>
               <Text color={bc}>{'  \u2502'}</Text>
             </Text>
           ))}
@@ -240,7 +258,8 @@ screen name=CodeBlockView target=ink
               <Text color={bc}>{'\u2502  '}</Text>
               <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
               <Text> </Text>
-              <Text dimColor>{'\u2026 '}{overflow}{' more lines'}</Text>
+              <Text dimColor>{overflowLabel}</Text>
+              <Text>{' '.repeat(Math.max(0, body - overflowLabel.length))}</Text>
               <Text color={bc}>{'  \u2502'}</Text>
             </Text>
           )}
@@ -251,7 +270,7 @@ screen name=CodeBlockView target=ink
 
 // ── Screen: RichSpanView ────────────────────────────────────────────
 
-screen name=RichSpanView target=ink
+screen name=RichSpanView target=ink memo=true
   prop name=span type=InlineSpan
   render
     handler <<<
@@ -272,7 +291,7 @@ screen name=RichSpanView target=ink
 
 // ── Screen: RichLineView ────────────────────────────────────────────
 
-screen name=RichLineView target=ink
+screen name=RichLineView target=ink memo=true
   prop name=line type=RichLine
   prop name=borderColor type=string optional=true
   render
@@ -299,7 +318,7 @@ screen name=RichLineView target=ink
 
 // ── Screen: MarkdownTableView ───────────────────────────────────────
 
-screen name=MarkdownTableView target=ink
+screen name=MarkdownTableView target=ink memo=true
   prop name=headers type="string[]"
   prop name=rows type="string[][]"
   prop name=alignments type="('left' | 'center' | 'right')[]"
@@ -340,17 +359,64 @@ screen name=MarkdownTableView target=ink
       );
     >>>
 
+fn name=segmentsEqual params="a:ContentSegment, b:ContentSegment" returns=boolean
+  handler <<<
+    if (a.type !== b.type) return false;
+    if (a.type === 'prose') {
+      return a.text === b.text;
+    }
+    if (a.type === 'code') {
+      return a.code === b.code && a.language === b.language && a.index === b.index;
+    }
+    if (a.type === 'table') {
+      if (a.headers?.length !== b.headers?.length) return false;
+      if (a.rows?.length !== b.rows?.length) return false;
+      // Compare alignments too — a table whose only change is the markdown
+      // delimiter alignment (:--- vs ---: ) must NOT be treated as equal, else
+      // useShallowSegmentDirty reuses the stale segment and renders old columns.
+      return JSON.stringify(a.headers) === JSON.stringify(b.headers) &&
+             JSON.stringify(a.rows) === JSON.stringify(b.rows) &&
+             JSON.stringify(a.alignments ?? []) === JSON.stringify(b.alignments ?? []);
+    }
+    return false;
+  >>>
+
+fn name=useShallowSegmentDirty params="segments:ContentSegment[]" returns="ContentSegment[]"
+  doc "Return a referentially-stable segment array: unchanged items keep their prior object reference so memoized children can skip re-render. Pure during render — the ref cache is committed in a useEffect (not mutated mid-render), so it is safe under StrictMode double-invoke and concurrent renders that may be discarded."
+  handler <<<
+    const ref = React.useRef<ContentSegment[]>([]);
+    const prev = ref.current;
+    let changed = prev.length !== segments.length;
+    const next: ContentSegment[] = [];
+    for (let i = 0; i < segments.length; i++) {
+      const currSeg = segments[i];
+      const prevSeg = prev[i];
+      if (prevSeg && segmentsEqual(prevSeg, currSeg)) {
+        next.push(prevSeg);
+      } else {
+        next.push(currSeg);
+        changed = true;
+      }
+    }
+    // When nothing changed, return the exact prior array reference; otherwise
+    // the freshly-built one (which still reuses unchanged item refs).
+    const stable = changed ? next : prev;
+    React.useEffect(() => { ref.current = stable; }, [stable]);
+    return stable;
+  >>>
+
 // ── Screen: RenderedSegments ────────────────────────────────────────
 
-screen name=RenderedSegments target=ink
+screen name=RenderedSegments target=ink memo=true
   prop name=segments type="ContentSegment[]"
   prop name=borderColor type=string
   prop name=wrapWidth type=number
   render
     handler <<<
+      const stableSegments = useShallowSegmentDirty(segments);
       return (
         <>
-          {segments.map((seg: ContentSegment, i: number) => {
+          {stableSegments.map((seg: ContentSegment, i: number) => {
             const spacer = i > 0 && borderColor ? <Text key={`sp-${i}`} color={borderColor}>{'\u2502'}</Text> : (i > 0 ? <Text key={`sp-${i}`}>{' '}</Text> : null);
 
             if (seg.type === 'prose') {
@@ -399,7 +465,7 @@ screen name=RenderedSegments target=ink
             return (
               <React.Fragment key={`seg-${i}`}>
                 {spacer}
-                <CodeBlockView segment={seg as ContentSegment & { type: 'code' }} borderColor={borderColor} />
+                <CodeBlockView segment={seg as ContentSegment & { type: 'code' }} borderColor={borderColor} wrapWidth={wrapWidth} />
               </React.Fragment>
             );
           })}
@@ -409,7 +475,7 @@ screen name=RenderedSegments target=ink
 
 // ── Screen: GradientLine ────────────────────────────────────────────
 
-screen name=GradientLine target=ink
+screen name=GradientLine target=ink memo=true
   prop name=text type=string
   prop name=colors type="readonly string[]"
   render
@@ -425,7 +491,7 @@ screen name=GradientLine target=ink
       );
     >>>
 
-screen name=AnsiLine target=ink
+screen name=AnsiLine target=ink memo=true
   prop name=text type=string
   prop name=maxWidth type=number
   prop name=fallbackDim type=boolean optional=true

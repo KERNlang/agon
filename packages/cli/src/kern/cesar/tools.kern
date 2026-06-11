@@ -1,4 +1,4 @@
-import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createGoalTool,createConquerTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createExitPlanModeTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,createTodoWriteTool,executeToolCall,resolveWorkingDir"
+import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,createReadTool,createEditTool,createMultiEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createGoalTool,createConquerTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createExitPlanModeTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,createTodoWriteTool,createSaveMemoryTool,executeToolCall,resolveWorkingDir,parsePermissionRuleSet,parseToolHooks"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -8,6 +8,7 @@ fn name=createCesarToolRegistry params="engineId?:string" returns="ToolRegistry"
     let name=toolRegistry value="new ToolRegistry()"
     do value="toolRegistry.register(createReadTool())"
     do value="toolRegistry.register(createEditTool())"
+    do value="toolRegistry.register(createMultiEditTool())"
     do value="toolRegistry.register(createWriteTool())"
     do value="toolRegistry.register(createBashTool())"
     do value="toolRegistry.register(createGrepTool())"
@@ -25,6 +26,7 @@ fn name=createCesarToolRegistry params="engineId?:string" returns="ToolRegistry"
     do value="toolRegistry.register(createReportConfidenceTool())"
     do value="toolRegistry.register(createQuickNeroTool())"
     do value="toolRegistry.register(createTodoWriteTool())"
+    do value="toolRegistry.register(createSaveMemoryTool())"
     do value="toolRegistry.register(createProposePlanTool())"
     do value="toolRegistry.register(createExitPlanModeTool())"
     do value="toolRegistry.register(createListPlansTool())"
@@ -37,7 +39,7 @@ fn name=createEagerToolContext params="ctx:HandlerContext, config:any, signal:Ab
     let name=cwd value="resolveWorkingDir()"
     let name=fsc value="getProjectFileStateCache(cwd)"
     let name=explorationMode value="(ctx as any).explorationMode ?? false"
-    return value="{ cwd, readFileState: (fsc as any).cache, abortSignal: signal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), }"
+    return value="{ cwd, readFileState: (fsc as any).cache, abortSignal: signal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, permissionRules: parsePermissionRuleSet((config as any).permissions), toolHooks: parseToolHooks((config as any).hooks), onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), }"
 
 fn name=parseEagerToolInput params="toolName:string,input:unknown" returns="{ok:boolean,input?:Record<string,unknown>,error?:string,raw:string}" export=true
   doc "Parse a streaming tool input into a JSON object. Malformed input is returned as an explicit retryable error instead of being silently coerced."
@@ -103,7 +105,7 @@ fn name=executeEagerTool async=true params="toolName:string, meta:Record<string,
         result: { ok: false, content: '', error },
         durationMs: 0,
       };
-      dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: error } as any);
+      dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: error, durationMs: result.durationMs } as any);
       return result;
     }
     const parsedInput = parsed.input ?? {};
@@ -137,11 +139,15 @@ fn name=executeEagerTool async=true params="toolName:string, meta:Record<string,
 
     const out = result.result.ok ? result.result.content : result.result.error;
     const status = result.result.ok ? 'done' : 'error';
+    // executeToolCall measures its own wall-clock elapsed (result.durationMs) — the
+    // most accurate source for the eager path. Carry it on the terminal event so the
+    // renderer shows the "· 1.4s" suffix; the brain-side _toolStartMs entry is cleared
+    // by dispatchToolCall when a terminal event already carries durationMs.
     if (streamStarted) {
-      dispatch({ type: 'tool-stream-end', streamId, engineId: cesarEngineId, tool: toolName, input: toolInput, status, output: out } as any);
+      dispatch({ type: 'tool-stream-end', streamId, engineId: cesarEngineId, tool: toolName, input: toolInput, status, output: out, durationMs: result.durationMs } as any);
     } else {
       // No chunks produced (permission denied, fast exit, etc.) — emit a normal tool-call block
-      dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status, output: out } as any);
+      dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status, output: out, durationMs: result.durationMs } as any);
     }
     return result;
   >>>

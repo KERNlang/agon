@@ -7,6 +7,7 @@ import from="node:path" names="dirname,join,resolve"
 import from="node:os" names="homedir"
 import from="../models/types.js" names="GlickoRating,RatingRecord,EngineMeta,TaskClass,EngineDefinition" types=true
 import from="./engine-registry.js" names="EngineRegistry" types=true
+import from="../blocks/file-lock.js" names="withFileLock"
 
 fn name=ratingsPath returns=string export=false
   handler <<<
@@ -14,6 +15,9 @@ fn name=ratingsPath returns=string export=false
     const home = override ? resolve(override) : join(homedir(), '.agon');
     return join(home, 'ratings.json');
   >>>
+
+fn name=ratingsLockPath returns=string export=false expr={{ return ratingsPath() + '.lock'; }}
+  doc "Cross-process lock next to ratings.json. Every load→mutate→save of the ratings record MUST run under withFileLock(ratingsLockPath()) — two concurrent run completions doing unlocked RMW was how parallel agon sessions silently corrupted ratings."
 
 const name=GLICKO_SCALE type=number value=173.7178
 
@@ -94,10 +98,9 @@ fn name=glickoG params="phi:number" returns=number expr={{ return 1 / Math.sqrt(
 fn name=glickoE params="mu:number, muJ:number, phiJ:number" returns=number expr={{ return 1 / (1 + Math.exp(-glickoG(phiJ) * (mu - muJ))); }}
   doc "Glicko-2 expected score."
 
-fn name=updateGlicko params="winnerId:string, loserId:string, taskClass:TaskClass, mode:'forge'|'brainstorm'|'tribunal'|'critique'" returns="{winnerMu:number, loserMu:number}"
-  doc "Single pairwise Glicko-2 update."
+fn name=applyGlickoPair params="record:RatingRecord, winnerId:string, loserId:string, taskClass:TaskClass, mode:'forge'|'brainstorm'|'tribunal'|'critique'" returns=void export=false
+  doc "Apply one pairwise Glicko-2 update to an in-memory record. Pure relative to the fs — load/lock/save are the caller's job, so a ranked batch can run N*(N-1)/2 pair updates under ONE lock with ONE load and ONE save."
   handler <<<
-    const record = loadRatings();
     const now = new Date().toISOString();
 
     // Ensure all scopes exist
@@ -164,9 +167,19 @@ fn name=updateGlicko params="winnerId:string, loserId:string, taskClass:TaskClas
     record.engineMeta[winnerId].matchCount++;
     record.engineMeta[loserId].lastActive = now;
     record.engineMeta[loserId].matchCount++;
+  >>>
 
-    saveRatings(record);
-    return { winnerMu: record.global[winnerId].mu, loserMu: record.global[loserId].mu };
+fn name=updateGlicko params="winnerId:string, loserId:string, taskClass:TaskClass, mode:'forge'|'brainstorm'|'tribunal'|'critique'" returns="{winnerMu:number, loserMu:number}"
+  doc "Single pairwise Glicko-2 update. The full read-modify-write runs under the cross-process ratings lock so concurrent agon processes can't lose each other's updates."
+  handler <<<
+    let result = { winnerMu: DEFAULT_MU, loserMu: DEFAULT_MU };
+    withFileLock(ratingsLockPath(), () => {
+      const record = loadRatings();
+      applyGlickoPair(record, winnerId, loserId, taskClass, mode);
+      saveRatings(record);
+      result = { winnerMu: record.global[winnerId].mu, loserMu: record.global[loserId].mu };
+    });
+    return result;
   >>>
 
 fn name=computeNewSigma params="sigma:number, phi:number, v:number, delta:number" returns=number
@@ -213,15 +226,19 @@ fn name=computeNewSigma params="sigma:number, phi:number, v:number, delta:number
   >>>
 
 fn name=updateGlickoRanked params="ranked:Array<{engineId:string,score:number}>, taskClass:TaskClass, mode:'forge'|'brainstorm'|'tribunal'|'critique'" returns=void
-  doc "Pairwise Glicko-2 updates for all ranked positions. Higher score beats lower score."
+  doc "Pairwise Glicko-2 updates for all ranked positions. Higher score beats lower score. The WHOLE batch runs under one ratings lock with a single load and save — previously each pair did its own unlocked load→save (up to 15 RMW cycles for a 6-engine run), which is what let two concurrent run completions clobber each other."
   handler <<<
     if (ranked.length < 2) return;
-    for (let i = 0; i < ranked.length; i++) {
-      for (let j = i + 1; j < ranked.length; j++) {
-        if (ranked[i].score === ranked[j].score) continue;
-        updateGlicko(ranked[i].engineId, ranked[j].engineId, taskClass, mode);
+    withFileLock(ratingsLockPath(), () => {
+      const record = loadRatings();
+      for (let i = 0; i < ranked.length; i++) {
+        for (let j = i + 1; j < ranked.length; j++) {
+          if (ranked[i].score === ranked[j].score) continue;
+          applyGlickoPair(record, ranked[i].engineId, ranked[j].engineId, taskClass, mode);
+        }
       }
-    }
+      saveRatings(record);
+    });
   >>>
 
 fn name=advisorScore params="engineId:string, mode:'forge'|'brainstorm'|'tribunal'|'critique'" returns=number
@@ -342,8 +359,11 @@ fn name=lineageFromRegistry params="registry:EngineRegistry" returns="Record<str
 fn name=seedNewEnginesFromRegistry params="registry:EngineRegistry" returns="string[]" export=true
   doc "One-shot cold-start seeding: read engine lineage from the registry, seed any new engine's global rating from its predecessor, and persist if anything changed. Safe to call repeatedly (idempotent — only seeds engines with no rating yet). Call before a competition so a freshly-dropped model version enters ranked play near its family's strength instead of from 1500."
   handler <<<
-    const ratings = loadRatings();
-    const seeded = seedEnginesFromLineage(ratings, lineageFromRegistry(registry));
-    if (seeded.length > 0) saveRatings(ratings);
+    let seeded: string[] = [];
+    withFileLock(ratingsLockPath(), () => {
+      const ratings = loadRatings();
+      seeded = seedEnginesFromLineage(ratings, lineageFromRegistry(registry));
+      if (seeded.length > 0) saveRatings(ratings);
+    });
     return seeded;
   >>>

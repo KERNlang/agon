@@ -38,6 +38,8 @@ union name=Intent discriminant=type
     field name=engineIds type="string[]"
   variant name=models
   variant name=tokens
+  variant name=raw
+    field name=index type=number optional=true
   variant name=doctor
     field name=scope type=string optional=true
   variant name=harness-replay
@@ -101,6 +103,8 @@ union name=Intent discriminant=type
   variant name=focus
     field name=jobId type=string optional=true
   variant name=explore
+  variant name=permissions
+  variant name=nogate
   variant name=nero
   variant name=chats-resume
     field name=sessionId type=string

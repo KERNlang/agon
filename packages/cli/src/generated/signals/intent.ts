@@ -49,7 +49,7 @@ export interface Intent {
 }
 
 // @kern-source: intent:44
-export const SLASH_COMMANDS: SlashCommand[] = [{ cmd: '/forge', desc: '<task> test with <cmd> [--hardened] — competitive code generation' }, { cmd: '/brainstorm', desc: '<question>              — confidence-bidding answers' }, { cmd: '/tribunal', desc: '[mode] <question>        — debate (adversarial|socratic|red-team|steelman|synthesis|postmortem)' }, { cmd: '/campfire', desc: '<topic>                  — think together, no competition' }, { cmd: '/think', desc: '<problem> [--strategy reflexion] [--steps 8] — sequential thinking, one engine' }, { cmd: '/council', desc: '<decision>               — roundtable: every engine a role, top-rated chairs' }, { cmd: '/synthesis', desc: '<task> [--swaps 2]       — engines draft, swap, improve; judge picks winner' }, { cmd: '/workspace', desc: 'add|remove|list|switch   — manage project repos' }, { cmd: '/ws', desc: '                          — list workspaces (shortcut)' }, { cmd: '/cesar', desc: '<engine>                — set Cesar brain engine (e.g. /cesar codex)' }, { cmd: '/models', desc: '                        — browse & add provider models + CLI models' }, { cmd: '/tokens', desc: '                        — show token usage & costs' }, { cmd: '/engines', desc: '                        — select active engines' }, { cmd: '/leaderboard', desc: '                        — Glicko rankings' }, { cmd: '/cesar-report', desc: '                      — Cesar routing calibration report' }, { cmd: '/cesar-hints', desc: '<task>                 — inspect Cesar routing hints for a prompt' }, { cmd: '/history', desc: '[id]                    — past forge runs' }, { cmd: '/config', desc: '[list|get|set]          — settings' }, { cmd: '/plan', desc: '<task> or no args    — plan mode or show plan' }, { cmd: '/auto', desc: '[on|off|toggle|status] or <task> — autonomous mode control' }, { cmd: '/plans', desc: '                        — list recent plans' }, { cmd: '/approve', desc: '                        — approve current plan' }, { cmd: '/retry', desc: '                        — retry failed plan step' }, { cmd: '/cancel', desc: '                        — cancel current plan' }, { cmd: '/apply', desc: '[path] [--force]       — apply winning forge patch' }, { cmd: '/cp', desc: '[N]                     — copy code block N to clipboard' }, { cmd: '/img', desc: '<path>                   — attach image to next prompt' }, { cmd: '/flow', desc: '                        — log this session' }, { cmd: '/flows', desc: '                        — flow analytics dashboard' }, { cmd: '/chats', desc: '[id|resume <id>]        — chat history or resume session' }, { cmd: '/build', desc: '<task>                   — agent builds in cwd (reads/edits/tests)' }, { cmd: '/goal', desc: '<intent> --queue <dir> --gate "<cmd>" [--push] — autonomous queue: build→review(all)→judge→fix→commit→push per task (background job)' }, { cmd: '/conquer', desc: '<task> --gate "<cmd>" [--builder X] [-e a,b] — supervised-autonomous build: Cesar drives a builder CLI, convenes nero/tribunal/council on forks, stops at a human merge gate (background job)' },{ cmd: '/agent', desc: '<task>                   — autonomous agent loop (solo or shadow, auto-routed)' }, { cmd: '/agent-solo', desc: '<task>                   — force solo agent mode, no shadow worker' }, { cmd: '/speculate', desc: '<task>                   — parallel speculation: N engines race in worktrees, winner applied' }, { cmd: '/team-forge', desc: '[2v2|3v3] <task> test with <cmd> — team code competition' }, { cmd: '/team-tribunal', desc: '[2v2|3v3] [mode] <question>    — team debate' }, { cmd: '/team-brainstorm', desc: '[2v2|3v3] <question>            — team ideation' }, { cmd: '/pipeline', desc: '<task> [test with <cmd>]  — build→review→fix loop' }, { cmd: '/review', desc: '[with <engine>] [<target>] — code review (uncommitted|branch:NAME|commit:SHA)' }, { cmd: '/provider', desc: 'add|remove|list|key      — providers & keys (key set/clear/list)' }, { cmd: '/run', desc: '<cmd>                    — run shell command inline' }, { cmd: '/commit', desc: '[message]                — stage & commit with auto-generated message' }, { cmd: '/status', desc: '                        — live engine telemetry snapshot' }, { cmd: '/doctor', desc: '[engines|harness]        — diagnose engines, worktree, or Cesar harness' }, { cmd: '/harness-replay', desc: '[turnId]              — replay Cesar tool timeline + approval ledger' }, { cmd: '/undo', desc: '                        — revert last patch or Cesar checkpoint' }, { cmd: '/checkpoints', desc: '                 — list recent file checkpoints' }, { cmd: '/jobs', desc: '                        — list running/completed jobs' }, { cmd: '/focus', desc: '<id>                    — switch to background job output' }, { cmd: '/explore', desc: '                        — toggle exploration mode (read-only)' }, { cmd: '/nero', desc: '[<decision>]             — toggle Nero mode, or challenge a decision (top-rated critic)' }, { cmd: '/btw', desc: '<question>               — ask something while engines work (side-channel)' }, { cmd: '/compact', desc: '                        — shrink Cesar context without clearing transcript' }, { cmd: '/mcp', desc: 'connect <name|url> | disconnect <name> | list — manage session MCP servers' }, { cmd: '/init', desc: '                        — create AGON.md config wizard' }, { cmd: '/create-skill', desc: '<name>                  — scaffold a new skill (.agon/skills/)' }, { cmd: '/clear', desc: '                        — reset session (saves chat, clears brain)' }, { cmd: '/clean', desc: '                        — alias for /clear' }, { cmd: '/extensions', desc: '                        — list installed extensions' }, { cmd: '/help', desc: '                        — show this help' }, { cmd: '/exit', desc: '                        — quit' }];
+export const SLASH_COMMANDS: SlashCommand[] = [{ cmd: '/forge', desc: '<task> test with <cmd> [--hardened] — competitive code generation' }, { cmd: '/brainstorm', desc: '<question>              — confidence-bidding answers' }, { cmd: '/tribunal', desc: '[mode] <question>        — debate (adversarial|socratic|red-team|steelman|synthesis|postmortem)' }, { cmd: '/campfire', desc: '<topic>                  — think together, no competition' }, { cmd: '/think', desc: '<problem> [--strategy reflexion] [--steps 8] — sequential thinking, one engine' }, { cmd: '/council', desc: '<decision>               — roundtable: every engine a role, top-rated chairs' }, { cmd: '/synthesis', desc: '<task> [--swaps 2]       — engines draft, swap, improve; judge picks winner' }, { cmd: '/workspace', desc: 'add|remove|list|switch   — manage project repos' }, { cmd: '/ws', desc: '                          — list workspaces (shortcut)' }, { cmd: '/cesar', desc: '<engine>                — set Cesar brain engine (e.g. /cesar codex)' }, { cmd: '/models', desc: '                        — browse & add provider models + CLI models' }, { cmd: '/tokens', desc: '                        — show token usage & costs' }, { cmd: '/raw', desc: '                          — reprint last folded engine output (unfolded)' }, { cmd: '/engines', desc: '                        — select active engines' }, { cmd: '/leaderboard', desc: '                        — Glicko rankings' }, { cmd: '/cesar-report', desc: '                      — Cesar routing calibration report' }, { cmd: '/cesar-hints', desc: '<task>                 — inspect Cesar routing hints for a prompt' }, { cmd: '/history', desc: '[id]                    — past forge runs' }, { cmd: '/config', desc: '[list|get|set]          — settings' }, { cmd: '/plan', desc: '<task> or no args    — plan mode or show plan' }, { cmd: '/auto', desc: '[on|off|toggle|status] or <task> — autonomous mode control' }, { cmd: '/plans', desc: '                        — list recent plans' }, { cmd: '/approve', desc: '                        — approve current plan' }, { cmd: '/retry', desc: '                        — retry failed plan step' }, { cmd: '/cancel', desc: '                        — cancel current plan' }, { cmd: '/apply', desc: '[path] [--force]       — apply winning forge patch' }, { cmd: '/cp', desc: '[N]                     — copy code block N to clipboard' }, { cmd: '/img', desc: '<path>                   — attach image to next prompt' }, { cmd: '/flow', desc: '                        — log this session' }, { cmd: '/flows', desc: '                        — flow analytics dashboard' }, { cmd: '/chats', desc: '[id|resume <id>]        — chat history or resume session' }, { cmd: '/build', desc: '<task>                   — agent builds in cwd (reads/edits/tests)' }, { cmd: '/goal', desc: '<intent> --queue <dir> --gate "<cmd>" [--push] — autonomous queue: build→review(all)→judge→fix→commit→push per task (background job)' }, { cmd: '/conquer', desc: '<task> --gate "<cmd>" [--builder X] [-e a,b] — supervised-autonomous build: Cesar drives a builder CLI, convenes nero/tribunal/council on forks, stops at a human merge gate (background job)' },{ cmd: '/agent', desc: '<task>                   — autonomous agent loop (solo or shadow, auto-routed)' }, { cmd: '/agent-solo', desc: '<task>                   — force solo agent mode, no shadow worker' }, { cmd: '/speculate', desc: '<task>                   — parallel speculation: N engines race in worktrees, winner applied' }, { cmd: '/team-forge', desc: '[2v2|3v3] <task> test with <cmd> — team code competition' }, { cmd: '/team-tribunal', desc: '[2v2|3v3] [mode] <question>    — team debate' }, { cmd: '/team-brainstorm', desc: '[2v2|3v3] <question>            — team ideation' }, { cmd: '/pipeline', desc: '<task> [test with <cmd>]  — build→review→fix loop' }, { cmd: '/review', desc: '[with <engine>] [<target>] — code review (uncommitted|branch:NAME|commit:SHA)' }, { cmd: '/provider', desc: 'add|remove|list|key      — providers & keys (key set/clear/list)' }, { cmd: '/run', desc: '<cmd>                    — run shell command inline' }, { cmd: '/commit', desc: '[message]                — stage & commit with auto-generated message' }, { cmd: '/status', desc: '                        — live engine telemetry snapshot' }, { cmd: '/doctor', desc: '[engines|harness]        — diagnose engines, worktree, or Cesar harness' }, { cmd: '/harness-replay', desc: '[turnId]              — replay Cesar tool timeline + approval ledger' }, { cmd: '/undo', desc: '                        — revert last patch or Cesar checkpoint' }, { cmd: '/checkpoints', desc: '                 — list recent file checkpoints' }, { cmd: '/jobs', desc: '                        — list running/completed jobs' }, { cmd: '/focus', desc: '<id>                    — switch to background job output' }, { cmd: '/explore', desc: '                        — toggle exploration mode (read-only)' }, { cmd: '/permissions', desc: '                  — show allow/deny permission rules (.agon.json)' }, { cmd: '/nogate', desc: '                        — toggle the verify-before-done gate nudge for this session' }, { cmd: '/nero', desc: '[<decision>]             — toggle Nero mode, or challenge a decision (top-rated critic)' }, { cmd: '/btw', desc: '<question>               — ask something while engines work (side-channel)' }, { cmd: '/compact', desc: '                        — shrink Cesar context without clearing transcript' }, { cmd: '/mcp', desc: 'connect <name|url> | disconnect <name> | list — manage session MCP servers' }, { cmd: '/init', desc: '                        — create AGON.md config wizard' }, { cmd: '/create-skill', desc: '<name>                  — scaffold a new skill (.agon/skills/)' }, { cmd: '/clear', desc: '                        — reset session (saves chat, clears brain)' }, { cmd: '/clean', desc: '                        — alias for /clear' }, { cmd: '/extensions', desc: '                        — list installed extensions' }, { cmd: '/help', desc: '                        — show this help' }, { cmd: '/exit', desc: '                        — quit' }];
 
 // @kern-source: intent:46
 export const FITNESS_PATTERN: RegExp = /\b(?:test with|test:|--test|fitness:)\s+(.+)/i;
@@ -170,7 +170,11 @@ function parseExplicitEngineIds(input: string): string[] {
       .forEach(add);
   };
 
-  const withMatch = input.match(/\bwith\s+([a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*)/i);
+  // Accept comma/and/or/plus separators AND plain spaces between engine
+  // names, so "with codex claude agy" captures all three (not just codex).
+  // Over-capturing trailing prose is harmless: normalizeEngineToken() drops
+  // any token that isn't a known engine id.
+  const withMatch = input.match(/\bwith\s+([a-z0-9@_.-]+(?:(?:\s*,\s*|\s+and\s+|\s+or\s+|\s+plus\s+|\s+)[a-z0-9@_.-]+)*)/i);
   if (withMatch) collect(withMatch[1]);
 
   const askMatch = input.match(/\b(?:ask|have|get)\s+([a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*)\s+(?:to\s+)?(?:review|check|audit|look|inspect|compare|weigh|think|debate)\b/i);
@@ -179,7 +183,7 @@ function parseExplicitEngineIds(input: string): string[] {
   return engineIds;
 }
 
-// @kern-source: intent:148
+// @kern-source: intent:152
 function parseSemanticReviewShortcut(input: string): Intent|null {
   const lower = input.toLowerCase();
   const reviewVerb = /\b(?:review|check|audit|inspect|look\s+over)\b/i.test(input);
@@ -209,17 +213,17 @@ function parseSemanticReviewShortcut(input: string): Intent|null {
   return { type: 'review', engineId: engineIds[0], engineIds: engineIds, target: target } as Intent;
 }
 
-// @kern-source: intent:172
+// @kern-source: intent:176
 function stripCollaborationLeadIn(input: string): string {
   return input.replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:to\s+)?/i, '').replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?what\s+do\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:think\s+about\s+|say\s+about\s+|recommend\s+for\s+)?/i, '').replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:talk|think)\s+(?:it|this)?\s*(?:through\s+)?with\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s*/i, '').trim();
 }
 
-// @kern-source: intent:176
+// @kern-source: intent:180
 function hasCollaborationAskShape(input: string): boolean {
   return /^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\b/i.test(input) || /^(?:can\s+you\s+|could\s+you\s+|please\s+)?what\s+do\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:think|say|recommend)\b/i.test(input) || /^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:brainstorm|compare|weigh\s+in)\s+(?:this|it)?\s*(?:with\s+)?(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\b/i.test(input);
 }
 
-// @kern-source: intent:180
+// @kern-source: intent:184
 function parseSemanticCollaborationShortcut(input: string): Intent|null {
   const question = stripCollaborationLeadIn(input);
   if (/\b(?:debate|argue|tribunal|red-team|red\s+team)\b/i.test(input)) {
@@ -235,7 +239,7 @@ function parseSemanticCollaborationShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:192
+// @kern-source: intent:196
 function parseSemanticForgeShortcut(input: string): Intent|null {
   const explicitForgeImperative = /^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\b/i.test(input) && !/^(?:can\s+you\s+|could\s+you\s+|please\s+)?forge\s+(?:is|was|seems?|looks?|does|did|can|should|would|will|not|still)\b/i.test(input);
   const hasForgeShape = explicitForgeImperative || /\b(?:forge\s+this|forge\s+it|have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|competitive\s+(?:build|implementation|fix))\b/i.test(input);
@@ -250,23 +254,23 @@ function parseSemanticForgeShortcut(input: string): Intent|null {
 /**
  * Plain text must not start orchestration. Brainstorm, tribunal, campfire, forge, and review are slash-only from chat input; mention words like 'tribunal' or 'forge' should reach Cesar as normal text unless the user uses /tribunal, /forge, etc.
  */
-// @kern-source: intent:202
+// @kern-source: intent:206
 function parseSemanticDelegationShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:207
+// @kern-source: intent:211
 function splitReviewArgs(input: string): string[] {
   return input.split(/\s+/).flatMap((part) => part.split(',')).map((part) => part.trim()).filter(Boolean);
 }
 
-// @kern-source: intent:211
+// @kern-source: intent:215
 function isReviewTargetArg(part: string): boolean {
   const lower = part.toLowerCase();
   return lower === 'uncommitted' || lower.startsWith('branch:') || lower.startsWith('commit:');
 }
 
-// @kern-source: intent:216
+// @kern-source: intent:220
 function isImplicitReviewSubjectArg(part: string): boolean {
   const lower = part.toLowerCase();
   return lower === 'it' || lower === 'this' || lower === 'that' || lower === 'them' || lower === 'changes' || lower === 'diff';
@@ -275,7 +279,7 @@ function isImplicitReviewSubjectArg(part: string): boolean {
 /**
  * Parse review args into target + engine list. When bareWordsAreEngines is true (the explicit /review slash path), any bare word that isn't a target (uncommitted/branch:/commit:) or a keyword is treated as an engine name — so `/review codex claude` reviews with BOTH, no `with` needed. The natural-language shortcut path leaves it false so prose like `review this code` doesn't mis-bind `code` as an engine.
  */
-// @kern-source: intent:221
+// @kern-source: intent:225
 function parseReviewInput(input: string, bareWordsAreEngines?: boolean): Intent {
   const reviewParts = splitReviewArgs(input);
   const engineIds: string[] = [];
@@ -310,7 +314,7 @@ function parseReviewInput(input: string, bareWordsAreEngines?: boolean): Intent 
   return { type: 'review', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target } as Intent;
 }
 
-// @kern-source: intent:257
+// @kern-source: intent:261
 function parseReviewShortcut(input: string): Intent|null {
   const match = input.match(/^(?:review|cr)(?:\s+([\s\S]+))?$/i);
   if (!match) {
@@ -338,7 +342,7 @@ function parseReviewShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:279
+// @kern-source: intent:283
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
@@ -512,6 +516,10 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
     case 'usage':
     case 'cost':
       return { type: 'tokens' } as Intent;
+    case 'raw': {
+      const rawN = parseInt(rest.trim(), 10);
+      return { type: 'raw', index: Number.isFinite(rawN) && rawN > 0 ? rawN : undefined } as Intent;
+    }
     case 'doctor':
       return { type: 'doctor', scope: rest || 'engines' } as unknown as Intent;
     case 'harness-replay':
@@ -644,6 +652,12 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
     case 'plan-mode':
     case 'readonly':
       return { type: 'explore' } as Intent;
+    case 'permissions':
+    case 'perms':
+      return { type: 'permissions' } as Intent;
+    case 'nogate':
+    case 'no-gate':
+      return { type: 'nogate' } as Intent;
     case 'nero':
     case 'devil':
     case 'adversarial': {
@@ -698,7 +712,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   }
 }
 
-// @kern-source: intent:639
+// @kern-source: intent:653
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) {
@@ -706,6 +720,18 @@ export function detectIntent(raw: string, commandRegistry?: any): Intent {
   }
   if (input.startsWith('/')) {
     return parseSlashCommand(input, commandRegistry);
+  }
+  // `! <cmd>` — Claude-Code-style inline bash prefix. The bang-SPACE
+  // trigger (mirrors `/`) routes to the shared /run executor + tool-block
+  // rendering, so the command runs in cwd and its output joins the
+  // conversation (handleRun appends it to chatSession). A bare `!`, `!!`,
+  // or `!important` (no space after the bang) is NOT a command — it falls
+  // through to normal text so prose/emphasis is never hijacked.
+  if (input.startsWith('! ')) {
+    const bangCmd = input.slice(2).trim();
+    if (bangCmd) {
+      return { type: 'run', input: bangCmd } as Intent;
+    }
   }
   if (EXIT_KEYWORDS.test(input)) {
     return { type: 'exit' } as Intent;
@@ -720,6 +746,18 @@ export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const delegationShortcut = parseSemanticDelegationShortcut(input);
   if (delegationShortcut) {
     return delegationShortcut;
+  }
+  // Deterministic review dispatch for an UNAMBIGUOUS chat request:
+  // a review verb + "with <known engine(s)>" (politeness prefixes ok,
+  // compound "fix then review" excluded, engine tokens validated). This
+  // grounds "review with codex claude agy" / "can you review with ..." so it
+  // dispatches directly (target defaults to uncommitted) instead of relying
+  // on the Cesar model to call the Review tool — which a weak engine may fake
+  // or mis-target to the current branch. Plain mentions still reach Cesar:
+  // parseSemanticReviewShortcut returns null when no known engine is named.
+  const reviewShortcut = parseSemanticReviewShortcut(input);
+  if (reviewShortcut) {
+    return reviewShortcut;
   }
   // Natural-language toggle for autoCredit (German + English)
   if (AUTOCREDIT_OFF_KEYWORDS.test(input)) {

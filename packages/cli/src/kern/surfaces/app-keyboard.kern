@@ -1,0 +1,571 @@
+// ── App keyboard handling (extracted from app.kern) ──
+// Behavior-preserving extraction of the REPL surface's keyboard logic: the
+// global key router (handleKeyboardInput — its own comment calls it a "pure
+// decision tree + thin dispatcher"), the composer Ctrl-shortcut router
+// (handleComposerCtrlShortcut), and the Ctrl+C cancel/exit path
+// (handleCancelOrExit). handleCancelOrExit lives here because it is invoked by
+// BOTH the other two keyboard fns and consumes the shared _lastSigintAt
+// interrupt singleton — it is keyboard-owned.
+//
+// Each body closes over a large slice of component scope (state values, refs,
+// setState fns, callbacks). Rather than capture from scope, each takes that
+// slice explicitly through a named `<Name>Deps` interface (well above the
+// ~6-field threshold, grouped + per-field documented). The thin
+// `callback` declarations stay in app.kern wiring component state in — and KEEP
+// their original `deps` arrays unchanged, so each compiles to the SAME
+// useCallback with the SAME recreation timing. Component-scope values are read
+// at CALL time off `opts`, exactly as the original closures read them, so
+// capture/staleness semantics are byte-identical.
+//
+// The interrupt singleton _lastSigintAt now lives in ./app-interrupt.js and is
+// imported here (not re-declared) — same source of truth the SIGINT handler and
+// app.kern share.
+//
+// Module imports (resolveKeyboardInput, isTerminalFocusReport, listFiles,
+// spawnSync) were module-level imports in app.kern too — they move here with the
+// logic; app.kern keeps whichever it still references.
+//
+// BEHAVIOR-PRESERVING ONLY: every key path (pickers, panels, history nav,
+// esc/interrupt, ctrl shortcuts, question prompts, update-banner keys, status
+// dashboard, file/execution rails, scrollbox) behaves byte-identically. Bodies
+// are relocated verbatim; only component-scope identifiers gained an `opts.`
+// prefix. The `startupOnly` field on KeyboardInputDeps is carried because it
+// stayed in handleKeyboardInput's original deps array (recreation timing) even
+// though the body never reads it — kept for behavior parity, not use.
+//
+// Convention (mirrors app-interrupt.kern / app-lifecycle.kern): explicit params;
+// params above ~6 fields = a named `<Name>Deps` interface with grouped,
+// per-field-documented fields; refs typed with their real {current: T} shape;
+// replState typed as its real ReplStateState (not loosened to any); typed
+// returns (never any); // Source: breadcrumb per fn; raw `<<<` kept for the
+// dense decision-tree bodies where structured KERN would distort the logic.
+import from="../signals/keyboard.js" names="resolveKeyboardInput"
+import from="../../input-utils.js" names="isTerminalFocusReport"
+import from="../signals/file-tracker.js" names="listFiles"
+import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
+import from="../signals/app-state.js" names="ReplStateState" types=true
+import from="./app-interrupt.js" names="_lastSigintAt"
+import from="node:child_process" names="spawnSync"
+
+module name=AppKeyboard
+
+  // ── Closed-over deps for runHandleCancelOrExit ──
+  // The question/repl state the cancel path inspects, the active-run abort ref it
+  // consults for the cancel message, plus the setState fns / callbacks it fires.
+  // Grouped by role. (Mirrors app.kern callback handleCancelOrExit deps
+  // "questionState,replState,inputValue,dispatch" + the stable refs/setters/cbs
+  // it closed over outside that array.)
+  interface name=CancelOrExitDeps
+    doc "Explicit dependencies for runHandleCancelOrExit — the question/repl/input state the Ctrl+C cancel path inspects, the active-abort ref it reads for the cancel-vs-interrupt message, and the setters/callbacks/dispatch it fires."
+    // ── State the cancel decision reads ──
+    field name=questionState type=any
+    field name=replState type=ReplStateState
+    field name=inputValue type=string
+    field name=activeAbortRef type="{current: AbortController | null}"
+    // ── Question prompt dismissal setters ──
+    field name=setQuestionState type="(val:any) => void"
+    field name=setQuestionAnswer type="(val:string) => void"
+    field name=setSelectedChoiceIndex type="(val:number) => void"
+    field name=setQuestionOtherActive type="(val:boolean) => void"
+    // ── Run interrupt + composer reset + notification ──
+    field name=interruptActiveRun type="(message:string, clearChat:boolean) => void"
+    field name=setInputValue type="(val:string) => void"
+    field name=dispatch type="(event:any) => void"
+
+  // ── handleCancelOrExit: the Ctrl+C cancel/exit decision ──
+  // Source: app.kern callback name=handleCancelOrExit. Resolves an open question
+  // prompt; if a run is active, interrupts it (Cancelled. if an abort controller
+  // is live, else Interrupted.) and returns; otherwise on a non-empty composer
+  // clears it and arms the double-Ctrl+C exit window; on an empty composer a
+  // second Ctrl+C within 1200ms exits, else arms the window with a hint.
+  fn name=runHandleCancelOrExit params="opts:CancelOrExitDeps" returns=void
+    handler <<<
+      if (opts.questionState) { opts.questionState.resolve(''); opts.setQuestionState(null); opts.setQuestionAnswer(''); opts.setSelectedChoiceIndex(0); opts.setQuestionOtherActive(false); }
+      if (opts.replState !== 'idle') {
+        opts.interruptActiveRun(opts.activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
+        return;
+      }
+
+      const now = Date.now();
+      if (opts.inputValue) {
+        _lastSigintAt.value = now;
+        opts.setInputValue('');
+        opts.dispatch({ type: 'info', message: 'Input cleared. Press Ctrl+C again to exit.' } as any);
+        return;
+      }
+
+      if (now - _lastSigintAt.value < 1200) {
+        process.exit(0);
+      }
+
+      _lastSigintAt.value = now;
+      opts.dispatch({ type: 'info', message: 'Press Ctrl+C again to exit.' } as any);
+    >>>
+
+  // ── Closed-over deps for runHandleComposerCtrlShortcut ──
+  // The refs the shortcut router flips (nested-chord tracking + the
+  // "Ink already consumed this key" flag) plus the rail/composer setters and the
+  // callbacks the shortcuts delegate to. Grouped by role. (Mirrors app.kern
+  // callback handleComposerCtrlShortcut deps "handleCancelOrExit,handleSubmit,
+  // openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry" + the
+  // stable refs/setters it closed over outside that array.)
+  interface name=ComposerCtrlShortcutDeps
+    doc "Explicit dependencies for runHandleComposerCtrlShortcut — the chord/handled refs it flips, the rail + composer + tool-output setters, and the cancel/submit/tool callbacks the per-key cases delegate to."
+    // ── Chord + handled-flag refs ──
+    field name=nestedCtrlShortcutRef type="{current: { key: string; at: number }}"
+    field name=ctrlKeyHandledRef type="{current: boolean}"
+    // ── Rail + composer + tool-output setters ──
+    field name=setExecutionRailOpen type="(val: boolean | ((prev:boolean) => boolean)) => void"
+    field name=setFileRailOpen type="(val: boolean | ((prev:boolean) => boolean)) => void"
+    field name=setFileRailExpandedPath type="(val:string | null) => void"
+    field name=setToolOutputExpanded type="(updater:(prev:boolean) => boolean) => void"
+    field name=setInputValue type="(updater:(prev:string) => string) => void"
+    // ── Delegated callbacks ──
+    field name=handleCancelOrExit type="() => void"
+    field name=handleSubmit type="(value:string) => void"
+    field name=openLatestToolDetail type="() => void"
+    field name=openResultsPager type="() => void"
+    field name=draftLatestFailedToolRetry type="() => void"
+
+  // ── handleComposerCtrlShortcut: route a Ctrl+<key> from the composer ──
+  // Source: app.kern callback name=handleComposerCtrlShortcut. Records the chord
+  // for nested-chord suppression, marks the key handled, and dispatches per key:
+  // b=file rail, c=cancel/exit, e=tool-output expand, g/i/t=execution rail,
+  // o=tool detail, l=/clear, r=results pager, y=retry failed tool, j=newline.
+  fn name=runHandleComposerCtrlShortcut params="opts:ComposerCtrlShortcutDeps, shortcut:string" returns=void
+    handler <<<
+      opts.nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
+      switch (shortcut) {
+        case 'b':
+          opts.ctrlKeyHandledRef.current = true;
+          opts.setExecutionRailOpen(false);
+          opts.setFileRailOpen((prev: boolean) => !prev);
+          return;
+        case 'c':
+          opts.ctrlKeyHandledRef.current = true;
+          opts.handleCancelOrExit();
+          return;
+        case 'e':
+          opts.ctrlKeyHandledRef.current = true;
+          opts.setToolOutputExpanded((prev: boolean) => !prev);
+          return;
+        case 'g':
+        case 'i':
+        case 't':
+          opts.ctrlKeyHandledRef.current = true;
+          opts.setFileRailOpen(false);
+          opts.setFileRailExpandedPath(null);
+          opts.setExecutionRailOpen((prev: boolean) => !prev);
+          return;
+        case 'o':
+          opts.ctrlKeyHandledRef.current = true;
+          opts.openLatestToolDetail();
+          return;
+        case 'l':
+          opts.ctrlKeyHandledRef.current = true;
+          opts.handleSubmit('/clear');
+          return;
+        case 'r':
+          opts.ctrlKeyHandledRef.current = true;
+          opts.openResultsPager();
+          return;
+        case 'y':
+          opts.ctrlKeyHandledRef.current = true;
+          opts.draftLatestFailedToolRetry();
+          return;
+        case 'j':
+          opts.ctrlKeyHandledRef.current = true;
+          opts.setInputValue((prev: string) => prev + '\n');
+          return;
+        default:
+          return;
+      }
+    >>>
+
+  // ── Closed-over deps for runHandleKeyboardInput ──
+  // The full slice of component scope the global key router reads/mutates: the UI
+  // state snapshot fed to resolveKeyboardInput, the refs it consults/flips, and
+  // every setState fn / callback the action switch dispatches. Grouped by role.
+  // (Mirrors app.kern callback handleKeyboardInput's 28-entry deps array PLUS the
+  // stable refs/setters it closed over outside it; `startupOnly` is carried only
+  // because it stayed in that deps array — the body never reads it.)
+  interface name=KeyboardInputDeps
+    doc "Explicit dependencies for runHandleKeyboardInput — the UI-state snapshot fed to resolveKeyboardInput, the refs the router consults/flips, and every setter/callback/dispatch the action switch fires. Passed in rather than captured from component scope; values are read at call time so staleness matches the original closure."
+    // ── Picker / modal / panel open flags ──
+    field name=modelPickerOpen type=boolean
+    field name=cesarPickerOpen type=boolean
+    field name=slashPickerOpen type=boolean
+    field name=atPickerOpen type=boolean
+    field name=enginePickerOpen type=boolean
+    field name=reviewEvent type=any
+    field name=toolDetailEvent type=any
+    field name=btwPanel type=any
+    field name=statusDashboardOpen type=boolean
+    // ── Question prompt state ──
+    field name=questionState type=any
+    field name=selectedChoiceIndex type=number
+    field name=questionOtherActive type=boolean
+    // ── Repl / composer / history state ──
+    field name=replState type=ReplStateState
+    field name=inputValue type=string
+    field name=inputHistory type="string[]"
+    field name=historyIndex type=number
+    // ── Mode + plan queue + plan approval ──
+    field name=planModeQueued type=boolean
+    field name=autoModeQueued type=boolean
+    field name=planApprovalIndex type=number
+    // ── Derived snapshots consumed by resolveKeyboardInput ──
+    field name=outputBlocks type="OutputBlock[]"
+    field name=allSlashCommands type="any[]"
+    field name=availableEngines type="string[]"
+    field name=updateInfo type=any
+    field name=terminalMode type=string
+    field name=newestLiveToolStreamId type=string
+    field name=fileRailOpen type=boolean
+    field name=fileRailExpandedPath type="string | null"
+    field name=fileRailSelectedIdx type=number
+    field name=executionRailOpen type=boolean
+    field name=currentVisibleRowBudget type=number
+    field name=startupOnly type=boolean
+    // ── Refs the router consults / flips ──
+    field name=nestedCtrlShortcutRef type="{current: { key: string; at: number }}"
+    field name=ctrlKeyHandledRef type="{current: boolean}"
+    field name=btwAbortRef type="{current: AbortController | null}"
+    field name=scrollBoxRef type="{current: any}"
+    field name=liveToolStreamsRef type="{current: Record<string, any>}"
+    field name=activePlanRef type="{current: any}"
+    // ── Picker / panel / status setters ──
+    field name=setBtwPanel type="(val:any) => void"
+    field name=setStatusDashboardOpen type="(val:boolean) => void"
+    field name=setStatusDashboardFilter type="(val:'all' | 'problem') => void"
+    field name=setSlashPickerOpen type="(val:boolean) => void"
+    field name=setEnginePickerOpen type="(val:boolean) => void"
+    field name=setPendingPlanProposal type="(val:any) => void"
+    // ── Question prompt setters ──
+    field name=setQuestionState type="(val:any) => void"
+    field name=setQuestionAnswer type="(val:string) => void"
+    field name=setSelectedChoiceIndex type="(val:number) => void"
+    field name=setQuestionOtherActive type="(val:boolean) => void"
+    // ── Composer / mode / history setters ──
+    field name=setInputValue type="(val:any) => void"
+    field name=setHistoryIndex type="(val:number) => void"
+    field name=setPlanModeQueued type="(updater:any) => void"
+    field name=setPersistentAutoMode type="(enabled:boolean) => void"
+    field name=setPlanApprovalIndex type="(val:number) => void"
+    // ── Tool-output / rail setters ──
+    field name=setToolOutputExpanded type="(updater:(prev:boolean) => boolean) => void"
+    field name=setLiveToolTailFrozen type="(updater:(prev:Record<string,boolean>) => Record<string,boolean>) => void"
+    field name=setExecutionRailOpen type="(val:any) => void"
+    field name=setFileRailOpen type="(val:any) => void"
+    field name=setFileRailExpandedPath type="(val:any) => void"
+    field name=setFileRailSelectedIdx type="(updater:(prev:number) => number) => void"
+    // ── Delegated callbacks ──
+    field name=handleSubmit type="(value:string) => void"
+    field name=interruptActiveRun type="(message:string, clearChat:boolean) => void"
+    field name=handleCancelOrExit type="() => void"
+    field name=openLatestToolDetail type="() => void"
+    field name=openResultsPager type="() => void"
+    field name=draftLatestFailedToolRetry type="() => void"
+    field name=triggerUpdatePrompt type="() => void"
+    field name=dismissUpdateBanner type="() => void"
+    field name=dispatch type="(event:any) => void"
+
+  // ── handleKeyboardInput: the global keyboard router ──
+  // Source: app.kern callback name=handleKeyboardInput (the "pure decision tree +
+  // thin dispatcher" block). Filters terminal focus-reports / pastes, handles the
+  // btw-panel Esc, the global Ctrl+E tool-expand, the status-dashboard keys, the
+  // fullscreen ScrollBox keys, and nested-chord suppression; then defers the rest
+  // to resolveKeyboardInput and dispatches the resulting action. Relocated
+  // verbatim — only component-scope identifiers gained an `opts.` prefix.
+  fn name=runHandleKeyboardInput params="opts:KeyboardInputDeps, input:string, key:any" returns=void
+    handler <<<
+      if (isTerminalFocusReport(input)) return;
+      if (key?.paste) return;
+      // The @-file picker (AtFilePicker) owns ALL keystrokes via its own useInput
+      // while open — navigation, accept, cancel, and typing into its filter. The
+      // global router must stay out so arrows/Enter/Esc/Tab don't double-fire
+      // (e.g. history nav or auto-mode toggle) underneath it. Mirrors how the
+      // composer swaps its TextInput out while the picker is up.
+      if (opts.atPickerOpen) return;
+
+      const keyName = typeof key?.name === 'string' ? key.name.toLowerCase() : '';
+      const globalCtrlInputMap = {
+        '\x01': 'a',
+        '\x03': 'c',
+        '\x05': 'e',
+        '\x07': 'g',
+        '\x0f': 'o',
+        '\x0a': 'j',
+        '\x0b': 'k',
+        '\x0c': 'l',
+        '\x12': 'r',
+        '\x14': 't',
+        '\x15': 'u',
+        '\x17': 'w',
+        '\x02': 'b',
+        ...(key.ctrl ? { '\x09': 'i' } : {}),
+      } as Record<string, string>;
+      const globalCtrlInput = globalCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
+      const hasGlobalCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
+      if (opts.btwPanel && (key.escape || input === '\x1b')) {
+        try { opts.btwAbortRef.current?.abort(); } catch { /* nothing in flight */ }
+        opts.btwAbortRef.current = null;
+        opts.setBtwPanel(null);
+        return;
+      }
+      const textInputOwnsReservedShortcut = !opts.statusDashboardOpen && !opts.modelPickerOpen && !opts.cesarPickerOpen && !opts.enginePickerOpen && !opts.reviewEvent && !opts.toolDetailEvent && !opts.slashPickerOpen && (!opts.questionState || !opts.questionState.choices);
+      if (hasGlobalCtrlSignal && globalCtrlInput === 'e' && !textInputOwnsReservedShortcut) {
+        const nested = opts.nestedCtrlShortcutRef.current;
+        if (nested.key === 'e' && Date.now() - nested.at < 120) {
+          opts.nestedCtrlShortcutRef.current = { key: '', at: 0 };
+          return;
+        }
+        opts.nestedCtrlShortcutRef.current = { key: 'e', at: Date.now() };
+        opts.ctrlKeyHandledRef.current = true;
+        opts.setToolOutputExpanded((prev: boolean) => !prev);
+        return;
+      }
+
+      if (opts.statusDashboardOpen && !opts.modelPickerOpen && !opts.cesarPickerOpen && !opts.enginePickerOpen && !opts.reviewEvent && !opts.toolDetailEvent && !opts.slashPickerOpen && !opts.questionState) {
+        if (key.escape || input === 'q' || input === 'Q' || (key.ctrl && input === '\x03')) {
+          opts.setStatusDashboardOpen(false);
+          return;
+        }
+        if (input === 'a' || input === 'A') {
+          opts.setStatusDashboardFilter('all');
+          return;
+        }
+        if (input === 'p' || input === 'P') {
+          opts.setStatusDashboardFilter('problem');
+          return;
+        }
+        return;
+      }
+
+      // ScrollBox keyboard shortcuts (only when fullscreen owns the viewport and no modal is open).
+      if (opts.terminalMode === 'fullscreen' && !opts.modelPickerOpen && !opts.cesarPickerOpen && !opts.enginePickerOpen && !opts.reviewEvent && !opts.toolDetailEvent && !opts.slashPickerOpen && !opts.questionState) {
+        if (key.shift && key.name === 'pageup') {
+          opts.scrollBoxRef.current?.scrollBy(-Math.max(1, Math.floor(opts.currentVisibleRowBudget / 2)));
+          return;
+        }
+        if (key.shift && key.name === 'pagedown') {
+          opts.scrollBoxRef.current?.scrollBy(Math.max(1, Math.floor(opts.currentVisibleRowBudget / 2)));
+          return;
+        }
+        if (key.name === 'home') {
+          opts.scrollBoxRef.current?.scrollTo(0);
+          return;
+        }
+        if (key.name === 'end') {
+          opts.scrollBoxRef.current?.scrollToBottom?.();
+          return;
+        }
+      }
+
+      const normalizedCtrlInputMap = {
+        '\x01': 'a',
+        '\x03': 'c',
+        '\x05': 'e',
+        '\x07': 'g',
+        '\x0f': 'o',
+        '\x0a': 'j',
+        '\x0b': 'k',
+        '\x0c': 'l',
+        '\x12': 'r',
+        '\x14': 't',
+        '\x15': 'u',
+        '\x17': 'w',
+        '\x02': 'b',
+        ...(key.ctrl ? { '\x09': 'i' } : {}),
+      } as Record<string, string>;
+      const normalizedCtrlInput = normalizedCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
+      const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
+      if (hasCtrlSignal && normalizedCtrlInput) {
+        const nested = opts.nestedCtrlShortcutRef.current;
+        if (nested.key === normalizedCtrlInput && Date.now() - nested.at < 120) {
+          opts.nestedCtrlShortcutRef.current = { key: '', at: 0 };
+          return;
+        }
+      }
+
+      const action = resolveKeyboardInput({
+        input, key,
+        textInputActive: !opts.modelPickerOpen && !opts.cesarPickerOpen && !opts.enginePickerOpen && !opts.reviewEvent && !opts.toolDetailEvent && !opts.slashPickerOpen && (!opts.questionState || !opts.questionState.choices),
+        modelPickerOpen: opts.modelPickerOpen, cesarPickerOpen: opts.cesarPickerOpen, slashPickerOpen: opts.slashPickerOpen, enginePickerOpen: opts.enginePickerOpen,
+        reviewEventOpen: !!opts.reviewEvent,
+        toolDetailOpen: !!opts.toolDetailEvent,
+        questionState: opts.questionState, questionChoiceIndex: opts.selectedChoiceIndex, questionOtherActive: opts.questionOtherActive,
+        updateInfo: opts.updateInfo,
+        replState: opts.replState, inputValue: opts.inputValue, inputHistory: opts.inputHistory, historyIndex: opts.historyIndex,
+        planModeQueued: opts.planModeQueued, autoModeQueued: opts.autoModeQueued, activePlanState: opts.activePlanRef.current?.state ?? null,
+        planApprovalIndex: opts.planApprovalIndex,
+        outputBlockCount: opts.outputBlocks.length,
+        commands: opts.allSlashCommands,
+        engineIds: opts.availableEngines,
+        fileRailFocused: opts.fileRailOpen && opts.inputValue.trim().length === 0,
+        fileRailExpanded: opts.fileRailExpandedPath !== null,
+        executionRailFocused: opts.executionRailOpen && opts.inputValue.trim().length === 0,
+        liveToolStreamCount: Object.keys(opts.liveToolStreamsRef.current ?? {}).length,
+      });
+
+      switch (action.type) {
+        case 'none': return;
+        case 'exit': process.exit(0); return;
+        case 'resolveChoice':
+          opts.questionState.resolve(action.choiceKey);
+          opts.setQuestionState(null); opts.setQuestionAnswer('');
+          opts.setSelectedChoiceIndex(0); opts.setQuestionOtherActive(false); return;
+        case 'cancelChoice':
+          opts.questionState.resolve('n');
+          opts.setQuestionState(null); opts.setQuestionAnswer('');
+          opts.setSelectedChoiceIndex(0); opts.setQuestionOtherActive(false); return;
+        case 'moveChoice':
+          opts.setSelectedChoiceIndex(action.index); return;
+        case 'enterOther': {
+          // Seat the cursor on the __other row so the inline editor renders even
+          // when Other was picked by its number (instant), not by arrowing to it.
+          // No __other row → nothing to edit; don't enter Other mode (else the hint
+          // would wrongly flip to "Esc returns to options").
+          const _otherIdx = Array.isArray(opts.questionState?.choices)
+            ? opts.questionState.choices.findIndex((c: any) => c && c.key === '__other')
+            : -1;
+          if (_otherIdx < 0) return;
+          opts.setSelectedChoiceIndex(_otherIdx);
+          opts.setQuestionOtherActive(true); opts.setQuestionAnswer(''); return;
+        }
+        case 'exitOther':
+          opts.setQuestionOtherActive(false); opts.setQuestionAnswer(''); return;
+        case 'swallow': return;
+        case 'ghostComplete':
+          opts.setInputValue(opts.inputValue + action.ghost + ' ');
+          return;
+        case 'togglePlanQueued':
+          opts.setPlanModeQueued((prev: boolean) => !prev); return;
+        case 'toggleAutoQueued':
+          const nextAutoModeQueued = !opts.autoModeQueued;
+          opts.setPlanModeQueued(false);
+          opts.setPersistentAutoMode(nextAutoModeQueued);
+          opts.dispatch({
+            type: 'info',
+            message: nextAutoModeQueued
+              ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Ctrl+A toggles it off.'
+              : 'AUTO OFF by default.',
+          } as any);
+          return;
+        case 'submit':
+          opts.handleSubmit(action.value); return;
+        case 'planControl':
+          // Swallow the Enter/key so PromptTextInput does not insert it
+          // into the composer after we route the approval.
+          opts.ctrlKeyHandledRef.current = true;
+          opts.setPlanApprovalIndex(0);
+          if (action.action === 'revise') {
+            // Drop the proposal from the live pane but leave the plan in
+            // activePlanRef so /cancel on the next turn is a no-op. Pre-fill
+            // the composer with a revision prompt; pressing Enter routes the
+            // message to Cesar, who (per session.kern RULE 9) will see the
+            // pending plan and ProposePlan again with the user's changes.
+            opts.setPendingPlanProposal(null);
+            opts.setInputValue('Revise the plan: ');
+            opts.dispatch({ type: 'info', message: 'Type your revision and press Enter (Esc clears).' } as any);
+            return;
+          }
+          opts.handleSubmit(action.action === 'approve' ? '/approve' : '/cancel');
+          return;
+        case 'movePlanApproval':
+          opts.setPlanApprovalIndex(action.index); return;
+        case 'updateBanner':
+          // Route the keyboard shortcut from the in-app update banner.
+          // `update` opens the choice prompt; `changelog` jumps straight to
+          // the release page; `dismiss` hides the banner and remembers the
+          // version so we don't nag again for this release.
+          if (action.action === 'update') {
+            opts.triggerUpdatePrompt();
+          } else if (action.action === 'changelog') {
+            try { spawnSync('open', ['https://github.com/KERNlang/agon/releases'], { stdio: 'ignore' }); } catch { /* ignore */ }
+          } else {
+            opts.dismissUpdateBanner();
+          }
+          return;
+        case 'toggleToolExpand':
+          opts.ctrlKeyHandledRef.current = true;
+          opts.setToolOutputExpanded((prev: boolean) => !prev); return;
+        case 'openToolDetail':
+          opts.openLatestToolDetail(); return;
+        case 'retryFailedTool':
+          opts.draftLatestFailedToolRetry(); return;
+        case 'openResults':
+          opts.openResultsPager(); return;
+        case 'toggleFileRail':
+          opts.setExecutionRailOpen(false);
+          opts.setFileRailOpen((prev: boolean) => !prev);
+          return;
+        case 'toggleExecutionRail':
+          opts.setFileRailOpen(false);
+          opts.setFileRailExpandedPath(null);
+          opts.setExecutionRailOpen((prev: boolean) => !prev);
+          return;
+        case 'toggleLiveToolTail':
+          opts.ctrlKeyHandledRef.current = true;
+          if (!opts.newestLiveToolStreamId) return;
+          opts.setLiveToolTailFrozen((prev: Record<string, boolean>) => ({
+            ...prev,
+            [opts.newestLiveToolStreamId]: !prev[opts.newestLiveToolStreamId],
+          }));
+          return;
+        case 'fileRailSelectPrev': {
+          const files = listFiles();
+          const last = Math.max(0, files.length - 1);
+          opts.setFileRailSelectedIdx((i: number) => Math.max(0, Math.min(last, i) - 1));
+          return;
+        }
+        case 'fileRailSelectNext': {
+          const files = listFiles();
+          const last = Math.max(0, files.length - 1);
+          opts.setFileRailSelectedIdx((i: number) => Math.min(last, Math.max(0, i) + 1));
+          return;
+        }
+        case 'fileRailToggleExpand': {
+          const files = listFiles();
+          if (files.length === 0) return;
+          const idx = Math.max(0, Math.min(files.length - 1, opts.fileRailSelectedIdx));
+          const target = files[idx];
+          opts.setFileRailExpandedPath((prev: string|null) => prev === target.path ? null : target.path);
+          return;
+        }
+        case 'fileRailClose':
+          opts.setFileRailOpen(false);
+          opts.setFileRailExpandedPath(null);
+          return;
+        case 'executionRailClose':
+          opts.setExecutionRailOpen(false);
+          return;
+        case 'unqueuePlan':
+          opts.setPlanModeQueued(false); return;
+        case 'unqueueAuto':
+          opts.setPersistentAutoMode(false);
+          opts.dispatch({ type: 'info', message: 'AUTO OFF by default.' } as any);
+          return;
+        case 'closeSlash':
+          opts.setSlashPickerOpen(false); return;
+        case 'closeEnginePicker':
+          opts.setEnginePickerOpen(false); return;
+        case 'cancelQuestion':
+          if (opts.questionState) { opts.questionState.resolve(''); opts.setQuestionState(null); opts.setQuestionAnswer(''); }
+          return;
+        case 'interrupt':
+          opts.interruptActiveRun('Interrupted.', false); return;
+        case 'clearInput':
+          opts.setInputValue(''); return;
+        case 'insertNewline':
+          opts.setInputValue((prev: string) => prev + '\n'); return;
+        case 'historySet':
+          opts.setHistoryIndex(action.index);
+          // value is always a string — empty string means "return to blank composer".
+          opts.setInputValue(action.value);
+          return;
+        case 'cancelOrExit':
+          opts.handleCancelOrExit();
+          return;
+      }
+    >>>

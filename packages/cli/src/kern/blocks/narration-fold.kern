@@ -1,0 +1,206 @@
+// -- Narration Folding -----------------------------------------------
+// Engine-agnostic safety net for verbose / black-box engines.
+//
+// A black-box --print CLI agent (e.g. agy / Antigravity) runs its OWN
+// internal tools and streams its ENTIRE agentic transcript as one text
+// dump -- "I will read X... let me check Y... now viewing lines 715..."
+// -- which Agon commits as a single giant engine-block: a wall of text.
+// Structured engines (claude stream-json) don't wall because their tool
+// calls become discrete islands; opaque engines give us only prose.
+//
+// This module collapses contiguous research play-by-play into a compact
+// placeholder while keeping the real answer visible. Design (validated by
+// a 6-engine brainstorm, 6/6):
+//   - FOLD, never delete -- raw is preserved (ring) for /raw + copy.
+//   - "unknown = substance" -- the classifier is precision-biased; a false
+//     negative (narration left visible) is fine, a false positive (answer
+//     hidden) is not.
+//   - Structural-first -- code fences / lists / tables / headings / the
+//     trailing answer are protected before any intent matching runs.
+//   - Anchor on a substance tail -- if a COMMITTED turn is pure narration
+//     with no answer, nothing is folded (never hide a block to nothing).
+//   - Regex/structural only -- no LLM in the hot path.
+//
+// Two entry points: foldNarration (commit-time, substance-tail anchored)
+// and foldNarrationLines (live/streaming, line-wise, no tail requirement
+// since live content is transient and never committed).
+
+interface name=NarrationFoldResult
+  doc "Result of foldNarration. visible is what renders to scrollback; raw is the untouched original kept (ring) for /raw + copy/search; foldedSteps counts the narration sentences collapsed into the placeholder."
+  field name=raw type=string
+  field name=visible type=string
+  field name=foldedSteps type=number
+  field name=didFold type=boolean
+
+interface name=LiveNarrationFold
+  doc "Result of foldNarrationLines (live streaming). visible is the substance to render; foldedSteps is the narration line count collapsed in the current window; lastStep is the most recent narration line, shown as a transient working indicator."
+  field name=visible type=string
+  field name=foldedSteps type=number
+  field name=lastStep type=string
+
+// -- Shared classifier -----------------------------------------------
+// Narration starters (research play-by-play openers). Shared by the
+// segment splitter and the intent test so they stay in lockstep.
+const name=_NARR_STARTERS type=string value={{ "I will|I'll|I am going to|I'm going to|Let me|Let's|Now I|Now let|Next,? I|Next,? let|I need to|I should|I want to|Checking|Searching|Reading|Viewing|Opening|Running|Looking at|First,? I" }}
+const name=_NARR_INTENT_RE value={{ new RegExp(`^(?:${_NARR_STARTERS})\\b`, 'i') }}
+// Tool/research verbs -- what the agent is DOING, not concluding.
+const name=_NARR_TOOL_VERB_RE value={{ /\b(?:read|re-?read|view|inspect|examine|search(?:ing)?|grep|list|open(?:ing)?|check(?:ing)?|look(?:ing)?\s+at|see\s+(?:if|how|what|where)|locate|find(?:\s+(?:the|where|references|out))?|run(?:ning)?\s+(?:the\s+)?tests?|scan(?:ning)?|explore|navigate|understand\s+how|verify|map\s+out|trace)\b/i }}
+// Answer / conclusion language -- VETOES a fold (this is substance).
+const name=_NARR_SUBSTANCE_RE value={{ /\b(?:recommend|the\s+(?:fix|issue|bug|root\s+cause|answer|problem|solution|reason)|because|therefore|so\s+that|found\s+that|in\s+(?:short|summary|conclusion)|here(?:'s|\s+is)|refers?\s+to|means?\b|works?\s+by|consists?\s+of|note\s+that|important(?:ly)?|warning|trade-?off|risk|failure\s+mode|you\s+(?:should|can|need)|we\s+(?:should|can|need)|confidence)\b/i }}
+// Structure -- headings, lists, quotes, tables, and the @@FENCE@@
+// placeholder. Anything matching here is substance, never folded.
+const name=_NARR_PROTECTED_RE value={{ /^(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s|\||@@FENCE)/ }}
+
+fn name=_isNarrationSegment params="s:string" returns=boolean export=false
+  doc "Precision-biased narration predicate: a segment is narration only if it opens with a research-intent starter AND carries a tool verb AND no answer/structure/question signal. Anything ambiguous is substance."
+  handler <<<
+    const t = String(s ?? '').trim();
+    if (!t) return false;
+    if (_NARR_PROTECTED_RE.test(t)) return false;
+    if (t.endsWith('?')) return false;
+    if (!_NARR_INTENT_RE.test(t)) return false;
+    if (_NARR_SUBSTANCE_RE.test(t)) return false;
+    if (!_NARR_TOOL_VERB_RE.test(t)) return false;
+    if (t.length > 240) return false;
+    return true;
+  >>>
+
+// -- Commit-time fold (substance-tail anchored) ----------------------
+fn name=foldNarration params="text:string, policy?:string" returns=NarrationFoldResult export=true
+  doc "Collapse contiguous research-narration runs in an engine's final text, keeping code, structure, and the answer tail visible. policy: 'off' (no-op) | 'safe' (default, min run 2) | 'aggressive' (min run 1). Pure + deterministic -- safe to run on every engine-block; clean answers fold nothing."
+  handler <<<
+    const raw = String(text ?? '');
+    const mode = policy ?? 'safe';
+    const noFold: NarrationFoldResult = { raw, visible: raw, foldedSteps: 0, didFold: false };
+    if (mode === 'off') return noFold;
+    if (!raw.trim()) return noFold;
+
+    // 1) Protect fenced code blocks. Use an @@FENCE@@ sentinel (non-
+    //    whitespace) so the sentence trimming/segmentation below can't
+    //    strip the guard and leak the token into visible text.
+    const fences: string[] = [];
+    const guarded = raw.replace(/```[\s\S]*?```/g, (m) => {
+      fences.push(m);
+      return `@@FENCE${fences.length - 1}@@`;
+    });
+
+    // 2) Segment into sentences. Black-box agents glue narration when tool
+    //    markup is stripped ("...in the REPL.In Agon AI, open files..."), so
+    //    split (a) on newlines, (b) after sentence punctuation before a
+    //    Capitalized word, and (c) before a narration starter.
+    const seg = guarded
+      .replace(/\r/g, '')
+      .replace(/\n+/g, '\n')
+      .replace(/([.!?])(?=[A-Z][a-z])/g, '$1\n')
+      .replace(new RegExp(`([\\s.;:!?)\\]])(?=(?:${_NARR_STARTERS})\\b)`, 'g'), '$1\n');
+    const sentences = seg.split('\n').map((s) => s.trim()).filter((s) => s.length > 0);
+
+    // 3) Classify.
+    const flags = sentences.map((s) => _isNarrationSegment(s));
+
+    // 4) Answer tail: the trailing run of NON-narration sentences. Always
+    //    shown, and required -- a pure-narration turn (no answer) is never
+    //    folded to nothing.
+    let tailStart = sentences.length;
+    for (let i = sentences.length - 1; i >= 0; i--) {
+      if (flags[i]) break;
+      tailStart = i;
+    }
+    if (tailStart >= sentences.length) return noFold;
+
+    // 5) Fold contiguous narration runs (>= min length) before the tail.
+    const FOLD_MIN_RUN = mode === 'aggressive' ? 1 : 2;
+    const out: string[] = [];
+    let folded = 0;
+    let i = 0;
+    while (i < tailStart) {
+      if (flags[i]) {
+        let j = i;
+        while (j < tailStart && flags[j]) j++;
+        const runLen = j - i;
+        if (runLen >= FOLD_MIN_RUN) {
+          folded += runLen;
+        } else {
+          for (let k = i; k < j; k++) out.push(sentences[k]);
+        }
+        i = j;
+      } else {
+        out.push(sentences[i]);
+        i++;
+      }
+    }
+    for (let k = tailStart; k < sentences.length; k++) out.push(sentences[k]);
+
+    if (folded === 0) return noFold;
+
+    // 6) Restore fences (sentinel matches regardless of surrounding space),
+    //    tidy blank runs.
+    const visible = out
+      .join('\n')
+      .replace(/@@FENCE(\d+)@@/g, (_m, n) => fences[Number(n)] ?? '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    return { raw, visible, foldedSteps: folded, didFold: true };
+  >>>
+
+// -- Live fold (streaming, line-wise, no tail requirement) -----------
+fn name=foldNarrationLines params="text:string, policy?:string" returns=LiveNarrationFold export=true
+  doc "Live/streaming variant. Collapses narration LINES (one per source line) into a count + the most recent step, WITHOUT requiring a substance tail -- live content is transient and uncommitted, so folding leading/all narration is correct. StreamingView runs this over its already-bounded visible window so a verbose engine's wall never appears even mid-stream. Fences are protected. 'off' is a no-op."
+  handler <<<
+    const raw = String(text ?? '');
+    const mode = policy ?? 'safe';
+    const noFold: LiveNarrationFold = { visible: raw, foldedSteps: 0, lastStep: '' };
+    if (mode === 'off' || !raw.trim()) return noFold;
+    const lines = raw.split('\n');
+    let inFence = false;
+    const out: string[] = [];
+    let folded = 0;
+    let lastStep = '';
+    for (const ln of lines) {
+      if (/^\s*```/.test(ln)) { inFence = !inFence; out.push(ln); continue; }
+      if (!inFence && _isNarrationSegment(ln)) { folded++; lastStep = ln.trim(); continue; }
+      out.push(ln);
+    }
+    if (folded === 0) return noFold;
+    const visible = out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    return { visible, foldedSteps: folded, lastStep };
+  >>>
+
+// -- Raw ring -- block-addressed replay for /raw ---------------------
+// Native scrollback rows cannot re-render in place, so /raw reprints the
+// untouched original as a fresh block. A bounded ring (not a single slot)
+// lets /raw [n] page back through recent folds instead of only ever
+// showing the most recent -- addresses the "older folded blocks lose
+// access to their raw" review finding.
+const name=_FOLD_RING_MAX type=number value=20
+const name=_foldedRaws type="string[]" value={{ [] as string[] }}
+
+fn name=setLastFoldedRaw params="raw:string" returns=void export=true
+  doc "Record the raw (unfolded) text of a just-folded engine-block, capped at the last 20."
+  handler <<<
+    const r = String(raw ?? '');
+    if (!r) return;
+    _foldedRaws.push(r);
+    while (_foldedRaws.length > _FOLD_RING_MAX) _foldedRaws.shift();
+  >>>
+
+fn name=getFoldedRawCount returns=number export=true
+  doc "Number of recent folded raws currently retained (0..20)."
+  handler <<<
+    return _foldedRaws.length;
+  >>>
+
+fn name=getFoldedRaw params="fromEnd:number" returns=string export=true
+  doc "Return the Nth-most-recent folded raw (1 = most recent). '' if out of range."
+  handler <<<
+    const n = Math.max(1, Math.floor(Number(fromEnd) || 1));
+    const idx = _foldedRaws.length - n;
+    return idx >= 0 ? _foldedRaws[idx] : '';
+  >>>
+
+fn name=getLastFoldedRaw returns=string export=true
+  doc "Return the most recently folded raw, or '' if nothing has been folded this session."
+  handler <<<
+    return _foldedRaws.length ? _foldedRaws[_foldedRaws.length - 1] : '';
+  >>>

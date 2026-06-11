@@ -239,20 +239,24 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
     },
     onStepDone: (stepId: string, result: CesarStepResult) => {
       const step = currentPlan.steps.find((s: any) => s.id === stepId);
-      const icon = result.status === 'success' ? '\u2713' : '\u2717';
-      const msgType = result.status === 'success' ? 'success' : 'error';
+      // 'paused' = brain awaiting user input on an approved step \u2014 a deliberate
+      // pause-to-idle, NOT a failure. Render it neutrally (no red \u2717) and leave the
+      // todo pending so /plan resume re-runs the step.
+      const isPausedResult = result.status === 'paused';
+      const icon = result.status === 'success' ? '\u2713' : isPausedResult ? '\u23f8' : '\u2717';
+      const msgType = result.status === 'success' ? 'success' : isPausedResult ? 'warning' : 'error';
       cb.dispatch({ type: 'spinner-stop' } as any);
       cb.dispatch({
         type: 'tool-call',
         engineId: 'cesar',
         tool: 'PlanStep',
         input: JSON.stringify(buildPlanStepToolInput(stepId)),
-        status: result.status === 'success' ? 'done' : 'error',
+        status: result.status === 'success' || isPausedResult ? 'done' : 'error',
         output: result.output ? result.output.slice(0, 4000) : '',
-        error: result.error,
+        error: isPausedResult ? undefined : result.error,
       } as any);
       cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} \u2014 ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s, $${result.actualCostUsd.toFixed(4)})` });
-      cb.dispatch({ type: 'todos-update', id: stepId, state: result.status === 'success' ? 'done' : 'failed', note: result.error ? result.error.slice(0, 80) : undefined } as any);
+      cb.dispatch({ type: 'todos-update', id: stepId, state: result.status === 'success' ? 'done' : isPausedResult ? 'pending' : 'failed', note: result.error ? result.error.slice(0, 80) : undefined } as any);
     },
     onPlanUpdate: (updated: CesarPlan) => {
       const previousState = currentPlan.state;
@@ -290,7 +294,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * Return true when a failed plan step looks like it was interrupted by stall/fallback handling rather than a semantic task failure.
  */
-// @kern-source: plan-execution:271
+// @kern-source: plan-execution:275
 export function failedPlanStepIsFallbackRetryable(step: any): boolean {
   if (!step || step.state !== 'failed') {
     return false;
@@ -306,7 +310,7 @@ export function failedPlanStepIsFallbackRetryable(step: any): boolean {
 /**
  * Reset one retryable failed plan step and bind it to the fallback engine. The caller runs executePlan again with a fresh abort controller.
  */
-// @kern-source: plan-execution:282
+// @kern-source: plan-execution:286
 export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string): CesarPlan|null {
   const engine = String(fallbackEngine ?? '').trim();
   if (!engine || !Array.isArray(plan.steps)) return null;
@@ -346,7 +350,7 @@ export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: plan-execution:320
+// @kern-source: plan-execution:324
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx, cb.dispatch);
   let abortController = new AbortController();
@@ -417,7 +421,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: plan-execution:389
+// @kern-source: plan-execution:393
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const FORGE_LIKE = new Set(['forge', 'teamforge', 'pipeline']);

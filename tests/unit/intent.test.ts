@@ -39,6 +39,24 @@ describe('Intent Detection — Slash Commands', () => {
     if (r.type === 'tribunal') expect(r.question).toBe('React vs Svelte');
   });
 
+  it('/raw parses with no index', () => {
+    const r = detectIntent('/raw');
+    expect(r.type).toBe('raw');
+    if (r.type === 'raw') expect(r.index).toBeUndefined();
+  });
+
+  it('/raw parses a numeric page index', () => {
+    const r = detectIntent('/raw 3');
+    expect(r.type).toBe('raw');
+    if (r.type === 'raw') expect(r.index).toBe(3);
+  });
+
+  it('/raw ignores a non-numeric arg (defaults to most recent)', () => {
+    const r = detectIntent('/raw foo');
+    expect(r.type).toBe('raw');
+    if (r.type === 'raw') expect(r.index).toBeUndefined();
+  });
+
   it('/team-tribunal parses size and mode', () => {
     const r = detectIntent('/team-tribunal 3v3 synthesis What should we launch first?');
     expect(r.type).toBe('team-tribunal');
@@ -193,6 +211,14 @@ describe('Intent Detection — Slash Commands', () => {
     if (withTarget.type === 'review') {
       expect(withTarget.engineIds).toEqual(['codex', 'claude']);
       expect(withTarget.target).toBe('branch:main');
+    }
+
+    // three space-separated engines, no target → defaults to uncommitted
+    const three = detectIntent('/review codex claude agy');
+    expect(three.type).toBe('review');
+    if (three.type === 'review') {
+      expect(three.engineIds).toEqual(['codex', 'claude', 'agy']);
+      expect(three.target).toBeUndefined();
     }
   });
 
@@ -447,17 +473,22 @@ describe('Intent Detection — Natural Language', () => {
     if (ambiguous.type === 'auto') expect(ambiguous.taskClass).toBe('ambiguous');
   });
 
-  it('keeps plain review text as auto; /review is required to start review', () => {
-    const r = detectIntent('review with gemini');
-    expect(r.type).toBe('auto');
+  it('dispatches an explicit "review with <known engine>" from chat', () => {
+    const r = detectIntent('review with claude');
+    expect(r.type).toBe('review');
 
     const branch = detectIntent('review branch:main with claude');
-    expect(branch.type).toBe('auto');
+    expect(branch.type).toBe('review');
+    if (branch.type === 'review') expect(branch.target).toBe('branch:main');
   });
 
-  it('keeps plain multi-engine review text as auto; /review is required', () => {
-    const r = detectIntent('review with codex gemini');
-    expect(r.type).toBe('auto');
+  it('dispatches plain multi-engine "review with <engines>" from chat', () => {
+    const r = detectIntent('review with codex claude');
+    expect(r.type).toBe('review');
+    if (r.type === 'review') expect(r.engineIds).toEqual(['codex', 'claude']);
+
+    // unknown engine token ("gemini" is now "agy") → not a dispatch, stays auto
+    expect(detectIntent('review with gemini').type).toBe('auto');
   });
 
   it('does not short-circuit compound instructions starting with implementation verbs', () => {
@@ -477,18 +508,19 @@ describe('Intent Detection — Natural Language', () => {
     expect(canYouFix.type).not.toBe('review');
   });
 
-  it('routes all plain review delegation text through Cesar instead of starting review', () => {
+  it('dispatches explicit review delegation text from chat (with known engines)', () => {
     const r = detectIntent('review it with codex');
-    expect(r.type).toBe('auto');
+    expect(r.type).toBe('review');
 
-    const withAnd = detectIntent('review it with codex and gemini');
-    expect(withAnd.type).toBe('auto');
+    const withAnd = detectIntent('review it with codex and claude');
+    expect(withAnd.type).toBe('review');
+    if (withAnd.type === 'review') expect(withAnd.engineIds).toEqual(['codex', 'claude']);
 
-    const ask = detectIntent('ask codex and gemini to review it');
-    expect(ask.type).toBe('auto');
+    const ask = detectIntent('ask codex and claude to review it');
+    expect(ask.type).toBe('review');
 
     const canYou = detectIntent('can you review with claude and codex');
-    expect(canYou.type).toBe('auto');
+    expect(canYou.type).toBe('review');
   });
 
   it('keeps collaboration phrases as auto; slash commands are required for buddy flows', () => {
@@ -598,5 +630,44 @@ describe('Intent Detection — Edge Cases', () => {
     for (const { cmd } of SLASH_COMMANDS) {
       expect(cmd.startsWith('/')).toBe(true);
     }
+  });
+});
+
+describe('Intent Detection — natural-language review dispatch (no slash)', () => {
+  it('dispatches "review with <engines>" deterministically, target defaults to uncommitted', () => {
+    const r = detectIntent('review with codex claude agy');
+    expect(r.type).toBe('review');
+    if (r.type === 'review') {
+      expect(r.engineIds).toEqual(['codex', 'claude', 'agy']);
+      expect(r.target).toBeUndefined(); // → uncommitted downstream
+    }
+  });
+
+  it('tolerates a politeness prefix and "and"-joined engines', () => {
+    const r = detectIntent('can you review with codex claude and agy');
+    expect(r.type).toBe('review');
+    if (r.type === 'review') {
+      expect(r.engineIds).toEqual(['codex', 'claude', 'agy']);
+    }
+  });
+
+  it('honours an explicit target in a chat request', () => {
+    const r = detectIntent('review branch:main with codex');
+    expect(r.type).toBe('review');
+    if (r.type === 'review') {
+      expect(r.engineIds).toEqual(['codex']);
+      expect(r.target).toBe('branch:main');
+    }
+  });
+
+  it('does NOT hijack prose that merely mentions review (→ Cesar)', () => {
+    expect(detectIntent('review this code').type).not.toBe('review');
+    expect(detectIntent('can you review whether this approach is correct').type).not.toBe('review');
+    // "with" but no known engine names → not a dispatch
+    expect(detectIntent('review with me the options').type).not.toBe('review');
+  });
+
+  it('does NOT hijack compound "fix then review" (→ Cesar handles the sequence)', () => {
+    expect(detectIntent('fix the bug then review with codex').type).not.toBe('review');
   });
 });

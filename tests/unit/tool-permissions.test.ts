@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isPathUnderCwd, checkFileReadPermission, checkFileWritePermission } from '@kernlang/agon-core';
+import { isPathUnderCwd, createReadTool, createWriteTool } from '@kernlang/agon-core';
 import type { ToolContext } from '@kernlang/agon-core';
 
 function makeCtx(overrides?: Partial<ToolContext>): ToolContext {
@@ -11,6 +11,14 @@ function makeCtx(overrides?: Partial<ToolContext>): ToolContext {
   } as ToolContext;
 }
 
+// These exercise the REAL inline permission gates that run on every execution
+// path (executeToolCall → handler.checkPermission). The former standalone
+// PermissionChecks.checkFileReadPermission / checkFileWritePermission were
+// proven dead (no caller used them) and were deleted; the live semantics now
+// live in the tool factories, so the assertions drive those directly.
+const readGate = createReadTool().checkPermission!;
+const writeGate = createWriteTool().checkPermission!;
+
 describe('tool-permissions', () => {
   describe('isPathUnderCwd', () => {
     it('allows relative path', () => expect(isPathUnderCwd('src/app.ts', '/home/user/project')).toBe(true));
@@ -19,32 +27,29 @@ describe('tool-permissions', () => {
     it('rejects .. traversal', () => expect(isPathUnderCwd('../../etc/passwd', '/home/user/project')).toBe(false));
   });
 
-  describe('checkFileReadPermission', () => {
+  describe('Read inline gate (createReadTool().checkPermission)', () => {
     it('allows files under cwd', () => {
-      const result = checkFileReadPermission('src/app.ts', makeCtx());
+      const result = readGate({ file_path: 'src/app.ts' }, makeCtx());
       expect(result.behavior).toBe('allow');
     });
 
-    it('asks for files outside cwd', () => {
-      const result = checkFileReadPermission('/etc/passwd', makeCtx());
-      expect(result.behavior).toBe('ask');
+    it('denies files outside cwd', () => {
+      const result = readGate({ file_path: '/etc/passwd' }, makeCtx());
+      expect(result.behavior).toBe('deny');
+      expect(result.message).toContain('outside the working directory');
     });
   });
 
-  describe('checkFileWritePermission', () => {
+  describe('Write inline gate (createWriteTool().checkPermission)', () => {
     it('allows files under cwd', () => {
-      const result = checkFileWritePermission('src/app.ts', makeCtx());
+      const result = writeGate({ file_path: 'src/app.ts' }, makeCtx());
       expect(result.behavior).toBe('allow');
     });
 
-    it('asks for sensitive files', () => {
-      const result = checkFileWritePermission('.env', makeCtx());
-      expect(result.behavior).toBe('ask');
-    });
-
-    it('asks for files outside cwd', () => {
-      const result = checkFileWritePermission('/tmp/outside.ts', makeCtx());
-      expect(result.behavior).toBe('ask');
+    it('denies files outside cwd', () => {
+      const result = writeGate({ file_path: '/tmp/outside.ts' }, makeCtx());
+      expect(result.behavior).toBe('deny');
+      expect(result.message).toContain('outside the working directory');
     });
   });
 });

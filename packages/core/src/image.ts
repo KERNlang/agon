@@ -7,4 +7,5 @@ export {
   buildImageAttachment,
   extractImagesFromInput,
   normalizeDroppedPath,
+  encodeImagesForDispatch,
 } from './generated/blocks/image.js';

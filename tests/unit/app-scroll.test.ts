@@ -34,6 +34,9 @@ import {
   recordCesarRecapEvent,
   shouldEmitCesarRecap,
 } from '../../packages/cli/src/generated/cesar/recap.js';
+import {
+  contextualizeSlicedMarkdown,
+} from '../../packages/cli/src/generated/surfaces/app-views.js';
 import { cleanupTestAgonHome } from '../helpers/agon-home.js';
 
 let testHome: string | undefined;
@@ -944,5 +947,33 @@ describe('app scroll helpers', () => {
     expect(displayColumnToStringIndex('a界b', 4)).toBe(3);
     expect(displayColumnToStringIndex('a🙂b', 2)).toBe(1);
     expect(displayColumnToStringIndex('a🙂b', 3)).toBe(3);
+  });
+
+  it('aligns committed markdown tables in transcript rows', () => {
+    const event = {
+      type: 'engine-block',
+      engineId: 'cesar',
+      color: 124,
+      content: '| Header A | Header B |\n|---|---|\n| short | very long value |',
+    } as any;
+    const rows = buildTranscriptRows([{ id: 1, event } as any], 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
+    expect(text).toContain('Header A │ Header B       ');
+    expect(text).toContain('─────────┼────────────────');
+    expect(text).toContain('short    │ very long value');
+  });
+
+  it('contextualizes sliced markdown tails when inside a code block', () => {
+    const originalText = 'some text\n```typescript\nconst x = 1;\nconst y = 2;\nconst z = 3;';
+    const slicedText = 'const y = 2;\nconst z = 3;';
+    const result = contextualizeSlicedMarkdown(originalText.slice(0, originalText.indexOf(slicedText)), slicedText);
+    expect(result).toBe('```typescript\nconst y = 2;\nconst z = 3;');
+  });
+
+  it('does not contextualize sliced markdown tails when outside a code block', () => {
+    const originalText = 'some text\n```typescript\nconst x = 1;\n```\nprose line\nanother prose line';
+    const slicedText = 'prose line\nanother prose line';
+    const result = contextualizeSlicedMarkdown(originalText.slice(0, originalText.indexOf(slicedText)), slicedText);
+    expect(result).toBe('prose line\nanother prose line');
   });
 });

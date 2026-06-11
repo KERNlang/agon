@@ -189,4 +189,41 @@ describe('Cesar self-turn approval', () => {
 
     expect(decision.approve).toBe(true);
   });
+
+  it('approves a small MultiEdit on a previously read file (folds the batch for the diff estimate)', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'agon-self-approval-medit-'));
+    const filePath = join(cwd, 'src.ts');
+    const content = 'const a = 1;\nconst b = 2;\n';
+    writeFileSync(filePath, content);
+
+    const decision = applyCesarSelfTurnApproval(
+      'MultiEdit',
+      { file_path: filePath, edits: [
+        { old_string: 'const a = 1;', new_string: 'const a = 10;' },
+        { old_string: 'const b = 2;', new_string: 'const b = 20;' },
+      ] },
+      makeCtx(cwd, filePath, content),
+      {},
+    );
+
+    expect(decision.approve).toBe(true);
+    expect(decision.tool).toBe('MultiEdit');
+  });
+
+  it('does not auto-approve a MultiEdit whose edit text is absent from the cached file', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'agon-self-approval-medit-'));
+    const filePath = join(cwd, 'src.ts');
+    const content = 'const a = 1;\n';
+    writeFileSync(filePath, content);
+
+    const decision = applyCesarSelfTurnApproval(
+      'MultiEdit',
+      { file_path: filePath, edits: [{ old_string: 'NOPE', new_string: 'x' }] },
+      makeCtx(cwd, filePath, content),
+      {},
+    );
+
+    expect(decision.approve).toBe(false);
+    expect(decision.reason).toContain('not found');
+  });
 });

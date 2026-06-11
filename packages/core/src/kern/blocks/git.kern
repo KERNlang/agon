@@ -202,11 +202,70 @@ fn name=hydrateWorktreeBuildArtifacts params="repoDir:string,worktreePath:string
     }
   >>>
 
+const name=activeWorktrees type="Map<string, string>" value={{
+  (() => {
+    const g = globalThis as any;
+    if (!g.__agonActiveWorktrees) {
+      g.__agonActiveWorktrees = new Map<string, string>();
+    }
+    return g.__agonActiveWorktrees;
+  })()
+}}
+
+fn name=registerExitHooks returns=void
+  handler <<<
+    const g = globalThis as any;
+    if (g.__agonExitHooksRegistered) return;
+    g.__agonExitHooksRegistered = true;
+
+    const cleanup = () => {
+      if (activeWorktrees.size === 0) return;
+      process.stderr.write(`\n[agon] Cleaning up active git worktrees...\n`);
+      // Capture repos BEFORE mutating the map so git worktree prune runs for
+      // every repo that had tracked worktrees, not just the empty remainder.
+      const repoDirs = new Set(activeWorktrees.values());
+      for (const [wtPath, repoDir] of activeWorktrees.entries()) {
+        try {
+          execFileSync('git', ['worktree', 'remove', wtPath, '--force'], { cwd: repoDir, stdio: 'ignore' });
+          activeWorktrees.delete(wtPath);
+        } catch { /* best effort */ }
+      }
+      for (const repoDir of repoDirs) {
+        try {
+          execFileSync('git', ['worktree', 'prune'], { cwd: repoDir, stdio: 'ignore' });
+        } catch {}
+      }
+    };
+
+    process.on('exit', () => {
+      cleanup();
+    });
+
+    const handleSigInt = () => {
+      cleanup();
+      if (process.listenerCount('SIGINT') <= 1) {
+        process.exit(130);
+      }
+    };
+
+    const handleSigTerm = () => {
+      cleanup();
+      if (process.listenerCount('SIGTERM') <= 1) {
+        process.exit(143);
+      }
+    };
+
+    process.on('SIGINT', handleSigInt);
+    process.on('SIGTERM', handleSigTerm);
+  >>>
+
 fn name=worktreeCreate params="repoDir:string,worktreePath:string,sha:string" returns=string
   handler <<<
+    registerExitHooks();
     worktreePrune(repoDir);
     try {
       git(['worktree', 'add', '--detach', worktreePath, sha], repoDir);
+      activeWorktrees.set(worktreePath, repoDir);
       linkWorktreeNodeModules(repoDir, worktreePath);
       hydrateWorktreeBuildArtifacts(repoDir, worktreePath);
       return worktreePath;
@@ -237,6 +296,9 @@ fn name=branchExists params="repoDir:string,branch:string" returns=boolean
 fn name=worktreeAddOnBranch params="repoDir:string,worktreePath:string,branch:string,base?:string,link?:boolean" returns=string
   doc "Add a git worktree checked out on a NAMED branch — unlike worktreeCreate, which detaches for throwaway forge candidates. Prefers git's DWIM (an existing local branch, or a tracking branch when <branch> resolves on exactly one remote); only when that fails is a fresh branch created off base/HEAD. When link is not false, overlay node_modules + dist so the worktree is immediately buildable."
   handler <<<
+    // Session worktrees are persistent by design: do NOT register them for
+    // process-exit cleanup. Only ephemeral throwaway worktrees (worktreeCreate)
+    // should be tracked in activeWorktrees.
     worktreePrune(repoDir);
     // Guard the empty string: '' ?? 'HEAD' is '', which git rejects as a start-point.
     const startPoint = (base && base.trim()) || 'HEAD';
@@ -268,6 +330,7 @@ fn name=worktreeRemove params="repoDir:string,worktreePath:string" returns=void
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         git(['worktree', 'remove', worktreePath, '--force'], repoDir);
+        activeWorktrees.delete(worktreePath);
         return;
       } catch (err) {
         lastErr = err;
@@ -323,6 +386,32 @@ fn name=worktreePruneAll params="repoDir:string,olderThanMs:number" returns=void
     // Prune git's internal worktree registry
     try { git(['worktree', 'prune'], repoDir); } catch { /* non-fatal */ }
   >>>
+
+fn name=worktreePruneOrphaned params="repoDir:string" returns=void export=true
+  doc "Prune any registered git worktrees that point to ephemeral Agon roots: repo-local .agon/agent-worktrees/, .agon/speculate-worktrees/, .agon/runs/, or .agon/goals/. Explicitly excludes persistent session worktrees under ~/.agon/worktrees/."
+  handler <<<
+    try {
+      const output = git(['worktree', 'list', '--porcelain'], repoDir);
+      const lines = output.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('worktree ')) {
+          const wtPath = line.slice(9).trim();
+          // Only match ephemeral Agon worktree roots. Session worktrees live
+          // under ~/.agon/worktrees/ and must NOT be caught here.
+          const isAgentWt = wtPath.includes('.agon/agent-worktrees') ||
+                            wtPath.includes('.agon/speculate-worktrees') ||
+                            wtPath.includes('.agon/runs') ||
+                            wtPath.includes('.agon/goals');
+          if (isAgentWt) {
+            worktreeRemoveBestEffort(repoDir, wtPath);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[agon] worktreePruneOrphaned failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  >>>
+
 
 fn name=worktreeChangedDiff params="cwd:string,baseSha:string" returns=string
   doc "Return the unified diff of all changes in a worktree against the base SHA, INCLUDING untracked files but EXCLUDING anything in .gitignore (node_modules, dist, .agon, etc.). Used by Phase 3 scoring to compute per-member diffs without the buggy worktreeDiff approach (which does git add -A and would stage node_modules)."
@@ -542,6 +631,30 @@ fn name=recentCommits params="cwd:string,count?:number" returns=string
       return value="git(['log', '--oneline', `-${count ?? 10}`], cwd)"
       catch name=e
         return value="''"
+
+fn name=coAuthorTrailer params="config:{commitCoAuthor?:string}" returns=string export=true
+  doc "Co-Authored-By trailer paragraph for commits agon itself creates. IDIOM: returns '' when config.commitCoAuthor is unset/blank, else a full leading-blank-line paragraph `\\n\\nCo-Authored-By: <value>` meant to be string-CONCATENATED onto the commit message body (matching the autoCredit trailer pattern in /commit). NOTE: call sites should prefer appendCoAuthor, which is paragraph-aware — it joins into the message's final paragraph when that paragraph is already a trailer block (so git keeps both trailers), instead of blindly prepending a blank-line paragraph. coAuthorTrailer stays exported for direct unit testing of the raw paragraph idiom."
+  handler lang="kern"
+    let name=v value="(config.commitCoAuthor ?? '').trim()"
+    if cond="!v"
+      return value="''"
+    return value="`\\n\\nCo-Authored-By: ${v}`"
+
+fn name=appendCoAuthor params="message:string,config:{commitCoAuthor?:string}" returns=string export=true
+  doc "Paragraph-aware Co-Authored-By append. Returns message unchanged when config.commitCoAuthor is blank/unset. Otherwise: if the message's LAST paragraph is a SEPARATE trailer block — there is more than one paragraph AND every non-empty line of the last one matches /^[A-Za-z][A-Za-z-]*: / (e.g. a user-supplied Co-Authored-By: or Signed-off-by:) — the new trailer is joined with a single `\\n` so all trailers share ONE final paragraph (git only parses trailers from the last paragraph; a blank-line separator would orphan the existing ones). Otherwise the trailer is appended as a new `\\n\\n` paragraph. The >1-paragraph guard is load-bearing: a single-paragraph conventional-commit subject like `feat: do thing` also matches the trailer regex and must NOT be treated as a trailer block. Prefer this over coAuthorTrailer at all commit call sites."
+  handler lang="kern"
+    let name=v value="(config.commitCoAuthor ?? '').trim()"
+    if cond="!v"
+      return value="message"
+    let name=trailerLine value="`Co-Authored-By: ${v}`"
+    comment raw="// Split into paragraphs on blank lines; inspect the LAST one. A trailer block must be a SEPARATE final paragraph — the subject line (a single-paragraph message like `feat: do thing`) also matches the trailer regex, so only treat the last paragraph as trailers when there is MORE than one paragraph."
+    let name=paragraphs value="message.split(/\\n\\s*\\n/)"
+    let name=lastParagraph value="paragraphs[paragraphs.length - 1] ?? ''"
+    let name=nonEmptyLines value="lastParagraph.split('\\n').map((l: string) => l.trim()).filter(Boolean)"
+    let name=isTrailerBlock value="paragraphs.length > 1 && nonEmptyLines.length > 0 && nonEmptyLines.every((l: string) => /^[A-Za-z][A-Za-z-]*: /.test(l))"
+    if cond="isTrailerBlock"
+      return value="`${message}\\n${trailerLine}`"
+    return value="`${message}\\n\\n${trailerLine}`"
 
 fn name=gitStatusShort params="cwd:string" returns=string
   doc "Read-only: git status --short. Never mutates the working tree."

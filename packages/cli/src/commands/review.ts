@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   EngineRegistry, ensureAgonHome, loadConfig,
@@ -9,7 +9,7 @@ import type { RunStatusEngine } from '@kernlang/agon-core';
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 import { resolveBuiltinEnginesDir } from '../generated/lib/engines-dir.js';
 import { resolveReviewTarget, runReviewCore, selectReviewEngine, extractReviewFindings } from '../generated/handlers/review.js';
-import { buildConsensus } from '../generated/blocks/consensus.js';
+import { buildConsensus, formatConsensusRow } from '../generated/blocks/consensus.js';
 import { fail, header, info, warn, bold } from '../output.js';
 
 // A captured "review" that is really just the claude TUI's collapsed-paste
@@ -76,6 +76,11 @@ export const reviewCommand = defineCommand({
       type: 'string',
       alias: 'p',
       description: 'Max engines to review concurrently. Default: all at once. Lower it (e.g. 2) if parallel API engines hit rate limits or first-chunk stalls.',
+    },
+    verbose: {
+      type: 'boolean',
+      alias: 'v',
+      description: 'After the consensus summary, print each engine\'s FULL review inline (the raw walls). Without it, full reviews stay in the run dir (the pointer line is always printed).',
     },
   },
   async run({ args }) {
@@ -151,6 +156,7 @@ export const reviewCommand = defineCommand({
       : 'single engine';
     if (!quiet) {
       header(`Review: ${target.label}`);
+      info(`Repo: ${cwd}`);
       info(`Engines: ${requested.join(', ')} (${concurrencyNote})`);
       info(`Per-engine timeout: ${timeoutSec}s (auto-cancel, others unaffected)`);
     }
@@ -188,7 +194,13 @@ export const reviewCommand = defineCommand({
       // Flush a single labeled block so concurrent engines never interleave mid-line.
       const flush = (body: string[]) => { if (!quiet && body.length) console.log(`\n▸ Reviewer: ${bold(engineId)}\n${body.join('\n')}`); };
       try {
-        const result = await runReviewCore(target.diff, target.label, engineId, ctx, controller.signal);
+        // Pin the engine dispatch to the SAME cwd the diff came from (process.cwd()).
+        // Without this cwdOverride, runReviewCore falls back to resolveWorkingDir()
+        // = the active workspace — so `agon review` run from repo X dispatched every
+        // engine into the active-workspace repo (e.g. agon's own source) to gather
+        // file context, while reviewing X's diff. The reviewers "never saw the code"
+        // the diff referenced. Passing cwd keeps diff + engine context in one repo.
+        const result = await runReviewCore(target.diff, target.label, engineId, ctx, controller.signal, undefined, cwd);
         const rawResponse = result.response ?? '';
         writeOutput(rawResponse);
         if (timedOut) {
@@ -299,14 +311,46 @@ export const reviewCommand = defineCommand({
         : { engine: id, status: st?.status ?? 'error', findings: [] as any[] };
     });
     const consensus = buildConsensus(outcomes as any);
-    const fmt = (f: any): string => `  • [${f.severity} ${f.maxConfidence.toFixed(2)} ×${f.engines.length}${f.pairVotes >= 2 ? ' pair' : ''}] ${f.problem}${f.file ? ` (${f.file}${f.lines ? ':' + f.lines : ''})` : ''}`;
-    const lines: string[] = ['', `▸ Consensus — ${consensus.summary}`];
-    if (consensus.verified.length) { lines.push('  VERIFIED (actionable):'); for (const f of consensus.verified) lines.push(fmt(f)); }
-    if (consensus.needsCheck.length) { lines.push('  NEEDS-CHECK (want a second opinion):'); for (const f of consensus.needsCheck) lines.push(fmt(f)); }
+    // Render each row via the shared KERN formatter so the CLI and the REPL
+    // attribute identically: compact engine badges ([codex][kimi]) instead of
+    // ×N, a `⚠ DISPUTED` prefix + indented per-engine stance lines when engines
+    // materially disagree on the same clustered finding. `'  '` pad matches the
+    // existing two-space indentation of the consensus block.
+    const lines: string[] = [''];
+    // Degraded-run honesty: fewer than quorum engines reviewed → warn BEFORE the
+    // consensus so a 1/6 run isn't read as a real consensus. Not a hard block.
+    if (consensus.degraded) lines.push(`  ${consensus.degraded.warning}`);
+    lines.push(`▸ Consensus — ${consensus.summary}`);
+    if (consensus.verified.length) { lines.push('  VERIFIED (actionable):'); for (const f of consensus.verified) for (const l of formatConsensusRow(f, '  ')) lines.push(l); }
+    if (consensus.needsCheck.length) { lines.push('  NEEDS-CHECK (want a second opinion):'); for (const f of consensus.needsCheck) for (const l of formatConsensusRow(f, '  ')) lines.push(l); }
     if (consensus.speculative.length) lines.push(`  SPECULATIVE: ${consensus.speculative.length} low-confidence finding(s) — likely noise.`);
     if (consensus.nits.length) lines.push(`  NITS: ${consensus.nits.length}.`);
     console.log(lines.join('\n'));
 
     if (!quiet) info(`Full per-engine reviews: ${outputDir}`);
+
+    // --verbose: print each engine's FULL review inline after the consensus, so
+    // the raw walls are reachable without opening the run dir. The run-dir
+    // pointer above still prints (the per-engine *-output.txt files remain the
+    // canonical artifact); this just inlines them for convenience.
+    if (args.verbose && !quiet) {
+      // Soft per-engine cap so a 6-engine panel of full-prose reviews (each up
+      // to the 100K diff-derived review) can't dump ~600KB to the terminal. Past
+      // the cap we print the head and point at the canonical run-dir artifact.
+      const VERBOSE_BODY_MAX = 50_000;
+      for (const id of requested) {
+        const st = engineStatuses.find((e) => e.id === id);
+        let body = '';
+        try {
+          body = readFileSync(join(outputDir, `${id}-output.txt`), 'utf-8').trim();
+        } catch { /* engine wrote no output (timeout/error before any text) */ }
+        console.log(`\n${'─'.repeat(60)}\n▸ Full review: ${bold(id)}${st ? ` (${st.status})` : ''}\n${'─'.repeat(60)}`);
+        if (body.length > VERBOSE_BODY_MAX) {
+          console.log(`${body.slice(0, VERBOSE_BODY_MAX)}\n… [truncated — ${body.length} chars; full review in ${join(outputDir, `${id}-output.txt`)}]`);
+        } else {
+          console.log(body || '(no review text captured)');
+        }
+      }
+    }
   },
 });

@@ -1,7 +1,7 @@
 import from="node:crypto" names="randomUUID"
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync"
 import from="@kernlang/agon-core" names="ForgeOptions,ForgeManifest,EngineAdapter,ForgeEvent,AgonConfig,DispatchMetric,EngineResult" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeRemoveBestEffort,updateGlickoRanked,classifyTask,createSidechainLogger,assignForgeRoles,buildSpecializedPrompt,recordForgeOutcome,extractPatchFilePatterns,tracker,engineHealth,seedNewEnginesFromRegistry,buildKernContextSpine"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeRemoveBestEffort,worktreePruneOrphaned,updateGlickoRanked,classifyTask,createSidechainLogger,assignForgeRoles,buildSpecializedPrompt,recordForgeOutcome,extractPatchFilePatterns,tracker,engineHealth,seedNewEnginesFromRegistry,buildKernContextSpine"
 import from="./health-check.js" names="healthCheckEngines,HEALTH_CHECK_DEFAULT_PROMPT"
 import from="./stages.js" names="runBaseline,runStage1,runStage2,resolveForgeMode,resolveForgeRequireDiff,resolveForgeAcceptReviewOutput"
 import from="@kernlang/agon-core" names="determineWinner"
@@ -309,10 +309,10 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
           droppedEngines.push({ id, reason: 'not-available: registry.isAvailable returned false (binary missing, API key missing, or engine disabled)' });
           return false;
         }
-        // Skip engines previously quarantined this session for auth/unreachable failures.
+        // Skip engines previously quarantined this session for auth/unreachable/binary-missing failures.
         // Timeouts and generic failures stay in rotation — they may be transient.
         const health = engineHealth.get(id);
-        if (health && (health.status === 'auth-failed' || health.status === 'unreachable')) {
+        if (health && (health.status === 'auth-failed' || health.status === 'unreachable' || health.status === 'binary-missing')) {
           skippedQuarantine.push({ id, reason: health.reason, status: health.status });
           return false;
         }
@@ -970,6 +970,11 @@ fn name=runForge async=true params="options:ForgeOptions & { onResult?: (engineI
       try { await new Promise(resolve => setTimeout(resolve, 1000)); } catch { /* non-fatal */ }
       for (const wt of worktrees) {
         worktreeRemoveBestEffort(wt.repoRoot, wt.path);
+      }
+      try {
+        worktreePruneOrphaned(root);
+      } catch (err) {
+        /* non-fatal */
       }
     }
     // Reached only on the catch path (try block returns directly). Manifest

@@ -41,6 +41,10 @@
     "maxTokens": 4096
   },
 
+  "sessionBudget": {
+    "contextWindow": 400000
+  },
+
   "env": {
     "OPENAI_API_KEY": { "required": false }
   },
@@ -61,6 +65,9 @@
   "cliModels": {
     "dynamicListCmd": ["__pty:/model"]
   },
+
+  "capabilities": ["vision"],
+  "imageFlag": "--image",
 
   "isolationHints": {
     "configEnv": "CODEX_HOME",

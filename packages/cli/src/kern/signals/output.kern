@@ -4,10 +4,11 @@
 
 import from="../../handlers/types.js" names="OutputEvent,EngineProgress" types=true
 import from="../blocks/markdown.js" names="parseMarkdownBlocks,cleanEngineOutput"
+import from="../blocks/narration-fold.js" names="foldNarration,setLastFoldedRaw"
 import from="../../code-buffer.js" names="codeBlockBuffer"
 import from="@kernlang/agon-core" names="loadConfig,configSet"
 import from="./todos.js" names="Todo" types=true
-import from="./todos.js" names="setTodos,updateTodoState,clearTodos"
+import from="./todos.js" names="setTodos,updateTodoState,clearTodos,clearLiveTodos"
 
 interface name=AgentProgressSnapshot
   doc "Live state for a running autonomous agent session. Fed by agent-* OutputEvents, rendered by surfaces/agent.kern::AgentProgressView. teamId groups members of a single AgentTeam run for explicit clear-by-team. completedAt is set by agent-step-end and consumed by the TTL pruner in app.kern."
@@ -34,6 +35,8 @@ interface name=StreamingEntry
   field name=engineId type=string
   field name=content type=string
   field name=startedAt type=number
+  doc "True when this entry holds ONLY a SPECULATIVE preview draft (from a PTY 'preview' chunk), never authoritative engine text. A draft-only entry is NEVER committed to the transcript at streaming-end (it is dropped), and the first authoritative streaming-chunk REPLACES the draft content rather than appending to it. This is the contamination firewall: a speculative preview can update the live pane but can never become — or prefix — the committed answer."
+  field name=draft type=boolean optional=true
 
 interface name=OutputState
   field name=liveSpinner type="{message:string,color?:number,engineId?:string}|null"
@@ -58,7 +61,7 @@ interface name=OutputActions
   field name=flushStream type="() => void"
   field name=getEngineColor type="(engineId:string) => number"
   field name=setCesarConfidence type="(val:number|null) => void"
-  field name=setCesarContext type="(val:{pct:number,used:number,limit:number,compacted:number,cached:number}|null) => void"
+  field name=setCesarContext type="(val:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:'api'|'projected'|'estimate'}|null) => void"
   field name=setLiveScoreboard type="(val:any) => void"
   field name=setLiveRationale type="(val:any) => void"
   field name=setAgentProgress type="(updater:Record<string,AgentProgressSnapshot> | ((prev:Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => void"
@@ -69,7 +72,7 @@ interface name=OutputActions
 const name=_thinkingBuffer type="{engineId:string,content:string}" value={{ { engineId: '', content: '' } }}
 
 // ── Permission queue — ensures prompts don't overwrite each other ────
-const name=_permissionQueue type="Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>" value={{ [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> }}
+const name=_permissionQueue type="Array<{tool:string,command:string,description?:string,reason:string,diffPreview?:any,fallbackNote?:string,resolve:(approved:boolean)=>void}>" value={{ [] as Array<{tool:string,command:string,description?:string,reason:string,diffPreview?:any,fallbackNote?:string,resolve:(approved:boolean)=>void}> }}
 
 const name=_sessionAllowList type="string[]" value={{ [] as string[] }}
 
@@ -167,7 +170,7 @@ fn name=_showNextPermission params="actions:OutputActions" returns=void export=f
     _drainAutoApproved(actions);
     if (_permissionQueue.length === 0) return;
     const next = _permissionQueue[0];
-    actions.addBlock({ type: 'permission-ask', tool: next.tool, command: next.command, description: next.description, reason: next.reason, resolve: next.resolve } as any);
+    actions.addBlock({ type: 'permission-ask', tool: next.tool, command: next.command, description: next.description, reason: next.reason, diffPreview: next.diffPreview, fallbackNote: next.fallbackNote, resolve: next.resolve } as any);
     const permResolve = next.resolve;
     const permCommand = next.command;
     actions.setQuestionState({
@@ -177,6 +180,8 @@ fn name=_showNextPermission params="actions:OutputActions" returns=void export=f
       command: permCommand,
       description: next.description,
       reason: next.reason,
+      diffPreview: next.diffPreview,
+      fallbackNote: next.fallbackNote,
       choices: [
         { key: 'y', label: 'Yes', color: '#4ade80' },
         { key: 'n', label: 'No', color: '#ef4444' },
@@ -219,6 +224,17 @@ fn name=_showNextPermission params="actions:OutputActions" returns=void export=f
     });
   >>>
 
+fn name=foldEngineContent params="content:string" returns="{ content: string, foldedSteps?: number }"
+  doc "Apply engine-agnostic narration folding to engine-block content per the narrationFold config (off|safe|aggressive, default safe). On a fold, records the raw in the bounded ring (for /raw) and returns { content, foldedSteps } to spread onto the engine-block; clean text folds nothing and returns just { content }. Pure backstop — runs on every engine-block, structured engines simply fold nothing. The raw is NOT returned per-event; it lives in the ring to avoid unbounded per-block memory growth."
+  handler <<<
+    const cfg = loadConfig();
+    const policy = String((cfg as any).narrationFold ?? 'safe');
+    const r = foldNarration(content, policy);
+    if (!r.didFold) return { content };
+    setLastFoldedRaw(r.raw);
+    return { content: r.visible, foldedSteps: r.foldedSteps };
+  >>>
+
 fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:OutputActions, mode:string, chatStartTime:number" returns=void
   doc "Process a single OutputEvent — updates spinner, streaming, and block state."
   handler <<<
@@ -245,7 +261,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       'spinner-start', 'spinner-stop', 'spinner-update',
       'progress-update', 'progress-clear',
       'confidence-update', 'context-usage',
-      'streaming-chunk', 'streaming-start',
+      'streaming-chunk', 'streaming-start', 'streaming-preview',
       'thinking-chunk', 'thinking-start', 'thinking-stop',
       'tool-stream-start', 'tool-stream-chunk', 'tool-stream-end',
     ]);
@@ -291,6 +307,31 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         }
         return;
       }
+      case 'streaming-preview': {
+        // SPECULATIVE live draft (PTY 'preview' chunk). REPLACE the engine's
+        // live-pane content with the sanitized draft and mark it draft=true so it
+        // can never be committed. content is the full draft-so-far, so replace —
+        // never append (the source already accumulates + growth-gates frames).
+        const eid = event.engineId;
+        const draftText = (event as any).content as string;
+        actions.setStreamingText((prev) => {
+          const existing = prev[eid];
+          // If authoritative text is already streaming (entry exists and is NOT a
+          // draft), the answer has begun — ignore any late preview so it can never
+          // overwrite real output. Previews only ever precede the authoritative text.
+          if (existing && !existing.draft) return prev;
+          return {
+            ...prev,
+            [eid]: {
+              engineId: eid,
+              content: draftText,
+              startedAt: existing ? existing.startedAt : Date.now(),
+              draft: true,
+            },
+          };
+        });
+        return;
+      }
       case 'streaming-chunk': {
         // Functional setter form: read-modify-write happens atomically inside the
         // action setter, so concurrent dispatches from N engines don't clobber each
@@ -299,11 +340,16 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         const chunk = event.chunk;
         actions.setStreamingText((prev) => {
           const existing = prev[eid];
+          // Contamination firewall: a streaming-chunk is AUTHORITATIVE engine text.
+          // If the existing entry is a speculative preview draft, DROP the draft and
+          // start fresh from this chunk — the authoritative answer never inherits or
+          // prefixes the preview. Real text always wins and clears draft=true.
+          const base = existing && !existing.draft ? existing.content : '';
           return {
             ...prev,
             [eid]: {
               engineId: eid,
-              content: existing ? existing.content + chunk : chunk,
+              content: base + chunk,
               startedAt: existing ? existing.startedAt : Date.now(),
             },
           };
@@ -314,6 +360,17 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         const eid = event.engineId;
         const st = state.streamingText[eid];
         if (st) {
+          // Contamination firewall: a still-draft entry holds ONLY a speculative
+          // preview (no authoritative streaming-chunk ever landed). Drop it from the
+          // live pane WITHOUT committing — a preview must never reach the transcript.
+          if (st.draft) {
+            actions.setStreamingText((prev) => {
+              const next: Record<string, StreamingEntry> = { ...prev };
+              delete next[eid];
+              return next;
+            });
+            return;
+          }
           const color = actions.getEngineColor(st.engineId);
           const cleaned = cleanEngineOutput(st.content);
           // Remove only this engine's entry; other engines' in-flight streams stay.
@@ -323,9 +380,10 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
             return next;
           });
           if (cleaned.trim()) {
-            const segments = parseMarkdownBlocks(cleaned);
+            const folded = foldEngineContent(cleaned);
+            const segments = parseMarkdownBlocks(folded.content);
             codeBlockBuffer.recordFromSegments(segments);
-            actions.addBlock({ type: 'engine-block', engineId: st.engineId, color, content: cleaned } as any);
+            actions.addBlock({ type: 'engine-block', engineId: st.engineId, color, content: folded.content, foldedSteps: folded.foldedSteps } as any);
             if (mode === 'chat' && chatStartTime > 0) {
               actions.addBlock({ type: 'response-meta', engineId: st.engineId, elapsed: Date.now() - chatStartTime } as any);
             }
@@ -347,7 +405,12 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         return;
       }
       case 'todos-clear': {
-        actions.setTodos(clearTodos());
+        const scope = (event as any).scope as string | undefined;
+        if (scope === 'live') {
+          actions.setTodos((prev) => clearLiveTodos(prev));
+        } else {
+          actions.setTodos(clearTodos());
+        }
         return;
       }
       case 'clear':
@@ -421,6 +484,8 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
           command: (event as any).command as string,
           description: (event as any).description as string | undefined,
           reason: (event as any).reason as string,
+          diffPreview: (event as any).diffPreview,
+          fallbackNote: (event as any).fallbackNote as string | undefined,
           resolve: (event as any).resolve as (approved: boolean) => void,
         };
         _permissionQueue.push(entry);
@@ -499,7 +564,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       }
       case 'context-usage': {
         const e = event as any;
-        actions.setCesarContext({ pct: e.pct, used: e.used, limit: e.limit, compacted: e.compacted ?? 0, cached: e.cached ?? 0 });
+        actions.setCesarContext({ pct: e.pct, used: e.used, limit: e.limit, compacted: e.compacted ?? 0, cached: e.cached ?? 0, source: e.source ?? 'estimate' });
         return;
       }
       case 'agent-step-start': {
@@ -694,6 +759,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
           input: e.input ?? existing.input ?? '',
           status: e.status,
           output,
+          ...(e.durationMs !== undefined ? { durationMs: e.durationMs } : {}),
         };
         const key = toolCallKey(toolCallEvent);
         if (e.status === 'done' || e.status === 'error') {
@@ -768,9 +834,16 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         // Record code blocks from engine-block events
         if (event.type === 'engine-block') {
           const cleaned = cleanEngineOutput((event as any).content);
-          const segments = parseMarkdownBlocks(cleaned);
+          // Skip folding if this block already carries fold metadata — a /raw
+          // re-dispatch sets foldedSteps (0) so the raw text renders unfolded.
+          // `!= null` covers both undefined and an explicit null.
+          const preFolded = (event as any).foldedSteps != null;
+          const folded: { content: string; foldedSteps?: number } = preFolded
+            ? { content: cleaned, foldedSteps: (event as any).foldedSteps }
+            : foldEngineContent(cleaned);
+          const segments = parseMarkdownBlocks(folded.content);
           codeBlockBuffer.recordFromSegments(segments);
-          event = { ...(event as any), content: cleaned } as any;
+          event = { ...(event as any), content: folded.content, foldedSteps: folded.foldedSteps } as any;
         }
         // Flush any pending stream before adding non-stream events
         if (event.type === 'text' || event.type === 'engine-block' || event.type === 'separator') {

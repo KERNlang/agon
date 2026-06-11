@@ -1,7 +1,9 @@
 import from="node:child_process" names="spawn"
 import from="node:child_process" names="ChildProcess" types=true
 import from="node:readline" names="createInterface"
-import from="../api/dispatch.js" names="apiStreamDispatchWithHistory"
+import from="../api/dispatch.js" names="apiStreamDispatchWithHistory,apiDispatch"
+import from="./compaction.js" names="findSafeKeepStart,buildCompactionSummary,renderCompactionText,buildSummarizationContext,buildCompactionPrompt"
+import from="../blocks/image.js" names="encodeImagesForDispatch"
 import from="../signals/session-store.js" names="saveSessionState,loadSessionState,saveToolResultToDisk,loadToolResultFromDisk,pruneToolCache,loadConversation"
 import from="../tools/tool-parser.js" names="parseToolCalls,toolCallsToApiFormat"
 import from="../models/context-parts.js" names="CompactionSummaryPart,ToolCacheEntry" types=true
@@ -20,6 +22,168 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
     let compactionSummary: CompactionSummaryPart | null = null;
     // Disk-backed tool result cache manifest
     let toolCacheManifest: ToolCacheEntry[] = [];
+    // ── Last REAL token usage from the API (ground truth for the gauge) ──
+    // AI SDK v6: usage.inputTokens already INCLUDES cache read+write tokens,
+    // so promptTokens + completionTokens = the exact context occupancy of the
+    // last request (the same formula Claude Code's context gauge uses).
+    // historyLength anchors the projection: messages at index >= historyLength
+    // were appended AFTER that dispatch and are estimated; everything before
+    // is covered by the real promptTokens. Invalidated (null) whenever
+    // compaction/trim REWRITES history — the next dispatch re-anchors it.
+    // Deliberately NOT persisted: the disk store trims history to its last
+    // SESSION_MAX_MESSAGES, which would desync the historyLength anchor.
+    let lastRealUsage: { promptTokens: number; completionTokens: number; cachedInputTokens: number; historyLength: number } | null = null;
+
+    // ── compact()/send() serialization ──
+    // compact() rewrites messageHistory in place; doing that while a send()
+    // is mid-stream would corrupt the history the in-flight request appends
+    // to. compact() COALESCES (a second call joins the in-flight promise) and
+    // DEFERS while a send is active; send() awaits any in-flight compaction
+    // before touching history. sendActive is also reset at send() entry as a
+    // self-heal: an abandoned generator (consumer dropped mid-abort without
+    // calling return()) must not wedge compaction forever.
+    let sendActive = false;
+    let compactPromise: Promise<{ok:boolean, method:'llm'|'regex'|'none'|'deferred', beforeTokens:number, afterTokens:number, limit:number}> | null = null;
+
+    // ── REAL usage accumulator (for cost tracking) ──
+    // A turn can span many dispatch steps (tool loop); each step bills its own
+    // full input, so the SUM across steps is the real billed usage. DRAINED
+    // (returned + reset) by getTurnUsage() when the orchestrator records the
+    // turn — drain-on-read keeps the session-wide total exact even when a turn
+    // fires extra sends through the same session (quick-nero self-challenge)
+    // or a path skips recording: undrained tokens are attributed to the next
+    // record call instead of being lost or double-counted.
+    let turnUsage: { promptTokens: number; completionTokens: number } = { promptTokens: 0, completionTokens: 0 };
+
+    // ── Token estimation + context limit (config-only — hoisted out of send()
+    // so getContextUsage() shares the same math) ──
+    // Token estimate: chars/3.5, not chars/4. Code/JSON-heavy agent history
+    // tokenizes closer to ~3.3 chars/token, so chars/4 systematically
+    // UNDERcounts — which let real requests blow past the window before
+    // compaction fired (the overflow → empty-response → auto-continue spin).
+    // Overcounting slightly is the safe side: compaction fires a bit early.
+    const estimateSingle = (m: {role: string, content: any}): number => {
+      if (typeof m.content === 'string') return Math.ceil(m.content.length / 3.5);
+      if (m.content === null && (m as any).tool_calls) {
+        return (m as any).tool_calls.reduce((s: number, tc: any) =>
+          s + Math.ceil((tc.function?.arguments ?? '').length / 3.5), 100);
+      }
+      return 50;
+    };
+    // Per-message token cache — only recompute for new/mutated messages
+    const estimateTokens = (msgs: Array<{role: string, content: any}>) =>
+      msgs.reduce((sum, m) => {
+        if ((m as any)._tokenEstimate === undefined) {
+          (m as any)._tokenEstimate = estimateSingle(m);
+        }
+        return sum + (m as any)._tokenEstimate;
+      }, 0);
+
+    // Context limit: PER-ENGINE, not a hardcoded 128k. maxTokens is the
+    // OUTPUT cap (4096-8192), NOT the context window — different axis.
+    // Priority: explicit engine.api.contextWindow → engine.sessionBudget →
+    // inferred from the model id → conservative 128k default. A wrong
+    // (too-high) limit is what let the request overflow the real window
+    // before compaction fired.
+    const inferContextWindow = (modelId: string): number => {
+      const m = (modelId ?? '').toLowerCase();
+      // Generous frontier windows
+      if (/gpt-4\.1|gpt-5|o3|o4|gemini|claude|sonnet|opus|haiku|grok/.test(m)) return 200_000;
+      if (/glm-4\.6|glm-5|glm-4\.5|kimi|moonshot|k2|qwen.*max|qwen3|deepseek|minimax/.test(m)) return 128_000;
+      if (/glm-4\b|glm-4-/.test(m)) return 128_000;
+      if (/mistral|mixtral|llama-3|llama3/.test(m)) return 128_000;
+      return 128_000;
+    };
+    const CONTEXT_LIMIT = (() => {
+      const explicit = Number((config.engine.api as any)?.contextWindow);
+      if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
+      const budgeted = Number((config.engine as any)?.sessionBudget?.contextWindow);
+      if (Number.isFinite(budgeted) && budgeted > 0) return Math.floor(budgeted);
+      return inferContextWindow(config.engine.api?.model ?? config.engine.id ?? '');
+    })();
+    // Reserve headroom that scales with the window (≥20k, ~15% of window),
+    // so a big window doesn't run right up to the edge before compacting.
+    const COMPACTION_BUFFER = Math.max(20_000, Math.round(CONTEXT_LIMIT * 0.15));
+
+    // Real-usage-anchored projection of what the NEXT request will occupy:
+    // the last dispatch's real promptTokens cover everything sent then; only
+    // the messages appended since (the reply, tool results, new user turns)
+    // are estimated. Falls back to the pure estimate when no real usage is
+    // anchored yet (fresh/restored session, or right after a history rewrite).
+    const projectContextTokens = (): number => {
+      if (!lastRealUsage || lastRealUsage.historyLength > messageHistory.length) {
+        return estimateTokens(messageHistory);
+      }
+      return lastRealUsage.promptTokens + estimateTokens(messageHistory.slice(lastRealUsage.historyLength));
+    };
+    const contextSource = (): 'api' | 'projected' | 'estimate' => {
+      if (!lastRealUsage || lastRealUsage.historyLength > messageHistory.length) return 'estimate';
+      return lastRealUsage.historyLength === messageHistory.length ? 'api' : 'projected';
+    };
+
+    // ── In-place compaction (Claude Code-style): summarize older messages,
+    // keep a verbatim tail, CONTINUE THE SAME SESSION. The Cesar budget gate
+    // and /compact own WHEN this runs (single policy owner); this is the HOW.
+    // LLM summary over a bounded transcript first; deterministic regex summary
+    // as fallback so compaction can never fail outright.
+    const COMPACT_KEEP_TAIL = 8; // messages kept verbatim (boundary-snapped)
+    const doCompact = async (): Promise<{ok:boolean, method:'llm'|'regex'|'none'|'deferred', beforeTokens:number, afterTokens:number, limit:number}> => {
+      const beforeTokens = projectContextTokens();
+      const hasSystem = messageHistory[0]?.role === 'system';
+      const startIdx = hasSystem ? 1 : 0;
+      const keepStart = findSafeKeepStart(messageHistory, COMPACT_KEEP_TAIL, startIdx);
+      const old = messageHistory.slice(startIdx, keepStart);
+      if (old.length === 0) {
+        return { ok: false, method: 'none', beforeTokens, afterTokens: beforeTokens, limit: CONTEXT_LIMIT };
+      }
+      const recent = messageHistory.slice(keepStart);
+      const system = hasSystem ? [messageHistory[0]] : [];
+
+      // Always build the structured summary — it's the LLM fallback AND the
+      // accumulated state (filesRead/Modified/decisions) cross-session memory
+      // reads via onTurnEnd.
+      const newSummary = buildCompactionSummary(old as any[], compactionSummary);
+
+      let summaryText: string | null = null;
+      let method: 'llm' | 'regex' = 'regex';
+      if (config.engine.api && process.env.AGON_DISABLE_LLM_COMPACTION !== '1') {
+        try {
+          // Summarize ONLY the `old` segment being replaced — the kept tail
+          // stays verbatim, so re-summarizing it both wastes budget and (under
+          // the total cap, which keeps the NEWEST lines) biases the summary
+          // toward exactly the messages that don't need summarizing.
+          // The summarization request CONTAINS the transcript — cap it so the
+          // request fits the window with headroom even at 95% occupancy
+          // (chars ≈ tokens × 3.5; budget ≈ 60% of window in tokens).
+          const transcript = buildSummarizationContext(old as any[], {
+            perMessageChars: 6000,
+            perToolChars: 1500,
+            totalChars: Math.floor(CONTEXT_LIMIT * 2.1),
+          });
+          const compactionConfig = { ...config.engine.api, maxTokens: 4096 };
+          const r = await apiDispatch(compactionConfig, buildCompactionPrompt(transcript), 60);
+          if (r.exitCode === 0 && r.stdout.trim().length > 80) {
+            summaryText = `[Context compacted — ${newSummary.messagesCompacted} earlier messages summarized below. The session continues from this briefing.]\n${r.stdout.trim()}`;
+            method = 'llm';
+          }
+        } catch { /* fall back to the regex summary */ }
+      }
+      if (summaryText === null) {
+        summaryText = renderCompactionText(newSummary, old.length);
+      }
+
+      compactionSummary = newSummary;
+      messageHistory.length = 0;
+      messageHistory.push(...system, { role: 'user' as const, content: summaryText }, ...recent);
+      lastRealUsage = null; // history rewritten — the next dispatch re-anchors real usage
+      const afterTokens = projectContextTokens();
+      if (config.sessionContinuity === true) {
+        // The store writes via tmp+rename (atomic) — a crash mid-compact
+        // leaves the previous on-disk state intact.
+        try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest }); } catch (saveErr) { console.warn('[session] failed to persist compaction:', (saveErr as Error).message ?? saveErr); }
+      }
+      return { ok: afterTokens < beforeTokens, method, beforeTokens, afterTokens, limit: CONTEXT_LIMIT };
+    };
 
     // ── In-session tool result deduplication ──
     // Avoids repeating stable discovery tools when the engine asks twice.
@@ -85,9 +249,17 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           yield { type: 'error' as const, content: 'Session not started' };
           return;
         }
+        // Self-heal a stale flag from an abandoned previous generator: a new
+        // send() beginning means the previous turn is over.
+        sendActive = false;
 
         // API-only engines: use HTTP dispatch with conversation history
         if (config.engine.api && !config.binaryPath) {
+          // Serialize with any in-flight compact(): it rewrites messageHistory.
+          if (compactPromise) {
+            try { await compactPromise; } catch { /* compaction failure must not block the turn */ }
+          }
+          sendActive = true;
           // Inject system prompt on first turn
           if (firstTurn) {
             const sysPrompt = config.systemPrompt ?? opts.systemPrompt;
@@ -97,61 +269,76 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
             firstTurn = false;
           }
 
-          // All messages are user messages. Tool results are handled inside the
-          // agentic loop (same turn), not across turns.
-          messageHistory.push({ role: 'user', content: opts.message });
-
-          // ── Three-tier context compaction (OpenCode-inspired) ──
-          // Tier 1: Replace old tool results with cached refs (disk-backed)
-          // Tier 2: Incremental CompactionSummary — merges across cycles
-          // Tier 3: (future) LLM-based summary as last resort
-          // Token estimate: chars/3.5, not chars/4. Code/JSON-heavy agent history
-          // tokenizes closer to ~3.3 chars/token, so chars/4 systematically
-          // UNDERcounts — which let real requests blow past the window before
-          // compaction fired (the overflow → empty-response → auto-continue spin).
-          // Overcounting slightly is the safe side: compaction fires a bit early.
-          const estimateSingle = (m: {role: string, content: any}): number => {
-            if (typeof m.content === 'string') return Math.ceil(m.content.length / 3.5);
-            if (m.content === null && (m as any).tool_calls) {
-              return (m as any).tool_calls.reduce((s: number, tc: any) =>
-                s + Math.ceil((tc.function?.arguments ?? '').length / 3.5), 100);
-            }
-            return 50;
-          };
-          // Per-message token cache — only recompute for new/mutated messages
-          const estimateTokens = (msgs: Array<{role: string, content: any}>) =>
-            msgs.reduce((sum, m) => {
-              if ((m as any)._tokenEstimate === undefined) {
-                (m as any)._tokenEstimate = estimateSingle(m);
+          // ── Vision: encode dropped images for THIS turn only ──
+          // base64 is attached at dispatch time (see withImages below), NEVER stored
+          // in messageHistory — that history is persisted, re-sent every turn, and run
+          // through compaction, so inlining base64 there would blow the context window.
+          // Gated by the engine's declared vision capability; a text-only engine gets a
+          // clear note instead of a file path it would otherwise try to Read as bytes.
+          const hasVision = !!config.engine.capabilities?.includes('vision');
+          let turnImageParts: Array<{type:'image',image:string,mediaType:string}> = [];
+          if (opts.images?.length) {
+            if (hasVision) {
+              const enc = encodeImagesForDispatch(opts.images);
+              turnImageParts = enc.parts;
+              if (enc.skipped.length) {
+                yield { type: 'status' as const, content: `image(s) not sent: ${enc.skipped.join('; ')}` };
               }
-              return sum + (m as any)._tokenEstimate;
-            }, 0);
+            } else {
+              yield { type: 'status' as const, content: `${config.engine.id} has no vision capability — ${opts.images.length} image(s) not sent to the model` };
+            }
+          }
 
-          // Context limit: PER-ENGINE, not a hardcoded 128k. maxTokens is the
-          // OUTPUT cap (4096-8192), NOT the context window — different axis.
-          // Priority: explicit engine.api.contextWindow → inferred from the model
-          // id → conservative 128k default. A wrong (too-high) limit is what let
-          // the request overflow the real window before compaction fired.
-          const inferContextWindow = (modelId: string): number => {
-            const m = (modelId ?? '').toLowerCase();
-            // Generous frontier windows
-            if (/gpt-4\.1|gpt-5|o3|o4|gemini|claude|sonnet|opus|haiku|grok/.test(m)) return 200_000;
-            if (/glm-4\.6|glm-5|glm-4\.5|kimi|moonshot|k2|qwen.*max|qwen3|deepseek|minimax/.test(m)) return 128_000;
-            if (/glm-4\b|glm-4-/.test(m)) return 128_000;
-            if (/mistral|mixtral|llama-3|llama3/.test(m)) return 128_000;
-            return 128_000;
+          // All messages are user messages. Tool results are handled inside the
+          // agentic loop (same turn), not across turns. Content stays text-only here.
+          // Keep the object reference so withImages targets THIS exact turn — anchoring
+          // by "last user message" would misfire once compaction appends its own
+          // [CONTEXT STATUS] / emergency-trim user messages later in this same turn.
+          const userTurnMsg: {role: string, content: any} = { role: 'user', content: opts.message };
+          messageHistory.push(userTurnMsg);
+
+          // Per-request view of history: splice the current turn's image parts into
+          // THIS turn's user message. Returns a shallow clone so messageHistory itself
+          // stays base64-free (and string-typed for compaction/estimation).
+          const withImages = (history: typeof messageHistory): typeof messageHistory => {
+            if (!turnImageParts.length) return history;
+            // Prefer object identity; fall back to the most recent user message whose
+            // content is still exactly our prompt (covers compaction cloning the object).
+            // Both miss → attach nothing rather than risk the wrong message.
+            let idx = history.indexOf(userTurnMsg);
+            if (idx < 0) {
+              for (let i = history.length - 1; i >= 0; i--) {
+                const m = history[i];
+                if (m?.role === 'user' && typeof m.content === 'string' && m.content === userTurnMsg.content) { idx = i; break; }
+              }
+            }
+            if (idx < 0) return history;
+            const base = history[idx];
+            const text = typeof base.content === 'string' ? base.content : '';
+            // Omit the text part entirely for an image-only turn (e.g. /img <path>):
+            // Anthropic and several OpenAI-compatible vision endpoints reject a
+            // multimodal message that carries an empty text content block.
+            const content = text.trim()
+              ? [{ type: 'text', text }, ...turnImageParts]
+              : [...turnImageParts];
+            const cloned = history.slice();
+            cloned[idx] = { ...base, content };
+            return cloned;
           };
-          const CONTEXT_LIMIT = (() => {
-            const explicit = Number((config.engine.api as any)?.contextWindow);
-            if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
-            return inferContextWindow(config.engine.api?.model ?? config.engine.id ?? '');
-          })();
-          // Reserve headroom that scales with the window (≥20k, ~15% of window),
-          // so a big window doesn't run right up to the edge before compacting.
-          const COMPACTION_BUFFER = Math.max(20_000, Math.round(CONTEXT_LIMIT * 0.15));
-          const PRUNE_PROTECT_TURNS = 6; // protect last 6 user-assistant exchanges (was 4)
 
-          const totalTokens = estimateTokens(messageHistory);
+          // ── In-send context management (backstop only) ──
+          // Tier 1: Replace old tool results with cached refs (disk-backed) —
+          //         cheap, lossless, no engine call.
+          // Emergency: deterministic regex fold if history blew past the
+          //         emergency line WITHIN a turn (tool loop appended huge
+          //         results) before the budget gate could see it.
+          // LLM compaction is NOT auto-triggered here — it is owned by the
+          // Cesar budget gate / /compact via session.compact() (single policy
+          // owner; double compaction in one turn was the old failure mode).
+          const PRUNE_PROTECT_TURNS = 6; // protect last 6 user-assistant exchanges (was 4)
+          const EMERGENCY_COMPACT_TOKENS = Math.round(CONTEXT_LIMIT * 0.92);
+
+          const totalTokens = projectContextTokens();
           // Fast path: skip all compaction tiers when well below threshold (<40% of context).
           // This eliminates regex extraction + merge + disk writes for short conversations.
           if (totalTokens > CONTEXT_LIMIT - COMPACTION_BUFFER) {
@@ -186,160 +373,36 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
               }
             }
 
-            // ── Tier 2: Incremental CompactionSummary if still over limit ──
-            const afterTier1 = estimateTokens(messageHistory);
-            if (afterTier1 > CONTEXT_LIMIT - COMPACTION_BUFFER) {
-              const old = messageHistory.slice(startIdx, protectFrom);
-              const recent = messageHistory.slice(protectFrom);
+            // ── Emergency regex fold — still over the EMERGENCY line after Tier 1 ──
+            // Normal-path compaction (LLM, in place) runs pre-turn via the
+            // budget gate. This deterministic fold (no engine call — it always
+            // fits, always succeeds) only fires when history blew past ~92% of
+            // the window inside a turn, as the last stop before an overflow.
+            const afterTier1 = projectContextTokens();
+            if (afterTier1 > EMERGENCY_COMPACT_TOKENS) {
+              // Snap the cut to a safe boundary — never strand a tool result
+              // from its tool_use (the API rejects the request with a 400).
+              const keepStart = findSafeKeepStart(messageHistory, messageHistory.length - protectFrom, startIdx);
+              const old = messageHistory.slice(startIdx, keepStart);
+              const recent = messageHistory.slice(keepStart);
               const system = hasSystem ? [messageHistory[0]] : [];
 
               if (old.length > 0) {
                 try {
-                  const userMsgs = old.filter((m: any) => m.role === 'user' && typeof m.content === 'string');
-                  const assistMsgs = old.filter((m: any) => m.role === 'assistant' && typeof m.content === 'string');
-
-                  // Extract structured data from old messages
-                  const filesRead = new Set<string>();
-                  const filesModified = new Set<string>();
-                  const toolsSummary: string[] = [];
-                  const discoveries: string[] = [];
-                  const decisions: string[] = [];
-
-                  for (const m of old as any[]) {
-                    // Prefer structured _parts (captured at stream time) over regex parsing
-                    if (m._parts && Array.isArray(m._parts)) {
-                      for (const part of m._parts) {
-                        if (part.kind === 'tool_call') {
-                          const fp = part.args?.file_path || part.args?.path || '';
-                          if (fp) filesRead.add(fp);
-                          if ((part.toolName === 'Edit' || part.toolName === 'Write') && fp) {
-                            filesModified.add(fp);
-                          }
-                          if (toolsSummary.length < 15) {
-                            const detail = fp || (part.args?.pattern ? `pattern:${part.args.pattern}` : '') || '';
-                            toolsSummary.push(`${part.toolName}(${String(detail).slice(0, 80)})`);
-                          }
-                        }
-                      }
-                    } else if (m.tool_calls) {
-                      // Fallback: regex-parse from tool_calls (legacy messages without _parts)
-                      for (const tc of m.tool_calls) {
-                        try {
-                          const toolName: string = tc.function?.name ?? '';
-                          const args = JSON.parse(tc.function?.arguments ?? '{}');
-                          const fp = args.file_path || args.path || '';
-
-                          if (fp) filesRead.add(fp);
-                          if (toolName === 'Edit' || toolName === 'Write') {
-                            if (fp) filesModified.add(fp);
-                          }
-                          if (toolName && toolsSummary.length < 15) {
-                            const detail = fp || (args.pattern ? `pattern:${args.pattern}` : '') || (args.command ? args.command.slice(0, 60) : '');
-                            toolsSummary.push(`${toolName}(${detail.slice(0, 80)})`);
-                          }
-                        } catch { /* skip malformed */ }
-                      }
-                    }
-                    // Extract decisions from assistant messages
-                    if (m.role === 'assistant' && typeof m.content === 'string') {
-                      const lines = m.content.split('\n');
-                      for (const line of lines) {
-                        if (/(?:I (?:will|chose|decided)|Decision:|Approach:|Strategy:)/i.test(line) && decisions.length < 8) {
-                          decisions.push(line.trim().slice(0, 200));
-                        }
-                        if (/(?:found|discovered|noticed|bug|issue|pattern|the problem is)/i.test(line) && discoveries.length < 8) {
-                          discoveries.push(line.trim().slice(0, 200));
-                        }
-                      }
-                    }
-                  }
-
-                  const goal = userMsgs.length > 0
-                    ? (userMsgs[0].content as string).slice(0, 500)
-                    : '';
-                  const lastProgress = assistMsgs.length > 0
-                    ? (assistMsgs[assistMsgs.length - 1].content as string).slice(0, 800)
-                    : '';
-
-                  // Build new CompactionSummary — merge with existing if present
-                  const prev = compactionSummary;
-                  const newSummary: CompactionSummaryPart = {
-                    kind: 'compaction' as const,
-                    goal: prev?.goal || goal,
-                    discoveries: [...new Set([...(prev?.discoveries ?? []), ...discoveries])].slice(0, 12),
-                    filesModified: [...new Set([...(prev?.filesModified ?? []), ...filesModified])].slice(0, 20),
-                    filesRead: [...new Set([...(prev?.filesRead ?? []), ...filesRead])].slice(0, 30),
-                    toolsSummary: [...new Set([...(prev?.toolsSummary ?? []), ...toolsSummary])].slice(0, 20),
-                    decisions: [...new Set([...(prev?.decisions ?? []), ...decisions])].slice(0, 10),
-                    progress: lastProgress || prev?.progress || '',
-                    compactedAt: Date.now(),
-                    messagesCompacted: (prev?.messagesCompacted ?? 0) + old.length,
-                  };
+                  const newSummary = buildCompactionSummary(old as any[], compactionSummary);
                   compactionSummary = newSummary;
-
-                  // Render compaction as a structured context message
-                  const compactedText = [
-                    `[Context compacted — ${newSummary.messagesCompacted} messages total, ${old.length} this cycle]`,
-                    newSummary.goal ? `GOAL: ${newSummary.goal}` : '',
-                    newSummary.discoveries.length > 0 ? `DISCOVERIES:\n${newSummary.discoveries.map((d: string) => `  - ${d}`).join('\n')}` : '',
-                    newSummary.filesRead.length > 0 ? `FILES READ: ${newSummary.filesRead.join(', ')}` : '',
-                    newSummary.filesModified.length > 0 ? `FILES MODIFIED: ${newSummary.filesModified.join(', ')}` : '',
-                    newSummary.toolsSummary.length > 0 ? `TOOLS USED: ${newSummary.toolsSummary.join(', ')}` : '',
-                    newSummary.decisions.length > 0 ? `DECISIONS:\n${newSummary.decisions.map((d: string) => `  - ${d}`).join('\n')}` : '',
-                    newSummary.progress ? `LATEST PROGRESS: ${newSummary.progress}` : '',
-                  ].filter(Boolean).join('\n');
-
-                  const summary = { role: 'user' as const, content: compactedText };
+                  const summary = { role: 'user' as const, content: renderCompactionText(newSummary, old.length) };
                   messageHistory.length = 0;
                   messageHistory.push(...system, summary, ...recent);
                 } catch (compactErr) {
                   // Snapshot before clearing — don't read from the array we just emptied
-                  console.warn(`[agon] session: compaction failed: ${compactErr instanceof Error ? compactErr.message : String(compactErr)}`);
+                  console.warn(`[agon] session: emergency compaction failed: ${compactErr instanceof Error ? compactErr.message : String(compactErr)}`);
                   const snapshot = [...messageHistory];
                   messageHistory.length = 0;
                   const sysMsg = hasSystem ? [snapshot[0]] : [];
-                  messageHistory.push(...sysMsg, ...snapshot.slice(protectFrom));
+                  messageHistory.push(...sysMsg, ...snapshot.slice(keepStart));
                 }
-              }
-            }
-
-            // ── Tier 3: LLM-based compaction as last resort ──
-            // Now ENABLED BY DEFAULT when we're still over budget after Tier 1+2:
-            // at that point the only alternative is sending an oversized request
-            // that the API rejects → empty response → auto-continue spin. A brief
-            // foreground summarization is the lesser evil. Set
-            // AGON_DISABLE_TIER3_COMPACTION=1 to opt out (or the old
-            // AGON_ENABLE_TIER3_COMPACTION=1 still force-enables it).
-            const afterTier2 = estimateTokens(messageHistory);
-            const tier3CompactionEnabled = process.env.AGON_DISABLE_TIER3_COMPACTION !== '1';
-            if (tier3CompactionEnabled && afterTier2 > CONTEXT_LIMIT - COMPACTION_BUFFER && config.engine.api) {
-              try {
-                const { apiDispatch } = await import('../api/dispatch.js');
-                // Use same API config but request minimal tokens
-                const compactionPrompt = `Summarize this conversation context into a concise briefing. Preserve: the user's goal, key discoveries, files read/modified, important decisions, and current progress. Drop: verbose tool outputs, repeated attempts, and pleasantries.
-
-CONTEXT TO SUMMARIZE:
-${messageHistory.filter((m: any) => m.role !== 'system').map((m: any) => `[${m.role}] ${typeof m.content === 'string' ? m.content.slice(0, 500) : '(tool call)'}`).join('\n')}
-
-Respond with ONLY the summary, no preamble.`;
-
-                const compactionConfig = { ...config.engine.api, maxTokens: 2048 };
-                const compactionResult = await apiDispatch(compactionConfig, compactionPrompt, 30);
-                if (compactionResult.exitCode === 0 && compactionResult.stdout.length > 50) {
-                  const hasSystem = messageHistory[0]?.role === 'system';
-                  const sysMsg = hasSystem ? [messageHistory[0]] : [];
-                  const protectedRecent = messageHistory.slice(-8); // Keep last 8 messages
-                  messageHistory.length = 0;
-                  messageHistory.push(
-                    ...sysMsg,
-                    { role: 'user' as const, content: `[LLM-compacted context — ${compactionSummary?.messagesCompacted ?? 0} messages total]\n${compactionResult.stdout}` },
-                    ...protectedRecent,
-                  );
-                  console.log(`[agon] Tier 3 LLM compaction fired: ${afterTier2} → ${estimateTokens(messageHistory)} tokens`);
-                }
-              } catch (tier3Err) {
-                // Tier 3 is best-effort — don't crash if the compaction model fails
-                console.warn(`[agon] Tier 3 compaction failed (non-fatal): ${tier3Err instanceof Error ? tier3Err.message : String(tier3Err)}`);
+                lastRealUsage = null; // history rewritten — the next dispatch re-anchors
               }
             }
 
@@ -358,8 +421,8 @@ Respond with ONLY the summary, no preamble.`;
 
           // ── Context awareness: tell the model its budget status ──
           {
-            // Reuse totalTokens if compaction didn't fire; otherwise re-estimate
-            const ctxTokens = totalTokens <= CONTEXT_LIMIT - COMPACTION_BUFFER ? totalTokens : estimateTokens(messageHistory);
+            // Reuse totalTokens if compaction didn't fire; otherwise re-project
+            const ctxTokens = totalTokens <= CONTEXT_LIMIT - COMPACTION_BUFFER ? totalTokens : projectContextTokens();
             const ctxPct = Math.round((ctxTokens / CONTEXT_LIMIT) * 100);
             const cachedCount = toolCacheManifest.length;
             const compactedCount = compactionSummary?.messagesCompacted ?? 0;
@@ -368,10 +431,13 @@ Respond with ONLY the summary, no preamble.`;
             // tight) via a metadata-tagged status chunk. The orchestrator turns
             // this into a `context-usage` event the status strip renders, so the
             // user can SEE window occupancy instead of it only going to the model.
+            // source: 'api' = exact (anchored on the last response's real token
+            // usage, nothing appended since), 'projected' = real anchor + small
+            // estimated delta, 'estimate' = chars-based only (no anchor yet).
             yield {
               type: 'status' as const,
               content: `context ${ctxPct}%`,
-              metadata: { kind: 'context-usage', pct: ctxPct, used: ctxTokens, limit: CONTEXT_LIMIT, compacted: compactedCount, cached: cachedCount },
+              metadata: { kind: 'context-usage', pct: ctxPct, used: ctxTokens, limit: CONTEXT_LIMIT, compacted: compactedCount, cached: cachedCount, source: contextSource() },
             };
 
             if (ctxPct > 60 || compactedCount > 0) {
@@ -466,6 +532,7 @@ Respond with ONLY the summary, no preamble.`;
               { role: 'user' as const, content: `[Emergency context trim — ${droppedCount} older messages dropped after an overflow error. Ask if you need detail from earlier.]` },
               ...recent,
             );
+            lastRealUsage = null; // history rewritten — the next dispatch re-anchors
             return true;
           };
 
@@ -506,7 +573,10 @@ Respond with ONLY the summary, no preamble.`;
               yield { type: 'status' as const, content: `tool loop turn ${step}/${budget}…` };
             }
 
-            const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal, effectiveTools);
+            // Anchor for real-usage projection: messages at index >= this were
+            // appended AFTER this dispatch (withImages clones, same count).
+            const sentHistoryLength = messageHistory.length;
+            const gen = apiStreamDispatchWithHistory(config.engine.api, withImages(messageHistory), config.engine.timeout ?? 180, opts.signal, effectiveTools);
             try {
               while (true) {
                 const { value, done } = await gen.next();
@@ -515,6 +585,29 @@ Respond with ONLY the summary, no preamble.`;
                   // Capture structured parts for smarter compaction
                   if (result?.parts && Array.isArray(result.parts)) {
                     lastDispatchParts = result.parts;
+                  }
+                  // ── Real token usage (ground truth) ──
+                  // promptTokens already includes cache read+write, so
+                  // prompt+completion = this request's exact context occupancy.
+                  // Surface it to the UI immediately — this is what makes the
+                  // gauge "quite correct" instead of a chars/3.5 guess.
+                  if (result?.usage && Number(result.usage.promptTokens) > 0) {
+                    lastRealUsage = {
+                      promptTokens: Number(result.usage.promptTokens),
+                      completionTokens: Number(result.usage.completionTokens ?? 0),
+                      cachedInputTokens: Number(result.usage.cachedInputTokens ?? 0),
+                      historyLength: sentHistoryLength,
+                    };
+                    // Every step bills its own input — accumulate for the turn's cost.
+                    turnUsage.promptTokens += lastRealUsage.promptTokens;
+                    turnUsage.completionTokens += lastRealUsage.completionTokens;
+                    const realUsed = lastRealUsage.promptTokens + lastRealUsage.completionTokens;
+                    const realPct = Math.round((realUsed / CONTEXT_LIMIT) * 100);
+                    yield {
+                      type: 'status' as const,
+                      content: `context ${realPct}%`,
+                      metadata: { kind: 'context-usage', pct: realPct, used: realUsed, limit: CONTEXT_LIMIT, compacted: compactionSummary?.messagesCompacted ?? 0, cached: toolCacheManifest.length, source: 'api' },
+                    };
                   }
                   if (result?.stderr) {
                     lastStderr = String(result.stderr);
@@ -1020,6 +1113,7 @@ Respond with ONLY the summary, no preamble.`;
             }
           }
 
+          sendActive = false;
           yield { type: 'done' as const, content: 'end_turn' };
           return;
         }
@@ -1141,6 +1235,47 @@ Respond with ONLY the summary, no preamble.`;
 
       getMessageHistory() {
         return [...messageHistory];
+      },
+
+      getContextUsage() {
+        return {
+          tokens: projectContextTokens(),
+          limit: CONTEXT_LIMIT,
+          softLimit: CONTEXT_LIMIT - COMPACTION_BUFFER,
+          source: contextSource(),
+          cachedInputTokens: lastRealUsage?.cachedInputTokens ?? 0,
+        };
+      },
+
+      getTurnUsage() {
+        // DRAIN: real billed usage accumulated since the last drain (sum
+        // across dispatch steps and any intermediate sends), or null when
+        // nothing real accrued (CLI path, failed dispatch). Resets on read so
+        // each token is recorded exactly once.
+        if (turnUsage.promptTokens <= 0 && turnUsage.completionTokens <= 0) return null;
+        const drained = {
+          promptTokens: turnUsage.promptTokens,
+          completionTokens: turnUsage.completionTokens,
+          totalTokens: turnUsage.promptTokens + turnUsage.completionTokens,
+          source: 'sdk' as const,
+          // Model id so the tracker can apply model-specific pricing instead
+          // of the generic per-engine fallback rate.
+          model: config.engine.api?.model,
+        };
+        turnUsage = { promptTokens: 0, completionTokens: 0 };
+        return drained;
+      },
+
+      async compact() {
+        if (compactPromise) return compactPromise; // coalesce concurrent calls
+        if (sendActive) {
+          // Never rewrite history under an in-flight send — defer; the gate
+          // runs pre-turn so this only happens on out-of-band /compact.
+          const tokens = projectContextTokens();
+          return { ok: false, method: 'deferred' as const, beforeTokens: tokens, afterTokens: tokens, limit: CONTEXT_LIMIT };
+        }
+        compactPromise = doCompact().finally(() => { compactPromise = null; });
+        return compactPromise;
       },
     };
 

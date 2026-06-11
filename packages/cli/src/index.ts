@@ -28,6 +28,8 @@ import { neroCommand } from './commands/nero.js';
 import { councilCommand } from './commands/council.js';
 import { conquerCommand } from './commands/conquer.js';
 import { worktreeCommand } from './commands/worktree.js';
+import { attachCommand } from './commands/attach.js';
+import { daemonCommand } from './commands/daemon.js';
 import { loginCommand } from './commands/login.js';
 import { updateCommand } from './commands/update.js';
 import { startRepl } from './repl.js';
@@ -166,7 +168,7 @@ maybeNotifyIsolationMigration();
 const main = defineCommand({
   meta: {
     name: 'agon',
-    version: '0.1.5',
+    version: '0.1.8',
     description: 'Any AI can join. They compete. You ship.',
   },
   subCommands: {
@@ -200,6 +202,8 @@ const main = defineCommand({
     conquer: conquerCommand,
     worktree: worktreeCommand,
     wt: worktreeCommand,
+    attach: attachCommand,
+    daemon: daemonCommand,
     login: loginCommand,
     update: updateCommand,
     upgrade: updateCommand,

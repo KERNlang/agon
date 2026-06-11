@@ -13,6 +13,7 @@ import from="../tools/tool-loop.js" names="buildToolSystemPrompt"
 import from="../tools/tool-parser.js" names="parseToolCalls"
 import from="../tools/tool-read.js" names="createReadTool"
 import from="../tools/tool-edit.js" names="createEditTool"
+import from="../tools/tool-multi-edit.js" names="createMultiEditTool"
 import from="../tools/tool-write.js" names="createWriteTool"
 import from="../tools/tool-bash.js" names="createBashTool"
 import from="../tools/tool-grep.js" names="createGrepTool"
@@ -97,7 +98,7 @@ fn name=repairToolName params="name:string, registry:any" returns="string"
     const capitalized = lower.charAt(0).toUpperCase() + lower.slice(1);
 
     // Known tool names in Agon
-    const knownTools = ['Read', 'Edit', 'Write', 'Bash', 'Grep', 'Glob', 'Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Review', 'Delegate', 'Pipeline', 'ReportConfidence', 'ProposePlan', 'ExitPlanMode'];
+    const knownTools = ['Read', 'Edit', 'MultiEdit', 'Write', 'Bash', 'Grep', 'Glob', 'Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Review', 'Delegate', 'Pipeline', 'ReportConfidence', 'ProposePlan', 'ExitPlanMode'];
     const match = knownTools.find((t: string) => t.toLowerCase() === lower);
     if (match) return match;
 
@@ -125,6 +126,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
     const registry = new ToolRegistry();
     registry.register(createReadTool());
     registry.register(createEditTool());
+    registry.register(createMultiEditTool());
     registry.register(createWriteTool());
     registry.register(createBashTool());
     registry.register(createGrepTool());
@@ -205,6 +207,12 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
     let step = 0;
     let totalToolCalls = 0;
     let finalResponse = '';
+    // Last visible assistant narration seen across steps. finalResponse is only
+    // set on the terminal no-tool-call answer, so on the silent return paths
+    // below (hidden-reasoning / empty output) it is always ''. This retains the
+    // most recent narration that DID accompany a tool call, so the degrade can
+    // surface real partial work instead of a bare error string.
+    let lastVisibleText = '';
     let emptyDispatchRetries = 0;
 
     while (step < MAX_STEPS) {
@@ -316,8 +324,12 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
             });
             continue;
           }
+          // Graceful degrade: if earlier steps produced visible work, surface it
+          // (mirrors the timeout-bail `finalResponse || …` above) instead of
+          // discarding it for a bare error string. Stays failed:true + keeps
+          // errorReason so the caller still classifies this as an error turn.
           return {
-            response: 'Error: API engine produced hidden reasoning but no visible answer or tool calls after retry.',
+            response: finalResponse || lastVisibleText || 'Error: API engine produced hidden reasoning but no visible answer or tool calls after retry.',
             toolCalls: totalToolCalls,
             steps: step,
             failed: true,
@@ -333,7 +345,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
             continue;
           }
           return {
-            response: 'Error: API engine produced no visible answer or tool calls.',
+            response: finalResponse || lastVisibleText || 'Error: API engine produced no visible answer or tool calls.',
             toolCalls: totalToolCalls,
             steps: step,
             failed: true,
@@ -354,6 +366,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
 
       if (extractedCalls.length > 0) {
         const cleanText = [parsedToolCalls.textBefore, parsedToolCalls.textAfter].filter(Boolean).join('\n\n').trim();
+        if (cleanText) lastVisibleText = cleanText;
         pushHistory({
           role: 'assistant', content: cleanText || null,
           tool_calls: extractedCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments } })),

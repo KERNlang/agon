@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, existsSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession, resolveWorkingDir } from '@kernlang/agon-core';
 
 import type { AgonConfig, ForgeManifest } from '@kernlang/agon-core';
 
@@ -19,6 +19,8 @@ import { EngineRegistry } from '@kernlang/agon-core';
 import { deriveRoutingHints, buildRoutingContext } from '../cesar/routing.js';
 
 import { summarizeAllCesarToolReliability } from '../cesar/reliability.js';
+
+import { getLastFoldedRaw, getFoldedRaw, getFoldedRawCount } from '../blocks/narration-fold.js';
 
 // ── Module: InfoHandlers ──
 
@@ -565,6 +567,56 @@ export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch,
   }
 }
 
+/**
+ * Render the loaded CC-parity allow/deny permission rules, their source scope file, and which scope wins. Mirrors Claude Code's /permissions inspection. deny ALWAYS wins over allow.
+ */
+export function handlePermissions(dispatch: Dispatch): void {
+  ensureAgonHome();
+  // Use the resolved active workspace dir, not the raw process cwd, so
+  // /permissions inspects the same .agon.json/.agon.local.json scope the
+  // approval gate actually loads (workspace switch / subdir invocation safe).
+  const cwd = resolveWorkingDir();
+  const readJsonSafe = (path: string): any => {
+    try { return JSON.parse(readFileSync(path, 'utf-8')); }
+    catch { return null; }
+  };
+  const globalPath = join(getAgonHome(), 'config.json');
+  const projectPath = join(cwd, '.agon.json');
+  const localPath = join(cwd, '.agon.local.json');
+  const scopes: Array<{ label: string; path: string; raw: any }> = [
+    { label: 'global', path: globalPath, raw: readJsonSafe(globalPath) },
+    { label: 'project', path: projectPath, raw: readJsonSafe(projectPath) },
+    { label: 'local', path: localPath, raw: readJsonSafe(localPath) },
+  ];
+
+  dispatch({ type: 'header', title: 'Permission Rules' });
+  dispatch({ type: 'text', content: 'Claude-Code-style allow/deny rules in .agon.json. deny ALWAYS wins over allow; an allow rule auto-approves, a deny rule refuses without prompting, everything else falls through to the normal ask flow.' });
+
+  const rows: string[][] = [];
+  for (const scope of scopes) {
+    const p = scope.raw?.permissions;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) {
+      rows.push([scope.label, scope.path, '—', '—']);
+      continue;
+    }
+    const allow = Array.isArray(p.allow) ? p.allow.filter((x: unknown) => typeof x === 'string') : [];
+    const deny = Array.isArray(p.deny) ? p.deny.filter((x: unknown) => typeof x === 'string') : [];
+    rows.push([scope.label, scope.path, deny.length ? deny.join(', ') : '—', allow.length ? allow.join(', ') : '—']);
+  }
+  dispatch({ type: 'table', headers: ['Scope', 'File', 'Deny (wins)', 'Allow'], rows });
+
+  // Effective merged set (what the gate actually consults).
+  const cfg = loadConfig(cwd);
+  const eff = (cfg as any).permissions ?? { allow: [], deny: [] };
+  const effAllow: string[] = Array.isArray(eff.allow) ? eff.allow : [];
+  const effDeny: string[] = Array.isArray(eff.deny) ? eff.deny : [];
+  if (effAllow.length === 0 && effDeny.length === 0) {
+    dispatch({ type: 'info', message: 'No permission rules configured. Add a "permissions" block with allow/deny arrays to .agon.json, e.g. { "permissions": { "allow": ["Bash(npm test:*)"], "deny": ["Bash(rm:*)"] } }' });
+  } else {
+    dispatch({ type: 'text', content: `Effective (all scopes merged): ${effDeny.length} deny, ${effAllow.length} allow. Deny rules take precedence.` });
+  }
+}
+
 export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerContext, setSessionEngines: (engines:string[]|null)=>void): void {
   if (engineIds.length === 0 || engineIds.length === 1 && engineIds[0] === 'all') {
     setSessionEngines(null);
@@ -672,6 +724,25 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
   dispatch({ type: 'info', message: 'Conversation context + memory preserved. Forge/tribunal engines unchanged — use /use to change those.' });
 }
 
+/**
+ * Reprint the untouched raw text of a recently narration-folded engine-block. The compact '▸ N reasoning steps folded · /raw' placeholder points here; native scrollback rows cannot expand in place, so /raw re-emits the full original as a fresh block. Bare /raw shows the most recent fold; /raw <n> pages back (1 = most recent) through the last 20. foldedSteps:0 marks it pre-processed so output.kern does not re-fold it.
+ */
+export function handleRaw(dispatch: Dispatch, index?: number): void {
+  const count = getFoldedRawCount();
+  if (count === 0) {
+    dispatch({ type: 'info', message: 'Nothing folded yet — /raw reprints the full text of a recently folded engine block.' });
+    return;
+  }
+  const n = index && index > 0 ? Math.floor(index) : 1;
+  const raw = getFoldedRaw(n) ?? '';
+  if (!raw.trim()) {
+    dispatch({ type: 'info', message: `No folded block #${n} — ${count} recent fold${count === 1 ? '' : 's'} kept (try /raw 1..${count}).` });
+    return;
+  }
+  dispatch({ type: 'header', title: count > 1 ? `Raw engine output (unfolded) — ${n} of ${count} recent` : 'Raw engine output (unfolded)' });
+  dispatch({ type: 'engine-block', engineId: 'raw', color: 244, content: raw, foldedSteps: 0 });
+}
+
 export function handleTokens(dispatch: Dispatch): void {
   const stats = tracker.getStats();
   dispatch({ type: 'header', title: 'Token Usage — This Session' });
@@ -702,8 +773,11 @@ export function handleTokens(dispatch: Dispatch): void {
   const costLabel = (costUsd: number, id: string): string => {
     if (costUsd <= 0) return 'free';
     const src = sourceLabel(id);
-    const prefix = src === 'sdk' ? '' : '~';
-    return `${prefix}$${costUsd.toFixed(4)}`;
+    if (src === 'sdk') return `$${costUsd.toFixed(4)}`;
+    if (src === 'mixed') return `~$${costUsd.toFixed(4)}`;
+    // Pure CLI/subscription engine: per-token cost is not countable —
+    // don't dress a chars/4 × flat-rate guess up as a dollar figure.
+    return 'not countable';
   };
 
   const rows = Object.entries(stats.byEngine).map(([id, e]: [string, any]) => [
@@ -717,9 +791,19 @@ export function handleTokens(dispatch: Dispatch): void {
   ]);
   dispatch({ type: 'table', headers: ['Engine', 'Calls', 'Prompt', 'Response', 'Total', 'Cost', 'Source'], rows });
 
-  const hasSdk = allUsages.some((u: any) => u.source === 'sdk');
-  const totalCostPrefix = hasSdk ? '' : '~';
-  const totalCost = stats.totalCostUsd > 0 ? `${totalCostPrefix}$${stats.totalCostUsd.toFixed(4)}` : 'free';
+  // Cost honesty: only sdk-sourced usage is real per-token billing.
+  // Subscription CLI engines have no countable cost — say so instead of
+  // presenting a chars/4 × flat-rate guess as a dollar figure.
+  const metered = (stats as any).meteredCostUsd ?? 0;
+  const unmetered = (stats as any).unmeteredDispatches ?? 0;
+  let totalCost: string;
+  if (metered > 0) {
+    totalCost = `metered $${metered.toFixed(4)}${unmetered > 0 ? ` (+${unmetered} cli/subscription dispatch${unmetered === 1 ? '' : 'es'}, not countable)` : ''}`;
+  } else if (unmetered > 0) {
+    totalCost = `not countable (subscription/CLI engines — rough estimate ~$${stats.totalCostUsd.toFixed(4)})`;
+  } else {
+    totalCost = 'free';
+  }
   dispatch({ type: 'text', content: `Session total: ${stats.totalTokens} tokens  ${totalCost}` });
   dispatch({ type: 'info', message: `${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines` });
 }

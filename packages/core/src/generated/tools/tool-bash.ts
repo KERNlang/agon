@@ -4,16 +4,20 @@ import type { ToolResult, ToolContext, ToolDefinition, PermissionDecision, ToolH
 
 import { spawnWithTimeout, spawnStream } from '../blocks/process.js';
 
-// @kern-source: tool-bash:7
-export const DANGEROUS_PREFIXES: readonly string[] = [ 'rm -rf /', 'dd if=', 'mkfs', '> /dev/', 'chmod 777', 'curl | sh', 'wget | sh' ] as const;
+import { evaluateBashRules, hasShellControl, splitShellSegments } from './tool-permissions.js';
+
+import { PERMISSION_DENIED_MESSAGE } from '../signals/tool-registry.js';
 
 // @kern-source: tool-bash:9
+export const DANGEROUS_PREFIXES: readonly string[] = [ 'rm -rf /', 'dd if=', 'mkfs', '> /dev/', 'chmod 777', 'curl | sh', 'wget | sh' ] as const;
+
+// @kern-source: tool-bash:11
 export const READONLY_COMMANDS: readonly string[] = [ 'ls', 'cat', 'head', 'tail', 'git status', 'git log', 'git diff', 'npm test', 'echo', 'pwd', 'which', 'find', 'grep', 'wc', 'date' ] as const;
 
 /**
  * Extract the actual command from wrappers like sudo, env, nice.
  */
-// @kern-source: tool-bash:11
+// @kern-source: tool-bash:13
 export function extractBaseCommand(command: string): string {
   let cmd = command.trim();
   // Strip common wrappers
@@ -33,7 +37,7 @@ export function extractBaseCommand(command: string): string {
 /**
  * When a command looks like a GUI/desktop launch that can't run in a headless shell, or its stderr shows a display failure, return a one-line hint pointing at a headless equivalent. Deliberately narrow — null for everything else (no broad 'studio' substring match).
  */
-// @kern-source: tool-bash:25
+// @kern-source: tool-bash:27
 export function guiUnavailableHint(command: string, stderr: string): string|null {
   const cmd = (command ?? '').trim();
   const launchesGui = /(^|\s)electron(\s|$)/i.test(cmd)
@@ -46,7 +50,7 @@ export function guiUnavailableHint(command: string, stderr: string): string|null
 /**
  * Factory: creates the Bash tool handler for shell command execution.
  */
-// @kern-source: tool-bash:36
+// @kern-source: tool-bash:38
 export function createBashTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Bash',
@@ -77,15 +81,43 @@ export function createBashTool(): ToolHandler {
     const base = extractBaseCommand(command);
     const lower = base.toLowerCase();
 
-    // Check dangerous prefixes — deny immediately
+    // Check dangerous prefixes — deny immediately (hard floor, before rules)
     for (const prefix of DANGEROUS_PREFIXES) {
       if (lower.startsWith(prefix)) {
         return { behavior: 'deny', message: `Blocked dangerous command: ${prefix}`, reason: 'dangerous-prefix' };
       }
     }
 
-    // Check read-only commands — allow automatically
-    const isReadOnly = READONLY_COMMANDS.some((safe: string) => lower === safe || lower.startsWith(safe + ' '));
+    // CC-parity allow/deny rules (.agon.json permissions): deny FIRST — before
+    // any mode-based auto-allow — and allow before the ask fall-throughs. This
+    // is the gate consulted on the API / XML tool-execution path (executeToolCall
+    // → handler.checkPermission). F2 compound-command splitting closes the
+    // `<allowed> && rm -rf /` hole; redirection falls through to ask.
+    if ((_ctx as any).permissionRules) {
+      const ruleDecision = evaluateBashRules(command, (_ctx as any).permissionRules);
+      if (ruleDecision === 'deny') {
+        return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: Bash (${command.slice(0, 80)}) blocked by a deny rule in .agon.json permissions`, reason: 'permission_rule_deny' };
+      }
+      // deny-all kill-switch outranks an allow RULE (only rule-DENY sits above it).
+      if (ruleDecision === 'allow' && _ctx.permissionMode !== 'deny-all') {
+        return { behavior: 'allow' };
+      }
+    }
+
+    // Check read-only commands — allow automatically. Compound-aware: a
+    // read-only PREFIX must not launder an appended mutating command
+    // (`ls & rm -rf /`, `git status ; rm -rf /`) — every segment has to be
+    // read-only on its own for the compound to count as read-only.
+    const isSegmentReadOnly = (seg: string): boolean => {
+      // Substitution bodies execute opaquely and redirection writes a file —
+      // neither is read-only no matter the leading token (`ls $(rm x)`).
+      if (/\$\(|`|>>?/.test(seg)) return false;
+      const segLower = seg.trim().toLowerCase();
+      return READONLY_COMMANDS.some((safe: string) => segLower === safe || segLower.startsWith(safe + ' '));
+    };
+    const isReadOnly = hasShellControl(command)
+      ? splitShellSegments(command).every(isSegmentReadOnly)
+      : isSegmentReadOnly(lower);
 
     // Investigation mode: allow read-only commands, block mutating ones
     if ((_ctx as any).readOnlyMode) {

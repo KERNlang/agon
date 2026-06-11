@@ -27,10 +27,18 @@ screen name=TodoList target=ink memo=true
           </Box>
           {todos.map((t) => {
             const cfg = TODO_STATE_ICONS[t.state] ?? TODO_STATE_ICONS.pending;
+            // Live (non-plan) turns render dimmer than plan todos: the icon loses
+            // its accent color and the active-row text drops to dim, so a self-
+            // declared live checklist reads as lighter-weight than an approved,
+            // persisted plan. Absent source ⇒ plan (plan-executor never sets it).
+            const isLive = t.source === 'live';
+            const iconColor = isLive ? '#64748b' : cfg.color;
+            const textColor = t.state === 'done' ? '#64748b' : (t.state === 'running' && !isLive) ? 'white' : undefined;
+            const textDim = isLive || (t.state !== 'done' && t.state !== 'running');
             return (
               <Box key={t.id}>
-                <Text color={cfg.color}>{cfg.icon}{' '}</Text>
-                <Text color={t.state === 'done' ? '#64748b' : t.state === 'running' ? 'white' : undefined} dimColor={t.state !== 'done' && t.state !== 'running'}>{t.text}</Text>
+                <Text color={iconColor} dimColor={isLive}>{cfg.icon}{' '}</Text>
+                <Text color={textColor} dimColor={textDim}>{t.text}</Text>
                 {t.note ? (<Text dimColor>{' — '}{t.note}</Text>) : null}
               </Box>
             );

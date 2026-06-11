@@ -1,10 +1,8 @@
 {
   "name": "@kernlang/agon-mcp",
-  "version": "0.1.5",
+  "version": "0.1.8",
+  "private": true,
   "type": "module",
-  "bin": {
-    "agon-mcp": "./dist/index.js"
-  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [

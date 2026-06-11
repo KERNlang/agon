@@ -4,7 +4,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 
 import { join, dirname } from 'node:path';
 
-import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan, cancelCesarPlan, exitCesarPlan, spawnWithTimeout } from '@kernlang/agon-core';
+import { createCesarPlan, formatCesarPlanMarkdown, sanitizePlanSteps, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan, cancelCesarPlan, exitCesarPlan, spawnWithTimeout } from '@kernlang/agon-core';
 
 import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@kernlang/agon-core';
 
@@ -20,36 +20,20 @@ import { handleCesarBrain } from '../cesar/brain.js';
 
 // @kern-source: plan-mode:11
 export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarPlan> {
-  // Tribunal fix #6: sanitize LLM-controlled step ids before they hit
-  // filesystem joins. Anything outside [a-z0-9_-]{1,64} is replaced.
-  const SAFE_ID = /^[a-z0-9_-]{1,64}$/;
-  const sanitizeId = (raw: any, fallback: string): string => {
-    if (typeof raw === 'string' && SAFE_ID.test(raw)) return raw;
-    return fallback;
-  };
-
-  const steps: CesarPlanStep[] = (args.steps ?? []).map((s: any, i: number) => {
-    // Tribunal fix #5: estimator is the only source of truth for cost.
-    // Cesar cannot lie about cost to slip past the auto-approve ceiling.
-    const est = planCostEstimator.estimate(s.type, s.engines ?? []);
-    return {
-      id: sanitizeId(s.id, `step-${i}-${Math.random().toString(36).slice(2, 8)}`),
-      type: s.type,
-      description: s.description,
-      engines: s.engines,
-      engine: s.engine,
-      fitnessCmd: s.fitnessCmd,
-      tribunalMode: s.tribunalMode,
-      parallel: s.parallel ?? false,
-      dependsOn: s.dependsOn,
-      exports: typeof s.exports === 'string' ? [s.exports] : s.exports,
-      imports: typeof s.imports === 'string' ? [s.imports] : s.imports,
-      estimatedTokens: est.tokens,
-      estimatedCostUsd: est.costUsd,
-      rationale: s.rationale,
-      verifyCmd: s.verifyCmd,
-    };
-  });
+  // Validate LLM-controlled steps at the boundary (core: sanitizePlanSteps).
+  // Cesar occasionally emits malformed step objects with no `type`/`description`
+  // (phantom entries), or even a non-array `steps`. Those are unexecutable —
+  // `plan-executor` returns "No executor for type: undefined" — and worse, they
+  // corrupt the plan markdown ("### Step 4: undefined") and crash
+  // PlanExecutionView at `s.description.slice()`. The validator drops them,
+  // applies the estimator (the only source of truth for cost — Cesar can't
+  // self-report to slip past the auto-approve ceiling), and reports the count.
+  const { steps, dropped } = sanitizePlanSteps(args.steps);
+  // Don't drop silently: the approved plan would differ from what Cesar
+  // proposed with no signal. Surface it so the divergence is auditable.
+  if (dropped > 0 && dispatch) {
+    dispatch({ type: 'info', message: `Dropped ${dropped} malformed plan step${dropped === 1 ? '' : 's'} from the proposal.` } as any);
+  }
 
   let plan = createCesarPlan(args.intent, steps);
   plan = {
@@ -92,7 +76,7 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
 /**
  * Cesar's escape hatch from plan mode (shared by the native onToolCall path and the MCP/XML signal paths in brain.kern). Archives any pending/paused plan as cancelled-with-reason, clears all plan state so mutation guards lift and go/yes stop routing to /approve, and sets a one-turn ping-pong guard. Refuses to abandon a RUNNING plan (it may have in-flight jobs/worktrees) — the user must cancel that. The dispatch is only for UI events; the state cleanup above does not depend on it, so a null dispatch is non-fatal (both call paths then behave identically). Returns the tool-result string.
  */
-// @kern-source: plan-mode:82
+// @kern-source: plan-mode:66
 export function handleExitPlanMode(reason: string, dispatch: Dispatch|null, ctx: HandlerContext): string {
   const r = (reason && reason.trim()) ? reason.trim() : 'no reason given';
   const current = ctx.activePlan as CesarPlan | undefined;
@@ -118,7 +102,7 @@ export function handleExitPlanMode(reason: string, dispatch: Dispatch|null, ctx:
   return `[PLAN_EXITED] Left plan mode (${r}). You are now live: investigate and act directly with tools, or answer the user. Do NOT propose a plan again this turn.`;
 }
 
-// @kern-source: plan-mode:109
+// @kern-source: plan-mode:93
 export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch): Record<string,StepExecutor> {
   const cwd = resolveWorkingDir();
   const outputDir = join(RUNS_DIR, `plan-exec-${Date.now()}`);
@@ -316,10 +300,34 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
             '',
             'When the step is complete, finish with a concise recap of what changed and what remains.',
           ].join('\n');
-          const outcome = await handleCesarBrain(prompt, stepDispatch as any, ctx, []);
+          let outcome = await handleCesarBrain(prompt, stepDispatch as any, ctx, []);
+          // Deadlock guard: a weak brain may IGNORE the "do not ask whether to start"
+          // instruction and stall, awaiting a greenlight it cannot receive while the
+          // plan owns the REPL (it never goes idle). Give it ONE forceful override
+          // retry; if it STILL stalls, PAUSE the plan to idle so the user can respond.
+          let retryOutputStart = captured.length;
+          if (outcome.awaitingUserInput && !signal?.aborted) {
+            stepDispatch({ type: 'warning', message: 'Cesar stalled awaiting input on a pre-approved step — forcing one retry.' } as any);
+            const overridePrompt = [
+              '[EXECUTOR OVERRIDE] This plan step is ALREADY APPROVED by the user. Proceed and DO IT NOW.',
+              'Do NOT ask for approval, a greenlight, or confirmation. Do NOT say you are holding or waiting.',
+              'Use the available tools to complete the step. If you are TRULY blocked, end with one concrete question.',
+              `Step ${step.id}: ${task}`,
+            ].join('\n');
+            retryOutputStart = captured.length; // pause message shows only the RETRY's output, not the first stalled run
+            outcome = await handleCesarBrain(overridePrompt, stepDispatch as any, ctx, []);
+          }
           const after = snapshotTokens();
           if (signal?.aborted || outcome.decisionReason === 'aborted') {
             return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: captured.join('\n').trim(), error: 'cancelled' } };
+          }
+          if (outcome.awaitingUserInput) {
+            // Still awaiting after the override → pause the plan to idle. advanceCesarStep
+            // leaves the step pending (re-runs on /plan resume) and sets plan.state='paused'.
+            const retryLines = captured.slice(retryOutputStart);
+            const ask = (retryLines.length ? retryLines : captured).join('\n').trim().split('\n').filter((l) => l.trim()).slice(-4).join('\n');
+            stepDispatch({ type: 'warning', message: `⏸ Plan paused — Cesar is waiting on you before continuing:\n${ask}\n\nType your answer, then /plan resume to continue (or /cancel).` } as any);
+            return { result: { status: 'paused', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: captured.join('\n').trim(), error: 'Cesar is awaiting your input on this approved step' } };
           }
           const output = captured.join('\n').trim() || `Cesar completed step ${step.id}.`;
           if (step.verifyCmd) stepDispatch({ type: 'info', message: `Verifying step ${step.id}: ${step.verifyCmd}` } as any);

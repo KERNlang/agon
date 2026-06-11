@@ -1,0 +1,665 @@
+// ── App input → intent dispatch pipeline (extracted from app.kern) ──
+// Behavior-preserving extraction of the REPL surface's submit pipeline: the
+// main turn router (handleSubmit — slash commands, plan-approval inputs, /btw,
+// images, mode switches, intent dispatch), the /btw side-channel dispatch
+// (sendBtwMessage), and the queued-input drain effect that re-submits the next
+// queued line once the repl goes idle.
+//
+// These three form one boundary: handleSubmit OWNS the queue (it pushes lines
+// into inputQueue when busy), the drain effect pops them back into handleSubmit,
+// and handleSubmit delegates the /btw branches to sendBtwMessage. askQuestion is
+// NOT submit-owned — it is consumed by buildContext + interruptActiveRun and
+// merely passed THROUGH handleSubmit's DispatchCallbacks object, so it stays in
+// app.kern and arrives here via opts.askQuestion.
+//
+// Each body closes over a large slice of component scope (state values, refs,
+// setState fns, callbacks). Rather than capture from scope, each takes that
+// slice explicitly through a named `<Name>Deps` interface (well above the
+// ~6-field threshold, grouped + per-field documented). The thin `callback` /
+// `effect` declarations stay in app.kern wiring component state in — and KEEP
+// their original `deps` arrays unchanged, so each compiles to the SAME
+// useCallback / useEffect with the SAME recreation timing. Component-scope
+// values are read at CALL time off `opts`, exactly as the original closures read
+// them, so capture/staleness semantics are byte-identical. The opts object is
+// built inside the thin callback body (the established app-keyboard.kern pattern),
+// so binding-by-name ES shorthand wires each field to its same source.
+//
+// sendBtwMessage's separate AbortController (btwAbortRef) semantics are preserved
+// exactly: it aborts any prior in-flight /btw dispatch, installs the new one,
+// and the .then/.catch handlers gate on the stable convId so an orphaned dispatch
+// can never cross-talk into a newer side-chat.
+//
+// Module imports (RUNS_DIR, join, mkdirSync, resolveWorkingDir, the app-input /
+// dispatch / paste / app-composer helpers, detectIntent, extractImagesFromInput,
+// summarizeBtwTranscriptEvent, bell/setWindowTitle, the repl-state transitions)
+// were module-level imports in app.kern too — they move here with the logic;
+// app.kern keeps whichever it still references.
+//
+// BEHAVIOR-PRESERVING ONLY: every branch (bare "/", paste expansion, /auto
+// control, /btw side-chat follow-up + opener, Cesar plan-approval coercion,
+// plan-dismiss retire, input queueing, /plan prefix, auto-mode-for-turn, image
+// extraction, status intent, mode switch, unknown-intent mode coercion,
+// dispatchIntent + the bell-ringing finally) behaves byte-identically. Bodies are
+// relocated verbatim; only component-scope identifiers gained an `opts.` prefix.
+//
+// Convention (mirrors app-keyboard.kern / app-interrupt.kern / app-lifecycle.kern):
+// explicit params; params above ~6 fields = a named `<Name>Deps` interface with
+// grouped, per-field-documented fields; refs typed with their real {current: T}
+// shape; replState typed as its real ReplStateState (not loosened to any); typed
+// returns (never any); // Source: breadcrumb per fn; raw `<<<` kept for the dense
+// intent-routing bodies where structured KERN would distort the logic.
+import from="@kernlang/agon-core" names="RUNS_DIR,extractImagesFromInput,resolveWorkingDir"
+import from="@kernlang/agon-core" names="ImageAttachment" types=true
+import from="../signals/intent.js" names="detectIntent"
+import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch,isCesarPlanApprovalInput,isCesarPlanStatusInput"
+import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
+import from="../signals/app-state.js" names="startCommandReplState,finishReplState"
+import from="../signals/app-state.js" names="ReplStateState" types=true
+import from="../signals/app-input.js" names="appendInputHistory,cleanSubmitValue,hasBtwSideChannelTarget,parseAutoModeCommand"
+import from="../cesar/steering.js" names="pushSteering,peekSteeringCount,drainLeftoverSteering"
+import from="../signals/paste-handler.js" names="expandPastePlaceholders"
+import from="../signals/output.js" names="StreamingEntry" types=true
+import from="./app-composer.js" names="COMPOSER_HISTORY_LIMIT,saveComposerInputHistory"
+import from="./app-blocks.js" names="summarizeBtwTranscriptEvent"
+import from="../lib/terminal-notify.js" names="setWindowTitle"
+import from="../signals/app-input.js" names="extractFileMentions"
+import from="node:path" names="join,resolve,relative,sep,isAbsolute"
+import from="node:fs" names="mkdirSync,readFileSync,statSync,realpathSync,openSync,readSync,closeSync"
+
+module name=AppSubmit
+
+  // ── @-file mention attachment ───────────────────────────────────────
+  // Caps so a stray "@huge-file" or a flood of mentions can't blow the turn's
+  // token budget. Per-file is generous (most source files fit); the total cap
+  // bounds the whole injected block. Both are byte (char) counts.
+  const name=MENTION_MAX_FILE_BYTES type=number value={{ 65536 }}
+  const name=MENTION_MAX_TOTAL_BYTES type=number value={{ 262144 }}
+  const name=MENTION_MAX_FILES type=number value={{ 20 }}
+
+  // Source: new — the ONE submit-pipeline predicate that exempts a line from the
+  // Cesar-bound augmentations (image extraction + @-file mention expansion). A
+  // slash command (`/run …`) and a `! <cmd>` inline-bash line are LITERAL
+  // command/shell text — a file path inside them is an argument, not an attach or
+  // a mention. Exported so the bang/mention tests pin the real gate instead of
+  // re-implementing the startsWith check inline (a tautology). Keep both call
+  // sites pointed here so the gate can never drift between them.
+  fn name=isLiteralCommandLine params="input:string" returns=boolean export=true expr={{ return input.startsWith('/') || input.startsWith('! '); }}
+
+  // Source: new — resolve @-mentions in submitted text into a fenced context
+  // block. Each mention is resolved RELATIVE to cwd and confined to it (a path
+  // escaping the project root via ../ or an absolute path is ignored, so the
+  // engine can't be steered into reading /etc/passwd). A non-existent / unreadable
+  // / non-file path is skipped (the mention stays as plain text in the user
+  // message). Files are read size-capped with an explicit "[truncated]" marker so
+  // the engine never silently sees a clipped file. Honors a per-file and a total
+  // byte cap, and a max file count. Returns '' when nothing resolved.
+  fn name=buildMentionedFilesContext params="text:string, cwd:string" returns=string export=true
+    handler <<<
+      const allMentions = extractFileMentions(text);
+      const mentions = allMentions.slice(0, MENTION_MAX_FILES);
+      if (mentions.length === 0) return '';
+      const root = resolve(cwd);
+      // Confinement is checked against the REAL (symlink-resolved) root so a
+      // symlink inside the tree can't be used to read outside it.
+      let realRoot: string;
+      try { realRoot = realpathSync(root); } catch { realRoot = root; }
+      const blocks: string[] = [];
+      let totalBytes = 0;
+      // Anything we couldn't include because a cap was hit. Surfaced as a final
+      // note so the engine (and user) know the attachment set is incomplete
+      // rather than silently short — mentions past MENTION_MAX_FILES plus any
+      // file dropped once the total byte cap is exhausted.
+      let dropped = allMentions.length - mentions.length;
+      for (const rel of mentions) {
+        // Reject absolute paths and any path that lexically resolves outside the
+        // project root — only project-relative mentions are attachable.
+        if (isAbsolute(rel)) continue;
+        const abs = resolve(root, rel);
+        const within = abs === root || abs.startsWith(root + sep);
+        if (!within) continue;
+        // Total-cap reached: this and every remaining mention is dropped.
+        if (totalBytes >= MENTION_MAX_TOTAL_BYTES) { dropped++; continue; }
+        const remaining = MENTION_MAX_TOTAL_BYTES - totalBytes;
+        const perFileCap = Math.min(MENTION_MAX_FILE_BYTES, remaining);
+        let size: number;
+        let body: string;
+        let truncated = false;
+        try {
+          const st = statSync(abs);
+          if (!st.isFile()) continue;
+          // Re-resolve symlinks and re-check confinement against the real root:
+          // statSync/readFileSync FOLLOW symlinks, so a symlinked path that
+          // passed the lexical check above could still point outside the tree.
+          const real = realpathSync(abs);
+          if (real !== realRoot && !real.startsWith(realRoot + sep)) continue;
+          size = st.size;
+          if (size > perFileCap) {
+            // Read only the cap rather than buffering the whole file — a huge
+            // file would otherwise be fully loaded (and >~512MB throws, dropping
+            // it silently) just to slice it back down.
+            const fd = openSync(abs, 'r');
+            try {
+              const buf = Buffer.alloc(perFileCap);
+              const bytesRead = readSync(fd, buf, 0, perFileCap, 0);
+              body = buf.toString('utf-8', 0, bytesRead);
+            } finally {
+              closeSync(fd);
+            }
+            truncated = true;
+          } else {
+            body = readFileSync(abs, 'utf-8');
+            // A multibyte tail can push a small file just over the cap once
+            // decoded; clamp defensively.
+            if (body.length > perFileCap) { body = body.slice(0, perFileCap); truncated = true; }
+          }
+        } catch {
+          // Non-existent / unreadable — leave the mention as plain text.
+          continue;
+        }
+        totalBytes += body.length;
+        const display = relative(root, abs) || rel;
+        const header = truncated
+          ? `@${display} (truncated to ${body.length} of ${size} bytes)`
+          : `@${display}`;
+        blocks.push(`\`\`\`\n// ${header}\n${body}\n\`\`\``);
+      }
+      if (blocks.length === 0) return '';
+      const note = dropped > 0
+        ? `\n\n[${dropped} more @-mentioned file${dropped === 1 ? '' : 's'} omitted: caps reached]`
+        : '';
+      return `\n\n[Attached files referenced with @ in the message above]\n${blocks.join('\n\n')}${note}`;
+    >>>
+
+  // ── processInputQueue: drain the next queued line once idle ──
+  // Source: app.kern effect deps="replState,inputQueue". When the repl returns to
+  // idle and a line is queued (handleSubmit pushed it while busy), pop the head off
+  // the queue and re-submit it after a 50ms tick so the queued turn starts cleanly.
+  fn name=runProcessInputQueue params="replState:ReplStateState, inputQueue:string[], setInputQueue:(updater:(prev:string[]) => string[]) => void, handleSubmit:(value:string) => void, setSteeringCount:(n:number) => void" returns=void
+    handler <<<
+      if (replState !== 'idle') return;
+      // The turn is over — clear the mid-turn steering hint count.
+      setSteeringCount(0);
+      // Spec: on normal turn end any UNCONSUMED steering messages feed the next
+      // turn via THIS existing inputQueue drain. The brain released its turn
+      // marker on a normal end but left leftovers buffered; pull them here (FIFO)
+      // and append them to the inputQueue so the pop-and-resubmit below carries
+      // them through handleSubmit. On interrupt the steering buffer was already
+      // cleared (runInterruptActiveRun → clearSteering), so there is nothing to
+      // carry over.
+      const leftover = drainLeftoverSteering();
+      if (leftover.length > 0) {
+        const lines = leftover.map((m) => m.input).filter((t) => !!t.trim());
+        if (lines.length > 0) setInputQueue((prev: string[]) => [...prev, ...lines]);
+      }
+      if (inputQueue.length > 0) {
+        const next = inputQueue[0];
+        setInputQueue((prev: string[]) => prev.slice(1));
+        setTimeout(() => handleSubmit(next), 50);
+      }
+    >>>
+
+  // ── Closed-over deps for runSendBtwMessage ──
+  // The slice of component scope the /btw dispatch reads/writes: the context
+  // builder + live runtime signals it summarizes into the prompt, the prior
+  // side-chat (btwPanel) it continues, the separate btw AbortController ref it
+  // swaps, and the panel setter it updates as the dispatch runs. Grouped by role.
+  // (Mirrors app.kern callback sendBtwMessage deps
+  // "buildContext,dispatch,mode,replState,outputBlocks,jobManager,btwPanel" + the
+  // stable refs/setters it closed over outside that array.)
+  interface name=SendBtwMessageDeps
+    doc "Explicit dependencies for runSendBtwMessage — the context builder + live runtime signals (mode/replState/streams/transcript/plan/jobs) it folds into the side-chat prompt, the prior btwPanel it continues, the separate btwAbortRef it swaps, and the panel setter + dispatch it drives. Passed in rather than captured from component scope; values read at call time so staleness matches the original closure."
+    // ── Context + prior side-chat ──
+    field name=buildContext type="() => any"
+    field name=btwPanel type=any
+    // ── Live runtime signals folded into the prompt ──
+    field name=mode type=string
+    field name=replState type=ReplStateState
+    field name=outputBlocks type="any[]"
+    field name=jobManager type=any
+    field name=streamingTextRef type="{current: Record<string, StreamingEntry>}"
+    field name=activePlanRef type="{current: any}"
+    // ── Separate /btw abort controller + panel setter + notification ──
+    field name=btwAbortRef type="{current: AbortController | null}"
+    field name=setBtwPanel type="(updater:any) => void"
+    field name=dispatch type="(event:any) => void"
+
+  // ── sendBtwMessage: one turn of the /btw side-chat with Cesar ──
+  // Source: app.kern callback name=sendBtwMessage. Runs in its OWN dispatch,
+  // concurrent with (and never interrupting) the main task — used for the opening
+  // /btw question AND every follow-up. Builds a continuity prompt from prior
+  // messages + live runtime context, swaps the separate btwAbortRef (aborting any
+  // prior in-flight side-chat dispatch), appends the user turn, and writes the
+  // answer back ONLY into the same convId that started the dispatch (orphan-safe).
+  // Relocated verbatim — only component-scope identifiers gained an `opts.` prefix.
+  fn name=runSendBtwMessage params="opts:SendBtwMessageDeps, question:string" returns=void
+    handler <<<
+      const q = (question ?? '').trim();
+      if (!q) return;
+      const ctx = opts.buildContext();
+      const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
+      let engineDef: any;
+      try { engineDef = ctx.registry.get(cesarId); } catch { /* cesar engine not registered */ }
+      if (!engineDef) {
+        opts.dispatch({ type: 'error', message: `btw: engine ${cesarId} not available` } as any);
+        return;
+      }
+
+      // Prior side-conversation, for multi-turn continuity.
+      const priorMessages: any[] = Array.isArray(opts.btwPanel?.messages) ? opts.btwPanel.messages : [];
+      const convo = priorMessages
+        .slice(-8)
+        .map((m: any) => `${m.role === 'user' ? 'You' : 'Cesar'}: ${m.text}`)
+        .join('\n');
+
+      // Live runtime context — same signals the one-shot /btw used.
+      let streamCtx = '';
+      const streamEntries = Object.values(opts.streamingTextRef.current ?? {});
+      if (streamEntries.length > 0) {
+        let latest: StreamingEntry | null = null;
+        for (const e of streamEntries) { if (!latest || e.startedAt > latest.startedAt) latest = e; }
+        if (latest && latest.content) {
+          const lines = latest.content.split('\n').filter((l: string) => l.trim());
+          streamCtx = lines.slice(-10).join('\n');
+        }
+      }
+      const transcriptCtx = opts.outputBlocks
+        .slice(-16)
+        .map((block: any) => summarizeBtwTranscriptEvent(block?.event))
+        .filter(Boolean)
+        .slice(-8)
+        .join('\n');
+      const runningCtx = [
+        `Mode: ${opts.mode}`,
+        `UI state: ${opts.replState}`,
+        opts.activePlanRef.current?.state ? `Plan state: ${opts.activePlanRef.current.state}` : '',
+        opts.jobManager.running().length > 0 ? `Running background jobs: ${opts.jobManager.running().map((job: any) => job.label ?? job.id).join(', ')}` : '',
+      ].filter(Boolean).join('\n');
+
+      const prompt = `You are Cesar, answering in a /btw side-chat while Agon continues another task in the main window. This is a continuing side conversation — stay consistent with what was already said.
+
+${convo ? 'Side-chat so far:\n' + convo + '\n\n' : ''}New message from the user:
+${q}
+
+Current runtime context:
+${runningCtx || '(none)'}
+
+${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n' : ''}${transcriptCtx ? 'Recent transcript context:\n' + transcriptCtx + '\n\n' : ''}Answer directly and briefly. Do not take over, cancel, or modify the main task.`;
+
+      // Stable conversation id: a dispatch only writes back into the SAME
+      // side-chat that started it. If the user Escs (panel → null) and opens a
+      // new /btw, an orphaned earlier dispatch sees a different id and is
+      // dropped instead of cross-talking into the new conversation.
+      const btwNow = Date.now();
+      const convId = opts.btwPanel?.id ?? `btw-${btwNow}`;
+      const btwOutputDir = join(RUNS_DIR, `${convId}-${btwNow}`);
+      try { opts.btwAbortRef.current?.abort(); } catch { /* no prior dispatch in flight */ }
+      const btwAbort = new AbortController();
+      opts.btwAbortRef.current = btwAbort;
+      // Append the user's turn and mark running; preserve existing id/messages.
+      opts.setBtwPanel((prev: any) => {
+        const base = prev ?? { id: convId, engineId: cesarId, messages: [] };
+        const messages = [...(Array.isArray(base.messages) ? base.messages : []), { role: 'user', text: q }].slice(-20);
+        return { ...base, id: base.id ?? convId, engineId: cesarId, status: 'running', error: '', messages, startedAt: btwNow };
+      });
+      try { mkdirSync(btwOutputDir, { recursive: true }); } catch { /* dir already exists or parent missing */ }
+      ctx.adapter.dispatch({
+        engine: engineDef,
+        prompt,
+        cwd: resolveWorkingDir(),
+        mode: 'exec' as any,
+        timeout: 60,
+        outputDir: btwOutputDir,
+        signal: btwAbort.signal,
+      }).then((result: any) => {
+        const answer = (result.stdout || '').trim();
+        opts.setBtwPanel((prev: any) => {
+          if (!prev || prev.id !== convId) return prev;
+          if (answer) return { ...prev, status: 'done', messages: [...(Array.isArray(prev.messages) ? prev.messages : []), { role: 'cesar', text: answer }].slice(-20) };
+          return { ...prev, status: 'empty', error: 'No response' };
+        });
+      }).catch((err: any) => {
+        if (btwAbort.signal.aborted) return;
+        opts.setBtwPanel((prev: any) => (prev && prev.id === convId) ? { ...prev, status: 'error', error: err instanceof Error ? err.message : String(err) } : prev);
+      });
+    >>>
+
+  // ── Closed-over deps for runHandleSubmit ──
+  // The full slice of component scope the main turn router reads/mutates: the
+  // epoch/paste/bell/plan refs it consults, the composer + history + queue + mode
+  // state it resets, every modal/picker/engine setter the DispatchCallbacks object
+  // wires up, and the callbacks it delegates to (buildContext, sendBtwMessage,
+  // transition, handleSubmit recursion, the mode/exploration/nero setters).
+  // Grouped by role. (Mirrors app.kern callback handleSubmit's 18-entry deps array
+  // PLUS the stable refs/setters it closed over outside it.)
+  interface name=HandleSubmitDeps
+    doc "Explicit dependencies for runHandleSubmit — the refs it consults (epoch/paste/bell/plan/turn/job-timing), the composer + history + queue + mode state it resets, every modal/picker/engine setter the DispatchCallbacks object wires, and the callbacks it delegates to. Passed in rather than captured from component scope; values read at call time so staleness matches the original closure."
+    // ── Refs the router consults / flips ──
+    field name=inputEpochRef type="{current: number}"
+    field name=pendingBellRef type="{current: boolean}"
+    field name=awaitingPlanAnnouncedRef type="{current: string}"
+    field name=pasteHashesRef type="{current: Map<string, string>}"
+    field name=pendingPasteTransformRef type="{current: boolean}"
+    field name=inputValueRef type="{current: string}"
+    field name=activePlanRef type="{current: any}"
+    field name=activeTurnRef type="{current: { input:string; engineId:string; retried:boolean } | null}"
+    field name=chatStartTimeRef type="{current: number}"
+    // ── Repl / composer / queue / mode state read by the router ──
+    field name=replState type=ReplStateState
+    field name=mode type=string
+    field name=planModeQueued type=boolean
+    field name=autoModeQueued type=boolean
+    field name=btwPanel type=any
+    field name=pendingImages type="ImageAttachment[]"
+    field name=outputBlocks type="any[]"
+    field name=allSlashCommands type="any[]"
+    field name=dynamicSkills type="any[]"
+    field name=extensionSkills type="any[]"
+    field name=lastUndoToken type="string | null"
+    field name=sessionStartTime type=number
+    field name=explorationMode type=boolean
+    field name=neroMode type=boolean
+    // ── Live runtime handles folded into the dispatch ──
+    field name=jobManager type=any
+    field name=commandRegistry type=any
+    field name=eventBus type=any
+    field name=loadedExtensions type="any[]"
+    // ── Composer / history / queue / mode setters ──
+    field name=setInputValue type="(val:string) => void"
+    field name=setInputHistory type="(updater:(prev:string[]) => string[]) => void"
+    field name=setHistoryIndex type="(val:number) => void"
+    field name=setInputQueue type="(updater:(prev:string[]) => string[]) => void"
+    field name=setSteeringCount type="(n:number) => void"
+    field name=setSlashPickerOpen type="(val:boolean) => void"
+    field name=setStatusDashboardOpen type="(val:boolean) => void"
+    field name=setPlanModeQueued type="(val:boolean) => void"
+    field name=setPersistentAutoMode type="(enabled:boolean) => void"
+    field name=setMode type="(val:any) => void"
+    field name=setWorkspacePath type="(val:string) => void"
+    field name=setReplState type="(updater:any) => void"
+    field name=setJobList type="(val:any) => void"
+    field name=setBtwPanel type="(updater:any) => void"
+    // ── DispatchCallbacks picker / engine / session setters ──
+    field name=setPendingImages type="(val:any) => void"
+    field name=setSessionEngines type="(val:any) => void"
+    field name=setEnginePickerOpen type="(val:boolean) => void"
+    field name=setModelPickerOpen type="(val:boolean) => void"
+    field name=setModelPickerEntries type="(val:any) => void"
+    field name=setModelPickerLoading type="(val:boolean) => void"
+    field name=setCesarPickerOpen type="(val:boolean) => void"
+    field name=setChatSession type="(val:any) => void"
+    field name=setLastUndoToken type="(val:any) => void"
+    field name=setModelPickerTargetEngine type="(val:any) => void"
+    field name=setModelPickerInitialFilter type="(val:string) => void"
+    field name=setModelPickerTitle type="(val:string) => void"
+    field name=setModelPickerCliGroups type="(val:any) => void"
+    field name=setExplorationMode type="(val:boolean) => void"
+    field name=setNeroMode type="(val:boolean) => void"
+    // ── Delegated callbacks ──
+    field name=dispatch type="(event:any) => void"
+    field name=buildContext type="() => any"
+    field name=sendBtwMessage type="(question:string) => void"
+    field name=handleSubmit type="(value:string) => void"
+    field name=transition type="(fn:any) => void"
+    field name=setActivePlanWrapped type="(plan:any) => void"
+    field name=askQuestion type="(prompt:string) => Promise<string>"
+    field name=bell type="() => void"
+
+  // ── handleSubmit: the main turn router ──
+  // Source: app.kern callback name=handleSubmit (async). Routes a composer submit:
+  // bare "/" opens the slash picker; paste placeholders are expanded; /auto
+  // toggles persistent auto-mode; an open /btw panel makes a plain submit a
+  // side-chat follow-up; a Cesar plan-approval phrase is coerced to /approve and
+  // a forward-move retires the pinned plan; /btw <q> opens/continues the side-chat;
+  // a busy repl queues the line; /plan prefix + auto-mode-for-turn are applied;
+  // images are extracted; then the intent is detected and dispatched, with a
+  // finally that routes completion through transition() so the done-bell rings.
+  // Relocated verbatim — only component-scope identifiers gained an `opts.` prefix.
+  fn name=runHandleSubmit async=true params="opts:HandleSubmitDeps, value:string" returns="Promise<void>"
+    handler <<<
+      opts.inputEpochRef.current += 1;
+      let input = cleanSubmitValue(value);
+      // User is submitting a turn — allow the next await to ring again.
+      opts.pendingBellRef.current = false;
+      opts.awaitingPlanAnnouncedRef.current = '';
+      if (!input) return;
+      // Bare "/" → open slash picker flyout, don't dump text list
+      if (input === '/') {
+        if (opts.planModeQueued) opts.setPlanModeQueued(false);
+        opts.setSlashPickerOpen(true);
+        return;
+      }
+      input = expandPastePlaceholders(input, opts.pasteHashesRef.current);
+      opts.pasteHashesRef.current.clear();
+      opts.pendingPasteTransformRef.current = false;
+      opts.inputValueRef.current = '';
+      opts.setInputValue('');
+      opts.setInputHistory((prev: string[]) => {
+        const next = appendInputHistory(prev, input, COMPOSER_HISTORY_LIMIT);
+        saveComposerInputHistory(next);
+        return next;
+      });
+      opts.setHistoryIndex(-1);
+
+      const autoControl = parseAutoModeCommand(input);
+      if (autoControl) {
+        if (autoControl === 'status') {
+          opts.dispatch({ type: 'info', message: opts.autoModeQueued ? 'AUTO is ON by default — plain tasks may self-escalate through Cesar.' : 'AUTO is OFF by default.' } as any);
+          return;
+        }
+        const nextAutoModeQueued = autoControl === 'toggle' ? !opts.autoModeQueued : autoControl === 'on';
+        opts.setPlanModeQueued(false);
+        opts.setPersistentAutoMode(nextAutoModeQueued);
+        opts.dispatch({
+          type: 'info',
+          message: nextAutoModeQueued
+            ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Use /auto off or Ctrl+A to disable.'
+            : 'AUTO OFF by default.',
+        } as any);
+        return;
+      }
+
+      // While the BTW side-chat panel is open, a plain (non-slash) submit is a
+      // follow-up turn in that side conversation — Cesar answers it in the
+      // panel without touching the main task. Esc leaves the side-chat.
+      // A `! <cmd>` inline-bash line runs the shell directly (it routes to /run),
+      // so it is NOT captured as a side-chat follow-up even while the /btw panel is
+      // open — same one-token exemption slash commands already get.
+      if (opts.btwPanel && input.trim() && !input.startsWith('/') && !input.startsWith('! ')) {
+        if (opts.btwPanel.status === 'running') {
+          opts.dispatch({ type: 'info', message: 'Side-chat is still answering — one turn at a time.' } as any);
+          return;
+        }
+        opts.sendBtwMessage(input.trim());
+        return;
+      }
+
+      if (!input.startsWith('/') && opts.activePlanRef.current?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
+        input = '/approve';
+      }
+
+      // When the user moves forward from a pinned plan proposal, demote it
+      // from the live pane into scrollback history (Claude-style) so this
+      // turn's output is the bottom-most content instead of being buried
+      // under the plan. The chat-route approval ("go sounds legit") never
+      // emits plan-execution, so this turn boundary is the reliable hook.
+      // Exclusions, so an input that is NOT a response to the plan can't
+      // falsely retire it:
+      //   - side-channel slash commands (/btw, /status, /clear, …) — and
+      //     /cancel, which keeps its own plan-cancelled path (no history block)
+      //   - status/progress queries are questions about the plan, not responses
+      const dismissLower = input.trim().toLowerCase();
+      const isSlashNonApprove = dismissLower.startsWith('/') && dismissLower !== '/approve';
+      if (
+        opts.activePlanRef.current?.state === 'awaiting_approval' &&
+        !isSlashNonApprove &&
+        !isCesarPlanStatusInput(input)
+      ) {
+        opts.dispatch({ type: 'plan-dismiss' } as any);
+      }
+
+      // /btw <question> — side-channel question during active dispatch
+      const btwLower = input.trim().toLowerCase();
+      if (btwLower === '/btw') {
+        opts.dispatch({ type: 'info', message: 'Usage: /btw <question> — ask something while engines work.' } as any);
+        return;
+      }
+      if (btwLower.startsWith('/btw ')) {
+        const btwQuestion = input.trim().slice(5).trim();
+        if (!btwQuestion) {
+          opts.dispatch({ type: 'info', message: 'Usage: /btw <question>' } as any);
+          return;
+        }
+        // Opening a side-chat needs active main work to talk "alongside"; once
+        // the panel is open, follow-ups are handled earlier as plain submits.
+        const activeWorkForBtw = hasBtwSideChannelTarget({
+          replState: opts.replState,
+          activePlanState: opts.activePlanRef.current?.state ?? null,
+          runningJobCount: opts.jobManager.running().length,
+        });
+        if (!opts.btwPanel && !activeWorkForBtw) {
+          opts.dispatch({ type: 'info', message: 'No active work for /btw. Ask normally without the /btw prefix.' } as any);
+          return;
+        }
+        opts.sendBtwMessage(btwQuestion);
+        return;
+      }
+      const isPlanAwaitingControl = opts.activePlanRef.current?.state === 'awaiting_approval'
+        && (input === '/approve' || input === '/cancel');
+      // ── Steering while Cesar works ──
+      // A plain (non-slash) message typed during a RUNNING Cesar chat turn is
+      // NOT rejected and NOT merely queued for the next turn — it is buffered in
+      // the steering singleton, which the brain drains INTO the running turn at
+      // its next tool boundary (mid-turn injection with full tool context).
+      // Slash commands are excluded so /help etc. keep their existing behavior
+      // (they fall through to the inputQueue path below). pushSteering no-ops
+      // unless the brain has an active turn marked; if it returns false (the turn
+      // just ended) we fall through to the normal queue so nothing is lost.
+      const isChatSteer = opts.replState !== 'idle'
+        && opts.mode === 'chat'
+        && !!opts.activeTurnRef.current
+        && !!input.trim()
+        && !input.startsWith('/')
+        && !opts.jobManager.running().length
+        && !isPlanAwaitingControl;
+      if (isChatSteer) {
+        // Extract image attachments from the steering line (and fold in any
+        // pending composer images) BEFORE buffering — pushSteering used to receive
+        // the RAW text only, so a steering message that referenced an image lost
+        // it entirely. Mirror the normal-turn extraction at line ~461 so a steered
+        // image survives into the buffer; it then rides the mid-turn injection or,
+        // if unconsumed, the idle leftover-drain → inputQueue → next handleSubmit
+        // path (which already processes images). (phase-A review finding 2.)
+        const { images: steerImages } = extractImagesFromInput(input, resolveWorkingDir());
+        const steerAllImages = [...opts.pendingImages, ...steerImages];
+        if (pushSteering(input, steerAllImages.length ? steerAllImages : undefined)) {
+          if (opts.pendingImages.length) opts.setPendingImages([]);
+          const count = peekSteeringCount();
+          opts.setSteeringCount(count);
+          opts.dispatch({ type: 'info', message: count > 1 ? `Steering queued (${count}) — injects at next step.` : 'Steering queued — injects at next step.' } as any);
+          return;
+        }
+      }
+      if (opts.replState !== 'idle' && !opts.jobManager.running().length && !isPlanAwaitingControl) {
+        opts.setInputQueue((prev: string[]) => [...prev, input]);
+        opts.dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '…' : input}` } as any);
+        return;
+      }
+      // A `! <cmd>` inline-bash line runs the shell directly even in plan mode
+      // (Claude Code parity — bash is exempt from the plan wrapper, same as slash
+      // commands), so don't rewrite it to `/plan ! <cmd>`.
+      if (opts.planModeQueued && input.trim() && !input.startsWith('/') && !input.startsWith('! ')) {
+        opts.setPlanModeQueued(false);
+        opts.handleSubmit(`/plan ${input}`);
+        return;
+      }
+      const autoModeForTurn = opts.autoModeQueued && input.trim() && !input.startsWith('/');
+      if (opts.planModeQueued) opts.setPlanModeQueued(false);
+      opts.transition(startCommandReplState);
+      opts.pendingBellRef.current = false;
+      setWindowTitle('● agon — running');
+      opts.dispatch({ type: 'separator' } as any);
+      opts.dispatch({ type: 'user-message', content: input } as any);
+      // Image extraction is gated by the SAME literal-command exemption as @-file
+      // mentions below: a slash command (e.g. `/run cp /tmp/shot.png docs/`) and a
+      // `! <cmd>` inline-bash line are literal shell/command text — an existing
+      // image path inside them is an ARGUMENT, not an attach. Running the extractor
+      // would STRIP that path out of the command (corrupting it) and silently
+      // attach it as a pending image. So for `/` and `! ` lines we skip extraction
+      // and keep the path in the command verbatim. (This also fixes the pre-existing
+      // gap for /run-with-an-image-path — the path now stays in the /run command,
+      // which is the correct Claude-Code-parity behavior.)
+      const literalCommandLine = isLiteralCommandLine(input);
+      const { text: cleanInput, images: detectedImages } = literalCommandLine
+        ? { text: input, images: [] as ImageAttachment[] }
+        : extractImagesFromInput(input, resolveWorkingDir());
+      const allImages = [...opts.pendingImages, ...detectedImages];
+      // @-file mentions: the transcript (user-message above) keeps the raw "@path"
+      // the user typed (Claude-Code style); the ENGINE prompt gets each resolved
+      // file's content appended as a fenced block so it sees the code without a
+      // manual paste. Slash commands parse their args literally, so they are never
+      // augmented; a `! <cmd>` inline-bash line is likewise a literal shell command
+      // (it routes to /run, not Cesar), so an "@path" inside it stays a shell arg
+      // and is NOT expanded. activeTurnRef below keeps the ORIGINAL input so
+      // retry/dedup matches what the user typed, not the file-expanded prompt.
+      const mentionContext = literalCommandLine
+        ? ''
+        : buildMentionedFilesContext(input, resolveWorkingDir());
+      const dispatchInput = mentionContext ? input + mentionContext : input;
+      let intent = detectIntent(cleanInput || input, opts.commandRegistry);
+      if (intent.type === 'status') {
+        opts.setStatusDashboardOpen(true);
+        opts.dispatch({ type: 'info', message: 'Status dashboard open. Press q or Esc to close.' } as any);
+        opts.transition(finishReplState);
+        return;
+      }
+      const ctx = opts.buildContext();
+      (ctx as any).autoModeQueued = autoModeForTurn;
+      const cesarEngineForTurn = String((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
+      opts.activeTurnRef.current = (!input.startsWith('/') && opts.mode === 'chat')
+        ? { input, engineId: cesarEngineForTurn, retried: false }
+        : null;
+      const cb: DispatchCallbacks = {
+        dispatch: opts.dispatch, ctx, commandRegistry: opts.commandRegistry, eventBus: opts.eventBus, loadedExtensions: opts.loadedExtensions, setWorkspacePath: opts.setWorkspacePath,
+        runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
+          const job = opts.jobManager.create(type, label);
+          opts.chatStartTimeRef.current = Date.now();
+          opts.setJobList([...opts.jobManager.list()]);
+          opts.dispatch({ type: 'info', message: `Started background job [${job.id}] ${type}: ${label || type}` } as any);
+          // Transition to idle so user can submit new commands while job runs
+          // Strip stays active via jobList.some(j => j.state === 'running') check
+          opts.setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
+          fn().then(() => { opts.jobManager.complete(job.id); opts.setJobList([...opts.jobManager.list()]); opts.bell(); setWindowTitle('agon'); })
+            .catch((err: any) => { opts.jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); opts.setJobList([...opts.jobManager.list()]); opts.dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); opts.bell(); setWindowTitle('agon'); });
+        },
+        setMode: opts.setMode, setPendingImages: opts.setPendingImages, setSessionEngines: opts.setSessionEngines, setEnginePickerOpen: opts.setEnginePickerOpen, setModelPickerOpen: opts.setModelPickerOpen, setModelPickerEntries: opts.setModelPickerEntries, setModelPickerLoading: opts.setModelPickerLoading, setCesarPickerOpen: opts.setCesarPickerOpen, setChatSession: opts.setChatSession, setLastUndoToken: opts.setLastUndoToken, askQuestion: opts.askQuestion, exit: () => process.exit(0),
+        setModelPickerTargetEngine: opts.setModelPickerTargetEngine, setModelPickerInitialFilter: opts.setModelPickerInitialFilter, setModelPickerTitle: opts.setModelPickerTitle, setModelPickerCliGroups: opts.setModelPickerCliGroups,
+        allImages, allSlashCommands: opts.allSlashCommands, dynamicSkills: [...opts.dynamicSkills, ...opts.extensionSkills], mode: opts.mode, lastUndoToken: opts.lastUndoToken, sessionStartTime: opts.sessionStartTime, jobManager: opts.jobManager,
+        explorationMode: opts.explorationMode, setExplorationMode: opts.setExplorationMode,
+        neroMode: opts.neroMode, setNeroMode: opts.setNeroMode,
+        setActivePlan: opts.setActivePlanWrapped,
+      };
+      if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
+        if (!(intent as any).input?.trim()) { opts.transition(finishReplState); return; }
+      }
+      if (intent.type === 'unknown' && opts.mode !== 'chat') {
+        switch (opts.mode) {
+          case 'campfire': intent = { type: 'campfire', topic: dispatchInput } as any; break;
+          case 'brainstorm': intent = { type: 'brainstorm', question: dispatchInput } as any; break;
+          case 'tribunal': intent = { type: 'tribunal', question: dispatchInput } as any; break;
+        }
+      }
+      try {
+        const result = await dispatchIntent(intent, dispatchInput, cb);
+        if (result.ranAsJob) return;
+      } catch (err: any) { opts.dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
+      finally {
+        if (opts.activeTurnRef.current?.input === input) opts.activeTurnRef.current = null;
+        // Route through transition() so a normally-completed turn rings the
+        // done-bell. A direct setReplState here bypassed transition's bell hook,
+        // so the MAIN completion path (every non-job turn) was silent — only the
+        // status-dashboard / empty-mode-switch edge cases rang. transition's own
+        // `next==='idle' && prev!=='idle'` guard makes this a no-op (no bell) for
+        // job turns that already went idle at the runAsJob handoff above.
+        opts.transition(finishReplState);
+      }
+    >>>

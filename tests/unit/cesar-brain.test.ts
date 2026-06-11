@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall } from '../../packages/cli/src/handlers/cesar-brain.js';
-import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, detectMutationIntentStall } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall, extractStrictConfidence, buildEscalationSuggestionLine, ESCALATION_SUGGESTION_THRESHOLD } from '../../packages/cli/src/handlers/cesar-brain.js';
+// Source of truth for these helpers is packages/cli/src/kern/cesar/brain-helpers.kern;
+// the generated/*.js below is regenerated from it (npm run kern:compile) — do not edit by hand.
+import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall, detectFabricatedDelegation, isBashToolName, isWriteToolName, stripAgonToolPrefix } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
+// Rigid DECISION/CONFIDENCE parser for ACTUALLY-FIRED nero/advisor results — C4
+// must leave this untouched (downstream escalation routing depends on it).
+import { parseQuickNeroDecision } from '../../packages/cli/src/generated/cesar/escalation.js';
 
 describe('Cesar Brain', () => {
   describe('splitBeforeToolMarkup', () => {
@@ -31,6 +36,29 @@ describe('Cesar Brain', () => {
 
     it('does not flag normal answers', () => {
       expect(detectNarratedToolStall('The tools are wired, but Kimi may be weak at native tool calls.')).toBe(false);
+    });
+  });
+
+  describe('detectFabricatedDelegation (confabulated dispatch)', () => {
+    it('flags a claim that reviewers/jobs are running or were dispatched', () => {
+      // Real phrases from the confabulation transcript.
+      expect(detectFabricatedDelegation('Going — three reviewers (codex, claude, agy) are reading the 90-file diff in parallel.')).toBe(true);
+      expect(detectFabricatedDelegation('The review is still running — codex, claude, and agy are each reading the diff in parallel.')).toBe(true);
+      expect(detectFabricatedDelegation("Review delegated to codex, claude, and agy. I'll get back when they report.")).toBe(true);
+      expect(detectFabricatedDelegation('I kicked off the review — the agents are working in parallel now.')).toBe(true);
+    });
+
+    it('does not flag a plain answer that merely mentions a review', () => {
+      expect(detectFabricatedDelegation('You should run a review before merging this branch.')).toBe(false);
+      expect(detectFabricatedDelegation('The review tool diffs the branch against its base.')).toBe(false);
+      expect(detectFabricatedDelegation('Here is the fix; nothing is running right now.')).toBe(false);
+    });
+
+    it('requires both a delegable target AND a dispatch/running claim', () => {
+      // "running" but no delegable target → not a fabricated delegation.
+      expect(detectFabricatedDelegation('The build is running in parallel across packages.')).toBe(false);
+      // target but no dispatch claim → not flagged.
+      expect(detectFabricatedDelegation('A tribunal would surface the tradeoffs here.')).toBe(false);
     });
   });
 
@@ -85,6 +113,117 @@ describe('Cesar Brain', () => {
     });
   });
 
+  describe('findTrailingUserQuestion (tail scan for the ask-then-advise shape)', () => {
+    it('finds a user question followed by a recommendation/rationale (the bug shape)', () => {
+      const resp = [
+        'Here is what I found.',
+        'Should I rename the source, or leave it alone?',
+        'My recommendation: rename now — it is cheap and reversible.',
+      ].join('\n');
+      expect(findTrailingUserQuestion(resp)).toBe('Should I rename the source, or leave it alone?');
+    });
+
+    it('finds a fork question followed by a confidence line (minimax shape)', () => {
+      const resp = [
+        'Rename now, or stop before the serializer?',
+        'Confidence: ~93% — high confidence in the rename.',
+      ].join('\n');
+      expect(findTrailingUserQuestion(resp)).toBe('Rename now, or stop before the serializer?');
+    });
+
+    it('still finds a question on the last line (last-line case preserved)', () => {
+      expect(findTrailingUserQuestion('All set.\nReady to proceed?')).toBe('Ready to proceed?');
+    });
+
+    it('returns null when there is no user-directed question in the tail', () => {
+      expect(findTrailingUserQuestion('I edited brain.kern and ran typecheck — all green.')).toBeNull();
+    });
+
+    it('returns the question even when the model also narrates an action nearby', () => {
+      // We deliberately do NOT suppress on "the model proceeded" — that produced
+      // false positives that hid real questions. A trailing question wins; it just
+      // stops auto-continuation (benign when the model is already done).
+      expect(findTrailingUserQuestion('I renamed the file.\nShould I also update the tests?')).toBe('Should I also update the tests?');
+      expect(findTrailingUserQuestion('Should I rename it, or leave it?\nI\'d rename it and update the docs too.')).toBe('Should I rename it, or leave it?');
+    });
+
+    it('does NOT catch a question buried above the last 6 non-empty lines', () => {
+      const resp = [
+        'Should I rename it, or leave it?', // line 1 — too far up
+        'line2', 'line3', 'line4', 'line5', 'line6', 'line7 — done.',
+      ].join('\n');
+      expect(findTrailingUserQuestion(resp)).toBeNull();
+    });
+
+    it('returns null for empty input', () => {
+      expect(findTrailingUserQuestion('')).toBeNull();
+    });
+
+    it('handles null/undefined input safely', () => {
+      expect(findTrailingUserQuestion(undefined as unknown as string)).toBeNull();
+      expect(findTrailingUserQuestion(null as unknown as string)).toBeNull();
+    });
+
+    it('finds a question exactly at the 6-non-empty-line boundary, not beyond it', () => {
+      // 6th line from the end → inside the window → found.
+      expect(findTrailingUserQuestion(['Should I proceed?', 'a', 'b', 'c', 'd', 'e'].join('\n'))).toBe('Should I proceed?');
+      // 7th line from the end → outside the window → null.
+      expect(findTrailingUserQuestion(['Should I proceed?', 'a', 'b', 'c', 'd', 'e', 'f'].join('\n'))).toBeNull();
+    });
+  });
+
+  describe('detectAwaitingUserInput (plan-execution stall/await signal)', () => {
+    it('detects "holding / awaiting greenlight" statements that have NO question mark', () => {
+      expect(detectAwaitingUserInput('Holding — awaiting your greenlight before the implementation steps.')).toBe(true);
+      expect(detectAwaitingUserInput("I'll hold for your greenlight rather than auto-firing step 3.")).toBe(true);
+      expect(detectAwaitingUserInput('Both specs are on disk.\nThe implementation steps need explicit user approval.')).toBe(true);
+      expect(detectAwaitingUserInput('Holding. Same state: awaiting user greenlight to begin step 3.')).toBe(true);
+    });
+
+    it('detects a trailing user-directed question (reuses findTrailingUserQuestion)', () => {
+      expect(detectAwaitingUserInput('Ready to proceed?')).toBe(true);
+    });
+
+    it('does NOT fire on ordinary completion / progress text', () => {
+      expect(detectAwaitingUserInput('Done — I created the files and the tests pass.')).toBe(false);
+      expect(detectAwaitingUserInput('I edited brain.kern and ran the build; all green.')).toBe(false);
+      expect(detectAwaitingUserInput('The server is waiting for the next request.')).toBe(false); // not user-directed
+      expect(detectAwaitingUserInput('')).toBe(false);
+    });
+
+    it('does NOT fire on greenlight-received or polite "let me know" closers (tightened)', () => {
+      expect(detectAwaitingUserInput('I received the greenlight and am starting now.')).toBe(false);
+      expect(detectAwaitingUserInput('Done. Let me know if you want more test coverage.')).toBe(false);
+      expect(detectAwaitingUserInput('The greenlight is on; proceeding.')).toBe(false);
+    });
+
+    it('still detects a holding/awaiting line behind a markdown list or quote marker', () => {
+      expect(detectAwaitingUserInput('- Holding for your input on the rename.')).toBe(true);
+      expect(detectAwaitingUserInput('1. Awaiting your approval before step 3.')).toBe(true);
+    });
+
+    it('does NOT fire on "Holding <noun>" / "Holding the lock" / "waiting/awaiting your <noun>"', () => {
+      expect(detectAwaitingUserInput('Holding references to assets in the bundle.')).toBe(false);
+      expect(detectAwaitingUserInput('Holding the lock until the write completes.')).toBe(false);
+      expect(detectAwaitingUserInput('The job is waiting for your files to upload.')).toBe(false);
+      expect(detectAwaitingUserInput('Awaiting your files from the previous step.')).toBe(false);
+      expect(detectAwaitingUserInput('Awaiting your branch build to finish.')).toBe(false);
+      // bare "awaiting input/response" (no user qualifier) = runtime status, not a user stall
+      expect(detectAwaitingUserInput('Awaiting input from the upstream API.')).toBe(false);
+      expect(detectAwaitingUserInput('Awaiting response from the server.')).toBe(false);
+    });
+
+    it('DOES fire on "awaiting your input/response" (user-qualified)', () => {
+      expect(detectAwaitingUserInput('Blocked — awaiting your input on the schema.')).toBe(true);
+      expect(detectAwaitingUserInput('Awaiting approval before I delete the table.')).toBe(true);
+    });
+
+    it('detects spaced "go ahead" / "sign off" stall phrasings', () => {
+      expect(detectAwaitingUserInput('Blocked — I need your sign off before deleting.')).toBe(true);
+      expect(detectAwaitingUserInput('Awaiting your go ahead to merge.')).toBe(true);
+    });
+  });
+
   describe('eager tool repair loop guards', () => {
     it('limits repair retries to failed tools and only once per tool', () => {
       const failedNames = eagerFailedToolNames([
@@ -112,6 +251,56 @@ describe('Cesar Brain', () => {
       for (const tool of ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'ReportConfidence']) {
         expect(shouldStopAfterXmlToolCall(tool)).toBe(false);
       }
+    });
+  });
+
+  describe('verify-before-done gate tool classification (native + MCP aliases)', () => {
+    describe('stripAgonToolPrefix', () => {
+      it('strips the Agon orchestration alias prefix case-insensitively', () => {
+        expect(stripAgonToolPrefix('AgonBash')).toBe('Bash');
+        expect(stripAgonToolPrefix('AgonEdit')).toBe('Edit');
+        expect(stripAgonToolPrefix('agonwrite')).toBe('write');
+      });
+      it('leaves bare names and non-Agon names untouched', () => {
+        expect(stripAgonToolPrefix('Bash')).toBe('Bash');
+        expect(stripAgonToolPrefix('Edit')).toBe('Edit');
+        expect(stripAgonToolPrefix('Agent')).toBe('Agent'); // not the 'Agon' prefix
+        expect(stripAgonToolPrefix('')).toBe('');
+      });
+    });
+
+    describe('isBashToolName', () => {
+      it('recognizes a shell call on the native/XML path (bare Bash)', () => {
+        expect(isBashToolName('Bash')).toBe(true);
+        expect(isBashToolName('bash')).toBe(true);
+      });
+      it('recognizes a shell call on the default companion/MCP path (AgonBash)', () => {
+        expect(isBashToolName('AgonBash')).toBe(true);
+        expect(isBashToolName('agonbash')).toBe(true);
+      });
+      it('does not treat non-shell tools as bash', () => {
+        for (const t of ['Edit', 'Write', 'AgonEdit', 'AgonWrite', 'Read', 'SaveMemory', 'Agent']) {
+          expect(isBashToolName(t)).toBe(false);
+        }
+      });
+    });
+
+    describe('isWriteToolName', () => {
+      it('counts native write tools as project write-work', () => {
+        for (const t of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+          expect(isWriteToolName(t)).toBe(true);
+        }
+      });
+      it('counts the MCP orchestration aliases as project write-work', () => {
+        for (const t of ['AgonEdit', 'AgonWrite', 'agonedit', 'AGONWRITE']) {
+          expect(isWriteToolName(t)).toBe(true);
+        }
+      });
+      it('does NOT count SaveMemory or shell/read tools as write-work', () => {
+        for (const t of ['SaveMemory', 'Bash', 'AgonBash', 'Read', 'Grep', 'Glob', 'ReportConfidence']) {
+          expect(isWriteToolName(t)).toBe(false);
+        }
+      });
     });
   });
 
@@ -350,6 +539,91 @@ describe('Cesar Brain', () => {
     });
   });
 
+  // ── C4: escalation softening — strict-anchored confidence + soft suggestion line ──
+  describe('extractStrictConfidence (strict CONFIDENCE: NN% anchor only)', () => {
+    it('extracts from a CONFIDENCE: NN% anchor', () => {
+      expect(extractStrictConfidence('CONFIDENCE: 72%')).toBe(72);
+      expect(extractStrictConfidence('Here is the plan.\nCONFIDENCE: 84%')).toBe(84);
+    });
+
+    it('is case-insensitive and tolerates ~ and inner spacing', () => {
+      expect(extractStrictConfidence('confidence: 80%')).toBe(80);
+      expect(extractStrictConfidence('CONFIDENCE: ~66 %')).toBe(66);
+    });
+
+    it('does NOT scrape loose prose like "72% sure"', () => {
+      expect(extractStrictConfidence("I'm 72% sure this is right.")).toBeNull();
+      expect(extractStrictConfidence('about 72% of the way there')).toBeNull();
+      expect(extractStrictConfidence('~72% — leading marker, not the anchor')).toBeNull();
+      expect(extractStrictConfidence('Confidence: 0.72 here')).toBeNull(); // decimal form is not the strict anchor
+    });
+
+    it('returns null for no anchor / empty / out-of-range', () => {
+      expect(extractStrictConfidence('Here is a normal response.')).toBeNull();
+      expect(extractStrictConfidence('')).toBeNull();
+      expect(extractStrictConfidence(undefined as unknown as string)).toBeNull();
+      expect(extractStrictConfidence('CONFIDENCE: 250%')).toBeNull();
+    });
+  });
+
+  describe('ESCALATION_SUGGESTION_THRESHOLD + suggestion-line gating', () => {
+    it('threshold is 85 (below ~85% earns a line)', () => {
+      expect(ESCALATION_SUGGESTION_THRESHOLD).toBe(85);
+    });
+
+    // The brain.kern gate is `strictConf < ESCALATION_SUGGESTION_THRESHOLD`.
+    // 84 → line, 85/90 → none (fail toward silence at/above threshold).
+    it('84 is below threshold (line); 85 and 90 are not (no line)', () => {
+      expect(extractStrictConfidence('CONFIDENCE: 84%')! < ESCALATION_SUGGESTION_THRESHOLD).toBe(true);
+      expect(extractStrictConfidence('CONFIDENCE: 85%')! < ESCALATION_SUGGESTION_THRESHOLD).toBe(false);
+      expect(extractStrictConfidence('CONFIDENCE: 90%')! < ESCALATION_SUGGESTION_THRESHOLD).toBe(false);
+    });
+
+    it('no anchor means no line (fail toward silence)', () => {
+      // A turn with only prose confidence never crosses the strict gate.
+      expect(extractStrictConfidence("I'm 70% sure but no anchor.")).toBeNull();
+    });
+  });
+
+  describe('buildEscalationSuggestionLine (dim in-flow one-liner)', () => {
+    it('renders a dim line offering nero/tribunal with the percent', () => {
+      const line = buildEscalationSuggestionLine(72);
+      expect(line).toContain('72% — want a nero/tribunal on this?');
+      expect(line).toContain('\x1b[2m'); // dim
+      expect(line).toContain('\x1b[0m'); // reset
+    });
+
+    it('has no modal/menu framing — it is just the suggestion text', () => {
+      const line = buildEscalationSuggestionLine(80);
+      expect(line).not.toMatch(/\b(y\/n|press|choose|option|\[1\.)/i);
+    });
+  });
+
+  // C4 guardrail: the rigid DECISION/CONFIDENCE parser for FIRED nero/advisor
+  // results must stay intact — softening only changed the AUTO-interrupt path.
+  describe('parseQuickNeroDecision (fired-result parser — must stay untouched)', () => {
+    it('still parses a structured self-check verdict', () => {
+      const out = parseQuickNeroDecision([
+        'CONFIDENCE: ~70%',
+        'DECISION: tribunal',
+        'BREADTH: team',
+        'FORGE_SCOPE: none',
+        'WHY: real tradeoff between session tokens and JWT',
+        'CHECK: token-revocation story is unproven',
+      ].join('\n'));
+      expect(out.decision).toBe('tribunal');
+      expect(out.team).toBe(true);
+      expect(out.scope).toBe('none');
+      expect(out.rationale).toContain('tradeoff');
+    });
+
+    it('defaults to self when no DECISION line is present', () => {
+      const out = parseQuickNeroDecision('Looks fine to me, no structured verdict here.');
+      expect(out.decision).toBe('self');
+      expect(out.team).toBe(false);
+    });
+  });
+
   describe('CESAR_SYSTEM_PROMPT', () => {
     it('references ReportConfidence tool', () => {
       expect(CESAR_SYSTEM_PROMPT).toContain('ReportConfidence');
@@ -370,6 +644,15 @@ describe('Cesar Brain', () => {
     it('mentions team and hardened variants', () => {
       expect(CESAR_SYSTEM_PROMPT).toContain('team=true');
       expect(CESAR_SYSTEM_PROMPT).toContain('hardened=true');
+    });
+
+    // C3: concise-output contract lives inside the TURN CLOSURE section.
+    it('carries the LEAD WITH FINDINGS concise-output principle', () => {
+      expect(CESAR_SYSTEM_PROMPT).toContain('LEAD WITH FINDINGS');
+      expect(CESAR_SYSTEM_PROMPT).toContain('FIRST sentence');
+      // GOOD/BAD example pair present
+      expect(CESAR_SYSTEM_PROMPT).toMatch(/GOOD:/);
+      expect(CESAR_SYSTEM_PROMPT).toMatch(/BAD:/);
     });
   });
 

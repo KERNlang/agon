@@ -19,6 +19,7 @@ export type Intent =
   | { type: 'use'; engineIds: string[] }
   | { type: 'models' }
   | { type: 'tokens' }
+  | { type: 'raw'; index?: number }
   | { type: 'doctor'; scope?: string }
   | { type: 'harness-replay'; turnId?: string }
   | { type: 'plan'; planId?: string }
@@ -50,6 +51,8 @@ export type Intent =
   | { type: 'jobs' }
   | { type: 'focus'; jobId?: string }
   | { type: 'explore' }
+  | { type: 'permissions' }
+  | { type: 'nogate' }
   | { type: 'nero' }
   | { type: 'chats-resume'; sessionId: string }
   | { type: 'suggest-brainstorm'; input: string; question?: string }

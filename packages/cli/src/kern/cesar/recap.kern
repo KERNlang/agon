@@ -5,7 +5,7 @@
 
 fn name=createCesarRecapCapture params="input:string,startedAt?:number" returns=any export=true
   handler lang="kern"
-    return value="{ input: String(input ?? ''), startedAt: startedAt ?? Date.now(), toolEventsByKey: {} as Record<string, any>, toolOrder: [] as string[], warnings: [] as string[], errors: [] as string[], confidence: null as number | null, confidenceReasoning: '', engineId: '', durationMs: null as number | null, }"
+    return value="{ input: String(input ?? ''), startedAt: startedAt ?? Date.now(), toolEventsByKey: {} as Record<string, any>, toolOrder: [] as string[], warnings: [] as string[], errors: [] as string[], confidence: null as number | null, confidenceReasoning: '', engineId: '', durationMs: null as number | null, todos: [] as any[], }"
 
 fn name=parseRecapJsonObject params="input:unknown" returns="Record<string,unknown>"
   handler lang="kern"
@@ -135,6 +135,19 @@ fn name=recordCesarRecapEvent params="capture:any,event:any" returns=void export
       capture.confidence = Number.isFinite(value) ? Math.round(value) : null;
       return;
     }
+    if (type === 'todos-set') {
+      // Latest live-todos snapshot wins (the brain re-emits the WHOLE block each
+      // state change). Keep only what we need for the recap delta line.
+      const list = Array.isArray(event.todos) ? event.todos : [];
+      capture.todos = list.map((t: any) => ({ state: String(t?.state ?? 'pending') }));
+      return;
+    }
+    if (type === 'todos-clear') {
+      // A live clear wipes the rolling list. scope:'live' (or no scope) both drop
+      // the live snapshot we track. The next todos-set (if any) re-captures it.
+      capture.todos = [];
+      return;
+    }
     if (type === 'thinking-chunk') {
       const chunk = String(event.chunk ?? '').trim();
       const match = chunk.match(/^Confidence reasoning(?:\s*[^:]*)?:\s*(.+)$/i);
@@ -259,6 +272,16 @@ fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[
       else readCount += 1;
     }
     const changeSummary = { created: createdCount, edited: editedCount, read: readCount };
+    // Todo delta: the turn's final live-checklist snapshot → "N/M done". Built
+    // from the latest todos-set captured this turn; null when the turn declared
+    // no live checklist (so the renderer omits the line).
+    const todoItems = Array.isArray(capture?.todos) ? capture.todos : [];
+    const todoTotal = todoItems.length;
+    const todoDone = todoItems.filter((t: any) => {
+      const s = String(t?.state ?? '');
+      return s === 'done' || s === 'cancelled';
+    }).length;
+    const todos = todoTotal > 0 ? { done: todoDone, total: todoTotal } : null;
     const verifyLabels = new Set(['compile', 'typecheck', 'build', 'tests', 'lint']);
     const verification: any[] = [];
     const seenVerify = new Set<string>();
@@ -282,6 +305,7 @@ fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[
       commands,
       files,
       changeSummary,
+      todos,
       verification,
       checkpoints,
       warnings: [...(capture?.warnings ?? []), ...(capture?.errors ?? [])].slice(0, 4),
@@ -289,9 +313,21 @@ fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[
   >>>
 
 fn name=shouldEmitCesarRecap params="event:any" returns=boolean export=true
+  doc "Gate the end-of-turn recap. A delegation always recaps. Otherwise emit only when the turn produced real FINDINGS — touched/changed files, ran commands, a diff, todo progress, or warnings/errors — OR did more than one tool call. SKIP a trivial turn (no findings AND toolCount <= 1): a bare ReportConfidence turn is exactly this case (toolCount 1, confidence set, nothing else) and must stay quiet — confidence alone is not a finding."
   handler lang="kern"
     if cond="!event || event.type !== 'cesar-recap'"
       return value="false"
     if cond="String(event.outcome ?? '').startsWith('Handed off to ')"
       return value="true"
-    return value="Number(event.toolCount ?? 0) > 0 || (Array.isArray(event.files) && event.files.length > 0) || (event.diffPreview && Array.isArray(event.diffPreview.files) && event.diffPreview.files.length > 0) || (Array.isArray(event.commands) && event.commands.length > 0) || (Array.isArray(event.warnings) && event.warnings.length > 0) || typeof event.confidence === 'number'"
+    let name=hasFiles value="Array.isArray(event.files) && event.files.some((f: any) => String(f?.status ?? '') !== 'read')"
+    let name=hasDiff value="!!(event.diffPreview && Array.isArray(event.diffPreview.files) && event.diffPreview.files.length > 0)"
+    let name=hasCommands value="Array.isArray(event.commands) && event.commands.length > 0"
+    let name=hasWarnings value="Array.isArray(event.warnings) && event.warnings.length > 0"
+    let name=hasTodos value="!!(event.todos && Number(event.todos.total ?? 0) > 0)"
+    let name=hasFindings value="hasFiles || hasDiff || hasCommands || hasWarnings || hasTodos"
+    let name=toolCount value="Number(event.toolCount ?? 0)"
+    comment raw="// SKIP the trivial turn: no findings AND at most one tool call (the bare"
+    comment raw="// ReportConfidence turn — toolCount 1, confidence set, nothing else)."
+    if cond="!hasFindings && toolCount <= 1"
+      return value="false"
+    return value="true"

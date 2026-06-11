@@ -153,6 +153,38 @@ describe('runApiAgentLoop', () => {
     }
   });
 
+  it('degrades to the last visible narration when the engine then goes silent (S3)', async () => {
+    const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(cwd, { recursive: true });
+
+    apiStreamDispatchWithHistoryMock
+      // Step 1: visible narration + a tool call → loop continues, narration retained.
+      .mockImplementationOnce(() => streamChunks(['Let me check the config file.\n<tool name="Read">{"file_path":"missing.txt"}</tool>']))
+      // Then the engine goes reasoning-only until the retry budget is exhausted.
+      .mockImplementationOnce(() => reasoningOnlyStream())
+      .mockImplementationOnce(() => reasoningOnlyStream())
+      .mockImplementationOnce(() => reasoningOnlyStream());
+
+    try {
+      const result = await runApiAgentLoop({
+        api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: 'AGON_TEST_API_KEY', model: 'test-model' },
+        prompt: 'Fix the thing',
+        cwd,
+        timeout: 120,
+        maxSteps: 6,
+      });
+
+      // Best-effort partial surfaced instead of a bare error string...
+      expect(result.response).toContain('Let me check the config file.');
+      expect(result.response).not.toContain('Error: API engine produced hidden reasoning');
+      // ...but the turn is still flagged failed so the caller classifies it as
+      // an error turn (quarantine/diagnostic signal preserved via errorReason).
+      expect(result.failed).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('retries a transient API failure with backoff, then completes (same step)', async () => {
     const cwd = join(tmpdir(), `agon-api-agent-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(cwd, { recursive: true });

@@ -42,6 +42,12 @@ npm run build          # tsc -b --force
 npm run test           # vitest run
 npm run typecheck      # tsc -b
 
+## Git Workflow — NEVER commit/push to main
+
+- NEVER commit or push directly to `main`/`master`. Always: feature branch → push → open PR. This applies to **Cesar/builder auto-commits too** — an autonomous build leaves work for a human merge gate; it does not land on main.
+- Stage explicit paths; never `git add -A` in the shared working tree (it sweeps other sessions' WIP).
+- Run the gate (`npm run kern:compile && npm run test`) green before committing; "done" from a builder is unverified until the gate passes.
+
 ## Conventions
 
 - ESM only, .js extensions in imports

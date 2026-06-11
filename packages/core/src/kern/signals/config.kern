@@ -4,6 +4,7 @@ import from="node:os" names="homedir"
 import from="../models/types.js" names="AgonConfig" types=true
 import from="../models/types.js" names="DEFAULT_AGON_CONFIG"
 import from="../models/errors.js" names="ConfigError"
+import from="../blocks/file-lock.js" names="withFileLock"
 
 fn name=getAgonHome returns=string
   doc "Resolve Agon's storage root at runtime. AGON_HOME overrides ~/.agon and is primarily used for test isolation and sandbox-safe runs."
@@ -84,6 +85,25 @@ fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
       };
     }
     if (!(merged as any).permissionMode) (merged as any).permissionMode = 'smart';
+    // CC-parity permissions: deep-merge allow/deny across scopes so deny from
+    // ANY scope (global/project/local) wins, instead of an outer scope's
+    // `permissions` object wholesale-replacing an inner one. Fail-safe:
+    // non-array / non-object entries collapse to empty arrays, never throw.
+    const collectRules = (src: any): { allow: string[]; deny: string[] } => {
+      const p = src?.permissions;
+      if (!p || typeof p !== 'object' || Array.isArray(p)) return { allow: [], deny: [] };
+      const allow = Array.isArray(p.allow) ? p.allow.filter((x: unknown) => typeof x === 'string') : [];
+      const deny = Array.isArray(p.deny) ? p.deny.filter((x: unknown) => typeof x === 'string') : [];
+      return { allow, deny };
+    };
+    const dedup = (arr: string[]): string[] => Array.from(new Set(arr));
+    const g = collectRules(global);
+    const l = collectRules(local);
+    const lp = collectRules(localPrivate);
+    (merged as any).permissions = {
+      allow: dedup([...g.allow, ...l.allow, ...lp.allow]),
+      deny: dedup([...g.deny, ...l.deny, ...lp.deny]),
+    };
     return merged;
   >>>
 
@@ -104,13 +124,18 @@ fn name=configSet params="key:keyof AgonConfig,value:AgonConfig[keyof AgonConfig
       }
     }
     // Review #10: dynamic path lookup so env override in tests is respected.
+    // The read-modify-write runs under the cross-process lock — two concurrent
+    // configSet calls (or one racing a heavy run's set) would otherwise lose
+    // whichever key the second writer didn't know about.
     const globalConfigPath = agonPath('config.json');
-    const existing = readJsonSafe<Partial<AgonConfig>>(globalConfigPath) ?? {};
-    (existing as any)[key] = value;
-    mkdirSync(dirname(globalConfigPath), { recursive: true });
-    const tmpPath = globalConfigPath + '.tmp';
-    writeFileSync(tmpPath, JSON.stringify(existing, null, 2) + '\n');
-    renameSync(tmpPath, globalConfigPath);
+    withFileLock(globalConfigPath + '.lock', () => {
+      const existing = readJsonSafe<Partial<AgonConfig>>(globalConfigPath) ?? {};
+      (existing as any)[key] = value;
+      mkdirSync(dirname(globalConfigPath), { recursive: true });
+      const tmpPath = globalConfigPath + '.tmp';
+      writeFileSync(tmpPath, JSON.stringify(existing, null, 2) + '\n');
+      renameSync(tmpPath, globalConfigPath);
+    });
   >>>
 
 fn name=pruneRuns returns=void

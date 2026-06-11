@@ -40,3 +40,19 @@ fn name=appendBlockWithCap params="prev:OutputBlock[], block:OutputBlock, archiv
     let name=overflow value="next.length - MAX_LIVE_BLOCKS + ARCHIVE_BATCH"
     do value="archiveBlocks(archivePath, next.slice(0, overflow))"
     return value="next.slice(overflow)"
+
+// ── Static-region remount epoch ──────────────────────────────────────────────
+// The native <Static> region is keyed by an epoch; changing the key REMOUNTS it,
+// which forces Ink to repaint the ENTIRE archive (~400 blocks) synchronously to
+// stdout. That repaint is wanted ONLY on a true transcript reset (/clear, /clean,
+// session reset). It must NEVER fire on an append or a cap-spill: Ink's <Static>
+// is append-only (it renders only items beyond its internal index), so a
+// front-slice spill renders nothing new and never needs a remount — bumping the
+// epoch on spill is the long-session repaint storm. Carry the cause EXPLICITLY
+// instead of inferring it from the array length shrinking.
+fn name=nextStaticEpoch params="currentEpoch:number, cause:'append'|'spill'|'reset'" returns=number export=true
+  doc "Next <Static> remount epoch. Only a true transcript reset advances it; append and cap-spill leave it untouched (a spill must NOT repaint the sealed Static region)."
+  handler lang="kern"
+    if cond="cause === 'reset'"
+      return value="currentEpoch + 1"
+    return value="currentEpoch"

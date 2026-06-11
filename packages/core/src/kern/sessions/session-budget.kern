@@ -1,0 +1,60 @@
+import from="../models/types.js" names="SessionBudget" types=true
+import from="./token-estimator.js" names="effectiveWindow"
+
+comment raw="// Default thresholds (fractions of the EFFECTIVE window). Overridable per"
+comment raw="// engine via SessionBudget. Ordered warn < compact < hard-stop."
+const name=DEFAULT_WARN_AT type=number value={{ 0.70 }}
+const name=DEFAULT_COMPACT_AT type=number value={{ 0.82 }}
+const name=DEFAULT_HARD_STOP_AT type=number value={{ 0.92 }}
+
+interface name=BudgetThresholds
+  field name=warnAt type=number
+  field name=compactAt type=number
+  field name=hardStopAt type=number
+
+interface name=BudgetCheck
+  field name=level type="'ok'|'warn'|'compact'|'hard-stop'"
+  field name=ratio type=number
+    doc "estimated / effectiveWindow, clamped to >= 0 (can exceed 1 when over-budget)."
+  field name=estimated type=number
+  field name=effectiveWindow type=number
+  field name=thresholds type=BudgetThresholds
+
+fn name=clampFraction params="value:number|undefined, fallback:number" returns=number export=false
+  doc "Coerce a configured threshold fraction into (0,1]; fall back when missing/out-of-range so a malformed config can never disable or invert the gate."
+  handler <<<
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= 1) return value;
+    return fallback;
+  >>>
+
+fn name=resolveThresholds params="budget:SessionBudget" returns=BudgetThresholds export=true
+  doc "Resolve the three threshold fractions with defaults, then enforce monotonic ordering warn <= compact <= hard-stop (a misconfigured compactAt below warnAt is raised to warnAt, etc.) so levels never cross."
+  handler <<<
+    let warnAt = clampFraction(budget.warnAt, DEFAULT_WARN_AT);
+    let compactAt = clampFraction(budget.compactAt, DEFAULT_COMPACT_AT);
+    let hardStopAt = clampFraction(budget.hardStopAt, DEFAULT_HARD_STOP_AT);
+    if (compactAt < warnAt) compactAt = warnAt;
+    if (hardStopAt < compactAt) hardStopAt = compactAt;
+    return { warnAt, compactAt, hardStopAt };
+  >>>
+
+fn name=checkSessionBudget params="estimated:number, budget:SessionBudget" returns=BudgetCheck export=true
+  doc "Pure pre-turn gate. Given an estimated token count and the engine's budget, return the threshold level + ratio. ratio = estimated / effectiveWindow. level rises ok -> warn -> compact -> hard-stop as the ratio crosses each fraction. Callers act on the level (warn: one nudge; compact: auto-compact; hard-stop: block the turn)."
+  handler <<<
+    const eff = effectiveWindow(budget);
+    const safeEstimated = Number.isFinite(estimated) && estimated > 0 ? estimated : 0;
+    const ratio = eff > 0 ? safeEstimated / eff : 0;
+    const thresholds = resolveThresholds(budget);
+    let level: 'ok'|'warn'|'compact'|'hard-stop' = 'ok';
+    if (ratio >= thresholds.hardStopAt) level = 'hard-stop';
+    else if (ratio >= thresholds.compactAt) level = 'compact';
+    else if (ratio >= thresholds.warnAt) level = 'warn';
+    return { level, ratio, estimated: safeEstimated, effectiveWindow: eff, thresholds };
+  >>>
+
+fn name=budgetRatioPct params="ratio:number" returns=number export=true
+  doc "Render helper: a budget ratio (0..>1) as a clamped 0..100+ integer percent for user-facing messages."
+  handler <<<
+    if (!Number.isFinite(ratio) || ratio < 0) return 0;
+    return Math.round(ratio * 100);
+  >>>

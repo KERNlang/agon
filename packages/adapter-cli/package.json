@@ -1,6 +1,6 @@
 {
   "name": "@kernlang/agon-adapter-cli",
-  "version": "0.1.5",
+  "version": "0.1.8",
   "type": "module",
   "exports": {
     ".": {
@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@kernlang/agon-core": "*",
-    "@kernlang/agon-engines": "*"
+    "@kernlang/agon-engines": "^0.1.2"
   },
   "optionalDependencies": {}
 }

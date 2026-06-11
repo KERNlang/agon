@@ -16,7 +16,7 @@ import type { Dispatch } from '../../../handlers/types.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleRun } from '../../../handlers/index.js';
+import { handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handlePermissions, handleUse, handleCesar, handleTokens, handleRaw, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleRun } from '../../../handlers/index.js';
 
 import { handleProvider } from '../../handlers/provider.js';
 
@@ -136,6 +136,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
     case 'discover': await handleDiscover(cb.dispatch, cb.ctx); break;
     case 'provider': await handleProvider(intent.action, intent.args, cb.dispatch, cb.ctx); break;
     case 'config': handleConfig(intent, cb.dispatch, cb.ctx); break;
+    case 'permissions': handlePermissions(cb.dispatch); break;
     case 'use': handleUse(intent.engineIds, cb.dispatch, cb.ctx, cb.setSessionEngines); break;
     case 'cesar': {
       const cesarTarget = (intent.engineIds ?? []).join(' ').trim();
@@ -147,6 +148,7 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
       break;
     }
     case 'tokens': handleTokens(cb.dispatch); break;
+    case 'raw': handleRaw(cb.dispatch, intent.index); break;
     case 'models': {
       cb.setModelPickerTargetEngine?.(null);
       cb.setModelPickerInitialFilter?.('');

@@ -60,8 +60,9 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
           <Box flexDirection="column">
             <Text color="#fbbf24" bold>{'Awaiting approval'}</Text>
             <Text color={(selectedIndex ?? 0) === 0 ? '#4ade80' : '#6b7280'} bold={(selectedIndex ?? 0) === 0}>{(selectedIndex ?? 0) === 0 ? '❯ ' : '  '}{'1. Approve & run'}</Text>
-            <Text color={(selectedIndex ?? 0) === 1 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Reject'}</Text>
-            <Text dimColor>{'  ↑↓ move · Enter select · ✎ type to change · /approve · /cancel'}</Text>
+            <Text color={(selectedIndex ?? 0) === 1 ? '#60a5fa' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Other — revise the plan'}</Text>
+            <Text color={(selectedIndex ?? 0) === 2 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 2}>{(selectedIndex ?? 0) === 2 ? '❯ ' : '  '}{'3. Reject'}</Text>
+            <Text dimColor>{'  ↑↓ move · Enter select · 1/2/3 jump · y/o/n · /approve · /cancel'}</Text>
           </Box>
         )}
       </Box>
@@ -188,8 +189,9 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
         <Box flexDirection="column">
           <Text color="#fbbf24" bold>{'Awaiting approval'}</Text>
           <Text color={(selectedIndex ?? 0) === 0 ? '#4ade80' : '#6b7280'} bold={(selectedIndex ?? 0) === 0}>{(selectedIndex ?? 0) === 0 ? '❯ ' : '  '}{'1. Approve & run'}</Text>
-          <Text color={(selectedIndex ?? 0) === 1 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Reject'}</Text>
-          <Text dimColor>{'  ↑↓ move · Enter select · ✎ type to change · /approve · /cancel'}</Text>
+          <Text color={(selectedIndex ?? 0) === 1 ? '#60a5fa' : '#6b7280'} bold={(selectedIndex ?? 0) === 1}>{(selectedIndex ?? 0) === 1 ? '❯ ' : '  '}{'2. Other — revise the plan'}</Text>
+          <Text color={(selectedIndex ?? 0) === 2 ? '#ef4444' : '#6b7280'} bold={(selectedIndex ?? 0) === 2}>{(selectedIndex ?? 0) === 2 ? '❯ ' : '  '}{'3. Reject'}</Text>
+          <Text dimColor>{'  ↑↓ move · Enter select · 1/2/3 jump · y/o/n · /approve · /cancel'}</Text>
         </Box>
       )}
     </Box>
@@ -197,7 +199,7 @@ const PlanProposalView = React.memo(function PlanProposalView({ plan, markdown, 
 });
 export { PlanProposalView };
 
-// @kern-source: plan-view:220
+// @kern-source: plan-view:222
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');
@@ -228,6 +230,10 @@ export function PlanExecutionView({ plan }: { plan:any }) {
         const result = s.result;
         const elapsed = result?.durationMs ? `${(result.durationMs / 1000).toFixed(1)}s` : '';
         const cost = result?.actualCostUsd ? `$${result.actualCostUsd.toFixed(4)}` : '';
+        // Defense in depth: never trust a step to have a description.
+        // A malformed/legacy plan (typeless phantom step) must render,
+        // not crash the whole TUI at `s.description.slice()`.
+        const desc = typeof s.description === 'string' ? s.description : '';
         return (
           <Box key={s.id}>
             <Text color={stateInfo.color}>{stateInfo.icon}{' '}</Text>
@@ -235,7 +241,7 @@ export function PlanExecutionView({ plan }: { plan:any }) {
               <Text bold color="white">{String(i + 1)}{'.'}</Text>
             </Box>
             <Text color={cfg.color}>{cfg.icon}{' '}</Text>
-            <Text color={s.state === 'done' ? '#64748b' : s.state === 'running' ? 'white' : undefined}>{s.description.slice(0, 50)}{s.description.length > 50 ? '\u2026' : ''}</Text>
+            <Text color={s.state === 'done' ? '#64748b' : s.state === 'running' ? 'white' : undefined}>{desc.slice(0, 50)}{desc.length > 50 ? '\u2026' : ''}</Text>
             {(elapsed || cost) && (
               <Text dimColor>{' ('}{elapsed}{elapsed && cost ? ', ' : ''}{cost}{')'}</Text>
             )}
@@ -248,7 +254,7 @@ export function PlanExecutionView({ plan }: { plan:any }) {
       {runningSteps.length > 0 && (
         <Box marginTop={1}>
           <Text color="#fbbf24">{'\u25cf Running: '}</Text>
-          <Text>{runningSteps.map((s: any) => s.description).join(', ')}</Text>
+          <Text>{runningSteps.map((s: any) => typeof s.description === 'string' ? s.description : '').join(', ')}</Text>
         </Box>
       )}
     </Box>

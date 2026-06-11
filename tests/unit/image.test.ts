@@ -10,6 +10,7 @@ import {
   buildImageAttachment,
   extractImagesFromInput,
   normalizeDroppedPath,
+  encodeImagesForDispatch,
 } from '../../packages/core/src/image.js';
 import { buildCommand } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
 
@@ -313,3 +314,75 @@ describe('buildCommand with images', () => {
     expect(args).toContain('hello');
   });
 });
+
+// ── encodeImagesForDispatch — API-engine base64 encode + caps ────────
+
+describe('encodeImagesForDispatch', () => {
+  let dir: string;
+  const made: string[] = [];
+
+  const mkImage = (name: string, bytes: number): string => {
+    const p = join(dir, name);
+    writeFileSync(p, Buffer.alloc(bytes, 0x41)); // 0x41 = 'A'
+    made.push(p);
+    return p;
+  };
+
+  beforeEach(() => {
+    dir = join(tmpdir(), `agon-enc-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(dir, { recursive: true });
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('encodes an image to a data: URL ImagePart with the right mediaType', () => {
+    const p = mkImage('shot.png', 12);
+    const { parts, skipped } = encodeImagesForDispatch([p]);
+    expect(skipped).toEqual([]);
+    expect(parts).toHaveLength(1);
+    expect(parts[0].type).toBe('image');
+    expect(parts[0].mediaType).toBe('image/png');
+    // image is an explicit data: URL; its base64 payload round-trips to the file bytes
+    expect(parts[0].image.startsWith('data:image/png;base64,')).toBe(true);
+    const b64 = parts[0].image.slice('data:image/png;base64,'.length);
+    expect(Buffer.from(b64, 'base64')).toEqual(Buffer.alloc(12, 0x41));
+  });
+
+  it('skips an image over the byte cap with a reason', () => {
+    const p = mkImage('huge.png', 2048);
+    const { parts, skipped } = encodeImagesForDispatch([p], 1024);
+    expect(parts).toHaveLength(0);
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]).toContain('huge.png');
+    expect(skipped[0]).toMatch(/over .*limit/i);
+  });
+
+  it('enforces the image-count cap and reports the overflow', () => {
+    const paths = ['a.png', 'b.png', 'c.png'].map((n, i) => mkImage(n, 4));
+    const { parts, skipped } = encodeImagesForDispatch(paths, undefined, 2);
+    expect(parts).toHaveLength(2);
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]).toContain('c.png');
+    expect(skipped[0]).toMatch(/limit/i);
+  });
+
+  it('rejects unsupported mime types (e.g. svg)', () => {
+    const p = mkImage('logo.svg', 8);
+    const { parts, skipped } = encodeImagesForDispatch([p]);
+    expect(parts).toHaveLength(0);
+    expect(skipped[0]).toContain('logo.svg');
+    expect(skipped[0]).toMatch(/unsupported/i);
+  });
+
+  it('skips a missing file', () => {
+    const { parts, skipped } = encodeImagesForDispatch([join(dir, 'nope.png')]);
+    expect(parts).toHaveLength(0);
+    expect(skipped[0]).toMatch(/not found/i);
+  });
+
+  it('returns empty for no input', () => {
+    expect(encodeImagesForDispatch([])).toEqual({ parts: [], skipped: [] });
+  });
+});
+

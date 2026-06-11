@@ -9,7 +9,6 @@ test name="Core tool permissions" target="../../../src/kern/tools/tool-permissio
     expect node=const name=DANGEROUS_PREFIXES prop=type is="string[]"
     expect node=fn name=isDangerousCommand prop=returns is=boolean
     expect node=fn name=isReadOnlyCommand prop=returns is=boolean
-    expect node=fn name=checkBashPermission prop=returns is=PermissionDecision
     expect fn=isDangerousCommand args={{["rm -rf /"]}} equals=true
     expect fn=isDangerousCommand args={{["sudo rm file"]}} equals=true
     expect fn=isDangerousCommand args={{["ls -la"]}} equals=false
@@ -30,17 +29,61 @@ test name="Core tool permissions" target="../../../src/kern/tools/tool-permissio
     expect node=fn name=stripShellWrappers prop=returns is=string
     expect node=fn name=extractBaseCommand prop=returns is=string
 
-  it name="bash permission decisions run at KERN level"
-    fixture name=askCtx value={{({ cwd: "/home/user/project", permissionMode: "ask" })}}
-    fixture name=autoCtx value={{({ cwd: "/home/user/project", permissionMode: "auto" })}}
-    expect expr={{checkBashPermission("rm -rf /", askCtx).behavior}} equals="deny"
-    expect expr={{checkBashPermission("git status", askCtx).behavior}} equals="allow"
-    expect expr={{checkBashPermission('agon config --help 2>/dev/null && echo "---" && agon config list 2>/dev/null', askCtx).behavior}} equals="allow"
-    expect expr={{checkBashPermission("npm install express", askCtx).behavior}} equals="ask"
-    expect expr={{checkBashPermission("npm install express", autoCtx).behavior}} equals="allow"
-    expect expr={{checkBashPermission("rm -rf /", autoCtx).behavior}} equals="deny"
+  // The standalone checkBashPermission / checkFileReadPermission /
+  // checkFileWritePermission were proven dead (no execution path called them —
+  // executeToolCall uses each tool's inline checkPermission) and were deleted.
+  // The inline tool factories live in tool-bash/tool-read/tool-write.kern and
+  // are not in this file's expr scope, so equivalent deny/allow/ask coverage
+  // now lives in tests/unit/permission-rules.test.ts (inline-gate chokepoint
+  // tests via createBashTool()/createReadTool()/createWriteTool()).
 
-  it name="file permission gates stay declared in KERN"
-    expect node=fn name=checkFileReadPermission prop=returns is=PermissionDecision
-    expect node=fn name=checkFileWritePermission prop=returns is=PermissionDecision
+  it name="path-under-cwd gate stays declared in KERN"
     expect node=fn name=isPathUnderCwd prop=returns is=boolean
+
+  it name="CC-parity rule engine functions stay declared in KERN"
+    expect node=fn name=parsePermissionRule prop=returns is="ParsedPermissionRule|null"
+    expect node=fn name=parsePermissionRuleSet prop=returns is=PermissionRuleSet
+    expect node=fn name=ruleMatches prop=returns is=boolean
+    expect node=fn name=evaluatePermissionRules prop=returns is="'allow'|'deny'|null"
+
+  it name="rule parsing splits tool, command and prefix flag"
+    expect expr={{parsePermissionRule("Bash(npm test:*)")?.tool}} equals="Bash"
+    expect expr={{parsePermissionRule("Bash(npm test:*)")?.command}} equals="npm test"
+    expect expr={{parsePermissionRule("Bash(npm test:*)")?.prefix}} equals=true
+    expect expr={{parsePermissionRule("Bash(git diff)")?.command}} equals="git diff"
+    expect expr={{parsePermissionRule("Bash(git diff)")?.prefix}} equals=false
+    expect expr={{parsePermissionRule("Edit")?.tool}} equals="Edit"
+    expect expr={{parsePermissionRule("Edit")?.command}} equals={{undefined}}
+    expect expr={{parsePermissionRule("Edit")?.prefix}} equals=false
+    expect expr={{parsePermissionRule("Write")?.tool}} equals="Write"
+
+  it name="malformed rule strings are ignored, not crashed"
+    expect expr={{parsePermissionRule("")}} equals={{null}}
+    expect expr={{parsePermissionRule("   ")}} equals={{null}}
+    expect expr={{parsePermissionRule(42)}} equals={{null}}
+    expect expr={{parsePermissionRule(null)}} equals={{null}}
+    expect expr={{parsePermissionRule("Bash(:*)")}} equals={{null}}
+    expect expr={{parsePermissionRule("two words here")}} equals={{null}}
+
+  it name="bash prefix matching respects word boundaries"
+    fixture name=npmTestRule value={{({ tool: "Bash", command: "npm test", prefix: true })}}
+    expect expr={{ruleMatches(npmTestRule, "Bash", "npm test")}} equals=true
+    expect expr={{ruleMatches(npmTestRule, "Bash", "npm test -- --filter x")}} equals=true
+    expect expr={{ruleMatches(npmTestRule, "Bash", "npm testify")}} equals=false
+    expect expr={{ruleMatches(npmTestRule, "Bash", "npm tes")}} equals=false
+    expect expr={{ruleMatches(npmTestRule, "Edit", "npm test")}} equals=false
+
+  it name="tool-level rules match any invocation"
+    fixture name=editRule value={{({ tool: "Edit", prefix: false })}}
+    expect expr={{ruleMatches(editRule, "Edit", "/any/path.ts")}} equals=true
+    expect expr={{ruleMatches(editRule, "Edit", "")}} equals=true
+    expect expr={{ruleMatches(editRule, "Write", "/any/path.ts")}} equals=false
+
+  it name="precedence: deny beats allow, both beat ask-fallthrough"
+    fixture name=ruleSet value={{({ allow: [{ tool: "Bash", command: "npm test", prefix: true }, { tool: "Edit", prefix: false }], deny: [{ tool: "Bash", command: "npm test", prefix: true }, { tool: "Write", prefix: false }, { tool: "Bash", command: "rm", prefix: true }] })}}
+    expect expr={{evaluatePermissionRules("Bash", "npm test -- x", ruleSet)}} equals="deny"
+    expect expr={{evaluatePermissionRules("Bash", "rm -rf node_modules", ruleSet)}} equals="deny"
+    expect expr={{evaluatePermissionRules("Write", "/x/y.ts", ruleSet)}} equals="deny"
+    expect expr={{evaluatePermissionRules("Edit", "/x/y.ts", ruleSet)}} equals="allow"
+    expect expr={{evaluatePermissionRules("Bash", "git status", ruleSet)}} equals={{null}}
+    expect expr={{evaluatePermissionRules("Read", "/x/y.ts", ruleSet)}} equals={{null}}

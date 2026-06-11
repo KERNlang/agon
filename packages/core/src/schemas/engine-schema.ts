@@ -82,6 +82,26 @@ export const IsolationHintsSchema = z.object({
   supportsProjectMcp: z.boolean().optional(),
 });
 
+// Proactive context-window budget. MUST be modelled here or Zod silently strips
+// it at load (z.object drops unknown keys), leaving every registry-loaded engine
+// with sessionBudget=undefined — which makes the pre-turn gate inert. Mirrors
+// EngineDefinition.sessionBudget / SessionBudget in types.kern. Thresholds are
+// fractions of the effective window; bounds reject inverted/out-of-range configs
+// loudly at load instead of silently mis-gating.
+const ThresholdFraction = z.number().gt(0).lte(1);
+export const SessionBudgetSchema = z.object({
+  contextWindow: z.number().int().positive(),
+  reserveTokens: z.number().int().nonnegative().optional(),
+  warnAt: ThresholdFraction.optional(),
+  compactAt: ThresholdFraction.optional(),
+  hardStopAt: ThresholdFraction.optional(),
+  estimator: z.enum(['chars-per-token', 'message-history']).optional(),
+  charsPerToken: z.number().positive().optional(),
+}).refine(
+  (b) => b.reserveTokens === undefined || b.reserveTokens < b.contextWindow,
+  { message: 'reserveTokens must be less than contextWindow (otherwise the effective window is degenerate)', path: ['reserveTokens'] },
+);
+
 export const EngineDefinitionSchema = z.object({
   schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   id: z.string().min(1),
@@ -108,6 +128,7 @@ export const EngineDefinitionSchema = z.object({
   api: ApiConfigSchema.optional(),
   companion: CompanionConfigSchema.optional(),
   isolationHints: IsolationHintsSchema.optional(),
+  sessionBudget: SessionBudgetSchema.optional(),
 });
 
 export type ValidatedEngineDefinition = z.infer<typeof EngineDefinitionSchema>;

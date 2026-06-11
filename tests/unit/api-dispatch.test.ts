@@ -33,6 +33,55 @@ describe('api-dispatch — AI SDK message conversion', () => {
     ]);
   });
 
+  it('passes a multimodal user array (text + image part) through untouched', () => {
+    const messages = [
+      { role: 'system', content: 'You are helpful.' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: "what's wrong here?" },
+          { type: 'image', image: 'QUFB', mediaType: 'image/png' },
+        ],
+      },
+    ];
+    const result = convertMessagesForSdk(messages);
+    expect(result).toEqual([
+      { role: 'system', content: 'You are helpful.' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: "what's wrong here?" },
+          { type: 'image', image: 'QUFB', mediaType: 'image/png' },
+        ],
+      },
+    ]);
+  });
+
+  it('passes an image-only user turn through (no empty text part)', () => {
+    // Mirrors withImages() for a /img drop with no text: image part(s) only.
+    const messages = [
+      { role: 'user', content: [{ type: 'image', image: 'QUFB', mediaType: 'image/png' }] },
+    ];
+    const result = convertMessagesForSdk(messages);
+    expect(result).toHaveLength(1);
+    expect((result[0] as any).content).toEqual([{ type: 'image', image: 'QUFB', mediaType: 'image/png' }]);
+    // No empty {type:'text',text:''} block slipped in.
+    expect((result[0] as any).content.some((p: any) => p.type === 'text')).toBe(false);
+  });
+
+  it('does not merge a multimodal user turn into an adjacent string user turn', () => {
+    const messages = [
+      { role: 'user', content: 'first' },
+      { role: 'user', content: [{ type: 'text', text: 'second' }, { type: 'image', image: 'QUFB', mediaType: 'image/png' }] },
+    ];
+    const result = convertMessagesForSdk(messages);
+    // The string turn stays separate; the image part survives as its own message.
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ role: 'user', content: 'first' });
+    expect(Array.isArray((result[1] as any).content)).toBe(true);
+    expect((result[1] as any).content).toContainEqual({ type: 'image', image: 'QUFB', mediaType: 'image/png' });
+  });
+
   it('merges separated system messages into one leading system message', () => {
     const messages = [
       { role: 'system', content: 'base rules' },
@@ -371,6 +420,7 @@ describe('apiDispatch usage capture', () => {
       promptTokens: 100,
       completionTokens: 50,
       totalTokens: 150,
+      cachedInputTokens: 0,
       source: 'sdk',
     });
   });
@@ -406,6 +456,7 @@ describe('apiDispatch usage capture', () => {
       promptTokens: 200,
       completionTokens: 0,
       totalTokens: 200,
+      cachedInputTokens: 0,
       source: 'sdk',
     });
   });

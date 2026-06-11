@@ -948,11 +948,17 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
     const outDir = join(RUNS_DIR, `acting-cesar-${Date.now()}`);
     mkdirSync(outDir, { recursive: true });
     if (!_silentMode) cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('acting', actingCesar, `log: ${outDir}`) });
+    // Acting-Cesar leads and may need tools, so dispatch in 'agent' mode when the
+    // substitute supports it. 'exec' triggers agy's OUTPUT-RULES gag (adapter-helpers:
+    // engine.id === 'agy' && mode !== 'agent') which forbids file edits / tool use and
+    // forces single-pass text — the reason agy refused to run tools as acting Cesar.
+    // Fall back to 'exec' for engines without an agent mode (no regression).
+    const actingMode = ((actingEngine as any)?.agent ? 'agent' : 'exec') as any;
     const actingResult = await cb.ctx.adapter.dispatch({
       engine: actingEngine,
       prompt: actingPrompt,
       cwd: resolveWorkingDir(),
-      mode: 'exec' as any,
+      mode: actingMode,
       timeout: (cesarConfig as any).timeout ?? 120,
       outputDir: outDir,
       systemPrompt: buildCesarSystemPrompt(cb.ctx),
@@ -988,7 +994,7 @@ export async function runCesarBrainFallback(input: string, cb: DispatchCallbacks
 /**
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
-// @kern-source: cesar-router:929
+// @kern-source: cesar-router:935
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   // Hoisted out of the try so the fallback ladder below can see whether the

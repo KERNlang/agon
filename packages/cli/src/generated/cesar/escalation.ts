@@ -12,20 +12,22 @@ import { icons } from '../signals/icons.js';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
+import { recordCesarTurn } from './brain-helpers.js';
+
 import { CONFIDENCE_TIERS, confidenceBadge, parseConfidence } from './confidence.js';
 
 import { CESAR_SYSTEM_PROMPT } from './session.js';
 
-// @kern-source: escalation:10
+// @kern-source: escalation:11
 export type QuickNeroDecision = 'self' | 'tribunal' | 'brainstorm' | 'campfire' | 'forge';
 
-// @kern-source: escalation:12
+// @kern-source: escalation:13
 export type QuickNeroScope = 'slice' | 'full' | 'none';
 
 /**
  * Parse structured guidance from Quick Nero self-check output.
  */
-// @kern-source: escalation:14
+// @kern-source: escalation:15
 export function parseQuickNeroDecision(text: string): {decision:QuickNeroDecision, team:boolean, scope:QuickNeroScope, rationale:string} {
   const cleaned = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
   const decisionMatch = cleaned.match(/(?:^|\n)\s*DECISION:\s*(self|tribunal|brainstorm|campfire|forge)\b/i);
@@ -42,7 +44,7 @@ export function parseQuickNeroDecision(text: string): {decision:QuickNeroDecisio
 /**
  * Pick the highest-ELO engine for this task class (excluding Cesar) as advisor.
  */
-// @kern-source: escalation:28
+// @kern-source: escalation:29
 export function pickBestAdvisor(input: string, ctx: HandlerContext): {engineId:string, color:number}|null {
   const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
   const otherEngines = ctx.activeEngines().filter((id: string) => id !== cesarEngineId);
@@ -59,7 +61,7 @@ export function pickBestAdvisor(input: string, ctx: HandlerContext): {engineId:s
 /**
  * At <70% confidence, dispatch the best-ranked engine as advisor with a focused advisory prompt.
  */
-// @kern-source: escalation:41
+// @kern-source: escalation:42
 export async function fireAdvisor(input: string, cesarResponse: string, parsedConfidence: number|null, ctx: HandlerContext, abort: AbortController): Promise<{stdout:string, engineId:string, color:number}|null> {
   const advisor = pickBestAdvisor(input, ctx);
       if (!advisor) return null;
@@ -99,7 +101,7 @@ export async function fireAdvisor(input: string, cesarResponse: string, parsedCo
 /**
  * Same-session self-challenge: inject a challenge message into the existing Cesar session. Fast — no engine spawn.
  */
-// @kern-source: escalation:79
+// @kern-source: escalation:80
 export async function fireQuickNero(session: any, response: string, input: string, confidence: number, dispatch: Dispatch, signal: AbortSignal, ctx: HandlerContext): Promise<{ challenged: boolean; newConfidence: number|null; challengeText: string; decision: QuickNeroDecision; team: boolean; scope: 'slice'|'full'|'none'; rationale: string }> {
   const challengePrompt = `[SELF-CHECK] You responded at ${confidence}% confidence.
 
@@ -143,7 +145,7 @@ export async function fireQuickNero(session: any, response: string, input: strin
 /**
  * Same-turn adversarial subagent: spawn a second Cesar instance with a contrarian prompt to attack the original response.
  */
-// @kern-source: escalation:121
+// @kern-source: escalation:122
 export async function fireNero(input: string, response: string, confidence: number, ctx: HandlerContext, abort: AbortController): Promise<{ challengeText: string; challengeConfidence: number|null } | null> {
   // Nero is the TOP-RATED adversarial engine (critique -> tribunal -> global
       // Glicko cascade — best builder != best critic), NOT the Cesar engine. The
@@ -197,7 +199,7 @@ export async function fireNero(input: string, response: string, confidence: numb
 /**
  * Display advisor opinion and present escalation menu. At <70%, advisor replaces STOP.
  */
-// @kern-source: escalation:173
+// @kern-source: escalation:174
 export async function handleSecondOpinion(secondResult: {stdout:string, engineId:string, color:number}|null, input: string, response: string, parsedConfidence: number|null, cesarEngineId: string, dispatch: Dispatch, ctx: HandlerContext, abortSignal?: AbortSignal): Promise<{delegated:boolean, responded:boolean, action?:string, task?:string, reasoning?:string}|null> {
   if (!secondResult || !secondResult.stdout.trim()) return null;
 
@@ -210,12 +212,7 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
   // Save Cesar's response
   appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
   appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-  // Cesar's own turn: prefer real billed usage from the API session.
-  try {
-    const su: any = (ctx.cesarSession as any)?.getTurnUsage?.();
-    if (su && su.totalTokens > 0) tracker.record(cesarEngineId, { usage: su });
-    else tracker.record(cesarEngineId, { prompt: input, response });
-  } catch { tracker.record(cesarEngineId, { prompt: input, response }); }
+  recordCesarTurn(ctx, cesarEngineId, input, response);
 
   // Yield so Ink paints the advisor response before showing the menu
   await new Promise<void>(resolve => setImmediate(resolve));
@@ -281,7 +278,7 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
 /**
  * Auto-activate Nero mode — kill session so next turn reboots with Nero system prompt.
  */
-// @kern-source: escalation:255
+// @kern-source: escalation:251
 export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   if (!ctx.neroMode && ctx.setNeroMode) {
     ctx.setNeroMode(true);
@@ -297,7 +294,7 @@ export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
 /**
  * Auto-deactivate Nero when confidence recovers.
  */
-// @kern-source: escalation:267
+// @kern-source: escalation:263
 export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   ctx.setNeroMode(false);
   ctx.neroMode = false;
@@ -309,7 +306,7 @@ export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
 /**
  * Ask user to confirm a suggested delegation with a simple yes/no prompt.
  */
-// @kern-source: escalation:277
+// @kern-source: escalation:273
 export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
   const confirmLabel = hardened ? `${action} (hardened)` : action;
   const answer = await new Promise<string>((resolve) => {
@@ -325,7 +322,7 @@ export async function promptDelegation(action: string, dispatch: Dispatch, harde
 /**
  * Last-resort fallback: if Cesar had routing context but still didn't delegate at low confidence, offer brainstorm. Cesar should have decided — this is a safety net.
  */
-// @kern-source: escalation:291
+// @kern-source: escalation:287
 export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean, tribunalMode?:string}|null> {
   if (parsedConfidence === null
       || parsedConfidence >= CONFIDENCE_TIERS.nero

@@ -62,7 +62,7 @@ export interface PersistentSession {
   getMessageHistory: () => Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>;
   getContextUsage?: () => {tokens:number, limit:number, softLimit:number, source:'api'|'projected'|'estimate', cachedInputTokens:number};
   compact?: () => Promise<{ok:boolean, method:'llm'|'regex'|'none'|'deferred', beforeTokens:number, afterTokens:number, limit:number}>;
-  getTurnUsage?: () => {promptTokens:number, completionTokens:number, totalTokens:number, source:'sdk'} | null;
+  getTurnUsage?: () => {promptTokens:number, completionTokens:number, totalTokens:number, source:'sdk', model?:string} | null;
 }
 
 /**

@@ -45,12 +45,14 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
     let sendActive = false;
     let compactPromise: Promise<{ok:boolean, method:'llm'|'regex'|'none'|'deferred', beforeTokens:number, afterTokens:number, limit:number}> | null = null;
 
-    // ── Per-turn REAL usage accumulator (for cost tracking) ──
+    // ── REAL usage accumulator (for cost tracking) ──
     // A turn can span many dispatch steps (tool loop); each step bills its own
-    // full input, so the SUM across steps is the turn's real billed usage.
-    // Reset at send() entry; read by the orchestrator via getTurnUsage() after
-    // the turn so cost is recorded from real API tokens instead of a chars/4
-    // estimate. null promptTokens sum ⇒ no real usage this turn (CLI path).
+    // full input, so the SUM across steps is the real billed usage. DRAINED
+    // (returned + reset) by getTurnUsage() when the orchestrator records the
+    // turn — drain-on-read keeps the session-wide total exact even when a turn
+    // fires extra sends through the same session (quick-nero self-challenge)
+    // or a path skips recording: undrained tokens are attributed to the next
+    // record call instead of being lost or double-counted.
     let turnUsage: { promptTokens: number; completionTokens: number } = { promptTokens: 0, completionTokens: 0 };
 
     // ── Token estimation + context limit (config-only — hoisted out of send()
@@ -258,7 +260,6 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
             try { await compactPromise; } catch { /* compaction failure must not block the turn */ }
           }
           sendActive = true;
-          turnUsage = { promptTokens: 0, completionTokens: 0 };
           // Inject system prompt on first turn
           if (firstTurn) {
             const sysPrompt = config.systemPrompt ?? opts.systemPrompt;
@@ -1247,17 +1248,22 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
       },
 
       getTurnUsage() {
-        // Real billed usage for the most recent turn (sum across its dispatch
-        // steps), or null when the turn produced no real usage (CLI path,
-        // failed dispatch). Callers record cost from this instead of a
-        // chars/4 estimate.
+        // DRAIN: real billed usage accumulated since the last drain (sum
+        // across dispatch steps and any intermediate sends), or null when
+        // nothing real accrued (CLI path, failed dispatch). Resets on read so
+        // each token is recorded exactly once.
         if (turnUsage.promptTokens <= 0 && turnUsage.completionTokens <= 0) return null;
-        return {
+        const drained = {
           promptTokens: turnUsage.promptTokens,
           completionTokens: turnUsage.completionTokens,
           totalTokens: turnUsage.promptTokens + turnUsage.completionTokens,
           source: 'sdk' as const,
+          // Model id so the tracker can apply model-specific pricing instead
+          // of the generic per-engine fallback rate.
+          model: config.engine.api?.model,
         };
+        turnUsage = { promptTokens: 0, completionTokens: 0 };
+        return drained;
       },
 
       async compact() {

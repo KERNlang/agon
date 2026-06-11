@@ -18,20 +18,7 @@ import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval"
 import from="./approval-diff.js" names="approvalToolIsFileMutating,buildApprovalDiffPreview"
 import from="./tool-observability.js" names="createCesarTurnId,recordCesarApprovalDecision,recordCesarToolTimeline,recordCesarConfidence"
 import from="./steering.js" names="markSteeringTurn,drainSteering,releaseSteeringTurn"
-import from="./brain-helpers.js" names="yieldToInk,splitBeforeToolMarkup,XML_TOOL_MARKUP_HOLD_CHARS,createTodosDisplayStripper,createPreambleStripper,findTrailingUserQuestion,detectAwaitingUserInput,detectNarratedToolStall,detectMutationIntentStall,detectFabricatedDelegation,eagerFailedToolNames,shouldRunEagerRepairTool,shouldStopAfterXmlToolCall,buildReviewFollowupPrompt,extractDelegation,isBashToolName,isWriteToolName"
-
-fn name=recordCesarTurn params="ctx:HandlerContext, cesarEngineId:string, input:string, response:string" returns="any"
-  doc "Record a Cesar turn into the token tracker. Prefers the session's REAL billed usage (getTurnUsage — API backend, summed across the turn's dispatch steps) so cost is metered; falls back to the chars/4 text estimate for PTY/CLI brains, whose per-token cost is not countable (subscription) and stays marked source:'estimated'."
-  handler <<<
-    try {
-      const s: any = ctx.cesarSession;
-      const u = s && typeof s.getTurnUsage === 'function' ? s.getTurnUsage() : null;
-      if (u && u.totalTokens > 0) {
-        return tracker.record(cesarEngineId, { usage: u });
-      }
-    } catch { /* fall through to the estimate */ }
-    return tracker.record(cesarEngineId, { prompt: input, response });
-  >>>
+import from="./brain-helpers.js" names="yieldToInk,recordCesarTurn,splitBeforeToolMarkup,XML_TOOL_MARKUP_HOLD_CHARS,createTodosDisplayStripper,createPreambleStripper,findTrailingUserQuestion,detectAwaitingUserInput,detectNarratedToolStall,detectMutationIntentStall,detectFabricatedDelegation,eagerFailedToolNames,shouldRunEagerRepairTool,shouldStopAfterXmlToolCall,buildReviewFollowupPrompt,extractDelegation,isBashToolName,isWriteToolName"
 
 fn name=commitTurnAndDelegate async=true params="pendingDel:PendingDelegation, input:string, response:string, cesarEngineId:string, streaming:boolean, dispatch:Dispatch, ctx:HandlerContext, telemetry?:Record<string,unknown>" returns="Promise<CesarTurnOutcome>"
   handler lang="kern"

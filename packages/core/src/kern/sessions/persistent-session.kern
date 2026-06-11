@@ -48,8 +48,8 @@ interface name=PersistentSession
     doc "API sessions only. Real-usage-anchored context occupancy: tokens = last dispatch's real prompt+completion tokens plus an estimate of messages appended since; limit = the engine's context window; softLimit = the compaction trigger line (limit minus reserve). source marks exactness: 'api' (exact), 'projected' (real anchor + estimated delta), 'estimate' (no anchor yet)."
   field name=compact type="() => Promise<{ok:boolean, method:'llm'|'regex'|'none'|'deferred', beforeTokens:number, afterTokens:number, limit:number}>" optional=true
     doc "API sessions only. In-place Claude-style compaction: summarize older messages (LLM first, deterministic regex fallback), keep a boundary-safe verbatim tail, CONTINUE the same session. Coalesces concurrent calls; defers ('deferred') while a send() is in flight. Policy-owned by the Cesar budget gate and /compact."
-  field name=getTurnUsage type="() => {promptTokens:number, completionTokens:number, totalTokens:number, source:'sdk'} | null" optional=true
-    doc "API sessions only. REAL billed token usage for the most recent turn (summed across its dispatch steps — each step bills its own full input). null when the turn produced no real usage. Callers should record cost from this instead of estimating from text length."
+  field name=getTurnUsage type="() => {promptTokens:number, completionTokens:number, totalTokens:number, source:'sdk', model?:string} | null" optional=true
+    doc "API sessions only. DRAINS the real billed token usage accumulated since the last drain (summed across dispatch steps — each step bills its own full input; resets on read so each token is recorded exactly once). null when nothing real accrued. Callers record cost from this instead of estimating from text length."
 
 fn name=createPersistentSession params="config:PersistentSessionConfig" returns="PersistentSession"
   doc "Factory: picks the right session implementation based on engine config."

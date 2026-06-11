@@ -30,8 +30,22 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+/**
+ * True for engines billed by SUBSCRIPTION, not per token — coding-plan API endpoints (kimi-for-coding-*, *-coding-plan-*) where the marginal cost of a dispatch is $0 regardless of token count. Their SDK-reported token numbers are real COUNTS but must never be multiplied by a per-token price (that invents money — the $8.79-vs-$0.07 budget-warning incident, 2026-06-11). Naming-convention heuristic until EngineDefinition carries a structured billing field; the convention is stable across the roster (kimi-for-coding-k2p6, minimax-coding-plan-minimax-m3, zai-coding-plan-glm-5.1).
+ */
 // @kern-source: token-tracker:27
+export function isFlatRateEngine(engineId: string): boolean {
+  return /(?:for-coding|coding-plan)/i.test(String(engineId ?? ''));
+}
+
+/**
+ * Per-token BALLPARK price for metered engines. Flat-rate subscription engines (isFlatRateEngine) always return 0 — their real marginal cost IS zero; pricing their tokens at any rate fabricates spend. Unknown metered engines fall back to a generic $2/Mtok ballpark — acceptable for the display-only totalCostUsd, never for budget enforcement (which reads meteredCostUsd).
+ */
+// @kern-source: token-tracker:33
 export function estimateCost(engineId: string, tokens: number, model?: string): number {
+  if (isFlatRateEngine(engineId)) {
+    return 0;
+  }
   const MODEL_COST: Record<string, number> = { "claude-opus-4-6": 45.00, "claude-sonnet-4-6": 9.00, "claude-haiku-4-5": 2.00, "gpt-4.1": 6.00, "gpt-4.1-mini": 1.20, "gpt-4.1-nano": 0.30, "gemini-3.1-pro": 5.00, "gemini-3.5-flash": 0.60, o3: 30.00, "o4-mini": 2.80 };
   if (model && MODEL_COST[model]) {
     return tokens / 1000000 * MODEL_COST[model];
@@ -41,11 +55,22 @@ export function estimateCost(engineId: string, tokens: number, model?: string): 
   return tokens / 1000000 * rate;
 }
 
-// @kern-source: token-tracker:36
+/**
+ * Cache-aware pricing: AI-SDK promptTokens INCLUDE cache reads, and a multi-turn tool loop re-reads the whole context every call — pricing those at the full input rate inflates 'actual' cost ~10-25x. Cached tokens are priced at 10% of the base rate (the standard provider cache-read discount) and clamped against promptTokens ONLY — cache reads are input-side, so a malformed cached count must never discount completion/output tokens (review finding 0.86). Flat-rate engines still return 0 via estimateCost.
+ */
+// @kern-source: token-tracker:45
+export function estimateCostCacheAware(engineId: string, promptTokens: number, completionTokens: number, cachedInputTokens?: number, model?: string): number {
+  const prompt = Math.max(0, Number(promptTokens ?? 0));
+  const completion = Math.max(0, Number(completionTokens ?? 0));
+  const cached = Math.max(0, Math.min(Number(cachedInputTokens ?? 0), prompt));
+  return estimateCost(engineId, prompt - cached + completion, model) + 0.1 * estimateCost(engineId, cached, model);
+}
+
+// @kern-source: token-tracker:54
 export class TokenTracker {
   private usages: TokenUsage[] = [];
 
-  record(engineId: string, inputOrPrompt: string|{prompt:string,response:string}|{usage:{promptTokens:number,completionTokens:number,totalTokens:number,source:'sdk'|'cli-reported'|'estimated'},model?:string}, responseText?: string): TokenUsage {
+  record(engineId: string, inputOrPrompt: string|{prompt:string,response:string}|{usage:{promptTokens:number,completionTokens:number,totalTokens:number,cachedInputTokens?:number,source:'sdk'|'cli-reported'|'estimated'},model?:string}, responseText?: string): TokenUsage {
     let promptTokens: number, responseTokens: number, totalTokens: number, source: TokenUsage['source'], model: string | undefined, costUsd: number;
 
     // Legacy 3-arg form: record(engineId, promptText, responseText)
@@ -62,7 +87,9 @@ export class TokenTracker {
       totalTokens = inputOrPrompt.usage.totalTokens;
       source = inputOrPrompt.usage.source;
       model = inputOrPrompt.model;
-      costUsd = estimateCost(engineId, totalTokens, model);
+      // Cache-aware: promptTokens include cache reads (re-sent context every
+      // loop turn) — price those at the 10% cache-read rate, not full input.
+      costUsd = estimateCostCacheAware(engineId, promptTokens, responseTokens, inputOrPrompt.usage.cachedInputTokens, model);
     } else {
       promptTokens = estimateTokens(inputOrPrompt.prompt);
       responseTokens = estimateTokens(inputOrPrompt.response);
@@ -85,10 +112,11 @@ export class TokenTracker {
       totalPromptTokens += u.promptTokens;
       totalResponseTokens += u.responseTokens;
       totalCostUsd += u.costUsd;
-      // Only real API usage ('sdk') is metered billing. 'estimated' and
-      // 'cli-reported' come from subscription/flat-rate CLI engines whose
-      // per-token cost is not countable.
-      if (u.source === 'sdk') { meteredCostUsd += u.costUsd; meteredDispatches += 1; }
+      // Only real API usage ('sdk') on a per-token-billed engine is metered
+      // billing. 'estimated'/'cli-reported' come from subscription CLI engines,
+      // and flat-rate coding-plan endpoints report real SDK token COUNTS but
+      // zero marginal dollars — both are unmetered.
+      if (u.source === 'sdk' && !isFlatRateEngine(u.engineId)) { meteredCostUsd += u.costUsd; meteredDispatches += 1; }
       else { unmeteredDispatches += 1; }
       if (!byEngine[u.engineId]) byEngine[u.engineId] = { promptTokens: 0, responseTokens: 0, totalTokens: 0, costUsd: 0, dispatches: 0 };
       const e = byEngine[u.engineId];

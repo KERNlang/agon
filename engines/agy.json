@@ -24,6 +24,8 @@
     "args": ["--print-timeout", "580s", "--print", "{prompt}", "--dangerously-skip-permissions"]
   },
 
+  "capabilities": ["vision"],
+
   "api": {
     "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
     "apiKeyEnv": "GOOGLE_API_KEY",

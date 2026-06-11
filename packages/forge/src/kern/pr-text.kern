@@ -1,0 +1,111 @@
+// `runPrText` — engine-written pull-request text for branches agon pushes.
+//
+// After `conquer --push` / `goal --push` lands a branch, one engine call turns
+// the actual branch diff + commits into a clean PR title and body (what
+// changed, why, how it was verified). The caller pairs the result with a
+// prefilled GitHub compare link (`prefilledPrUrl`) — agon's no-gh PR path:
+// the human clicks the link, the form is already filled, they review + merge.
+//
+// Deliberately fail-open: the push has already succeeded when this runs, so an
+// engine miss (timeout / empty / unparseable) returns ok:false and the caller
+// falls back to its templated title/body. PR prose is a nicety, never a gate.
+
+import from="@kernlang/agon-core" names="EngineAdapter" types=true
+import from="@kernlang/agon-core" names="EngineRegistry"
+import from="./delegate.js" names="runDelegate"
+
+interface name=PrTextOptions export=true
+  field name=engineId type=string doc="The engine that writes the PR text. Callers pass the run's own roster (conquer: the builder; goal: the first implement engine) — already trusted, already authenticated."
+  field name=intent type=string doc="What the run set out to do (the conquer task / goal intent)."
+  field name=context type="string | undefined" optional=true doc="Run facts included verbatim (done-claim, gate command + result, run summary). The prompt instructs the writer to only assert what these facts and the diff show."
+  field name=commits type=string doc="git log --oneline of the branch commits (may be '')."
+  field name=diff type=string doc="The branch diff — callers cap it (e.g. diffstat + first N lines) before passing."
+  field name=registry type=EngineRegistry
+  field name=adapter type=EngineAdapter
+  field name=timeout type=number
+  field name=outputDir type=string
+  field name=cwd type="string | undefined" optional=true
+  field name=signal type="AbortSignal | undefined" optional=true
+
+interface name=PrTextResult export=true
+  field name=ok type=boolean
+  field name=title type=string
+  field name=body type=string
+  field name=engineId type=string
+
+fn name=buildPrTextPrompt params="opts:{intent:string, context?:string, commits:string, diff:string}" returns=string export=true
+  doc "Build the PR-writer prompt. Pure — exported for testing. The TITLE:-line reply format is deliberately not JSON: CLI engines wrap/quote JSON unreliably, but a labeled first line survives every wrapper."
+  handler <<<
+    const lines: string[] = [];
+    lines.push('Write the pull-request text for a change that was just pushed. You are writing for the human reviewer who will merge it.');
+    lines.push('');
+    lines.push('TASK / INTENT:');
+    lines.push(opts.intent.trim());
+    if (opts.context && opts.context.trim()) {
+      lines.push('');
+      lines.push('RUN FACTS (verified — you may state these):');
+      lines.push(opts.context.trim());
+    }
+    if (opts.commits.trim()) {
+      lines.push('');
+      lines.push('COMMITS ON THIS BRANCH:');
+      lines.push(opts.commits.trim());
+    }
+    lines.push('');
+    lines.push('DIFF (may be truncated):');
+    lines.push(opts.diff.trim() || '(diff unavailable — describe from the commits and run facts only)');
+    lines.push('');
+    lines.push('Requirements:');
+    lines.push('- Title: ONE imperative line, max 72 chars, conventional-commit style when natural (feat:/fix:/refactor:/…). No trailing period.');
+    lines.push('- Body: GitHub markdown with exactly these sections:');
+    lines.push('  ## Summary — 2-4 sentences: what changed and why.');
+    lines.push('  ## Changes — bullets of the concrete changes, grouped by area, naming key files.');
+    lines.push('  ## Verification — how it was verified. ONLY state what the run facts/diff show (gate command, tests in the diff); never invent test runs or results.');
+    lines.push('- No preamble, no sign-off, no emojis, no flattery, nothing the diff does not support.');
+    lines.push('');
+    lines.push('Reply EXACTLY in this format (first line literally starts with "TITLE: "):');
+    lines.push('TITLE: <the title>');
+    lines.push('');
+    lines.push('<the body markdown>');
+    return lines.join('\n');
+  >>>
+
+fn name=parsePrText params="raw:string" returns="{title:string, body:string} | null" export=true
+  doc "Parse the TITLE:-line reply format. Tolerates engine wrappers: <think> blocks are stripped, preamble lines BEFORE the TITLE line are dropped, a whole-reply markdown fence is unwrapped, and a leading 'BODY:' label is removed. Returns null when no usable title or body — callers fall back to their template. Pure — exported for testing."
+  handler <<<
+    let cleaned = raw.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+    // unwrap a single whole-reply code fence (```markdown … ```)
+    const fence = cleaned.match(/^```[a-z]*\s*\n([\s\S]*?)\n```\s*$/i);
+    if (fence) cleaned = fence[1].trim();
+    if (!cleaned) return null;
+    const lines = cleaned.split('\n');
+    const i = lines.findIndex((l) => /^\s*TITLE:\s*\S/.test(l));
+    if (i < 0) return null;
+    const title = lines[i].replace(/^\s*TITLE:\s*/, '').trim();
+    let body = lines.slice(i + 1).join('\n').trim();
+    body = body.replace(/^BODY:\s*/i, '').trim();
+    if (!title || !body) return null;
+    return { title, body };
+  >>>
+
+fn name=runPrText async=true params="opts:PrTextOptions" returns="Promise<PrTextResult>" export=true
+  doc "One engine call → {title, body}. NEVER throws on engine failure: returns ok:false (empty title/body) so callers fall back to their templated text — the push already succeeded, PR prose must not fail the command."
+  handler <<<
+    try {
+      const r = await runDelegate({
+        engineId: opts.engineId,
+        task: buildPrTextPrompt(opts),
+        cwd: opts.cwd,
+        registry: opts.registry,
+        adapter: opts.adapter,
+        timeout: opts.timeout,
+        outputDir: opts.outputDir,
+        signal: opts.signal,
+      });
+      const parsed = parsePrText(r.response ?? '');
+      if (!parsed) return { ok: false, title: '', body: '', engineId: opts.engineId };
+      return { ok: true, title: parsed.title, body: parsed.body, engineId: opts.engineId };
+    } catch {
+      return { ok: false, title: '', body: '', engineId: opts.engineId };
+    }
+  >>>

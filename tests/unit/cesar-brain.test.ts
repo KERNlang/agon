@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall, extractStrictConfidence, buildEscalationSuggestionLine, ESCALATION_SUGGESTION_THRESHOLD } from '../../packages/cli/src/handlers/cesar-brain.js';
 // Source of truth for these helpers is packages/cli/src/kern/cesar/brain-helpers.kern;
 // the generated/*.js below is regenerated from it (npm run kern:compile) — do not edit by hand.
-import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall, detectFabricatedDelegation, isBashToolName, isWriteToolName, stripAgonToolPrefix } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall, detectFabricatedDelegation, stripNonAssertionSpans, shouldDeescalateGuard, isBashToolName, isWriteToolName, stripAgonToolPrefix } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 // Rigid DECISION/CONFIDENCE parser for ACTUALLY-FIRED nero/advisor results — C4
 // must leave this untouched (downstream escalation routing depends on it).
@@ -60,6 +60,21 @@ describe('Cesar Brain', () => {
       // target but no dispatch claim → not flagged.
       expect(detectFabricatedDelegation('A tribunal would surface the tradeoffs here.')).toBe(false);
     });
+
+    it('still flags an actor-less running-status lie (codex adversarial case)', () => {
+      expect(detectFabricatedDelegation('Background review in progress. Diff analysis is running now. Results soon.')).toBe(true);
+      expect(detectFabricatedDelegation('A tribunal review is currently running.')).toBe(true);
+    });
+
+    it('does NOT flag a description OF the harness (the 2026-06-11 incident class)', () => {
+      // The richer harness description that tripped the old bare-vocabulary guard.
+      expect(detectFabricatedDelegation('Agon runs a read-only investigation phase first; the Edit and Write tools unlock after approval. Forge dispatches engines that work in parallel in isolated worktrees and report back with a winner.')).toBe(false);
+      expect(detectFabricatedDelegation('It handles orchestration modes like Forge and Tribunal via isolated worktrees, and engines compete in parallel during a forge run.')).toBe(false);
+    });
+
+    it('does NOT flag quoted failure text being discussed (debug conversation)', () => {
+      expect(detectFabricatedDelegation('Why did the agent say "the review is still running" yesterday? Nothing was dispatched.')).toBe(false);
+    });
   });
 
   describe('detectMutationIntentStall (false read-only hand-back)', () => {
@@ -87,6 +102,75 @@ describe('Cesar Brain', () => {
 
     it('does NOT flag a legitimate clarifying question with no write intent', () => {
       expect(detectMutationIntentStall('Should I use approach A or approach B for the router?')).toBe(false);
+    });
+
+    it('still flags a result-first stall with no first-person intent (codex adversarial case)', () => {
+      expect(detectMutationIntentStall('Patch ready. Please apply it manually; this environment is read-only.')).toBe(true);
+    });
+
+    it('does NOT flag a description OF the harness (the 2026-06-11 incident class)', () => {
+      // The exact answer shape that derailed the kern-game-studio session.
+      expect(detectMutationIntentStall('The Agon harness is a runtime layer that mediates between AI engines and your codebase. It provides sandboxed tool access (Read/Edit/Write/Bash/Grep) with approval gating for writes, enforces read-before-edit rules, runs auto-verification after changes, and handles orchestration modes like Forge and Tribunal via isolated worktrees.')).toBe(false);
+      expect(detectMutationIntentStall('Agon runs a read-only investigation phase first; the Edit and Write tools unlock after approval.')).toBe(false);
+    });
+
+    it('does NOT flag quoted failure text being discussed (debug conversation)', () => {
+      expect(detectMutationIntentStall('The engine said "paste it into your terminal" and "I cannot apply the edit" — that is the stall we are debugging.')).toBe(false);
+    });
+  });
+
+  describe('stripNonAssertionSpans (Layer 1: quoted/demonstrated text is not a claim)', () => {
+    it('strips fenced code, backtick spans, double quotes, and tool enumerations', () => {
+      expect(stripNonAssertionSpans('see ```\nI cannot write\n``` for details')).not.toContain('cannot write');
+      expect(stripNonAssertionSpans('the tools (Read/Edit/Write/Bash) are gated')).not.toContain('Edit');
+      expect(stripNonAssertionSpans('it printed "apply it manually" yesterday')).not.toContain('apply it manually');
+      expect(stripNonAssertionSpans('run `git apply` yourself')).not.toContain('git apply');
+    });
+
+    it('keeps a quoted span that is itself an active first-person claim (anti-hiding carve-out)', () => {
+      expect(stripNonAssertionSpans('`I\'ll edit foo.ts next`')).toContain("I'll edit foo.ts next");
+    });
+
+    it('does not let contraction apostrophes pair up as quotes', () => {
+      const s = "I can't write from here; the patch is ready and you don't need more context.";
+      expect(stripNonAssertionSpans(s)).toContain("can't write");
+      expect(stripNonAssertionSpans(s)).toContain('patch is ready');
+    });
+  });
+
+  describe('shouldDeescalateGuard (Layer 3: warn-only, never suppress, fail-open)', () => {
+    it('de-escalates only on conversational intake+flow with no mutating tool', () => {
+      expect(shouldDeescalateGuard({ intakeKind: 'chat', recommendedFlow: 'answer', usedMutatingTool: false })).toBe(true);
+      expect(shouldDeescalateGuard({ intakeKind: 'exploration', recommendedFlow: 'campfire', usedMutatingTool: false })).toBe(true);
+      expect(shouldDeescalateGuard({ intakeKind: 'exploration', recommendedFlow: 'brainstorm', usedMutatingTool: false })).toBe(true);
+    });
+
+    it('fails open (full nudge) on task intakes, escalated flows, mutating tools, or missing signals', () => {
+      expect(shouldDeescalateGuard({ intakeKind: 'big-feature', recommendedFlow: 'plan-first', usedMutatingTool: false })).toBe(false);
+      // chat intake the router escalated to a non-answer flow does NOT de-escalate.
+      expect(shouldDeescalateGuard({ intakeKind: 'chat', recommendedFlow: 'quick-fix', usedMutatingTool: false })).toBe(false);
+      expect(shouldDeescalateGuard({ intakeKind: 'chat', recommendedFlow: 'answer', usedMutatingTool: true })).toBe(false);
+      expect(shouldDeescalateGuard({ intakeKind: 'chat', recommendedFlow: 'answer' })).toBe(false);
+      expect(shouldDeescalateGuard({ intakeKind: 'chat' })).toBe(false);
+      expect(shouldDeescalateGuard({})).toBe(false);
+    });
+  });
+
+  describe('watchdogs — review-verified recall cases (round 2)', () => {
+    it('mutation stall: past-tense and artifact-presentation hand-backs still fire', () => {
+      expect(detectMutationIntentStall('I made the change; apply this diff in your terminal.')).toBe(true);
+      expect(detectMutationIntentStall('Here is the diff; git apply it.')).toBe(true);
+      expect(detectMutationIntentStall('I already updated the file; copy-paste this patch.')).toBe(true);
+    });
+
+    it('fabricated delegation: passive/elliptical dispatch claims still fire', () => {
+      expect(detectFabricatedDelegation('The review was queued.')).toBe(true);
+      expect(detectFabricatedDelegation('The team of reviewers has been kicked off.')).toBe(true);
+      expect(detectFabricatedDelegation('Agents are on it.')).toBe(true);
+    });
+
+    it('a completed write with no hand-back still does not fire', () => {
+      expect(detectMutationIntentStall('I edited brain.kern and the change is applied; tests pass.')).toBe(false);
     });
   });
 

@@ -209,5 +209,6 @@ export interface HandlerContext {
   setSessionMcpServers?: ((servers: Array<Record<string,unknown>>) => void) | undefined;
   autoModeQueued?: boolean;
   telemetryVitals?: Map<string, EngineVitals> | undefined;
+  telemetrySnapshot?: (() => Map<string, EngineVitals>) | undefined;
   recentFallbacks?: {from:string,to:string,reason:string,at:number}[] | undefined;
 }

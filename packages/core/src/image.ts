@@ -8,4 +8,5 @@ export {
   extractImagesFromInput,
   normalizeDroppedPath,
   encodeImagesForDispatch,
+  visionSupportNote,
 } from './generated/blocks/image.js';

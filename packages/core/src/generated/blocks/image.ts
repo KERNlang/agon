@@ -201,3 +201,17 @@ export function encodeImagesForDispatch(paths: string[], maxBytes?: number, maxI
     skipped,
   };
 }
+
+/**
+ * One-line attach-time warning when the given engine cannot see images, or null when it can. The 'vision' capability here means 'this engine ends up seeing the image SOMEHOW': via API image parts (session-resume), via an imageFlag on CLI dispatch (claude/codex), or — deliberately — via the adapter's path-label fallback when the binary is an agentic CLI that reads the file itself (agy, verified 2026-06-11). So capability-without-imageFlag on a CLI engine is NOT a false negative; do not require imageFlag here. Two warning tiers: an API-only engine without vision truly never receives the image (session-resume drops it), while a CLI engine without the capability gets the file path and MAY still read it. Shown at /img attach, on the composer image chip, and on drag-drop submit — so the user learns BEFORE the turn, not from a status line after.
+ */
+// @kern-source: image:184
+export function visionSupportNote(engine: any): string|null {
+  if (!engine) return null;
+  if (engine.capabilities?.includes('vision')) return null;
+  const id = String(engine.id ?? 'engine');
+  if (engine.binary) {
+    return `${id} has no native image support — it only gets the file path (an agentic CLI may still read it)`;
+  }
+  return `${id} can't see images — they won't be sent to the model`;
+}

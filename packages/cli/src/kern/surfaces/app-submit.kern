@@ -48,7 +48,7 @@
 // shape; replState typed as its real ReplStateState (not loosened to any); typed
 // returns (never any); // Source: breadcrumb per fn; raw `<<<` kept for the dense
 // intent-routing bodies where structured KERN would distort the logic.
-import from="@kernlang/agon-core" names="RUNS_DIR,extractImagesFromInput,resolveWorkingDir"
+import from="@kernlang/agon-core" names="RUNS_DIR,extractImagesFromInput,resolveWorkingDir,visionSupportNote"
 import from="@kernlang/agon-core" names="ImageAttachment" types=true
 import from="../signals/intent.js" names="detectIntent"
 import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch,isCesarPlanApprovalInput,isCesarPlanStatusInput"
@@ -615,6 +615,14 @@ ${streamCtx ? 'Recent live output from the running task:\n' + streamCtx + '\n\n'
       const ctx = opts.buildContext();
       (ctx as any).autoModeQueued = autoModeForTurn;
       const cesarEngineForTurn = String((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
+      // Drag-dropped images warn here at submit (the /img path already warned at
+      // attach): if the brain can't see them, say so before the turn runs.
+      if (detectedImages.length > 0) {
+        try {
+          const visionNote = visionSupportNote(ctx.registry.get(cesarEngineForTurn));
+          if (visionNote) opts.dispatch({ type: 'warning', message: visionNote } as any);
+        } catch { /* unknown engine id — the dispatch-time status note still covers it */ }
+      }
       opts.activeTurnRef.current = (!input.startsWith('/') && opts.mode === 'chat')
         ? { input, engineId: cesarEngineForTurn, retried: false }
         : null;

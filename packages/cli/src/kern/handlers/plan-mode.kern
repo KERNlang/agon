@@ -98,10 +98,14 @@ fn name=buildStepExecutors params="ctx:HandlerContext, liveDispatch?:Dispatch" r
 
     const wrap = (fn: (step: CesarPlanStep, context: Record<string,string|undefined>, signal?: AbortSignal) => Promise<{result: CesarStepResult, contextExport?: string}>): StepExecutor => ({ execute: fn });
 
-    // Helper: extract token/cost from tracker delta
+    // Helper: extract token/cost from tracker delta.
+    // meteredCostUsd, NOT totalCostUsd: only real per-token billing counts as a
+    // step's "actual" spend. The ballpark total priced flat-rate engines at a
+    // made-up default rate and fed the budget warning fabricated dollars
+    // ($8.79 "actual" on a $0-marginal kimi coding-plan run, 2026-06-11).
     const snapshotTokens = () => {
       const s = tracker.getStats();
-      return { tokens: s.totalTokens, cost: s.totalCostUsd };
+      return { tokens: s.totalTokens, cost: s.meteredCostUsd };
     };
 
     const buildContext = (step: CesarPlanStep, context: Record<string, string | undefined>) => {
@@ -593,7 +597,7 @@ fn name=buildStepExecutors params="ctx:HandlerContext, liveDispatch?:Dispatch" r
         const startTime = Date.now();
         const before = snapshotTokens();
         try {
-          const { diff, label } = resolveReviewTarget('uncommitted', cwd);
+          const { diff, label } = resolveReviewTarget('uncommitted', cwd, undefined);
           if (!diff.trim()) {
             const after = snapshotTokens();
             return {

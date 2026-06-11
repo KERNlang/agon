@@ -1,6 +1,6 @@
 // ── Dispatch dispatchSessionInfoIntent — extracted intent-router cases (verbatim) ──
 import from="node:path" names="join"
-import from="@kernlang/agon-core" names="resolveWorkingDir,buildImageAttachment,sessionContext"
+import from="@kernlang/agon-core" names="resolveWorkingDir,buildImageAttachment,sessionContext,visionSupportNote"
 import from="../../handlers/chat.js" names="invalidateCwdCache"
 import from="@kernlang/agon-core" names="ImageAttachment" types=true
 import from="@kernlang/agon-core" names="loadCesarPlan"
@@ -33,6 +33,13 @@ fn name=dispatchSessionInfoIntent async=true params="intent:any, input:string, c
         else {
           cb.setPendingImages((prev: ImageAttachment[]) => [...prev, att]);
           cb.dispatch({ type: 'success', message: `Attached: ${att.filename}` });
+          // Warn at attach time, not after dispatch: the user should know the
+          // current brain can't see the image while they can still /cesar away.
+          try {
+            const cesarId = (cb.ctx.config as any).cesarEngine ?? cb.ctx.config.forgeFixedStarter ?? 'claude';
+            const note = visionSupportNote(cb.ctx.registry.get(cesarId));
+            if (note) cb.dispatch({ type: 'warning', message: note });
+          } catch { /* unknown engine id — dispatch-time status note still covers it */ }
         }
         break;
       }
@@ -95,8 +102,11 @@ fn name=dispatchSessionInfoIntent async=true params="intent:any, input:string, c
       case 'status': {
         const registry = cb.ctx.registry;
         const ids = registry.listIds();
+        // Prefer the live poller read: telemetryVitals (React state) is
+        // repaint-deduped and may lag by a signature bucket between commits.
+        const liveVitals = cb.ctx.telemetrySnapshot?.() ?? cb.ctx.telemetryVitals;
         const engines = ids.map((id: string) => {
-          const v = cb.ctx.telemetryVitals?.get(id);
+          const v = liveVitals?.get(id);
           if (v) return v;
           return createEngineVitals(id);
         });

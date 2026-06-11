@@ -63,6 +63,7 @@ union name=Intent discriminant=type
     field name=force type=boolean optional=true
   variant name=cp
     field name=index type=number optional=true
+    field name=last type=boolean optional=true
   variant name=flow
   variant name=flows
   variant name=chats

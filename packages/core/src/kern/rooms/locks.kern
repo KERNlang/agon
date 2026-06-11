@@ -1,0 +1,116 @@
+// ── Agon Rooms — first-class resource locks (claim / release / steal) ──
+// Field-proven need: agents improvised "LOCK #64" as plain chat, one went stale
+// when the holder forgot RELEASE, takeover had to be improvised. Locks here are
+// ordinary ledger events (kind: lock | release | lock-steal) so the transcript
+// stays the protocol: the lock table is a pure fold, every takeover leaves an
+// audit trail, and TTL expiry needs no daemon. Claims/steals serialize through
+// the SAME .lock seq allocator as posts, so two concurrent claims cannot both win.
+//
+// Clock-skew caveat: expiry compares the writer's absolute expiresAt timestamp
+// to the reader's clock — fine for multi-CLI on one machine, document for LAN use.
+
+import from="./store.js" names="withRoomLock,appendEventHoldingLock,readEvents"
+import from="./types.js" names="RoomActor,RoomEvent,RoomLockState" types=true
+
+fn name=foldLocks params="events:RoomEvent[], nowMs:number" returns="RoomLockState[]" export=true
+  doc "Fold lock/release/lock-steal events into the current lock table. Latest event per resource wins; release clears; status derives from expiresAt vs nowMs."
+  handler <<<
+    const table = new Map<string, RoomLockState>();
+    for (const ev of events) {
+      if (!ev.lock || typeof ev.lock.resource !== 'string') continue;
+      const resource = ev.lock.resource;
+      if (ev.kind === 'release') { table.delete(resource); continue; }
+      if (ev.kind !== 'lock' && ev.kind !== 'lock-steal') continue;
+      table.set(resource, {
+        resource,
+        holder: ev.actor.callsign,
+        actorId: ev.actor.actorId,
+        seq: ev.seq,
+        acquiredAt: ev.createdAt,
+        expiresAt: ev.lock.expiresAt,
+        status: new Date(ev.lock.expiresAt).getTime() > nowMs ? 'active' : 'expired',
+        ...(typeof ev.lock.stolenFromSeq === 'number' ? { stolenFromSeq: ev.lock.stolenFromSeq } : {}),
+      });
+    }
+    return Array.from(table.values()).sort((a, b) => a.resource.localeCompare(b.resource));
+  >>>
+
+fn name=listRoomLocks params="roomId:string" returns="RoomLockState[]" export=true
+  doc "The room's current lock table (active AND expired-but-unreleased — expired entries are the forgot-RELEASE signal, so they stay visible until released or stolen)."
+  handler <<<
+    return foldLocks(readEvents(roomId, 0, 0), Date.now());
+  >>>
+
+fn name=claimRoomLock params="roomId:string, actor:RoomActor, resource:string, ttlMs:number, repoHint:string, steal:boolean" returns="{ ok: boolean; event?: RoomEvent; reason?: string }" export=true
+  doc "Claim (or --steal) a resource lock atomically: fold-check-append under ONE room-lock acquisition. Steal is allowed only on an EXPIRED lock and writes a lock-steal event referencing the stale holder's seq (and @mentions them) so every takeover is audited and noisy."
+  handler <<<
+    const res = String(resource ?? '').trim().toLowerCase();
+    if (!res) return { ok: false, reason: 'lock needs a non-empty --resource name' };
+    // 1 minute floor (a sub-minute TTL is a race, not a lease), 1 year ceiling,
+    // and NaN/Infinity sanitized — a bad ttlMs must yield {ok:false}-style
+    // safety, never a RangeError from Date escaping the lock callback.
+    const ttlRaw = Number(ttlMs);
+    const ttl = Math.max(60_000, Math.min(Number.isFinite(ttlRaw) && ttlRaw > 0 ? ttlRaw : 60_000, 31_536_000_000));
+    let out: { ok: boolean; event?: RoomEvent; reason?: string } = { ok: false, reason: 'lock not attempted' };
+    withRoomLock(roomId, () => {
+      const now = Date.now();
+      const current = foldLocks(readEvents(roomId, 0, 0), now).find((l) => l.resource === res);
+      const expiresAt = new Date(now + ttl).toISOString();
+      if (steal) {
+        if (!current) { out = { ok: false, reason: `nothing to steal — no lock on "${res}" (plain claim works)` }; return; }
+        if (current.holder === actor.callsign) { out = { ok: false, reason: `you already hold "${res}" — re-claim without --steal to extend` }; return; }
+        if (current.status === 'active') { out = { ok: false, reason: `lock "${res}" is still ACTIVE — held by ${current.holder} until ${current.expiresAt}` }; return; }
+        const event = appendEventHoldingLock(roomId, {
+          kind: 'lock-steal', actor,
+          body: `STEAL lock "${res}" from ${current.holder} (expired ${current.expiresAt})`,
+          mentions: [current.holder], replyTo: null, repoHint,
+          lock: { resource: res, expiresAt, stolenFromSeq: current.seq },
+        });
+        out = { ok: true, event };
+        return;
+      }
+      if (current && current.holder !== actor.callsign) {
+        out = current.status === 'active'
+          ? { ok: false, reason: `lock "${res}" held by ${current.holder} until ${current.expiresAt}` }
+          : { ok: false, reason: `lock "${res}" held by ${current.holder} but EXPIRED ${current.expiresAt} — take it over with --steal (leaves an audit trail)` };
+        return;
+      }
+      // No lock, or re-claim/extend of our own (active or expired) — plain lock event.
+      const event = appendEventHoldingLock(roomId, {
+        kind: 'lock', actor,
+        body: `LOCK "${res}" (ttl ${Math.round(ttl / 60000)}m)`,
+        mentions: [], replyTo: null, repoHint,
+        lock: { resource: res, expiresAt },
+      });
+      out = { ok: true, event };
+    });
+    return out;
+  >>>
+
+fn name=releaseRoomLock params="roomId:string, actor:RoomActor, resource:string, repoHint:string" returns="{ ok: boolean; event?: RoomEvent; reason?: string }" export=true
+  doc "Release a lock you hold (active OR expired — releasing your stale lock is the polite cleanup). Only the holder may release; a takeover goes through --steal so the trail shows who did what."
+  handler <<<
+    const res = String(resource ?? '').trim().toLowerCase();
+    if (!res) return { ok: false, reason: 'release needs a non-empty --resource name' };
+    let out: { ok: boolean; event?: RoomEvent; reason?: string } = { ok: false, reason: 'release not attempted' };
+    withRoomLock(roomId, () => {
+      const now = Date.now();
+      const current = foldLocks(readEvents(roomId, 0, 0), now).find((l) => l.resource === res);
+      if (!current) { out = { ok: false, reason: `no lock on "${res}"` }; return; }
+      if (current.holder !== actor.callsign) { out = { ok: false, reason: `lock "${res}" is held by ${current.holder}, not you — expired locks are taken over with lock --steal` }; return; }
+      const event = appendEventHoldingLock(roomId, {
+        kind: 'release', actor,
+        body: `RELEASE "${res}"`,
+        mentions: [], replyTo: null, repoHint,
+        lock: { resource: res, expiresAt: new Date(now).toISOString() },
+      });
+      out = { ok: true, event };
+    });
+    return out;
+  >>>
+
+fn name=expiredLocksHeldBy params="roomId:string, callsign:string" returns="RoomLockState[]" export=true
+  doc "Expired-but-unreleased locks a member still nominally holds — the warn-on-post hook: posting while holding one of these means you probably forgot RELEASE."
+  handler <<<
+    return listRoomLocks(roomId).filter((l) => l.holder === callsign && l.status === 'expired');
+  >>>

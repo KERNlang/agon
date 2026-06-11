@@ -12,8 +12,8 @@
 // follow-up. See .design-docs-local/cesar-autonomous-mode.md.
 
 import from="citty" names="defineCommand"
-import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,spawnWithTimeout,appendCoAuthor"
-import from="@kernlang/agon-forge" names="runConquer"
+import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,spawnWithTimeout,appendAttribution,appendPrAttribution,githubRepoUrl,defaultBaseBranch,prefilledPrUrl"
+import from="@kernlang/agon-forge" names="runConquer,runPrText"
 import from="@kernlang/agon-forge" names="ConquerResult,ConquerTurn" types=true
 import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
 import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
@@ -110,6 +110,16 @@ const name=conquerCommand type=any
             process.exitCode = 1;
             return;
           }
+          // The human merge gate is load-bearing: pushing the DEFAULT branch would
+          // land the build with no PR at all. Refuse up front (before an hours-long
+          // run), not after the work is done.
+          const br = await spawnWithTimeout({ command: 'git', args: ['rev-parse', '--abbrev-ref', 'HEAD'], cwd, timeout: 15_000 });
+          const startBranch = String(br.stdout ?? '').trim();
+          if (startBranch === defaultBaseBranch(cwd) || startBranch === 'main' || startBranch === 'master') {
+            console.error(`--push refuses to run on the default branch (${startBranch}) — it would push the build straight to ${startBranch} and bypass the PR merge gate. Create a feature branch first: git checkout -b conquer/<name>`);
+            process.exitCode = 1;
+            return;
+          }
         }
 
         const { path: outputDir } = createRunDir({ mode: 'conquer', label: args.label, announce: false });
@@ -185,7 +195,9 @@ const name=conquerCommand type=any
             process.exitCode = 1;
           } else {
             const add = await git(['add', '-A'], 30_000);
-            const commit = add.exitCode === 0 ? await git(['commit', '-m', `conquer: ${taskStr}`, '-m', appendCoAuthor(claim, config)], 30_000) : add;
+            // appendAttribution = the Claude-Code-style footer (Generated-with line +
+            // Co-Authored-By trailer) on the claim body; opt out via commitCoAuthor "".
+            const commit = add.exitCode === 0 ? await git(['commit', '-m', `conquer: ${taskStr}`, '-m', appendAttribution(claim, config)], 30_000) : add;
             if (add.exitCode !== 0 || commit.exitCode !== 0) {
               const stage = add.exitCode !== 0 ? 'add' : 'commit';
               const errTxt = String((add.exitCode !== 0 ? add.stderr : commit.stderr) ?? '').slice(0, 200);
@@ -197,7 +209,46 @@ const name=conquerCommand type=any
                 info(dim(`git push failed: ${String(push.stderr ?? '').slice(0, 200)} — committed locally on ${branch}; push it manually.`));
                 process.exitCode = 1;
               } else {
-                info(`Pushed ${branch}. Open a PR to review + merge — this is your merge gate.`);
+                info(`Pushed ${branch}.`);
+                // Engine-written PR text + a prefilled compare link — the no-gh PR
+                // path: the human clicks the link (title+body already filled) and
+                // merges. A PR-text miss falls back to the templated title + the
+                // builder's claim; the push already succeeded, so never fail here.
+                const base = defaultBaseBranch(cwd);
+                let title = `conquer: ${taskStr}`.slice(0, 72);
+                let body = claim;
+                if (branch !== base) {
+                  const logRes = await git(['log', '--oneline', `origin/${base}..HEAD`], 15_000);
+                  const commits = logRes.exitCode === 0 ? String(logRes.stdout ?? '').trim() : '';
+                  const diffRes = await git(['diff', `origin/${base}...HEAD`], 30_000);
+                  const rawDiff = diffRes.exitCode === 0 ? String(diffRes.stdout ?? '') : '';
+                  const diffLines = rawDiff.split('\n');
+                  const cappedDiff = diffLines.length > 1200 ? diffLines.slice(0, 1200).join('\n') + `\n... (${diffLines.length - 1200} more lines)` : rawDiff;
+                  info(dim(`Writing PR text (${builder})…`));
+                  const pr = await runPrText({
+                    engineId: builder,
+                    intent: taskStr,
+                    context: `Builder's verified done-claim: ${claim}\nAcceptance gate (passed): ${gate}`,
+                    commits,
+                    diff: cappedDiff,
+                    registry,
+                    adapter,
+                    timeout: 300,
+                    outputDir,
+                    cwd,
+                  });
+                  if (pr.ok) { title = pr.title; body = pr.body; }
+                  else info(dim('PR-text engine call failed — using the templated title + claim.'));
+                }
+                body = appendPrAttribution(body, config);
+                console.log('');
+                info(bold(title));
+                console.log(body);
+                console.log('');
+                const repoUrl = githubRepoUrl(cwd);
+                const url = branch !== base ? prefilledPrUrl({ repoUrl, base, branch, title, body }) : '';
+                if (url) info(`Open the PR (form prefilled with the text above): ${url}`);
+                else info(`Open a PR from ${branch} to review + merge — this is your merge gate.`);
               }
             }
           }

@@ -255,7 +255,11 @@ Performs an automated, multi-engine code review of your uncommitted changes, bra
 ```bash
 /review HEAD~1..HEAD
 agon review commit:HEAD --engines claude,codex,agy
+agon review branch:feat-x --base main        # feat-x's commits vs main, regardless of checkout
+agon review range:main...feat-x              # fully explicit two-ref scope
 ```
+
+Diff scope is deliberate, never implicit: `--base <ref>` pins the base for `uncommitted`/`branch:` targets, and `range:BASE...TARGET` names both ends. A failed reviewer seat (timeout / hard error) is auto-retried once at half the wall clock before it's reported — and every failure is named in the run summary, never silently folded into a smaller panel. The same retry + loud `panel degraded:` banner applies to brainstorm, tribunal, and council seats.
 
 ### Agent
 An autonomous agent loop that can operate solo or in shadow mode, automatically routed to the best engine by Cesar based on task requirements.
@@ -317,7 +321,7 @@ agon goal "Close all KERN gaps" \
 | `--oracle-gate` | Pre-flight oracle red-team (`off`\|`warn`\|`strict`): the panel tries to GAME each task's `verify`; `strict` refuses to launch if any is gameable | `off` |
 | `--max-attempts` | Attempts per task before park | `3` |
 | `--max-hours` / `--budget` | Wall-clock and/or USD ceiling — either, both, or neither | off (`0`) |
-| `--push` / `--pr` | Push the goal branch per task / open a PR at the end (never `main`) | off |
+| `--push` / `--pr` | Push the goal branch per task / open a PR via `gh` at the end (never `main`). With `--push`, the run ends with an engine-written PR title/body and a **prefilled GitHub PR link** — click it and the form is already filled (no `gh`/token needed) | off |
 | `--resume` / `--status` / `--dry-run` | Resume from journal / print a run's digest / plan only | — |
 
 Read a run's digest from any session with `agon goal --status --id close-all-kern-gaps`. Reachable from external CLIs via `agon call goal "<intent>" --queue <dir> --gate "<cmd>"`. _(Roadmap: hermetic gate isolation, detached delegation + async callback.)_
@@ -339,7 +343,7 @@ agon conquer "..." --push                           # on success, commit + push 
 
 - **Cesar consults on forks.** When the builder hits a genuine fork it emits `CONQUER_ASK: <question>`; Cesar classifies it and convenes the _cheapest sufficient_ panel — `nero` (quick), `tribunal` (a choice), `brainstorm` (open), `council` (high-stakes) — then feeds back a compact verdict. A normal agent loop re-prompts itself with the same blind spots; conquer brings the whole heterogeneous panel to bear.
 - **A layered done-oracle, not a self-claim.** On `CONQUER_DONE: <claim>` the cheap deterministic layers run first — the `--gate` command (L0), a diff acceptance-drift check that blocks weakened/rewritten existing tests (L1), and an empty-claim guard (L2). Only when those pass does the **evidence-based falsifier** run (L4/L5): a _tool-enabled_ critic clones the working tree into a throwaway sandbox, reads the real code and runs commands to hunt a counterexample, then Cesar **mechanically re-runs** that counterexample in the sandbox and blocks "done" _only_ when it actually reproduces a failure — never on a bare opinion or confidence score. The adversary's findings are surfaced to your merge gate whether or not they blocked. A red gate, a weakened/tampered test, or a _verified_ counterexample blocks "done."
-- **Stops at a human merge gate.** conquer never auto-merges to main. By default it leaves the builder's changes in the working tree for you to review; `--push` commits + pushes the branch so you merge the PR. The done-oracle is irreducible for open-ended work, so the human merge gate is load-bearing — it holds the original product intent no automated layer can reconstruct.
+- **Stops at a human merge gate.** conquer never auto-merges to main. By default it leaves the builder's changes in the working tree for you to review; `--push` commits + pushes the branch, then prints an **engine-written PR title/body** (from the real branch diff) and a **prefilled GitHub PR link** (`…/compare/…?quick_pull=1&title=…&body=…`) — click it, the form is already filled, review + merge. No `gh` CLI or token needed. The done-oracle is irreducible for open-ended work, so the human merge gate is load-bearing — it holds the original product intent no automated layer can reconstruct.
 
 _(Roadmap: per-session git-worktree isolation, a frozen-oracle hash, and OS-level sandbox/network isolation for the falsifier's auto-exec. Interactive `/conquer` in the REPL and `agon call conquer` for external CLIs have shipped.)_
 
@@ -383,12 +387,24 @@ agon room post design --as codex --engine codex -m "file-first is the right MVP 
 
 # Anytime
 agon room read design   # full transcript (--since <seq> for new-only)
-agon room who design    # who's present (here / stale / left)
+agon room who design    # who's present + unread/mention counts + the lock table
 agon room leave design --as claude   # clear your presence
 agon room list          # all rooms
 ```
 
-Messages are human-mediated by default (you post when prompted), `@callsign` mentions are parsed, and presence tracks who's around.
+Messages are human-mediated by default (you post when prompted), `@callsign` mentions are parsed, and presence tracks who's around. `agon room post design "quick reply"` also works — `-m` is optional when the message is positional. Add `--json` to `read`/`tail` (JSON lines) or `who` (one JSON object) for scripts and monitors.
+
+**Never work a stale board.** Every member has a **read cursor**: `agon room read design --unread --as codex` returns only what you haven't seen and advances your cursor (add `--peek` to look without advancing). `room who` shows each member's unread/mention counts, so "is anyone behind?" is one command. Agents should run an `--unread` read at the start of every turn — via CLI or MCP `RoomRead(callsign, unreadOnly, markRead)`.
+
+**Resource locks.** Claim a file/branch/task so two agents never collide, with a TTL so a forgotten lock can't go stale forever:
+
+```bash
+agon room lock design -r packages/core --as codex --ttl 30   # claim for 30 min
+agon room release design -r packages/core --as codex          # done — free it
+agon room lock design -r packages/core --as claude --steal    # take over an EXPIRED lock (audited, @mentions the stale holder)
+```
+
+Locks are ordinary ledger events (`lock`/`release`/`lock-steal`), so the lock table in `room who` can never disagree with the transcript; posting while you hold an expired lock warns you to release it.
 
 **Autonomous mode.** An agent can watch a room and reply on its own turn until a stop condition:
 
@@ -398,7 +414,7 @@ agon room auto design --as claude --engine claude --until-human   # respond unti
 
 It's **safe by design**: mention-only by default (add `--open-floor` to respond to anything), a one-poster-at-a-time **turn lease**, hard caps (`--max-turns`, default 3; `--max-minutes`, default 10), and a **ping-pong halt** that stops two auto-agents from looping. Use `--dry-run` to exercise the loop without spending tokens.
 
-MCP-capable engines can also use the [room tools](#using-agon-from-other-clis) (`RoomJoin`/`RoomPost`/`RoomRead`/…) instead of the CLI. A push-based daemon transport is on the roadmap.
+MCP-capable engines can also use the [room tools](#using-agon-from-other-clis) (`RoomJoin`/`RoomPost`/`RoomRead`/`RoomLock`/`RoomRelease`/…) instead of the CLI. A push-based daemon transport is on the roadmap.
 
 ## Using Agon from Other CLIs
 
@@ -543,6 +559,22 @@ If you want manual control, you can easily override Cesar's routing:
 ## Configuration
 
 Global configuration, engine selection, model preferences, and telemetry settings are managed via your personal config file located at `~/.agon/AGON.md`. Project-specific settings can be defined in a local `AGON.md` within your repository.
+
+### Commit attribution & PR text
+
+Every commit agon itself creates (`conquer --push`, each `goal` task commit, the REPL's `/commit`) ends with a Claude-Code-style attribution block:
+
+```
+⚔️ Forged by [Agon](https://github.com/KERNlang/agon)
+
+Co-Authored-By: agon (KERN) <292465531+KERN-Agon@users.noreply.github.com>
+```
+
+PR bodies agon writes end with the same line rendered with the **real AGON logo** — the [KERN-Agon](https://github.com/KERN-Agon) account's avatar (`github.com/KERN-Agon.png`), since PR bodies render markdown while commit messages are plain text. Upload the AGON wordmark as that account's profile picture once and it powers both the contributor avatar and the PR footer.
+
+- **One opt-out switch:** set `commitCoAuthor` to `""` (machine-wide in `~/.agon/config.json` or per-project in `.agon.json`) to disable the whole block — banner and trailer, commits and PR bodies. Mirrors Claude Code's `includeCoAuthoredBy`.
+- **Contributor-graph credit:** the default email is the [KERN-Agon](https://github.com/KERN-Agon) GitHub account's noreply address, so GitHub renders agon as a real co-author avatar on every commit it builds. To credit a different account, set `commitCoAuthor` to that bot's `<id>+<login>@users.noreply.github.com`.
+- **PR text:** after a `--push`, one engine call turns the branch's actual diff + commits into a clean PR title/body (Summary / Changes / Verification), printed in the terminal and baked into a prefilled GitHub compare link — clicking it opens the new-PR form already filled in. If the engine call misses, agon falls back to its templated digest; the push itself never depends on it.
 
 ## Architecture
 

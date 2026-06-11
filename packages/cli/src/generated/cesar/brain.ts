@@ -40,7 +40,7 @@ import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline
 
 import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering.js';
 
-import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName } from './brain-helpers.js';
+import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, shouldDeescalateGuard, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName } from './brain-helpers.js';
 
 // @kern-source: brain:23
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
@@ -1909,9 +1909,18 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (!mutationDeferred && !inPlanMode && !ctx.cesar!.pendingDelegation
             && (hadToolActivity || ranToolLoop) && session.alive && !abort.signal.aborted
             && detectMutationIntentStall(response)) {
-          mutationDeferred = true;
-          mutationStallForced = true;
-          dispatch({ type: 'warning', message: 'Cesar described a write but called no tool — unlocking execution and pushing it to apply directly.' });
+          // De-escalation (never suppression): on a conversational turn that used no
+          // mutating tool, a residual match warns visibly but injects NO unlock nudge —
+          // a misfire can no longer derail an informational answer with 'apply it
+          // directly'. Any missing signal fails open into the full nudge path.
+          const _usedMutatingTool = _toolsUsed.some((t: string) => isWriteToolName(t) || isBashToolName(t));
+          if (shouldDeescalateGuard({ intakeKind: routingHints.intakeKind, recommendedFlow: routingHints.recommendedFlow, usedMutatingTool: _usedMutatingTool })) {
+            dispatch({ type: 'warning', message: 'Cesar guard: write-narration matched on a conversational turn — warning only, no auto-unlock (de-escalated).' });
+          } else {
+            mutationDeferred = true;
+            mutationStallForced = true;
+            dispatch({ type: 'warning', message: 'Cesar described a write but called no tool — unlocking execution and pushing it to apply directly.' });
+          }
         }
         if (mutationDeferred && toolRegistry && session.alive && !abort.signal.aborted) {
           toolCtx.readOnlyMode = false;
@@ -2031,12 +2040,20 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // the real tool now, or tell the user plainly that nothing is running. If the
         // re-prompt dispatches for real, pendingDelegation gets set and the existing
         // downstream delegation path takes over.
-        if (
-          !ctx.cesar!.pendingDelegation
+        // De-escalation mirror of the mutation-stall guard: on a conversational turn
+        // with no mutating tool, a residual match warns visibly but skips the injected
+        // grounding turn (the nudge itself derails informational answers). Fails open.
+        const _fabDelegationDetected = !ctx.cesar!.pendingDelegation
           && session.alive
           && !abort.signal.aborted
-          && detectFabricatedDelegation(response.trim())
-        ) {
+          && detectFabricatedDelegation(response.trim());
+        if (_fabDelegationDetected && shouldDeescalateGuard({
+          intakeKind: routingHints.intakeKind,
+          recommendedFlow: routingHints.recommendedFlow,
+          usedMutatingTool: _toolsUsed.some((t: string) => isWriteToolName(t) || isBashToolName(t)),
+        })) {
+          dispatch({ type: 'warning', message: 'Cesar guard: dispatch-claim matched on a conversational turn — warning only, no grounding turn (de-escalated).' });
+        } else if (_fabDelegationDetected) {
           dispatch({ type: 'warning', message: 'Cesar claimed a job was running but never dispatched one — grounding...' });
           dispatch({ type: 'spinner-start', message: 'Cesar grounding…', color });
           try {

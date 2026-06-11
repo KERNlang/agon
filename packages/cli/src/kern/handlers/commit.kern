@@ -1,5 +1,5 @@
 import from="node:child_process" names="execSync,execFileSync"
-import from="@kernlang/agon-core" names="loadConfig,resolveWorkingDir,configGet,appendCoAuthor"
+import from="@kernlang/agon-core" names="loadConfig,resolveWorkingDir,configGet,appendAttribution,appendCoAuthor"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 fn name=gitExec params="cmd:string, cwd:string" returns=string export=false
@@ -73,15 +73,15 @@ fn name=handleCommit async=true params="message:string|undefined, dispatch:Dispa
       if cond="answer.toLowerCase() !== 'y' && answer.trim()"
         assign target="commitMsg" value="answer.trim()"
         assign target="agonGenerated" value="false"
-    comment raw="// Append the configured Co-Authored-By identity (commitCoAuthor) for commits agon creates; no-op when unset."
-    comment raw="// appendCoAuthor is paragraph-aware: a user-supplied message already ending in a trailer block gets the identity joined into that final paragraph (git only parses trailers from the last paragraph)."
+    comment raw="// Attribution honesty: the '⚔️ Forged by Agon' banner ONLY when agon wrote the message (agonGenerated); a user-typed/edited message gets just the Co-Authored-By trailer — agon co-authored the commit mechanics, it did not write the text. Both are no-ops when commitCoAuthor is unset (the single opt-out switch)."
+    comment raw="// The underlying trailer append stays paragraph-aware: a user-supplied message already ending in a trailer block keeps its trailers parseable."
     let name=config value="loadConfig(cwd)"
     let name=commitCoAuthor value="(config.commitCoAuthor ?? '').trim()"
     comment raw="// commitCoAuthor SUPERSEDES the legacy autoCredit 'Agon AI <agon@local>' line: when an identity is set (the default), agon@local resolves to no GitHub account and two co-author identities for the same tool is noise. autoCredit only applies when commitCoAuthor is opted out (\"\")."
     let name=autoCredit value="configGet('autoCredit', cwd) as boolean"
     if cond="agonGenerated && autoCredit && !commitCoAuthor"
       assign target="commitMsg" op="+=" value="'\\n\\nCo-authored-by: Agon AI <agon@local>'"
-    assign target="commitMsg" value="appendCoAuthor(commitMsg, config)"
+    assign target="commitMsg" value="agonGenerated ? appendAttribution(commitMsg, config) : appendCoAuthor(commitMsg, config)"
     comment raw="// Step 4: Commit with HEREDOC (safe for special chars)"
     do value="dispatch({ type: 'spinner-start', message: 'Committing...' })"
     try

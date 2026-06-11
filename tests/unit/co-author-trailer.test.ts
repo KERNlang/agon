@@ -110,10 +110,12 @@ describe('commitCoAuthor default-on opt-out (loadConfig + coAuthorTrailer)', () 
     rmSync(projectDir, { recursive: true, force: true });
   });
 
-  it('DEFAULT (no config anywhere): trailer is present with the KERN identity', () => {
+  it('DEFAULT (no config anywhere): trailer is present with the KERN-Agon GitHub identity', () => {
     const config = loadConfig(projectDir);
-    expect(config.commitCoAuthor).toBe('agon (KERN) <noreply@kernlang.dev>');
-    expect(coAuthorTrailer(config)).toBe('\n\nCo-Authored-By: agon (KERN) <noreply@kernlang.dev>');
+    // The KERN-Agon account's noreply address — what makes GitHub render agon
+    // as a real co-author avatar/contributor instead of plain trailer text.
+    expect(config.commitCoAuthor).toBe('agon (KERN) <292465531+KERN-Agon@users.noreply.github.com>');
+    expect(coAuthorTrailer(config)).toBe('\n\nCo-Authored-By: agon (KERN) <292465531+KERN-Agon@users.noreply.github.com>');
   });
 
   it('project config "" overrides the default to OFF (no trailer)', () => {

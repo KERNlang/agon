@@ -2,7 +2,7 @@
 
 import { join } from 'node:path';
 
-import { resolveWorkingDir, buildImageAttachment, sessionContext } from '@kernlang/agon-core';
+import { resolveWorkingDir, buildImageAttachment, sessionContext, visionSupportNote } from '@kernlang/agon-core';
 
 import { invalidateCwdCache } from '../../handlers/chat.js';
 
@@ -52,6 +52,13 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
       else {
         cb.setPendingImages((prev: ImageAttachment[]) => [...prev, att]);
         cb.dispatch({ type: 'success', message: `Attached: ${att.filename}` });
+        // Warn at attach time, not after dispatch: the user should know the
+        // current brain can't see the image while they can still /cesar away.
+        try {
+          const cesarId = (cb.ctx.config as any).cesarEngine ?? cb.ctx.config.forgeFixedStarter ?? 'claude';
+          const note = visionSupportNote(cb.ctx.registry.get(cesarId));
+          if (note) cb.dispatch({ type: 'warning', message: note });
+        } catch { /* unknown engine id — dispatch-time status note still covers it */ }
       }
       break;
     }
@@ -114,8 +121,11 @@ export async function dispatchSessionInfoIntent(intent: any, input: string, cb: 
     case 'status': {
       const registry = cb.ctx.registry;
       const ids = registry.listIds();
+      // Prefer the live poller read: telemetryVitals (React state) is
+      // repaint-deduped and may lag by a signature bucket between commits.
+      const liveVitals = cb.ctx.telemetrySnapshot?.() ?? cb.ctx.telemetryVitals;
       const engines = ids.map((id: string) => {
-        const v = cb.ctx.telemetryVitals?.get(id);
+        const v = liveVitals?.get(id);
         if (v) return v;
         return createEngineVitals(id);
       });

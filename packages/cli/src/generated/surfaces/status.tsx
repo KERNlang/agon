@@ -28,7 +28,7 @@ import { buildPlanPhaseGauge, buildExecutionRailTimeline } from './status-helper
 
 export { buildPlanPhaseGauge, buildExecutionRailTimeline } from './status-helpers.js';
 
-// @kern-source: status:59
+// @kern-source: status:26
 export function SpinnerBlock({ message, color }: { message:string; color?:number }) {
   return (
     <Text>
@@ -38,7 +38,7 @@ export function SpinnerBlock({ message, color }: { message:string; color?:number
   );
 }
 
-// @kern-source: status:75
+// @kern-source: status:42
 export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:number }) {
   const pct = Math.min(100, Math.round((tokens / maxTokens) * 100));
   const barWidth = 12;
@@ -55,25 +55,7 @@ export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:num
   );
 }
 
-// @kern-source: status:98
-function AgonTip() {
-  // Ink-safe setter: bridges microtask → macrotask for reliable repaints
-  function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
-    return (value) => setTimeout(() => setter(value), 0);
-  }
-
-  const [tip, _setTipRaw] = useState<string>(AGON_TIPS[Math.floor(Math.random() * AGON_TIPS.length)]);
-  const setTip = useMemo(() => __inkSafe(_setTipRaw), [_setTipRaw]);
-
-  return (
-    <Text>
-      <Text dimColor>{'  \u2514 Tip: '}</Text>
-      <Text dimColor>{tip}</Text>
-    </Text>
-  );
-}
-
-// @kern-source: status:111
+// @kern-source: status:65
 export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, telemetryVitals, context, meteredCostUsd, hasUnmetered }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any>; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; meteredCostUsd?:number; hasUnmetered?:boolean }) {
   // Cost honesty: only REAL API token usage is billable per token. A
   // subscription CLI brain (claude/codex binary) has no countable per-turn
@@ -144,7 +126,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
   );
 }
 
-// @kern-source: status:200
+// @kern-source: status:154
 const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height, filter }: { telemetryVitals:Map<string, any>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number; filter?:'all'|'problem' }) {
   const vitals = Array.from(telemetryVitals?.values?.() ?? []);
   const severity: Record<string, number> = { stalled: 5, fallback: 4, offline: 3, busy: 2, idle: 1 };
@@ -203,7 +185,7 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
 });
 export { StatusDashboard };
 
-// @kern-source: status:266
+// @kern-source: status:220
 const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
   const planGauge = buildPlanPhaseGauge(activePlan, 10);
   const now = Date.now();
@@ -307,7 +289,7 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
 });
 export { ExecutionRail };
 
-// @kern-source: status:380
+// @kern-source: status:334
 const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive, width, maxRows, focused }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean; width?:number; maxRows?:number; focused?:boolean }) {
   const safeWidth = Math.max(32, Math.floor(Number(width ?? 42)));
   const safeRows = Math.max(8, Math.floor(Number(maxRows ?? 12)));
@@ -418,42 +400,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
 });
 export { ExecutionRailPanel };
 
-// @kern-source: status:506
-export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
-  // Ink-safe setter: bridges microtask → macrotask for reliable repaints
-  function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
-    return (value) => setTimeout(() => setter(value), 0);
-  }
-
-  const [now, _setNowRaw] = useState<number>(Date.now());
-  const setNow = useMemo(() => __inkSafe(_setNowRaw), [_setNowRaw]);
-
-  useEffect(() => {
-    const _animId = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-    return () => clearInterval(_animId);
-  }, []);
-
-  const elapsed = Math.floor((now - startTime) / 1000);
-  const mins = Math.floor(elapsed / 60);
-  const secs = elapsed % 60;
-  const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-  const c = color ? color256toHex(color) : '#f97316';
-  return (
-    <Box flexDirection="column" paddingLeft={2}>
-      <Text>
-        <Text color={c}><Spinner type="dots" /></Text>
-        {engineId && <Text color={c} bold>{` ${engineId}`}</Text>}
-        <Text color={c}>{' thinking\u2026'}</Text>
-        <Text dimColor>{` (${timeStr})`}</Text>
-      </Text>
-      {elapsed >= 5 && <AgonTip />}
-    </Box>
-  );
-}
-
-// @kern-source: status:535
+// @kern-source: status:460
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -472,7 +419,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:557
+// @kern-source: status:482
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -581,32 +528,3 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   );
 });
 export { CesarStatusStrip };
-
-// @kern-source: status:26
-export const AGON_TIPS: string[] = [
-  'Run /forge <task> test with <cmd> to make engines compete on code',
-  'Run /brainstorm to get confidence bids from all engines',
-  'Run /tribunal to start a multi-AI debate',
-  'Run /cesar <engine> to change your Cesar brain engine',
-  'Run /models to browse & add provider models, or /engines to pick active engines',
-  'Run /campfire for collaborative multi-engine thinking',
-  'Run /leaderboard to see engine Glicko ratings',
-  'Run /history to browse past forge runs',
-  'Run /tokens to see session cost breakdown',
-  'Type an engine name first (e.g. "codex explain...") to pick who answers',
-  'Run /pipeline for scout, build, forge in one shot',
-  'Run /discover to find new AI CLIs on your system',
-  'Drag and drop an image path to include it in your prompt',
-  "Run /apply <patch> to apply a forge winner's diff",
-  // ── Arena flavor — Greek agon + Roman imperium ──
-  'The arena does not reward the swift, but the precise.',
-  'In the agon, every contestant bleeds — only the best ship code.',
-  'Veni, vidi, forged — the emperor demands results.',
-  'The Colosseum had gladiators. You have engines. Same rules apply.',
-  'Ave Cesar — those about to compile salute you.',
-  'The strongest steel is forged in the hottest fire.',
-  'In the arena, there are no allies — only the next challenger.',
-  'The crowd waits. The engines compete. You ship.',
-  'Even Rome was built with tests.',
-  'The tribunal has spoken — but the emperor decides.',
-];

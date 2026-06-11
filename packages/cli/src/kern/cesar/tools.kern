@@ -1,4 +1,4 @@
-import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createGoalTool,createConquerTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createExitPlanModeTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,createTodoWriteTool,createSaveMemoryTool,executeToolCall,resolveWorkingDir,parsePermissionRuleSet,parseToolHooks"
+import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,createReadTool,createEditTool,createMultiEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createGoalTool,createConquerTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createExitPlanModeTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,createTodoWriteTool,createSaveMemoryTool,executeToolCall,resolveWorkingDir,parsePermissionRuleSet,parseToolHooks"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -8,6 +8,7 @@ fn name=createCesarToolRegistry params="engineId?:string" returns="ToolRegistry"
     let name=toolRegistry value="new ToolRegistry()"
     do value="toolRegistry.register(createReadTool())"
     do value="toolRegistry.register(createEditTool())"
+    do value="toolRegistry.register(createMultiEditTool())"
     do value="toolRegistry.register(createWriteTool())"
     do value="toolRegistry.register(createBashTool())"
     do value="toolRegistry.register(createGrepTool())"

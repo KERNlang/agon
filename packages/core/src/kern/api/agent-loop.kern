@@ -13,6 +13,7 @@ import from="../tools/tool-loop.js" names="buildToolSystemPrompt"
 import from="../tools/tool-parser.js" names="parseToolCalls"
 import from="../tools/tool-read.js" names="createReadTool"
 import from="../tools/tool-edit.js" names="createEditTool"
+import from="../tools/tool-multi-edit.js" names="createMultiEditTool"
 import from="../tools/tool-write.js" names="createWriteTool"
 import from="../tools/tool-bash.js" names="createBashTool"
 import from="../tools/tool-grep.js" names="createGrepTool"
@@ -97,7 +98,7 @@ fn name=repairToolName params="name:string, registry:any" returns="string"
     const capitalized = lower.charAt(0).toUpperCase() + lower.slice(1);
 
     // Known tool names in Agon
-    const knownTools = ['Read', 'Edit', 'Write', 'Bash', 'Grep', 'Glob', 'Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Review', 'Delegate', 'Pipeline', 'ReportConfidence', 'ProposePlan', 'ExitPlanMode'];
+    const knownTools = ['Read', 'Edit', 'MultiEdit', 'Write', 'Bash', 'Grep', 'Glob', 'Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Review', 'Delegate', 'Pipeline', 'ReportConfidence', 'ProposePlan', 'ExitPlanMode'];
     const match = knownTools.find((t: string) => t.toLowerCase() === lower);
     if (match) return match;
 
@@ -125,6 +126,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
     const registry = new ToolRegistry();
     registry.register(createReadTool());
     registry.register(createEditTool());
+    registry.register(createMultiEditTool());
     registry.register(createWriteTool());
     registry.register(createBashTool());
     registry.register(createGrepTool());

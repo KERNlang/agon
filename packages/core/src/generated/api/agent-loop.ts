@@ -20,6 +20,8 @@ import { createReadTool } from '../tools/tool-read.js';
 
 import { createEditTool } from '../tools/tool-edit.js';
 
+import { createMultiEditTool } from '../tools/tool-multi-edit.js';
+
 import { createWriteTool } from '../tools/tool-write.js';
 
 import { createBashTool } from '../tools/tool-bash.js';
@@ -44,7 +46,7 @@ import { createWebSearchTool } from '../tools/tool-web-search.js';
 
 import type { ToolCacheEntry } from '../models/context-parts.js';
 
-// @kern-source: agent-loop:29
+// @kern-source: agent-loop:30
 export interface ApiAgentOptions {
   api: ApiConfig;
   prompt: string;
@@ -69,7 +71,7 @@ export interface ApiAgentOptions {
   retryBaseMs?: number;
 }
 
-// @kern-source: agent-loop:52
+// @kern-source: agent-loop:53
 export interface ApiAgentResult {
   response: string;
   toolCalls: number;
@@ -82,7 +84,7 @@ export interface ApiAgentResult {
 /**
  * Attempt to repair malformed JSON tool arguments. Handles common LLM mistakes: markdown fencing, trailing commas, single quotes, unquoted keys.
  */
-// @kern-source: agent-loop:60
+// @kern-source: agent-loop:61
 export function repairToolArgs(raw: string): Record<string,unknown>|null {
   let cleaned = raw.trim();
 
@@ -113,7 +115,7 @@ export function repairToolArgs(raw: string): Record<string,unknown>|null {
 /**
  * Auto-correct tool name case mismatches. Maps 'read' → 'Read', 'GREP' → 'Grep', etc.
  */
-// @kern-source: agent-loop:89
+// @kern-source: agent-loop:90
 export function repairToolName(name: string, registry: any): string {
   // Check if exact match exists
   if (registry.has?.(name) || registry.get?.(name)) return name;
@@ -123,7 +125,7 @@ export function repairToolName(name: string, registry: any): string {
   const capitalized = lower.charAt(0).toUpperCase() + lower.slice(1);
 
   // Known tool names in Agon
-  const knownTools = ['Read', 'Edit', 'Write', 'Bash', 'Grep', 'Glob', 'Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Review', 'Delegate', 'Pipeline', 'ReportConfidence', 'ProposePlan', 'ExitPlanMode'];
+  const knownTools = ['Read', 'Edit', 'MultiEdit', 'Write', 'Bash', 'Grep', 'Glob', 'Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Review', 'Delegate', 'Pipeline', 'ReportConfidence', 'ProposePlan', 'ExitPlanMode'];
   const match = knownTools.find((t: string) => t.toLowerCase() === lower);
   if (match) return match;
 
@@ -134,7 +136,7 @@ export function repairToolName(name: string, registry: any): string {
 /**
  * True when an API dispatch failure looks transient (worth a backoff+retry) rather than permanent. Transient: request timeout (exitCode 124), rate limit (429), upstream 5xx, stream errors, connection resets / DNS hiccups, overloaded. Permanent (never retried): missing/invalid API key, 401/403 auth, 400 bad request. Aborts (exitCode 130 / signal) are handled by the caller, not here.
  */
-// @kern-source: agent-loop:108
+// @kern-source: agent-loop:109
 export function isTransientDispatchFailure(stderr: string, exitCode?: number): boolean {
   const s = String(stderr ?? '').toLowerCase();
   if (exitCode === 124) return true; // request timed out
@@ -146,7 +148,7 @@ export function isTransientDispatchFailure(stderr: string, exitCode?: number): b
 /**
  * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
  */
-// @kern-source: agent-loop:118
+// @kern-source: agent-loop:119
 export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentResult> {
   // Run-scoped cache ID: prevents concurrent forge runs from colliding
   const runCacheId = `${opts.api.model || 'api-agent'}-${randomUUID().slice(0, 8)}`;
@@ -155,6 +157,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   const registry = new ToolRegistry();
   registry.register(createReadTool());
   registry.register(createEditTool());
+  registry.register(createMultiEditTool());
   registry.register(createWriteTool());
   registry.register(createBashTool());
   registry.register(createGrepTool());

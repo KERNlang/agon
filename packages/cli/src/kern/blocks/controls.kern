@@ -4,7 +4,7 @@ import from="react" names="useState,useMemo,useEffect"
 import from="ink" names="Box,Text,useInput"
 import from="ink-spinner" default="Spinner"
 import from="../signals/intent.js" names="SLASH_COMMANDS"
-import from="../signals/app-input.js" names="getSlashMatches,movePickerCursor"
+import from="../signals/app-input.js" names="getSlashMatches,movePickerCursor,rankFileMatches"
 import from="./rendering.js" names="contentWidth,engineColor,color256toHex,DiffLine,CODE_RAIL,CODE_RAIL_COLOR"
 import from="./output-format.js" names="ENGINE_COLORS"
 import from="../signals/icons.js" names="icons"
@@ -35,7 +35,7 @@ screen name=SlashPicker target=ink
       useInput((input: string, key: any) => {
         const isForwardDelete = input === '\x1b[3~';
         const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
-        if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
+        if (key.escape || (key.ctrl && input === 'c') || input === '\x03') { onCancel(); return; }
         if (key.return) {
           if (filtered[currentIndex]) onSelect(filtered[currentIndex].cmd);
           return;
@@ -90,6 +90,108 @@ screen name=SlashPicker target=ink
               });
             })()
           )}
+        </Box>
+      );
+    >>>
+
+// ── Screen: AtFilePicker ────────────────────────────────────────────
+// Claude-Code-style "@" file picker. Opens inline when the user types "@" in the
+// composer; mirrors SlashPicker's controlled idiom: it owns its own useInput +
+// filter while open (the composer's TextInput is swapped out for a dimmed echo),
+// navigates a fuzzy-ranked file list, and reports the chosen path UP to app.kern
+// via onSelect — app.kern rewrites the composer value to "<prefix>@<path> ". Esc
+// (or backspace past the seed query) cancels and keeps whatever was typed.
+
+screen name=AtFilePicker target=ink
+  prop name=files type="string[]"
+  prop name=prefix type=string
+  prop name=initialQuery type=string
+  prop name=onSelect type="(path: string) => void"
+  prop name=onCancel type="(typed: string) => void"
+  state name=selectedIndex type=number initial="0"
+  // String(...) forces the kern→ink transpiler to emit the initial VERBATIM as a
+  // variable reference. A bare `initialQuery` identifier is quoted by the
+  // compiler (-> useState<string>('initialQuery'), the literal text), which would
+  // seed the picker filtered by the garbage string "initialQuery" on every open.
+  // Same idiom as status.kern's `AGON_TIPS[...]` / app.kern's `resolveWorkingDir()`.
+  state name=filter type=string initial="String(initialQuery)"
+  render
+    handler <<<
+      const filtered = useMemo(() => rankFileMatches(filter, files, 50), [filter, files]);
+      const currentIndex = filtered.length === 0 ? 0 : Math.min(selectedIndex, filtered.length - 1);
+
+      useInput((input: string, key: any) => {
+        const isForwardDelete = input === '\x1b[3~';
+        const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
+        // onCancel reports the text that should remain in the composer in place
+        // of the picker: '@<filter>' keeps the typed mention as plain text; ''
+        // means the leading '@' was backspaced away too.
+        if (key.escape || (key.ctrl && input === 'c') || input === '\x03') { onCancel('@' + filter); return; }
+        if (key.return) {
+          if (filtered[currentIndex]) onSelect(filtered[currentIndex]);
+          else onCancel('@' + filter);
+          return;
+        }
+        if (key.upArrow) { setSelectedIndex(movePickerCursor('up', currentIndex, filtered.length)); return; }
+        if (key.downArrow) { setSelectedIndex(movePickerCursor('down', currentIndex, filtered.length)); return; }
+        if (key.tab) {
+          if (filtered[currentIndex]) onSelect(filtered[currentIndex]);
+          return;
+        }
+        if (isBackspace || isForwardDelete) {
+          // Backspacing past the "@" cancels (returns to plain typing) rather than
+          // eating the rest of the line — same instinct as SlashPicker. The '@'
+          // is consumed too, so nothing is folded back.
+          if (!filter) { onCancel(''); return; }
+          setFilter((f: string) => f.slice(0, -1));
+          setSelectedIndex(0);
+          return;
+        }
+        if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
+          // A space ends the mention — fold "@<filter> " back into the composer
+          // as plain text so the user can keep typing the rest of the line.
+          if (input === ' ') { onCancel('@' + filter + ' '); return; }
+          setFilter((f: string) => f + input);
+          setSelectedIndex(0);
+        }
+      });
+
+      return (
+        <Box flexDirection="column" borderStyle="round" borderColor="#22d3ee" paddingX={1}>
+          <Box>
+            <Text dimColor>{prefix}</Text>
+            <Text color="#22d3ee">{'@'}</Text>
+            <Text>{filter}</Text>
+            <Text dimColor>{'█'}</Text>
+            <Text dimColor>{'  ↑↓ navigate  Tab/Enter select  Esc cancel'}</Text>
+          </Box>
+          <Text dimColor>{'─'.repeat(48)}</Text>
+          {filtered.length === 0 ? (
+            <Text dimColor>{'  No matching files'}</Text>
+          ) : (
+            (() => {
+              const maxVisible = 12;
+              const start = Math.max(0, Math.min(currentIndex - Math.floor(maxVisible / 2), filtered.length - maxVisible));
+              const visible = filtered.slice(start, start + maxVisible);
+              return visible.map((path: string, vi: number) => {
+                const i = start + vi;
+                const slash = path.lastIndexOf('/');
+                const dir = slash >= 0 ? path.slice(0, slash + 1) : '';
+                const base = slash >= 0 ? path.slice(slash + 1) : path;
+                return (
+                  <Box key={path}>
+                    <Text color={i === currentIndex ? '#22d3ee' : undefined} bold={i === currentIndex}>
+                      {i === currentIndex ? ' ❯ ' : '   '}
+                    </Text>
+                    <Text dimColor>{dir}</Text>
+                    <Text color={i === currentIndex ? '#22d3ee' : undefined} bold={i === currentIndex}>{base}</Text>
+                  </Box>
+                );
+              });
+            })()
+          )}
+          <Text dimColor>{'─'.repeat(48)}</Text>
+          <Text dimColor>{filtered.length}{' files'}</Text>
         </Box>
       );
     >>>

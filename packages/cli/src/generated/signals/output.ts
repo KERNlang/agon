@@ -89,7 +89,7 @@ export interface OutputActions {
 export const _thinkingBuffer: {engineId:string,content:string} = { engineId: '', content: '' };
 
 // @kern-source: output:75
-export const _permissionQueue: Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>;
+export const _permissionQueue: Array<{tool:string,command:string,description?:string,reason:string,diffPreview?:any,fallbackNote?:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,description?:string,reason:string,diffPreview?:any,fallbackNote?:string,resolve:(approved:boolean)=>void}>;
 
 // @kern-source: output:77
 export const _sessionAllowList: string[] = [] as string[];
@@ -199,7 +199,7 @@ function _showNextPermission(actions: OutputActions): void {
   _drainAutoApproved(actions);
   if (_permissionQueue.length === 0) return;
   const next = _permissionQueue[0];
-  actions.addBlock({ type: 'permission-ask', tool: next.tool, command: next.command, description: next.description, reason: next.reason, resolve: next.resolve } as any);
+  actions.addBlock({ type: 'permission-ask', tool: next.tool, command: next.command, description: next.description, reason: next.reason, diffPreview: next.diffPreview, fallbackNote: next.fallbackNote, resolve: next.resolve } as any);
   const permResolve = next.resolve;
   const permCommand = next.command;
   actions.setQuestionState({
@@ -209,6 +209,8 @@ function _showNextPermission(actions: OutputActions): void {
     command: permCommand,
     description: next.description,
     reason: next.reason,
+    diffPreview: next.diffPreview,
+    fallbackNote: next.fallbackNote,
     choices: [
       { key: 'y', label: 'Yes', color: '#4ade80' },
       { key: 'n', label: 'No', color: '#ef4444' },
@@ -254,7 +256,7 @@ function _showNextPermission(actions: OutputActions): void {
 /**
  * Apply engine-agnostic narration folding to engine-block content per the narrationFold config (off|safe|aggressive, default safe). On a fold, records the raw in the bounded ring (for /raw) and returns { content, foldedSteps } to spread onto the engine-block; clean text folds nothing and returns just { content }. Pure backstop — runs on every engine-block, structured engines simply fold nothing. The raw is NOT returned per-event; it lives in the ring to avoid unbounded per-block memory growth.
  */
-// @kern-source: output:225
+// @kern-source: output:227
 export function foldEngineContent(content: string): { content: string, foldedSteps?: number } {
   const cfg = loadConfig();
   const policy = String((cfg as any).narrationFold ?? 'safe');
@@ -267,7 +269,7 @@ export function foldEngineContent(content: string): { content: string, foldedSte
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
-// @kern-source: output:236
+// @kern-source: output:238
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
@@ -510,6 +512,8 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
         command: (event as any).command as string,
         description: (event as any).description as string | undefined,
         reason: (event as any).reason as string,
+        diffPreview: (event as any).diffPreview,
+        fallbackNote: (event as any).fallbackNote as string | undefined,
         resolve: (event as any).resolve as (approved: boolean) => void,
       };
       _permissionQueue.push(entry);

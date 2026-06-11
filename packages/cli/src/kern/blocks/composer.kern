@@ -12,7 +12,7 @@
 import from="react" default="React"
 import from="ink" names="Box,Text"
 import from="../../generated/blocks/prompt-input.js" names="PromptTextInput"
-import from="../../generated/blocks/controls.js" names="SlashPicker"
+import from="../../generated/blocks/controls.js" names="SlashPicker,AtFilePicker"
 import from="../signals/icons.js" names="icons"
 import from="../../ghost-text.js" names="getGhostCompletion"
 import from="./markdown.js" names="truncateCodeLine"
@@ -30,6 +30,12 @@ screen name=ComposerView target=ink memo=true
   prop name=autoModeQueued type=boolean
   prop name=activePlanState type="string|null"
   prop name=slashPickerOpen type=boolean
+  prop name=atPickerOpen type=boolean
+  prop name=atPickerFiles type="string[]"
+  prop name=atPickerPrefix type=string
+  prop name=atPickerQuery type=string
+  prop name=onAtSelect type="(path:string) => void"
+  prop name=onAtCancel type="(typed:string) => void"
   prop name=inputValue type=string
   prop name=handleInputChange type="(value:string) => void"
   prop name=handlePasteInput type="(raw:string) => string"
@@ -89,6 +95,19 @@ screen name=ComposerView target=ink memo=true
       const permissionHasMoreLines = permissionLinesAll.length > 1;
       const permissionNeedsDetail = permissionHasMoreLines || permissionCommand.length > permissionLineWidth;
       const permissionSummary = permissionReason || permissionDescription;
+      // File-mutating tools (AgonEdit/AgonWrite/Edit/Write) carry a unified diff
+      // computed at approval time. Render it with the same shape/idiom as the
+      // post-execution cesar recap (engine.kern diffPreview.files): per-file
+      // header (path, +N/-M), colored +/- lines, truncation marker. When the
+      // file is binary/too large the helper returns a fallbackNote instead and
+      // we keep the truncated command preview.
+      const permissionDiffFiles = Array.isArray(questionState?.diffPreview?.files)
+        ? questionState.diffPreview.files as any[]
+        : [];
+      const permissionFallbackNote = typeof questionState?.fallbackNote === 'string'
+        ? questionState.fallbackNote.trim()
+        : '';
+      const permissionHasDiff = permissionDiffFiles.length > 0;
       const questionAccent = choiceList.length > 0 ? '#60a5fa' : '#d1d5db';
       // Claude-Code-style select: a cursor (selectedChoiceIndex) highlights one
       // row; arrows move it, Enter confirms. Clamp defensively in case the menu
@@ -105,6 +124,7 @@ screen name=ComposerView target=ink memo=true
       return (
         <>
           {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={onSlashSelect} onCancel={onSlashCancel} />}
+          {atPickerOpen && <AtFilePicker files={atPickerFiles} prefix={atPickerPrefix} initialQuery={atPickerQuery} onSelect={onAtSelect} onCancel={onAtCancel} />}
           {!questionState && (
             <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
               {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' \u2502 '}</Text></Text>)}
@@ -112,6 +132,8 @@ screen name=ComposerView target=ink memo=true
               <Box flexGrow={1}>
                 {slashPickerOpen ? (
                   <Text dimColor>{inputValue || '/'}</Text>
+                ) : atPickerOpen ? (
+                  <Text dimColor>{atPickerPrefix}{'@'}</Text>
                 ) : (
                   <PromptTextInput
                     value={inputValue}
@@ -166,8 +188,24 @@ screen name=ComposerView target=ink memo=true
                       return renderChoiceRow(c, i, '#fbbf24');
                     })}
                   </Box>
-                  {permissionPreview ? (
-                    <Text dimColor>{'  $ '}{permissionPreview}{permissionHasMoreLines ? ' …' : ''}</Text>
+                  {permissionHasDiff ? (
+                    permissionDiffFiles.slice(0, 4).map((file: any, index: number) => (
+                      <Box key={`perm-diff-${index}`} flexDirection="column">
+                        <Text>
+                          <Text color="#22d3ee">{'  Δ '}{file.relPath ?? file.path}</Text>
+                          {file.status === 'created' ? <Text color="#4ade80">{' (new file)'}</Text> : null}
+                          <Text dimColor>{' +'}{Number(file.additions ?? 0)}{' -'}{Number(file.deletions ?? 0)}</Text>
+                        </Text>
+                        {(Array.isArray(file.lines) ? file.lines : []).map((line: string, lineIndex: number) => (
+                          <Text key={`perm-diff-line-${index}-${lineIndex}`} color={line.startsWith('+') ? '#4ade80' : line.startsWith('-') ? '#ef4444' : '#fbbf24'} dimColor={line.startsWith('@@')}>
+                            {'    '}{truncateCodeLine(line, Math.max(24, termWidth - 10))}
+                          </Text>
+                        ))}
+                        {Number(file.omitted ?? 0) > 0 ? <Text dimColor>{'    … +'}{Number(file.omitted)}{' more lines'}</Text> : null}
+                      </Box>
+                    ))
+                  ) : permissionPreview ? (
+                    <Text dimColor>{'  $ '}{permissionPreview}{permissionHasMoreLines ? ' …' : ''}{permissionFallbackNote ? ` · ${permissionFallbackNote}` : ''}</Text>
                   ) : questionPrompt ? (
                     <Text dimColor>{'  '}{questionPrompt}</Text>
                   ) : null}

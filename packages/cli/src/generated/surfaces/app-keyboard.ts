@@ -130,6 +130,7 @@ export interface KeyboardInputDeps {
   modelPickerOpen: boolean;
   cesarPickerOpen: boolean;
   slashPickerOpen: boolean;
+  atPickerOpen: boolean;
   enginePickerOpen: boolean;
   reviewEvent: any;
   toolDetailEvent: any;
@@ -198,6 +199,12 @@ export interface KeyboardInputDeps {
 export function runHandleKeyboardInput(opts: KeyboardInputDeps, input: string, key: any): void {
   if (isTerminalFocusReport(input)) return;
   if (key?.paste) return;
+  // The @-file picker (AtFilePicker) owns ALL keystrokes via its own useInput
+  // while open — navigation, accept, cancel, and typing into its filter. The
+  // global router must stay out so arrows/Enter/Esc/Tab don't double-fire
+  // (e.g. history nav or auto-mode toggle) underneath it. Mirrors how the
+  // composer swaps its TextInput out while the picker is up.
+  if (opts.atPickerOpen) return;
 
   const keyName = typeof key?.name === 'string' ? key.name.toLowerCase() : '';
   const globalCtrlInputMap = {

@@ -715,6 +715,18 @@ export function detectIntent(raw: string, commandRegistry?: any): Intent {
   if (input.startsWith('/')) {
     return parseSlashCommand(input, commandRegistry);
   }
+  // `! <cmd>` — Claude-Code-style inline bash prefix. The bang-SPACE
+  // trigger (mirrors `/`) routes to the shared /run executor + tool-block
+  // rendering, so the command runs in cwd and its output joins the
+  // conversation (handleRun appends it to chatSession). A bare `!`, `!!`,
+  // or `!important` (no space after the bang) is NOT a command — it falls
+  // through to normal text so prose/emphasis is never hijacked.
+  if (input.startsWith('! ')) {
+    const bangCmd = input.slice(2).trim();
+    if (bangCmd) {
+      return { type: 'run', input: bangCmd } as Intent;
+    }
+  }
   if (EXIT_KEYWORDS.test(input)) {
     return { type: 'exit' } as Intent;
   }

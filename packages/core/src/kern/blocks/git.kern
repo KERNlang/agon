@@ -656,8 +656,11 @@ fn name=appendCoAuthor params="message:string,config:{commitCoAuthor?:string}" r
       return value="`${message}\\n${trailerLine}`"
     return value="`${message}\\n\\n${trailerLine}`"
 
-const name=AGON_ATTRIBUTION type=string value={{ '🤖 Generated with [Agon](https://github.com/KERNlang/agon)' }} export=true
-  doc "The Claude-Code-style attribution line agon appends to commits it creates and PR bodies it writes. Kept as one shared const so the commit footer and the PR footer can never drift apart."
+const name=AGON_ATTRIBUTION type=string value={{ '⚔️ Forged by [Agon](https://github.com/KERNlang/agon)' }} export=true
+  doc "The Claude-Code-style attribution line agon appends to COMMITS it creates — 'Forged by', after agon's signature forge mode. Commit messages are rendered as PLAIN TEXT on GitHub (no markdown, no images), so the brand mark is the agon arena glyph ⚔️ — the colored AGON wordmark is impossible here. PR bodies use AGON_ATTRIBUTION_PR (markdown context, real logo image). Same wording in both so they read as one brand."
+
+const name=AGON_ATTRIBUTION_PR type=string value={{ '<img src="https://github.com/KERN-Agon.png" width="16" height="16" alt="Agon" /> Forged by [Agon](https://github.com/KERNlang/agon)' }} export=true
+  doc "PR-body attribution line — PR bodies render markdown/HTML, so this shows the real AGON logo: the KERN-Agon GitHub account's avatar (github.com/KERN-Agon.png is a stable public URL even though the repo is private). Upload the AGON wordmark as that account's profile picture once and it powers BOTH the co-author/contributor avatar AND this footer. Falls back to GitHub's identicon until the avatar is set — never broken."
 
 fn name=appendAttribution params="message:string,config:{commitCoAuthor?:string}" returns=string export=true
   doc "Claude-Code-1:1 attribution block for commits agon itself creates: appends the '🤖 Generated with [Agon](…)' line as its own paragraph, then the Co-Authored-By trailer as the final paragraph — the exact layout Claude Code uses. config.commitCoAuthor is the SINGLE opt-out switch (mirrors Claude Code's includeCoAuthoredBy): blank/unset returns the message unchanged — no banner, no trailer. Implemented as appendCoAuthor(message + banner): the banner paragraph guarantees the trailer lands alone in the last paragraph, where git parses trailers. Prefer this over bare appendCoAuthor at agon's own commit call sites."
@@ -668,11 +671,11 @@ fn name=appendAttribution params="message:string,config:{commitCoAuthor?:string}
   >>>
 
 fn name=appendPrAttribution params="body:string,config:{commitCoAuthor?:string}" returns=string export=true
-  doc "PR-body variant of appendAttribution: appends only the Generated-with line (Co-Authored-By is a commit-trailer concept, not PR text). Same single opt-out switch (commitCoAuthor blank = no footer)."
+  doc "PR-body variant of appendAttribution: appends only the Generated-with line (Co-Authored-By is a commit-trailer concept, not PR text), using the markdown/logo variant since PR bodies render HTML. Same single opt-out switch (commitCoAuthor blank = no footer)."
   handler <<<
     const v = (config.commitCoAuthor ?? '').trim();
     if (!v) return body;
-    return `${body.trimEnd()}\n\n${AGON_ATTRIBUTION}`;
+    return `${body.trimEnd()}\n\n${AGON_ATTRIBUTION_PR}`;
   >>>
 
 fn name=normalizeGitHubRemote params="url:string" returns=string export=true

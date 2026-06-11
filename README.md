@@ -546,13 +546,15 @@ Global configuration, engine selection, model preferences, and telemetry setting
 
 ### Commit attribution & PR text
 
-Every commit agon itself creates (`conquer --push`, each `goal` task commit, the REPL's `/commit`) ends with a Claude-Code-style attribution block, and every PR body agon writes ends with the same Generated-with line:
+Every commit agon itself creates (`conquer --push`, each `goal` task commit, the REPL's `/commit`) ends with a Claude-Code-style attribution block:
 
 ```
-🤖 Generated with [Agon](https://github.com/KERNlang/agon)
+⚔️ Forged by [Agon](https://github.com/KERNlang/agon)
 
 Co-Authored-By: agon (KERN) <292465531+KERN-Agon@users.noreply.github.com>
 ```
+
+PR bodies agon writes end with the same line rendered with the **real AGON logo** — the [KERN-Agon](https://github.com/KERN-Agon) account's avatar (`github.com/KERN-Agon.png`), since PR bodies render markdown while commit messages are plain text. Upload the AGON wordmark as that account's profile picture once and it powers both the contributor avatar and the PR footer.
 
 - **One opt-out switch:** set `commitCoAuthor` to `""` (machine-wide in `~/.agon/config.json` or per-project in `.agon.json`) to disable the whole block — banner and trailer, commits and PR bodies. Mirrors Claude Code's `includeCoAuthoredBy`.
 - **Contributor-graph credit:** the default email is the [KERN-Agon](https://github.com/KERN-Agon) GitHub account's noreply address, so GitHub renders agon as a real co-author avatar on every commit it builds. To credit a different account, set `commitCoAuthor` to that bot's `<id>+<login>@users.noreply.github.com`.

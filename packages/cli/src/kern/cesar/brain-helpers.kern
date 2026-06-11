@@ -3,10 +3,27 @@
 // Pure functions + small helpers — no session/streaming state.
 
 import from="@kernlang/agon-core" names="ToolCallResult" types=true
+import from="@kernlang/agon-core" names="tracker"
 import from="../../handlers/types.js" names="HandlerContext,PendingDelegation" types=true
 
 // Yield a macrotask so Ink can paint — await Promise.resolve() is NOT enough
 const name=yieldToInk type="() => Promise<void>" value={{ () => new Promise<void>(resolve => setImmediate(resolve)) }} export=true
+
+fn name=recordCesarTurn params="ctx:HandlerContext, cesarEngineId:string, input:string, response:string" returns="any" export=true
+  doc "Record a Cesar turn into the token tracker. Prefers the session's REAL billed usage (getTurnUsage — API backend, drained sum across the turn's dispatch steps, with the model id for model-specific pricing) so cost is metered; falls back to the chars/4 text estimate for PTY/CLI brains, whose per-token cost is not countable (subscription) and stays marked source:'estimated'."
+  handler <<<
+    try {
+      const s: any = ctx.cesarSession;
+      const u = s && typeof s.getTurnUsage === 'function' ? s.getTurnUsage() : null;
+      if (u && u.totalTokens > 0) {
+        return tracker.record(cesarEngineId, {
+          usage: { promptTokens: u.promptTokens, completionTokens: u.completionTokens, totalTokens: u.totalTokens, source: u.source ?? 'sdk' },
+          model: u.model,
+        });
+      }
+    } catch { /* fall through to the estimate */ }
+    return tracker.record(cesarEngineId, { prompt: input, response });
+  >>>
 
 const name=splitBeforeToolMarkup type="(text:string) => { visible:string, hasToolMarkup:boolean }" export=true
   handler <<<

@@ -13,6 +13,12 @@ interface name=SessionStats
   field name=totalResponseTokens type=number
   field name=totalTokens type=number
   field name=totalCostUsd type=number
+    doc "Sum over ALL recordings, including chars/4 estimates priced at flat per-engine rates — a ballpark, NOT a bill. Prefer meteredCostUsd for anything user-facing."
+  field name=meteredCostUsd type=number
+    doc "Cost from REAL API token usage only (source 'sdk'). This is the only number that corresponds to actual per-token billing. Subscription CLI engines (claude/codex binaries) never contribute here — their per-turn cost is not countable."
+  field name=meteredDispatches type=number
+  field name=unmeteredDispatches type=number
+    doc "Recordings with estimated or cli-reported tokens — flat-rate/subscription engines whose real cost is not countable."
   field name=byEngine type="Record<string,{promptTokens:number;responseTokens:number;totalTokens:number;costUsd:number;dispatches:number}>"
   field name=dispatches type=number
 
@@ -67,16 +73,22 @@ service name=TokenTracker
     handler <<<
       const byEngine: SessionStats['byEngine'] = {};
       let totalPromptTokens = 0, totalResponseTokens = 0, totalCostUsd = 0;
+      let meteredCostUsd = 0, meteredDispatches = 0, unmeteredDispatches = 0;
       for (const u of this.usages) {
         totalPromptTokens += u.promptTokens;
         totalResponseTokens += u.responseTokens;
         totalCostUsd += u.costUsd;
+        // Only real API usage ('sdk') is metered billing. 'estimated' and
+        // 'cli-reported' come from subscription/flat-rate CLI engines whose
+        // per-token cost is not countable.
+        if (u.source === 'sdk') { meteredCostUsd += u.costUsd; meteredDispatches += 1; }
+        else { unmeteredDispatches += 1; }
         if (!byEngine[u.engineId]) byEngine[u.engineId] = { promptTokens: 0, responseTokens: 0, totalTokens: 0, costUsd: 0, dispatches: 0 };
         const e = byEngine[u.engineId];
         e.promptTokens += u.promptTokens; e.responseTokens += u.responseTokens;
         e.totalTokens += u.promptTokens + u.responseTokens; e.costUsd += u.costUsd; e.dispatches += 1;
       }
-      return { totalPromptTokens, totalResponseTokens, totalTokens: totalPromptTokens + totalResponseTokens, totalCostUsd, byEngine, dispatches: this.usages.length };
+      return { totalPromptTokens, totalResponseTokens, totalTokens: totalPromptTokens + totalResponseTokens, totalCostUsd, meteredCostUsd, meteredDispatches, unmeteredDispatches, byEngine, dispatches: this.usages.length };
     >>>
 
   method name=recent params="n:number=5" returns="TokenUsage[]"

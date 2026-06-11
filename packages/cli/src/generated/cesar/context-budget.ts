@@ -22,6 +22,20 @@ export const TOOL_PROMPT_OVERHEAD_TOKENS: number = 2500;
  */
 // @kern-source: context-budget:27
 export function estimateBrainTokens(ctx: HandlerContext, session: PersistentSession|null, backend: string, budget: SessionBudget, pendingInput: string): number {
+  // API engine, best source: the session's REAL-usage-anchored projection —
+  // exact token counts from the last API response plus an estimated delta.
+  // Falls through to the chars estimate only when no anchor exists yet.
+  if (backend === 'api' && session && typeof (session as any).getContextUsage === 'function') {
+    try {
+      const live = (session as any).getContextUsage();
+      if (live && Number.isFinite(live.tokens) && live.tokens > 0 && live.source !== 'estimate') {
+        const pendingTokens = pendingInput
+          ? estimateSessionTokens({ messageHistory: [{ role: 'user', content: pendingInput }] as any }, budget)
+          : 0;
+        return live.tokens + pendingTokens;
+      }
+    } catch { /* fall through to the history estimate */ }
+  }
   // API engine: the real message history is the source of truth. Append the
   // pending user turn so the estimate reflects the session AS-IT-WILL-BE-SENT
   // (the PTY path already counts pendingInputChars; keep the paths symmetric).
@@ -76,7 +90,7 @@ export function estimateBrainTokens(ctx: HandlerContext, session: PersistentSess
 /**
  * Pre-turn context-budget gate. Inert (proceed:true) for engines without sessionBudget. Interactive default = warn-then-auto-compact. When autonomous/auto mode is active, auto-compact at compactAt WITHOUT the warn step (no human to prompt).
  */
-// @kern-source: context-budget:81
+// @kern-source: context-budget:95
 export async function enforceContextBudget(ctx: HandlerContext, session: PersistentSession|null, engine: any, backend: string, dispatch: Dispatch, pendingInput: string): Promise<BudgetGateResult> {
   const budget: SessionBudget | undefined = engine?.sessionBudget;
   if (!budget || typeof budget.contextWindow !== 'number' || budget.contextWindow <= 0) {
@@ -94,6 +108,85 @@ export async function enforceContextBudget(ctx: HandlerContext, session: Persist
   const pct = budgetRatioPct(check.ratio);
   const autoMode = ctx.autoModeQueued === true || ctx.cesar?.autoModeQueued === true;
 
+  // Compaction primitive (reuses the /compact path): fold older turns into the
+  // bounded summary, then close+null the session so ensureCesarSession rebuilds
+  // fresh, dropping the engine-side accumulated history. Returns whether a fold
+  // happened (for messaging). FALLBACK ONLY for API sessions that can compact
+  // in place; the primary path for PTY/CLI brains.
+  const doCompactReboot = (): boolean => {
+    let folded = false;
+    try { if (ctx.chatSession) folded = updateChatSummary(ctx.chatSession); } catch { /* best-effort fold */ }
+    try { session?.close?.(); } catch { /* best-effort */ }
+    try { ctx.setCesarSession(null); } catch { /* best-effort */ }
+    try { ctx.cesarMemory?.clearSession?.(); } catch { /* best-effort */ }
+    // ensureCesarSession resets budgetWarned when it boots the fresh session.
+    return folded;
+  };
+
+  // ── API session with in-place compact(): real-usage, RAW-window policy ──
+  // Claude Code parity: compact deeply and rarely — ONE LLM summarization at
+  // ~85% of the raw window that keeps the recent tail and CONTINUES the same
+  // session. The legacy effective-window thresholds below (compact fires at
+  // ~70% of raw) reboot far too early for a session that can fold itself.
+  // Gate the raw-window branch on REAL-anchored usage only ('api'/'projected').
+  // A cold or freshly-restored session reports source:'estimate' — that goes
+  // through the established checkSessionBudget() path below until its first
+  // dispatch anchors real numbers (codex review: don't run the late raw
+  // thresholds on a chars guess).
+  const live = (session && typeof (session as any).getContextUsage === 'function') ? (session as any).getContextUsage() : null;
+  const canCompactInPlace = !!(backend === 'api' && session && typeof (session as any).compact === 'function' && live && Number(live.limit) > 0 && live.source !== 'estimate');
+  if (canCompactInPlace) {
+    const limit = Number(live.limit);
+    const warnLimit = Math.floor(limit * 0.70);
+    // Clamp above warnLimit so an engine-supplied low softLimit can never
+    // invert/empty the warn band (the pre-compaction heads-up).
+    const softLimit = Math.max(warnLimit + 1, (Number.isFinite(Number(live.softLimit)) && Number(live.softLimit) > 0) ? Number(live.softLimit) : Math.floor(limit * 0.85));
+    const hardLimit = Math.floor(limit * 0.95);
+    const pendingTokens = pendingInput
+      ? estimateSessionTokens({ messageHistory: [{ role: 'user', content: pendingInput }] as any }, budget)
+      : 0;
+    const projected = Number(live.tokens) + pendingTokens;
+    const pctOf = (n: number) => Math.max(0, Math.round((n / limit) * 100));
+
+    if (projected < warnLimit) return { proceed: true, compacted: false };
+    if (projected < softLimit) {
+      if (!autoMode && ctx.cesar && !ctx.cesar.budgetWarned) {
+        ctx.cesar.budgetWarned = true;
+        dispatch({ type: 'info', message: `Context at ${pctOf(projected)}% of ${engineId}'s window — Cesar will auto-compact in place around ${pctOf(softLimit)}%. Run /compact to fold older turns now.` });
+      }
+      return { proceed: true, compacted: false };
+    }
+
+    // At/over the soft limit: compact IN PLACE — summarize older turns, keep
+    // the recent tail verbatim, continue the same session. No reboot.
+    let res: { ok: boolean; method: string; beforeTokens: number; afterTokens: number; limit: number } | null = null;
+    try { res = await (session as any).compact(); } catch { res = null; }
+    if (res && res.ok) {
+      dispatch({ type: 'info', message: `Compacted context in place: ${pctOf(res.beforeTokens)}% → ${pctOf(res.afterTokens)}% of ${engineId}'s window (${res.method === 'llm' ? 'older turns summarized by the engine' : 'older turns folded into a structured summary'}). The session continues.` });
+      // Refresh the gauge immediately — otherwise the strip shows the stale
+      // pre-compaction pct next to the message that just said it dropped.
+      dispatch({ type: 'context-usage', pct: pctOf(res.afterTokens), used: res.afterTokens, limit, compacted: 1, cached: 0, source: 'projected' } as any);
+      if (res.afterTokens + pendingTokens < hardLimit) {
+        return { proceed: true, compacted: true };
+      }
+    }
+
+    // In-place compaction failed, was deferred, or freed too little →
+    // legacy compact-and-reboot fallback, then re-check before blocking.
+    const foldedIp = doCompactReboot();
+    let postEstimateIp = projected;
+    try {
+      postEstimateIp = estimateBrainTokens(ctx, null, backend, budget, pendingInput);
+    } catch { /* keep the pre-compaction estimate */ }
+    const postCheckIp = checkSessionBudget(postEstimateIp, budget);
+    if (postCheckIp.level !== 'hard-stop') {
+      dispatch({ type: 'info', message: `In-place compaction couldn't free enough at ${pctOf(projected)}% — auto-compacted Cesar context${foldedIp ? ' (folded older turns into a summary)' : ''} and rebooted the brain with fresh context. The transcript is preserved.` });
+      return { proceed: true, compacted: true };
+    }
+    dispatch({ type: 'error', message: `Cesar context is still at ${budgetRatioPct(postCheckIp.ratio)}% of ${engineId}'s window after compaction — too full to safely send this turn. Trim the message, or run /clear to reset the session, then resend.` });
+    return { proceed: false, compacted: true };
+  }
+
   // ── ok ──
   if (check.level === 'ok') {
     return { proceed: true, compacted: false };
@@ -109,21 +202,7 @@ export async function enforceContextBudget(ctx: HandlerContext, session: Persist
     return { proceed: true, compacted: false };
   }
 
-  // Compaction primitive (reuses the /compact path): fold older turns into the
-  // bounded summary, then close+null the session so ensureCesarSession rebuilds
-  // fresh, dropping the engine-side accumulated history. Returns whether a fold
-  // happened (for messaging).
-  const doCompactReboot = (): boolean => {
-    let folded = false;
-    try { if (ctx.chatSession) folded = updateChatSummary(ctx.chatSession); } catch { /* best-effort fold */ }
-    try { session?.close?.(); } catch { /* best-effort */ }
-    try { ctx.setCesarSession(null); } catch { /* best-effort */ }
-    try { ctx.cesarMemory?.clearSession?.(); } catch { /* best-effort */ }
-    // ensureCesarSession resets budgetWarned when it boots the fresh session.
-    return folded;
-  };
-
-  // ── compact ── auto-fold + reboot the brain session.
+  // ── compact ── auto-fold + reboot the brain session (PTY/CLI brains).
   if (check.level === 'compact') {
     const folded = doCompactReboot();
     dispatch({ type: 'info', message: `Context reached ${pct}% — auto-compacted Cesar context${folded ? ' (folded older turns into a summary)' : ''} and rebooted the brain with fresh context. The transcript is preserved.` });

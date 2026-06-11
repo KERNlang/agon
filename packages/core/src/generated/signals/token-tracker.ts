@@ -18,16 +18,19 @@ export interface SessionStats {
   totalResponseTokens: number;
   totalTokens: number;
   totalCostUsd: number;
+  meteredCostUsd: number;
+  meteredDispatches: number;
+  unmeteredDispatches: number;
   byEngine: Record<string,{promptTokens:number;responseTokens:number;totalTokens:number;costUsd:number;dispatches:number}>;
   dispatches: number;
 }
 
-// @kern-source: token-tracker:19
+// @kern-source: token-tracker:25
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-// @kern-source: token-tracker:21
+// @kern-source: token-tracker:27
 export function estimateCost(engineId: string, tokens: number, model?: string): number {
   const MODEL_COST: Record<string, number> = { "claude-opus-4-6": 45.00, "claude-sonnet-4-6": 9.00, "claude-haiku-4-5": 2.00, "gpt-4.1": 6.00, "gpt-4.1-mini": 1.20, "gpt-4.1-nano": 0.30, "gemini-3.1-pro": 5.00, "gemini-3.5-flash": 0.60, o3: 30.00, "o4-mini": 2.80 };
   if (model && MODEL_COST[model]) {
@@ -38,7 +41,7 @@ export function estimateCost(engineId: string, tokens: number, model?: string): 
   return tokens / 1000000 * rate;
 }
 
-// @kern-source: token-tracker:30
+// @kern-source: token-tracker:36
 export class TokenTracker {
   private usages: TokenUsage[] = [];
 
@@ -77,16 +80,22 @@ export class TokenTracker {
   getStats(): SessionStats {
     const byEngine: SessionStats['byEngine'] = {};
     let totalPromptTokens = 0, totalResponseTokens = 0, totalCostUsd = 0;
+    let meteredCostUsd = 0, meteredDispatches = 0, unmeteredDispatches = 0;
     for (const u of this.usages) {
       totalPromptTokens += u.promptTokens;
       totalResponseTokens += u.responseTokens;
       totalCostUsd += u.costUsd;
+      // Only real API usage ('sdk') is metered billing. 'estimated' and
+      // 'cli-reported' come from subscription/flat-rate CLI engines whose
+      // per-token cost is not countable.
+      if (u.source === 'sdk') { meteredCostUsd += u.costUsd; meteredDispatches += 1; }
+      else { unmeteredDispatches += 1; }
       if (!byEngine[u.engineId]) byEngine[u.engineId] = { promptTokens: 0, responseTokens: 0, totalTokens: 0, costUsd: 0, dispatches: 0 };
       const e = byEngine[u.engineId];
       e.promptTokens += u.promptTokens; e.responseTokens += u.responseTokens;
       e.totalTokens += u.promptTokens + u.responseTokens; e.costUsd += u.costUsd; e.dispatches += 1;
     }
-    return { totalPromptTokens, totalResponseTokens, totalTokens: totalPromptTokens + totalResponseTokens, totalCostUsd, byEngine, dispatches: this.usages.length };
+    return { totalPromptTokens, totalResponseTokens, totalTokens: totalPromptTokens + totalResponseTokens, totalCostUsd, meteredCostUsd, meteredDispatches, unmeteredDispatches, byEngine, dispatches: this.usages.length };
   }
 
   recent(n: number = 5): TokenUsage[] {

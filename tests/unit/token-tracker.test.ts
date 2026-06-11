@@ -49,6 +49,30 @@ describe('TokenTracker', () => {
     expect(stats.byEngine['codex'].promptTokens).toBe(100);
   });
 
+  it('getStats splits metered (sdk) cost from unmetered (cli/estimated) recordings', () => {
+    tracker.record('claude', { prompt: 'aaa', response: 'bbb' }); // estimated → unmetered
+    const sdk = tracker.record('codex', {
+      usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150, source: 'sdk' },
+    });
+    tracker.record('claude', {
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, source: 'cli-reported' },
+    }); // cli-reported → real tokens, but still not metered billing
+    const stats = tracker.getStats();
+    expect(stats.meteredDispatches).toBe(1);
+    expect(stats.unmeteredDispatches).toBe(2);
+    expect(stats.meteredCostUsd).toBeCloseTo(sdk.costUsd, 10);
+    expect(stats.totalCostUsd).toBeGreaterThan(stats.meteredCostUsd);
+  });
+
+  it('getStats reports zero metered cost for a CLI-only session (cost not countable)', () => {
+    tracker.record('claude', { prompt: 'long prompt text here', response: 'a long response' });
+    const stats = tracker.getStats();
+    expect(stats.meteredCostUsd).toBe(0);
+    expect(stats.meteredDispatches).toBe(0);
+    expect(stats.unmeteredDispatches).toBe(1);
+    expect(stats.totalCostUsd).toBeGreaterThan(0); // ballpark exists but is not billing
+  });
+
   it('estimateCost uses model pricing when available', () => {
     const haikuCost = estimateCost('claude', 1_000_000, 'claude-haiku-4-5');
     const defaultCost = estimateCost('claude', 1_000_000);

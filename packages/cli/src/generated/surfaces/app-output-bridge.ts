@@ -41,7 +41,7 @@ export interface OutputBridgeDeps {
   setQuestionState: (val:any) => void;
   chatStartTimeRef: {current: number};
   setCesarConfidence: (val:number|null) => void;
-  setCesarContext: (val:{pct:number,used:number,limit:number,compacted:number,cached:number}|null) => void;
+  setCesarContext: (val:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:'api'|'projected'|'estimate'}|null) => void;
   setLiveScoreboard: (val:Scoreboard | null) => void;
   setLiveRationale: (val:ModeRationale | null) => void;
   agentProgressRef: {current: Record<string,AgentProgressSnapshot>};

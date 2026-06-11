@@ -420,6 +420,7 @@ describe('apiDispatch usage capture', () => {
       promptTokens: 100,
       completionTokens: 50,
       totalTokens: 150,
+      cachedInputTokens: 0,
       source: 'sdk',
     });
   });
@@ -455,6 +456,7 @@ describe('apiDispatch usage capture', () => {
       promptTokens: 200,
       completionTokens: 0,
       totalTokens: 200,
+      cachedInputTokens: 0,
       source: 'sdk',
     });
   });

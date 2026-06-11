@@ -161,7 +161,7 @@ screen name=App target=ink
   state name=toolOutputExpanded type=boolean initial=false
   state name=thinkingExpanded type=boolean initial=true
   state name=cesarConfidence type="number|null" initial="null" throttle=200
-  state name=cesarContext type="{pct:number,used:number,limit:number,compacted:number,cached:number}|null" initial="null" throttle=200
+  state name=cesarContext type="{pct:number,used:number,limit:number,compacted:number,cached:number,source?:'api'|'projected'|'estimate'}|null" initial="null" throttle=200
   state name=liveScoreboard type="Scoreboard|null" initial="null"
   state name=liveRationale type="ModeRationale|null" initial="null"
   state name=agentProgress type="Record<string,AgentProgressSnapshot>" initial="{}"
@@ -313,7 +313,7 @@ screen name=App target=ink
     handler lang="kern"
       let name=stats value="tracker.getStats()"
       let name=cesarId value="(config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude'"
-      return value="{ cesarId, chatMessageCount: chatSession.messages.length, totalTokens: stats.totalTokens, totalCostUsd: stats.totalCostUsd, }"
+      return value="{ cesarId, chatMessageCount: chatSession.messages.length, totalTokens: stats.totalTokens, totalCostUsd: stats.totalCostUsd, meteredCostUsd: stats.meteredCostUsd ?? 0, hasUnmetered: (stats.unmeteredDispatches ?? 0) > 0, }"
 
   memo name=runningJobs deps="jobList"
     handler lang="kern"

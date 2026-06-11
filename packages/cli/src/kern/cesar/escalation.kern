@@ -4,6 +4,7 @@ import from="@kernlang/agon-core" names="RUNS_DIR,resolveWorkingDir,tracker,appe
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../signals/icons.js" names="icons"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="./brain-helpers.js" names="recordCesarTurn"
 import from="./confidence.js" names="CONFIDENCE_TIERS,confidenceBadge,parseConfidence"
 import from="./session.js" names="CESAR_SYSTEM_PROMPT"
 
@@ -184,7 +185,7 @@ fn name=handleSecondOpinion async=true params="secondResult:{stdout:string, engi
     // Save Cesar's response
     appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-    tracker.record(cesarEngineId, { prompt: input, response });
+    recordCesarTurn(ctx, cesarEngineId, input, response);
 
     // Yield so Ink paints the advisor response before showing the menu
     await new Promise<void>(resolve => setImmediate(resolve));

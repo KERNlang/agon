@@ -6,7 +6,9 @@ import type { ChildProcess } from 'node:child_process';
 
 import { createInterface } from 'node:readline';
 
-import { apiStreamDispatchWithHistory } from '../api/dispatch.js';
+import { apiStreamDispatchWithHistory, apiDispatch } from '../api/dispatch.js';
+
+import { findSafeKeepStart, buildCompactionSummary, renderCompactionText, buildSummarizationContext, buildCompactionPrompt } from './compaction.js';
 
 import { encodeImagesForDispatch } from '../blocks/image.js';
 
@@ -21,850 +23,834 @@ import type { PersistentSessionConfig, PersistentSession, SessionChunk, SessionS
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */
-// @kern-source: session-resume:11
+// @kern-source: session-resume:12
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
-      let sessionId: string | null = null;
-      let firstTurn = true;
-      let activePid: number | null = null;
-      // Message history for API engines — enables multi-turn tool loops
-      const messageHistory: Array<{role: string, content: any, tool_calls?: any[], tool_call_id?: string}> = [];
-      // Compaction state — accumulates across compaction cycles
-      let compactionSummary: CompactionSummaryPart | null = null;
-      // Disk-backed tool result cache manifest
-      let toolCacheManifest: ToolCacheEntry[] = [];
+  let sessionId: string | null = null;
+  let firstTurn = true;
+  let activePid: number | null = null;
+  // Message history for API engines — enables multi-turn tool loops
+  const messageHistory: Array<{role: string, content: any, tool_calls?: any[], tool_call_id?: string}> = [];
+  // Compaction state — accumulates across compaction cycles
+  let compactionSummary: CompactionSummaryPart | null = null;
+  // Disk-backed tool result cache manifest
+  let toolCacheManifest: ToolCacheEntry[] = [];
+  // ── Last REAL token usage from the API (ground truth for the gauge) ──
+  // AI SDK v6: usage.inputTokens already INCLUDES cache read+write tokens,
+  // so promptTokens + completionTokens = the exact context occupancy of the
+  // last request (the same formula Claude Code's context gauge uses).
+  // historyLength anchors the projection: messages at index >= historyLength
+  // were appended AFTER that dispatch and are estimated; everything before
+  // is covered by the real promptTokens. Invalidated (null) whenever
+  // compaction/trim REWRITES history — the next dispatch re-anchors it.
+  // Deliberately NOT persisted: the disk store trims history to its last
+  // SESSION_MAX_MESSAGES, which would desync the historyLength anchor.
+  let lastRealUsage: { promptTokens: number; completionTokens: number; cachedInputTokens: number; historyLength: number } | null = null;
 
-      // ── In-session tool result deduplication ──
-      // Avoids repeating stable discovery tools when the engine asks twice.
-      // Do not cache Read here: the Read tool owns mtime-aware dedup and must
-      // run on every explicit re-read so it can refresh the edit/write snapshot
-      // after another tool or process has changed the file.
-      // Keyed by (toolName, serialized args). Values are results.
-      const toolResultCache = new Map<string, { result: string; callId: string }>();
-      const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
-      const cacheKey = (name: string, args: Record<string, unknown>) => {
-        // Normalize: sort keys for stable hashing
-        const sorted = Object.keys(args).sort().map(k => `${k}=${JSON.stringify(args[k])}`).join('&');
-        return `${name}:${sorted}`;
-      };
+  // ── compact()/send() serialization ──
+  // compact() rewrites messageHistory in place; doing that while a send()
+  // is mid-stream would corrupt the history the in-flight request appends
+  // to. compact() COALESCES (a second call joins the in-flight promise) and
+  // DEFERS while a send is active; send() awaits any in-flight compaction
+  // before touching history. sendActive is also reset at send() entry as a
+  // self-heal: an abandoned generator (consumer dropped mid-abort without
+  // calling return()) must not wedge compaction forever.
+  let sendActive = false;
+  let compactPromise: Promise<{ok:boolean, method:'llm'|'regex'|'none'|'deferred', beforeTokens:number, afterTokens:number, limit:number}> | null = null;
 
-      const session: PersistentSession = {
-        get alive() { return alive; },
-        get sessionId() { return sessionId; },
-        get pid() { return activePid; },
-        engineId: config.engine.id,
+  // ── REAL usage accumulator (for cost tracking) ──
+  // A turn can span many dispatch steps (tool loop); each step bills its own
+  // full input, so the SUM across steps is the real billed usage. DRAINED
+  // (returned + reset) by getTurnUsage() when the orchestrator records the
+  // turn — drain-on-read keeps the session-wide total exact even when a turn
+  // fires extra sends through the same session (quick-nero self-challenge)
+  // or a path skips recording: undrained tokens are attributed to the next
+  // record call instead of being lost or double-counted.
+  let turnUsage: { promptTokens: number; completionTokens: number } = { promptTokens: 0, completionTokens: 0 };
 
-        async start() {
-          alive = true;
-          // Preserve messageHistory in memory for the current process. Loading
-          // disk history is opt-in because stale cross-session context can make a
-          // fresh Agon run remember already-fixed attempts.
-          if (config.sessionContinuity === true && messageHistory.length === 0) {
-            firstTurn = true;
-            // Prefer the freshest context source:
-            // 1. workspace-scoped conversation continuity (latest cross-engine turn)
-            // 2. engine-scoped persisted state (same-engine restart)
-            const saved = loadSessionState(config.engine.id);
-            const conversation = loadConversation();
+  // ── Token estimation + context limit (config-only — hoisted out of send()
+  // so getContextUsage() shares the same math) ──
+  // Token estimate: chars/3.5, not chars/4. Code/JSON-heavy agent history
+  // tokenizes closer to ~3.3 chars/token, so chars/4 systematically
+  // UNDERcounts — which let real requests blow past the window before
+  // compaction fired (the overflow → empty-response → auto-continue spin).
+  // Overcounting slightly is the safe side: compaction fires a bit early.
+  const estimateSingle = (m: {role: string, content: any}): number => {
+    if (typeof m.content === 'string') return Math.ceil(m.content.length / 3.5);
+    if (m.content === null && (m as any).tool_calls) {
+      return (m as any).tool_calls.reduce((s: number, tc: any) =>
+        s + Math.ceil((tc.function?.arguments ?? '').length / 3.5), 100);
+    }
+    return 50;
+  };
+  // Per-message token cache — only recompute for new/mutated messages
+  const estimateTokens = (msgs: Array<{role: string, content: any}>) =>
+    msgs.reduce((sum, m) => {
+      if ((m as any)._tokenEstimate === undefined) {
+        (m as any)._tokenEstimate = estimateSingle(m);
+      }
+      return sum + (m as any)._tokenEstimate;
+    }, 0);
 
-            const hasSavedState = !!(saved && saved.messageHistory.length > 0);
-            const hasConversation = !!(conversation && conversation.messageHistory.length > 0);
-            const shouldUseConversation = !!(
-              hasConversation && (
-                !hasSavedState ||
-                (conversation!.savedAt ?? 0) >= (saved?.savedAt ?? 0)
-              )
-            );
+  // Context limit: PER-ENGINE, not a hardcoded 128k. maxTokens is the
+  // OUTPUT cap (4096-8192), NOT the context window — different axis.
+  // Priority: explicit engine.api.contextWindow → engine.sessionBudget →
+  // inferred from the model id → conservative 128k default. A wrong
+  // (too-high) limit is what let the request overflow the real window
+  // before compaction fired.
+  const inferContextWindow = (modelId: string): number => {
+    const m = (modelId ?? '').toLowerCase();
+    // Generous frontier windows
+    if (/gpt-4\.1|gpt-5|o3|o4|gemini|claude|sonnet|opus|haiku|grok/.test(m)) return 200_000;
+    if (/glm-4\.6|glm-5|glm-4\.5|kimi|moonshot|k2|qwen.*max|qwen3|deepseek|minimax/.test(m)) return 128_000;
+    if (/glm-4\b|glm-4-/.test(m)) return 128_000;
+    if (/mistral|mixtral|llama-3|llama3/.test(m)) return 128_000;
+    return 128_000;
+  };
+  const CONTEXT_LIMIT = (() => {
+    const explicit = Number((config.engine.api as any)?.contextWindow);
+    if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
+    const budgeted = Number((config.engine as any)?.sessionBudget?.contextWindow);
+    if (Number.isFinite(budgeted) && budgeted > 0) return Math.floor(budgeted);
+    return inferContextWindow(config.engine.api?.model ?? config.engine.id ?? '');
+  })();
+  // Reserve headroom that scales with the window (≥20k, ~15% of window),
+  // so a big window doesn't run right up to the edge before compacting.
+  const COMPACTION_BUFFER = Math.max(20_000, Math.round(CONTEXT_LIMIT * 0.15));
 
-            if (shouldUseConversation) {
-              // Strip system prompts — the new engine gets its own identity prompt.
-              const replayMessages = conversation!.messageHistory.filter((m: any) => m.role !== 'system');
-              if (replayMessages.length > 0) {
-                messageHistory.push(...replayMessages);
-                firstTurn = false;
-                console.log(`[agon] conversation continuity: loaded ${replayMessages.length} messages from ${conversation!.sourceEngine ?? 'previous engine'}`);
-              }
-            } else if (hasSavedState) {
-              messageHistory.push(...saved!.messageHistory);
-              compactionSummary = saved!.compactionSummary ?? null;
-              toolCacheManifest = saved!.toolCacheManifest ?? [];
-              firstTurn = false; // Not a fresh session — system prompt already in history
+  // Real-usage-anchored projection of what the NEXT request will occupy:
+  // the last dispatch's real promptTokens cover everything sent then; only
+  // the messages appended since (the reply, tool results, new user turns)
+  // are estimated. Falls back to the pure estimate when no real usage is
+  // anchored yet (fresh/restored session, or right after a history rewrite).
+  const projectContextTokens = (): number => {
+    if (!lastRealUsage || lastRealUsage.historyLength > messageHistory.length) {
+      return estimateTokens(messageHistory);
+    }
+    return lastRealUsage.promptTokens + estimateTokens(messageHistory.slice(lastRealUsage.historyLength));
+  };
+  const contextSource = (): 'api' | 'projected' | 'estimate' => {
+    if (!lastRealUsage || lastRealUsage.historyLength > messageHistory.length) return 'estimate';
+    return lastRealUsage.historyLength === messageHistory.length ? 'api' : 'projected';
+  };
+
+  // ── In-place compaction (Claude Code-style): summarize older messages,
+  // keep a verbatim tail, CONTINUE THE SAME SESSION. The Cesar budget gate
+  // and /compact own WHEN this runs (single policy owner); this is the HOW.
+  // LLM summary over a bounded transcript first; deterministic regex summary
+  // as fallback so compaction can never fail outright.
+  const COMPACT_KEEP_TAIL = 8; // messages kept verbatim (boundary-snapped)
+  const doCompact = async (): Promise<{ok:boolean, method:'llm'|'regex'|'none'|'deferred', beforeTokens:number, afterTokens:number, limit:number}> => {
+    const beforeTokens = projectContextTokens();
+    const hasSystem = messageHistory[0]?.role === 'system';
+    const startIdx = hasSystem ? 1 : 0;
+    const keepStart = findSafeKeepStart(messageHistory, COMPACT_KEEP_TAIL, startIdx);
+    const old = messageHistory.slice(startIdx, keepStart);
+    if (old.length === 0) {
+      return { ok: false, method: 'none', beforeTokens, afterTokens: beforeTokens, limit: CONTEXT_LIMIT };
+    }
+    const recent = messageHistory.slice(keepStart);
+    const system = hasSystem ? [messageHistory[0]] : [];
+
+    // Always build the structured summary — it's the LLM fallback AND the
+    // accumulated state (filesRead/Modified/decisions) cross-session memory
+    // reads via onTurnEnd.
+    const newSummary = buildCompactionSummary(old as any[], compactionSummary);
+
+    let summaryText: string | null = null;
+    let method: 'llm' | 'regex' = 'regex';
+    if (config.engine.api && process.env.AGON_DISABLE_LLM_COMPACTION !== '1') {
+      try {
+        // Summarize ONLY the `old` segment being replaced — the kept tail
+        // stays verbatim, so re-summarizing it both wastes budget and (under
+        // the total cap, which keeps the NEWEST lines) biases the summary
+        // toward exactly the messages that don't need summarizing.
+        // The summarization request CONTAINS the transcript — cap it so the
+        // request fits the window with headroom even at 95% occupancy
+        // (chars ≈ tokens × 3.5; budget ≈ 60% of window in tokens).
+        const transcript = buildSummarizationContext(old as any[], {
+          perMessageChars: 6000,
+          perToolChars: 1500,
+          totalChars: Math.floor(CONTEXT_LIMIT * 2.1),
+        });
+        const compactionConfig = { ...config.engine.api, maxTokens: 4096 };
+        const r = await apiDispatch(compactionConfig, buildCompactionPrompt(transcript), 60);
+        if (r.exitCode === 0 && r.stdout.trim().length > 80) {
+          summaryText = `[Context compacted — ${newSummary.messagesCompacted} earlier messages summarized below. The session continues from this briefing.]\n${r.stdout.trim()}`;
+          method = 'llm';
+        }
+      } catch { /* fall back to the regex summary */ }
+    }
+    if (summaryText === null) {
+      summaryText = renderCompactionText(newSummary, old.length);
+    }
+
+    compactionSummary = newSummary;
+    messageHistory.length = 0;
+    messageHistory.push(...system, { role: 'user' as const, content: summaryText }, ...recent);
+    lastRealUsage = null; // history rewritten — the next dispatch re-anchors real usage
+    const afterTokens = projectContextTokens();
+    if (config.sessionContinuity === true) {
+      // The store writes via tmp+rename (atomic) — a crash mid-compact
+      // leaves the previous on-disk state intact.
+      try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest }); } catch (saveErr) { console.warn('[session] failed to persist compaction:', (saveErr as Error).message ?? saveErr); }
+    }
+    return { ok: afterTokens < beforeTokens, method, beforeTokens, afterTokens, limit: CONTEXT_LIMIT };
+  };
+
+  // ── In-session tool result deduplication ──
+  // Avoids repeating stable discovery tools when the engine asks twice.
+  // Do not cache Read here: the Read tool owns mtime-aware dedup and must
+  // run on every explicit re-read so it can refresh the edit/write snapshot
+  // after another tool or process has changed the file.
+  // Keyed by (toolName, serialized args). Values are results.
+  const toolResultCache = new Map<string, { result: string; callId: string }>();
+  const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
+  const cacheKey = (name: string, args: Record<string, unknown>) => {
+    // Normalize: sort keys for stable hashing
+    const sorted = Object.keys(args).sort().map(k => `${k}=${JSON.stringify(args[k])}`).join('&');
+    return `${name}:${sorted}`;
+  };
+
+  const session: PersistentSession = {
+    get alive() { return alive; },
+    get sessionId() { return sessionId; },
+    get pid() { return activePid; },
+    engineId: config.engine.id,
+
+    async start() {
+      alive = true;
+      // Preserve messageHistory in memory for the current process. Loading
+      // disk history is opt-in because stale cross-session context can make a
+      // fresh Agon run remember already-fixed attempts.
+      if (config.sessionContinuity === true && messageHistory.length === 0) {
+        firstTurn = true;
+        // Prefer the freshest context source:
+        // 1. workspace-scoped conversation continuity (latest cross-engine turn)
+        // 2. engine-scoped persisted state (same-engine restart)
+        const saved = loadSessionState(config.engine.id);
+        const conversation = loadConversation();
+
+        const hasSavedState = !!(saved && saved.messageHistory.length > 0);
+        const hasConversation = !!(conversation && conversation.messageHistory.length > 0);
+        const shouldUseConversation = !!(
+          hasConversation && (
+            !hasSavedState ||
+            (conversation!.savedAt ?? 0) >= (saved?.savedAt ?? 0)
+          )
+        );
+
+        if (shouldUseConversation) {
+          // Strip system prompts — the new engine gets its own identity prompt.
+          const replayMessages = conversation!.messageHistory.filter((m: any) => m.role !== 'system');
+          if (replayMessages.length > 0) {
+            messageHistory.push(...replayMessages);
+            firstTurn = false;
+            console.log(`[agon] conversation continuity: loaded ${replayMessages.length} messages from ${conversation!.sourceEngine ?? 'previous engine'}`);
+          }
+        } else if (hasSavedState) {
+          messageHistory.push(...saved!.messageHistory);
+          compactionSummary = saved!.compactionSummary ?? null;
+          toolCacheManifest = saved!.toolCacheManifest ?? [];
+          firstTurn = false; // Not a fresh session — system prompt already in history
+        }
+      }
+    },
+
+    async *send(opts: SessionSendOptions) {
+      if (!alive) {
+        yield { type: 'error' as const, content: 'Session not started' };
+        return;
+      }
+      // Self-heal a stale flag from an abandoned previous generator: a new
+      // send() beginning means the previous turn is over.
+      sendActive = false;
+
+      // API-only engines: use HTTP dispatch with conversation history
+      if (config.engine.api && !config.binaryPath) {
+        // Serialize with any in-flight compact(): it rewrites messageHistory.
+        if (compactPromise) {
+          try { await compactPromise; } catch { /* compaction failure must not block the turn */ }
+        }
+        sendActive = true;
+        // Inject system prompt on first turn
+        if (firstTurn) {
+          const sysPrompt = config.systemPrompt ?? opts.systemPrompt;
+          if (sysPrompt) {
+            messageHistory.push({ role: 'system', content: sysPrompt });
+          }
+          firstTurn = false;
+        }
+
+        // ── Vision: encode dropped images for THIS turn only ──
+        // base64 is attached at dispatch time (see withImages below), NEVER stored
+        // in messageHistory — that history is persisted, re-sent every turn, and run
+        // through compaction, so inlining base64 there would blow the context window.
+        // Gated by the engine's declared vision capability; a text-only engine gets a
+        // clear note instead of a file path it would otherwise try to Read as bytes.
+        const hasVision = !!config.engine.capabilities?.includes('vision');
+        let turnImageParts: Array<{type:'image',image:string,mediaType:string}> = [];
+        if (opts.images?.length) {
+          if (hasVision) {
+            const enc = encodeImagesForDispatch(opts.images);
+            turnImageParts = enc.parts;
+            if (enc.skipped.length) {
+              yield { type: 'status' as const, content: `image(s) not sent: ${enc.skipped.join('; ')}` };
+            }
+          } else {
+            yield { type: 'status' as const, content: `${config.engine.id} has no vision capability — ${opts.images.length} image(s) not sent to the model` };
+          }
+        }
+
+        // All messages are user messages. Tool results are handled inside the
+        // agentic loop (same turn), not across turns. Content stays text-only here.
+        // Keep the object reference so withImages targets THIS exact turn — anchoring
+        // by "last user message" would misfire once compaction appends its own
+        // [CONTEXT STATUS] / emergency-trim user messages later in this same turn.
+        const userTurnMsg: {role: string, content: any} = { role: 'user', content: opts.message };
+        messageHistory.push(userTurnMsg);
+
+        // Per-request view of history: splice the current turn's image parts into
+        // THIS turn's user message. Returns a shallow clone so messageHistory itself
+        // stays base64-free (and string-typed for compaction/estimation).
+        const withImages = (history: typeof messageHistory): typeof messageHistory => {
+          if (!turnImageParts.length) return history;
+          // Prefer object identity; fall back to the most recent user message whose
+          // content is still exactly our prompt (covers compaction cloning the object).
+          // Both miss → attach nothing rather than risk the wrong message.
+          let idx = history.indexOf(userTurnMsg);
+          if (idx < 0) {
+            for (let i = history.length - 1; i >= 0; i--) {
+              const m = history[i];
+              if (m?.role === 'user' && typeof m.content === 'string' && m.content === userTurnMsg.content) { idx = i; break; }
             }
           }
-        },
+          if (idx < 0) return history;
+          const base = history[idx];
+          const text = typeof base.content === 'string' ? base.content : '';
+          // Omit the text part entirely for an image-only turn (e.g. /img <path>):
+          // Anthropic and several OpenAI-compatible vision endpoints reject a
+          // multimodal message that carries an empty text content block.
+          const content = text.trim()
+            ? [{ type: 'text', text }, ...turnImageParts]
+            : [...turnImageParts];
+          const cloned = history.slice();
+          cloned[idx] = { ...base, content };
+          return cloned;
+        };
 
-        async *send(opts: SessionSendOptions) {
-          if (!alive) {
-            yield { type: 'error' as const, content: 'Session not started' };
-            return;
+        // ── In-send context management (backstop only) ──
+        // Tier 1: Replace old tool results with cached refs (disk-backed) —
+        //         cheap, lossless, no engine call.
+        // Emergency: deterministic regex fold if history blew past the
+        //         emergency line WITHIN a turn (tool loop appended huge
+        //         results) before the budget gate could see it.
+        // LLM compaction is NOT auto-triggered here — it is owned by the
+        // Cesar budget gate / /compact via session.compact() (single policy
+        // owner; double compaction in one turn was the old failure mode).
+        const PRUNE_PROTECT_TURNS = 6; // protect last 6 user-assistant exchanges (was 4)
+        const EMERGENCY_COMPACT_TOKENS = Math.round(CONTEXT_LIMIT * 0.92);
+
+        const totalTokens = projectContextTokens();
+        // Fast path: skip all compaction tiers when well below threshold (<40% of context).
+        // This eliminates regex extraction + merge + disk writes for short conversations.
+        if (totalTokens > CONTEXT_LIMIT - COMPACTION_BUFFER) {
+          const hasSystem = messageHistory[0].role === 'system';
+          const startIdx = hasSystem ? 1 : 0;
+
+          // Count protected messages from the end
+          let protectFrom = messageHistory.length;
+          let turnsFound = 0;
+          for (let i = messageHistory.length - 1; i >= startIdx; i--) {
+            if ((messageHistory[i] as any).role === 'user') turnsFound++;
+            if (turnsFound > PRUNE_PROTECT_TURNS) break;
+            protectFrom = i;
           }
 
-          // API-only engines: use HTTP dispatch with conversation history
-          if (config.engine.api && !config.binaryPath) {
-            // Inject system prompt on first turn
-            if (firstTurn) {
-              const sysPrompt = config.systemPrompt ?? opts.systemPrompt;
-              if (sysPrompt) {
-                messageHistory.push({ role: 'system', content: sysPrompt });
-              }
-              firstTurn = false;
-            }
-
-            // ── Vision: encode dropped images for THIS turn only ──
-            // base64 is attached at dispatch time (see withImages below), NEVER stored
-            // in messageHistory — that history is persisted, re-sent every turn, and run
-            // through compaction, so inlining base64 there would blow the context window.
-            // Gated by the engine's declared vision capability; a text-only engine gets a
-            // clear note instead of a file path it would otherwise try to Read as bytes.
-            const hasVision = !!config.engine.capabilities?.includes('vision');
-            let turnImageParts: Array<{type:'image',image:string,mediaType:string}> = [];
-            if (opts.images?.length) {
-              if (hasVision) {
-                const enc = encodeImagesForDispatch(opts.images);
-                turnImageParts = enc.parts;
-                if (enc.skipped.length) {
-                  yield { type: 'status' as const, content: `image(s) not sent: ${enc.skipped.join('; ')}` };
-                }
+          // ── Tier 1: Replace old tool results with disk-cached refs ──
+          for (let i = startIdx; i < protectFrom; i++) {
+            const msg = messageHistory[i] as any;
+            if (msg.role === 'tool' && msg.content && typeof msg.content === 'string' && msg.content.length > 200) {
+              // Already cached? Just clear inline
+              if (msg.content.includes('[cached —')) continue;
+              // Save to disk cache
+              const tcId = msg.tool_call_id ?? `legacy_${i}`;
+              const entry = saveToolResultToDisk(config.engine.id, tcId, 'tool', msg.content);
+              if (entry) {
+                toolCacheManifest.push(entry);
+                msg.content = msg.content.slice(0, 200) + `\n[cached — ${tcId}]`;
               } else {
-                yield { type: 'status' as const, content: `${config.engine.id} has no vision capability — ${opts.images.length} image(s) not sent to the model` };
+                msg.content = '[Old tool result cleared]';
               }
+              delete msg._tokenEstimate; // invalidate cache — content mutated
             }
+          }
 
-            // All messages are user messages. Tool results are handled inside the
-            // agentic loop (same turn), not across turns. Content stays text-only here.
-            // Keep the object reference so withImages targets THIS exact turn — anchoring
-            // by "last user message" would misfire once compaction appends its own
-            // [CONTEXT STATUS] / emergency-trim user messages later in this same turn.
-            const userTurnMsg: {role: string, content: any} = { role: 'user', content: opts.message };
-            messageHistory.push(userTurnMsg);
+          // ── Emergency regex fold — still over the EMERGENCY line after Tier 1 ──
+          // Normal-path compaction (LLM, in place) runs pre-turn via the
+          // budget gate. This deterministic fold (no engine call — it always
+          // fits, always succeeds) only fires when history blew past ~92% of
+          // the window inside a turn, as the last stop before an overflow.
+          const afterTier1 = projectContextTokens();
+          if (afterTier1 > EMERGENCY_COMPACT_TOKENS) {
+            // Snap the cut to a safe boundary — never strand a tool result
+            // from its tool_use (the API rejects the request with a 400).
+            const keepStart = findSafeKeepStart(messageHistory, messageHistory.length - protectFrom, startIdx);
+            const old = messageHistory.slice(startIdx, keepStart);
+            const recent = messageHistory.slice(keepStart);
+            const system = hasSystem ? [messageHistory[0]] : [];
 
-            // Per-request view of history: splice the current turn's image parts into
-            // THIS turn's user message. Returns a shallow clone so messageHistory itself
-            // stays base64-free (and string-typed for compaction/estimation).
-            const withImages = (history: typeof messageHistory): typeof messageHistory => {
-              if (!turnImageParts.length) return history;
-              // Prefer object identity; fall back to the most recent user message whose
-              // content is still exactly our prompt (covers compaction cloning the object).
-              // Both miss → attach nothing rather than risk the wrong message.
-              let idx = history.indexOf(userTurnMsg);
-              if (idx < 0) {
-                for (let i = history.length - 1; i >= 0; i--) {
-                  const m = history[i];
-                  if (m?.role === 'user' && typeof m.content === 'string' && m.content === userTurnMsg.content) { idx = i; break; }
-                }
-              }
-              if (idx < 0) return history;
-              const base = history[idx];
-              const text = typeof base.content === 'string' ? base.content : '';
-              // Omit the text part entirely for an image-only turn (e.g. /img <path>):
-              // Anthropic and several OpenAI-compatible vision endpoints reject a
-              // multimodal message that carries an empty text content block.
-              const content = text.trim()
-                ? [{ type: 'text', text }, ...turnImageParts]
-                : [...turnImageParts];
-              const cloned = history.slice();
-              cloned[idx] = { ...base, content };
-              return cloned;
-            };
-
-            // ── Three-tier context compaction (OpenCode-inspired) ──
-            // Tier 1: Replace old tool results with cached refs (disk-backed)
-            // Tier 2: Incremental CompactionSummary — merges across cycles
-            // Tier 3: (future) LLM-based summary as last resort
-            // Token estimate: chars/3.5, not chars/4. Code/JSON-heavy agent history
-            // tokenizes closer to ~3.3 chars/token, so chars/4 systematically
-            // UNDERcounts — which let real requests blow past the window before
-            // compaction fired (the overflow → empty-response → auto-continue spin).
-            // Overcounting slightly is the safe side: compaction fires a bit early.
-            const estimateSingle = (m: {role: string, content: any}): number => {
-              if (typeof m.content === 'string') return Math.ceil(m.content.length / 3.5);
-              if (m.content === null && (m as any).tool_calls) {
-                return (m as any).tool_calls.reduce((s: number, tc: any) =>
-                  s + Math.ceil((tc.function?.arguments ?? '').length / 3.5), 100);
-              }
-              return 50;
-            };
-            // Per-message token cache — only recompute for new/mutated messages
-            const estimateTokens = (msgs: Array<{role: string, content: any}>) =>
-              msgs.reduce((sum, m) => {
-                if ((m as any)._tokenEstimate === undefined) {
-                  (m as any)._tokenEstimate = estimateSingle(m);
-                }
-                return sum + (m as any)._tokenEstimate;
-              }, 0);
-
-            // Context limit: PER-ENGINE, not a hardcoded 128k. maxTokens is the
-            // OUTPUT cap (4096-8192), NOT the context window — different axis.
-            // Priority: explicit engine.api.contextWindow → inferred from the model
-            // id → conservative 128k default. A wrong (too-high) limit is what let
-            // the request overflow the real window before compaction fired.
-            const inferContextWindow = (modelId: string): number => {
-              const m = (modelId ?? '').toLowerCase();
-              // Generous frontier windows
-              if (/gpt-4\.1|gpt-5|o3|o4|gemini|claude|sonnet|opus|haiku|grok/.test(m)) return 200_000;
-              if (/glm-4\.6|glm-5|glm-4\.5|kimi|moonshot|k2|qwen.*max|qwen3|deepseek|minimax/.test(m)) return 128_000;
-              if (/glm-4\b|glm-4-/.test(m)) return 128_000;
-              if (/mistral|mixtral|llama-3|llama3/.test(m)) return 128_000;
-              return 128_000;
-            };
-            const CONTEXT_LIMIT = (() => {
-              const explicit = Number((config.engine.api as any)?.contextWindow);
-              if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
-              return inferContextWindow(config.engine.api?.model ?? config.engine.id ?? '');
-            })();
-            // Reserve headroom that scales with the window (≥20k, ~15% of window),
-            // so a big window doesn't run right up to the edge before compacting.
-            const COMPACTION_BUFFER = Math.max(20_000, Math.round(CONTEXT_LIMIT * 0.15));
-            const PRUNE_PROTECT_TURNS = 6; // protect last 6 user-assistant exchanges (was 4)
-
-            const totalTokens = estimateTokens(messageHistory);
-            // Fast path: skip all compaction tiers when well below threshold (<40% of context).
-            // This eliminates regex extraction + merge + disk writes for short conversations.
-            if (totalTokens > CONTEXT_LIMIT - COMPACTION_BUFFER) {
-              const hasSystem = messageHistory[0].role === 'system';
-              const startIdx = hasSystem ? 1 : 0;
-
-              // Count protected messages from the end
-              let protectFrom = messageHistory.length;
-              let turnsFound = 0;
-              for (let i = messageHistory.length - 1; i >= startIdx; i--) {
-                if ((messageHistory[i] as any).role === 'user') turnsFound++;
-                if (turnsFound > PRUNE_PROTECT_TURNS) break;
-                protectFrom = i;
-              }
-
-              // ── Tier 1: Replace old tool results with disk-cached refs ──
-              for (let i = startIdx; i < protectFrom; i++) {
-                const msg = messageHistory[i] as any;
-                if (msg.role === 'tool' && msg.content && typeof msg.content === 'string' && msg.content.length > 200) {
-                  // Already cached? Just clear inline
-                  if (msg.content.includes('[cached —')) continue;
-                  // Save to disk cache
-                  const tcId = msg.tool_call_id ?? `legacy_${i}`;
-                  const entry = saveToolResultToDisk(config.engine.id, tcId, 'tool', msg.content);
-                  if (entry) {
-                    toolCacheManifest.push(entry);
-                    msg.content = msg.content.slice(0, 200) + `\n[cached — ${tcId}]`;
-                  } else {
-                    msg.content = '[Old tool result cleared]';
-                  }
-                  delete msg._tokenEstimate; // invalidate cache — content mutated
-                }
-              }
-
-              // ── Tier 2: Incremental CompactionSummary if still over limit ──
-              const afterTier1 = estimateTokens(messageHistory);
-              if (afterTier1 > CONTEXT_LIMIT - COMPACTION_BUFFER) {
-                const old = messageHistory.slice(startIdx, protectFrom);
-                const recent = messageHistory.slice(protectFrom);
-                const system = hasSystem ? [messageHistory[0]] : [];
-
-                if (old.length > 0) {
-                  try {
-                    const userMsgs = old.filter((m: any) => m.role === 'user' && typeof m.content === 'string');
-                    const assistMsgs = old.filter((m: any) => m.role === 'assistant' && typeof m.content === 'string');
-
-                    // Extract structured data from old messages
-                    const filesRead = new Set<string>();
-                    const filesModified = new Set<string>();
-                    const toolsSummary: string[] = [];
-                    const discoveries: string[] = [];
-                    const decisions: string[] = [];
-
-                    for (const m of old as any[]) {
-                      // Prefer structured _parts (captured at stream time) over regex parsing
-                      if (m._parts && Array.isArray(m._parts)) {
-                        for (const part of m._parts) {
-                          if (part.kind === 'tool_call') {
-                            const fp = part.args?.file_path || part.args?.path || '';
-                            if (fp) filesRead.add(fp);
-                            if ((part.toolName === 'Edit' || part.toolName === 'Write') && fp) {
-                              filesModified.add(fp);
-                            }
-                            if (toolsSummary.length < 15) {
-                              const detail = fp || (part.args?.pattern ? `pattern:${part.args.pattern}` : '') || '';
-                              toolsSummary.push(`${part.toolName}(${String(detail).slice(0, 80)})`);
-                            }
-                          }
-                        }
-                      } else if (m.tool_calls) {
-                        // Fallback: regex-parse from tool_calls (legacy messages without _parts)
-                        for (const tc of m.tool_calls) {
-                          try {
-                            const toolName: string = tc.function?.name ?? '';
-                            const args = JSON.parse(tc.function?.arguments ?? '{}');
-                            const fp = args.file_path || args.path || '';
-
-                            if (fp) filesRead.add(fp);
-                            if (toolName === 'Edit' || toolName === 'Write') {
-                              if (fp) filesModified.add(fp);
-                            }
-                            if (toolName && toolsSummary.length < 15) {
-                              const detail = fp || (args.pattern ? `pattern:${args.pattern}` : '') || (args.command ? args.command.slice(0, 60) : '');
-                              toolsSummary.push(`${toolName}(${detail.slice(0, 80)})`);
-                            }
-                          } catch { /* skip malformed */ }
-                        }
-                      }
-                      // Extract decisions from assistant messages
-                      if (m.role === 'assistant' && typeof m.content === 'string') {
-                        const lines = m.content.split('\n');
-                        for (const line of lines) {
-                          if (/(?:I (?:will|chose|decided)|Decision:|Approach:|Strategy:)/i.test(line) && decisions.length < 8) {
-                            decisions.push(line.trim().slice(0, 200));
-                          }
-                          if (/(?:found|discovered|noticed|bug|issue|pattern|the problem is)/i.test(line) && discoveries.length < 8) {
-                            discoveries.push(line.trim().slice(0, 200));
-                          }
-                        }
-                      }
-                    }
-
-                    const goal = userMsgs.length > 0
-                      ? (userMsgs[0].content as string).slice(0, 500)
-                      : '';
-                    const lastProgress = assistMsgs.length > 0
-                      ? (assistMsgs[assistMsgs.length - 1].content as string).slice(0, 800)
-                      : '';
-
-                    // Build new CompactionSummary — merge with existing if present
-                    const prev = compactionSummary;
-                    const newSummary: CompactionSummaryPart = {
-                      kind: 'compaction' as const,
-                      goal: prev?.goal || goal,
-                      discoveries: [...new Set([...(prev?.discoveries ?? []), ...discoveries])].slice(0, 12),
-                      filesModified: [...new Set([...(prev?.filesModified ?? []), ...filesModified])].slice(0, 20),
-                      filesRead: [...new Set([...(prev?.filesRead ?? []), ...filesRead])].slice(0, 30),
-                      toolsSummary: [...new Set([...(prev?.toolsSummary ?? []), ...toolsSummary])].slice(0, 20),
-                      decisions: [...new Set([...(prev?.decisions ?? []), ...decisions])].slice(0, 10),
-                      progress: lastProgress || prev?.progress || '',
-                      compactedAt: Date.now(),
-                      messagesCompacted: (prev?.messagesCompacted ?? 0) + old.length,
-                    };
-                    compactionSummary = newSummary;
-
-                    // Render compaction as a structured context message
-                    const compactedText = [
-                      `[Context compacted — ${newSummary.messagesCompacted} messages total, ${old.length} this cycle]`,
-                      newSummary.goal ? `GOAL: ${newSummary.goal}` : '',
-                      newSummary.discoveries.length > 0 ? `DISCOVERIES:\n${newSummary.discoveries.map((d: string) => `  - ${d}`).join('\n')}` : '',
-                      newSummary.filesRead.length > 0 ? `FILES READ: ${newSummary.filesRead.join(', ')}` : '',
-                      newSummary.filesModified.length > 0 ? `FILES MODIFIED: ${newSummary.filesModified.join(', ')}` : '',
-                      newSummary.toolsSummary.length > 0 ? `TOOLS USED: ${newSummary.toolsSummary.join(', ')}` : '',
-                      newSummary.decisions.length > 0 ? `DECISIONS:\n${newSummary.decisions.map((d: string) => `  - ${d}`).join('\n')}` : '',
-                      newSummary.progress ? `LATEST PROGRESS: ${newSummary.progress}` : '',
-                    ].filter(Boolean).join('\n');
-
-                    const summary = { role: 'user' as const, content: compactedText };
-                    messageHistory.length = 0;
-                    messageHistory.push(...system, summary, ...recent);
-                  } catch (compactErr) {
-                    // Snapshot before clearing — don't read from the array we just emptied
-                    console.warn(`[agon] session: compaction failed: ${compactErr instanceof Error ? compactErr.message : String(compactErr)}`);
-                    const snapshot = [...messageHistory];
-                    messageHistory.length = 0;
-                    const sysMsg = hasSystem ? [snapshot[0]] : [];
-                    messageHistory.push(...sysMsg, ...snapshot.slice(protectFrom));
-                  }
-                }
-              }
-
-              // ── Tier 3: LLM-based compaction as last resort ──
-              // Now ENABLED BY DEFAULT when we're still over budget after Tier 1+2:
-              // at that point the only alternative is sending an oversized request
-              // that the API rejects → empty response → auto-continue spin. A brief
-              // foreground summarization is the lesser evil. Set
-              // AGON_DISABLE_TIER3_COMPACTION=1 to opt out (or the old
-              // AGON_ENABLE_TIER3_COMPACTION=1 still force-enables it).
-              const afterTier2 = estimateTokens(messageHistory);
-              const tier3CompactionEnabled = process.env.AGON_DISABLE_TIER3_COMPACTION !== '1';
-              if (tier3CompactionEnabled && afterTier2 > CONTEXT_LIMIT - COMPACTION_BUFFER && config.engine.api) {
-                try {
-                  const { apiDispatch } = await import('../api/dispatch.js');
-                  // Use same API config but request minimal tokens
-                  const compactionPrompt = `Summarize this conversation context into a concise briefing. Preserve: the user's goal, key discoveries, files read/modified, important decisions, and current progress. Drop: verbose tool outputs, repeated attempts, and pleasantries.
-
-  CONTEXT TO SUMMARIZE:
-  ${messageHistory.filter((m: any) => m.role !== 'system').map((m: any) => `[${m.role}] ${typeof m.content === 'string' ? m.content.slice(0, 500) : '(tool call)'}`).join('\n')}
-
-  Respond with ONLY the summary, no preamble.`;
-
-                  const compactionConfig = { ...config.engine.api, maxTokens: 2048 };
-                  const compactionResult = await apiDispatch(compactionConfig, compactionPrompt, 30);
-                  if (compactionResult.exitCode === 0 && compactionResult.stdout.length > 50) {
-                    const hasSystem = messageHistory[0]?.role === 'system';
-                    const sysMsg = hasSystem ? [messageHistory[0]] : [];
-                    const protectedRecent = messageHistory.slice(-8); // Keep last 8 messages
-                    messageHistory.length = 0;
-                    messageHistory.push(
-                      ...sysMsg,
-                      { role: 'user' as const, content: `[LLM-compacted context — ${compactionSummary?.messagesCompacted ?? 0} messages total]\n${compactionResult.stdout}` },
-                      ...protectedRecent,
-                    );
-                    console.log(`[agon] Tier 3 LLM compaction fired: ${afterTier2} → ${estimateTokens(messageHistory)} tokens`);
-                  }
-                } catch (tier3Err) {
-                  // Tier 3 is best-effort — don't crash if the compaction model fails
-                  console.warn(`[agon] Tier 3 compaction failed (non-fatal): ${tier3Err instanceof Error ? tier3Err.message : String(tier3Err)}`);
-                }
-              }
-
-              // Prune disk cache — keep only IDs still referenced in history
-              const activeIds = new Set<string>();
-              for (const m of messageHistory) {
-                if (typeof (m as any).content === 'string') {
-                  const refs = ((m as any).content as string).matchAll(/\[cached — ([^\]]+)\]/g);
-                  for (const ref of refs) activeIds.add(ref[1]);
-                }
-                if ((m as any).tool_call_id) activeIds.add((m as any).tool_call_id);
-              }
-              pruneToolCache(config.engine.id, activeIds);
-              toolCacheManifest = toolCacheManifest.filter((e: ToolCacheEntry) => activeIds.has(e.toolCallId));
-            }
-
-            // ── Context awareness: tell the model its budget status ──
-            {
-              // Reuse totalTokens if compaction didn't fire; otherwise re-estimate
-              const ctxTokens = totalTokens <= CONTEXT_LIMIT - COMPACTION_BUFFER ? totalTokens : estimateTokens(messageHistory);
-              const ctxPct = Math.round((ctxTokens / CONTEXT_LIMIT) * 100);
-              const cachedCount = toolCacheManifest.length;
-              const compactedCount = compactionSummary?.messagesCompacted ?? 0;
-
-              // Surface the live context gauge to the UI EVERY turn (not just when
-              // tight) via a metadata-tagged status chunk. The orchestrator turns
-              // this into a `context-usage` event the status strip renders, so the
-              // user can SEE window occupancy instead of it only going to the model.
-              yield {
-                type: 'status' as const,
-                content: `context ${ctxPct}%`,
-                metadata: { kind: 'context-usage', pct: ctxPct, used: ctxTokens, limit: CONTEXT_LIMIT, compacted: compactedCount, cached: cachedCount },
-              };
-
-              if (ctxPct > 60 || compactedCount > 0) {
-                const statusParts: string[] = [
-                  `[Context: ${ctxPct}% used (${ctxTokens}/${CONTEXT_LIMIT} tokens)]`,
-                ];
-                if (compactedCount > 0) {
-                  statusParts.push(`[${compactedCount} older messages were compacted — key discoveries and files preserved in summary above]`);
-                }
-                if (cachedCount > 0) {
-                  statusParts.push(`[${cachedCount} tool results cached to disk — use RetrieveResult(id) to get full content from [cached — id] markers]`);
-                }
-                if (ctxPct > 80) {
-                  statusParts.push(`[WARNING: Context is ${ctxPct}% full. Be concise. Avoid re-reading files you already have context on.]`);
-                }
-                // Inject as a user-scoped status note. Appending system messages
-                // mid-conversation breaks Anthropic/AI SDK message conversion.
-                messageHistory.push({ role: 'user', content: statusParts.join('\n') });
-              }
-            }
-
-            // ── Inject RetrieveResult tool so models can access cached results ──
-            const retrieveToolDef = {
-              type: 'function' as const,
-              function: {
-                name: 'RetrieveResult',
-                description: 'Retrieve the full content of a previously cached tool result. When you see "[cached — {id}]" in a truncated tool output, call this with that id to get the full content without re-running the original tool.',
-                parameters: {
-                  type: 'object' as const,
-                  properties: { id: { type: 'string', description: 'The cache ID from [cached — {id}] marker' } },
-                  required: ['id'],
-                },
-              },
-            };
-            const effectiveTools = config.nativeTools ? [...config.nativeTools, retrieveToolDef] : [retrieveToolDef];
-
-            // ── Agentic tool loop with dynamic budget ──
-            // Productive steps (successful tool calls) extend the budget.
-            // Failed steps shrink it. Models that work get more runway.
-            const requestedBaseBudget = Number(opts.toolLoopBaseBudget ?? config.toolLoopBaseBudget ?? 15);
-            const requestedMaxBudget = Number(opts.toolLoopMaxBudget ?? config.toolLoopMaxBudget ?? 30);
-            const BASE_BUDGET = Number.isFinite(requestedBaseBudget) && requestedBaseBudget > 0
-              ? Math.max(1, Math.floor(requestedBaseBudget))
-              : 15;
-            const MAX_BUDGET = Number.isFinite(requestedMaxBudget) && requestedMaxBudget > 0
-              ? Math.max(BASE_BUDGET, Math.floor(requestedMaxBudget))
-              : 30; // hard cap even for very productive sessions
-            const MAX_CONSECUTIVE_ERRORS = 3;
-            let budget = BASE_BUDGET;
-            let step = 0;
-            let productiveSteps = 0;
-            let consecutiveErrors = 0;
-            let repeatedReadOnlyRetrySteps = 0;
-            let readOnlyLoopRecoveryUsed = false;
-            let lastReadOnlySignature = '';
-            // ── Read-spin detector (codex/nero-reviewed) ──
-            // The exact-signature guard above only fires on byte-identical read
-            // batches; an engine re-reading the same content in VARYING batch
-            // compositions (Read×2, then ×3, then ×6) evades it while every read
-            // extends the budget. Extra signal, feeding the SAME recovery:
-            // seenReadKeys accumulator — a read-only step that introduces ZERO new
-            // cache-keys is an exact re-read. cacheKey() is full-arg (name + sorted
-            // args), so reading DIFFERENT files, a WIDER range, or a DIFFERENT grep
-            // pattern yields a NEW key and resets the counter — no false-positive on
-            // legitimate investigation/narrowing passes (nero Ch.1/Ch.5 defused by the
-            // fine-grained key). An earlier narration-repeat signal was dropped: it
-            // false-positived on repeated prose while reading genuinely-new files.
-            const seenReadKeys = new Set<string>();
-            let noNewInfoReadSteps = 0;
-            // Bounded retry for empty (non-overflow) completions — usually a transient
-            // rate-limit (per the comment at the empty-response branch below), which
-            // previously dead-stopped the turn. Capped per-turn so a deterministic
-            // content-filter/format empty still surfaces the real error after retries.
-            let emptyResponseRetries = 0;
-            const MAX_EMPTY_RETRIES = 2;
-            // One-shot emergency recovery: if a request fails with an overflow-shaped
-            // error, hard-trim history once and retry the same step instead of
-            // surfacing an empty response (the spin trigger). Token estimates can be
-            // wrong; this is the backstop when proactive compaction under-shot.
-            let emergencyTrimmed = false;
-            const OVERFLOW_RE = /context|too\s*long|maximum\s+context|context_length|too many tokens|exceeds?\b.*(context|token)|reduce the length|input is too large|413|payload too large/i;
-            const emergencyTrim = (): boolean => {
-              const hasSystem = messageHistory[0]?.role === 'system';
-              const sys = hasSystem ? [messageHistory[0]] : [];
-              const keepLast = 6; // keep the most recent few messages verbatim
-              if (messageHistory.length - sys.length <= keepLast) return false;
-              const recent = messageHistory.slice(-keepLast);
-              const droppedCount = messageHistory.length - sys.length - recent.length;
-              messageHistory.length = 0;
-              messageHistory.push(
-                ...sys,
-                { role: 'user' as const, content: `[Emergency context trim — ${droppedCount} older messages dropped after an overflow error. Ask if you need detail from earlier.]` },
-                ...recent,
-              );
-              return true;
-            };
-
-            // ── Solo-coding gate: track investigation vs write behavior ──
-            // Architecture, not prompts: block writes that skip investigation
-            let readCount = 0;   // Read, Grep, Glob calls this turn
-            let writeCount = 0;  // Edit, Write calls this turn
-            let orchCount = 0;   // Forge, Brainstorm, Tribunal, etc. calls this turn
-            const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'RetrieveResult']);
-            const WRITE_TOOLS = new Set(['Edit', 'Write']);
-            const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Delegate', 'ProposePlan']);
-            const hasHistoryToolCall = (toolNames: Set<string>) => messageHistory.some((msg: any) =>
-              Array.isArray(msg?.tool_calls) && msg.tool_calls.some((tc: any) => {
-                const fnName = tc?.function?.name ?? tc?.name;
-                return typeof fnName === 'string' && toolNames.has(fnName);
-              })
-            );
-            // Detect task complexity from the user's message
-            const userMsg = opts.message.toLowerCase();
-            const isComplexTask = (
-              /\b(refactor|architect|redesign|rewrite|migrate|implement feature|add feature|new feature|multi.?file|across.?(files|modules|packages))\b/i.test(userMsg) ||
-              userMsg.length > 500  // Long prompts usually mean complex tasks
-            );
-            // Simple task whitelist: if the user mentions a specific single file, it's probably simple
-            const singleFileMatch = opts.message.match(/\b([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})\b/);
-            const isSingleFileMention = singleFileMatch && !opts.message.includes(' and ') && !isComplexTask;
-
-            while (step < budget) {
-              step++;
-              let fullResponse = '';
-              let lastStderr = ''; // captured non-throwing error from the dispatch result
-              let lastDispatchParts: any[] | undefined; // Structured parts from dispatch
-
-              // ── Status update so the UI shows activity during API tool loops ──
-              if (step === 1) {
-                yield { type: 'status' as const, content: 'dispatching engine…' };
-              } else {
-                yield { type: 'status' as const, content: `tool loop turn ${step}/${budget}…` };
-              }
-
-              const gen = apiStreamDispatchWithHistory(config.engine.api, withImages(messageHistory), config.engine.timeout ?? 180, opts.signal, effectiveTools);
+            if (old.length > 0) {
               try {
-                while (true) {
-                  const { value, done } = await gen.next();
-                  if (done) {
-                    const result = value as any;
-                    // Capture structured parts for smarter compaction
-                    if (result?.parts && Array.isArray(result.parts)) {
-                      lastDispatchParts = result.parts;
-                    }
-                    if (result?.stderr) {
-                      lastStderr = String(result.stderr);
-                      if (fullResponse.length === 0) {
-                        // Don't surface yet — the empty-response block below decides
-                        // whether to recover (overflow) or surface the error.
-                        if (!OVERFLOW_RE.test(lastStderr) || emergencyTrimmed) {
-                          yield { type: 'error' as const, content: result.stderr };
-                        }
-                      } else {
-                        console.warn(`[agon] API warning (response preserved): ${result.stderr.slice(0, 200)}`);
-                      }
-                    }
-                    break;
-                  }
-                  fullResponse += value as string;
-                  yield { type: 'text' as const, content: value as string };
-                }
-              } catch (err: any) {
-                // Retry once on stream failure before giving up — but only if we have NO output
-                if (fullResponse.length === 0) {
-                  const errText = String(err?.message ?? err);
-                  // Overflow-shaped failure → emergency-trim history once and retry,
-                  // so the turn recovers instead of yielding an empty response that
-                  // makes the orchestrator spin the canned "paused mid-task" closure.
-                  if (!emergencyTrimmed && OVERFLOW_RE.test(errText) && emergencyTrim()) {
-                    emergencyTrimmed = true;
-                    yield { type: 'status' as const, content: 'context overflow — trimmed history, retrying…' };
-                    step--; // retry the same step with the trimmed history
-                    continue;
-                  }
-                  if (step === 1) {
-                    yield { type: 'error' as const, content: `API stream failed, retrying… (${err.message ?? String(err)})` };
-                    await new Promise(r => setTimeout(r, 1000));
-                    continue; // Retry the same step
-                  }
-                  // Don't kill session — preserve history for next turn. Disk
-                  // persistence is opt-in so fresh processes stay clean by default.
-                  if (config.sessionContinuity === true) {
-                    try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch (saveErr) { console.warn('[session] failed to save state on error:', (saveErr as Error).message ?? saveErr); }
-                  }
-                  yield { type: 'error' as const, content: err.message ?? String(err) };
-                  break;
-                }
-                // Got partial output before crash — preserve it, log warning
-                console.warn(`[agon] API stream error after ${fullResponse.length} chars (preserved): ${(err.message ?? '').slice(0, 200)}`);
-                // Fall through to process fullResponse as if stream completed
+                const newSummary = buildCompactionSummary(old as any[], compactionSummary);
+                compactionSummary = newSummary;
+                const summary = { role: 'user' as const, content: renderCompactionText(newSummary, old.length) };
+                messageHistory.length = 0;
+                messageHistory.push(...system, summary, ...recent);
+              } catch (compactErr) {
+                // Snapshot before clearing — don't read from the array we just emptied
+                console.warn(`[agon] session: emergency compaction failed: ${compactErr instanceof Error ? compactErr.message : String(compactErr)}`);
+                const snapshot = [...messageHistory];
+                messageHistory.length = 0;
+                const sysMsg = hasSystem ? [snapshot[0]] : [];
+                messageHistory.push(...sysMsg, ...snapshot.slice(keepStart));
               }
+              lastRealUsage = null; // history rewritten — the next dispatch re-anchors
+            }
+          }
 
-              if (!fullResponse) {
-                // Overflow returned as a non-throwing error (e.g. provider 400 in
-                // stderr) → emergency-trim once and retry, same as the throw path.
-                if (!emergencyTrimmed && OVERFLOW_RE.test(lastStderr) && emergencyTrim()) {
-                  emergencyTrimmed = true;
-                  yield { type: 'status' as const, content: 'context overflow — trimmed history, retrying…' };
-                  step--;
-                  continue;
+          // Prune disk cache — keep only IDs still referenced in history
+          const activeIds = new Set<string>();
+          for (const m of messageHistory) {
+            if (typeof (m as any).content === 'string') {
+              const refs = ((m as any).content as string).matchAll(/\[cached — ([^\]]+)\]/g);
+              for (const ref of refs) activeIds.add(ref[1]);
+            }
+            if ((m as any).tool_call_id) activeIds.add((m as any).tool_call_id);
+          }
+          pruneToolCache(config.engine.id, activeIds);
+          toolCacheManifest = toolCacheManifest.filter((e: ToolCacheEntry) => activeIds.has(e.toolCallId));
+        }
+
+        // ── Context awareness: tell the model its budget status ──
+        {
+          // Reuse totalTokens if compaction didn't fire; otherwise re-project
+          const ctxTokens = totalTokens <= CONTEXT_LIMIT - COMPACTION_BUFFER ? totalTokens : projectContextTokens();
+          const ctxPct = Math.round((ctxTokens / CONTEXT_LIMIT) * 100);
+          const cachedCount = toolCacheManifest.length;
+          const compactedCount = compactionSummary?.messagesCompacted ?? 0;
+
+          // Surface the live context gauge to the UI EVERY turn (not just when
+          // tight) via a metadata-tagged status chunk. The orchestrator turns
+          // this into a `context-usage` event the status strip renders, so the
+          // user can SEE window occupancy instead of it only going to the model.
+          // source: 'api' = exact (anchored on the last response's real token
+          // usage, nothing appended since), 'projected' = real anchor + small
+          // estimated delta, 'estimate' = chars-based only (no anchor yet).
+          yield {
+            type: 'status' as const,
+            content: `context ${ctxPct}%`,
+            metadata: { kind: 'context-usage', pct: ctxPct, used: ctxTokens, limit: CONTEXT_LIMIT, compacted: compactedCount, cached: cachedCount, source: contextSource() },
+          };
+
+          if (ctxPct > 60 || compactedCount > 0) {
+            const statusParts: string[] = [
+              `[Context: ${ctxPct}% used (${ctxTokens}/${CONTEXT_LIMIT} tokens)]`,
+            ];
+            if (compactedCount > 0) {
+              statusParts.push(`[${compactedCount} older messages were compacted — key discoveries and files preserved in summary above]`);
+            }
+            if (cachedCount > 0) {
+              statusParts.push(`[${cachedCount} tool results cached to disk — use RetrieveResult(id) to get full content from [cached — id] markers]`);
+            }
+            if (ctxPct > 80) {
+              statusParts.push(`[WARNING: Context is ${ctxPct}% full. Be concise. Avoid re-reading files you already have context on.]`);
+            }
+            // Inject as a user-scoped status note. Appending system messages
+            // mid-conversation breaks Anthropic/AI SDK message conversion.
+            messageHistory.push({ role: 'user', content: statusParts.join('\n') });
+          }
+        }
+
+        // ── Inject RetrieveResult tool so models can access cached results ──
+        const retrieveToolDef = {
+          type: 'function' as const,
+          function: {
+            name: 'RetrieveResult',
+            description: 'Retrieve the full content of a previously cached tool result. When you see "[cached — {id}]" in a truncated tool output, call this with that id to get the full content without re-running the original tool.',
+            parameters: {
+              type: 'object' as const,
+              properties: { id: { type: 'string', description: 'The cache ID from [cached — {id}] marker' } },
+              required: ['id'],
+            },
+          },
+        };
+        const effectiveTools = config.nativeTools ? [...config.nativeTools, retrieveToolDef] : [retrieveToolDef];
+
+        // ── Agentic tool loop with dynamic budget ──
+        // Productive steps (successful tool calls) extend the budget.
+        // Failed steps shrink it. Models that work get more runway.
+        const requestedBaseBudget = Number(opts.toolLoopBaseBudget ?? config.toolLoopBaseBudget ?? 15);
+        const requestedMaxBudget = Number(opts.toolLoopMaxBudget ?? config.toolLoopMaxBudget ?? 30);
+        const BASE_BUDGET = Number.isFinite(requestedBaseBudget) && requestedBaseBudget > 0
+          ? Math.max(1, Math.floor(requestedBaseBudget))
+          : 15;
+        const MAX_BUDGET = Number.isFinite(requestedMaxBudget) && requestedMaxBudget > 0
+          ? Math.max(BASE_BUDGET, Math.floor(requestedMaxBudget))
+          : 30; // hard cap even for very productive sessions
+        const MAX_CONSECUTIVE_ERRORS = 3;
+        let budget = BASE_BUDGET;
+        let step = 0;
+        let productiveSteps = 0;
+        let consecutiveErrors = 0;
+        let repeatedReadOnlyRetrySteps = 0;
+        let readOnlyLoopRecoveryUsed = false;
+        let lastReadOnlySignature = '';
+        // ── Read-spin detector (codex/nero-reviewed) ──
+        // The exact-signature guard above only fires on byte-identical read
+        // batches; an engine re-reading the same content in VARYING batch
+        // compositions (Read×2, then ×3, then ×6) evades it while every read
+        // extends the budget. Extra signal, feeding the SAME recovery:
+        // seenReadKeys accumulator — a read-only step that introduces ZERO new
+        // cache-keys is an exact re-read. cacheKey() is full-arg (name + sorted
+        // args), so reading DIFFERENT files, a WIDER range, or a DIFFERENT grep
+        // pattern yields a NEW key and resets the counter — no false-positive on
+        // legitimate investigation/narrowing passes (nero Ch.1/Ch.5 defused by the
+        // fine-grained key). An earlier narration-repeat signal was dropped: it
+        // false-positived on repeated prose while reading genuinely-new files.
+        const seenReadKeys = new Set<string>();
+        let noNewInfoReadSteps = 0;
+        // Bounded retry for empty (non-overflow) completions — usually a transient
+        // rate-limit (per the comment at the empty-response branch below), which
+        // previously dead-stopped the turn. Capped per-turn so a deterministic
+        // content-filter/format empty still surfaces the real error after retries.
+        let emptyResponseRetries = 0;
+        const MAX_EMPTY_RETRIES = 2;
+        // One-shot emergency recovery: if a request fails with an overflow-shaped
+        // error, hard-trim history once and retry the same step instead of
+        // surfacing an empty response (the spin trigger). Token estimates can be
+        // wrong; this is the backstop when proactive compaction under-shot.
+        let emergencyTrimmed = false;
+        const OVERFLOW_RE = /context|too\s*long|maximum\s+context|context_length|too many tokens|exceeds?\b.*(context|token)|reduce the length|input is too large|413|payload too large/i;
+        const emergencyTrim = (): boolean => {
+          const hasSystem = messageHistory[0]?.role === 'system';
+          const sys = hasSystem ? [messageHistory[0]] : [];
+          const keepLast = 6; // keep the most recent few messages verbatim
+          if (messageHistory.length - sys.length <= keepLast) return false;
+          const recent = messageHistory.slice(-keepLast);
+          const droppedCount = messageHistory.length - sys.length - recent.length;
+          messageHistory.length = 0;
+          messageHistory.push(
+            ...sys,
+            { role: 'user' as const, content: `[Emergency context trim — ${droppedCount} older messages dropped after an overflow error. Ask if you need detail from earlier.]` },
+            ...recent,
+          );
+          lastRealUsage = null; // history rewritten — the next dispatch re-anchors
+          return true;
+        };
+
+        // ── Solo-coding gate: track investigation vs write behavior ──
+        // Architecture, not prompts: block writes that skip investigation
+        let readCount = 0;   // Read, Grep, Glob calls this turn
+        let writeCount = 0;  // Edit, Write calls this turn
+        let orchCount = 0;   // Forge, Brainstorm, Tribunal, etc. calls this turn
+        const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'RetrieveResult']);
+        const WRITE_TOOLS = new Set(['Edit', 'Write']);
+        const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Delegate', 'ProposePlan']);
+        const hasHistoryToolCall = (toolNames: Set<string>) => messageHistory.some((msg: any) =>
+          Array.isArray(msg?.tool_calls) && msg.tool_calls.some((tc: any) => {
+            const fnName = tc?.function?.name ?? tc?.name;
+            return typeof fnName === 'string' && toolNames.has(fnName);
+          })
+        );
+        // Detect task complexity from the user's message
+        const userMsg = opts.message.toLowerCase();
+        const isComplexTask = (
+          /\b(refactor|architect|redesign|rewrite|migrate|implement feature|add feature|new feature|multi.?file|across.?(files|modules|packages))\b/i.test(userMsg) ||
+          userMsg.length > 500  // Long prompts usually mean complex tasks
+        );
+        // Simple task whitelist: if the user mentions a specific single file, it's probably simple
+        const singleFileMatch = opts.message.match(/\b([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})\b/);
+        const isSingleFileMention = singleFileMatch && !opts.message.includes(' and ') && !isComplexTask;
+
+        while (step < budget) {
+          step++;
+          let fullResponse = '';
+          let lastStderr = ''; // captured non-throwing error from the dispatch result
+          let lastDispatchParts: any[] | undefined; // Structured parts from dispatch
+
+          // ── Status update so the UI shows activity during API tool loops ──
+          if (step === 1) {
+            yield { type: 'status' as const, content: 'dispatching engine…' };
+          } else {
+            yield { type: 'status' as const, content: `tool loop turn ${step}/${budget}…` };
+          }
+
+          // Anchor for real-usage projection: messages at index >= this were
+          // appended AFTER this dispatch (withImages clones, same count).
+          const sentHistoryLength = messageHistory.length;
+          const gen = apiStreamDispatchWithHistory(config.engine.api, withImages(messageHistory), config.engine.timeout ?? 180, opts.signal, effectiveTools);
+          try {
+            while (true) {
+              const { value, done } = await gen.next();
+              if (done) {
+                const result = value as any;
+                // Capture structured parts for smarter compaction
+                if (result?.parts && Array.isArray(result.parts)) {
+                  lastDispatchParts = result.parts;
                 }
-                // Empty response after successful stream: usually means the model returned
-                // an empty completion (rate limit, content filter, or format mismatch — common
-                // with Kimi/ZAI when tool-use format doesn't line up). Most empties are
-                // TRANSIENT rate-limits, so retry the same step a bounded number of times
-                // with backoff before surfacing the error — this is what previously
-                // dead-stopped a whole turn ("Cesar … stopped — engine did not respond").
-                // A deterministic content-filter/format empty will still fail after the
-                // retries and surface the real error below.
-                if (!opts.signal?.aborted && emptyResponseRetries < MAX_EMPTY_RETRIES) {
-                  emptyResponseRetries++;
-                  yield { type: 'status' as const, content: `engine returned empty — retrying (${emptyResponseRetries}/${MAX_EMPTY_RETRIES})…` };
-                  await new Promise(r => setTimeout(r, 1200 * emptyResponseRetries));
-                  step--; // retry the same step
-                  continue;
+                // ── Real token usage (ground truth) ──
+                // promptTokens already includes cache read+write, so
+                // prompt+completion = this request's exact context occupancy.
+                // Surface it to the UI immediately — this is what makes the
+                // gauge "quite correct" instead of a chars/3.5 guess.
+                if (result?.usage && Number(result.usage.promptTokens) > 0) {
+                  lastRealUsage = {
+                    promptTokens: Number(result.usage.promptTokens),
+                    completionTokens: Number(result.usage.completionTokens ?? 0),
+                    cachedInputTokens: Number(result.usage.cachedInputTokens ?? 0),
+                    historyLength: sentHistoryLength,
+                  };
+                  // Every step bills its own input — accumulate for the turn's cost.
+                  turnUsage.promptTokens += lastRealUsage.promptTokens;
+                  turnUsage.completionTokens += lastRealUsage.completionTokens;
+                  const realUsed = lastRealUsage.promptTokens + lastRealUsage.completionTokens;
+                  const realPct = Math.round((realUsed / CONTEXT_LIMIT) * 100);
+                  yield {
+                    type: 'status' as const,
+                    content: `context ${realPct}%`,
+                    metadata: { kind: 'context-usage', pct: realPct, used: realUsed, limit: CONTEXT_LIMIT, compacted: compactionSummary?.messagesCompacted ?? 0, cached: toolCacheManifest.length, source: 'api' },
+                  };
                 }
-                yield { type: 'error' as const, content: lastStderr && OVERFLOW_RE.test(lastStderr)
-                  ? `Engine context overflow could not be recovered: ${lastStderr.slice(0, 160)}`
-                  : 'Engine returned an empty response (possible rate limit, content filter, or tool-format mismatch).' };
+                if (result?.stderr) {
+                  lastStderr = String(result.stderr);
+                  if (fullResponse.length === 0) {
+                    // Don't surface yet — the empty-response block below decides
+                    // whether to recover (overflow) or surface the error.
+                    if (!OVERFLOW_RE.test(lastStderr) || emergencyTrimmed) {
+                      yield { type: 'error' as const, content: result.stderr };
+                    }
+                  } else {
+                    console.warn(`[agon] API warning (response preserved): ${result.stderr.slice(0, 200)}`);
+                  }
+                }
                 break;
               }
-
-              // Tool-call resolution — STRUCTURED-FIRST, with text-parse fallback.
-              // Native function-calling engines surface tool calls as structured
-              // parts (lastDispatchParts, kind:'tool_call') with clean SDK args and
-              // real tool-call ids. Execute those DIRECTLY so the args are never
-              // round-tripped through <tool>{json}</tool> text + regex — that round
-              // trip can mangle any arg containing </tool> or nested JSON, and it
-              // mislabels native calls as "xml". Engines that emit tool syntax in
-              // prose (weak-native: Kimi/Z.AI in text mode) produce NO structured
-              // tool_call parts, so they fall through to the exact text-parse path
-              // they used before. Worst case (no structured parts) == prior behavior.
-              const _structuredToolCalls = (lastDispatchParts ?? []).filter((p: any) => p?.kind === 'tool_call' && p?.toolName);
-              let extractedCalls: Array<{ id: string; name: string; args: any; arguments: string; parseError: boolean }>;
-              let cleanText: string;
-              if (_structuredToolCalls.length > 0) {
-                extractedCalls = _structuredToolCalls.map((p: any, i: number) => ({
-                  id: typeof p.toolCallId === 'string' && p.toolCallId ? p.toolCallId : `call_${Date.now()}_${i}`,
-                  name: String(p.toolName),
-                  args: p.args ?? {},
-                  arguments: JSON.stringify(p.args ?? {}),
-                  parseError: false,
-                }));
-                // Reconstruct the visible prose from the STRUCTURED text parts the
-                // SDK already separated from tool calls — never regex the serialized
-                // <tool> marker out of fullResponse. The marker's JSON args can hold
-                // a literal </tool>, and a non-greedy strip truncates there, leaving
-                // corrupted prose in the assistant history (codex review). Text parts
-                // carry only the model's real prose, so there is nothing to strip.
-                cleanText = (lastDispatchParts ?? [])
-                  .filter((p: any) => p?.kind === 'text' && typeof p.text === 'string')
-                  .map((p: any) => p.text as string)
-                  .join('')
-                  .trim();
-              } else {
-                // Robust text parser handles all prose formats: <tool name="X">{json}</tool>,
-                // <tool_call>{json}</tool_call>, <toolcall>…, <tool_call_tool>…
-                const parsed = parseToolCalls(fullResponse);
-                extractedCalls = parsed.hasToolCalls
-                  ? parsed.toolCalls.map((tc, i) => ({
-                      id: `call_${Date.now()}_${i}`,
-                      name: tc.name,
-                      args: tc.input,
-                      arguments: JSON.stringify(tc.input),
-                      parseError: false,
-                    }))
-                  : [];
-                cleanText = (parsed.textBefore + ' ' + parsed.textAfter).trim();
+              fullResponse += value as string;
+              yield { type: 'text' as const, content: value as string };
+            }
+          } catch (err: any) {
+            // Retry once on stream failure before giving up — but only if we have NO output
+            if (fullResponse.length === 0) {
+              const errText = String(err?.message ?? err);
+              // Overflow-shaped failure → emergency-trim history once and retry,
+              // so the turn recovers instead of yielding an empty response that
+              // makes the orchestrator spin the canned "paused mid-task" closure.
+              if (!emergencyTrimmed && OVERFLOW_RE.test(errText) && emergencyTrim()) {
+                emergencyTrimmed = true;
+                yield { type: 'status' as const, content: 'context overflow — trimmed history, retrying…' };
+                step--; // retry the same step with the trimmed history
+                continue;
               }
+              if (step === 1) {
+                yield { type: 'error' as const, content: `API stream failed, retrying… (${err.message ?? String(err)})` };
+                await new Promise(r => setTimeout(r, 1000));
+                continue; // Retry the same step
+              }
+              // Don't kill session — preserve history for next turn. Disk
+              // persistence is opt-in so fresh processes stay clean by default.
+              if (config.sessionContinuity === true) {
+                try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch (saveErr) { console.warn('[session] failed to save state on error:', (saveErr as Error).message ?? saveErr); }
+              }
+              yield { type: 'error' as const, content: err.message ?? String(err) };
+              break;
+            }
+            // Got partial output before crash — preserve it, log warning
+            console.warn(`[agon] API stream error after ${fullResponse.length} chars (preserved): ${(err.message ?? '').slice(0, 200)}`);
+            // Fall through to process fullResponse as if stream completed
+          }
 
-              if (extractedCalls.length > 0 && config.onToolCall) {
-                // Model requested tool calls — execute and loop
+          if (!fullResponse) {
+            // Overflow returned as a non-throwing error (e.g. provider 400 in
+            // stderr) → emergency-trim once and retry, same as the throw path.
+            if (!emergencyTrimmed && OVERFLOW_RE.test(lastStderr) && emergencyTrim()) {
+              emergencyTrimmed = true;
+              yield { type: 'status' as const, content: 'context overflow — trimmed history, retrying…' };
+              step--;
+              continue;
+            }
+            // Empty response after successful stream: usually means the model returned
+            // an empty completion (rate limit, content filter, or format mismatch — common
+            // with Kimi/ZAI when tool-use format doesn't line up). Most empties are
+            // TRANSIENT rate-limits, so retry the same step a bounded number of times
+            // with backoff before surfacing the error — this is what previously
+            // dead-stopped a whole turn ("Cesar … stopped — engine did not respond").
+            // A deterministic content-filter/format empty will still fail after the
+            // retries and surface the real error below.
+            if (!opts.signal?.aborted && emptyResponseRetries < MAX_EMPTY_RETRIES) {
+              emptyResponseRetries++;
+              yield { type: 'status' as const, content: `engine returned empty — retrying (${emptyResponseRetries}/${MAX_EMPTY_RETRIES})…` };
+              await new Promise(r => setTimeout(r, 1200 * emptyResponseRetries));
+              step--; // retry the same step
+              continue;
+            }
+            yield { type: 'error' as const, content: lastStderr && OVERFLOW_RE.test(lastStderr)
+              ? `Engine context overflow could not be recovered: ${lastStderr.slice(0, 160)}`
+              : 'Engine returned an empty response (possible rate limit, content filter, or tool-format mismatch).' };
+            break;
+          }
 
-                // Add assistant message with tool_calls + structured parts to history
-                const assistToolMsg: any = {
+          // Tool-call resolution — STRUCTURED-FIRST, with text-parse fallback.
+          // Native function-calling engines surface tool calls as structured
+          // parts (lastDispatchParts, kind:'tool_call') with clean SDK args and
+          // real tool-call ids. Execute those DIRECTLY so the args are never
+          // round-tripped through <tool>{json}</tool> text + regex — that round
+          // trip can mangle any arg containing </tool> or nested JSON, and it
+          // mislabels native calls as "xml". Engines that emit tool syntax in
+          // prose (weak-native: Kimi/Z.AI in text mode) produce NO structured
+          // tool_call parts, so they fall through to the exact text-parse path
+          // they used before. Worst case (no structured parts) == prior behavior.
+          const _structuredToolCalls = (lastDispatchParts ?? []).filter((p: any) => p?.kind === 'tool_call' && p?.toolName);
+          let extractedCalls: Array<{ id: string; name: string; args: any; arguments: string; parseError: boolean }>;
+          let cleanText: string;
+          if (_structuredToolCalls.length > 0) {
+            extractedCalls = _structuredToolCalls.map((p: any, i: number) => ({
+              id: typeof p.toolCallId === 'string' && p.toolCallId ? p.toolCallId : `call_${Date.now()}_${i}`,
+              name: String(p.toolName),
+              args: p.args ?? {},
+              arguments: JSON.stringify(p.args ?? {}),
+              parseError: false,
+            }));
+            // Reconstruct the visible prose from the STRUCTURED text parts the
+            // SDK already separated from tool calls — never regex the serialized
+            // <tool> marker out of fullResponse. The marker's JSON args can hold
+            // a literal </tool>, and a non-greedy strip truncates there, leaving
+            // corrupted prose in the assistant history (codex review). Text parts
+            // carry only the model's real prose, so there is nothing to strip.
+            cleanText = (lastDispatchParts ?? [])
+              .filter((p: any) => p?.kind === 'text' && typeof p.text === 'string')
+              .map((p: any) => p.text as string)
+              .join('')
+              .trim();
+          } else {
+            // Robust text parser handles all prose formats: <tool name="X">{json}</tool>,
+            // <tool_call>{json}</tool_call>, <toolcall>…, <tool_call_tool>…
+            const parsed = parseToolCalls(fullResponse);
+            extractedCalls = parsed.hasToolCalls
+              ? parsed.toolCalls.map((tc, i) => ({
+                  id: `call_${Date.now()}_${i}`,
+                  name: tc.name,
+                  args: tc.input,
+                  arguments: JSON.stringify(tc.input),
+                  parseError: false,
+                }))
+              : [];
+            cleanText = (parsed.textBefore + ' ' + parsed.textAfter).trim();
+          }
+
+          if (extractedCalls.length > 0 && config.onToolCall) {
+            // Model requested tool calls — execute and loop
+
+            // Add assistant message with tool_calls + structured parts to history
+            const assistToolMsg: any = {
+              role: 'assistant',
+              content: cleanText || null,
+              tool_calls: extractedCalls.map(tc => ({
+                id: tc.id, type: 'function',
+                function: { name: tc.name, arguments: tc.arguments },
+              })),
+            };
+            if (lastDispatchParts && lastDispatchParts.length > 0) {
+              assistToolMsg._parts = lastDispatchParts;
+            }
+            messageHistory.push(assistToolMsg);
+
+            // Execute tools in parallel (like Vercel AI SDK Promise.all pattern)
+            const INLINE_LIMIT = 8192;
+
+            // Emit all as running
+            const parsedCalls = extractedCalls;
+            const readOnlyStep = parsedCalls.length > 0 && parsedCalls.every(tc => READ_TOOLS.has(tc.name));
+            const readOnlySignature = readOnlyStep
+              ? parsedCalls.map(tc => `${tc.name}:${cacheKey(tc.name, tc.args)}`).join('|')
+              : '';
+            const staleReadRetryText = /\bfile (?:has been |was )?modified since (?:my |the )?last read\b/i.test(fullResponse)
+              || /\bre-?read\b[\s\S]{0,120}\bedit\b/i.test(fullResponse);
+            const duplicateReadOnlyStep = readOnlyStep && readOnlySignature !== '' && readOnlySignature === lastReadOnlySignature;
+            if (duplicateReadOnlyStep) {
+              repeatedReadOnlyRetrySteps++;
+            } else {
+              repeatedReadOnlyRetrySteps = 0;
+            }
+            lastReadOnlySignature = readOnlySignature;
+            // ── Generalized re-read spin signal (see decls above) ──
+            // Accumulate read-keys across the turn: a read-only step that adds NO
+            // new key is an exact re-read (full-arg keys ⇒ different files / wider
+            // ranges / new grep patterns count as new info and reset the counter).
+            const readKeysThisStep = readOnlyStep ? parsedCalls.map(tc => cacheKey(tc.name, tc.args)) : [];
+            const newReadKeys = readKeysThisStep.filter(k => !seenReadKeys.has(k));
+            for (const k of readKeysThisStep) seenReadKeys.add(k);
+            if (readOnlyStep) {
+              if (readKeysThisStep.length > 0 && newReadKeys.length === 0) noNewInfoReadSteps++; else noNewInfoReadSteps = 0;
+            } else {
+              noNewInfoReadSteps = 0;
+            }
+            const readSpin = noNewInfoReadSteps >= 3;
+            if ((readOnlyStep && staleReadRetryText && parsedCalls.length > 20) || repeatedReadOnlyRetrySteps >= 3 || readSpin) {
+              if (messageHistory[messageHistory.length - 1] === assistToolMsg) {
+                messageHistory.pop();
+              }
+              if (!readOnlyLoopRecoveryUsed && step < budget) {
+                readOnlyLoopRecoveryUsed = true;
+                yield { type: 'status' as const, content: 'recovering from repeated stale read loop…' };
+                messageHistory.push({
                   role: 'assistant',
-                  content: cleanText || null,
-                  tool_calls: extractedCalls.map(tc => ({
-                    id: tc.id, type: 'function',
-                    function: { name: tc.name, arguments: tc.arguments },
-                  })),
-                };
-                if (lastDispatchParts && lastDispatchParts.length > 0) {
-                  assistToolMsg._parts = lastDispatchParts;
-                }
-                messageHistory.push(assistToolMsg);
+                  content: `${cleanText ? `${cleanText}\n` : ''}[Agon omitted a duplicate read-only tool batch to avoid a stale-read loop.]`,
+                });
+                messageHistory.push({
+                  role: 'user',
+                  content: 'Agon detected repeated Read/Grep/Glob calls without new information. Do not re-read the same files again. Use the latest content already in context and either finish the answer, call the required Edit/Write/Bash tool once, or explain the exact blocker.',
+                });
+                continue;
+              }
+              yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after recovery. The engine kept repeating reads instead of finishing, editing, or explaining the blocker.' };
+              messageHistory.push({
+                role: 'assistant',
+                content: `${cleanText ? `${cleanText}\n` : ''}[Tool loop stopped — repeated read-only stale-edit retry before executing duplicate read-only calls]`,
+              });
+              break;
+            }
+            for (const tc of parsedCalls) {
+              if (tc.parseError) {
+                yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: `Malformed tool arguments from API: ${tc.arguments.slice(0, 200)}` } };
+              } else {
+                yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'running' } };
+              }
+            }
 
-                // Execute tools in parallel (like Vercel AI SDK Promise.all pattern)
-                const INLINE_LIMIT = 8192;
-
-                // Emit all as running
-                const parsedCalls = extractedCalls;
-                const readOnlyStep = parsedCalls.length > 0 && parsedCalls.every(tc => READ_TOOLS.has(tc.name));
-                const readOnlySignature = readOnlyStep
-                  ? parsedCalls.map(tc => `${tc.name}:${cacheKey(tc.name, tc.args)}`).join('|')
-                  : '';
-                const staleReadRetryText = /\bfile (?:has been |was )?modified since (?:my |the )?last read\b/i.test(fullResponse)
-                  || /\bre-?read\b[\s\S]{0,120}\bedit\b/i.test(fullResponse);
-                const duplicateReadOnlyStep = readOnlyStep && readOnlySignature !== '' && readOnlySignature === lastReadOnlySignature;
-                if (duplicateReadOnlyStep) {
-                  repeatedReadOnlyRetrySteps++;
-                } else {
-                  repeatedReadOnlyRetrySteps = 0;
-                }
-                lastReadOnlySignature = readOnlySignature;
-                // ── Generalized re-read spin signal (see decls above) ──
-                // Accumulate read-keys across the turn: a read-only step that adds NO
-                // new key is an exact re-read (full-arg keys ⇒ different files / wider
-                // ranges / new grep patterns count as new info and reset the counter).
-                const readKeysThisStep = readOnlyStep ? parsedCalls.map(tc => cacheKey(tc.name, tc.args)) : [];
-                const newReadKeys = readKeysThisStep.filter(k => !seenReadKeys.has(k));
-                for (const k of readKeysThisStep) seenReadKeys.add(k);
-                if (readOnlyStep) {
-                  if (readKeysThisStep.length > 0 && newReadKeys.length === 0) noNewInfoReadSteps++; else noNewInfoReadSteps = 0;
-                } else {
-                  noNewInfoReadSteps = 0;
-                }
-                const readSpin = noNewInfoReadSteps >= 3;
-                if ((readOnlyStep && staleReadRetryText && parsedCalls.length > 20) || repeatedReadOnlyRetrySteps >= 3 || readSpin) {
-                  if (messageHistory[messageHistory.length - 1] === assistToolMsg) {
-                    messageHistory.pop();
-                  }
-                  if (!readOnlyLoopRecoveryUsed && step < budget) {
-                    readOnlyLoopRecoveryUsed = true;
-                    yield { type: 'status' as const, content: 'recovering from repeated stale read loop…' };
-                    messageHistory.push({
-                      role: 'assistant',
-                      content: `${cleanText ? `${cleanText}\n` : ''}[Agon omitted a duplicate read-only tool batch to avoid a stale-read loop.]`,
-                    });
-                    messageHistory.push({
-                      role: 'user',
-                      content: 'Agon detected repeated Read/Grep/Glob calls without new information. Do not re-read the same files again. Use the latest content already in context and either finish the answer, call the required Edit/Write/Bash tool once, or explain the exact blocker.',
-                    });
-                    continue;
-                  }
-                  yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after recovery. The engine kept repeating reads instead of finishing, editing, or explaining the blocker.' };
-                  messageHistory.push({
-                    role: 'assistant',
-                    content: `${cleanText ? `${cleanText}\n` : ''}[Tool loop stopped — repeated read-only stale-edit retry before executing duplicate read-only calls]`,
-                  });
-                  break;
-                }
-                for (const tc of parsedCalls) {
-                  if (tc.parseError) {
-                    yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: `Malformed tool arguments from API: ${tc.arguments.slice(0, 200)}` } };
-                  } else {
-                    yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'running' } };
-                  }
-                }
-
-                // ── Solo-coding gate: block writes without investigation ──
-                // Architecture enforcement: if the engine tries to write code without
-                // reading anything first, block the write and force investigation.
-                // Whitelisted: step > 3 (already investigated), single-file tasks,
-                // forge context (workers should code), or if reads happened this turn.
-                const hasWrites = parsedCalls.some(tc => WRITE_TOOLS.has(tc.name));
-                const hasReads = parsedCalls.some(tc => READ_TOOLS.has(tc.name));
-                const investigatedAlready = readCount > 0 || hasHistoryToolCall(READ_TOOLS);
-                const orchestratedAlready = orchCount > 0 || hasHistoryToolCall(ORCH_TOOLS);
-                if (hasWrites && !investigatedAlready && !orchestratedAlready && step <= 2 && !isSingleFileMention && isComplexTask) {
-                  // Cowboy detected: writing without investigating on a complex task
-                  yield { type: 'status' as const, content: 'solo-coding gate: forcing investigation first…' };
-                  // Don't execute the writes — return error feedback for write tools only
-                  // Let reads through so the model can investigate
-                  const gateResults: typeof parsedCalls extends Array<infer T> ? Array<T & {result: string}> : never = [];
-                  for (const tc of parsedCalls) {
-                    if (WRITE_TOOLS.has(tc.name)) {
-                      gateResults.push({ ...tc, result: `[BLOCKED] You haven't investigated the codebase yet. Call Read/Grep to understand the code first, then decide if this needs Forge or Brainstorm. Do not write code without reading what exists.` });
-                      yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: 'Blocked: investigate first' } };
-                    } else if (READ_TOOLS.has(tc.name)) {
-                      // Allow reads through — let the model investigate (with dedup)
-                      let result: string;
-                      try {
-                        if (CACHEABLE_TOOLS.has(tc.name)) {
-                          const ck = cacheKey(tc.name, tc.args);
-                          const prev = toolResultCache.get(ck);
-                          if (prev) {
-                            result = prev.result;
-                          } else {
-                            result = await config.onToolCall!(tc.name, tc.args, tc.id);
-                            toolResultCache.set(ck, { result, callId: tc.id });
-                          }
-                        } else if (tc.name === 'RetrieveResult' && tc.args.id) {
-                          const cached = loadToolResultFromDisk(config.engine.id, tc.args.id as string);
-                          result = cached ?? `No cached result found for id "${tc.args.id}".`;
-                        } else {
-                          result = await config.onToolCall!(tc.name, tc.args, tc.id);
-                        }
-                      } catch (err: any) { result = `Error: ${err.message ?? String(err)}`; }
-                      gateResults.push({ ...tc, result });
-                      readCount++;
-                      yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: 'done' } };
-                    } else {
-                      // Other tools (Bash, etc.) — let through
-                      let result: string;
-                      try { result = await config.onToolCall!(tc.name, tc.args, tc.id); } catch (err: any) { result = `Error: ${err.message ?? String(err)}`; }
-                      gateResults.push({ ...tc, result });
-                      yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: 'done' } };
-                    }
-                  }
-                  // Add results to history
-                  for (const tc of gateResults) {
-                    let histContent = tc.result;
-                    if (histContent.length > INLINE_LIMIT) {
-                      const cacheEntry = saveToolResultToDisk(config.engine.id, tc.id, tc.name, tc.result);
-                      if (cacheEntry) { toolCacheManifest.push(cacheEntry); histContent = histContent.slice(0, 2048) + `\n...\n[cached — ${tc.id}]`; }
-                      else { histContent = histContent.slice(0, 2048) + '\n...\n[truncated]'; }
-                    }
-                    messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
-                  }
-                  productiveSteps++;
-                  continue; // Loop — model gets feedback and should investigate
-                }
-
-                // Track tool usage for the solo-coding gate
-                for (const tc of parsedCalls) {
-                  if (READ_TOOLS.has(tc.name)) readCount++;
-                  if (WRITE_TOOLS.has(tc.name)) writeCount++;
-                  if (ORCH_TOOLS.has(tc.name)) orchCount++;
-                }
-
-                // Execute all in parallel — intercept RetrieveResult locally (cache is in-process)
-                yield { type: 'status' as const, content: `executing ${parsedCalls.length} tool${parsedCalls.length > 1 ? 's' : ''}…` };
-                const results = await Promise.all(parsedCalls.map(async (tc) => {
+            // ── Solo-coding gate: block writes without investigation ──
+            // Architecture enforcement: if the engine tries to write code without
+            // reading anything first, block the write and force investigation.
+            // Whitelisted: step > 3 (already investigated), single-file tasks,
+            // forge context (workers should code), or if reads happened this turn.
+            const hasWrites = parsedCalls.some(tc => WRITE_TOOLS.has(tc.name));
+            const hasReads = parsedCalls.some(tc => READ_TOOLS.has(tc.name));
+            const investigatedAlready = readCount > 0 || hasHistoryToolCall(READ_TOOLS);
+            const orchestratedAlready = orchCount > 0 || hasHistoryToolCall(ORCH_TOOLS);
+            if (hasWrites && !investigatedAlready && !orchestratedAlready && step <= 2 && !isSingleFileMention && isComplexTask) {
+              // Cowboy detected: writing without investigating on a complex task
+              yield { type: 'status' as const, content: 'solo-coding gate: forcing investigation first…' };
+              // Don't execute the writes — return error feedback for write tools only
+              // Let reads through so the model can investigate
+              const gateResults: typeof parsedCalls extends Array<infer T> ? Array<T & {result: string}> : never = [];
+              for (const tc of parsedCalls) {
+                if (WRITE_TOOLS.has(tc.name)) {
+                  gateResults.push({ ...tc, result: `[BLOCKED] You haven't investigated the codebase yet. Call Read/Grep to understand the code first, then decide if this needs Forge or Brainstorm. Do not write code without reading what exists.` });
+                  yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: 'Blocked: investigate first' } };
+                } else if (READ_TOOLS.has(tc.name)) {
+                  // Allow reads through — let the model investigate (with dedup)
                   let result: string;
                   try {
-                    // In-session dedup: skip re-executing cacheable reads we already have
                     if (CACHEABLE_TOOLS.has(tc.name)) {
                       const ck = cacheKey(tc.name, tc.args);
                       const prev = toolResultCache.get(ck);
@@ -875,340 +861,436 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                         toolResultCache.set(ck, { result, callId: tc.id });
                       }
                     } else if (tc.name === 'RetrieveResult' && tc.args.id) {
-                      // RetrieveResult: read from local disk cache, no need for external tool handler
                       const cached = loadToolResultFromDisk(config.engine.id, tc.args.id as string);
-                      result = cached ?? `No cached result found for id "${tc.args.id}". Try re-running the original tool.`;
+                      result = cached ?? `No cached result found for id "${tc.args.id}".`;
                     } else {
                       result = await config.onToolCall!(tc.name, tc.args, tc.id);
                     }
-                  } catch (err: any) {
-                    result = `Error: ${err.message ?? String(err)}`;
-                  }
-                  return { ...tc, result };
-                }));
-
-                // Emit results and add to history — track errors for circuit breaker
-                // Large results are cached to disk; history keeps preview + ref
-                let stepErrors = 0;
-                for (const tc of results) {
-                  const isError = tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:');
-                  if (isError) stepErrors++;
-                  yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: tc.result, status: isError ? 'error' : 'done' } };
-
-                  let histContent = tc.result;
-                  if (histContent.length > INLINE_LIMIT) {
-                    // Disk-backed cache: save full result, keep preview + ref inline
-                    const cacheEntry = saveToolResultToDisk(config.engine.id, tc.id, tc.name, tc.result);
-                    if (cacheEntry) {
-                      toolCacheManifest.push(cacheEntry);
-                      const lines = histContent.split('\n').length;
-                      histContent = histContent.slice(0, 2048) + `\n...\n[${lines} lines, ${histContent.length} chars — cached — ${tc.id}]`;
-                    } else {
-                      histContent = histContent.slice(0, 2048) + `\n...\n[truncated — ${histContent.length} chars total]`;
-                    }
-                  }
-                  messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
-                }
-
-                // ── Delegation break — onToolCall signaled the loop to stop ──
-                const delegationBreak = results.some(tc => tc.result.startsWith('[DELEGATION_BREAK]'));
-                if (delegationBreak) {
-                  // Clean the prefix from history so it doesn't confuse the model
-                  for (let i = messageHistory.length - 1; i >= 0; i--) {
-                    const m = messageHistory[i] as any;
-                    if (m.role === 'tool' && typeof m.content === 'string' && m.content.startsWith('[DELEGATION_BREAK]')) {
-                      m.content = m.content.replace('[DELEGATION_BREAK] ', '');
-                      delete m._tokenEstimate;
-                    }
-                  }
-                  messageHistory.push({ role: 'assistant', content: '[Delegation — tool loop stopped]' });
-                  break;
-                }
-
-                // ── Dynamic budget + circuit breaker ──
-                if (stepErrors > 0 && stepErrors >= results.length) {
-                  // ALL tools failed — shrink budget, count consecutive errors
-                  consecutiveErrors++;
-                  if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                    yield { type: 'error' as const, content: `Tool loop circuit breaker: ${consecutiveErrors} consecutive steps with all tools failing. Stopping to avoid token waste.` };
-                    messageHistory.push({ role: 'assistant', content: '[Tool loop stopped — repeated failures]' });
-                    break;
-                  }
+                  } catch (err: any) { result = `Error: ${err.message ?? String(err)}`; }
+                  gateResults.push({ ...tc, result });
+                  readCount++;
+                  yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: 'done' } };
                 } else {
-                  // At least one tool succeeded — extend budget, reset errors
-                  consecutiveErrors = 0;
-                  productiveSteps++;
-                  // Every 3 productive steps, grant 2 more (up to MAX_BUDGET)
-                  if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) {
-                    budget = Math.min(budget + 2, MAX_BUDGET);
-                  }
-                }
-
-                // Continue loop — call API again with tool results
-                yield { type: 'status' as const, content: 'processing results, dispatching again…' };
-                continue;
-              }
-
-              // ── Intent extraction from stalls ──
-              // When a model narrates "let me read X" without calling tools,
-              // Agon extracts the intent and executes it FOR the model.
-              // Architecture, not prompts — the model narrates, Agon acts.
-              if (config.onToolCall && step < budget - 1) {
-                const tail = fullResponse.slice(-300);
-
-                // ── Fake approval / fake tool-blocking narration ──
-                // Some API models narrate "the Edit tool keeps blocking me" or
-                // "I need permission" instead of actually calling Edit/Write/Bash.
-                // That creates a fake approval gate in the UI: the user sees the
-                // model talk about needing approval, but Agon never gets a real
-                // tool call, so no prompt can be shown. Bounce the model back
-                // into the tool loop and force a real tool invocation instead.
-                const FAKE_GATE_RE = /\b(?:need (?:user )?(?:permission|approval)|await(?:ing)? approval|tool (?:keeps )?blocking me|(?:edit|write|bash|command) tool (?:keeps )?blocking me|blocked by (?:the )?(?:edit|write|bash) tool|let me try writing|try writing the full file|since i(?:'ve| have) already read it)\b/i;
-                if (FAKE_GATE_RE.test(fullResponse)) {
-                  yield { type: 'status' as const, content: 'forcing real approval gate…' };
-                  messageHistory.push({ role: 'assistant', content: fullResponse });
-                  messageHistory.push({
-                    role: 'user',
-                    content: 'Do not narrate that a tool is blocked or that you need permission. If you need to edit files, write files, or run shell commands, call Edit/Write/Bash now. Agon will show the real approval prompt if needed. Do not explain the permission system — use the tool.',
-                  });
-                  continue;
-                }
-
-                // Extract file paths from narration: "let me read/check/look at packages/foo/bar.ts"
-                const readIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|see|review|open|view)\s+[`"']?([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})[`"']?/i);
-                // Extract search intent: "let me search/grep for X", "find X in Y"
-                const searchIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:search|grep|find|look)\s+(?:for\s+)?[`"']?(.+?)[`"']?\s*(?:in\s+|$)/i);
-                // Extract directory listing: "let me check what's in packages/mcp/"
-                const dirIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:check|see|look at|list|find)\s+(?:what's in |files in |the )?\s*[`"']?([a-zA-Z0-9_./-]+\/)[`"']?/i);
-
-                if (readIntent || searchIntent || dirIntent) {
-                  messageHistory.push({ role: 'assistant', content: fullResponse });
-
-                  // Build synthetic tool calls from extracted intent
-                  const syntheticCalls: Array<{id: string, name: string, args: Record<string,unknown>}> = [];
-                  if (readIntent) {
-                    syntheticCalls.push({ id: `auto_${Date.now()}_0`, name: 'Read', args: { file_path: readIntent[1] } });
-                  }
-                  if (dirIntent && !readIntent) {
-                    syntheticCalls.push({ id: `auto_${Date.now()}_1`, name: 'Glob', args: { pattern: '**/*', path: dirIntent[1] } });
-                  }
-                  if (searchIntent && !readIntent && !dirIntent) {
-                    syntheticCalls.push({ id: `auto_${Date.now()}_2`, name: 'Grep', args: { pattern: searchIntent[1].trim() } });
-                  }
-
-                  if (syntheticCalls.length > 0) {
-                    // Execute extracted intent — model narrated, Agon acts
-                    yield { type: 'status' as const, content: `auto-executing ${syntheticCalls.map(s => s.name).join(', ')}…` };
-                    const autoResults: string[] = [];
-                    for (const sc of syntheticCalls) {
-                      yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, status: 'running' } };
-                      let result: string;
-                      try {
-                        result = await config.onToolCall(sc.name, sc.args, sc.id);
-                      } catch (err: any) {
-                        result = `Error: ${err.message ?? String(err)}`;
-                      }
-                      yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, output: result, status: 'done' } };
-
-                      // Add to history as proper tool call + result
-                      messageHistory.push({
-                        role: 'assistant', content: null,
-                        tool_calls: [{ id: sc.id, type: 'function', function: { name: sc.name, arguments: JSON.stringify(sc.args) } }],
-                      } as any);
-                      let histContent = result;
-                      if (histContent.length > 8192) {
-                        // Disk-backed cache for auto-executed intent results too
-                        const cacheEntry = saveToolResultToDisk(config.engine.id, sc.id, sc.name, result);
-                        if (cacheEntry) {
-                          toolCacheManifest.push(cacheEntry);
-                          histContent = histContent.slice(0, 2048) + `\n...\n[cached — ${sc.id}]`;
-                        } else {
-                          histContent = histContent.slice(0, 2048) + `\n...\n[truncated]`;
-                        }
-                      }
-                      messageHistory.push({ role: 'tool', content: histContent, tool_call_id: sc.id } as any);
-                      autoResults.push(result);
-                    }
-
-                    productiveSteps++;
-                    if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) budget = Math.min(budget + 2, MAX_BUDGET);
-                    continue; // Loop — model gets tool results and can continue
-                  }
-                }
-
-                // No extractable intent — fallback to nudge
-                const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|now (?:let me|i'll)|continu(?:e|ing)|keep (?:reading|investigating|looking)|next[,.]?\s*(?:i|let)|before (?:i can|proceeding|implementing|deciding))\b/i;
-                if (STALL_RE.test(tail)) {
-                  yield { type: 'status' as const, content: 'nudging stalled model…' };
-                  messageHistory.push({ role: 'assistant', content: fullResponse });
-                  messageHistory.push({ role: 'user', content: 'Continue. Call the tools you need — do not narrate, just act. If a write or command needs approval, call the tool and Agon will prompt the user. If you have enough context, delegate to Forge/Brainstorm/Tribunal now.' });
-                  continue;
+                  // Other tools (Bash, etc.) — let through
+                  let result: string;
+                  try { result = await config.onToolCall!(tc.name, tc.args, tc.id); } catch (err: any) { result = `Error: ${err.message ?? String(err)}`; }
+                  gateResults.push({ ...tc, result });
+                  yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: 'done' } };
                 }
               }
+              // Add results to history
+              for (const tc of gateResults) {
+                let histContent = tc.result;
+                if (histContent.length > INLINE_LIMIT) {
+                  const cacheEntry = saveToolResultToDisk(config.engine.id, tc.id, tc.name, tc.result);
+                  if (cacheEntry) { toolCacheManifest.push(cacheEntry); histContent = histContent.slice(0, 2048) + `\n...\n[cached — ${tc.id}]`; }
+                  else { histContent = histContent.slice(0, 2048) + '\n...\n[truncated]'; }
+                }
+                messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
+              }
+              productiveSteps++;
+              continue; // Loop — model gets feedback and should investigate
+            }
 
-              // ── Final check: if response ends mid-thought, auto-continue instead of breaking ──
-              // Catches models that narrate plans without calling tools or delegating
-              if (config.nativeTools && step < budget - 1) {
-                const tail = fullResponse.slice(-200);
-                const UNFINISHED_RE = /\b(?:let me|i(?:'ll| will| should| need to)|next[,:]?\s*(?:i|we|let)|to (?:be continued|summarize|complete)|(?:first|then|after that)[,:]?\s*(?:i|we|let)|still (?:need|working|investigating))\s*[.…]*\s*$/i;
-                if (UNFINISHED_RE.test(tail)) {
-                  yield { type: 'status' as const, content: 'model paused mid-thought, nudging…' };
-                  messageHistory.push({ role: 'assistant', content: fullResponse });
-                  messageHistory.push({ role: 'user', content: 'You stopped mid-thought. Either call the tools you need NOW, or delegate to Forge/Brainstorm/Tribunal. If a tool needs approval, call it and Agon will handle the prompt. Do not narrate — act.' });
-                  continue;
+            // Track tool usage for the solo-coding gate
+            for (const tc of parsedCalls) {
+              if (READ_TOOLS.has(tc.name)) readCount++;
+              if (WRITE_TOOLS.has(tc.name)) writeCount++;
+              if (ORCH_TOOLS.has(tc.name)) orchCount++;
+            }
+
+            // Execute all in parallel — intercept RetrieveResult locally (cache is in-process)
+            yield { type: 'status' as const, content: `executing ${parsedCalls.length} tool${parsedCalls.length > 1 ? 's' : ''}…` };
+            const results = await Promise.all(parsedCalls.map(async (tc) => {
+              let result: string;
+              try {
+                // In-session dedup: skip re-executing cacheable reads we already have
+                if (CACHEABLE_TOOLS.has(tc.name)) {
+                  const ck = cacheKey(tc.name, tc.args);
+                  const prev = toolResultCache.get(ck);
+                  if (prev) {
+                    result = prev.result;
+                  } else {
+                    result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                    toolResultCache.set(ck, { result, callId: tc.id });
+                  }
+                } else if (tc.name === 'RetrieveResult' && tc.args.id) {
+                  // RetrieveResult: read from local disk cache, no need for external tool handler
+                  const cached = loadToolResultFromDisk(config.engine.id, tc.args.id as string);
+                  result = cached ?? `No cached result found for id "${tc.args.id}". Try re-running the original tool.`;
+                } else {
+                  result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                }
+              } catch (err: any) {
+                result = `Error: ${err.message ?? String(err)}`;
+              }
+              return { ...tc, result };
+            }));
+
+            // Emit results and add to history — track errors for circuit breaker
+            // Large results are cached to disk; history keeps preview + ref
+            let stepErrors = 0;
+            for (const tc of results) {
+              const isError = tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:');
+              if (isError) stepErrors++;
+              yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: tc.result, status: isError ? 'error' : 'done' } };
+
+              let histContent = tc.result;
+              if (histContent.length > INLINE_LIMIT) {
+                // Disk-backed cache: save full result, keep preview + ref inline
+                const cacheEntry = saveToolResultToDisk(config.engine.id, tc.id, tc.name, tc.result);
+                if (cacheEntry) {
+                  toolCacheManifest.push(cacheEntry);
+                  const lines = histContent.split('\n').length;
+                  histContent = histContent.slice(0, 2048) + `\n...\n[${lines} lines, ${histContent.length} chars — cached — ${tc.id}]`;
+                } else {
+                  histContent = histContent.slice(0, 2048) + `\n...\n[truncated — ${histContent.length} chars total]`;
                 }
               }
+              messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
+            }
 
-              // Final response. Add to history with structured parts for smarter compaction.
-              const assistMsg: any = { role: 'assistant', content: fullResponse };
-              if (lastDispatchParts && lastDispatchParts.length > 0) {
-                assistMsg._parts = lastDispatchParts;
+            // ── Delegation break — onToolCall signaled the loop to stop ──
+            const delegationBreak = results.some(tc => tc.result.startsWith('[DELEGATION_BREAK]'));
+            if (delegationBreak) {
+              // Clean the prefix from history so it doesn't confuse the model
+              for (let i = messageHistory.length - 1; i >= 0; i--) {
+                const m = messageHistory[i] as any;
+                if (m.role === 'tool' && typeof m.content === 'string' && m.content.startsWith('[DELEGATION_BREAK]')) {
+                  m.content = m.content.replace('[DELEGATION_BREAK] ', '');
+                  delete m._tokenEstimate;
+                }
               }
-              messageHistory.push(assistMsg);
+              messageHistory.push({ role: 'assistant', content: '[Delegation — tool loop stopped]' });
               break;
             }
 
-            if (config.sessionContinuity === true) {
-              // Persist session state to disk after each turn — survives process restart.
-              try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest }); } catch (saveErr) { console.warn('[session] failed to persist turn:', (saveErr as Error).message ?? saveErr); }
-
-              // ── Cross-session memory: extract learnings for Cesar's brain ──
-              if (config.onTurnEnd && compactionSummary) {
-                try {
-                  config.onTurnEnd({
-                    filesRead: compactionSummary.filesRead ?? [],
-                    filesModified: compactionSummary.filesModified ?? [],
-                    decisions: compactionSummary.decisions ?? [],
-                    discoveries: compactionSummary.discoveries ?? [],
-                    toolsUsed: compactionSummary.toolsSummary ?? [],
-                  });
-                } catch { /* memory write is best-effort */ }
+            // ── Dynamic budget + circuit breaker ──
+            if (stepErrors > 0 && stepErrors >= results.length) {
+              // ALL tools failed — shrink budget, count consecutive errors
+              consecutiveErrors++;
+              if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                yield { type: 'error' as const, content: `Tool loop circuit breaker: ${consecutiveErrors} consecutive steps with all tools failing. Stopping to avoid token waste.` };
+                messageHistory.push({ role: 'assistant', content: '[Tool loop stopped — repeated failures]' });
+                break;
               }
-            }
-
-            yield { type: 'done' as const, content: 'end_turn' };
-            return;
-          }
-
-          const args: string[] = [];
-          const engineExec = config.engine.exec;
-          if (!engineExec) {
-            yield { type: 'error' as const, content: `Engine ${config.engine.id} has no exec config` };
-            return;
-          }
-
-          // Build args from engine config
-          for (const arg of engineExec.args) {
-            if (arg === '{prompt}') {
-              args.push(opts.message);
             } else {
-              args.push(arg);
-            }
-          }
-
-          // Add resume flag on subsequent turns
-          if (!firstTurn && sessionId) {
-            // Try common resume flags
-            if (config.engine.binary === 'claude') {
-              args.unshift('--resume', sessionId);
-            } else if (config.engine.binary === 'opencode') {
-              args.unshift('--session', sessionId, '--continue');
-            }
-          }
-
-          const child = spawn(config.binaryPath, args, {
-            stdio: ['ignore', 'pipe', 'pipe'],
-            cwd: config.cwd,
-            detached: true,
-          });
-          activePid = child.pid ?? null;
-
-          const chunks: SessionChunk[] = [];
-          let done = false;
-          let resolveWait: (() => void) | null = null;
-
-          // Abort: kill spawned child process
-          const onAbort = () => {
-            done = true;
-            activePid = null;
-            chunks.push({ type: 'done', content: 'cancelled' });
-            try { if (child.pid) process.kill(-child.pid, 'SIGTERM'); } catch (e) { console.warn(`[agon] session-stream: kill failed: ${e instanceof Error ? e.message : String(e)}`); try { child.kill('SIGTERM'); } catch { /* process already exited */ } }
-            if (resolveWait) { resolveWait(); resolveWait = null; }
-          };
-          if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
-          opts.signal?.addEventListener('abort', onAbort, { once: true });
-
-          const rl = createInterface({ input: child.stdout! });
-          rl.on('line', (line: string) => {
-            // Try to parse as NDJSON
-            try {
-              const parsed = JSON.parse(line);
-              if (parsed.session_id && !sessionId) {
-                sessionId = parsed.session_id;
+              // At least one tool succeeded — extend budget, reset errors
+              consecutiveErrors = 0;
+              productiveSteps++;
+              // Every 3 productive steps, grant 2 more (up to MAX_BUDGET)
+              if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) {
+                budget = Math.min(budget + 2, MAX_BUDGET);
               }
-              if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-                chunks.push({ type: 'text', content: parsed.delta.text });
-              } else if (parsed.type === 'assistant' && parsed.message?.content) {
-                for (const block of parsed.message.content) {
-                  if (block.type === 'text' && block.text) chunks.push({ type: 'text', content: block.text });
+            }
+
+            // Continue loop — call API again with tool results
+            yield { type: 'status' as const, content: 'processing results, dispatching again…' };
+            continue;
+          }
+
+          // ── Intent extraction from stalls ──
+          // When a model narrates "let me read X" without calling tools,
+          // Agon extracts the intent and executes it FOR the model.
+          // Architecture, not prompts — the model narrates, Agon acts.
+          if (config.onToolCall && step < budget - 1) {
+            const tail = fullResponse.slice(-300);
+
+            // ── Fake approval / fake tool-blocking narration ──
+            // Some API models narrate "the Edit tool keeps blocking me" or
+            // "I need permission" instead of actually calling Edit/Write/Bash.
+            // That creates a fake approval gate in the UI: the user sees the
+            // model talk about needing approval, but Agon never gets a real
+            // tool call, so no prompt can be shown. Bounce the model back
+            // into the tool loop and force a real tool invocation instead.
+            const FAKE_GATE_RE = /\b(?:need (?:user )?(?:permission|approval)|await(?:ing)? approval|tool (?:keeps )?blocking me|(?:edit|write|bash|command) tool (?:keeps )?blocking me|blocked by (?:the )?(?:edit|write|bash) tool|let me try writing|try writing the full file|since i(?:'ve| have) already read it)\b/i;
+            if (FAKE_GATE_RE.test(fullResponse)) {
+              yield { type: 'status' as const, content: 'forcing real approval gate…' };
+              messageHistory.push({ role: 'assistant', content: fullResponse });
+              messageHistory.push({
+                role: 'user',
+                content: 'Do not narrate that a tool is blocked or that you need permission. If you need to edit files, write files, or run shell commands, call Edit/Write/Bash now. Agon will show the real approval prompt if needed. Do not explain the permission system — use the tool.',
+              });
+              continue;
+            }
+
+            // Extract file paths from narration: "let me read/check/look at packages/foo/bar.ts"
+            const readIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|see|review|open|view)\s+[`"']?([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})[`"']?/i);
+            // Extract search intent: "let me search/grep for X", "find X in Y"
+            const searchIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:search|grep|find|look)\s+(?:for\s+)?[`"']?(.+?)[`"']?\s*(?:in\s+|$)/i);
+            // Extract directory listing: "let me check what's in packages/mcp/"
+            const dirIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:check|see|look at|list|find)\s+(?:what's in |files in |the )?\s*[`"']?([a-zA-Z0-9_./-]+\/)[`"']?/i);
+
+            if (readIntent || searchIntent || dirIntent) {
+              messageHistory.push({ role: 'assistant', content: fullResponse });
+
+              // Build synthetic tool calls from extracted intent
+              const syntheticCalls: Array<{id: string, name: string, args: Record<string,unknown>}> = [];
+              if (readIntent) {
+                syntheticCalls.push({ id: `auto_${Date.now()}_0`, name: 'Read', args: { file_path: readIntent[1] } });
+              }
+              if (dirIntent && !readIntent) {
+                syntheticCalls.push({ id: `auto_${Date.now()}_1`, name: 'Glob', args: { pattern: '**/*', path: dirIntent[1] } });
+              }
+              if (searchIntent && !readIntent && !dirIntent) {
+                syntheticCalls.push({ id: `auto_${Date.now()}_2`, name: 'Grep', args: { pattern: searchIntent[1].trim() } });
+              }
+
+              if (syntheticCalls.length > 0) {
+                // Execute extracted intent — model narrated, Agon acts
+                yield { type: 'status' as const, content: `auto-executing ${syntheticCalls.map(s => s.name).join(', ')}…` };
+                const autoResults: string[] = [];
+                for (const sc of syntheticCalls) {
+                  yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, status: 'running' } };
+                  let result: string;
+                  try {
+                    result = await config.onToolCall(sc.name, sc.args, sc.id);
+                  } catch (err: any) {
+                    result = `Error: ${err.message ?? String(err)}`;
+                  }
+                  yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, output: result, status: 'done' } };
+
+                  // Add to history as proper tool call + result
+                  messageHistory.push({
+                    role: 'assistant', content: null,
+                    tool_calls: [{ id: sc.id, type: 'function', function: { name: sc.name, arguments: JSON.stringify(sc.args) } }],
+                  } as any);
+                  let histContent = result;
+                  if (histContent.length > 8192) {
+                    // Disk-backed cache for auto-executed intent results too
+                    const cacheEntry = saveToolResultToDisk(config.engine.id, sc.id, sc.name, result);
+                    if (cacheEntry) {
+                      toolCacheManifest.push(cacheEntry);
+                      histContent = histContent.slice(0, 2048) + `\n...\n[cached — ${sc.id}]`;
+                    } else {
+                      histContent = histContent.slice(0, 2048) + `\n...\n[truncated]`;
+                    }
+                  }
+                  messageHistory.push({ role: 'tool', content: histContent, tool_call_id: sc.id } as any);
+                  autoResults.push(result);
                 }
-              } else if (parsed.type === 'result' && !chunks.some((c: any) => c.type === 'text')) {
-                // Only use result text if no text was streamed yet
-                const text = parsed.result ?? '';
-                if (text && typeof text === 'string') chunks.push({ type: 'text', content: text });
-              }
-            } catch {
-              // Raw text
-              chunks.push({ type: 'text', content: line });
-            }
-            if (resolveWait) { resolveWait(); resolveWait = null; }
-          });
 
-          child.on('close', () => {
-            done = true;
-            activePid = null;
-            chunks.push({ type: 'done', content: 'end_turn' });
-            if (resolveWait) { resolveWait(); resolveWait = null; }
-          });
-
-          child.on('error', (err: Error) => {
-            done = true;
-            activePid = null;
-            chunks.push({ type: 'error', content: err.message });
-            if (resolveWait) { resolveWait(); resolveWait = null; }
-          });
-
-          try {
-            // Send user message
-            // wait, wait! The original spawn in ResumeSession sends opts.message via spawn arg {prompt}.
-            // No need to write to stdin unless required, but the original implementation did not write to stdin!
-            // So let's keep it exactly as it was.
-            while (!done) {
-              if (chunks.length > 0) {
-                yield chunks.shift()!;
-              } else {
-                await new Promise<void>((r) => { resolveWait = r; });
+                productiveSteps++;
+                if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) budget = Math.min(budget + 2, MAX_BUDGET);
+                continue; // Loop — model gets tool results and can continue
               }
             }
-            while (chunks.length > 0) {
-              yield chunks.shift()!;
+
+            // No extractable intent — fallback to nudge
+            const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|now (?:let me|i'll)|continu(?:e|ing)|keep (?:reading|investigating|looking)|next[,.]?\s*(?:i|let)|before (?:i can|proceeding|implementing|deciding))\b/i;
+            if (STALL_RE.test(tail)) {
+              yield { type: 'status' as const, content: 'nudging stalled model…' };
+              messageHistory.push({ role: 'assistant', content: fullResponse });
+              messageHistory.push({ role: 'user', content: 'Continue. Call the tools you need — do not narrate, just act. If a write or command needs approval, call the tool and Agon will prompt the user. If you have enough context, delegate to Forge/Brainstorm/Tribunal now.' });
+              continue;
             }
-          } finally {
-            opts.signal?.removeEventListener('abort', onAbort);
-            firstTurn = false;
-            if (done) activePid = null;
           }
-        },
 
-        close() {
-          alive = false;
-          activePid = null;
-        },
+          // ── Final check: if response ends mid-thought, auto-continue instead of breaking ──
+          // Catches models that narrate plans without calling tools or delegating
+          if (config.nativeTools && step < budget - 1) {
+            const tail = fullResponse.slice(-200);
+            const UNFINISHED_RE = /\b(?:let me|i(?:'ll| will| should| need to)|next[,:]?\s*(?:i|we|let)|to (?:be continued|summarize|complete)|(?:first|then|after that)[,:]?\s*(?:i|we|let)|still (?:need|working|investigating))\s*[.…]*\s*$/i;
+            if (UNFINISHED_RE.test(tail)) {
+              yield { type: 'status' as const, content: 'model paused mid-thought, nudging…' };
+              messageHistory.push({ role: 'assistant', content: fullResponse });
+              messageHistory.push({ role: 'user', content: 'You stopped mid-thought. Either call the tools you need NOW, or delegate to Forge/Brainstorm/Tribunal. If a tool needs approval, call it and Agon will handle the prompt. Do not narrate — act.' });
+              continue;
+            }
+          }
 
-        getMessageHistory() {
-          return [...messageHistory];
-        },
+          // Final response. Add to history with structured parts for smarter compaction.
+          const assistMsg: any = { role: 'assistant', content: fullResponse };
+          if (lastDispatchParts && lastDispatchParts.length > 0) {
+            assistMsg._parts = lastDispatchParts;
+          }
+          messageHistory.push(assistMsg);
+          break;
+        }
+
+        if (config.sessionContinuity === true) {
+          // Persist session state to disk after each turn — survives process restart.
+          try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest }); } catch (saveErr) { console.warn('[session] failed to persist turn:', (saveErr as Error).message ?? saveErr); }
+
+          // ── Cross-session memory: extract learnings for Cesar's brain ──
+          if (config.onTurnEnd && compactionSummary) {
+            try {
+              config.onTurnEnd({
+                filesRead: compactionSummary.filesRead ?? [],
+                filesModified: compactionSummary.filesModified ?? [],
+                decisions: compactionSummary.decisions ?? [],
+                discoveries: compactionSummary.discoveries ?? [],
+                toolsUsed: compactionSummary.toolsSummary ?? [],
+              });
+            } catch { /* memory write is best-effort */ }
+          }
+        }
+
+        sendActive = false;
+        yield { type: 'done' as const, content: 'end_turn' };
+        return;
+      }
+
+      const args: string[] = [];
+      const engineExec = config.engine.exec;
+      if (!engineExec) {
+        yield { type: 'error' as const, content: `Engine ${config.engine.id} has no exec config` };
+        return;
+      }
+
+      // Build args from engine config
+      for (const arg of engineExec.args) {
+        if (arg === '{prompt}') {
+          args.push(opts.message);
+        } else {
+          args.push(arg);
+        }
+      }
+
+      // Add resume flag on subsequent turns
+      if (!firstTurn && sessionId) {
+        // Try common resume flags
+        if (config.engine.binary === 'claude') {
+          args.unshift('--resume', sessionId);
+        } else if (config.engine.binary === 'opencode') {
+          args.unshift('--session', sessionId, '--continue');
+        }
+      }
+
+      const child = spawn(config.binaryPath, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        cwd: config.cwd,
+        detached: true,
+      });
+      activePid = child.pid ?? null;
+
+      const chunks: SessionChunk[] = [];
+      let done = false;
+      let resolveWait: (() => void) | null = null;
+
+      // Abort: kill spawned child process
+      const onAbort = () => {
+        done = true;
+        activePid = null;
+        chunks.push({ type: 'done', content: 'cancelled' });
+        try { if (child.pid) process.kill(-child.pid, 'SIGTERM'); } catch (e) { console.warn(`[agon] session-stream: kill failed: ${e instanceof Error ? e.message : String(e)}`); try { child.kill('SIGTERM'); } catch { /* process already exited */ } }
+        if (resolveWait) { resolveWait(); resolveWait = null; }
       };
+      if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+      opts.signal?.addEventListener('abort', onAbort, { once: true });
 
-      return session;
+      const rl = createInterface({ input: child.stdout! });
+      rl.on('line', (line: string) => {
+        // Try to parse as NDJSON
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.session_id && !sessionId) {
+            sessionId = parsed.session_id;
+          }
+          if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+            chunks.push({ type: 'text', content: parsed.delta.text });
+          } else if (parsed.type === 'assistant' && parsed.message?.content) {
+            for (const block of parsed.message.content) {
+              if (block.type === 'text' && block.text) chunks.push({ type: 'text', content: block.text });
+            }
+          } else if (parsed.type === 'result' && !chunks.some((c: any) => c.type === 'text')) {
+            // Only use result text if no text was streamed yet
+            const text = parsed.result ?? '';
+            if (text && typeof text === 'string') chunks.push({ type: 'text', content: text });
+          }
+        } catch {
+          // Raw text
+          chunks.push({ type: 'text', content: line });
+        }
+        if (resolveWait) { resolveWait(); resolveWait = null; }
+      });
+
+      child.on('close', () => {
+        done = true;
+        activePid = null;
+        chunks.push({ type: 'done', content: 'end_turn' });
+        if (resolveWait) { resolveWait(); resolveWait = null; }
+      });
+
+      child.on('error', (err: Error) => {
+        done = true;
+        activePid = null;
+        chunks.push({ type: 'error', content: err.message });
+        if (resolveWait) { resolveWait(); resolveWait = null; }
+      });
+
+      try {
+        // Send user message
+        // wait, wait! The original spawn in ResumeSession sends opts.message via spawn arg {prompt}.
+        // No need to write to stdin unless required, but the original implementation did not write to stdin!
+        // So let's keep it exactly as it was.
+        while (!done) {
+          if (chunks.length > 0) {
+            yield chunks.shift()!;
+          } else {
+            await new Promise<void>((r) => { resolveWait = r; });
+          }
+        }
+        while (chunks.length > 0) {
+          yield chunks.shift()!;
+        }
+      } finally {
+        opts.signal?.removeEventListener('abort', onAbort);
+        firstTurn = false;
+        if (done) activePid = null;
+      }
+    },
+
+    close() {
+      alive = false;
+      activePid = null;
+    },
+
+    getMessageHistory() {
+      return [...messageHistory];
+    },
+
+    getContextUsage() {
+      return {
+        tokens: projectContextTokens(),
+        limit: CONTEXT_LIMIT,
+        softLimit: CONTEXT_LIMIT - COMPACTION_BUFFER,
+        source: contextSource(),
+        cachedInputTokens: lastRealUsage?.cachedInputTokens ?? 0,
+      };
+    },
+
+    getTurnUsage() {
+      // DRAIN: real billed usage accumulated since the last drain (sum
+      // across dispatch steps and any intermediate sends), or null when
+      // nothing real accrued (CLI path, failed dispatch). Resets on read so
+      // each token is recorded exactly once.
+      if (turnUsage.promptTokens <= 0 && turnUsage.completionTokens <= 0) return null;
+      const drained = {
+        promptTokens: turnUsage.promptTokens,
+        completionTokens: turnUsage.completionTokens,
+        totalTokens: turnUsage.promptTokens + turnUsage.completionTokens,
+        source: 'sdk' as const,
+        // Model id so the tracker can apply model-specific pricing instead
+        // of the generic per-engine fallback rate.
+        model: config.engine.api?.model,
+      };
+      turnUsage = { promptTokens: 0, completionTokens: 0 };
+      return drained;
+    },
+
+    async compact() {
+      if (compactPromise) return compactPromise; // coalesce concurrent calls
+      if (sendActive) {
+        // Never rewrite history under an in-flight send — defer; the gate
+        // runs pre-turn so this only happens on out-of-band /compact.
+        const tokens = projectContextTokens();
+        return { ok: false, method: 'deferred' as const, beforeTokens: tokens, afterTokens: tokens, limit: CONTEXT_LIMIT };
+      }
+      compactPromise = doCompact().finally(() => { compactPromise = null; });
+      return compactPromise;
+    },
+  };
+
+  return session;
 }

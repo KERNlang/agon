@@ -57,7 +57,7 @@ module name=AppOutputBridge
     field name=chatStartTimeRef type="{current: number}"
     // ── Cesar telemetry (confidence, context gauge, scoreboard, rationale) ──
     field name=setCesarConfidence type="(val:number|null) => void"
-    field name=setCesarContext type="(val:{pct:number,used:number,limit:number,compacted:number,cached:number}|null) => void"
+    field name=setCesarContext type="(val:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:'api'|'projected'|'estimate'}|null) => void"
     field name=setLiveScoreboard type="(val:Scoreboard | null) => void"
     field name=setLiveRationale type="(val:ModeRationale | null) => void"
     // ── Agent progress / todos (multi-agent snapshots + todo list) ──

@@ -40,7 +40,7 @@ import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline
 
 import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering.js';
 
-import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName } from './brain-helpers.js';
+import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName } from './brain-helpers.js';
 
 // @kern-source: brain:23
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
@@ -57,7 +57,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   await yieldToInk();
   appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
   appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-  tracker.record(cesarEngineId, { prompt: input, response: response });
+  recordCesarTurn(ctx, cesarEngineId, input, response);
   const delResult = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team);
   const happened = buildWhatHappenedSummary(telemetry ?? {});
   if (happened) {
@@ -87,7 +87,7 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   await yieldToInk();
   appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
   appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-  tracker.record(cesarEngineId, { prompt: input, response: response });
+  recordCesarTurn(ctx, cesarEngineId, input, response);
   if (suggestion.rest) {
     dispatch({ type: 'engine-block', engineId: cesarEngineId, color: color, content: suggestion.rest });
   }
@@ -554,7 +554,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             if (freshResult.stdout.trim()) {
               dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: freshResult.stdout.trim() });
               appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
-              tracker.record(cesarEngineId, { prompt: input, response: freshResult.stdout.trim() });
+              if (freshResult.usage && freshResult.usage.totalTokens > 0) {
+                tracker.record(cesarEngineId, { usage: freshResult.usage });
+              } else {
+                tracker.record(cesarEngineId, { prompt: input, response: freshResult.stdout.trim() });
+              }
               return { delegated: false, responded: true };
             }
             // Empty stdout — persist the user turn idempotently so the next
@@ -978,6 +982,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   limit: Number(_ctxMeta.limit ?? 0),
                   compacted: Number(_ctxMeta.compacted ?? 0),
                   cached: Number(_ctxMeta.cached ?? 0),
+                  source: typeof _ctxMeta.source === 'string' ? _ctxMeta.source : undefined,
                 } as any);
                 continue;
               }
@@ -1848,7 +1853,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 appendMessage(ctx.chatSession, { role: 'engine', engineId: ch.engineId, content: ch.content, timestamp: new Date().toISOString() });
               }
             }
-            tracker.record(cesarEngineId, { prompt: input, response });
+            recordCesarTurn(ctx, cesarEngineId, input, response);
             return {
               mode: escalationAction as any,
               delegated: true,
@@ -2633,7 +2638,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               appendMessage(ctx.chatSession, { role: 'engine', engineId: ch.engineId, content: ch.content, timestamp: new Date().toISOString() });
             }
           }
-          const tokenUsage = tracker.record(cesarEngineId, { prompt: input, response });
+          const tokenUsage = recordCesarTurn(ctx, cesarEngineId, input, response);
 
           // Trace
           try {

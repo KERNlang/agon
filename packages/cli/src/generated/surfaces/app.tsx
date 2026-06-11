@@ -366,12 +366,12 @@ export function App() {
       }
     };
   }, []);
-  const [cesarContext, _setCesarContextRaw] = useState<{pct:number,used:number,limit:number,compacted:number,cached:number}|null>(null);
+  const [cesarContext, _setCesarContextRaw] = useState<{pct:number,used:number,limit:number,compacted:number,cached:number,source?:'api'|'projected'|'estimate'}|null>(null);
   const setCesarContext = useMemo(() => {
     let _lastCall = 0;
-    let _pendingValue: React.SetStateAction<{pct:number,used:number,limit:number,compacted:number,cached:number}|null>;
+    let _pendingValue: React.SetStateAction<{pct:number,used:number,limit:number,compacted:number,cached:number,source?:'api'|'projected'|'estimate'}|null>;
     let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
-    return (value: React.SetStateAction<{pct:number,used:number,limit:number,compacted:number,cached:number}|null>) => {
+    return (value: React.SetStateAction<{pct:number,used:number,limit:number,compacted:number,cached:number,source?:'api'|'projected'|'estimate'}|null>) => {
       const now = Date.now();
       const elapsed = now - _lastCall;
       if (elapsed >= 200) {
@@ -601,7 +601,7 @@ export function App() {
   const statusStats = useMemo(() => {
           const stats = tracker.getStats();
           const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-          return { cesarId: cesarId, chatMessageCount: chatSession.messages.length, totalTokens: stats.totalTokens, totalCostUsd: stats.totalCostUsd };
+          return { cesarId: cesarId, chatMessageCount: chatSession.messages.length, totalTokens: stats.totalTokens, totalCostUsd: stats.totalCostUsd, meteredCostUsd: stats.meteredCostUsd ?? 0, hasUnmetered: (stats.unmeteredDispatches ?? 0) > 0 };
   }, [outputBlocks,chatSession,replState,config]);
 
   const runningJobs = useMemo(() => {

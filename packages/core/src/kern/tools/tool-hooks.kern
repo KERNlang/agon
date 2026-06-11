@@ -16,6 +16,13 @@
 // (case-insensitive, with a trivially-stripped `Agon` prefix); missing/empty
 // matcher = all tools. Fail-safe throughout: a malformed entry is skipped with
 // one warning, never throws, never blocks.
+//
+// KNOWN EXCLUSIONS (hooks do NOT fire there): the MCP server's own write path
+// (packages/mcp handleWriteToolCall executes outside executeToolCall) and the
+// api/agent-loop subagent path (its ToolContext at agent-loop.kern:144 carries
+// neither permissionRules nor toolHooks — delegated agent runs bypass both,
+// same scope decision as D1). Hooks run synchronously (execSync): a slow hook
+// blocks the streaming turn for up to its timeout — keep hooks sub-second.
 
 import from="node:child_process" names="execSync"
 import from="../models/tool-types.js" names="ToolHookDef,ParsedToolHooks" types=true
@@ -66,6 +73,11 @@ fn name=_parseHookList params="list:unknown, kind:string" returns="ToolHookDef[]
         continue;
       }
       const matcher = typeof e.matcher === 'string' ? e.matcher : undefined;
+      if (matcher && matcher.includes('|')) {
+        // Claude Code supports "Edit|Write" matchers; we match a single tool
+        // name only — a piped matcher would silently match NOTHING. Warn loudly.
+        _warnOnceToolHook(`toolhooks:pipe:${matcher}`, `[agon] warning: ${kind} hook matcher "${matcher}" contains '|' — agon matches a single tool name per entry; split into separate entries`);
+      }
       const timeout = typeof e.timeout === 'number' && e.timeout > 0 ? e.timeout : undefined;
       out.push({ matcher, command, timeout });
     }
@@ -103,9 +115,11 @@ fn name=_matches params="def:ToolHookDef, toolName:string" returns=boolean expor
 // Returns { exitCode, stderr, timedOut, spawnFailed }. Never throws.
 fn name=_runHookCommand params="command:string, payload:unknown, timeoutSec:number" returns="{exitCode:number, stderr:string, stdout:string, timedOut:boolean, spawnFailed:boolean}" export=false
   handler <<<
-    const input = JSON.stringify(payload);
     const timeout = Math.max(1, timeoutSec) * 1000;
     try {
+      // Stringify INSIDE the try: a non-serializable payload (circular/BigInt)
+      // must fail-open like any other hook failure, never escape executeToolCall.
+      const input = JSON.stringify(payload);
       const stdout = execSync(command, {
         input,
         timeout,
@@ -139,7 +153,9 @@ fn name=runPreToolUseHooks async=true params="toolName:string, toolInput:unknown
       const payload = { tool_name: toolName, tool_input: toolInput };
       const r = _runHookCommand(def.command, payload, def.timeout ?? 10);
       if (r.exitCode === 2) {
-        const reason = r.stderr.trim() || `PreToolUse hook blocked ${toolName}`;
+        // Cap the refusal: a misbehaving hook spewing 100KB to stderr must not
+        // flood the engine-visible tool result / prompt context.
+        const reason = r.stderr.trim().slice(0, 2000) || `PreToolUse hook blocked ${toolName}`;
         return { block: true, reason };
       }
       if (r.exitCode !== 0) {

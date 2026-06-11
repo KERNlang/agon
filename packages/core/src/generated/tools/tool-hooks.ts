@@ -4,17 +4,17 @@ import { execSync } from 'node:child_process';
 
 import type { ToolHookDef, ParsedToolHooks } from '../models/tool-types.js';
 
-// @kern-source: tool-hooks:23
+// @kern-source: tool-hooks:30
 export interface PreHookOutcome {
   block: boolean;
   reason?: string;
   warning?: string;
 }
 
-// @kern-source: tool-hooks:29
+// @kern-source: tool-hooks:36
 export const _warnedToolHooks: Set<string> = new Set();
 
-// @kern-source: tool-hooks:31
+// @kern-source: tool-hooks:38
 function _warnOnceToolHook(key: string, message: string): void {
   if (_warnedToolHooks.has(key)) return;
   _warnedToolHooks.add(key);
@@ -24,7 +24,7 @@ function _warnOnceToolHook(key: string, message: string): void {
 /**
  * Normalize a matcher to a comparable tool name: trim, lowercase, strip a leading 'agon' prefix. Empty/non-string → undefined (matches all).
  */
-// @kern-source: tool-hooks:38
+// @kern-source: tool-hooks:45
 function _normalizeMatcher(raw: unknown): string|undefined {
   if (typeof raw !== 'string') return undefined;
   let m = raw.trim().toLowerCase();
@@ -33,7 +33,7 @@ function _normalizeMatcher(raw: unknown): string|undefined {
   return m;
 }
 
-// @kern-source: tool-hooks:48
+// @kern-source: tool-hooks:55
 function _parseHookList(list: unknown, kind: string): ToolHookDef[] {
   if (!Array.isArray(list)) {
     if (list !== undefined) {
@@ -54,6 +54,11 @@ function _parseHookList(list: unknown, kind: string): ToolHookDef[] {
       continue;
     }
     const matcher = typeof e.matcher === 'string' ? e.matcher : undefined;
+    if (matcher && matcher.includes('|')) {
+      // Claude Code supports "Edit|Write" matchers; we match a single tool
+      // name only — a piped matcher would silently match NOTHING. Warn loudly.
+      _warnOnceToolHook(`toolhooks:pipe:${matcher}`, `[agon] warning: ${kind} hook matcher "${matcher}" contains '|' — agon matches a single tool name per entry; split into separate entries`);
+    }
     const timeout = typeof e.timeout === 'number' && e.timeout > 0 ? e.timeout : undefined;
     out.push({ matcher, command, timeout });
   }
@@ -63,7 +68,7 @@ function _parseHookList(list: unknown, kind: string): ToolHookDef[] {
 /**
  * Extract preToolUse/postToolUse entries from the raw `hooks` config record. Fail-safe: non-object input or missing keys yield empty lists; malformed entries are skipped with a one-time warning. Coexists with the dispatch-lifecycle hooks that live under other keys of the same record.
  */
-// @kern-source: tool-hooks:75
+// @kern-source: tool-hooks:87
 export function parseToolHooks(rawHooks: unknown): ParsedToolHooks {
   const empty: ParsedToolHooks = { preToolUse: [], postToolUse: [] };
   if (!rawHooks || typeof rawHooks !== 'object' || Array.isArray(rawHooks)) return empty;
@@ -77,7 +82,7 @@ export function parseToolHooks(rawHooks: unknown): ParsedToolHooks {
 /**
  * True when at least one pre/post tool-call hook is configured. Lets the executor keep a zero-overhead path when no hooks exist.
  */
-// @kern-source: tool-hooks:87
+// @kern-source: tool-hooks:99
 export function hasToolHooks(hooks: ParsedToolHooks|undefined): boolean {
   return !!hooks && (hooks.preToolUse.length > 0 || hooks.postToolUse.length > 0);
 }
@@ -85,7 +90,7 @@ export function hasToolHooks(hooks: ParsedToolHooks|undefined): boolean {
 /**
  * Does a hook's matcher select this tool? Missing/empty matcher matches all.
  */
-// @kern-source: tool-hooks:93
+// @kern-source: tool-hooks:105
 function _matches(def: ToolHookDef, toolName: string): boolean {
   const m = _normalizeMatcher(def.matcher);
   if (m === undefined) return true;
@@ -93,11 +98,13 @@ function _matches(def: ToolHookDef, toolName: string): boolean {
   return m === t;
 }
 
-// @kern-source: tool-hooks:104
+// @kern-source: tool-hooks:116
 function _runHookCommand(command: string, payload: unknown, timeoutSec: number): {exitCode:number, stderr:string, stdout:string, timedOut:boolean, spawnFailed:boolean} {
-  const input = JSON.stringify(payload);
   const timeout = Math.max(1, timeoutSec) * 1000;
   try {
+    // Stringify INSIDE the try: a non-serializable payload (circular/BigInt)
+    // must fail-open like any other hook failure, never escape executeToolCall.
+    const input = JSON.stringify(payload);
     const stdout = execSync(command, {
       input,
       timeout,
@@ -124,7 +131,7 @@ function _runHookCommand(command: string, payload: unknown, timeoutSec: number):
 /**
  * Run all matching PreToolUse hooks BEFORE a tool executes. Exit 2 → block (stderr is the engine-visible refusal). Exit 0 → proceed. Any other exit / timeout / spawn failure → fail-OPEN (proceed) with a one-time warning. Hooks run in declared order; the FIRST exit-2 blocks and short-circuits.
  */
-// @kern-source: tool-hooks:132
+// @kern-source: tool-hooks:146
 export async function runPreToolUseHooks(toolName: string, toolInput: unknown, hooks: ParsedToolHooks|undefined): Promise<PreHookOutcome> {
   if (!hooks || hooks.preToolUse.length === 0) return { block: false };
   let warning: string | undefined;
@@ -133,7 +140,9 @@ export async function runPreToolUseHooks(toolName: string, toolInput: unknown, h
     const payload = { tool_name: toolName, tool_input: toolInput };
     const r = _runHookCommand(def.command, payload, def.timeout ?? 10);
     if (r.exitCode === 2) {
-      const reason = r.stderr.trim() || `PreToolUse hook blocked ${toolName}`;
+      // Cap the refusal: a misbehaving hook spewing 100KB to stderr must not
+      // flood the engine-visible tool result / prompt context.
+      const reason = r.stderr.trim().slice(0, 2000) || `PreToolUse hook blocked ${toolName}`;
       return { block: true, reason };
     }
     if (r.exitCode !== 0) {
@@ -150,7 +159,7 @@ export async function runPreToolUseHooks(toolName: string, toolInput: unknown, h
 /**
  * Run all matching PostToolUse hooks AFTER a tool executes, with {tool_name, tool_input, tool_response} on stdin. Result is ignored except a one-time fail warning; post-hooks can never block.
  */
-// @kern-source: tool-hooks:156
+// @kern-source: tool-hooks:172
 export async function runPostToolUseHooks(toolName: string, toolInput: unknown, toolResponse: unknown, hooks: ParsedToolHooks|undefined): Promise<void> {
   if (!hooks || hooks.postToolUse.length === 0) return;
   for (const def of hooks.postToolUse) {

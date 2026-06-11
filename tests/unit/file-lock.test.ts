@@ -80,6 +80,15 @@ describe('withFileLock', () => {
     expect(ran).toBe(true);
   });
 
+  it('honors a timeout smaller than one sleep slice (never spins forever)', () => {
+    writeFileSync(lockPath, JSON.stringify({
+      pid: process.pid, uuid: 'other', hostname: hostname(), acquiredAt: new Date().toISOString(),
+    }), { flag: 'wx' });
+    const start = Date.now();
+    expect(() => withFileLock(lockPath, () => {}, { timeoutMs: 1 })).toThrow(/file lock timeout/);
+    expect(Date.now() - start).toBeLessThan(2_000);
+  });
+
   it('treats a corrupt lock file as stale', () => {
     writeFileSync(lockPath, 'not json at all', { flag: 'wx' });
     let ran = false;

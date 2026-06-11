@@ -316,9 +316,13 @@ export class RunsStore {
       }
 
       // Re-stamp completion time and refresh the cached snapshot. Count-only:
-      // we just need the post-prune total, not mtimes.
+      // we just need the post-prune total, not mtimes. Stamp under the same
+      // lock as the claim so it can't clobber another process's claim (only
+      // reachable concurrently via force=true, but cheap to close).
       const finishedAt = Date.now();
-      writePruneStamp(finishedAt);
+      try {
+        withFileLock(pruneStampPath() + '.lock', () => writePruneStamp(finishedAt));
+      } catch { /* best effort — a missing completion stamp just shortens the next cooldown */ }
       const remaining = await countRunJsonFiles();
       this.snap = { count: remaining, hydratedAt: finishedAt };
 
@@ -336,5 +340,5 @@ export class RunsStore {
 /**
  * Process-wide RunsStore singleton. Import this from render + telemetry; never construct another.
  */
-// @kern-source: runs-store:326
+// @kern-source: runs-store:330
 export const runsStore = new RunsStore();

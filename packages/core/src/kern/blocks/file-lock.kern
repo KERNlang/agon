@@ -22,7 +22,7 @@ const name=FILE_LOCK_STALE_MS type=number value=10000
   doc "TTL backstop for stale detection. Same-host locks are pid-authoritative (a dead holder is reclaimed immediately); the TTL covers pid-reuse and cross-host (e.g. NFS-shared) homes."
 
 const name=FILE_LOCK_SPIN_MS type=number value=12
-  doc "Busy-wait slice between acquisition attempts — matches the room lock's spin."
+  doc "Sleep slice between acquisition attempts — matches the room lock's cadence."
 
 // Holder record written into the lock file.
 interface name=FileLockInfo
@@ -30,6 +30,18 @@ interface name=FileLockInfo
   field name=uuid type=string
   field name=hostname type=string
   field name=acquiredAt type=string
+
+fn name=fileLockSleep params="ms:number" returns=void export=false
+  doc "Synchronous sleep WITHOUT burning CPU: Atomics.wait on a throwaway SharedArrayBuffer parks the thread (allowed on Node's main thread, unlike browsers). Callers of withFileLock are synchronous APIs (updateGlicko & co.) with µs hold times, so blocking is inherent — this just makes the rare contention wait idle instead of a hot spin."
+  handler <<<
+    try {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    } catch {
+      // Environment without SharedArrayBuffer — fall back to a brief busy-wait.
+      const until = Date.now() + ms;
+      while (Date.now() < until) { /* fallback spin */ }
+    }
+  >>>
 
 fn name=fileLockPidAlive params="pid:number" returns=boolean export=false
   doc "process.kill(pid,0) probes existence without signalling. ESRCH = dead; EPERM = alive but owned by another user (still alive)."
@@ -89,6 +101,13 @@ fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs
       } catch (e) {
         if ((e as { code?: string }).code !== 'EEXIST') throw e;
       }
+      // Deadline FIRST, before any continue path — a stale-but-unreclaimable
+      // lock (e.g. rename persistently failing) must time out, never spin
+      // forever.
+      if (Date.now() > deadline) {
+        const blocker = readFileLockInfo(lockPath);
+        throw new Error(`file lock timeout after ${timeoutMs}ms: ${lockPath} (held by pid ${blocker?.pid ?? '?'} on ${blocker?.hostname ?? '?'})`);
+      }
       const holder = readFileLockInfo(lockPath);
       if (isFileLockStale(holder, staleMs)) {
         // Stale → CLAIM it by renaming the stale entry AWAY to a unique path.
@@ -97,15 +116,22 @@ fn name=withFileLock params="lockPath:string, work:() => void, opts?:{ timeoutMs
         const claim = `${lockPath}.claim.${uuid}`;
         try {
           renameSync(lockPath, claim);
-          try { unlinkSync(claim); } catch { /* claimed stale entry; best-effort */ }
-        } catch { /* another reclaimer/acquirer got there first */ }
+        } catch {
+          continue; // another reclaimer/acquirer got there first
+        }
+        // Verify we claimed the SAME entry we judged stale. Between our read
+        // and the rename, the slot may have been reclaimed AND re-acquired by
+        // a LIVE holder — stealing that would break mutual exclusion. On
+        // mismatch, put it back (best effort) and re-contend.
+        const claimed = readFileLockInfo(claim);
+        if (claimed && claimed.uuid !== holder?.uuid && !isFileLockStale(claimed, staleMs)) {
+          try { renameSync(claim, lockPath); } catch { /* slot re-taken; claim file remains as debris rather than silently double-locking */ }
+          continue;
+        }
+        try { unlinkSync(claim); } catch { /* claimed stale entry; best-effort */ }
         continue;
       }
-      if (Date.now() > deadline) {
-        throw new Error(`file lock timeout after ${timeoutMs}ms: ${lockPath} (held by pid ${holder?.pid ?? '?'} on ${holder?.hostname ?? '?'})`);
-      }
-      const spinUntil = Date.now() + FILE_LOCK_SPIN_MS;
-      while (Date.now() < spinUntil) { /* brief busy-wait */ }
+      fileLockSleep(FILE_LOCK_SPIN_MS);
     }
 
     try {

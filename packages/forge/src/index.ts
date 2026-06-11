@@ -40,6 +40,9 @@ export type { ThoughtNode, ThinkResult } from './generated/thinking.js';
 // ── Delegate ──
 export { runDelegate } from './generated/delegate.js';
 export type { DelegateResult } from './generated/delegate.js';
+// ── PR text (engine-written title/body for pushed branches) ──
+export { runPrText, buildPrTextPrompt, parsePrText } from './generated/pr-text.js';
+export type { PrTextOptions, PrTextResult } from './generated/pr-text.js';
 // ── Goal controller ──
 export type { GoalSpec, GoalTask, AttemptRecord, GoalEvent, JournalState } from './generated/goal/types.js';
 export {

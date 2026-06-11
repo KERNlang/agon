@@ -100,6 +100,10 @@ fn name=buildApprovalDiffPreview params="tool:string, args:Record<string,unknown
       const oldStr = typeof (args as any)?.old_string === 'string' ? String((args as any).old_string) : '';
       const newStr = typeof (args as any)?.new_string === 'string' ? String((args as any).new_string) : '';
       const replaceAll = (args as any)?.replace_all === true;
+      // Finding 4: an empty old_string is rejected by the executor (tool-edit.kern
+      // requires a non-empty match target). Surface that in the approval prompt as
+      // a fallback note instead of previewing a silent no-op.
+      if (oldStr === '') return { fallback: 'empty old_string — edit will fail' };
       if (!existsSync(filePath)) return null;
       try {
         const st = statSync(filePath);
@@ -179,7 +183,7 @@ fn name=computeFileDiffPreview params="path:string, relPath:string, status:strin
     // real edits touch a small contiguous region), then if the remaining work is
     // still too large bail to a count-only fallback note instead of building the
     // table.
-    const APPROVAL_DIFF_MAX_LCS_LINES = 4000;
+    const APPROVAL_DIFF_MAX_LCS_LINES = 1200;
 
     let pre = 0;
     const oldLenAll = oldAll.length;

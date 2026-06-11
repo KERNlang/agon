@@ -105,6 +105,10 @@ export function buildApprovalDiffPreview(tool: string, args: Record<string,unkno
     const oldStr = typeof (args as any)?.old_string === 'string' ? String((args as any).old_string) : '';
     const newStr = typeof (args as any)?.new_string === 'string' ? String((args as any).new_string) : '';
     const replaceAll = (args as any)?.replace_all === true;
+    // Finding 4: an empty old_string is rejected by the executor (tool-edit.kern
+    // requires a non-empty match target). Surface that in the approval prompt as
+    // a fallback note instead of previewing a silent no-op.
+    if (oldStr === '') return { fallback: 'empty old_string — edit will fail' };
     if (!existsSync(filePath)) return null;
     try {
       const st = statSync(filePath);
@@ -175,7 +179,7 @@ export function buildApprovalDiffPreview(tool: string, args: Record<string,unkno
 /**
  * Produce one recap-shaped diff-preview file entry: a minimal LCS line diff rendered as +/- lines with a leading @@ hunk marker, capped to maxLines (and maxTotal as the hard ceiling). additions/deletions count the full diff; omitted reports how many interesting lines were dropped past the cap.
  */
-// @kern-source: approval-diff:170
+// @kern-source: approval-diff:174
 export function computeFileDiffPreview(path: string, relPath: string, status: string, oldContent: string, newContent: string, maxLines: number, maxTotal: number): any {
   const oldAll = oldContent.length === 0 ? [] : oldContent.replace(/\n$/, '').split('\n');
   const newAll = newContent.length === 0 ? [] : newContent.replace(/\n$/, '').split('\n');
@@ -186,7 +190,7 @@ export function computeFileDiffPreview(path: string, relPath: string, status: st
   // real edits touch a small contiguous region), then if the remaining work is
   // still too large bail to a count-only fallback note instead of building the
   // table.
-  const APPROVAL_DIFF_MAX_LCS_LINES = 4000;
+  const APPROVAL_DIFF_MAX_LCS_LINES = 1200;
 
   let pre = 0;
   const oldLenAll = oldAll.length;
@@ -287,7 +291,7 @@ export function computeFileDiffPreview(path: string, relPath: string, status: st
 /**
  * Single-line truncation for a diff body line (no leading +/- marker).
  */
-// @kern-source: approval-diff:280
+// @kern-source: approval-diff:284
 export function truncateDiffLine(line: string, max: number): string {
   const text = String(line ?? '').replace(/\t/g, '  ');
   if (text.length <= max) {

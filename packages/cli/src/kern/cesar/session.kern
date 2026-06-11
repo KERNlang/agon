@@ -202,7 +202,10 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export
     // agon's own commit paths. When the user opts out (commitCoAuthor === ''),
     // emit no attribution section at all — and give Cesar the deactivation contract
     // so it can honor "remove the logo/attribution" requests itself.
-    const commitCoAuthor = (config.commitCoAuthor || '').trim();
+    // Sanitize: this value is interpolated into a backtick-delimited trailer in
+    // the system prompt — strip newlines/backticks (collapse to single spaces) so
+    // a malformed config value can't break out of the template or inject text.
+    const commitCoAuthor = (config.commitCoAuthor || '').replace(/[`\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
     if (commitCoAuthor) {
       systemParts.push(`COMMIT ATTRIBUTION: When you create a git commit yourself via Bash, end the commit message with a trailer line \`Co-Authored-By: ${commitCoAuthor}\`. This attribution is configurable (config.commitCoAuthor) and is ON by default.\n- If the user asks to REMOVE/DISABLE the commit logo/attribution, first ask whether to disable it for THIS PROJECT or MACHINE-WIDE, then disable it: machine-wide, run \`agon config set commitCoAuthor ""\` (writes ~/.agon/config.json); per-project, safely edit ./.agon.json with your file tools (read the JSON if it exists, set/merge the key \`"commitCoAuthor": ""\`, write it back — never clobber other keys). Confirm once done.\n- If the user asks to CHANGE the identity instead, set the new value the same way (\`agon config set commitCoAuthor "<value>"\` machine-wide, or merge it into ./.agon.json per-project).`);
     }

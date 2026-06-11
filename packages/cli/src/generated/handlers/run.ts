@@ -77,6 +77,7 @@ export async function handleRun(command: string, dispatch: Dispatch, ctx: Handle
     // the result. Bounded to RUN_CONTEXT_OUTPUT_CAP so a noisy command can't
     // flood the next prompt (the human transcript above still shows it full).
     if (ctx.chatSession) {
+      // Deliberate CC parity: `! `/`/run` output joins the conversation (capped) so Cesar sees it — same trust model as Claude Code's ! prefix.
       const ts = new Date().toISOString();
       const captured = output || '(no output)';
       const cappedOutput = captured.length > RUN_CONTEXT_OUTPUT_CAP

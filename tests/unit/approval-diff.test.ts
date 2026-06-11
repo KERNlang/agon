@@ -76,6 +76,21 @@ describe('buildApprovalDiffPreview', () => {
     expect(preview).toBeNull();
   });
 
+  it('returns a fallback note when AgonEdit old_string is empty (edit will fail)', () => {
+    const file = join(dir, 'empty-old.ts');
+    writeFileSync(file, 'alpha\nbeta\n');
+    const preview = buildApprovalDiffPreview('AgonEdit', {
+      file_path: file,
+      old_string: '',
+      new_string: 'inserted',
+    });
+    expect(preview).toBeTruthy();
+    expect(preview.files).toBeUndefined();
+    expect(typeof preview.fallback).toBe('string');
+    expect(preview.fallback).toMatch(/empty old_string/);
+    expect(preview.fallback).toMatch(/edit will fail/);
+  });
+
   it('returns null for a no-op edit (old === new)', () => {
     const file = join(dir, 'noop.ts');
     writeFileSync(file, 'same\n');
@@ -278,7 +293,7 @@ describe('buildApprovalDiffPreview', () => {
   it('bails to a count-only note when the changed region exceeds the LCS line cap', () => {
     const file = join(dir, 'fully-rewritten.ts');
     // 3000 distinct old lines fully rewritten to 3000 distinct new lines:
-    // no common prefix/suffix, so trimming cannot help and n+m=6000 > 4000.
+    // no common prefix/suffix, so trimming cannot help and n+m=6000 > 1200.
     const oldBody = Array.from({ length: 3000 }, (_, i) => `old-${i}`).join('\n') + '\n';
     const newBody = Array.from({ length: 3000 }, (_, i) => `new-${i}`).join('\n') + '\n';
     writeFileSync(file, oldBody);

@@ -521,6 +521,7 @@ export function App() {
 
   const activeEnginePidsRef = useRef<Map<string,number>>(new Map());
   const telemetryPollerRef = useRef<any>(null);
+  const statusDashboardOpenRef = useRef<boolean>(false);
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
   const activePlanRef = useRef<any>(null);
@@ -1623,7 +1624,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    return startTelemetryPoller({ registry, cesarSession, activeEngines, dispatch, cesarSessionHolder: _cesarSessionRef, telemetryPollerRef, activeEnginePidsRef, activeTurnRef, activePlanRef, activeAbortRef, setRecentFallbacks, setConfigVersion, setCesarSessionWrapped, setInputQueue, setTelemetryVitals });
+    statusDashboardOpenRef.current = statusDashboardOpen;
+  }, [statusDashboardOpen]);
+
+  useEffect(() => {
+    return startTelemetryPoller({ registry, cesarSession, activeEngines, dispatch, cesarSessionHolder: _cesarSessionRef, telemetryPollerRef, activeEnginePidsRef, activeTurnRef, activePlanRef, activeAbortRef, setRecentFallbacks, setConfigVersion, setCesarSessionWrapped, setInputQueue, setTelemetryVitals, statusDashboardOpenRef });
   }, [registry,cesarSession,activeEngines]);
 
   useEffect(() => {
@@ -2037,7 +2042,7 @@ export function App() {
 // @kern-source: app:92
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1842
+// @kern-source: app:1851
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

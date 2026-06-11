@@ -150,6 +150,9 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
       }
     }
 
+    // Panel health is non-negotiable output: a retried or dropped seat-round
+    // must be visible right next to the verdict it shaped.
+    if (result.panelHealth?.banner) dispatch({ type: 'info', message: `⚠ ${result.panelHealth.banner}` });
     dispatch({ type: 'header', title: mode === 'socratic' ? 'Unresolved Questions' : mode === 'red-team' ? 'Risk Register' : mode === 'synthesis' ? 'Decision Matrix' : mode === 'postmortem' ? 'Postmortem Report' : 'Verdict' });
     dispatch({ type: 'verdict', summary: result.summary });
     dispatch({ type: 'info', message: `Full debate saved: ${outputDir}` });

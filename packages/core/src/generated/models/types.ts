@@ -622,16 +622,26 @@ export interface BrainstormGroup {
   similarity: number;
 }
 
-// @kern-source: types:509
+// @kern-source: types:512
+export interface PanelHealth {
+  requested: number;
+  responded: number;
+  degraded: boolean;
+  notes: string[];
+  banner: string | null;
+}
+
+// @kern-source: types:519
 export interface BrainstormResult {
   question: string;
   bids: BrainstormBid[];
   winner: string;
   response: string;
   groups?: BrainstormGroup[];
+  panelHealth?: PanelHealth;
 }
 
-// @kern-source: types:516
+// @kern-source: types:527
 export interface BreakerArtifact {
   engineId: string;
   testScript: string;
@@ -641,7 +651,7 @@ export interface BreakerArtifact {
   validated: boolean;
 }
 
-// @kern-source: types:524
+// @kern-source: types:535
 export interface GauntletResult {
   winnerId: string;
   breakerArtifacts: BreakerArtifact[];
@@ -654,7 +664,7 @@ export interface GauntletResult {
   patchPath?: string;
 }
 
-// @kern-source: types:535
+// @kern-source: types:546
 export interface CorpusEntry {
   forgeId: string;
   taskClass: TaskClass;
@@ -664,7 +674,7 @@ export interface CorpusEntry {
   pattern?: string;
 }
 
-// @kern-source: types:543
+// @kern-source: types:554
 export interface GapPattern {
   pattern: string;
   taskClass: TaskClass;
@@ -675,7 +685,7 @@ export interface GapPattern {
   skillPath?: string;
 }
 
-// @kern-source: types:552
+// @kern-source: types:563
 export interface Critique {
   file: string;
   lines: string;
@@ -683,5 +693,5 @@ export interface Critique {
   minimalFix: string;
 }
 
-// @kern-source: types:558
+// @kern-source: types:569
 export const DEFAULT_CONFIG: Required<AgonConfig> = DEFAULT_AGON_CONFIG;

@@ -146,6 +146,9 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
     }
 
     dispatch({ type: 'separator' });
+    // Panel health is non-negotiable output: a retried or dropped seat must be
+    // visible in the REPL render, not just in background warn noise.
+    if (result.panelHealth?.banner) dispatch({ type: 'info', message: `⚠ ${result.panelHealth.banner}` });
     dispatch({ type: 'engine-block', engineId: result.winner, color: ENGINE_COLORS[result.winner] ?? 124, content: result.response });
 
     // Save to chat history so follow-up messages have context

@@ -14,7 +14,11 @@ import { dedupBrainstormDrafts } from './dedup-bridge.js';
 
 import { preflightHealthFilter } from './health-check.js';
 
-// @kern-source: brainstorm:9
+import { dispatchSeatWithRetry, buildPanelHealth } from './seat-dispatch.js';
+
+import type { SeatOutcome } from './seat-dispatch.js';
+
+// @kern-source: brainstorm:11
 export function calibrateConfidence(engineId: string, rawBid: number): number {
   // Use Glicko-2 brainstorm ratings for calibration, fall back to global
   const ratings = getRatings();
@@ -27,7 +31,7 @@ export function calibrateConfidence(engineId: string, rawBid: number): number {
   return Math.round(rawBid * 0.3 + winRate * 100 * 0.7);
 }
 
-// @kern-source: brainstorm:20
+// @kern-source: brainstorm:22
 export function qualityScore(engineId: string, draft: KernDraft): number {
   let score = 0;
   if (draft.approach.length > 10) {
@@ -47,8 +51,8 @@ export function qualityScore(engineId: string, draft: KernDraft): number {
   return score;
 }
 
-// @kern-source: brainstorm:36
-export function rankDrafts(drafts: {engineId:string, draft:KernDraft, raw:string}[]): {engineId:string, draft:KernDraft, raw:string}[] {
+// @kern-source: brainstorm:38
+export function rankDrafts(drafts: {engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[]): {engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[] {
   return [...drafts].sort((a, b) => {
     const scoreA = qualityScore(a.engineId, a.draft);
     const scoreB = qualityScore(b.engineId, b.draft);
@@ -56,76 +60,56 @@ export function rankDrafts(drafts: {engineId:string, draft:KernDraft, raw:string
   });
 }
 
-// @kern-source: brainstorm:45
-export async function collectRankedDrafts(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{engineId:string, draft:KernDraft, raw:string}[]> {
+// @kern-source: brainstorm:47
+export async function collectRankedDrafts(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{engineId:string, draft:KernDraft, raw:string, seat:SeatOutcome}[]> {
   const draftPrompt = buildKernDraftPrompt({
     question: opts.question,
     context: opts.context,
     mode: 'brainstorm',
   });
 
+  const failedDraft = (): KernDraft => ({
+    approach: 'Failed to respond',
+    reasoning: '',
+    tradeoffs: [],
+    confidence: 0,
+    keyFiles: [],
+    steps: [],
+  });
+
   const draftPromises = opts.engines.map(async (engineId: string) => {
     const engine = opts.registry.get(engineId);
-    try {
-      const result = await opts.adapter.dispatch({
-        engine,
-        prompt: draftPrompt,
-        systemPrompt: 'You are participating in a brainstorm. Respond directly with your analysis and approach. Do NOT use tools, do NOT read files, do NOT run commands. Just think and write your response as plain text.',
-        cwd: process.cwd(),
-        mode: 'exec',
-        timeout: opts.timeout,
-        outputDir: opts.outputDir,
-        signal: opts.signal,
-      });
-
-      const raw = String(result.stdout ?? '');
-      if (result.exitCode !== 0 || !raw.trim()) {
-        const detail = result.stderr?.trim()
-          ? `: ${result.stderr.trim().slice(0, 240)}`
-          : (!raw.trim() ? ': empty response' : '');
-        console.warn(`[agon] brainstorm dispatch (${engineId}) returned no usable draft${detail}`);
-        return {
-          engineId,
-          draft: {
-            approach: 'Failed to respond',
-            reasoning: '',
-            tradeoffs: [],
-            confidence: 0,
-            keyFiles: [],
-            steps: [],
-          } satisfies KernDraft,
-          raw,
-        };
-      }
-
-      const draft = parseKernDraft(raw);
-      if (draft) {
-        return { engineId, draft, raw };
-      }
-
-      return { engineId, draft: fallbackParse(raw), raw };
-    } catch (err) {
-      console.warn(`[agon] brainstorm dispatch (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
-      return {
-        engineId,
-        draft: {
-          approach: 'Failed to respond',
-          reasoning: '',
-          tradeoffs: [],
-          confidence: 0,
-          keyFiles: [],
-          steps: [],
-        } satisfies KernDraft,
-        raw: '',
-      };
+    // One auto-retry per seat (shorter timeout) — transient flake must not
+    // silently shrink the promised panel. Whatever still fails gets reported
+    // through the panel-health banner instead of vanishing into a 3/6 run.
+    const seat = await dispatchSeatWithRetry(opts.adapter, {
+      engineId,
+      engine,
+      prompt: draftPrompt,
+      systemPrompt: 'You are participating in a brainstorm. Respond directly with your analysis and approach. Do NOT use tools, do NOT read files, do NOT run commands. Just think and write your response as plain text.',
+      cwd: process.cwd(),
+      mode: 'exec',
+      timeout: opts.timeout,
+      outputDir: opts.outputDir,
+      signal: opts.signal,
+    });
+    if (!seat.ok) {
+      console.warn(`[agon] brainstorm dispatch (${engineId}) failed after ${seat.attempts} attempt(s): ${seat.failure}`);
+      return { engineId, draft: failedDraft(), raw: '', seat };
     }
+    const raw = seat.text;
+    const draft = parseKernDraft(raw);
+    if (draft) {
+      return { engineId, draft, raw, seat };
+    }
+    return { engineId, draft: fallbackParse(raw), raw, seat };
   });
 
   const drafts = await Promise.all(draftPromises);
   return rankDrafts(drafts);
 }
 
-// @kern-source: brainstorm:114
+// @kern-source: brainstorm:96
 export function scoutScore(bid: ScoutBid): number {
   let score = 0;
   // Confidence: 40% weight (0-40 points)
@@ -139,7 +123,7 @@ export function scoutScore(bid: ScoutBid): number {
   return score;
 }
 
-// @kern-source: brainstorm:127
+// @kern-source: brainstorm:109
 export async function runScout(opts: {question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}> {
   const count = opts.scoutCount ?? 2;
   // Filter quarantined engines BEFORE slicing, else a dead engine in the first
@@ -157,7 +141,7 @@ export async function runScout(opts: {question:string, context?:string, engines:
   return { rankedBids: bids, leadEngine: (bids.length > 0) ? bids[0].engineId : scouts[0], topConfidence: topConfidence, disagreementSpread: disagreementSpread };
 }
 
-// @kern-source: brainstorm:144
+// @kern-source: brainstorm:126
 export function fallbackParse(output: string): KernDraft {
   const stripped = output.replace(/\x60\x60\x60(?:json)?\s*/gi, '').replace(/\x60\x60\x60/g, '');
   let depth = 0;
@@ -198,7 +182,7 @@ export function fallbackParse(output: string): KernDraft {
   };
 }
 
-// @kern-source: brainstorm:185
+// @kern-source: brainstorm:167
 export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<BrainstormResult> {
   const brainstormId = randomUUID().slice(0, 8);
   // Cold-start: seed newly-dropped model versions from their predecessor before
@@ -230,6 +214,13 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
     signal: opts.signal,
   });
 
+  // LOUD degradation: the run must never quietly complete as a smaller
+  // committee. The banner prints here AND rides on the result so every
+  // surface (CLI, REPL, call.ts) can show it.
+  const panelHealth = buildPanelHealth(ranked.map((d) => d.seat));
+  if (panelHealth.banner) console.warn(`[agon] brainstorm ${panelHealth.banner}`);
+  sidechain.log('brainstorm:panel-health', undefined, panelHealth);
+
   const bids: BrainstormBid[] = ranked.map((d, i) => {
     const reasoning = d.draft.approach + (d.draft.reasoning ? ` — ${d.draft.reasoning}` : '');
     const approach = d.draft.steps.map((s: string, j: number) => `${j + 1}. ${s}`).join('\n');
@@ -250,6 +241,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
       bids,
       winner: 'none',
       response: 'No engines were available to brainstorm this question.',
+      panelHealth,
     };
   }
 
@@ -328,5 +320,6 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
     winner: winner.engineId,
     response: response.replace(/<think>[\s\S]*?<\/think>\s*/gi, ''),
     groups: dedupGroups ?? undefined,
+    panelHealth,
   };
 }

@@ -609,7 +609,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const startTime = Date.now();
       const before = snapshotTokens();
       try {
-        const { diff, label } = resolveReviewTarget('uncommitted', cwd);
+        const { diff, label } = resolveReviewTarget('uncommitted', cwd, undefined);
         if (!diff.trim()) {
           const after = snapshotTokens();
           return {

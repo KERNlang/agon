@@ -195,6 +195,7 @@ module name=AppKeyboard
     field name=modelPickerOpen type=boolean
     field name=cesarPickerOpen type=boolean
     field name=slashPickerOpen type=boolean
+    field name=atPickerOpen type=boolean
     field name=enginePickerOpen type=boolean
     field name=reviewEvent type=any
     field name=toolDetailEvent type=any
@@ -280,6 +281,12 @@ module name=AppKeyboard
     handler <<<
       if (isTerminalFocusReport(input)) return;
       if (key?.paste) return;
+      // The @-file picker (AtFilePicker) owns ALL keystrokes via its own useInput
+      // while open — navigation, accept, cancel, and typing into its filter. The
+      // global router must stay out so arrows/Enter/Esc/Tab don't double-fire
+      // (e.g. history nav or auto-mode toggle) underneath it. Mirrors how the
+      // composer swaps its TextInput out while the picker is up.
+      if (opts.atPickerOpen) return;
 
       const keyName = typeof key?.name === 'string' ? key.name.toLowerCase() : '';
       const globalCtrlInputMap = {

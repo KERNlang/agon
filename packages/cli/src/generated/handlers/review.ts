@@ -822,6 +822,9 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
     const outcomes = all.map((c) => reviewOutcome(c.engineId, c.reviewOutput, c.status, c.note));
     const consensus = buildConsensus(outcomes as any);
     const consensusSummary = buildReviewConsensusLines(consensus).join('\n');
+    // Degraded-run honesty: when fewer than quorum engines reviewed, warn BEFORE
+    // the consensus lines so a 1/6 run isn't read as a real consensus. Not a block.
+    if (consensus.degraded) dispatch({ type: 'warning', message: consensus.degraded.warning });
     dispatch({ type: consensus.autoBlock ? 'warning' : 'info', message: consensusSummary });
 
     const anyUnstructured = collected.some((c) => c.unstructured);

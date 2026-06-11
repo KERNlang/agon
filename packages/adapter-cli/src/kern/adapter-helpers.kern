@@ -5,14 +5,14 @@ import from="node:path" names="join,dirname,basename"
 import from="node:os" names="homedir,tmpdir"
 
 fn name=recordDispatchHealth params="engineId:string, result:{exitCode?:number,stderr?:string,timedOut?:boolean}" returns=void
-  doc "Centralized engine-health recording for any dispatch return point. exitCode 0 + not timed out → mark ok (clears prior quarantine). Otherwise classify and quarantine only on auth-failed/unreachable — timeouts and generic failures stay in rotation since they may be transient."
+  doc "Centralized engine-health recording for any dispatch return point. exitCode 0 + not timed out → mark ok (clears prior quarantine). Otherwise classify and quarantine only on auth-failed/unreachable/binary-missing — timeouts and generic failures stay in rotation since they may be transient. (A missing binary won't reappear mid-session, so it's quarantined like an auth failure.)"
   handler lang="kern"
     let name=exitCode value="result.exitCode ?? 0"
     if cond="exitCode === 0 && !result.timedOut"
       do value="engineHealth.mark(engineId, 'ok', '')"
       return
     let name=status value="classifyDispatchFailure({ stderr: result.stderr, exitCode, timedOut: result.timedOut })"
-    if cond="status === 'auth-failed' || status === 'unreachable'"
+    if cond="status === 'auth-failed' || status === 'unreachable' || status === 'binary-missing'"
       do value="engineHealth.mark(engineId, status, (result.stderr || '').split('\\n')[0])"
 
 fn name=stampDispatchDepth params="env?:Record<string,string>" returns="Record<string,string>" export=false
@@ -338,6 +338,13 @@ fn name=answerChannelMode returns="string"
     return 'file';
   >>>
 
+fn name=useFileChannelForMode params="mode?:'exec'|'agent'" returns="boolean"
+  doc "Whether the file answer-channel applies for a given one-shot dispatch mode. TRUE for both exec (council/forge/brainstorm/tribunal/synthesis members) AND agent (forge one-shot agent dispatch) — both lose long-form output to TUI scrape corruption and benefit from the authoritative file. Gated by answerChannelMode()==='file'. Defaults mode to 'exec'."
+  handler <<<
+    const m = mode ?? 'exec';
+    return (m === 'exec' || m === 'agent') && answerChannelMode() === 'file';
+  >>>
+
 fn name=fileChannelInstruction params="answerFile:string" returns="string"
   doc "Appended to a one-shot claude prompt under file answer-channel mode: instruct claude to deliver its COMPLETE answer by writing it (markdown only, no commentary) to answerFile with its native Write tool. This is what makes the answer arrive as a clean file instead of a scraped TUI frame."
   handler <<<
@@ -371,7 +378,7 @@ fn name=setupFileAnswerChannel params="composed:string" returns="{ prompt:string
   >>>
 
 fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:AbortSignal, mode?:'exec'|'agent', cwd?:string, systemPrompt?:string, env?:Record<string,string>, extraArgv?:string[]" returns="Promise<{exitCode:number,stdout:string,stderr:string,durationMs:number,timedOut:boolean,unavailable?:boolean}>" async=true
-  doc "Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @kernlang/agon-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt; extraArgv (model/effort launch flags) is forwarded to the engine exec. When AGON_CLAUDE_ANSWER_CHANNEL=file and mode=exec, claude is asked to Write its answer to a temp file we read as the AUTHORITATIVE result (clean — no TUI scrape), falling back to the scrape if the file is absent. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check."
+  doc "Drive interactive `claude` under a pty so the subscription billing path is used. Lazy-imports @kernlang/agon-engines — runs a python3 daemon (kern_engines.cli.daemon) over stdio JSON-RPC, no native node deps. cwd is plumbed through so worktree dispatches land in the right repo; systemPrompt is prepended to the prompt; extraArgv (model/effort launch flags) is forwarded to the engine exec. When AGON_CLAUDE_ANSWER_CHANNEL=file and mode is exec OR agent, claude is asked to Write its answer to a temp file we read as the AUTHORITATIVE result (clean — no TUI scrape), falling back to the scrape if the file is absent. Never throws — returns unavailable:true on any unexpected failure so kern callers can fall through to legacy paths with a simple !result.unavailable check."
   handler <<<
     const start = Date.now();
     try {
@@ -417,10 +424,10 @@ fn name=runClaudePtyDispatch params="prompt:string, timeoutSec:number, signal?:A
         signal.addEventListener('abort', onAbort, { once: true });
       }
 
-      // File answer-channel: only for one-shot exec dispatch (council/forge/
-      // brainstorm/tribunal members). claude writes its answer to a temp file we
-      // read as authoritative, bypassing the flaky scrape. Off by default.
-      const useFileChannel = (mode ?? 'exec') === 'exec' && answerChannelMode() === 'file';
+      // File answer-channel: for one-shot exec (council/forge/brainstorm/tribunal
+      // members) AND agent (forge one-shot agent dispatch). claude writes its answer
+      // to a temp file we read as authoritative, bypassing the flaky scrape.
+      const useFileChannel = useFileChannelForMode(mode);
       let channelDir = '';
       try {
         let composed = composeClaudePtyPrompt(prompt, systemPrompt);
@@ -525,9 +532,9 @@ fn name=runClaudePtyStreamDispatch params="prompt:string, timeoutSec:number, sig
         signal.addEventListener('abort', onAbort, { once: true });
       }
 
-      // File answer-channel (one-shot exec only): stream the scraped deltas for live
-      // UX, but read the FINAL answer from the authoritative file claude writes.
-      const useFileChannel = (mode ?? 'exec') === 'exec' && answerChannelMode() === 'file';
+      // File answer-channel (one-shot exec AND agent): stream the scraped deltas for
+      // live UX, but read the FINAL answer from the authoritative file claude writes.
+      const useFileChannel = useFileChannelForMode(mode);
       let channelDir = '';
       const collected: string[] = [];
       try {

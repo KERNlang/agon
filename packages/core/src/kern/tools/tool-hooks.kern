@@ -1,0 +1,169 @@
+// ── PreToolUse / PostToolUse hook engine (.agon.json hooks) ──────────
+// Claude-Code-parity tool-call hooks. Config shape (rides the existing
+// `hooks` record alongside the dispatch-lifecycle hooks):
+//
+//   "hooks": {
+//     "preToolUse":  [{ "matcher": "Bash", "command": "<shell cmd>", "timeout": 10 }],
+//     "postToolUse": [{ "command": "<shell cmd>" }]
+//   }
+//
+// A pre-hook receives {tool_name, tool_input} as JSON on stdin and runs
+// BEFORE the tool executes: exit 0 → proceed; exit 2 → BLOCK (stderr is the
+// engine-visible refusal); any other exit / timeout / spawn failure →
+// FAIL-OPEN (proceed) with one warning line. A post-hook receives
+// {tool_name, tool_input, tool_response} on stdin, runs AFTER execution, and
+// can never block (result ignored except logging). `matcher` is the tool name
+// (case-insensitive, with a trivially-stripped `Agon` prefix); missing/empty
+// matcher = all tools. Fail-safe throughout: a malformed entry is skipped with
+// one warning, never throws, never blocks.
+
+import from="node:child_process" names="execSync"
+import from="../models/tool-types.js" names="ToolHookDef,ParsedToolHooks" types=true
+
+interface name=PreHookOutcome
+  field name=block type=boolean
+  field name=reason type=string optional=true
+  field name=warning type=string optional=true
+
+// One-time warning dedupe for malformed entries / fail-open notices.
+const name=_warnedToolHooks type="Set<string>" value={{ new Set() }}
+
+fn name=_warnOnceToolHook params="key:string, message:string" returns=void export=false
+  handler <<<
+    if (_warnedToolHooks.has(key)) return;
+    _warnedToolHooks.add(key);
+    console.warn(message);
+  >>>
+
+fn name=_normalizeMatcher params="raw:unknown" returns="string|undefined" export=false
+  doc "Normalize a matcher to a comparable tool name: trim, lowercase, strip a leading 'agon' prefix. Empty/non-string → undefined (matches all)."
+  handler <<<
+    if (typeof raw !== 'string') return undefined;
+    let m = raw.trim().toLowerCase();
+    if (m.length === 0) return undefined;
+    if (m.startsWith('agon') && m.length > 4) m = m.slice(4);
+    return m;
+  >>>
+
+fn name=_parseHookList params="list:unknown, kind:string" returns="ToolHookDef[]" export=false
+  handler <<<
+    if (!Array.isArray(list)) {
+      if (list !== undefined) {
+        _warnOnceToolHook(`toolhooks:list:${kind}`, `[agon] warning: hooks.${kind} is not an array — ignoring`);
+      }
+      return [];
+    }
+    const out: ToolHookDef[] = [];
+    for (const entry of list) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        _warnOnceToolHook(`toolhooks:entry:${kind}:${String(entry)}`, `[agon] warning: ignoring malformed ${kind} hook entry: ${JSON.stringify(entry)}`);
+        continue;
+      }
+      const e = entry as Record<string, unknown>;
+      const command = typeof e.command === 'string' ? e.command.trim() : '';
+      if (command.length === 0) {
+        _warnOnceToolHook(`toolhooks:cmd:${kind}:${JSON.stringify(entry)}`, `[agon] warning: ignoring ${kind} hook with no command: ${JSON.stringify(entry)}`);
+        continue;
+      }
+      const matcher = typeof e.matcher === 'string' ? e.matcher : undefined;
+      const timeout = typeof e.timeout === 'number' && e.timeout > 0 ? e.timeout : undefined;
+      out.push({ matcher, command, timeout });
+    }
+    return out;
+  >>>
+
+fn name=parseToolHooks params="rawHooks:unknown" returns="ParsedToolHooks" export=true
+  doc "Extract preToolUse/postToolUse entries from the raw `hooks` config record. Fail-safe: non-object input or missing keys yield empty lists; malformed entries are skipped with a one-time warning. Coexists with the dispatch-lifecycle hooks that live under other keys of the same record."
+  handler <<<
+    const empty: ParsedToolHooks = { preToolUse: [], postToolUse: [] };
+    if (!rawHooks || typeof rawHooks !== 'object' || Array.isArray(rawHooks)) return empty;
+    const h = rawHooks as Record<string, unknown>;
+    return {
+      preToolUse: _parseHookList(h.preToolUse, 'preToolUse'),
+      postToolUse: _parseHookList(h.postToolUse, 'postToolUse'),
+    };
+  >>>
+
+fn name=hasToolHooks params="hooks:ParsedToolHooks|undefined" returns=boolean export=true
+  doc "True when at least one pre/post tool-call hook is configured. Lets the executor keep a zero-overhead path when no hooks exist."
+  handler <<<
+    return !!hooks && (hooks.preToolUse.length > 0 || hooks.postToolUse.length > 0);
+  >>>
+
+fn name=_matches params="def:ToolHookDef, toolName:string" returns=boolean export=false
+  doc "Does a hook's matcher select this tool? Missing/empty matcher matches all."
+  handler <<<
+    const m = _normalizeMatcher(def.matcher);
+    if (m === undefined) return true;
+    const t = _normalizeMatcher(toolName);
+    return m === t;
+  >>>
+
+// Run a single hook command with a CC-shaped JSON payload on stdin.
+// Returns { exitCode, stderr, timedOut, spawnFailed }. Never throws.
+fn name=_runHookCommand params="command:string, payload:unknown, timeoutSec:number" returns="{exitCode:number, stderr:string, stdout:string, timedOut:boolean, spawnFailed:boolean}" export=false
+  handler <<<
+    const input = JSON.stringify(payload);
+    const timeout = Math.max(1, timeoutSec) * 1000;
+    try {
+      const stdout = execSync(command, {
+        input,
+        timeout,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        encoding: 'utf-8',
+      });
+      return { exitCode: 0, stderr: '', stdout: stdout ?? '', timedOut: false, spawnFailed: false };
+    } catch (err: any) {
+      // execSync throws on non-zero exit, timeout (err.signal === 'SIGTERM' /
+      // err.killed), or spawn failure (err.status == null && no signal).
+      const timedOut = err?.killed === true || err?.signal === 'SIGTERM';
+      const status = typeof err?.status === 'number' ? err.status : null;
+      const spawnFailed = status === null && !timedOut;
+      return {
+        exitCode: status ?? 1,
+        stderr: typeof err?.stderr === 'string' ? err.stderr : '',
+        stdout: typeof err?.stdout === 'string' ? err.stdout : '',
+        timedOut,
+        spawnFailed,
+      };
+    }
+  >>>
+
+fn name=runPreToolUseHooks async=true params="toolName:string, toolInput:unknown, hooks:ParsedToolHooks|undefined" returns="Promise<PreHookOutcome>" export=true
+  doc "Run all matching PreToolUse hooks BEFORE a tool executes. Exit 2 → block (stderr is the engine-visible refusal). Exit 0 → proceed. Any other exit / timeout / spawn failure → fail-OPEN (proceed) with a one-time warning. Hooks run in declared order; the FIRST exit-2 blocks and short-circuits."
+  handler <<<
+    if (!hooks || hooks.preToolUse.length === 0) return { block: false };
+    let warning: string | undefined;
+    for (const def of hooks.preToolUse) {
+      if (!_matches(def, toolName)) continue;
+      const payload = { tool_name: toolName, tool_input: toolInput };
+      const r = _runHookCommand(def.command, payload, def.timeout ?? 10);
+      if (r.exitCode === 2) {
+        const reason = r.stderr.trim() || `PreToolUse hook blocked ${toolName}`;
+        return { block: true, reason };
+      }
+      if (r.exitCode !== 0) {
+        // Fail-OPEN: timeout, spawn failure, or any non-0/non-2 exit proceeds.
+        const cause = r.timedOut ? 'timed out' : r.spawnFailed ? 'failed to spawn' : `exited ${r.exitCode}`;
+        const w = `[agon] PreToolUse hook for ${toolName} ${cause} — proceeding (fail-open)`;
+        _warnOnceToolHook(`pre:${def.command}:${cause}`, w);
+        warning = w;
+      }
+    }
+    return { block: false, warning };
+  >>>
+
+fn name=runPostToolUseHooks async=true params="toolName:string, toolInput:unknown, toolResponse:unknown, hooks:ParsedToolHooks|undefined" returns="Promise<void>" export=true
+  doc "Run all matching PostToolUse hooks AFTER a tool executes, with {tool_name, tool_input, tool_response} on stdin. Result is ignored except a one-time fail warning; post-hooks can never block."
+  handler <<<
+    if (!hooks || hooks.postToolUse.length === 0) return;
+    for (const def of hooks.postToolUse) {
+      if (!_matches(def, toolName)) continue;
+      const payload = { tool_name: toolName, tool_input: toolInput, tool_response: toolResponse };
+      const r = _runHookCommand(def.command, payload, def.timeout ?? 10);
+      if (r.exitCode !== 0) {
+        const cause = r.timedOut ? 'timed out' : r.spawnFailed ? 'failed to spawn' : `exited ${r.exitCode}`;
+        _warnOnceToolHook(`post:${def.command}:${cause}`, `[agon] PostToolUse hook for ${toolName} ${cause} — ignored (post-hooks never block)`);
+      }
+    }
+  >>>

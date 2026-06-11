@@ -281,7 +281,8 @@ config name=AgonConfig
   field name=cesarStreamingXmlTools type=boolean default=true
     doc "When true, interrupt text streaming as soon as a complete XML tool call is parsed so XML fallback tools can execute live instead of waiting for the whole response."
   field name=campfireObserverStrategy type="'lead-first'|'all-respond'" default=lead-first
-  field name=hooks type="Record<string,Array<{command:string,engines?:string[],timeout?:number}>>" optional=true
+  field name=hooks type="Record<string,Array<{command:string,engines?:string[],matcher?:string,timeout?:number}>>" optional=true
+    doc "Shell hook commands keyed by event. Dispatch-lifecycle events (pre_dispatch, post_forge, …) use {command, engines?, timeout?}. CC-parity tool-call events `preToolUse`/`postToolUse` use {matcher?, command, timeout?}: a pre-hook gets {tool_name, tool_input} on stdin and may BLOCK with exit 2 (stderr = refusal); a post-hook gets {tool_name, tool_input, tool_response} and never blocks. All hooks are fail-safe (timeout/spawn-failure/other-exit → proceed)."
   field name=permissionMode type="'auto'|'smart'|'ask'|'deny-all'" default=smart
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true

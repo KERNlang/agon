@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,appendFileSync,existsSync,readFileSync,unlinkSync,readdirSync,writeFileSync"
 import from="@kernlang/agon-core" names="ImageAttachment,PersistentSession,ForgeManifest,ForgeJudgment" types=true
-import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,appendMessage,appendUserTurnIfAbsent,buildHistoryPrimedPrompt,tracker,resolveWorkingDir,ToolRegistry,getProjectFileStateCache,parseToolCalls,formatToolResults,runToolLoop,classifyTask,loadConfig,configSet,createStreamBridge,engineHealth,hasProjectBrief,parsePermissionRuleSet,evaluatePermissionRules,evaluateToolRules"
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,appendMessage,appendUserTurnIfAbsent,buildHistoryPrimedPrompt,tracker,resolveWorkingDir,ToolRegistry,getProjectFileStateCache,parseToolCalls,formatToolResults,runToolLoop,classifyTask,loadConfig,configSet,createStreamBridge,engineHealth,hasProjectBrief,parsePermissionRuleSet,parseToolHooks,evaluatePermissionRules,evaluateToolRules"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,PendingDelegation,CesarTurnOutcome" types=true
@@ -1268,6 +1268,9 @@ ${reviewFollowup.prompt}`;
             // this shared toolCtx (runToolLoop → executeToolCalls → executeToolCall
             // → handler.checkPermission). deny-first, before mode-based auto-allow.
             permissionRules: parsePermissionRuleSet((config as any).permissions),
+            // CC-parity PreToolUse/PostToolUse hooks reach all three XML
+            // runToolLoop paths via this shared toolCtx (→ executeToolCall).
+            toolHooks: parseToolHooks((config as any).hooks),
       };
       const _lastToolInputs: Record<string, string> = {};
       const xmlToolBridge = createStreamBridge(dispatch as (event: Record<string,unknown>) => void, { initialEngineId: cesarEngineId });

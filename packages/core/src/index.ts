@@ -132,7 +132,8 @@ export type { ApiAgentOptions, ApiAgentResult } from './generated/api/agent-loop
 export { resolveIsolationMode, planEngineIsolation, isValidIsolationMode, ISOLATION_MODES } from './generated/signals/isolation.js';
 export type { EngineIsolationPlan } from './generated/signals/isolation.js';
 // ── Tool System ──
-export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState, ParsedPermissionRule, PermissionRuleSet } from './tool-types.js';
+export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState, ParsedPermissionRule, PermissionRuleSet, ToolHookDef, ParsedToolHooks } from './tool-types.js';
+export { parseToolHooks, hasToolHooks, runPreToolUseHooks, runPostToolUseHooks } from './tool-hooks.js';
 export { FileStateCache, fileStateCache, getProjectFileStateCache, clearProjectFileStateCaches } from './file-state-cache.js';
 export { ToolRegistry, executeToolCall, executeToolCalls } from './tool-registry.js';
 export { checkBashPermission, checkFileReadPermission, checkFileWritePermission, isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';

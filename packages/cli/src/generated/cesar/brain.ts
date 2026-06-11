@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@kernlang/agon-core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, hasProjectBrief, parsePermissionRuleSet, evaluatePermissionRules, evaluateToolRules } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, hasProjectBrief, parsePermissionRuleSet, parseToolHooks, evaluatePermissionRules, evaluateToolRules } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -1299,6 +1299,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               // this shared toolCtx (runToolLoop → executeToolCalls → executeToolCall
               // → handler.checkPermission). deny-first, before mode-based auto-allow.
               permissionRules: parsePermissionRuleSet((config as any).permissions),
+              // CC-parity PreToolUse/PostToolUse hooks reach all three XML
+              // runToolLoop paths via this shared toolCtx (→ executeToolCall).
+              toolHooks: parseToolHooks((config as any).hooks),
         };
         const _lastToolInputs: Record<string, string> = {};
         const xmlToolBridge = createStreamBridge(dispatch as (event: Record<string,unknown>) => void, { initialEngineId: cesarEngineId });

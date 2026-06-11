@@ -5,7 +5,7 @@ import from="node:fs" names="mkdirSync"
 import from="node:url" names="fileURLToPath,pathToFileURL"
 import from="node:module" names="createRequire"
 import from="@kernlang/agon-core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES,parsePermissionRuleSet,evaluatePermissionRules,evaluateToolRules,PERMISSION_DENIED_MESSAGE"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES,parsePermissionRuleSet,parseToolHooks,evaluatePermissionRules,evaluateToolRules,PERMISSION_DENIED_MESSAGE"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./tools.js" names="createCesarToolRegistry"
@@ -426,6 +426,9 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       // (deny-first, before any mode-based auto-allow). Without this, a
       // Bash(rm:*) deny rule never fires for API engines under 'smart' mode.
       permissionRules: parsePermissionRuleSet((config as any).permissions),
+      // CC-parity PreToolUse/PostToolUse hooks reach the API tool-execution
+      // path here: executeToolCall fires them around handler.execute.
+      toolHooks: parseToolHooks((config as any).hooks),
     };
     return async (name: string, args: Record<string, unknown>, callId: string) => {
       // Plan mode: block execution tools and mutating shell commands before

@@ -29,6 +29,20 @@ interface name=PermissionRuleSet
   field name=allow type="ParsedPermissionRule[]"
   field name=deny type="ParsedPermissionRule[]"
 
+// ── CC-parity PreToolUse/PostToolUse hook shapes ──────────────────────
+// Defined here (like the permission-rule shapes) so ToolContext can carry
+// the parsed tool-hook set without a circular import; tool-hooks imports
+// these back as the canonical type.
+
+interface name=ToolHookDef
+  field name=matcher type=string optional=true
+  field name=command type=string
+  field name=timeout type=number optional=true
+
+interface name=ParsedToolHooks
+  field name=preToolUse type="ToolHookDef[]"
+  field name=postToolUse type="ToolHookDef[]"
+
 interface name=ToolContext
   field name=cwd type=string
   field name=readFileState type="Map<string, FileState>"
@@ -47,6 +61,7 @@ interface name=ToolContext
   field name=sessionAllowList type="string[]" optional=true
   field name=source type="'user'|'orchestrator'" optional=true
   field name=permissionRules type=PermissionRuleSet optional=true
+  field name=toolHooks type="ParsedToolHooks" optional=true
 
 interface name=FileState
   field name=content type=string

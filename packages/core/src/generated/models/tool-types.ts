@@ -33,7 +33,20 @@ export interface PermissionRuleSet {
   deny: ParsedPermissionRule[];
 }
 
-// @kern-source: tool-types:32
+// @kern-source: tool-types:37
+export interface ToolHookDef {
+  matcher?: string;
+  command: string;
+  timeout?: number;
+}
+
+// @kern-source: tool-types:42
+export interface ParsedToolHooks {
+  preToolUse: ToolHookDef[];
+  postToolUse: ToolHookDef[];
+}
+
+// @kern-source: tool-types:46
 export interface ToolContext {
   cwd: string;
   readFileState: Map<string, FileState>;
@@ -52,9 +65,10 @@ export interface ToolContext {
   sessionAllowList?: string[];
   source?: 'user'|'orchestrator';
   permissionRules?: PermissionRuleSet;
+  toolHooks?: ParsedToolHooks;
 }
 
-// @kern-source: tool-types:51
+// @kern-source: tool-types:66
 export interface FileState {
   content: string;
   timestamp: number;
@@ -65,7 +79,7 @@ export interface FileState {
   lastTouchedAt?: number;
 }
 
-// @kern-source: tool-types:60
+// @kern-source: tool-types:75
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -76,7 +90,7 @@ export interface ToolDefinition {
   isDestructive?: boolean;
 }
 
-// @kern-source: tool-types:69
+// @kern-source: tool-types:84
 export interface ToolHandler {
   definition: ToolDefinition;
   validate: (input: Record<string,unknown>, ctx: ToolContext) => string|null;
@@ -84,14 +98,14 @@ export interface ToolHandler {
   execute: (input: Record<string,unknown>, ctx: ToolContext) => Promise<ToolResult>;
 }
 
-// @kern-source: tool-types:75
+// @kern-source: tool-types:90
 export interface ToolCall {
   id: string;
   name: string;
   input: Record<string,unknown>;
 }
 
-// @kern-source: tool-types:80
+// @kern-source: tool-types:95
 export interface ToolCallResult {
   toolCallId: string;
   toolName: string;

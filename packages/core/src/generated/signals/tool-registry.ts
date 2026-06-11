@@ -2,10 +2,12 @@
 
 import type { ToolDefinition, ToolCall, ToolCallResult, ToolResult, ToolContext, PermissionDecision, ToolHandler } from '../models/tool-types.js';
 
-// @kern-source: tool-registry:11
+import { runPreToolUseHooks, runPostToolUseHooks, hasToolHooks } from '../tools/tool-hooks.js';
+
+// @kern-source: tool-registry:12
 export const PERMISSION_DENIED_MESSAGE: string = 'PERMISSION_DENIED';
 
-// @kern-source: tool-registry:13
+// @kern-source: tool-registry:14
 export class ToolRegistry {
   tools: Map<string, ToolHandler>;
 
@@ -46,7 +48,7 @@ export class ToolRegistry {
 /**
  * Three-phase pipeline: validate → permission → execute
  */
-// @kern-source: tool-registry:48
+// @kern-source: tool-registry:49
 export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean|string>): Promise<ToolCallResult> {
   const start = Date.now();
   const handler = registry.get(call.name);
@@ -132,6 +134,29 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
     }
   }
 
+  // Phase 2.5: PreToolUse hooks (.agon.json hooks.preToolUse) — fail-safe.
+  // Runs AFTER the permission gate, BEFORE execution, for EVERY path that
+  // reaches executeToolCall (API native, XML loop, eager). Exit 2 blocks
+  // with stderr as the engine-visible refusal; timeout / spawn failure /
+  // any other non-0 exit fails OPEN (proceeds) with one warning line. A
+  // zero-overhead guard skips all of this when no tool hooks are configured.
+  const toolHooks = (ctx as any).toolHooks;
+  const hooksActive = hasToolHooks(toolHooks);
+  if (hooksActive) {
+    const pre = await runPreToolUseHooks(call.name, call.input, toolHooks);
+    if (pre.warning && typeof ctx.onProgress === 'function') {
+      try { ctx.onProgress(pre.warning); } catch { /* never let a status line break a tool call */ }
+    }
+    if (pre.block) {
+      return {
+        toolCallId: call.id,
+        toolName: call.name,
+        result: { ok: false, content: '', error: pre.reason ?? `PreToolUse hook blocked ${call.name}` },
+        durationMs: Date.now() - start,
+      };
+    }
+  }
+
   // Phase 3: Execute
   try {
     const result = await handler.execute(call.input, ctx);
@@ -139,6 +164,12 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
     // Truncate if over maxResultSizeChars
     if (result.content.length > handler.definition.maxResultSizeChars) {
       result.content = result.content.slice(0, handler.definition.maxResultSizeChars) + `\n\n[Truncated: ${result.content.length - handler.definition.maxResultSizeChars} chars omitted]`;
+    }
+
+    // Phase 4: PostToolUse hooks — never block, result ignored except logging.
+    if (hooksActive) {
+      const responsePayload = result.ok ? result.content : { error: result.error ?? '' };
+      await runPostToolUseHooks(call.name, call.input, responsePayload, toolHooks);
     }
 
     return {
@@ -160,7 +191,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
 /**
  * Execute multiple tool calls, partitioned into concurrent/serial batches.
  */
-// @kern-source: tool-registry:160
+// @kern-source: tool-registry:190
 export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean|string>, onProgress?: (result:ToolCallResult)=>void): Promise<ToolCallResult[]> {
   const results: ToolCallResult[] = [];
 

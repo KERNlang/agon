@@ -31,6 +31,7 @@
 import from="@kernlang/agon-core" names="saveCesarPlan,cancelCesarPlan"
 import from="@kernlang/agon-core" names="PersistentSession" types=true
 import from="../cesar/pause-state.js" names="createPauseState,dismissPauseState"
+import from="../cesar/steering.js" names="clearSteering"
 import from="../cesar/pause-state.js" names="PauseState" types=true
 import from="../signals/output.js" names="OutputActions,AgentProgressSnapshot" types=true
 import from="../signals/output.js" names="clearPermissionQueue,clearThinkingBuffer"
@@ -105,6 +106,10 @@ module name=AppInterrupt
       if cond="abort"
         do value="abort.abort()"
       do value="runTrackAbort(null, opts.activeAbortRef, opts.setActiveAbort)"
+      comment raw="// Interrupt drops any mid-turn steering — no silent carryover to the"
+      comment raw="// next turn (spec point 3). The brain's own turn-end release path is"
+      comment raw="// bypassed on an abort, so the drop must happen here."
+      do value="clearSteering()"
       do value="opts.setLiveSpinner(null)"
       do value="opts.setLiveProgress(null)"
       comment raw="// Commit any in-flight streams before wiping. In main-buffer mode the"
@@ -182,6 +187,8 @@ module name=AppInterrupt
       return () => {
         for (const abort of _activeAborts) abort.abort();
         _activeAborts.clear();
+        // Hard cancel also drops any mid-turn steering (no carryover).
+        clearSteering();
         opts.activeAbortRef.current = null;
         opts.setActiveAbort(null);
         opts.setLiveSpinner(null);

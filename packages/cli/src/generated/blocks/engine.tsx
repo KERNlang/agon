@@ -26,7 +26,7 @@ import { ForgeArena, BrainstormStorm, CampfireFire, TribunalCourt } from './aren
 
 import { PlanProposalView, PlanExecutionView } from './plan-view.js';
 
-import { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary } from './engine-helpers.js';
+import { parseToolInputPayload, extractPatchText, parsePatchPreview, extractSummary, formatDuration } from './engine-helpers.js';
 
 import { createRequire } from 'node:module';
 
@@ -200,6 +200,12 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
           ))}
         </Text>
       ) : null}
+      {(event as any).todos && Number((event as any).todos.total ?? 0) > 0 ? (
+        <Text>
+          <Text dimColor>{'  todos: '}</Text>
+          <Text color={Number((event as any).todos.done ?? 0) >= Number((event as any).todos.total ?? 0) ? '#4ade80' : '#fbbf24'}>{Number((event as any).todos.done ?? 0)}{'/'}{Number((event as any).todos.total ?? 0)}{' done'}</Text>
+        </Text>
+      ) : null}
       <Text dimColor>{'  '}{toolLine}{failedTools > 0 ? ` · ${failedTools} failed` : ''}</Text>
       {(event as any).confidenceReasoning ? (
         <Text italic color="#a8a8a8">{'  why: '}{(event as any).confidenceReasoning}</Text>
@@ -239,7 +245,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
 });
 export { CesarRecapBlock };
 
-// @kern-source: engine:285
+// @kern-source: engine:291
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -307,7 +313,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-// @kern-source: engine:357
+// @kern-source: engine:363
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -331,7 +337,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:386
+// @kern-source: engine:392
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -579,10 +585,26 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       } catch { /* not JSON — rawInput used as fallback */ }
       const toolKey = event.tool.toLowerCase();
       const forceExpanded = ['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey);
-      // Tool blocks are committed into native terminal scrollback via
-      // <Static> once finalized — so a per-block "Ctrl+E expand" hint
-      // would be misleading (Ink cannot re-render past Static items).
+      // Tool blocks rendered through OutputBlockView are committed into
+      // native terminal scrollback via <Static> once finalized — Ink cannot
+      // re-render past Static items, so a "ctrl+e to expand" hint HERE would
+      // lie (flipping the toggle can never repaint a sealed row). The expand
+      // affordance therefore lives only in the live (re-renderable) tool-row
+      // path: buildToolCallRows in app-rendering.kern. This stays null by
+      // design. Ctrl+E is the global compact↔expanded transcript toggle
+      // (toolOutputExpanded); the latest tool-call island is kept live so it
+      // honours the flip — see effectiveNativeArchiveBlockCount.
       const collapsedHint = null;
+      // Claude Code-style compact duration suffix for the result summary
+      // line — e.g. "→ 12 lines · 1.4s". Only present on terminal events
+      // (done/error) that carried a durationMs from the brain dispatcher;
+      // running events and instant signal completions render no suffix.
+      const durTextRaw = typeof event.durationMs === 'number' && event.status !== 'running'
+        ? formatDuration(event.durationMs)
+        : '';
+      const durSuffix = durTextRaw
+        ? <Text dimColor>{' · '}{durTextRaw}</Text>
+        : null;
 
       if (toolKey === 'reportconfidence') {
         return (
@@ -614,6 +636,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
                 {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'Bash'}</Text></Text>
                 <Text dimColor>{desc ? ' \u00b7 ' : ' $ '}{cmdPreview}{cmdPreview.length >= 60 ? '\u2026' : ''}</Text>
                 {outputLines > 0 && event.status !== 'running' && <Text dimColor>{' \u2192 '}{outputLines}{' lines'}</Text>}
+                {durSuffix}
                 {collapsedHint}
               </Text>
             </Box>
@@ -675,7 +698,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
           return (
             <Box paddingLeft={2}>
               <Text>
-                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{' '}<Text dimColor>\u00b7 </Text><Text color="#ef4444">-{removedCount}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{addedCount}</Text>{' lines'}<Text dimColor>{''}</Text>
+                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{' '}<Text dimColor>\u00b7 </Text><Text color="#ef4444">-{removedCount}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{addedCount}</Text>{' lines'}{durSuffix}<Text dimColor>{''}</Text>
               </Text>
             </Box>
           );
@@ -725,7 +748,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
           return (
             <Box paddingLeft={2}>
               <Text>
-                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{lineCount > 0 && <><Text dimColor>{' \u00b7 '}</Text><Text color="#4ade80">+{lineCount}</Text><Text dimColor>{' lines'}</Text></>}<Text dimColor>{''}</Text>
+                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{lineCount > 0 && <><Text dimColor>{' \u00b7 '}</Text><Text color="#4ade80">+{lineCount}</Text><Text dimColor>{' lines'}</Text></>}{durSuffix}<Text dimColor>{''}</Text>
               </Text>
             </Box>
           );
@@ -793,6 +816,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
                 {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().read + ' Read'}</Text></Text>
                 {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
                 {lineCount > 0 && event.status === 'done' && <Text dimColor>{' '}{lineCount}{' lines'}</Text>}
+                {durSuffix}
                 {collapsedHint}
               </Text>
             </Box>
@@ -821,6 +845,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
                 {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().search + ' Search'}</Text></Text>
                 {' '}<Text color="#a78bfa">{pattern}</Text>
                 {matchCount > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{matchCount}{' matches'}</Text>}
+                {durSuffix}
                 {collapsedHint}
               </Text>
             </Box>
@@ -847,6 +872,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
                 {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().find + ' Find'}</Text></Text>
                 {' '}<Text color="#a78bfa">{pattern}</Text>
                 {fileCount > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{fileCount}{' files'}</Text>}
+                {durSuffix}
                 {collapsedHint}
               </Text>
             </Box>
@@ -876,7 +902,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
         const outLines = event.output ? event.output.split('\n').length : 0;
         return (
           <Box paddingLeft={2}>
-            <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{label}</Text></Text>{' '}<Text dimColor>{inputPreview}</Text>{outLines > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{outLines}{' lines'}</Text>}{collapsedHint}</Text>
+            <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{label}</Text></Text>{' '}<Text dimColor>{inputPreview}</Text>{outLines > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{outLines}{' lines'}</Text>}{durSuffix}{collapsedHint}</Text>
           </Box>
         );
       }
@@ -906,6 +932,15 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       );
     }
     case 'cesar-recap': return <CesarRecapBlock event={event as OutputEvent & { type: 'cesar-recap' }} />;
+    case 'cesar-preamble': {
+      const intent = String((event as any).intent ?? '').trim();
+      if (!intent) return null;
+      return (
+        <Box paddingLeft={1} marginTop={1}>
+          <Text dimColor>{'• '}{intent}</Text>
+        </Box>
+      );
+    }
     case 'file-changes': {
       const files = (event as any).files as { path: string; status: string; additions: number; deletions: number }[];
       if (!files || files.length === 0) return null;
@@ -942,7 +977,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:1003
+// @kern-source: engine:1038
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -1058,12 +1093,27 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
   const firstEvent = (blocks[0]?.event as any) ?? {};
   const metaEngine = String(firstEvent.engineId ?? '').trim() || 'engine';
   const inferredElapsedMs = firstTimestampMs != null && lastTimestampMs != null ? Math.max(0, lastTimestampMs - firstTimestampMs) : 0;
-  const metaElapsedMs = explicitElapsedMs > 0 ? explicitElapsedMs : inferredElapsedMs;
+  // Duration honesty: tool-call events carry a per-tool durationMs but NO
+  // wall-clock timestamp, so a group's only available number is the SUM of
+  // per-tool durations (explicitElapsedMs). For a group of tools that ran
+  // CONCURRENTLY (eager streaming dispatches >1 tool at once), that sum
+  // overreports the real wall-clock span. Only present it as a plain duration
+  // when it can't be a misleading sum — a single timed tool, or a verified
+  // timestamp span. Otherwise (a multi-tool sum with no span to confirm
+  // sequencing) prefix it with Σ so it reads as cumulative tool time, not
+  // wall-clock. (phase-A review finding 8.)
+  const timedToolCount = blocks.reduce((n: number, b: any) => n + (durationMs(b?.event) != null ? 1 : 0), 0);
+  const useInferredSpan = inferredElapsedMs > 0;
+  const metaElapsedMs = useInferredSpan ? inferredElapsedMs : (explicitElapsedMs > 0 ? explicitElapsedMs : 0);
+  const elapsedIsCumulativeSum = !useInferredSpan && explicitElapsedMs > 0 && timedToolCount > 1;
+  const elapsedLabel = metaElapsedMs > 0
+    ? (elapsedIsCumulativeSum ? `Σ ${formatDuration(metaElapsedMs)}` : formatDuration(metaElapsedMs))
+    : '';
   const metaParts = [
     metaEngine,
     `${blocks.length} tool${blocks.length === 1 ? '' : 's'}`,
     `changed ${changedFiles.length} file${changedFiles.length === 1 ? '' : 's'}`,
-    metaElapsedMs > 0 ? `${(metaElapsedMs / 1000).toFixed(1)}s` : '',
+    elapsedLabel,
     totalOutputBytes > 0 ? `${Math.ceil(totalOutputBytes / 1024)}kb` : '',
   ].filter(Boolean);
 
@@ -1087,7 +1137,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1154
+// @kern-source: engine:1204
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -1113,7 +1163,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1183
+// @kern-source: engine:1233
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (

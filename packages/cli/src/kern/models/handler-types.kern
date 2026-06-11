@@ -80,7 +80,8 @@ union name=OutputEvent discriminant=type
     field name=state type=string
     field name=note type=string optional=true
   variant name=todos-clear
-    doc "Wipe the rolling todo list."
+    doc "Wipe the rolling todo list. With scope:'live' only live-sourced items are dropped (plan items survive); omit scope to wipe everything."
+    field name=scope type="'live'" optional=true
   variant name=scoreboard
     field name=title type=string
     field name=winner type=string optional=true
@@ -122,6 +123,8 @@ union name=OutputEvent discriminant=type
     field name=input type=string
     field name=status type="'running'|'done'|'error'"
     field name=output type=string optional=true
+    doc "Wall-clock duration of the tool call (running→done/error), set by the brain dispatcher. Rendered as a dim suffix on the result line (e.g. '→ 12 lines · 1.4s'). Absent for instant signal/MCP completions that had no preceding 'running' event."
+    field name=durationMs type=number optional=true
   variant name=tool-call-group
     doc "A compacted group of consecutive tool-call blocks, committed to Static as a single summary row a-la Claude Code. Built by output.kern's pending buffer on non-tool events or /clear."
     field name=blocks type="any[]"
@@ -140,6 +143,8 @@ union name=OutputEvent discriminant=type
     field name=engineId type=string optional=true
     field name=tool type=string optional=true
     field name=input type=string optional=true
+    doc "Wall-clock duration of the streamed tool call, measured by executeToolCall in the eager path. Passed through to the synthetic tool-call block in output.kern so the renderer shows the '· 1.4s' suffix for streaming tools too."
+    field name=durationMs type=number optional=true
   variant name=user-message
     field name=content type=string
   variant name=response-meta
@@ -168,9 +173,15 @@ union name=OutputEvent discriminant=type
     field name=toolSummary type="string[]"
     field name=commands type="Array<{ label: string; command: string; status: string }>"
     field name=files type="Array<{ path: string; relPath: string; status: string; touchCount: number }>"
+    doc "The turn's final live-todo checklist progress (N/M done), or null when the turn declared no live checklist. Rendered as a 'todos: N/M done' line."
+    field name=todos type="{ done: number; total: number } | null" optional=true
     field name=checkpoints type="Array<{ id: string; label: string }>" optional=true
     field name=diffPreview type="{ files: Array<{ path: string; relPath: string; status: string; additions: number; deletions: number; lines: string[]; omitted: number }>; totalFiles: number }" optional=true
     field name=warnings type="string[]"
+  variant name=cesar-preamble
+    doc "One short intent line ([INTENT] marker, RULE 7c) shown as a distinct dim block at the START of a Cesar turn, before any tool work. Parsed + stripped from the visible answer like [TODOS]; absent marker = no block."
+    field name=engineId type=string optional=true
+    field name=intent type=string
   variant name=file-changes
     field name=files type="{ path: string; status: 'modified'|'created'|'deleted'; additions: number; deletions: number }[]"
   variant name=dashboard

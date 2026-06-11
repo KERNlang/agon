@@ -66,7 +66,7 @@ export {
 } from './workspace.js';
 export type { Workspace, WorkspaceState } from './workspace.js';
 export type { ContextFormat } from './context-scanner.js';
-export { tracker, estimateTokens, estimateCost } from './token-tracker.js';
+export { tracker, estimateTokens, estimateCost, estimateCostCacheAware, isFlatRateEngine } from './token-tracker.js';
 export type { TokenUsage, SessionStats } from './token-tracker.js';
 export {
   createPlan, advanceStep, canAutoApprove,

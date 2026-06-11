@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tracker, estimateTokens, estimateCost } from '../../packages/core/src/generated/signals/token-tracker.js';
+import { tracker, estimateTokens, estimateCost, estimateCostCacheAware, isFlatRateEngine } from '../../packages/core/src/generated/signals/token-tracker.js';
 import type { TokenUsage } from '../../packages/core/src/generated/signals/token-tracker.js';
 
 describe('TokenTracker', () => {
@@ -86,5 +86,51 @@ describe('TokenTracker', () => {
     expect(usage.promptTokens).toBe(2);
     expect(usage.responseTokens).toBe(2);
     expect(usage.engineId).toBe('claude');
+  });
+
+  describe('honest pricing (the $8.79-vs-$0.07 budget-warning incident)', () => {
+    it('flat-rate coding-plan engines always cost $0 — real token counts, zero invented dollars', () => {
+      expect(isFlatRateEngine('kimi-for-coding-k2p6')).toBe(true);
+      expect(isFlatRateEngine('minimax-coding-plan-minimax-m3')).toBe(true);
+      expect(isFlatRateEngine('zai-coding-plan-glm-5.1')).toBe(true);
+      expect(isFlatRateEngine('claude')).toBe(false);
+      expect(isFlatRateEngine('codex')).toBe(false);
+      // 4.4M tokens on kimi used to price at the made-up $2/Mtok default → $8.79.
+      expect(estimateCost('kimi-for-coding-k2p6', 4_400_000)).toBe(0);
+      const usage = tracker.record('kimi-for-coding-k2p6', {
+        usage: { promptTokens: 4_000_000, completionTokens: 400_000, totalTokens: 4_400_000, source: 'sdk' },
+      });
+      expect(usage.costUsd).toBe(0);
+    });
+
+    it('flat-rate sdk usage is excluded from meteredCostUsd (the budget-warning input)', () => {
+      tracker.record('kimi-for-coding-k2p6', {
+        usage: { promptTokens: 4_000_000, completionTokens: 400_000, totalTokens: 4_400_000, source: 'sdk' },
+      });
+      const stats = tracker.getStats();
+      expect(stats.meteredCostUsd).toBe(0);
+      expect(stats.meteredDispatches).toBe(0);
+      expect(stats.unmeteredDispatches).toBe(1);
+    });
+
+    it('cache reads are priced at 10% of the base rate, not full input price', () => {
+      // 950k prompt (900k cached) + 50k completion: 150k full + 900k at 10% = 240k effective… (190k of 1M)
+      const cacheAware = estimateCostCacheAware('claude', 950_000, 50_000, 900_000);
+      const fullPrice = estimateCost('claude', 1_000_000);
+      expect(cacheAware).toBeCloseTo(fullPrice * 0.19, 5);
+      // record() applies it when the usage carries cachedInputTokens.
+      const usage = tracker.record('claude', {
+        usage: { promptTokens: 950_000, completionTokens: 50_000, totalTokens: 1_000_000, cachedInputTokens: 900_000, source: 'sdk' },
+      });
+      expect(usage.costUsd).toBeCloseTo(fullPrice * 0.19, 5);
+    });
+
+    it('clamps a bogus cached count against promptTokens only — never discounts output tokens', () => {
+      // cached 5000 > prompt 80 → clamp to 80; the 20 completion tokens stay full price.
+      expect(estimateCostCacheAware('claude', 80, 20, 5_000))
+        .toBeCloseTo(estimateCost('claude', 20) + 0.1 * estimateCost('claude', 80), 8);
+      // negative cached → no discount at all.
+      expect(estimateCostCacheAware('claude', 80, 20, -50)).toBeCloseTo(estimateCost('claude', 100), 8);
+    });
   });
 });

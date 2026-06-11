@@ -7,7 +7,7 @@ import from="@kernlang/agon-core" names="loadCesarPlan"
 import from="@kernlang/agon-core" names="CesarPlan" types=true
 import from="../../../handlers/types.js" names="Dispatch" types=true
 import from="../../blocks/output-format.js" names="ENGINE_COLORS"
-import from="../../../handlers/index.js" names="handleLeaderboard,handleCesarReport,handleCesarHints,handleHistory,handleEngines,handleDiscover,handleConfig,handlePermissions,handleUse,handleCesar,handleTokens,handleRaw,handleWorkspace,handleChats,handlePlanShow,handlePlansList,handleApprove,handleRetry,handleCancel,handleApplyPatch,handleCp,handleCommit,handleFlowReport,handleFlowAnalysis,handleRun"
+import from="../../../handlers/index.js" names="handleLeaderboard,handleCesarReport,handleCesarHints,handleHistory,handleEngines,handleDiscover,handleConfig,handlePermissions,handleUse,handleCesar,handleTokens,handleRaw,handleWorkspace,handleChats,handlePlanShow,handlePlansList,handleApprove,handleRetry,handleCancel,handleApplyPatch,handleCp,handleCpLast,handleCommit,handleFlowReport,handleFlowAnalysis,handleRun"
 import from="../../handlers/provider.js" names="handleProvider"
 import from="../../commands/doctor.js" names="diagnoseEngineDoctorEntry,checkDoctorWorktree,buildHarnessDoctorReport"
 import from="../../cesar/tool-observability.js" names="replayCesarHarnessLogs"
@@ -102,8 +102,11 @@ fn name=dispatchSessionInfoIntent async=true params="intent:any, input:string, c
       case 'status': {
         const registry = cb.ctx.registry;
         const ids = registry.listIds();
+        // Prefer the live poller read: telemetryVitals (React state) is
+        // repaint-deduped and may lag by a signature bucket between commits.
+        const liveVitals = cb.ctx.telemetrySnapshot?.() ?? cb.ctx.telemetryVitals;
         const engines = ids.map((id: string) => {
-          const v = cb.ctx.telemetryVitals?.get(id);
+          const v = liveVitals?.get(id);
           if (v) return v;
           return createEngineVitals(id);
         });
@@ -266,7 +269,11 @@ fn name=dispatchSessionInfoIntent async=true params="intent:any, input:string, c
       case 'retry': await handleRetry(cb.dispatch, cb.ctx); break;
       case 'cancel': handleCancel(cb.dispatch, cb.ctx); break;
       case 'apply': await handleApplyPatch(cb.dispatch, cb.ctx, intent.patchPath, intent.force); break;
-      case 'cp': handleCp(intent.index, cb.dispatch); break;
+      case 'cp': {
+        if (intent.last) handleCpLast(cb.ctx.chatSession, cb.dispatch);
+        else handleCp(intent.index, cb.dispatch);
+        break;
+      }
       case 'commit': await handleCommit(intent.input, cb.dispatch, cb.ctx); break;
 
       default: return null;

@@ -32,7 +32,7 @@ export type Intent =
   | { type: 'provider'; action: string; args: string }
   | { type: 'discover' }
   | { type: 'apply'; patchPath?: string; force?: boolean }
-  | { type: 'cp'; index?: number }
+  | { type: 'cp'; index?: number; last?: boolean }
   | { type: 'flow' }
   | { type: 'flows' }
   | { type: 'chats'; sessionId?: string }

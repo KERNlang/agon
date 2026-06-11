@@ -2,11 +2,35 @@
 
 import { copyToClipboard } from '@kernlang/agon-core';
 
+import type { ChatSession } from '@kernlang/agon-core';
+
 import { codeBlockBuffer } from '../../code-buffer.js';
 
 import type { Dispatch } from '../../handlers/types.js';
 
-// @kern-source: cp:5
+/**
+ * /cp last — copy the most recent engine response (whole message, not just fenced code) to the clipboard. The terminal-native answer to 'I can't mouse-select output while the screen repaints': during an active run Ink redraws constantly and any selection is wiped, so copying must not depend on selection surviving.
+ */
+// @kern-source: cp:6
+export function handleCpLast(chatSession: ChatSession|null|undefined, dispatch: Dispatch): void {
+  const messages = chatSession?.messages ?? [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === 'engine' && typeof m.content === 'string' && m.content.trim()) {
+      try {
+        copyToClipboard(m.content);
+        const lineCount = m.content.split('\n').length;
+        dispatch({ type: 'success', message: `Copied last response (${m.engineId ?? 'engine'}, ${lineCount} line${lineCount === 1 ? '' : 's'}) — /cp N copies a single code block` });
+      } catch (err) {
+        dispatch({ type: 'error', message: `Failed to copy: ${err instanceof Error ? err.message : String(err)}` });
+      }
+      return;
+    }
+  }
+  dispatch({ type: 'warning', message: 'No engine response to copy yet.' });
+}
+
+// @kern-source: cp:26
 export function handleCp(index: number|undefined, dispatch: Dispatch): void {
   const blocks = codeBlockBuffer.blocks;
   if (blocks.length === 0) {

@@ -12,6 +12,8 @@ import type { TelemetryPoller } from '../cesar/telemetry-poller.js';
 
 import type { EngineVitals } from '../cesar/telemetry.js';
 
+import { vitalsRenderSignature } from '../cesar/telemetry.js';
+
 import { probeEngineVitals } from './app-telemetry.js';
 
 import { sessionResultStore } from '../models/session-results.js';
@@ -174,6 +176,7 @@ export interface TelemetryPollerDeps {
   setCesarSessionWrapped: (session:any) => void;
   setInputQueue: (fn:any) => void;
   setTelemetryVitals: (map:any) => void;
+  statusDashboardOpenRef: {current: boolean};
 }
 
 export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | undefined {
@@ -193,6 +196,7 @@ export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | 
     setCesarSessionWrapped,
     setInputQueue,
     setTelemetryVitals,
+    statusDashboardOpenRef,
   } = opts;
   if (telemetryPollerRef.current) {
     telemetryPollerRef.current.stop();
@@ -247,7 +251,18 @@ export function startTelemetryPoller(opts: TelemetryPollerDeps): (() => void) | 
   });
   poller.start();
   telemetryPollerRef.current = poller;
+  // Repaint dedupe: every probe refreshes volatile fields (lastHeartbeatAt,
+  // latencyMs, cpu/mem), so a naive setState here re-renders the whole app
+  // every poll even when the screen would paint identically — and each Ink
+  // repaint wipes the user's terminal text selection. While the /status
+  // dashboard is open every snapshot commits (its rows render at 1%/1ms
+  // precision and must tick live); otherwise only the coarse StatusBar is
+  // visible, so snapshots whose render signature is unchanged are skipped.
+  let lastVitalsSignature: string | null = null;
   const unsub = poller.subscribe((snapshot: Map<string, EngineVitals>) => {
+    const signature = vitalsRenderSignature(Array.from(snapshot.values()));
+    if (!statusDashboardOpenRef.current && signature === lastVitalsSignature) return;
+    lastVitalsSignature = signature;
     setTelemetryVitals(new Map(snapshot));
   });
   return () => {

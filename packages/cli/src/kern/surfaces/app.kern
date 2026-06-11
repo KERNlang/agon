@@ -178,6 +178,10 @@ screen name=App target=ink
 
   // ── Refs ──
   ref name=telemetryPollerRef type="any" initial="null"
+  // Mirrors statusDashboardOpen for the poller subscriber: while the /status
+  // dashboard is visible its full-precision rows must update every tick, so the
+  // repaint dedupe in startTelemetryPoller is bypassed via this ref.
+  ref name=statusDashboardOpenRef type=boolean initial=false
   ref name=chatStartTimeRef type=number initial=0
   ref name=currentPlanRef type="Plan|null" initial="null"
   ref name=activePlanRef type=any initial="null"
@@ -870,6 +874,7 @@ screen name=App target=ink
         extensionPromptFragments,
         sessionMcpServers, setSessionMcpServers,
         telemetryVitals,
+        telemetrySnapshot: () => telemetryPollerRef.current?.snapshot?.() ?? telemetryVitals,
         recentFallbacks,
       };
     >>>
@@ -981,9 +986,19 @@ screen name=App target=ink
     >>>
 
   // ── Telemetry poller lifecycle ──
+  effect deps="statusDashboardOpen"
+    handler <<<
+      statusDashboardOpenRef.current = statusDashboardOpen;
+      // First paint must be live, not the last deduped commit: push the
+      // poller's current vitals into state the moment the dashboard opens.
+      if (statusDashboardOpen && telemetryPollerRef.current?.snapshot) {
+        setTelemetryVitals(new Map(telemetryPollerRef.current.snapshot()));
+      }
+    >>>
+
   effect deps="registry,cesarSession,activeEngines"
     handler <<<
-      return startTelemetryPoller({ registry, cesarSession, activeEngines, dispatch, cesarSessionHolder: _cesarSessionRef, telemetryPollerRef, activeEnginePidsRef, activeTurnRef, activePlanRef, activeAbortRef, setRecentFallbacks, setConfigVersion, setCesarSessionWrapped, setInputQueue, setTelemetryVitals });
+      return startTelemetryPoller({ registry, cesarSession, activeEngines, dispatch, cesarSessionHolder: _cesarSessionRef, telemetryPollerRef, activeEnginePidsRef, activeTurnRef, activePlanRef, activeAbortRef, setRecentFallbacks, setConfigVersion, setCesarSessionWrapped, setInputQueue, setTelemetryVitals, statusDashboardOpenRef });
     >>>
 
   // ── Queue processing ──

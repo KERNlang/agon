@@ -17,6 +17,7 @@ import from="../services/update-check.js" names="checkForUpdate,loadDismissedVer
 import from="../cesar/telemetry-poller.js" names="createTelemetryPoller"
 import from="../cesar/telemetry-poller.js" names="TelemetryPoller" types=true
 import from="../cesar/telemetry.js" names="EngineVitals" types=true
+import from="../cesar/telemetry.js" names="vitalsRenderSignature"
 import from="./app-telemetry.js" names="probeEngineVitals"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="node:fs" names="statSync"
@@ -195,6 +196,7 @@ module name=AppLifecycle
     field name=setCesarSessionWrapped type="(session:any) => void"
     field name=setInputQueue type="(fn:any) => void"
     field name=setTelemetryVitals type="(map:any) => void"
+    field name=statusDashboardOpenRef type="{current: boolean}" doc="Mirrors the /status dashboard visibility. While open, every snapshot commits (full-precision rows must tick live); while closed, snapshots dedupe by render signature so an idle screen stays still."
 
   // ── Telemetry poller lifecycle ──
   // Source: app.kern effect deps="registry,cesarSession,activeEngines".
@@ -218,6 +220,7 @@ module name=AppLifecycle
         setCesarSessionWrapped,
         setInputQueue,
         setTelemetryVitals,
+        statusDashboardOpenRef,
       } = opts;
       if (telemetryPollerRef.current) {
         telemetryPollerRef.current.stop();
@@ -272,7 +275,18 @@ module name=AppLifecycle
       });
       poller.start();
       telemetryPollerRef.current = poller;
+      // Repaint dedupe: every probe refreshes volatile fields (lastHeartbeatAt,
+      // latencyMs, cpu/mem), so a naive setState here re-renders the whole app
+      // every poll even when the screen would paint identically — and each Ink
+      // repaint wipes the user's terminal text selection. While the /status
+      // dashboard is open every snapshot commits (its rows render at 1%/1ms
+      // precision and must tick live); otherwise only the coarse StatusBar is
+      // visible, so snapshots whose render signature is unchanged are skipped.
+      let lastVitalsSignature: string | null = null;
       const unsub = poller.subscribe((snapshot: Map<string, EngineVitals>) => {
+        const signature = vitalsRenderSignature(Array.from(snapshot.values()));
+        if (!statusDashboardOpenRef.current && signature === lastVitalsSignature) return;
+        lastVitalsSignature = signature;
         setTelemetryVitals(new Map(snapshot));
       });
       return () => {

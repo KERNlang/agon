@@ -258,7 +258,8 @@ describe('permission queue', () => {
     );
     handleOutputEvent({ type: 'tool-stream-chunk', streamId: 's1', chunk: 'file ' } as any, emptyState(), actions, 'chat', 0);
     handleOutputEvent({ type: 'tool-stream-chunk', streamId: 's1', chunk: 'content' } as any, emptyState(), actions, 'chat', 0);
-    handleOutputEvent({ type: 'tool-stream-end', streamId: 's1', status: 'done' } as any, emptyState(), actions, 'chat', 0);
+    // The eager path carries the executeToolCall-measured durationMs on the terminal event.
+    handleOutputEvent({ type: 'tool-stream-end', streamId: 's1', status: 'done', durationMs: 1400 } as any, emptyState(), actions, 'chat', 0);
     flushPendingToolCalls(actions);
 
     expect(actions.calls.setLiveToolStreams.length).toBeGreaterThanOrEqual(4);
@@ -271,6 +272,7 @@ describe('permission queue', () => {
       input: '{"file_path":"a.ts"}',
       status: 'done',
       output: 'file content',
+      durationMs: 1400,
     });
   });
 

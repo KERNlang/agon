@@ -23,7 +23,7 @@ export interface CesarApprovalLedgerRecord {
 // @kern-source: tool-observability:23
 export interface CesarToolTimelineRecord {
   turnId: string;
-  event: 'turn_start'|'turn_summary'|'tool_call'|'tool_result'|'approval_decision'|'xml_interrupt';
+  event: 'turn_start'|'turn_summary'|'tool_call'|'tool_result'|'approval_decision'|'xml_interrupt'|'steering_injected';
   engineId?: string;
   cwd?: string;
   tool?: string;

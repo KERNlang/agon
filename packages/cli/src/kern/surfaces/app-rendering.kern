@@ -196,6 +196,19 @@ module name=AppRendering
       if (event.status === 'error') {
         collapsedHint.push({ text: ' · Ctrl+Y retry', color: '#fbbf24' });
       }
+      // Global transcript expand affordance. The compact summary already states
+      // WHAT was produced (e.g. "→ N lines"); this dim segment tells the user HOW
+      // to see it — Ctrl+E flips the global toolOutputExpanded toggle that this
+      // very function reads. It is rendered ONLY here in the live (re-renderable)
+      // tool-row path, NOT in the <Static>-committed engine.kern path, because
+      // sealed scrollback rows cannot repaint when the toggle flips (so a hint
+      // there would lie). Gated on a TERMINAL status (done/error) so it never
+      // appears on a still-streaming result whose output is not yet materialized.
+      // K (the hidden line count) is the adjacent "→ N lines" the summary already
+      // prints, so we surface the affordance without duplicating the number.
+      if (collapsed && (event.status === 'done' || event.status === 'error') && event.output) {
+        collapsedHint.push({ text: ' · ctrl+e to expand', dimColor: true });
+      }
       const nestSegment = { text: ' ⏿ ', color: eColor };
       const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 2) => {
         rows.push({ key: `${baseKey}-${suffix}`, kind: 'segments', paddingLeft, segments });
@@ -1121,6 +1134,15 @@ module name=AppRendering
               confidence ? { text: ` · ${confidence}`, dimColor: true } : null,
               seconds ? { text: ` · ${seconds}`, dimColor: true } : null,
             ].filter(Boolean));
+            const recapTodos = (event as any).todos;
+            if (recapTodos && Number(recapTodos.total ?? 0) > 0) {
+              const tDone = Number(recapTodos.done ?? 0);
+              const tTotal = Number(recapTodos.total ?? 0);
+              pushSegmentsRow(`${baseKey}-recap-todos`, 1, [
+                { text: '  todos: ', dimColor: true },
+                { text: `${tDone}/${tTotal} done`, color: tDone >= tTotal ? '#4ade80' : '#fbbf24' },
+              ]);
+            }
             pushSegmentsRow(`${baseKey}-recap-tools`, 1, [{ text: `  ${toolLine}${failedTools > 0 ? ` · ${failedTools} failed` : ''}`, dimColor: true }]);
             if ((event as any).confidenceReasoning) {
               pushSegmentsRow(`${baseKey}-recap-why`, 1, [{ text: `  why: ${(event as any).confidenceReasoning}`, italic: true, color: '#a8a8a8' }]);
@@ -1266,6 +1288,12 @@ module name=AppRendering
             pushSegmentsRow(`${baseKey}-team-complete`, 2, [{ text: `Team ${event.teamId} complete · winner ${event.winner ?? 'none'} · $${event.teamCostUsd.toFixed(2)}`, dimColor: true }]);
             return;
           case 'spinner-start':
+          case 'cesar-preamble': {
+            const intent = String((event as any).intent ?? '').trim();
+            if (!intent) return;
+            pushSegmentsRow(`${baseKey}-preamble`, 1, [{ text: `• ${intent}`, dimColor: true }]);
+            return;
+          }
           case 'spinner-stop':
           case 'spinner-update':
           case 'progress-update':

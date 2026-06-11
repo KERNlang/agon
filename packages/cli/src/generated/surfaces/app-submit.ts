@@ -16,6 +16,8 @@ import type { ReplStateState } from '../signals/app-state.js';
 
 import { appendInputHistory, cleanSubmitValue, hasBtwSideChannelTarget, parseAutoModeCommand } from '../signals/app-input.js';
 
+import { pushSteering, peekSteeringCount, drainLeftoverSteering } from '../cesar/steering.js';
+
 import { expandPastePlaceholders } from '../signals/paste-handler.js';
 
 import type { StreamingEntry } from '../signals/output.js';
@@ -120,8 +122,23 @@ export function buildMentionedFilesContext(text: string, cwd: string): string {
   return `\n\n[Attached files referenced with @ in the message above]\n${blocks.join('\n\n')}${note}`;
 }
 
-export function runProcessInputQueue(replState: ReplStateState, inputQueue: string[], setInputQueue: (updater:(prev:string[]) => string[]) => void, handleSubmit: (value:string) => void): void {
-  if (replState === 'idle' && inputQueue.length > 0) {
+export function runProcessInputQueue(replState: ReplStateState, inputQueue: string[], setInputQueue: (updater:(prev:string[]) => string[]) => void, handleSubmit: (value:string) => void, setSteeringCount: (n:number) => void): void {
+  if (replState !== 'idle') return;
+  // The turn is over — clear the mid-turn steering hint count.
+  setSteeringCount(0);
+  // Spec: on normal turn end any UNCONSUMED steering messages feed the next
+  // turn via THIS existing inputQueue drain. The brain released its turn
+  // marker on a normal end but left leftovers buffered; pull them here (FIFO)
+  // and append them to the inputQueue so the pop-and-resubmit below carries
+  // them through handleSubmit. On interrupt the steering buffer was already
+  // cleared (runInterruptActiveRun → clearSteering), so there is nothing to
+  // carry over.
+  const leftover = drainLeftoverSteering();
+  if (leftover.length > 0) {
+    const lines = leftover.map((m) => m.input).filter((t) => !!t.trim());
+    if (lines.length > 0) setInputQueue((prev: string[]) => [...prev, ...lines]);
+  }
+  if (inputQueue.length > 0) {
     const next = inputQueue[0];
     setInputQueue((prev: string[]) => prev.slice(1));
     setTimeout(() => handleSubmit(next), 50);
@@ -271,6 +288,7 @@ export interface HandleSubmitDeps {
   setInputHistory: (updater:(prev:string[]) => string[]) => void;
   setHistoryIndex: (val:number) => void;
   setInputQueue: (updater:(prev:string[]) => string[]) => void;
+  setSteeringCount: (n:number) => void;
   setSlashPickerOpen: (val:boolean) => void;
   setStatusDashboardOpen: (val:boolean) => void;
   setPlanModeQueued: (val:boolean) => void;
@@ -415,6 +433,40 @@ export async function runHandleSubmit(opts: HandleSubmitDeps, value: string): Pr
   }
   const isPlanAwaitingControl = opts.activePlanRef.current?.state === 'awaiting_approval'
     && (input === '/approve' || input === '/cancel');
+  // ── Steering while Cesar works ──
+  // A plain (non-slash) message typed during a RUNNING Cesar chat turn is
+  // NOT rejected and NOT merely queued for the next turn — it is buffered in
+  // the steering singleton, which the brain drains INTO the running turn at
+  // its next tool boundary (mid-turn injection with full tool context).
+  // Slash commands are excluded so /help etc. keep their existing behavior
+  // (they fall through to the inputQueue path below). pushSteering no-ops
+  // unless the brain has an active turn marked; if it returns false (the turn
+  // just ended) we fall through to the normal queue so nothing is lost.
+  const isChatSteer = opts.replState !== 'idle'
+    && opts.mode === 'chat'
+    && !!opts.activeTurnRef.current
+    && !!input.trim()
+    && !input.startsWith('/')
+    && !opts.jobManager.running().length
+    && !isPlanAwaitingControl;
+  if (isChatSteer) {
+    // Extract image attachments from the steering line (and fold in any
+    // pending composer images) BEFORE buffering — pushSteering used to receive
+    // the RAW text only, so a steering message that referenced an image lost
+    // it entirely. Mirror the normal-turn extraction at line ~461 so a steered
+    // image survives into the buffer; it then rides the mid-turn injection or,
+    // if unconsumed, the idle leftover-drain → inputQueue → next handleSubmit
+    // path (which already processes images). (phase-A review finding 2.)
+    const { images: steerImages } = extractImagesFromInput(input, resolveWorkingDir());
+    const steerAllImages = [...opts.pendingImages, ...steerImages];
+    if (pushSteering(input, steerAllImages.length ? steerAllImages : undefined)) {
+      if (opts.pendingImages.length) opts.setPendingImages([]);
+      const count = peekSteeringCount();
+      opts.setSteeringCount(count);
+      opts.dispatch({ type: 'info', message: count > 1 ? `Steering queued (${count}) — injects at next step.` : 'Steering queued — injects at next step.' } as any);
+      return;
+    }
+  }
   if (opts.replState !== 'idle' && !opts.jobManager.running().length && !isPlanAwaitingControl) {
     opts.setInputQueue((prev: string[]) => [...prev, input]);
     opts.dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '…' : input}` } as any);

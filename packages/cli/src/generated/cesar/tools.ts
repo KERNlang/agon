@@ -118,7 +118,7 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
       result: { ok: false, content: '', error },
       durationMs: 0,
     };
-    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: error } as any);
+    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: error, durationMs: result.durationMs } as any);
     return result;
   }
   const parsedInput = parsed.input ?? {};
@@ -152,11 +152,15 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
 
   const out = result.result.ok ? result.result.content : result.result.error;
   const status = result.result.ok ? 'done' : 'error';
+  // executeToolCall measures its own wall-clock elapsed (result.durationMs) — the
+  // most accurate source for the eager path. Carry it on the terminal event so the
+  // renderer shows the "· 1.4s" suffix; the brain-side _toolStartMs entry is cleared
+  // by dispatchToolCall when a terminal event already carries durationMs.
   if (streamStarted) {
-    dispatch({ type: 'tool-stream-end', streamId, engineId: cesarEngineId, tool: toolName, input: toolInput, status, output: out } as any);
+    dispatch({ type: 'tool-stream-end', streamId, engineId: cesarEngineId, tool: toolName, input: toolInput, status, output: out, durationMs: result.durationMs } as any);
   } else {
     // No chunks produced (permission denied, fast exit, etc.) — emit a normal tool-call block
-    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status, output: out } as any);
+    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status, output: out, durationMs: result.durationMs } as any);
   }
   return result;
 }

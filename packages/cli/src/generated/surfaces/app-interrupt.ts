@@ -6,6 +6,8 @@ import type { PersistentSession } from '@kernlang/agon-core';
 
 import { createPauseState, dismissPauseState } from '../cesar/pause-state.js';
 
+import { clearSteering } from '../cesar/steering.js';
+
 import type { PauseState } from '../cesar/pause-state.js';
 
 import type { OutputActions, AgentProgressSnapshot } from '../signals/output.js';
@@ -70,6 +72,10 @@ export function runInterruptActiveRun(opts: InterruptRunDeps, message: string, c
     abort.abort();
   }
   runTrackAbort(null, opts.activeAbortRef, opts.setActiveAbort);
+  // Interrupt drops any mid-turn steering — no silent carryover to the
+  // next turn (spec point 3). The brain's own turn-end release path is
+  // bypassed on an abort, so the drop must happen here.
+  clearSteering();
   opts.setLiveSpinner(null);
   opts.setLiveProgress(null);
   // Commit any in-flight streams before wiping. In main-buffer mode the
@@ -141,6 +147,8 @@ export function buildCancelCallback(opts: CancelCallbackDeps): () => void {
   return () => {
     for (const abort of _activeAborts) abort.abort();
     _activeAborts.clear();
+    // Hard cancel also drops any mid-turn steering (no carryover).
+    clearSteering();
     opts.activeAbortRef.current = null;
     opts.setActiveAbort(null);
     opts.setLiveSpinner(null);

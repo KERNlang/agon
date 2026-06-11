@@ -11,6 +11,7 @@ import {
   extractImagesFromInput,
   normalizeDroppedPath,
   encodeImagesForDispatch,
+  visionSupportNote,
 } from '../../packages/core/src/image.js';
 import { buildCommand } from '../../packages/adapter-cli/src/generated/adapter-helpers.js';
 
@@ -386,3 +387,29 @@ describe('encodeImagesForDispatch', () => {
   });
 });
 
+
+// ── visionSupportNote ───────────────────────────────────────────────
+
+describe('visionSupportNote', () => {
+  it('returns null for vision-capable engines', () => {
+    expect(visionSupportNote({ id: 'kimi-for-coding-k2p6', capabilities: ['vision'] })).toBeNull();
+    expect(visionSupportNote({ id: 'claude', binary: 'claude', capabilities: ['vision'] })).toBeNull();
+  });
+
+  it('returns null for a missing engine', () => {
+    expect(visionSupportNote(null)).toBeNull();
+    expect(visionSupportNote(undefined)).toBeNull();
+  });
+
+  it('warns hard for API-only engines without vision (image is dropped)', () => {
+    const note = visionSupportNote({ id: 'zai-coding-plan-glm-5.1', api: { baseUrl: 'x' } });
+    expect(note).toContain("can't see images");
+    expect(note).toContain('zai-coding-plan-glm-5.1');
+  });
+
+  it('warns soft for CLI engines without vision (path-only fallback)', () => {
+    const note = visionSupportNote({ id: 'somecli', binary: 'somecli' });
+    expect(note).toContain('file path');
+    expect(note).toContain('somecli');
+  });
+});

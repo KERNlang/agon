@@ -601,7 +601,7 @@ export function App() {
   const statusStats = useMemo(() => {
           const stats = tracker.getStats();
           const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-          return { cesarId: cesarId, chatMessageCount: chatSession.messages.length, totalTokens: stats.totalTokens, totalCostUsd: stats.totalCostUsd };
+          return { cesarId: cesarId, chatMessageCount: chatSession.messages.length, totalTokens: stats.totalTokens, totalCostUsd: stats.totalCostUsd, meteredCostUsd: stats.meteredCostUsd ?? 0, hasUnmetered: (stats.unmeteredDispatches ?? 0) > 0 };
   }, [outputBlocks,chatSession,replState,config]);
 
   const runningJobs = useMemo(() => {

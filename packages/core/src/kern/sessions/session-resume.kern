@@ -45,6 +45,14 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
     let sendActive = false;
     let compactPromise: Promise<{ok:boolean, method:'llm'|'regex'|'none'|'deferred', beforeTokens:number, afterTokens:number, limit:number}> | null = null;
 
+    // ── Per-turn REAL usage accumulator (for cost tracking) ──
+    // A turn can span many dispatch steps (tool loop); each step bills its own
+    // full input, so the SUM across steps is the turn's real billed usage.
+    // Reset at send() entry; read by the orchestrator via getTurnUsage() after
+    // the turn so cost is recorded from real API tokens instead of a chars/4
+    // estimate. null promptTokens sum ⇒ no real usage this turn (CLI path).
+    let turnUsage: { promptTokens: number; completionTokens: number } = { promptTokens: 0, completionTokens: 0 };
+
     // ── Token estimation + context limit (config-only — hoisted out of send()
     // so getContextUsage() shares the same math) ──
     // Token estimate: chars/3.5, not chars/4. Code/JSON-heavy agent history
@@ -250,6 +258,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
             try { await compactPromise; } catch { /* compaction failure must not block the turn */ }
           }
           sendActive = true;
+          turnUsage = { promptTokens: 0, completionTokens: 0 };
           // Inject system prompt on first turn
           if (firstTurn) {
             const sysPrompt = config.systemPrompt ?? opts.systemPrompt;
@@ -588,6 +597,9 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                       cachedInputTokens: Number(result.usage.cachedInputTokens ?? 0),
                       historyLength: sentHistoryLength,
                     };
+                    // Every step bills its own input — accumulate for the turn's cost.
+                    turnUsage.promptTokens += lastRealUsage.promptTokens;
+                    turnUsage.completionTokens += lastRealUsage.completionTokens;
                     const realUsed = lastRealUsage.promptTokens + lastRealUsage.completionTokens;
                     const realPct = Math.round((realUsed / CONTEXT_LIMIT) * 100);
                     yield {
@@ -1231,6 +1243,20 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           softLimit: CONTEXT_LIMIT - COMPACTION_BUFFER,
           source: contextSource(),
           cachedInputTokens: lastRealUsage?.cachedInputTokens ?? 0,
+        };
+      },
+
+      getTurnUsage() {
+        // Real billed usage for the most recent turn (sum across its dispatch
+        // steps), or null when the turn produced no real usage (CLI path,
+        // failed dispatch). Callers record cost from this instead of a
+        // chars/4 estimate.
+        if (turnUsage.promptTokens <= 0 && turnUsage.completionTokens <= 0) return null;
+        return {
+          promptTokens: turnUsage.promptTokens,
+          completionTokens: turnUsage.completionTokens,
+          totalTokens: turnUsage.promptTokens + turnUsage.completionTokens,
+          source: 'sdk' as const,
         };
       },
 

@@ -184,7 +184,12 @@ fn name=handleSecondOpinion async=true params="secondResult:{stdout:string, engi
     // Save Cesar's response
     appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-    tracker.record(cesarEngineId, { prompt: input, response });
+    // Cesar's own turn: prefer real billed usage from the API session.
+    try {
+      const su: any = (ctx.cesarSession as any)?.getTurnUsage?.();
+      if (su && su.totalTokens > 0) tracker.record(cesarEngineId, { usage: su });
+      else tracker.record(cesarEngineId, { prompt: input, response });
+    } catch { tracker.record(cesarEngineId, { prompt: input, response }); }
 
     // Yield so Ink paints the advisor response before showing the menu
     await new Promise<void>(resolve => setImmediate(resolve));

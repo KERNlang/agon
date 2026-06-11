@@ -122,9 +122,17 @@ screen name=StatusBar target=ink
   prop name=fullscreenEnabled type=boolean optional=true
   prop name=telemetryVitals type="Map<string, any>" optional=true
   prop name=context type="{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null" optional=true
+  prop name=meteredCostUsd type=number optional=true
+  prop name=hasUnmetered type=boolean optional=true
   render
     handler <<<
-      const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
+      // Cost honesty: only REAL API token usage is billable per token. A
+      // subscription CLI brain (claude/codex binary) has no countable per-turn
+      // cost — show that instead of a fabricated estimate-times-flat-rate $.
+      const metered = meteredCostUsd ?? 0;
+      const cost = metered > 0
+        ? `$${metered.toFixed(2)}${hasUnmetered ? ' +cli' : ''}`
+        : (hasUnmetered ? 'cost not countable (cli)' : (totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : ''));
       const msgs = chatMessageCount;
       const tokens = totalTokens;
       // Context gauge: REAL window occupancy from the session's context-usage

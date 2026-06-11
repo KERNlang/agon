@@ -74,8 +74,14 @@ function AgonTip() {
 }
 
 // @kern-source: status:111
-export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, telemetryVitals, context }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any>; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null }) {
-  const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
+export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, telemetryVitals, context, meteredCostUsd, hasUnmetered }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any>; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; meteredCostUsd?:number; hasUnmetered?:boolean }) {
+  // Cost honesty: only REAL API token usage is billable per token. A
+  // subscription CLI brain (claude/codex binary) has no countable per-turn
+  // cost — show that instead of a fabricated estimate-times-flat-rate $.
+  const metered = meteredCostUsd ?? 0;
+  const cost = metered > 0
+    ? `$${metered.toFixed(2)}${hasUnmetered ? ' +cli' : ''}`
+    : (hasUnmetered ? 'cost not countable (cli)' : (totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : ''));
   const msgs = chatMessageCount;
   const tokens = totalTokens;
   // Context gauge: REAL window occupancy from the session's context-usage
@@ -138,7 +144,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
   );
 }
 
-// @kern-source: status:192
+// @kern-source: status:200
 const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height, filter }: { telemetryVitals:Map<string, any>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number; filter?:'all'|'problem' }) {
   const vitals = Array.from(telemetryVitals?.values?.() ?? []);
   const severity: Record<string, number> = { stalled: 5, fallback: 4, offline: 3, busy: 2, idle: 1 };
@@ -197,7 +203,7 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
 });
 export { StatusDashboard };
 
-// @kern-source: status:258
+// @kern-source: status:266
 const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
   const planGauge = buildPlanPhaseGauge(activePlan, 10);
   const now = Date.now();
@@ -301,7 +307,7 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
 });
 export { ExecutionRail };
 
-// @kern-source: status:372
+// @kern-source: status:380
 const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive, width, maxRows, focused }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean; width?:number; maxRows?:number; focused?:boolean }) {
   const safeWidth = Math.max(32, Math.floor(Number(width ?? 42)));
   const safeRows = Math.max(8, Math.floor(Number(maxRows ?? 12)));
@@ -412,7 +418,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
 });
 export { ExecutionRailPanel };
 
-// @kern-source: status:498
+// @kern-source: status:506
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -447,7 +453,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:527
+// @kern-source: status:535
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -466,7 +472,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:549
+// @kern-source: status:557
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

@@ -42,7 +42,22 @@ import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering
 
 import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName } from './brain-helpers.js';
 
+/**
+ * Record a Cesar turn into the token tracker. Prefers the session's REAL billed usage (getTurnUsage — API backend, summed across the turn's dispatch steps) so cost is metered; falls back to the chars/4 text estimate for PTY/CLI brains, whose per-token cost is not countable (subscription) and stays marked source:'estimated'.
+ */
 // @kern-source: brain:23
+export function recordCesarTurn(ctx: HandlerContext, cesarEngineId: string, input: string, response: string): any {
+  try {
+    const s: any = ctx.cesarSession;
+    const u = s && typeof s.getTurnUsage === 'function' ? s.getTurnUsage() : null;
+    if (u && u.totalTokens > 0) {
+      return tracker.record(cesarEngineId, { usage: u });
+    }
+  } catch { /* fall through to the estimate */ }
+  return tracker.record(cesarEngineId, { prompt: input, response });
+}
+
+// @kern-source: brain:36
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -57,7 +72,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   await yieldToInk();
   appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
   appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-  tracker.record(cesarEngineId, { prompt: input, response: response });
+  recordCesarTurn(ctx, cesarEngineId, input, response);
   const delResult = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team);
   const happened = buildWhatHappenedSummary(telemetry ?? {});
   if (happened) {
@@ -73,7 +88,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:49
+// @kern-source: brain:62
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -87,7 +102,7 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   await yieldToInk();
   appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
   appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-  tracker.record(cesarEngineId, { prompt: input, response: response });
+  recordCesarTurn(ctx, cesarEngineId, input, response);
   if (suggestion.rest) {
     dispatch({ type: 'engine-block', engineId: cesarEngineId, color: color, content: suggestion.rest });
   }
@@ -104,10 +119,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:74
+// @kern-source: brain:87
 export const _noBriefNudged: Set<string> = new Set<string>();
 
-// @kern-source: brain:76
+// @kern-source: brain:89
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -554,7 +569,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             if (freshResult.stdout.trim()) {
               dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: freshResult.stdout.trim() });
               appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
-              tracker.record(cesarEngineId, { prompt: input, response: freshResult.stdout.trim() });
+              if (freshResult.usage && freshResult.usage.totalTokens > 0) {
+                tracker.record(cesarEngineId, { usage: freshResult.usage });
+              } else {
+                tracker.record(cesarEngineId, { prompt: input, response: freshResult.stdout.trim() });
+              }
               return { delegated: false, responded: true };
             }
             // Empty stdout — persist the user turn idempotently so the next
@@ -1849,7 +1868,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 appendMessage(ctx.chatSession, { role: 'engine', engineId: ch.engineId, content: ch.content, timestamp: new Date().toISOString() });
               }
             }
-            tracker.record(cesarEngineId, { prompt: input, response });
+            recordCesarTurn(ctx, cesarEngineId, input, response);
             return {
               mode: escalationAction as any,
               delegated: true,
@@ -2634,7 +2653,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               appendMessage(ctx.chatSession, { role: 'engine', engineId: ch.engineId, content: ch.content, timestamp: new Date().toISOString() });
             }
           }
-          const tokenUsage = tracker.record(cesarEngineId, { prompt: input, response });
+          const tokenUsage = recordCesarTurn(ctx, cesarEngineId, input, response);
 
           // Trace
           try {

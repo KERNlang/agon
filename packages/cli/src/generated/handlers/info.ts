@@ -773,8 +773,11 @@ export function handleTokens(dispatch: Dispatch): void {
   const costLabel = (costUsd: number, id: string): string => {
     if (costUsd <= 0) return 'free';
     const src = sourceLabel(id);
-    const prefix = src === 'sdk' ? '' : '~';
-    return `${prefix}$${costUsd.toFixed(4)}`;
+    if (src === 'sdk') return `$${costUsd.toFixed(4)}`;
+    if (src === 'mixed') return `~$${costUsd.toFixed(4)}`;
+    // Pure CLI/subscription engine: per-token cost is not countable —
+    // don't dress a chars/4 × flat-rate guess up as a dollar figure.
+    return 'not countable';
   };
 
   const rows = Object.entries(stats.byEngine).map(([id, e]: [string, any]) => [
@@ -788,9 +791,19 @@ export function handleTokens(dispatch: Dispatch): void {
   ]);
   dispatch({ type: 'table', headers: ['Engine', 'Calls', 'Prompt', 'Response', 'Total', 'Cost', 'Source'], rows });
 
-  const hasSdk = allUsages.some((u: any) => u.source === 'sdk');
-  const totalCostPrefix = hasSdk ? '' : '~';
-  const totalCost = stats.totalCostUsd > 0 ? `${totalCostPrefix}$${stats.totalCostUsd.toFixed(4)}` : 'free';
+  // Cost honesty: only sdk-sourced usage is real per-token billing.
+  // Subscription CLI engines have no countable cost — say so instead of
+  // presenting a chars/4 × flat-rate guess as a dollar figure.
+  const metered = (stats as any).meteredCostUsd ?? 0;
+  const unmetered = (stats as any).unmeteredDispatches ?? 0;
+  let totalCost: string;
+  if (metered > 0) {
+    totalCost = `metered $${metered.toFixed(4)}${unmetered > 0 ? ` (+${unmetered} cli/subscription dispatch${unmetered === 1 ? '' : 'es'}, not countable)` : ''}`;
+  } else if (unmetered > 0) {
+    totalCost = `not countable (subscription/CLI engines — rough estimate ~$${stats.totalCostUsd.toFixed(4)})`;
+  } else {
+    totalCost = 'free';
+  }
   dispatch({ type: 'text', content: `Session total: ${stats.totalTokens} tokens  ${totalCost}` });
   dispatch({ type: 'info', message: `${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines` });
 }

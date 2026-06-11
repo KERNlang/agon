@@ -210,7 +210,12 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
   // Save Cesar's response
   appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
   appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-  tracker.record(cesarEngineId, { prompt: input, response });
+  // Cesar's own turn: prefer real billed usage from the API session.
+  try {
+    const su: any = (ctx.cesarSession as any)?.getTurnUsage?.();
+    if (su && su.totalTokens > 0) tracker.record(cesarEngineId, { usage: su });
+    else tracker.record(cesarEngineId, { prompt: input, response });
+  } catch { tracker.record(cesarEngineId, { prompt: input, response }); }
 
   // Yield so Ink paints the advisor response before showing the menu
   await new Promise<void>(resolve => setImmediate(resolve));
@@ -276,7 +281,7 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
 /**
  * Auto-activate Nero mode — kill session so next turn reboots with Nero system prompt.
  */
-// @kern-source: escalation:250
+// @kern-source: escalation:255
 export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   if (!ctx.neroMode && ctx.setNeroMode) {
     ctx.setNeroMode(true);
@@ -292,7 +297,7 @@ export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
 /**
  * Auto-deactivate Nero when confidence recovers.
  */
-// @kern-source: escalation:262
+// @kern-source: escalation:267
 export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   ctx.setNeroMode(false);
   ctx.neroMode = false;
@@ -304,7 +309,7 @@ export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
 /**
  * Ask user to confirm a suggested delegation with a simple yes/no prompt.
  */
-// @kern-source: escalation:272
+// @kern-source: escalation:277
 export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
   const confirmLabel = hardened ? `${action} (hardened)` : action;
   const answer = await new Promise<string>((resolve) => {
@@ -320,7 +325,7 @@ export async function promptDelegation(action: string, dispatch: Dispatch, harde
 /**
  * Last-resort fallback: if Cesar had routing context but still didn't delegate at low confidence, offer brainstorm. Cesar should have decided — this is a safety net.
  */
-// @kern-source: escalation:286
+// @kern-source: escalation:291
 export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean, tribunalMode?:string}|null> {
   if (parsedConfidence === null
       || parsedConfidence >= CONFIDENCE_TIERS.nero

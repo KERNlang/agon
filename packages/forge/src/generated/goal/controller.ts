@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { ensureAgonHome, spawnWithTimeout, worktreeCreate, worktreeRemoveBestEffort, worktreeChangedDiff, loadConfig, appendCoAuthor } from '@kernlang/agon-core';
+import { ensureAgonHome, spawnWithTimeout, worktreeCreate, worktreeRemoveBestEffort, worktreeChangedDiff, loadConfig, appendAttribution } from '@kernlang/agon-core';
 
 import { assertSafeGoalId, resolveWithin } from './paths.js';
 
@@ -481,9 +481,10 @@ export async function runGoalController(opts: { spec: GoalSpec, repoRoot: string
       }
 
       // COMMIT — one commit per task, then advance the goal branch ref.
-      // Append the configured Co-Authored-By identity (commitCoAuthor) for commits agon creates; no-op when unset.
+      // appendAttribution = the Claude-Code-style footer (Generated-with line +
+      // Co-Authored-By trailer) on commits agon creates; no-op when commitCoAuthor is "".
       await git(['add', '-A'], wt);
-      const commit = await git(['commit', '-m', appendCoAuthor(`goal(${spec.goalId}): ${task.source}`, loadConfig(repoRoot)), '--no-verify'], wt);
+      const commit = await git(['commit', '-m', appendAttribution(`goal(${spec.goalId}): ${task.source}`, loadConfig(repoRoot)), '--no-verify'], wt);
       if (commit.exitCode !== 0) throw { kind: 'error', detail: `commit failed: ${commit.stderr.trim()}` };
       const headRes = await git(['rev-parse', 'HEAD'], wt);
       const newSha = headRes.stdout.trim();

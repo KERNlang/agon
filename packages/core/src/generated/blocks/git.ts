@@ -720,9 +720,97 @@ export function appendCoAuthor(message: string, config: {commitCoAuthor?:string}
 }
 
 /**
- * Read-only: git status --short. Never mutates the working tree.
+ * The Claude-Code-style attribution line agon appends to commits it creates and PR bodies it writes. Kept as one shared const so the commit footer and the PR footer can never drift apart.
  */
 // @kern-source: git:659
+export const AGON_ATTRIBUTION: string = '🤖 Generated with [Agon](https://github.com/KERNlang/agon)';
+
+/**
+ * Claude-Code-1:1 attribution block for commits agon itself creates: appends the '🤖 Generated with [Agon](…)' line as its own paragraph, then the Co-Authored-By trailer as the final paragraph — the exact layout Claude Code uses. config.commitCoAuthor is the SINGLE opt-out switch (mirrors Claude Code's includeCoAuthoredBy): blank/unset returns the message unchanged — no banner, no trailer. Implemented as appendCoAuthor(message + banner): the banner paragraph guarantees the trailer lands alone in the last paragraph, where git parses trailers. Prefer this over bare appendCoAuthor at agon's own commit call sites.
+ */
+// @kern-source: git:662
+export function appendAttribution(message: string, config: {commitCoAuthor?:string}): string {
+  const v = (config.commitCoAuthor ?? '').trim();
+  if (!v) return message;
+  return appendCoAuthor(`${message.trimEnd()}\n\n${AGON_ATTRIBUTION}`, config);
+}
+
+/**
+ * PR-body variant of appendAttribution: appends only the Generated-with line (Co-Authored-By is a commit-trailer concept, not PR text). Same single opt-out switch (commitCoAuthor blank = no footer).
+ */
+// @kern-source: git:670
+export function appendPrAttribution(body: string, config: {commitCoAuthor?:string}): string {
+  const v = (config.commitCoAuthor ?? '').trim();
+  if (!v) return body;
+  return `${body.trimEnd()}\n\n${AGON_ATTRIBUTION}`;
+}
+
+/**
+ * Normalize a github.com remote URL (scp-like ssh, ssh://, http(s), with/without .git) to https://github.com/<org>/<repo>. Returns '' for non-GitHub or unparseable remotes — callers then skip the prefilled-PR link and just print the PR text. Pure; exported for unit tests.
+ */
+// @kern-source: git:678
+export function normalizeGitHubRemote(url: string): string {
+  const u = url.trim();
+  let m = u.match(/^(?:ssh:\/\/)?git@github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/);
+  if (m) return `https://github.com/${m[1]}/${m[2]}`;
+  m = u.match(/^https?:\/\/(?:[^@/]+@)?github\.com\/([^/]+)\/(.+?)(?:\.git)?\/?$/);
+  if (m) return `https://github.com/${m[1]}/${m[2]}`;
+  return '';
+}
+
+/**
+ * https://github.com/<org>/<repo> for the given remote (default 'origin'), or '' (no such remote / not GitHub). Callers that push to a --remote MUST pass it through so the PR link targets the repo that actually received the branch.
+ */
+// @kern-source: git:689
+export function githubRepoUrl(cwd: string, remote?: string): string {
+  try {
+    return normalizeGitHubRemote(git(['remote', 'get-url', remote ?? 'origin'], cwd));
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The remote default branch for the given remote (default 'origin'). Resolution order, all local (never hits the network): <remote>/HEAD symbolic-ref → an existing refs/remotes/<remote>/main → …/master → 'main'. The existence probes cover clones where <remote>/HEAD was never populated but the real default branch is fetched. Used as the PR base for prefilled compare links.
+ */
+// @kern-source: git:699
+export function defaultBaseBranch(cwd: string, remote?: string): string {
+  const r = remote ?? 'origin';
+  try {
+    const ref = git(['symbolic-ref', '--short', `refs/remotes/${r}/HEAD`], cwd).trim();
+    const name = ref.startsWith(`${r}/`) ? ref.slice(r.length + 1) : ref;
+    if (name) return name;
+  } catch { /* fall through to existence probes */ }
+  for (const candidate of ['main', 'master']) {
+    try {
+      git(['show-ref', '--verify', '--quiet', `refs/remotes/${r}/${candidate}`], cwd);
+      return candidate;
+    } catch { /* try next */ }
+  }
+  return 'main';
+}
+
+/**
+ * GitHub compare URL with ?quick_pull=1&title=…&body=… — clicking it opens the new-PR form already filled in. This is agon's no-gh PR path: after a push, the human clicks the link and merges; no GitHub CLI/token needed. The title is clamped to 256 chars and the body shrunk until the whole URL fits in ~7500 chars (GitHub/browsers reject very long URLs) — callers print the full body in the terminal first so nothing is lost. Returns '' when repoUrl is empty. Pure; exported for unit tests.
+ */
+// @kern-source: git:717
+export function prefilledPrUrl(opts: {repoUrl:string,base:string,branch:string,title:string,body:string}): string {
+  if (!opts.repoUrl) return '';
+  const head = `${opts.repoUrl}/compare/${encodeURIComponent(opts.base)}...${encodeURIComponent(opts.branch)}?quick_pull=1&title=${encodeURIComponent(opts.title.slice(0, 256))}`;
+  let url = `${head}&body=${encodeURIComponent(opts.body)}`;
+  const note = '\n\n…(body truncated — the full description was printed in the terminal)';
+  let keep = opts.body.length;
+  while (url.length > 7500 && keep > 0) {
+    keep = Math.floor(keep * 0.7);
+    url = `${head}&body=${encodeURIComponent(opts.body.slice(0, keep) + note)}`;
+  }
+  return url;
+}
+
+/**
+ * Read-only: git status --short. Never mutates the working tree.
+ */
+// @kern-source: git:732
 export function gitStatusShort(cwd: string): string {
   try {
     return git(['status', '--short'], cwd);
@@ -734,7 +822,7 @@ export function gitStatusShort(cwd: string): string {
 /**
  * Read-only: git diff --stat for unstaged changes. No git add.
  */
-// @kern-source: git:667
+// @kern-source: git:740
 export function gitDiffStat(cwd: string): string {
   try {
     return git(['diff', '--stat'], cwd);
@@ -746,7 +834,7 @@ export function gitDiffStat(cwd: string): string {
 /**
  * Read-only: list of changed file paths (unstaged + staged). No git add.
  */
-// @kern-source: git:675
+// @kern-source: git:748
 export function gitChangedFiles(cwd: string): string[] {
   try {
     const unstaged = git(['diff', '--name-only'], cwd);
@@ -761,7 +849,7 @@ export function gitChangedFiles(cwd: string): string[] {
 /**
  * Read-only: truncated git diff (unstaged). Caps output. No git add.
  */
-// @kern-source: git:686
+// @kern-source: git:759
 export function gitTruncatedDiff(cwd: string, maxLines?: number): string {
   try {
     const diff = git(['diff'], cwd);

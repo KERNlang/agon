@@ -325,9 +325,37 @@ export function shouldStopAfterXmlToolCall(toolName: string): boolean {
 }
 
 /**
- * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
+ * Strip the 'Agon' orchestration alias prefix from a tool name. The default companion/MCP path surfaces write/bash tools as AgonBash/AgonEdit/AgonWrite (the MCP completion's done.tool is the ORIGINAL alias, not the mapped kern tool — see agon-orchestration.kern handleWriteToolCall), while the native/XML loop uses the bare names. Case-insensitive prefix match; returns the un-prefixed remainder so both paths classify identically.
  */
 // @kern-source: brain-helpers:344
+export function stripAgonToolPrefix(name: string): string {
+  const n = String(name ?? '');
+  return n.toLowerCase().startsWith('agon') ? n.slice(4) : n;
+}
+
+/**
+ * True when a tool name denotes a shell/bash call on EITHER path — bare 'Bash' (native/XML) or 'AgonBash' (MCP). Path-agnostic so the verify-before-done gate arms on the default companion path, not only the native one.
+ */
+// @kern-source: brain-helpers:350
+export function isBashToolName(name: string): boolean {
+  return stripAgonToolPrefix(name).toLowerCase() === 'bash';
+}
+
+// @kern-source: brain-helpers:355
+export const WRITE_TOOL_NAMES: Set<string> = new Set(['edit', 'write', 'multiedit', 'notebookedit']);
+
+/**
+ * True when a tool name denotes project write-work (file edit/create) on EITHER path — bare Edit/Write/MultiEdit/NotebookEdit (native/XML) or the AgonEdit/AgonWrite MCP aliases. SaveMemory is deliberately NOT write-work: it appends to .agon/project.md (durable memory), not the project tree, so the project's verification gate has nothing to verify for it.
+ */
+// @kern-source: brain-helpers:357
+export function isWriteToolName(name: string): boolean {
+  return WRITE_TOOL_NAMES.has(stripAgonToolPrefix(name).toLowerCase());
+}
+
+/**
+ * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
+ */
+// @kern-source: brain-helpers:362
 export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
   const trimmed = input.trim();
   const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
@@ -348,7 +376,7 @@ export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): {
   return { matched: true, prompt: prompt };
 }
 
-// @kern-source: brain-helpers:363
+// @kern-source: brain-helpers:381
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;

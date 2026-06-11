@@ -1,7 +1,88 @@
 // ── Cesar Memory — session only ──────────────────────────────────────
 // Ephemeral memory scoped to the current Agon session. New sessions start clean.
 
+import from="node:fs" names="readFileSync,existsSync"
+import from="node:path" names="resolve"
+
 const name=MAX_SESSION_ENTRIES type=number value=50
+
+const name=PROJECT_MEMORY_REL type=string value={{ '.agon/project.md' }}
+  doc "Durable project-memory file written by the SaveMemory tool. Same file scanProjectContext injects whole and context-scanner parses for `fitness:` — here we surface ONLY its memory sections as a labeled [PROJECT MEMORY] block."
+
+const name=PROJECT_MEMORY_SECTIONS type="string[]" value={{ ['Decisions', 'Constraints', 'Conventions', 'Session Notes'] }}
+  doc "Sections SaveMemory manages. Only these are lifted into the [PROJECT MEMORY] prompt block — any other prose in project.md (the brief, the fitness: line) is left to scanProjectContext."
+
+const name=PROJECT_MEMORY_MAX_CHARS type=number value={{ 4000 }}
+  doc "Cap the injected memory block so a large project.md can't blow the prompt budget."
+
+fn name=extractProjectMemorySections params="content:string" returns=string export=true
+  doc "Pull the SaveMemory-managed sections (## Decisions / ## Constraints / ## Conventions / ## Session Notes) out of a project.md, in canonical order, preserving their bullet entries. Returns '' when none are present. Pure — used to build the [PROJECT MEMORY] block without re-injecting the whole brief."
+  handler <<<
+    const src = String(content ?? '');
+    if (!src.trim()) return '';
+    const lines = src.split('\n');
+    // Index every '## ' header with its body span.
+    const headers: { name: string; start: number; end: number }[] = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      const m = lines[i].match(/^##\s+(.+?)\s*$/);
+      if (m) headers.push({ name: m[1].trim(), start: i, end: lines.length });
+    }
+    for (let h = 0; h < headers.length; h += 1) {
+      headers[h].end = h + 1 < headers.length ? headers[h + 1].start : lines.length;
+    }
+    const out: string[] = [];
+    for (const want of PROJECT_MEMORY_SECTIONS) {
+      const hit = headers.find((h) => h.name.toLowerCase() === want.toLowerCase());
+      if (!hit) continue;
+      const body = lines.slice(hit.start + 1, hit.end).filter((l) => l.trim().startsWith('-'));
+      if (body.length === 0) continue;
+      out.push(`### ${want}`);
+      for (const b of body) out.push(b.trim());
+    }
+    return out.join('\n');
+  >>>
+
+fn name=stripProjectMemorySections params="content:string" returns=string export=true
+  doc "COMPLEMENT of extractProjectMemorySections: return project.md content with the SaveMemory-managed sections (## Decisions / ## Constraints / ## Conventions / ## Session Notes, case-insensitive) removed, keeping the brief prose and the `fitness:` line intact. Used by scanProjectContext so the memory bullets appear ONLY in the [PROJECT MEMORY] block and are NOT double-injected as raw PROJECT CONTEXT. Pure; collapses the blank-line runs left where a section was excised so the kept prose stays tidy."
+  handler <<<
+    const src = String(content ?? '');
+    if (!src.trim()) return src;
+    const lines = src.split('\n');
+    const managed = new Set(PROJECT_MEMORY_SECTIONS.map((s) => s.toLowerCase()));
+    const out: string[] = [];
+    let skipping = false;
+    for (let i = 0; i < lines.length; i += 1) {
+      const h = lines[i].match(/^##\s+(.+?)\s*$/);
+      if (h) {
+        // Entering a new section: skip it iff it is a SaveMemory-managed one.
+        skipping = managed.has(h[1].trim().toLowerCase());
+        if (skipping) continue;
+      }
+      if (!skipping) out.push(lines[i]);
+    }
+    // Collapse 3+ consecutive blank lines (left by an excised section) to one, and
+    // trim trailing blank lines so the kept prose reads clean.
+    const collapsed = out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '');
+    return collapsed;
+  >>>
+
+fn name=buildProjectMemoryBlock params="cwd:string" returns=string export=true
+  doc "Read .agon/project.md and render its SaveMemory sections as a labeled [PROJECT MEMORY] block for the prompt — placed ABOVE session memory so durable cross-session facts lead. Returns '' when the file is absent or has no memory sections (no block). Best-effort: swallows IO errors toward silence."
+  handler <<<
+    try {
+      const path = resolve(cwd, PROJECT_MEMORY_REL);
+      if (!existsSync(path)) return '';
+      const content = readFileSync(path, 'utf-8');
+      const sections = extractProjectMemorySections(content);
+      if (!sections) return '';
+      const capped = sections.length > PROJECT_MEMORY_MAX_CHARS
+        ? sections.slice(0, PROJECT_MEMORY_MAX_CHARS) + '\n... (truncated)'
+        : sections;
+      return `## [PROJECT MEMORY] (durable, saved across sessions)\n${capped}`;
+    } catch {
+      return '';
+    }
+  >>>
 
 interface name=MemoryEntry
   field name=key type=string

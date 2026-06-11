@@ -3,6 +3,12 @@
 
 import from="../models/tool-types.js" names="ToolDefinition,ToolCall,ToolCallResult,ToolResult,ToolContext,PermissionDecision,ToolHandler" types=true
 
+// Canonical denial message produced when the user declines a tool-call permission
+// ask. Exported so the consumer (Cesar session.kern isPermissionDenial check) keys
+// off this constant instead of a hardcoded substring — keep producer and detector
+// in lock-step.
+const name=PERMISSION_DENIED_MESSAGE type=string value={{ 'User denied permission' }} export=true
+
 service name=ToolRegistry singleton=true
   field name=tools type="Map<string, ToolHandler>"
 
@@ -110,7 +116,7 @@ fn name=executeToolCall async=true params="call:ToolCall, ctx:ToolContext, regis
           return {
             toolCallId: call.id,
             toolName: call.name,
-            result: { ok: false, content: '', error: 'User denied permission' },
+            result: { ok: false, content: '', error: PERMISSION_DENIED_MESSAGE },
             durationMs: Date.now() - start,
           };
         }

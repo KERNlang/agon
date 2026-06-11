@@ -1,0 +1,22 @@
+test name="Core tool hooks" target="../../../src/kern/tools/tool-hooks.kern"
+  it name="tool-hooks source stays valid KERN"
+    expect no=schemaViolations
+    expect no=semanticViolations
+    expect no=codegenErrors
+
+  it name="hook engine functions keep their declared shapes"
+    expect node=fn name=parseToolHooks prop=returns is=ParsedToolHooks
+    expect node=fn name=hasToolHooks prop=returns is=boolean
+    expect node=fn name=runPreToolUseHooks prop=returns is="Promise<PreHookOutcome>"
+    expect node=fn name=runPostToolUseHooks prop=returns is="Promise<void>"
+
+  // NOTE: parseToolHooks behavior (fail-safe parsing, malformed-entry skipping,
+  // CC-shaped stdin, exit-2 block, timeout fail-open, matcher filtering, post-hook
+  // payload) is covered by the compiled-JS vitest suite tests/unit/tool-hooks.test.ts.
+  // The kern `expr` evaluator can't run parseToolHooks (its warn-path helper uses a
+  // construct the AST evaluator rejects), so structural + hasToolHooks checks live here.
+
+  it name="hasToolHooks gates the zero-overhead path"
+    expect fn=hasToolHooks args={{[undefined]}} equals=false
+    expect fn=hasToolHooks args={{[{ preToolUse: [], postToolUse: [] }]}} equals=false
+    expect fn=hasToolHooks args={{[{ preToolUse: [{ command: "x" }], postToolUse: [] }]}} equals=true

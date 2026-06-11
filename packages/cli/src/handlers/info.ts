@@ -8,6 +8,7 @@ export {
   handleEngines,
   handleDiscover,
   handleConfig,
+  handlePermissions,
   handleUse,
   handleCesar,
   handleTokens,

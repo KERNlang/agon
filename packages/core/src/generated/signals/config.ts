@@ -110,15 +110,34 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
     };
   }
   if (!(merged as any).permissionMode) (merged as any).permissionMode = 'smart';
+  // CC-parity permissions: deep-merge allow/deny across scopes so deny from
+  // ANY scope (global/project/local) wins, instead of an outer scope's
+  // `permissions` object wholesale-replacing an inner one. Fail-safe:
+  // non-array / non-object entries collapse to empty arrays, never throw.
+  const collectRules = (src: any): { allow: string[]; deny: string[] } => {
+    const p = src?.permissions;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return { allow: [], deny: [] };
+    const allow = Array.isArray(p.allow) ? p.allow.filter((x: unknown) => typeof x === 'string') : [];
+    const deny = Array.isArray(p.deny) ? p.deny.filter((x: unknown) => typeof x === 'string') : [];
+    return { allow, deny };
+  };
+  const dedup = (arr: string[]): string[] => Array.from(new Set(arr));
+  const g = collectRules(global);
+  const l = collectRules(local);
+  const lp = collectRules(localPrivate);
+  (merged as any).permissions = {
+    allow: dedup([...g.allow, ...l.allow, ...lp.allow]),
+    deny: dedup([...g.deny, ...l.deny, ...lp.deny]),
+  };
   return merged;
 }
 
-// @kern-source: config:90
+// @kern-source: config:109
 export function configGet(key: keyof AgonConfig, cwd?: string): Required<AgonConfig>[keyof AgonConfig] {
   return loadConfig(cwd)[key];
 }
 
-// @kern-source: config:92
+// @kern-source: config:111
 export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonConfig]): void {
   if (!(key in DEFAULT_AGON_CONFIG)) {
     throw new ConfigError(`Unknown config key: ${String(key)}`);
@@ -145,7 +164,7 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
 /**
  * Remove stale run directories beyond retention limit. Fresh dirs are protected so active forge/plan worktrees are never deleted mid-run.
  */
-// @kern-source: config:116
+// @kern-source: config:135
 export function pruneRuns(): void {
   // Review #10: dynamic runs dir via agonPath() — otherwise the frozen
   // RUNS_DIR const would prune the real ~/.agon/runs even in tests that
@@ -174,7 +193,7 @@ export function pruneRuns(): void {
   } catch { /* dir doesn't exist yet — not critical */ }
 }
 
-// @kern-source: config:146
+// @kern-source: config:165
 export function ensureAgonHome(): void {
   mkdirSync(getAgonHome(), { recursive: true });
   mkdirSync(agonPath('runs'), { recursive: true });

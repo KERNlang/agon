@@ -6,6 +6,8 @@ import from="node:fs" names="writeFileSync,statSync,existsSync,mkdirSync"
 import from="node:path" names="resolve,dirname,relative"
 import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolHandler,ToolDefinition,PermissionDecision" types=true
 import from="../blocks/file-history.js" names="takeSnapshot"
+import from="./tool-permissions.js" names="evaluateFilePathRules"
+import from="../signals/tool-registry.js" names="PERMISSION_DENIED_MESSAGE"
 
 fn name=createWriteTool returns=ToolHandler
   doc "Factory for the Write tool — writes or creates files with safety guards."
@@ -55,6 +57,20 @@ fn name=createWriteTool returns=ToolHandler
           message: `Write denied: ${filePath} is outside the working directory`,
           reason: 'path-outside-cwd',
         };
+      }
+
+      // CC-parity allow/deny rules (.agon.json permissions): deny FIRST — before
+      // the auto-allow below — and allow before any ask. Gate on the API / XML
+      // execution path (executeToolCall → handler.checkPermission). F3 path-aware.
+      if ((ctx as any).permissionRules) {
+        const ruleDecision = evaluateFilePathRules('Write', input.file_path as string, ctx.cwd, (ctx as any).permissionRules);
+        if (ruleDecision === 'deny') {
+          return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: Write ${filePath} blocked by a deny rule in .agon.json permissions`, reason: 'permission_rule_deny' };
+        }
+        // deny-all kill-switch outranks an allow RULE (only rule-DENY sits above it).
+        if (ruleDecision === 'allow' && ctx.permissionMode !== 'deny-all') {
+          return { behavior: 'allow' };
+        }
       }
 
       return { behavior: 'allow' };

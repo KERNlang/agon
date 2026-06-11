@@ -4,6 +4,8 @@
 import from="node:fs" names="readFileSync,statSync,existsSync"
 import from="node:path" names="resolve,relative"
 import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolHandler,ToolDefinition,PermissionDecision,FileState" types=true
+import from="./tool-permissions.js" names="evaluateFilePathRules"
+import from="../signals/tool-registry.js" names="PERMISSION_DENIED_MESSAGE"
 
 fn name=formatWithLineNumbers params="text:string, startLine:number" returns=string export=false
   doc "Format text with cat -n style line numbers."
@@ -59,6 +61,19 @@ fn name=createReadTool returns=ToolHandler
           message: `Read denied: ${filePath} is outside the working directory`,
           reason: 'path-outside-cwd',
         };
+      }
+
+      // CC-parity allow/deny rules (.agon.json permissions): deny FIRST, allow
+      // before the auto-allow. Gate on the API / XML execution path. F3 path-aware.
+      if ((ctx as any).permissionRules) {
+        const ruleDecision = evaluateFilePathRules('Read', input.file_path as string, ctx.cwd, (ctx as any).permissionRules);
+        if (ruleDecision === 'deny') {
+          return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: Read ${filePath} blocked by a deny rule in .agon.json permissions`, reason: 'permission_rule_deny' };
+        }
+        // deny-all kill-switch outranks an allow RULE (only rule-DENY sits above it).
+        if (ruleDecision === 'allow' && ctx.permissionMode !== 'deny-all') {
+          return { behavior: 'allow' };
+        }
       }
 
       return { behavior: 'allow' };

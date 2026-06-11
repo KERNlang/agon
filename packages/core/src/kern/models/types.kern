@@ -281,10 +281,13 @@ config name=AgonConfig
   field name=cesarStreamingXmlTools type=boolean default=true
     doc "When true, interrupt text streaming as soon as a complete XML tool call is parsed so XML fallback tools can execute live instead of waiting for the whole response."
   field name=campfireObserverStrategy type="'lead-first'|'all-respond'" default=lead-first
-  field name=hooks type="Record<string,Array<{command:string,engines?:string[],timeout?:number}>>" optional=true
+  field name=hooks type="Record<string,Array<{command:string,engines?:string[],matcher?:string,timeout?:number}>>" optional=true
+    doc "Shell hook commands keyed by event. Dispatch-lifecycle events (pre_dispatch, post_forge, …) use {command, engines?, timeout?}. CC-parity tool-call events `preToolUse`/`postToolUse` use {matcher?, command, timeout?}: a pre-hook gets {tool_name, tool_input} on stdin and may BLOCK with exit 2 (stderr = refusal); a post-hook gets {tool_name, tool_input, tool_response} and never blocks. All hooks are fail-safe (timeout/spawn-failure/other-exit → proceed)."
   field name=permissionMode type="'auto'|'smart'|'ask'|'deny-all'" default=smart
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
+  field name=permissions type="{allow?:string[],deny?:string[]}" optional=true
+    doc "Claude-Code-parity allow/deny rule strings honored by the approval gate. Rules look like `Bash(npm test:*)`, `Bash(git diff:*)`, `Edit`, `Write`, `Read`. `deny` ALWAYS wins over `allow`: a deny rule refuses without prompting, an allow rule auto-approves the matching ask, everything else falls through to the normal ask flow. Project scope lives in .agon.json (committable); personal overrides in .agon.local.json (gitignored). Malformed rules are ignored with a one-time warning, never block."
   field name=hiddenEngines type="string[]" optional=true
     doc "SOFT denylist (verb: /engines hide). Excluded from automatic rosters, rankings, batch selection and health-preflight candidates, but an explicit -e/--engines request for a hidden engine is still HONORED (with a warning). Use for engines you usually don't want but occasionally A/B-test."
   field name=removedEngines type="string[]" optional=true
@@ -297,6 +300,8 @@ config name=AgonConfig
     doc "Internal: set true once the one-time 'engines now run workspace-pure by default' migration notice has been shown, so it isn't repeated."
   field name=terminalMode type="'native'|'fullscreen'" default=native
     doc "Terminal scroll behavior. 'native' uses the terminal's own scrollback and OS scrollbar. 'fullscreen' matches Codex/Claude-style app-captured scrolling."
+  field name=statusLine type=string default=""
+    doc "Configurable one-line status (engine/model · context % · git branch) in the Cesar TUI. '' (default/absent) = off / keep existing status chrome only. 'default' = render the standard line. Any other value is treated as a format string with {engine}, {model}, {context}, {branch}, {cwd} placeholders (unknown placeholders pass through literally; a missing value renders empty). Custom shell-command status lines (à la Claude Code's `statusLine.command`) are NOT supported yet — placeholders only."
   field name=iconTheme type="'roman'|'classic'" default=roman
   field name=narrationFold type="'off'|'safe'|'aggressive'" default=safe
     doc "Engine-agnostic narration folding. Collapses verbose research play-by-play (e.g. a black-box --print agent's 'I will read X… let me check Y…' transcript) into a compact '▸ N reasoning steps folded · /raw' placeholder, keeping the answer visible. 'safe' (default) folds only contiguous runs of >=2 narration sentences and never the answer tail; 'aggressive' folds single narration lines too; 'off' disables. Fold-not-delete — /raw reprints the untouched original."

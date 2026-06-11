@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, existsSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession, resolveWorkingDir } from '@kernlang/agon-core';
 
 import type { AgonConfig, ForgeManifest } from '@kernlang/agon-core';
 
@@ -564,6 +564,56 @@ export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch,
     }
     default:
       dispatch({ type: 'error', message: `Unknown config action: ${action}` });
+  }
+}
+
+/**
+ * Render the loaded CC-parity allow/deny permission rules, their source scope file, and which scope wins. Mirrors Claude Code's /permissions inspection. deny ALWAYS wins over allow.
+ */
+export function handlePermissions(dispatch: Dispatch): void {
+  ensureAgonHome();
+  // Use the resolved active workspace dir, not the raw process cwd, so
+  // /permissions inspects the same .agon.json/.agon.local.json scope the
+  // approval gate actually loads (workspace switch / subdir invocation safe).
+  const cwd = resolveWorkingDir();
+  const readJsonSafe = (path: string): any => {
+    try { return JSON.parse(readFileSync(path, 'utf-8')); }
+    catch { return null; }
+  };
+  const globalPath = join(getAgonHome(), 'config.json');
+  const projectPath = join(cwd, '.agon.json');
+  const localPath = join(cwd, '.agon.local.json');
+  const scopes: Array<{ label: string; path: string; raw: any }> = [
+    { label: 'global', path: globalPath, raw: readJsonSafe(globalPath) },
+    { label: 'project', path: projectPath, raw: readJsonSafe(projectPath) },
+    { label: 'local', path: localPath, raw: readJsonSafe(localPath) },
+  ];
+
+  dispatch({ type: 'header', title: 'Permission Rules' });
+  dispatch({ type: 'text', content: 'Claude-Code-style allow/deny rules in .agon.json. deny ALWAYS wins over allow; an allow rule auto-approves, a deny rule refuses without prompting, everything else falls through to the normal ask flow.' });
+
+  const rows: string[][] = [];
+  for (const scope of scopes) {
+    const p = scope.raw?.permissions;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) {
+      rows.push([scope.label, scope.path, '—', '—']);
+      continue;
+    }
+    const allow = Array.isArray(p.allow) ? p.allow.filter((x: unknown) => typeof x === 'string') : [];
+    const deny = Array.isArray(p.deny) ? p.deny.filter((x: unknown) => typeof x === 'string') : [];
+    rows.push([scope.label, scope.path, deny.length ? deny.join(', ') : '—', allow.length ? allow.join(', ') : '—']);
+  }
+  dispatch({ type: 'table', headers: ['Scope', 'File', 'Deny (wins)', 'Allow'], rows });
+
+  // Effective merged set (what the gate actually consults).
+  const cfg = loadConfig(cwd);
+  const eff = (cfg as any).permissions ?? { allow: [], deny: [] };
+  const effAllow: string[] = Array.isArray(eff.allow) ? eff.allow : [];
+  const effDeny: string[] = Array.isArray(eff.deny) ? eff.deny : [];
+  if (effAllow.length === 0 && effDeny.length === 0) {
+    dispatch({ type: 'info', message: 'No permission rules configured. Add a "permissions" block with allow/deny arrays to .agon.json, e.g. { "permissions": { "allow": ["Bash(npm test:*)"], "deny": ["Bash(rm:*)"] } }' });
+  } else {
+    dispatch({ type: 'text', content: `Effective (all scopes merged): ${effDeny.length} deny, ${effAllow.length} allow. Deny rules take precedence.` });
   }
 }
 

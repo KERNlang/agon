@@ -84,6 +84,25 @@ fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
       };
     }
     if (!(merged as any).permissionMode) (merged as any).permissionMode = 'smart';
+    // CC-parity permissions: deep-merge allow/deny across scopes so deny from
+    // ANY scope (global/project/local) wins, instead of an outer scope's
+    // `permissions` object wholesale-replacing an inner one. Fail-safe:
+    // non-array / non-object entries collapse to empty arrays, never throw.
+    const collectRules = (src: any): { allow: string[]; deny: string[] } => {
+      const p = src?.permissions;
+      if (!p || typeof p !== 'object' || Array.isArray(p)) return { allow: [], deny: [] };
+      const allow = Array.isArray(p.allow) ? p.allow.filter((x: unknown) => typeof x === 'string') : [];
+      const deny = Array.isArray(p.deny) ? p.deny.filter((x: unknown) => typeof x === 'string') : [];
+      return { allow, deny };
+    };
+    const dedup = (arr: string[]): string[] => Array.from(new Set(arr));
+    const g = collectRules(global);
+    const l = collectRules(local);
+    const lp = collectRules(localPrivate);
+    (merged as any).permissions = {
+      allow: dedup([...g.allow, ...l.allow, ...lp.allow]),
+      deny: dedup([...g.deny, ...l.deny, ...lp.deny]),
+    };
     return merged;
   >>>
 

@@ -103,6 +103,7 @@ union name=Intent discriminant=type
   variant name=focus
     field name=jobId type=string optional=true
   variant name=explore
+  variant name=permissions
   variant name=nogate
   variant name=nero
   variant name=chats-resume

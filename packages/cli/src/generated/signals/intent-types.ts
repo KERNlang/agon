@@ -51,6 +51,7 @@ export type Intent =
   | { type: 'jobs' }
   | { type: 'focus'; jobId?: string }
   | { type: 'explore' }
+  | { type: 'permissions' }
   | { type: 'nogate' }
   | { type: 'nero' }
   | { type: 'chats-resume'; sessionId: string }

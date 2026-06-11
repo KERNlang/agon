@@ -8,15 +8,19 @@ import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDe
 
 import { takeSnapshot } from '../blocks/file-history.js';
 
+import { evaluateFilePathRules } from './tool-permissions.js';
+
+import { PERMISSION_DENIED_MESSAGE } from '../signals/tool-registry.js';
+
 /**
  * Replace curly/smart quotes with straight ASCII equivalents.
  */
-// @kern-source: tool-edit:10
+// @kern-source: tool-edit:12
 function normalizeCurlyQuotes(text: string): string {
   return text.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"');
 }
 
-// @kern-source: tool-edit:15
+// @kern-source: tool-edit:17
 function countOccurrences(haystack: string, needle: string): number {
   let count = 0;
   let pos = 0;
@@ -32,7 +36,7 @@ function countOccurrences(haystack: string, needle: string): number {
 /**
  * Factory for the Edit tool — exact string replacement with safety checks.
  */
-// @kern-source: tool-edit:28
+// @kern-source: tool-edit:30
 export function createEditTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Edit',
@@ -87,6 +91,22 @@ export function createEditTool(): ToolHandler {
         message: `Edit denied: ${filePath} is outside the working directory`,
         reason: 'path-outside-cwd',
       };
+    }
+
+    // CC-parity allow/deny rules (.agon.json permissions): deny FIRST — before
+    // the agent-mode auto-allow below — and allow before any ask. This is the
+    // gate on the API / XML tool-execution path (executeToolCall →
+    // handler.checkPermission). F3 path-aware: `Edit(/etc:*)` blocks /etc/passwd
+    // and ../ / symlink escapes are resolved before matching.
+    if ((ctx as any).permissionRules) {
+      const ruleDecision = evaluateFilePathRules('Edit', input.file_path as string, ctx.cwd, (ctx as any).permissionRules);
+      if (ruleDecision === 'deny') {
+        return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: Edit ${filePath} blocked by a deny rule in .agon.json permissions`, reason: 'permission_rule_deny' };
+      }
+      // deny-all kill-switch outranks an allow RULE (only rule-DENY sits above it).
+      if (ruleDecision === 'allow' && ctx.permissionMode !== 'deny-all') {
+        return { behavior: 'allow' };
+      }
     }
 
     // Auto-allow edits within CWD — agent mode (like Claude Code default)

@@ -41,8 +41,9 @@ export function extractStrictConfidence(text: string): number|null {
   if (!text) {
     return null;
   }
-  // Require the literal CONFIDENCE: anchor; reject bare '<n>% sure' prose.
-  const m = text.match(/\bCONFIDENCE:\s*~?(\d{1,3})\s*%/i);
+  // Require the literal CONFIDENCE: anchor; reject bare '<n>% sure' prose. LAST anchor wins — a refreshed late-turn confidence supersedes a stale early one.
+  const all = Array.from(text.matchAll(/\bCONFIDENCE:\s*~?(\d{1,3})\s*%/gi));
+  const m = (all.length > 0) ? all[all.length - 1] : null;
   if (!m) {
     return null;
   }
@@ -56,7 +57,7 @@ export function extractStrictConfidence(text: string): number|null {
 /**
  * The dim, in-flow escalation-suggestion one-liner appended below a sub-threshold turn (replaces the QuickNero interrupt block). No modal, no turn interruption — just the inline nudge, e.g. dim `72% — want a nero/tribunal on this?`. The user taking it up still routes to the real nero/tribunal dispatch.
  */
-// @kern-source: confidence:46
+// @kern-source: confidence:47
 export function buildEscalationSuggestionLine(value: number): string {
   const dim = '\x1b[2m';
   const reset = '\x1b[0m';
@@ -66,7 +67,7 @@ export function buildEscalationSuggestionLine(value: number): string {
 /**
  * ANSI color for confidence badge: green 94+, yellow 90-93, red <90.
  */
-// @kern-source: confidence:53
+// @kern-source: confidence:54
 export function confidenceColor(value: number): string {
   if (value >= 96) return '\x1b[32m';  // green — direct
   if (value >= 93) return '\x1b[33m';  // yellow — quickNero
@@ -78,7 +79,7 @@ export function confidenceColor(value: number): string {
 /**
  * Formatted confidence badge with color.
  */
-// @kern-source: confidence:63
+// @kern-source: confidence:64
 export function confidenceBadge(value: number): string {
   const color = confidenceColor(value);
   const reset = '\x1b[0m';

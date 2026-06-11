@@ -162,7 +162,8 @@ RULE 10 — TURN CLOSURE: End every turn with one clear closing line so the user
     GOOD: "The leak is in brain.kern — the drain timer never clears on early return. Added the cleanup at line 793; typecheck green."
     BAD: "Great question! So I went and looked into this. There are a few things going on here. First, let me walk through the architecture. The session has a drain timer..."
 
-  CONFIDENCE REFRESH: If your confidence changed materially during the turn (e.g. started at 40% "need to verify" and verified successfully → real confidence is now 95%), call ReportConfidence again with the new number BEFORE the closing line. Stale initial confidence in the recap misleads the user about what state you're in.`
+  CONFIDENCE REFRESH: If your confidence changed materially during the turn (e.g. started at 40% "need to verify" and verified successfully → real confidence is now 95%), call ReportConfidence again with the new number BEFORE the closing line. Stale initial confidence in the recap misleads the user about what state you're in.
+  If you END the turn still below ~85%, write CONFIDENCE: NN% once near your closing line — the UI uses that exact shape to offer the user an escalation (nero/tribunal).`
   >>>
 
 fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export=true

@@ -178,12 +178,13 @@ RULE 10 — TURN CLOSURE: End every turn with one clear closing line so the user
     GOOD: "The leak is in brain.kern — the drain timer never clears on early return. Added the cleanup at line 793; typecheck green."
     BAD: "Great question! So I went and looked into this. There are a few things going on here. First, let me walk through the architecture. The session has a drain timer..."
 
-  CONFIDENCE REFRESH: If your confidence changed materially during the turn (e.g. started at 40% "need to verify" and verified successfully → real confidence is now 95%), call ReportConfidence again with the new number BEFORE the closing line. Stale initial confidence in the recap misleads the user about what state you're in.`;
+  CONFIDENCE REFRESH: If your confidence changed materially during the turn (e.g. started at 40% "need to verify" and verified successfully → real confidence is now 95%), call ReportConfidence again with the new number BEFORE the closing line. Stale initial confidence in the recap misleads the user about what state you're in.
+  If you END the turn still below ~85%, write CONFIDENCE: NN% once near your closing line — the UI uses that exact shape to offer the user an escalation (nero/tribunal).`;
 
 /**
  * Build the full Cesar system prompt with project context, engine list, and mode flags.
  */
-// @kern-source: session:168
+// @kern-source: session:169
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -384,19 +385,19 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:370
+// @kern-source: session:371
 export const CESAR_SNAPSHOT_MSG_CHAR_CAP: number = 4000;
 
-// @kern-source: session:372
+// @kern-source: session:373
 export const CONFIDENCE_BLOCK_LIMIT: number = 2;
 
-// @kern-source: session:374
+// @kern-source: session:375
 export const SEARCH_NUDGE_THRESHOLD: number = 40;
 
 /**
  * Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it.
  */
-// @kern-source: session:376
+// @kern-source: session:377
 export function capSnapshotMessageContent(content: string): string {
   if (content.length <= CESAR_SNAPSHOT_MSG_CHAR_CAP) return content;
   return `${content.slice(0, CESAR_SNAPSHOT_MSG_CHAR_CAP)}\n… [${content.length - CESAR_SNAPSHOT_MSG_CHAR_CAP} chars truncated for Cesar context]`;
@@ -405,7 +406,7 @@ export function capSnapshotMessageContent(content: string): string {
 /**
  * Render the `command` string shown in a Cesar permission prompt for a tool call. SaveMemory renders the human-readable '[<section>] <memory>' (the durable fact the user is confirming) instead of an opaque JSON args blob; every other tool keeps the existing precedence: args.command -> args.file_path -> JSON.stringify(args). Shared across the API-native and both XML-loop permission builders so they render identically (the MCP watcher in brain.kern already special-cases SaveMemory the same way). Pure; tolerant of non-object args.
  */
-// @kern-source: session:383
+// @kern-source: session:384
 export function renderToolPermissionCommand(tool: string, args: unknown): string {
   const a = (args && typeof args === 'object') ? (args as Record<string, unknown>) : {};
   if (tool === 'SaveMemory') {
@@ -417,7 +418,7 @@ export function renderToolPermissionCommand(tool: string, args: unknown): string
 /**
  * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched.
  */
-// @kern-source: session:393
+// @kern-source: session:394
 export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const directHistory = session?.getMessageHistory?.() ?? [];
   if (directHistory.length > 0) {
@@ -450,7 +451,7 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
 /**
  * Persist the active Cesar conversation before the session is discarded.
  */
-// @kern-source: session:418
+// @kern-source: session:419
 export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
   if (!session) return;
   const snapshot = buildCesarConversationSnapshot(session, chatSession);
@@ -465,7 +466,7 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
-// @kern-source: session:431
+// @kern-source: session:432
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -776,7 +777,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:740
+// @kern-source: session:741
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -959,7 +960,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:924
+// @kern-source: session:925
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -993,7 +994,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:958
+// @kern-source: session:959
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -1017,7 +1018,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:982
+// @kern-source: session:983
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -1029,7 +1030,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:989
+// @kern-source: session:990
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -1049,7 +1050,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
-// @kern-source: session:1007
+// @kern-source: session:1008
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
   const raw = fromUrl ?? import.meta.url;
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
@@ -1083,7 +1084,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:1039
+// @kern-source: session:1040
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1108,7 +1109,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1065
+// @kern-source: session:1066
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

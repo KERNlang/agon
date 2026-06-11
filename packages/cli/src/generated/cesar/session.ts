@@ -399,9 +399,21 @@ export function capSnapshotMessageContent(content: string): string {
 }
 
 /**
- * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched.
+ * Render the `command` string shown in a Cesar permission prompt for a tool call. SaveMemory renders the human-readable '[<section>] <memory>' (the durable fact the user is confirming) instead of an opaque JSON args blob; every other tool keeps the existing precedence: args.command -> args.file_path -> JSON.stringify(args). Shared across the API-native and both XML-loop permission builders so they render identically (the MCP watcher in brain.kern already special-cases SaveMemory the same way). Pure; tolerant of non-object args.
  */
 // @kern-source: session:379
+export function renderToolPermissionCommand(tool: string, args: unknown): string {
+  const a = (args && typeof args === 'object') ? (args as Record<string, unknown>) : {};
+  if (tool === 'SaveMemory') {
+    return `[${String(a.section ?? '')}] ${String(a.memory ?? '')}`.trim();
+  }
+  return String(a.command ?? a.file_path ?? JSON.stringify(args ?? {}));
+}
+
+/**
+ * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched.
+ */
+// @kern-source: session:389
 export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const directHistory = session?.getMessageHistory?.() ?? [];
   if (directHistory.length > 0) {
@@ -434,7 +446,7 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
 /**
  * Persist the active Cesar conversation before the session is discarded.
  */
-// @kern-source: session:404
+// @kern-source: session:414
 export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
   if (!session) return;
   const snapshot = buildCesarConversationSnapshot(session, chatSession);
@@ -449,7 +461,7 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
-// @kern-source: session:417
+// @kern-source: session:427
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -702,7 +714,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
         return new Promise<boolean>((resolve) => {
           const d = ctx.cesar!.lastDispatch;
           if (d) {
-            const cmd = (args as any).command ?? (args as any).file_path ?? JSON.stringify(args);
+            const cmd = renderToolPermissionCommand(tool, args);
             d({ type: 'permission-ask', tool, command: cmd, reason: message, resolve } as any);
           } else {
             resolve(true);
@@ -718,7 +730,14 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       const diag = buildToolErrorDiagnostic(name, args as Record<string, unknown>, result.result.error);
       const retryKey = `${name}:${JSON.stringify(args)}`;
       const used = nativeToolErrorRetries.get(retryKey) ?? 0;
-      if (used <= 0) {
+      // A user-denied permission is a deliberate choice, NOT a malformed-input
+      // error: never wrap it in [RETRYABLE_TOOL_ERROR] (which would invite an
+      // immediate re-prompt of the very tool the user just refused, e.g. a denied
+      // SaveMemory). Surface the denial verbatim so Cesar accepts it and moves on.
+      const isPermissionDenial = typeof result.result.error === 'string' && result.result.error.includes('User denied permission');
+      if (isPermissionDenial) {
+        output = result.result.error as string;
+      } else if (used <= 0) {
         nativeToolErrorRetries.set(retryKey, 1);
         output = `[RETRYABLE_TOOL_ERROR] ${diag}\nRetry this ${name} call ONCE with corrected input that matches the tool's schema. Do not narrate before retrying.`;
       } else {
@@ -753,7 +772,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:719
+// @kern-source: session:736
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -936,7 +955,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:903
+// @kern-source: session:920
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -970,7 +989,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:937
+// @kern-source: session:954
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -994,7 +1013,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:961
+// @kern-source: session:978
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -1006,7 +1025,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:968
+// @kern-source: session:985
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -1026,7 +1045,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
-// @kern-source: session:986
+// @kern-source: session:1003
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
   const raw = fromUrl ?? import.meta.url;
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
@@ -1060,7 +1079,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:1018
+// @kern-source: session:1035
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1085,7 +1104,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1044
+// @kern-source: session:1061
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

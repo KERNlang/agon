@@ -5,6 +5,7 @@ import from="./git.js" names="currentBranch,gitStatusShort,gitChangedFiles,gitTr
 import from="./process.js" names="spawnWithTimeout"
 import from="@kernlang/context" names="buildSpine"
 import from="@kernlang/context" names="ProjectContextGraph" types=true
+import from="../cesar/memory.js" names="stripProjectMemorySections"
 
 type name=ContextFormat values="plain|kern"
 
@@ -309,7 +310,14 @@ fn name=scanProjectContext params="cwd:string,extraContext?:string,format?:Conte
       try {
         const path = join(cwd, file);
         if (existsSync(path)) {
-          const content = readFileSync(path, "utf-8").trim();
+          const raw = readFileSync(path, "utf-8");
+          // For the dedicated Agon brief, strip the SaveMemory-managed sections
+          // (## Decisions / ## Constraints / ## Conventions / ## Session Notes):
+          // those bullets are injected separately as the [PROJECT MEMORY] block, so
+          // leaving them here would double-inject ~2k duplicate tokens per turn. The
+          // brief prose + the `fitness:` line are kept. Other brief files (AGON.md,
+          // CLAUDE.md, …) are passed through untouched.
+          const content = (file === ".agon/project.md" ? stripProjectMemorySections(raw) : raw).trim();
           if (content) {
             const cap = projectBriefCap(file);
             const capped = content.length > cap ? content.slice(0, cap) + `\n... (truncated at ${cap} chars)` : content;

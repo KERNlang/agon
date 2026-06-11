@@ -9,6 +9,7 @@ test name="Core SaveMemory tool" target="../../../src/kern/tools/tool-save-memor
     expect node=fn name=appendMemoryLine prop=returns is=MemoryAppendResult
     expect node=fn name=normalizeMemoryLine prop=returns is=string
     expect node=fn name=todayPrefix prop=returns is=string
+    expect node=fn name=canonicalMemorySection prop=returns is="string | null"
 
   it name="normalizeMemoryLine strips bullet, date, case, and whitespace (dedup key)"
     expect fn=normalizeMemoryLine args={{["- 2026-06-11 Use   session   TOKENS"]}} equals="use session tokens"

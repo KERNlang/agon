@@ -109,6 +109,49 @@ describe('context-scanner', () => {
     });
   });
 
+  describe('SaveMemory double-injection fix (F4)', () => {
+    const dirs: string[] = [];
+    function tmpRepo(): string {
+      const d = mkdtempSync(join(tmpdir(), 'agon-f4-'));
+      dirs.push(d);
+      return d;
+    }
+    afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); });
+
+    it('strips SaveMemory sections from .agon/project.md PROJECT CONTEXT (bullets live only in [PROJECT MEMORY])', () => {
+      const root = tmpRepo();
+      mkdirSync(join(root, '.agon'), { recursive: true });
+      writeFileSync(
+        join(root, '.agon/project.md'),
+        '# Brief\n\nThis is the prose brief.\n\nfitness: npm run gate\n\n## Decisions\n- 2026-06-11 use session tokens\n\n## Constraints\n- 2026-06-11 node 20 floor\n',
+      );
+      const ctx = scanProjectContext(root);
+      // Prose + fitness line are KEPT in PROJECT CONTEXT…
+      expect(ctx).toContain('Project instructions (.agon/project.md)');
+      expect(ctx).toContain('This is the prose brief.');
+      expect(ctx).toContain('fitness: npm run gate');
+      // …but the SaveMemory section headers + bullets are STRIPPED (no double-inject;
+      // they are surfaced separately as the [PROJECT MEMORY] block by session.kern).
+      expect(ctx).not.toContain('## Decisions');
+      expect(ctx).not.toContain('use session tokens');
+      expect(ctx).not.toContain('## Constraints');
+      expect(ctx).not.toContain('node 20 floor');
+    });
+
+    it('leaves other brief files (AGON.md) untouched — their ## sections are NOT stripped', () => {
+      const root = tmpRepo();
+      // Same shape but in AGON.md, which is not the SaveMemory store.
+      writeFileSync(
+        join(root, 'AGON.md'),
+        '# Brief\n\n## Decisions\n- a real heading in a hand-written brief\n',
+      );
+      const ctx = scanProjectContext(root);
+      expect(ctx).toContain('Project instructions (AGON.md)');
+      expect(ctx).toContain('## Decisions');
+      expect(ctx).toContain('a real heading in a hand-written brief');
+    });
+  });
+
   describe('hasProjectBrief (#6 nudge signal)', () => {
     const dirs: string[] = [];
     function tmpRepo(prefix: string): string {

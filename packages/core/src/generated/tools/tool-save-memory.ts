@@ -13,7 +13,7 @@ import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDe
 export const MEMORY_FILE_REL: string = '.agon/project.md';
 
 /**
- * Canonical section names. SaveMemory refuses any other section so the file stays predictable.
+ * Canonical section names. SaveMemory refuses any other section so the file stays predictable. Exported so the MCP write-tool branch validates/canonicalizes against the SAME list as the core tool (no two-path divergence).
  */
 // @kern-source: tool-save-memory:27
 export const MEMORY_SECTIONS: string[] = ['Decisions', 'Constraints', 'Conventions', 'Session Notes'];
@@ -25,9 +25,19 @@ export const MEMORY_SECTIONS: string[] = ['Decisions', 'Constraints', 'Conventio
 export const SECTION_CAP: number = 30;
 
 /**
- * Normalize a memory line for dedup comparison: strip a leading markdown bullet and an optional leading YYYY-MM-DD date prefix, collapse internal whitespace, lowercase, trim. So '- 2026-06-11 Use   X' and 'use x' compare equal.
+ * Canonicalize a section name against MEMORY_SECTIONS (case-insensitive, trimmed). Returns the canonical casing ('decisions' -> 'Decisions') or null when it matches no managed section. Shared so every SaveMemory entry point (the core tool's validate/checkPermission/execute AND the MCP write-tool branch) produces identical headers and rejects the same non-canonical sections — no two-path divergence.
  */
 // @kern-source: tool-save-memory:33
+export function canonicalMemorySection(section: unknown): string | null {
+  const want = String(section ?? '').trim().toLowerCase();
+  if (!want) return null;
+  return MEMORY_SECTIONS.find((s) => s.toLowerCase() === want) ?? null;
+}
+
+/**
+ * Normalize a memory line for dedup comparison: strip a leading markdown bullet and an optional leading YYYY-MM-DD date prefix, collapse internal whitespace, lowercase, trim. So '- 2026-06-11 Use   X' and 'use x' compare equal.
+ */
+// @kern-source: tool-save-memory:41
 export function normalizeMemoryLine(line: string): string {
   return String(line ?? '')
     .replace(/^[\s>*-]+/, '')              // leading bullet/quote/space
@@ -40,12 +50,12 @@ export function normalizeMemoryLine(line: string): string {
 /**
  * Today's date as YYYY-MM-DD (UTC-stable via toISOString slice).
  */
-// @kern-source: tool-save-memory:44
+// @kern-source: tool-save-memory:52
 export function todayPrefix(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-// @kern-source: tool-save-memory:50
+// @kern-source: tool-save-memory:58
 export interface MemoryAppendResult {
   content: string;
   changed: boolean;
@@ -55,7 +65,7 @@ export interface MemoryAppendResult {
 /**
  * Pure append-with-dedup over markdown content. Inserts a dated one-liner ('- <dateStr> <text>') as the LAST item under '## <section>', creating the section (appended at end) when absent and the whole file when empty. Skips when a near-identical line already exists in that section (whitespace/case/date-insensitive via normalizeMemoryLine). Honors SECTION_CAP by dropping the OLDEST entry in the section when full. Never touches other sections or non-section lines (e.g. a `fitness:` line). dateStr is the YYYY-MM-DD prefix (caller passes todayPrefix()); kept as a param so this stays a PURE, deterministically-testable function (no clock dependency).
  */
-// @kern-source: tool-save-memory:55
+// @kern-source: tool-save-memory:63
 export function appendMemoryLine(existing: string, section: string, text: string, dateStr: string): MemoryAppendResult {
   const datePrefix = dateStr;
   const cleanText = String(text ?? '').replace(/\s+/g, ' ').trim();
@@ -64,7 +74,7 @@ export function appendMemoryLine(existing: string, section: string, text: string
 
   const src = String(existing ?? '');
   const lines = src.length > 0 ? src.split('\n') : [];
-  const headerRe = new RegExp(`^##\\s+${section.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\s*$`, 'i');
+  const headerRe = new RegExp(`^##\\s+${section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
 
   // Find the section header index.
   let headerIdx = -1;
@@ -131,7 +141,7 @@ export function appendMemoryLine(existing: string, section: string, text: string
 /**
  * Factory for the SaveMemory tool — records one durable cross-session fact into .agon/project.md under a section, dated and deduped. Returns 'ask' so each memory is user-confirmed.
  */
-// @kern-source: tool-save-memory:129
+// @kern-source: tool-save-memory:137
 export function createSaveMemoryTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'SaveMemory',
@@ -156,8 +166,7 @@ export function createSaveMemoryTool(): ToolHandler {
     if (!input.section || typeof input.section !== 'string') {
       return `Missing required parameter: section (one of: ${MEMORY_SECTIONS.join(', ')})`;
     }
-    const match = MEMORY_SECTIONS.find((s) => s.toLowerCase() === String(input.section).trim().toLowerCase());
-    if (!match) {
+    if (!canonicalMemorySection(input.section)) {
       return `Invalid section "${input.section}". Use one of: ${MEMORY_SECTIONS.join(', ')}`;
     }
     return null;
@@ -166,7 +175,7 @@ export function createSaveMemoryTool(): ToolHandler {
   // Write tools auto-allow in-cwd; SaveMemory explicitly asks so the user
   // confirms each durable memory. The message surfaces the exact line + section.
   const checkPermission = (input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
-    const section = MEMORY_SECTIONS.find((s) => s.toLowerCase() === String(input.section ?? '').trim().toLowerCase()) ?? String(input.section ?? '');
+    const section = canonicalMemorySection(input.section) ?? String(input.section ?? '');
     const memory = String(input.memory ?? '').replace(/\s+/g, ' ').trim();
     return {
       behavior: 'ask',
@@ -176,7 +185,7 @@ export function createSaveMemoryTool(): ToolHandler {
   };
 
   const execute = async (input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> => {
-    const section = MEMORY_SECTIONS.find((s) => s.toLowerCase() === String(input.section).trim().toLowerCase()) as string;
+    const section = canonicalMemorySection(input.section) as string;
     const memory = String(input.memory);
     const filePath = resolve(ctx.cwd, MEMORY_FILE_REL);
 

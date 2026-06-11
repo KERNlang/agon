@@ -42,6 +42,30 @@ fn name=extractProjectMemorySections params="content:string" returns=string expo
     return out.join('\n');
   >>>
 
+fn name=stripProjectMemorySections params="content:string" returns=string export=true
+  doc "COMPLEMENT of extractProjectMemorySections: return project.md content with the SaveMemory-managed sections (## Decisions / ## Constraints / ## Conventions / ## Session Notes, case-insensitive) removed, keeping the brief prose and the `fitness:` line intact. Used by scanProjectContext so the memory bullets appear ONLY in the [PROJECT MEMORY] block and are NOT double-injected as raw PROJECT CONTEXT. Pure; collapses the blank-line runs left where a section was excised so the kept prose stays tidy."
+  handler <<<
+    const src = String(content ?? '');
+    if (!src.trim()) return src;
+    const lines = src.split('\n');
+    const managed = new Set(PROJECT_MEMORY_SECTIONS.map((s) => s.toLowerCase()));
+    const out: string[] = [];
+    let skipping = false;
+    for (let i = 0; i < lines.length; i += 1) {
+      const h = lines[i].match(/^##\s+(.+?)\s*$/);
+      if (h) {
+        // Entering a new section: skip it iff it is a SaveMemory-managed one.
+        skipping = managed.has(h[1].trim().toLowerCase());
+        if (skipping) continue;
+      }
+      if (!skipping) out.push(lines[i]);
+    }
+    // Collapse 3+ consecutive blank lines (left by an excised section) to one, and
+    // trim trailing blank lines so the kept prose reads clean.
+    const collapsed = out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '');
+    return collapsed;
+  >>>
+
 fn name=buildProjectMemoryBlock params="cwd:string" returns=string export=true
   doc "Read .agon/project.md and render its SaveMemory sections as a labeled [PROJECT MEMORY] block for the prompt — placed ABOVE session memory so durable cross-session facts lead. Returns '' when the file is absent or has no memory sections (no block). Best-effort: swallows IO errors toward silence."
   handler <<<

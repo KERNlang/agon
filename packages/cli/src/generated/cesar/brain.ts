@@ -18,7 +18,7 @@ import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge } from './confidence
 
 import { parseSuggestion } from './suggestion.js';
 
-import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend } from './session.js';
+import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend, renderToolPermissionCommand } from './session.js';
 
 import { enforceContextBudget } from './context-budget.js';
 
@@ -1432,7 +1432,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   return new Promise<boolean>((resolve) => {
                     const lastInput = _lastToolInputs[tool] ?? '{}';
                     let command = '';
-                    try { command = JSON.parse(lastInput).command ?? JSON.parse(lastInput).file_path ?? lastInput; } catch { command = lastInput; }
+                    try { command = renderToolPermissionCommand(tool, JSON.parse(lastInput)); } catch { command = lastInput; }
                     dispatch({ type: 'permission-ask', tool, command, reason: message, resolve } as any);
                   });
                 },
@@ -1978,7 +1978,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             return new Promise<boolean>((resolve) => {
               const lastInput = _lastToolInputs[tool] ?? '{}';
               let command = '';
-              try { command = JSON.parse(lastInput).command ?? JSON.parse(lastInput).file_path ?? lastInput; } catch { command = lastInput; }
+              try { command = renderToolPermissionCommand(tool, JSON.parse(lastInput)); } catch { command = lastInput; }
               dispatch({ type: 'permission-ask', tool, command, reason: message, resolve } as any);
             });
           },

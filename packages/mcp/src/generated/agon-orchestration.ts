@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 
 import { execSync, spawnSync } from 'node:child_process';
 
-import { defaultFinalizeOnScoreForTask, appendMemoryLine } from '@kernlang/agon-core';
+import { defaultFinalizeOnScoreForTask, appendMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS } from '@kernlang/agon-core';
 
 import { ROOM_TOOLS, isRoomTool, handleRoomTool } from './rooms.js';
 
@@ -339,12 +339,20 @@ export async function handleWriteToolCall(name: string, args: Record<string,unkn
       return output;
     }
     if (name === 'SaveMemory') {
-      const section = String((args as any).section ?? '').trim();
+      // Canonicalize + validate the section against the SAME MEMORY_SECTIONS list
+      // the core tool uses, so this external-CLI path produces identical headers
+      // and rejects non-canonical sections instead of writing a divergent header.
+      const section = canonicalMemorySection((args as any).section);
       const memory = String((args as any).memory ?? '').trim();
+      if (!section) {
+        const output = `Invalid section "${String((args as any).section ?? '')}". Use one of: ${MEMORY_SECTIONS.join(', ')}`;
+        writeToolCompletion(requestId, name, args, 'error', output);
+        return output;
+      }
       const cwd = process.env.AGON_CWD || process.cwd();
       const memPath = join(cwd, '.agon', 'project.md');
       const existing = existsSync(memPath) ? readFileSync(memPath, 'utf-8') : '';
-      const res = appendMemoryLine(existing, section, memory);
+      const res = appendMemoryLine(existing, section, memory, todayPrefix());
       if (!res.changed) {
         const output = `Already in project memory [${section}] — skipped (near-duplicate).`;
         writeToolCompletion(requestId, name, args, 'done', output);

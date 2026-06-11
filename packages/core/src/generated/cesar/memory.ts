@@ -55,9 +55,35 @@ export function extractProjectMemorySections(content: string): string {
 }
 
 /**
- * Read .agon/project.md and render its SaveMemory sections as a labeled [PROJECT MEMORY] block for the prompt — placed ABOVE session memory so durable cross-session facts lead. Returns '' when the file is absent or has no memory sections (no block). Best-effort: swallows IO errors toward silence.
+ * COMPLEMENT of extractProjectMemorySections: return project.md content with the SaveMemory-managed sections (## Decisions / ## Constraints / ## Conventions / ## Session Notes, case-insensitive) removed, keeping the brief prose and the `fitness:` line intact. Used by scanProjectContext so the memory bullets appear ONLY in the [PROJECT MEMORY] block and are NOT double-injected as raw PROJECT CONTEXT. Pure; collapses the blank-line runs left where a section was excised so the kept prose stays tidy.
  */
 // @kern-source: memory:45
+export function stripProjectMemorySections(content: string): string {
+  const src = String(content ?? '');
+  if (!src.trim()) return src;
+  const lines = src.split('\n');
+  const managed = new Set(PROJECT_MEMORY_SECTIONS.map((s) => s.toLowerCase()));
+  const out: string[] = [];
+  let skipping = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    const h = lines[i].match(/^##\s+(.+?)\s*$/);
+    if (h) {
+      // Entering a new section: skip it iff it is a SaveMemory-managed one.
+      skipping = managed.has(h[1].trim().toLowerCase());
+      if (skipping) continue;
+    }
+    if (!skipping) out.push(lines[i]);
+  }
+  // Collapse 3+ consecutive blank lines (left by an excised section) to one, and
+  // trim trailing blank lines so the kept prose reads clean.
+  const collapsed = out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '');
+  return collapsed;
+}
+
+/**
+ * Read .agon/project.md and render its SaveMemory sections as a labeled [PROJECT MEMORY] block for the prompt — placed ABOVE session memory so durable cross-session facts lead. Returns '' when the file is absent or has no memory sections (no block). Best-effort: swallows IO errors toward silence.
+ */
+// @kern-source: memory:69
 export function buildProjectMemoryBlock(cwd: string): string {
   try {
     const path = resolve(cwd, PROJECT_MEMORY_REL);
@@ -74,7 +100,7 @@ export function buildProjectMemoryBlock(cwd: string): string {
   }
 }
 
-// @kern-source: memory:63
+// @kern-source: memory:87
 export interface MemoryEntry {
   key: string;
   value: string;
@@ -82,7 +108,7 @@ export interface MemoryEntry {
   category: 'file'|'decision'|'attempt'|'preference'|'pattern';
 }
 
-// @kern-source: memory:69
+// @kern-source: memory:93
 export interface CesarMemory {
   session: Map<string, MemoryEntry>;
   remember: (key: string, value: string, category: MemoryEntry['category']) => void;
@@ -95,7 +121,7 @@ export interface CesarMemory {
 /**
  * Create session-scoped Cesar memory. It does not persist across sessions.
  */
-// @kern-source: memory:77
+// @kern-source: memory:101
 export function createCesarMemory(): CesarMemory {
   const session = new Map<string, MemoryEntry>();
 

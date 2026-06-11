@@ -6,5 +6,6 @@ test name="Cesar memory — project memory block" target="../../../src/kern/cesa
 
   it name="project-memory helpers keep their shape (behavior pinned in tests/unit/save-memory-tool.test.ts)"
     expect node=fn name=extractProjectMemorySections prop=returns is=string
+    expect node=fn name=stripProjectMemorySections prop=returns is=string
     expect node=fn name=buildProjectMemoryBlock prop=returns is=string
     expect node=const name=PROJECT_MEMORY_SECTIONS prop=type is="string[]"

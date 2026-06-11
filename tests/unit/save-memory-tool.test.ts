@@ -12,10 +12,12 @@ import {
   appendMemoryLine,
   normalizeMemoryLine,
   todayPrefix,
+  canonicalMemorySection,
 } from '../../packages/core/src/generated/tools/tool-save-memory.js';
 import {
   buildProjectMemoryBlock,
   extractProjectMemorySections,
+  stripProjectMemorySections,
 } from '../../packages/core/src/generated/cesar/memory.js';
 import { parseFitnessLine } from '../../packages/core/src/generated/blocks/context-scanner.js';
 
@@ -63,6 +65,33 @@ describe('SaveMemory — pure helpers', () => {
     const r = appendMemoryLine('## Decisions\n- 2026-06-11 Node 20 floor', 'Constraints', 'Node 20 floor', D);
     expect(r.changed).toBe(true);
     expect(r.content).toBe('## Decisions\n- 2026-06-11 Node 20 floor\n\n## Constraints\n- 2026-06-11 Node 20 floor');
+  });
+
+  it('a section with regex metacharacters does not throw and dedups against its own header (F3)', () => {
+    // Before the fix the header regex char class was malformed: 'C++ rules' threw
+    // a SyntaxError. The escape must produce a valid regex AND still match the
+    // section it created, so a re-append dedups instead of spawning a 2nd header.
+    let first!: ReturnType<typeof appendMemoryLine>;
+    expect(() => { first = appendMemoryLine('', 'C++ rules', 'no raw pointers', D); }).not.toThrow();
+    expect(first.content).toBe('## C++ rules\n- 2026-06-11 no raw pointers');
+    // Re-appending the same line must find the existing '## C++ rules' header (regex
+    // matched) and skip as a near-dup — proof the metachars were escaped, not eaten.
+    const second = appendMemoryLine(first.content, 'C++ rules', 'no raw pointers', D);
+    expect(second.changed).toBe(false);
+    expect(second.status).toBe('duplicate');
+    // A genuinely new line lands under the SAME header (no duplicate header).
+    const third = appendMemoryLine(first.content, 'C++ rules', 'use RAII', D);
+    expect(third.changed).toBe(true);
+    expect((third.content.match(/^## C\+\+ rules$/gm) ?? []).length).toBe(1);
+  });
+
+  it('canonicalMemorySection canonicalizes case/whitespace and rejects unknown (F2)', () => {
+    expect(canonicalMemorySection('decisions')).toBe('Decisions');
+    expect(canonicalMemorySection('  CONSTRAINTS ')).toBe('Constraints');
+    expect(canonicalMemorySection('Session Notes')).toBe('Session Notes');
+    expect(canonicalMemorySection('Nonsense')).toBeNull();
+    expect(canonicalMemorySection('')).toBeNull();
+    expect(canonicalMemorySection(undefined)).toBeNull();
   });
 
   it('caps the section at 30, dropping the oldest, newest lands last', () => {
@@ -163,5 +192,21 @@ describe('SaveMemory — [PROJECT MEMORY] prompt block', () => {
     mkdirSync(join(dir, '.agon'), { recursive: true });
     writeFileSync(join(dir, '.agon', 'project.md'), '# Brief\n\nfitness: npm test\n');
     expect(buildProjectMemoryBlock(dir)).toBe('');
+  });
+
+  it('stripProjectMemorySections removes the managed sections but keeps prose + fitness (F4 complement)', () => {
+    const doc = '# Brief\n\nProse here.\n\nfitness: npm run gate\n\n## Decisions\n- 2026-06-11 session tokens\n\n## Constraints\n- 2026-06-11 node 20\n';
+    const stripped = stripProjectMemorySections(doc);
+    expect(stripped).toContain('# Brief');
+    expect(stripped).toContain('Prose here.');
+    expect(stripped).toContain('fitness: npm run gate');
+    expect(stripped).not.toContain('## Decisions');
+    expect(stripped).not.toContain('session tokens');
+    expect(stripped).not.toContain('## Constraints');
+    expect(stripped).not.toContain('node 20');
+    // strip then extract are complements: nothing managed remains to extract.
+    expect(extractProjectMemorySections(stripped)).toBe('');
+    // A non-managed heading is preserved.
+    expect(stripProjectMemorySections('## Architecture\n- keep me')).toContain('## Architecture');
   });
 });

@@ -376,6 +376,16 @@ fn name=capSnapshotMessageContent params="content:string" returns="string"
     return `${content.slice(0, CESAR_SNAPSHOT_MSG_CHAR_CAP)}\n… [${content.length - CESAR_SNAPSHOT_MSG_CHAR_CAP} chars truncated for Cesar context]`;
   >>>
 
+fn name=renderToolPermissionCommand params="tool:string, args:unknown" returns=string export=true
+  doc "Render the `command` string shown in a Cesar permission prompt for a tool call. SaveMemory renders the human-readable '[<section>] <memory>' (the durable fact the user is confirming) instead of an opaque JSON args blob; every other tool keeps the existing precedence: args.command -> args.file_path -> JSON.stringify(args). Shared across the API-native and both XML-loop permission builders so they render identically (the MCP watcher in brain.kern already special-cases SaveMemory the same way). Pure; tolerant of non-object args."
+  handler <<<
+    const a = (args && typeof args === 'object') ? (args as Record<string, unknown>) : {};
+    if (tool === 'SaveMemory') {
+      return `[${String(a.section ?? '')}] ${String(a.memory ?? '')}`.trim();
+    }
+    return String(a.command ?? a.file_path ?? JSON.stringify(args ?? {}));
+  >>>
+
 fn name=buildCesarConversationSnapshot params="session:PersistentSession|null, chatSession:any" returns="Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>" export=true
   doc "Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched."
   handler lang="kern"
@@ -668,7 +678,7 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
           return new Promise<boolean>((resolve) => {
             const d = ctx.cesar!.lastDispatch;
             if (d) {
-              const cmd = (args as any).command ?? (args as any).file_path ?? JSON.stringify(args);
+              const cmd = renderToolPermissionCommand(tool, args);
               d({ type: 'permission-ask', tool, command: cmd, reason: message, resolve } as any);
             } else {
               resolve(true);
@@ -684,7 +694,14 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         const diag = buildToolErrorDiagnostic(name, args as Record<string, unknown>, result.result.error);
         const retryKey = `${name}:${JSON.stringify(args)}`;
         const used = nativeToolErrorRetries.get(retryKey) ?? 0;
-        if (used <= 0) {
+        // A user-denied permission is a deliberate choice, NOT a malformed-input
+        // error: never wrap it in [RETRYABLE_TOOL_ERROR] (which would invite an
+        // immediate re-prompt of the very tool the user just refused, e.g. a denied
+        // SaveMemory). Surface the denial verbatim so Cesar accepts it and moves on.
+        const isPermissionDenial = typeof result.result.error === 'string' && result.result.error.includes('User denied permission');
+        if (isPermissionDenial) {
+          output = result.result.error as string;
+        } else if (used <= 0) {
           nativeToolErrorRetries.set(retryKey, 1);
           output = `[RETRYABLE_TOOL_ERROR] ${diag}\nRetry this ${name} call ONCE with corrected input that matches the tool's schema. Do not narrate before retrying.`;
         } else {

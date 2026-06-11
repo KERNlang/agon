@@ -24,11 +24,19 @@ import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolHandler,
 const name=MEMORY_FILE_REL type=string value={{ '.agon/project.md' }}
   doc "Project-memory file, relative to cwd. Same file scanProjectContext injects and context-scanner parses for `fitness:`."
 
-const name=MEMORY_SECTIONS type="string[]" value={{ ['Decisions', 'Constraints', 'Conventions', 'Session Notes'] }}
-  doc "Canonical section names. SaveMemory refuses any other section so the file stays predictable."
+const name=MEMORY_SECTIONS type="string[]" value={{ ['Decisions', 'Constraints', 'Conventions', 'Session Notes'] }} export=true
+  doc "Canonical section names. SaveMemory refuses any other section so the file stays predictable. Exported so the MCP write-tool branch validates/canonicalizes against the SAME list as the core tool (no two-path divergence)."
 
 const name=SECTION_CAP type=number value={{ 30 }}
   doc "Per-section cap. At the cap, the OLDEST entry is dropped (append still lands) so durable memory never silently fails to record the newest fact."
+
+fn name=canonicalMemorySection params="section:unknown" returns="string | null" export=true
+  doc "Canonicalize a section name against MEMORY_SECTIONS (case-insensitive, trimmed). Returns the canonical casing ('decisions' -> 'Decisions') or null when it matches no managed section. Shared so every SaveMemory entry point (the core tool's validate/checkPermission/execute AND the MCP write-tool branch) produces identical headers and rejects the same non-canonical sections — no two-path divergence."
+  handler <<<
+    const want = String(section ?? '').trim().toLowerCase();
+    if (!want) return null;
+    return MEMORY_SECTIONS.find((s) => s.toLowerCase() === want) ?? null;
+  >>>
 
 fn name=normalizeMemoryLine params="line:string" returns=string export=true
   doc "Normalize a memory line for dedup comparison: strip a leading markdown bullet and an optional leading YYYY-MM-DD date prefix, collapse internal whitespace, lowercase, trim. So '- 2026-06-11 Use   X' and 'use x' compare equal."
@@ -62,7 +70,7 @@ fn name=appendMemoryLine params="existing:string, section:string, text:string, d
 
     const src = String(existing ?? '');
     const lines = src.length > 0 ? src.split('\n') : [];
-    const headerRe = new RegExp(`^##\\s+${section.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\s*$`, 'i');
+    const headerRe = new RegExp(`^##\\s+${section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
 
     // Find the section header index.
     let headerIdx = -1;
@@ -152,8 +160,7 @@ fn name=createSaveMemoryTool returns=ToolHandler export=true
       if (!input.section || typeof input.section !== 'string') {
         return `Missing required parameter: section (one of: ${MEMORY_SECTIONS.join(', ')})`;
       }
-      const match = MEMORY_SECTIONS.find((s) => s.toLowerCase() === String(input.section).trim().toLowerCase());
-      if (!match) {
+      if (!canonicalMemorySection(input.section)) {
         return `Invalid section "${input.section}". Use one of: ${MEMORY_SECTIONS.join(', ')}`;
       }
       return null;
@@ -162,7 +169,7 @@ fn name=createSaveMemoryTool returns=ToolHandler export=true
     // Write tools auto-allow in-cwd; SaveMemory explicitly asks so the user
     // confirms each durable memory. The message surfaces the exact line + section.
     const checkPermission = (input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
-      const section = MEMORY_SECTIONS.find((s) => s.toLowerCase() === String(input.section ?? '').trim().toLowerCase()) ?? String(input.section ?? '');
+      const section = canonicalMemorySection(input.section) ?? String(input.section ?? '');
       const memory = String(input.memory ?? '').replace(/\s+/g, ' ').trim();
       return {
         behavior: 'ask',
@@ -172,7 +179,7 @@ fn name=createSaveMemoryTool returns=ToolHandler export=true
     };
 
     const execute = async (input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> => {
-      const section = MEMORY_SECTIONS.find((s) => s.toLowerCase() === String(input.section).trim().toLowerCase()) as string;
+      const section = canonicalMemorySection(input.section) as string;
       const memory = String(input.memory);
       const filePath = resolve(ctx.cwd, MEMORY_FILE_REL);
 

@@ -137,7 +137,7 @@ export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, To
 export { FileStateCache, fileStateCache, getProjectFileStateCache, clearProjectFileStateCaches } from './file-state-cache.js';
 export { ToolRegistry, executeToolCall, executeToolCalls } from './tool-registry.js';
 export { checkBashPermission, checkFileReadPermission, checkFileWritePermission, isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
-export { createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createAgentTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, createQuickNeroTool } from './tools.js';
+export { createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createAgentTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, createQuickNeroTool } from './tools.js';
 export { formatCesarPlanMarkdown } from './generated/cesar/plan-formatter.js';
 export { generateToolPrompt, toolsToOpenAIFormat } from './generated/tools/tool-prompt.js';
 export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './generated/tools/tool-parser.js';
@@ -213,7 +213,7 @@ export { Speculator, createSpeculator } from './generated/cesar/speculator.js';
 export type {
   SpeculatorMemberConfig, SpeculatorOptions, SpeculatorResult,
 } from './generated/cesar/speculator.js';
-export { createCesarMemory, buildProjectMemoryBlock, extractProjectMemorySections } from './generated/cesar/memory.js';
+export { createCesarMemory, buildProjectMemoryBlock, extractProjectMemorySections, stripProjectMemorySections } from './generated/cesar/memory.js';
 export type { CesarMemory, MemoryEntry } from './generated/cesar/memory.js';
 export {
   ContextThread, loadOrCreateActiveThread, forkActiveThread, listThreadsForProject, deleteThread, projectHash16, projectSha8,

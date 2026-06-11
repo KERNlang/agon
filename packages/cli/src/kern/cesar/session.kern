@@ -272,10 +272,13 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export
       } else {
       const stats = tracker.getStats();
       let budgetWarning = '';
-      if (stats.totalCostUsd > 0.50) {
-        budgetWarning = `\n\nURGENT: Planning has spent $${stats.totalCostUsd.toFixed(2)}. Stop investigating and decide NOW — call ProposePlan or ExitPlanMode.`;
-      } else if (stats.totalCostUsd > 0.25) {
-        budgetWarning = `\n\nWARNING: Planning has spent $${stats.totalCostUsd.toFixed(2)}. Wrap up and decide — call ProposePlan or ExitPlanMode.`;
+      // meteredCostUsd, not the ballpark total: flat-rate engines (kimi/minimax/zai
+      // coding plans) spend $0 real money, and the ballpark priced their cache-inflated
+      // token counts at a made-up default rate — fabricated 'Planning has spent $X'.
+      if (stats.meteredCostUsd > 0.50) {
+        budgetWarning = `\n\nURGENT: Planning has spent $${stats.meteredCostUsd.toFixed(2)}. Stop investigating and decide NOW — call ProposePlan or ExitPlanMode.`;
+      } else if (stats.meteredCostUsd > 0.25) {
+        budgetWarning = `\n\nWARNING: Planning has spent $${stats.meteredCostUsd.toFixed(2)}. Wrap up and decide — call ProposePlan or ExitPlanMode.`;
       }
       systemParts.push(`RULE 9 — PLAN MODE: You are in PLAN MODE because the user asked for planning, so proposing a plan is usually the right call here. But you are NEVER trapped and never forced: if you decide a plan is not the right approach — the task is simple enough to do live, or planning is blocking progress — call ExitPlanMode with a one-line reason and work live instead. You decide.
 

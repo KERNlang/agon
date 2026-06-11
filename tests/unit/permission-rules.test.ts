@@ -15,7 +15,6 @@ import {
   hasShellControl,
   hasRedirection,
   splitShellSegments,
-  checkBashPermission,
 } from '../../packages/core/src/generated/tools/tool-permissions.js';
 import { createBashTool } from '../../packages/core/src/generated/tools/tool-bash.js';
 import { createEditTool } from '../../packages/core/src/generated/tools/tool-edit.js';
@@ -28,6 +27,12 @@ const baseCtx = (extra: Record<string, unknown> = {}) => ({
   readFileState: new Map(),
   ...extra,
 });
+
+// The standalone PermissionChecks.checkBashPermission was proven dead (no
+// execution path called it) and was deleted. The live Bash gate is the inline
+// createBashTool().checkPermission, so probe that directly.
+const bashGate = (command: string, ctx: unknown) =>
+  createBashTool().checkPermission!({ command }, ctx as any);
 
 describe('CC-parity permission rule parsing', () => {
   it('parses Bash prefix rules', () => {
@@ -154,6 +159,29 @@ describe('loadConfig merges permissions across scopes (deny from any scope wins)
     expect(evaluatePermissionRules('Bash', 'rm -rf /', ruleSet)).toBe('deny');
     expect(evaluatePermissionRules('Bash', 'git diff HEAD', ruleSet)).toBe('allow');
     expect(evaluatePermissionRules('Bash', 'ls', ruleSet)).toBeNull();
+  });
+});
+
+// ── Inline Bash gate: live deny/allow/ask floor ───────────────────────
+// Equivalent coverage for the deleted standalone checkBashPermission. These
+// assert the REAL gate (createBashTool().checkPermission) that runs on every
+// execution path. NOTE: these are the LIVE semantics, which the dead standalone
+// had drifted from — e.g. the inline gate treats a redirecting compound
+// (`... 2>/dev/null`) as NOT read-only (redirection writes a file), so it asks
+// rather than auto-allowing as the old standalone did.
+describe('inline Bash gate floor (createBashTool().checkPermission)', () => {
+  it('auto-allows a clean read-only command', () => {
+    expect(bashGate('git status', baseCtx({ permissionMode: 'ask' })).behavior).toBe('allow');
+    expect(bashGate('cat file.txt', baseCtx({ permissionMode: 'ask' })).behavior).toBe('allow');
+  });
+  it('asks for a mutating command in ask mode, allows it in auto mode', () => {
+    expect(bashGate('npm install express', baseCtx({ permissionMode: 'ask' })).behavior).toBe('ask');
+    expect(bashGate('npm install express', baseCtx({ permissionMode: 'auto' })).behavior).toBe('allow');
+  });
+  it('does not auto-allow a read-only command that redirects (redirection writes)', () => {
+    expect(
+      bashGate('agon config --help 2>/dev/null && echo "---" && agon config list 2>/dev/null', baseCtx({ permissionMode: 'ask' })).behavior,
+    ).toBe('ask');
   });
 });
 
@@ -315,13 +343,13 @@ describe('F1: executeToolCall honors deny rules on the API/XML path', () => {
       permissionMode: 'smart',
       permissionRules: parsePermissionRuleSet({ allow: ['Bash(echo:*)'] }),
     });
-    // echo is also readonly, so assert via checkBashPermission directly on a
+    // echo is also readonly, so assert via the inline Bash gate directly on a
     // non-readonly allowed command to prove the rule (not readonly) path.
     const ctx2 = baseCtx({
       permissionMode: 'smart',
       permissionRules: parsePermissionRuleSet({ allow: ['Bash(touch:*)'] }),
     });
-    expect(checkBashPermission('touch newfile', ctx2 as any).behavior).toBe('allow');
+    expect(bashGate('touch newfile', ctx2).behavior).toBe('allow');
     expect(ctx).toBeDefined();
   });
 
@@ -345,6 +373,6 @@ describe('F1: executeToolCall honors deny rules on the API/XML path', () => {
 
   it('without a deny rule, smart mode still asks (deny rule did not over-fire)', () => {
     const ctx = baseCtx({ permissionMode: 'smart', source: 'user', permissionRules: parsePermissionRuleSet({}) });
-    expect(checkBashPermission('rm -rf node_modules', ctx as any).behavior).toBe('ask');
+    expect(bashGate('rm -rf node_modules', ctx).behavior).toBe('ask');
   });
 });

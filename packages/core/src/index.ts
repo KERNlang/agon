@@ -136,7 +136,7 @@ export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, To
 export { parseToolHooks, hasToolHooks, runPreToolUseHooks, runPostToolUseHooks } from './tool-hooks.js';
 export { FileStateCache, fileStateCache, getProjectFileStateCache, clearProjectFileStateCaches } from './file-state-cache.js';
 export { ToolRegistry, executeToolCall, executeToolCalls } from './tool-registry.js';
-export { checkBashPermission, checkFileReadPermission, checkFileWritePermission, isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
+export { isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
 export { parsePermissionRule, parsePermissionRuleSet, ruleMatches, evaluatePermissionRules, evaluateToolRules, evaluateBashRules, evaluateFilePathRules, hasShellControl, hasRedirection, hasSubstitution, splitShellSegments, resolveRulePath, pathRuleMatches } from './tool-permissions.js';
 export { PERMISSION_DENIED_MESSAGE } from './tool-registry.js';
 export { createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createAgentTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, createQuickNeroTool } from './tools.js';

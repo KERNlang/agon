@@ -87,40 +87,6 @@ module name=GitDirtyCache
       return value="((dirty, fileName) => [...dirty].some((dirtyPath: string) => filePath.endsWith(dirtyPath) || dirtyPath.endsWith(fileName)))(getGitDirtyFiles(cwd), filePath.split('/').pop() ?? filePath)"
 
 module name=PermissionChecks
-  fn name=isSessionAllowed params="command:string, ctx:ToolContext" returns=boolean
-    handler lang="kern"
-      if cond="!ctx.sessionAllowList || ctx.sessionAllowList.length === 0"
-        return value="false"
-      let name=sessionBase value="command.trim().split(/\\s+/)[0]"
-      return value="ctx.sessionAllowList.some(ac => command.startsWith(ac) || sessionBase === ac)"
-
-  fn name=checkBashPermission params="command:string, ctx:ToolContext" returns=PermissionDecision
-    handler <<<
-      // Dangerous patterns are a hard floor — denied regardless of rules.
-      if (isDangerousCommand(command)) {
-        return { behavior: 'deny', message: `Dangerous command blocked: ${command.slice(0, 50)}`, reason: 'dangerous_pattern' };
-      }
-      // CC-parity allow/deny rules: deny FIRST (before any mode-based auto-allow),
-      // allow before the ask fall-throughs. F2 compound-command splitting applies.
-      if (ctx.permissionRules) {
-        const ruleDecision = evaluateBashRules(command, ctx.permissionRules);
-        if (ruleDecision === 'deny') return { behavior: 'deny', message: PERMISSION_DENIED_MESSAGE + `: Bash (${command.slice(0, 80)}) blocked by a deny rule`, reason: 'permission_rule_deny' };
-        if (ruleDecision === 'allow') return { behavior: 'allow' };
-      }
-      if (ctx.permissionMode === 'deny-all') return { behavior: 'deny', message: 'All tool execution is denied' };
-      if (ctx.toolPermissions?.['Bash'] === 'allow') return { behavior: 'allow' };
-      if (ctx.toolPermissions?.['Bash'] === 'deny') return { behavior: 'deny', message: 'Bash denied in settings' };
-      if (isReadOnlyCommand(command)) return { behavior: 'allow' };
-      if (ctx.allowedCommands?.some(ac => command.startsWith(ac) || command.trim().split(/\s+/)[0] === ac)) return { behavior: 'allow' };
-      if (ctx.permissionMode === 'smart') {
-        return (isSessionAllowed(command, ctx) || ctx.source === 'orchestrator')
-          ? { behavior: 'allow' }
-          : { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
-      }
-      if (ctx.permissionMode === 'auto') return { behavior: 'allow' };
-      return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
-    >>>
-
   fn name=isPathUnderCwd params="filePath:string, cwd:string" returns=boolean
     handler <<<
       const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
@@ -141,64 +107,6 @@ module name=PermissionChecks
       const rel = relative(realCwd, realPath);
       return !rel.startsWith('..');
     >>>
-
-  fn name=checkFileReadPermission params="filePath:string, ctx:ToolContext" returns=PermissionDecision
-    handler lang="kern"
-      if cond="ctx.permissionMode === 'deny-all'"
-        return value="{ behavior: 'deny', message: 'All tool execution is denied' }"
-      comment raw="// CC-parity allow/deny rules: deny FIRST, allow before ask fall-throughs (F3 path-aware)."
-      if cond="ctx.permissionRules"
-        let name=readRule value="evaluateFilePathRules('Read', filePath, ctx.cwd, ctx.permissionRules)"
-        if cond="readRule === 'deny'"
-          return value="{ behavior: 'deny', message: PERMISSION_DENIED_MESSAGE + `: Read ${filePath} blocked by a deny rule`, reason: 'permission_rule_deny' }"
-        if cond="readRule === 'allow'"
-          return value="{ behavior: 'allow' }"
-      comment raw="// Check per-tool permission from settings.json"
-      if cond="ctx.toolPermissions?.['Read'] === 'deny'"
-        return value="{ behavior: 'deny', message: 'Read denied in settings' }"
-      let name=readResolved value="isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath)"
-      if cond="isPathUnderCwd(readResolved, ctx.cwd)"
-        return value="{ behavior: 'allow' }"
-      if cond="ctx.toolPermissions?.['Read'] === 'ask'"
-        return value="{ behavior: 'ask', message: `Read file outside workspace: ${readResolved}` }"
-      if cond="ctx.permissionMode === 'auto'"
-        return value="{ behavior: 'allow' }"
-      return value="{ behavior: 'ask', message: `Read file outside workspace: ${readResolved}` }"
-
-  fn name=checkFileWritePermission params="filePath:string, ctx:ToolContext" returns=PermissionDecision
-    handler lang="kern"
-      if cond="ctx.permissionMode === 'deny-all'"
-        return value="{ behavior: 'deny', message: 'All tool execution is denied' }"
-      comment raw="// CC-parity allow/deny rules: deny FIRST, allow before ask fall-throughs (F3 path-aware). Edit/Write share the Edit-tool path rules."
-      if cond="ctx.permissionRules"
-        let name=writeRule value="evaluateFilePathRules('Edit', filePath, ctx.cwd, ctx.permissionRules)"
-        if cond="writeRule === 'deny'"
-          return value="{ behavior: 'deny', message: PERMISSION_DENIED_MESSAGE + `: Edit/Write ${filePath} blocked by a deny rule`, reason: 'permission_rule_deny' }"
-        if cond="writeRule === 'allow'"
-          return value="{ behavior: 'allow' }"
-      comment raw="// Check per-tool permission from settings.json"
-      if cond="ctx.toolPermissions?.['Edit']"
-        let name=editPermission value="ctx.toolPermissions['Edit']"
-        if cond="editPermission === 'deny'"
-          return value="{ behavior: 'deny', message: 'Edit/Write denied in settings' }"
-        if cond="editPermission === 'ask'"
-          return value="{ behavior: 'ask', message: `Edit requires approval: ${filePath}` }"
-      let name=writeResolved value="isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath)"
-      comment raw="// Block writing to sensitive files"
-      let name=basename value="writeResolved.split('/').pop() ?? ''"
-      let name=sensitivePatterns value="['.env', 'credentials', 'secrets', '.pem', '.key', 'id_rsa']"
-      if cond="sensitivePatterns.some((pat: string) => basename.includes(pat))"
-        return value="{ behavior: 'ask', message: `Write to sensitive file: ${basename}` }"
-      if cond="isPathUnderCwd(writeResolved, ctx.cwd)"
-        return value="{ behavior: 'allow' }"
-      comment raw="// Smart mode: auto-approve git-dirty files, orchestrator edits"
-      if cond="ctx.permissionMode === 'smart'"
-        if cond="isGitDirtyFile(writeResolved, ctx.cwd)"
-          return value="{ behavior: 'allow' }"
-        if cond="ctx.source === 'orchestrator'"
-          return value="{ behavior: 'allow' }"
-        return value="{ behavior: 'ask', message: `Write to new file requires approval: ${writeResolved}` }"
-      return value="{ behavior: 'ask', message: `Write file outside workspace: ${writeResolved}` }"
 
 // ── CC-parity allow/deny rule engine (.agon.json permissions) ─────────
 // Mirrors Claude Code settings.json semantics: rules are strings like

@@ -96,40 +96,6 @@ export function isGitDirtyFile(filePath: string, cwd: string): boolean {
 
 // ── Module: PermissionChecks ──
 
-export function isSessionAllowed(command: string, ctx: ToolContext): boolean {
-  if (!ctx.sessionAllowList || ctx.sessionAllowList.length === 0) {
-    return false;
-  }
-  const sessionBase = command.trim().split(/\s+/)[0];
-  return ctx.sessionAllowList.some(ac => command.startsWith(ac) || sessionBase === ac);
-}
-
-export function checkBashPermission(command: string, ctx: ToolContext): PermissionDecision {
-  // Dangerous patterns are a hard floor — denied regardless of rules.
-  if (isDangerousCommand(command)) {
-    return { behavior: 'deny', message: `Dangerous command blocked: ${command.slice(0, 50)}`, reason: 'dangerous_pattern' };
-  }
-  // CC-parity allow/deny rules: deny FIRST (before any mode-based auto-allow),
-  // allow before the ask fall-throughs. F2 compound-command splitting applies.
-  if (ctx.permissionRules) {
-    const ruleDecision = evaluateBashRules(command, ctx.permissionRules);
-    if (ruleDecision === 'deny') return { behavior: 'deny', message: PERMISSION_DENIED_MESSAGE + `: Bash (${command.slice(0, 80)}) blocked by a deny rule`, reason: 'permission_rule_deny' };
-    if (ruleDecision === 'allow') return { behavior: 'allow' };
-  }
-  if (ctx.permissionMode === 'deny-all') return { behavior: 'deny', message: 'All tool execution is denied' };
-  if (ctx.toolPermissions?.['Bash'] === 'allow') return { behavior: 'allow' };
-  if (ctx.toolPermissions?.['Bash'] === 'deny') return { behavior: 'deny', message: 'Bash denied in settings' };
-  if (isReadOnlyCommand(command)) return { behavior: 'allow' };
-  if (ctx.allowedCommands?.some(ac => command.startsWith(ac) || command.trim().split(/\s+/)[0] === ac)) return { behavior: 'allow' };
-  if (ctx.permissionMode === 'smart') {
-    return (isSessionAllowed(command, ctx) || ctx.source === 'orchestrator')
-      ? { behavior: 'allow' }
-      : { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
-  }
-  if (ctx.permissionMode === 'auto') return { behavior: 'allow' };
-  return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
-}
-
 export function isPathUnderCwd(filePath: string, cwd: string): boolean {
   const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
   // Resolve symlinks to prevent traversal via symlinks
@@ -150,86 +116,8 @@ export function isPathUnderCwd(filePath: string, cwd: string): boolean {
   return !rel.startsWith('..');
 }
 
-export function checkFileReadPermission(filePath: string, ctx: ToolContext): PermissionDecision {
-  if (ctx.permissionMode === 'deny-all') {
-    return { behavior: 'deny', message: 'All tool execution is denied' };
-  }
-  // CC-parity allow/deny rules: deny FIRST, allow before ask fall-throughs (F3 path-aware).
-  if (ctx.permissionRules) {
-    const readRule = evaluateFilePathRules('Read', filePath, ctx.cwd, ctx.permissionRules);
-    if (readRule === 'deny') {
-      return { behavior: 'deny', message: PERMISSION_DENIED_MESSAGE + `: Read ${filePath} blocked by a deny rule`, reason: 'permission_rule_deny' };
-    }
-    if (readRule === 'allow') {
-      return { behavior: 'allow' };
-    }
-  }
-  // Check per-tool permission from settings.json
-  if (ctx.toolPermissions?.['Read'] === 'deny') {
-    return { behavior: 'deny', message: 'Read denied in settings' };
-  }
-  const readResolved = isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath);
-  if (isPathUnderCwd(readResolved, ctx.cwd)) {
-    return { behavior: 'allow' };
-  }
-  if (ctx.toolPermissions?.['Read'] === 'ask') {
-    return { behavior: 'ask', message: `Read file outside workspace: ${readResolved}` };
-  }
-  if (ctx.permissionMode === 'auto') {
-    return { behavior: 'allow' };
-  }
-  return { behavior: 'ask', message: `Read file outside workspace: ${readResolved}` };
-}
 
-export function checkFileWritePermission(filePath: string, ctx: ToolContext): PermissionDecision {
-  if (ctx.permissionMode === 'deny-all') {
-    return { behavior: 'deny', message: 'All tool execution is denied' };
-  }
-  // CC-parity allow/deny rules: deny FIRST, allow before ask fall-throughs (F3 path-aware). Edit/Write share the Edit-tool path rules.
-  if (ctx.permissionRules) {
-    const writeRule = evaluateFilePathRules('Edit', filePath, ctx.cwd, ctx.permissionRules);
-    if (writeRule === 'deny') {
-      return { behavior: 'deny', message: PERMISSION_DENIED_MESSAGE + `: Edit/Write ${filePath} blocked by a deny rule`, reason: 'permission_rule_deny' };
-    }
-    if (writeRule === 'allow') {
-      return { behavior: 'allow' };
-    }
-  }
-  // Check per-tool permission from settings.json
-  if (ctx.toolPermissions?.['Edit']) {
-    const editPermission = ctx.toolPermissions['Edit'];
-    if (editPermission === 'deny') {
-      return { behavior: 'deny', message: 'Edit/Write denied in settings' };
-    }
-    if (editPermission === 'ask') {
-      return { behavior: 'ask', message: `Edit requires approval: ${filePath}` };
-    }
-  }
-  const writeResolved = isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath);
-  // Block writing to sensitive files
-  const basename = writeResolved.split('/').pop() ?? '';
-  const sensitivePatterns = ['.env', 'credentials', 'secrets', '.pem', '.key', 'id_rsa'];
-  if (sensitivePatterns.some((pat: string) => basename.includes(pat))) {
-    return { behavior: 'ask', message: `Write to sensitive file: ${basename}` };
-  }
-  if (isPathUnderCwd(writeResolved, ctx.cwd)) {
-    return { behavior: 'allow' };
-  }
-  // Smart mode: auto-approve git-dirty files, orchestrator edits
-  if (ctx.permissionMode === 'smart') {
-    if (isGitDirtyFile(writeResolved, ctx.cwd)) {
-      return { behavior: 'allow' };
-    }
-    if (ctx.source === 'orchestrator') {
-      return { behavior: 'allow' };
-    }
-    return { behavior: 'ask', message: `Write to new file requires approval: ${writeResolved}` };
-  }
-  return { behavior: 'ask', message: `Write file outside workspace: ${writeResolved}` };
-}
-
-
-// @kern-source: tool-permissions:212
+// @kern-source: tool-permissions:120
 export const _warnedMalformedRules: Set<string> = new Set();
 
 // ── Module: PermissionRules ──

@@ -9,7 +9,6 @@ test name="Core tool permissions" target="../../../src/kern/tools/tool-permissio
     expect node=const name=DANGEROUS_PREFIXES prop=type is="string[]"
     expect node=fn name=isDangerousCommand prop=returns is=boolean
     expect node=fn name=isReadOnlyCommand prop=returns is=boolean
-    expect node=fn name=checkBashPermission prop=returns is=PermissionDecision
     expect fn=isDangerousCommand args={{["rm -rf /"]}} equals=true
     expect fn=isDangerousCommand args={{["sudo rm file"]}} equals=true
     expect fn=isDangerousCommand args={{["ls -la"]}} equals=false
@@ -30,19 +29,15 @@ test name="Core tool permissions" target="../../../src/kern/tools/tool-permissio
     expect node=fn name=stripShellWrappers prop=returns is=string
     expect node=fn name=extractBaseCommand prop=returns is=string
 
-  it name="bash permission decisions run at KERN level"
-    fixture name=askCtx value={{({ cwd: "/home/user/project", permissionMode: "ask" })}}
-    fixture name=autoCtx value={{({ cwd: "/home/user/project", permissionMode: "auto" })}}
-    expect expr={{checkBashPermission("rm -rf /", askCtx).behavior}} equals="deny"
-    expect expr={{checkBashPermission("git status", askCtx).behavior}} equals="allow"
-    expect expr={{checkBashPermission('agon config --help 2>/dev/null && echo "---" && agon config list 2>/dev/null', askCtx).behavior}} equals="allow"
-    expect expr={{checkBashPermission("npm install express", askCtx).behavior}} equals="ask"
-    expect expr={{checkBashPermission("npm install express", autoCtx).behavior}} equals="allow"
-    expect expr={{checkBashPermission("rm -rf /", autoCtx).behavior}} equals="deny"
+  // The standalone checkBashPermission / checkFileReadPermission /
+  // checkFileWritePermission were proven dead (no execution path called them —
+  // executeToolCall uses each tool's inline checkPermission) and were deleted.
+  // The inline tool factories live in tool-bash/tool-read/tool-write.kern and
+  // are not in this file's expr scope, so equivalent deny/allow/ask coverage
+  // now lives in tests/unit/permission-rules.test.ts (inline-gate chokepoint
+  // tests via createBashTool()/createReadTool()/createWriteTool()).
 
-  it name="file permission gates stay declared in KERN"
-    expect node=fn name=checkFileReadPermission prop=returns is=PermissionDecision
-    expect node=fn name=checkFileWritePermission prop=returns is=PermissionDecision
+  it name="path-under-cwd gate stays declared in KERN"
     expect node=fn name=isPathUnderCwd prop=returns is=boolean
 
   it name="CC-parity rule engine functions stay declared in KERN"

@@ -861,6 +861,7 @@ screen name=App target=ink
         extensionPromptFragments,
         sessionMcpServers, setSessionMcpServers,
         telemetryVitals,
+        telemetrySnapshot: () => telemetryPollerRef.current?.snapshot?.() ?? telemetryVitals,
         recentFallbacks,
       };
     >>>
@@ -975,6 +976,11 @@ screen name=App target=ink
   effect deps="statusDashboardOpen"
     handler <<<
       statusDashboardOpenRef.current = statusDashboardOpen;
+      // First paint must be live, not the last deduped commit: push the
+      // poller's current vitals into state the moment the dashboard opens.
+      if (statusDashboardOpen && telemetryPollerRef.current?.snapshot) {
+        setTelemetryVitals(new Map(telemetryPollerRef.current.snapshot()));
+      }
     >>>
 
   effect deps="registry,cesarSession,activeEngines"

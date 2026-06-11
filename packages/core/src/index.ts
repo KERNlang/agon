@@ -42,6 +42,8 @@ export {
   acquireApplyLock, releaseApplyLock, headChanged, branchChanged,
 } from './worktree-lock.js';
 export type { ApplyLockInfo, ApplyLockResult } from './worktree-lock.js';
+export { withFileLock } from './file-lock.js';
+export type { FileLockInfo } from './file-lock.js';
 export { spawnWithTimeout, spawnStream } from './process.js';
 export type { SpawnOptions } from './process.js';
 export {

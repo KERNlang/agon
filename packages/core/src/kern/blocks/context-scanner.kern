@@ -46,6 +46,13 @@ const name=GATE_SCRIPT_PRIORITY type="string[]" value={{ ['fitness', 'test', 'ty
 const name=GATE_RUNNER_TOKENS type="string[]" value={{ ['vitest', 'jest', 'mocha', 'pytest', 'tsc', 'eslint', 'playwright', 'ava', 'tap', 'cargo test', 'go test', 'pnpm test', 'yarn test', 'make test'] }}
   doc "Well-known test/check runner tokens. If a discovered package.json script body invokes one of these, the runner token is added as an extra loose matcher so Cesar running the bare tool (e.g. 'npx vitest run x') still counts as ranGate even if it didn't type the npm-script alias."
 
+fn name=parseFitnessLine params="content:string" returns="string | null" export=true
+  doc "Extract an explicit `fitness: <cmd>` line from brief CONTENT (case-insensitive, leading whitespace / markdown bullet/quote tolerated). Returns the trimmed command or null. Pure — the regex is shared by parseFitnessOverride and kept testable in isolation so SaveMemory's `## Decisions` etc. sections in the same file provably don't break gate discovery."
+  handler <<<
+    const m = String(content ?? '').match(/^[ \t>*-]*fitness:[ \t]*(.+?)[ \t]*$/im);
+    return m ? m[1].trim() || null : null;
+  >>>
+
 fn name=parseFitnessOverride params="cwd:string" returns="string | null" export=false
   doc "Read the FIRST recognized project-brief file and extract an explicit `fitness: <cmd>` override line (case-insensitive, leading whitespace / markdown bullet tolerated). Returns the trimmed command or null. First brief in the cascade that EXISTS is authoritative — an existing brief without a fitness: line returns null (no fall-through to a later brief), mirroring scanProjectContext's first-match-wins."
   handler <<<
@@ -56,9 +63,7 @@ fn name=parseFitnessOverride params="cwd:string" returns="string | null" export=
         if (!st || !st.isFile() || st.size === 0) continue;
         if (st.size > MAX_PROJECT_BRIEF_BYTES) return null;
         const content = readFileSync(path, "utf-8");
-        // `fitness: <cmd>` anywhere on a line; tolerate a leading markdown bullet/quote.
-        const m = content.match(/^[ \t>*-]*fitness:[ \t]*(.+?)[ \t]*$/im);
-        return m ? m[1].trim() || null : null;
+        return parseFitnessLine(content);
       } catch { /* unreadable brief — keep scanning the cascade */ }
     }
     return null;

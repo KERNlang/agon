@@ -680,7 +680,13 @@ ${reviewFollowup.prompt}`;
             }
             // Dispatch permission-ask to UI
             logMcpApproval('prompted', 'mcp.user-prompt', 'Cesar wants to execute');
-            dispatch({ type: 'permission-ask', tool: req.tool, command: String(req.args?.command ?? req.args?.file_path ?? JSON.stringify(req.args)), reason: `Cesar wants to execute`, resolve: (approved: boolean | string) => {
+            // SaveMemory shows the memory line + section so the user confirms the
+            // actual durable fact, not an opaque args blob.
+            const askCommand = reqTool === 'SaveMemory'
+              ? `[${String(reqArgs.section ?? '')}] ${String(reqArgs.memory ?? '')}`
+              : String(req.args?.command ?? req.args?.file_path ?? JSON.stringify(req.args));
+            const askReason = reqTool === 'SaveMemory' ? 'Cesar wants to save a durable project memory' : 'Cesar wants to execute';
+            dispatch({ type: 'permission-ask', tool: req.tool, command: askCommand, reason: askReason, resolve: (approved: boolean | string) => {
               const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : approved;
               logMcpApproval(wasApproved ? 'approved' : 'denied', 'mcp.user-prompt', wasApproved ? 'user approved' : 'user denied');
               // Handle "Always" — persist to config

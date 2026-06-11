@@ -12,4 +12,5 @@ export { createListPlansTool } from './generated/tools/tool-list-plans.js';
 export { createRetrieveResultTool } from './generated/tools/tool-retrieve.js';
 export { createWebFetchTool, parseAndValidateUrl, htmlToText } from './generated/tools/tool-web-fetch.js';
 export { createTodoWriteTool, normalizeTodos } from './generated/tools/tool-todo-write.js';
+export { createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix } from './generated/tools/tool-save-memory.js';
 export { createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults } from './generated/tools/tool-web-search.js';

@@ -20,31 +20,33 @@ fn name=canonicalToolName params="tool:string" returns=string export=false
       return value="'Bash'"
     return value="tool"
 
-fn name=estimateMultiEditApproval params="cachedContent:string, edits:any" returns="{ ok: boolean, reason: string, nextContent: string }" export=false
-  doc "Fold a MultiEdit batch over the cached file content to estimate the resulting diff for self-turn approval. Mirrors the tool's sequential semantics: each edit applies to the prior result; a match must exist and be unique unless replace_all."
+fn name=estimateMultiEditApproval params="cachedContent:string, edits:any" returns="{ ok: boolean, reason: string, nextContent: string, tokens: number }" export=false
+  doc "Fold a MultiEdit batch over the cached file content to estimate the resulting diff for self-turn approval. Mirrors the tool's sequential semantics: each edit applies to the prior result; a match must exist and be unique unless replace_all. `tokens` SUMS the per-edit changed-token estimate (like the single-Edit branch) rather than diffing the whole file — so scattered small edits don't inflate the estimate and trip the cap."
   handler <<<
     if (!Array.isArray(edits) || edits.length === 0) {
-      return { ok: false, reason: 'missing edits array', nextContent: '' };
+      return { ok: false, reason: 'missing edits array', nextContent: '', tokens: 0 };
     }
     let working = cachedContent;
+    let tokens = 0;
     for (let i = 0; i < edits.length; i++) {
       const e = (edits[i] ?? {}) as Record<string, unknown>;
       const oldS = e.old_string;
       const newS = e.new_string;
       if (typeof oldS !== 'string' || typeof newS !== 'string' || oldS === '') {
-        return { ok: false, reason: `edits[${i}] missing/empty old_string or new_string`, nextContent: '' };
+        return { ok: false, reason: `edits[${i}] missing/empty old_string or new_string`, nextContent: '', tokens: 0 };
       }
       const occ = countOccurrences(working, oldS);
       if (occ <= 0) {
-        return { ok: false, reason: `edits[${i}] old_string not found in cached content`, nextContent: '' };
+        return { ok: false, reason: `edits[${i}] old_string not found in cached content`, nextContent: '', tokens: 0 };
       }
       const replaceAll = e.replace_all === true;
       if (!replaceAll && occ > 1) {
-        return { ok: false, reason: `edits[${i}] old_string not unique and replace_all not set`, nextContent: '' };
+        return { ok: false, reason: `edits[${i}] old_string not unique and replace_all not set`, nextContent: '', tokens: 0 };
       }
+      tokens += estimateChangedTokens(oldS, newS) * (replaceAll ? occ : 1);
       working = replaceAll ? working.split(oldS).join(newS) : working.replace(oldS, newS);
     }
-    return { ok: true, reason: 'ok', nextContent: working };
+    return { ok: true, reason: 'ok', nextContent: working, tokens };
   >>>
 
 fn name=approvalArgsFromCommand params="tool:string,command:string" returns="Record<string,unknown>" export=true
@@ -216,7 +218,7 @@ fn name=applyCesarSelfTurnApproval params="tool:string,args:Record<string,unknow
         let name=meRes value="estimateMultiEditApproval(cached.content, (normalizedArgs as any).edits)"
         if cond="!meRes.ok"
           return value="{ approve: false, reason: `MultiEdit ${meRes.reason}`, tool: t, path: filePath }"
-        assign target="diffTokens" value="estimateChangedTokens(cached.content, meRes.nextContent)"
+        assign target="diffTokens" value="meRes.tokens"
         assign target="nextContent" value="meRes.nextContent"
       else
         let name=content value="normalizedArgs.content"

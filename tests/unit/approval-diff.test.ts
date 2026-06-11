@@ -10,7 +10,7 @@ import {
 
 describe('approvalToolIsFileMutating', () => {
   it('matches the file-mutating tools (raw + Agon-mapped names)', () => {
-    for (const t of ['Edit', 'Write', 'AgonEdit', 'AgonWrite', 'edit', 'write']) {
+    for (const t of ['Edit', 'Write', 'AgonEdit', 'AgonWrite', 'edit', 'write', 'MultiEdit', 'multiedit', 'AgonMultiEdit']) {
       expect(approvalToolIsFileMutating(t)).toBe(true);
     }
   });
@@ -28,6 +28,30 @@ describe('buildApprovalDiffPreview', () => {
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('folds a MultiEdit batch into a sequential diff preview', () => {
+    const file = join(dir, 'm.ts');
+    writeFileSync(file, 'const a = 1;\nconst b = 2;\n');
+    const preview = buildApprovalDiffPreview('MultiEdit', {
+      file_path: file,
+      edits: [
+        { old_string: 'const a = 1;', new_string: 'const a = 10;' },
+        { old_string: 'const b = 2;', new_string: 'const b = 20;' },
+      ],
+    });
+    expect(preview).toBeTruthy();
+    expect((preview as any).files?.length).toBeGreaterThan(0);
+  });
+
+  it('returns a fallback note when a MultiEdit edit will not apply', () => {
+    const file = join(dir, 'm2.ts');
+    writeFileSync(file, 'const a = 1;\n');
+    const preview = buildApprovalDiffPreview('MultiEdit', {
+      file_path: file,
+      edits: [{ old_string: 'NOPE', new_string: 'x' }],
+    });
+    expect((preview as any)?.fallback).toMatch(/will not apply/);
   });
 
   it('renders an AgonWrite to a non-existent path as a new file (all additions)', () => {

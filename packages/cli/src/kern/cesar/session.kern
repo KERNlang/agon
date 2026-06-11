@@ -398,6 +398,12 @@ fn name=renderToolPermissionCommand params="tool:string, args:unknown" returns=s
     if (tool === 'SaveMemory') {
       return `[${String(a.section ?? '')}] ${String(a.memory ?? '')}`.trim();
     }
+    // MultiEdit carries an `edits` array, not old/new strings — render the full
+    // JSON so the command-string approval seam can JSON-parse the edits back
+    // (approvalArgsFromCommand) for self-turn approval + the diff preview.
+    if (tool === 'MultiEdit') {
+      return JSON.stringify(args ?? {});
+    }
     return String(a.command ?? a.file_path ?? JSON.stringify(args ?? {}));
   >>>
 
@@ -788,7 +794,7 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
       const mode = (cfg as any).permissionMode ?? 'ask';
 
       // Map engine tool names to Agon tool names
-      const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob' };
+      const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', multiedit: 'MultiEdit', read: 'Read', grep: 'Grep', glob: 'Glob' };
       const agonTool = toolMap[tool.toLowerCase()] ?? tool;
       const perm = perms[agonTool];
       // CC-parity allow/deny rules (.agon.json permissions). For Bash the

@@ -46,7 +46,11 @@ fn name=claimRoomLock params="roomId:string, actor:RoomActor, resource:string, t
   handler <<<
     const res = String(resource ?? '').trim().toLowerCase();
     if (!res) return { ok: false, reason: 'lock needs a non-empty --resource name' };
-    const ttl = Math.max(60_000, ttlMs);   // 1 minute floor — a sub-minute TTL is a race, not a lease
+    // 1 minute floor (a sub-minute TTL is a race, not a lease), 1 year ceiling,
+    // and NaN/Infinity sanitized — a bad ttlMs must yield {ok:false}-style
+    // safety, never a RangeError from Date escaping the lock callback.
+    const ttlRaw = Number(ttlMs);
+    const ttl = Math.max(60_000, Math.min(Number.isFinite(ttlRaw) && ttlRaw > 0 ? ttlRaw : 60_000, 31_536_000_000));
     let out: { ok: boolean; event?: RoomEvent; reason?: string } = { ok: false, reason: 'lock not attempted' };
     withRoomLock(roomId, () => {
       const now = Date.now();

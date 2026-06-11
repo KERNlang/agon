@@ -44,7 +44,11 @@ export function listRoomLocks(roomId: string): RoomLockState[] {
 export function claimRoomLock(roomId: string, actor: RoomActor, resource: string, ttlMs: number, repoHint: string, steal: boolean): { ok: boolean; event?: RoomEvent; reason?: string } {
   const res = String(resource ?? '').trim().toLowerCase();
   if (!res) return { ok: false, reason: 'lock needs a non-empty --resource name' };
-  const ttl = Math.max(60_000, ttlMs);   // 1 minute floor — a sub-minute TTL is a race, not a lease
+  // 1 minute floor (a sub-minute TTL is a race, not a lease), 1 year ceiling,
+  // and NaN/Infinity sanitized — a bad ttlMs must yield {ok:false}-style
+  // safety, never a RangeError from Date escaping the lock callback.
+  const ttlRaw = Number(ttlMs);
+  const ttl = Math.max(60_000, Math.min(Number.isFinite(ttlRaw) && ttlRaw > 0 ? ttlRaw : 60_000, 31_536_000_000));
   let out: { ok: boolean; event?: RoomEvent; reason?: string } = { ok: false, reason: 'lock not attempted' };
   withRoomLock(roomId, () => {
     const now = Date.now();
@@ -84,7 +88,7 @@ export function claimRoomLock(roomId: string, actor: RoomActor, resource: string
 /**
  * Release a lock you hold (active OR expired — releasing your stale lock is the polite cleanup). Only the holder may release; a takeover goes through --steal so the trail shows who did what.
  */
-// @kern-source: locks:86
+// @kern-source: locks:90
 export function releaseRoomLock(roomId: string, actor: RoomActor, resource: string, repoHint: string): { ok: boolean; event?: RoomEvent; reason?: string } {
   const res = String(resource ?? '').trim().toLowerCase();
   if (!res) return { ok: false, reason: 'release needs a non-empty --resource name' };
@@ -108,7 +112,7 @@ export function releaseRoomLock(roomId: string, actor: RoomActor, resource: stri
 /**
  * Expired-but-unreleased locks a member still nominally holds — the warn-on-post hook: posting while holding one of these means you probably forgot RELEASE.
  */
-// @kern-source: locks:108
+// @kern-source: locks:112
 export function expiredLocksHeldBy(roomId: string, callsign: string): RoomLockState[] {
   return listRoomLocks(roomId).filter((l) => l.holder === callsign && l.status === 'expired');
 }

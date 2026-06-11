@@ -202,7 +202,7 @@ export const reviewCommand = defineCommand({
       // while reviewing X's diff. The reviewers "never saw the code" the diff
       // referenced. Passing cwd keeps diff + engine context in one repo.
       const attempt = async (attemptTimeoutSec: number): Promise<
-        { kind: 'ok'; result: Awaited<ReturnType<typeof runReviewCore>> } | { kind: 'timeout' } | { kind: 'error'; message: string }
+        { kind: 'ok'; result: Awaited<ReturnType<typeof runReviewCore>> } | { kind: 'timeout'; afterSec: number } | { kind: 'error'; message: string }
       > => {
         const controller = new AbortController();
         let timedOut = false;
@@ -211,10 +211,10 @@ export const reviewCommand = defineCommand({
           const result = await runReviewCore(target.diff, target.label, engineId, ctx, controller.signal, undefined, cwd);
           // Keep partial text on disk for forensics, but the outcome is a timeout
           // regardless of what runReviewCore returned on abort.
-          if (timedOut) { writeOutput(result.response ?? ''); return { kind: 'timeout' }; }
+          if (timedOut) { writeOutput(result.response ?? ''); return { kind: 'timeout', afterSec: attemptTimeoutSec }; }
           return { kind: 'ok', result };
         } catch (err) {
-          if (timedOut) return { kind: 'timeout' };
+          if (timedOut) return { kind: 'timeout', afterSec: attemptTimeoutSec };
           return { kind: 'error', message: err instanceof Error ? err.message : String(err) };
         } finally {
           clearTimeout(timer);
@@ -228,7 +228,9 @@ export const reviewCommand = defineCommand({
       let retryNote = '';
       if (outcome.kind !== 'ok') {
         const firstKind = outcome.kind;
-        const retryTimeoutSec = Math.max(60, Math.floor(timeoutSec / 2));
+        // Half the wall clock, floored at 60s, but never LONGER than the first
+        // attempt — a sub-120s --timeout must not get a bigger retry budget.
+        const retryTimeoutSec = Math.min(timeoutSec, Math.max(60, Math.floor(timeoutSec / 2)));
         outcome = await attempt(retryTimeoutSec);
         retryNote = outcome.kind === 'ok'
           ? ` (${firstKind} on first attempt → retried OK)`
@@ -236,8 +238,10 @@ export const reviewCommand = defineCommand({
       }
       {
         if (outcome.kind === 'timeout') {
-          flush([`⚠ timed out after ${timeoutSec}s — aborted${retryNote}.`]);
-          return { id: engineId, status: 'timeout', durationMs: Date.now() - engineStart, detail: `exceeded per-engine timeout${retryNote}`, outputPath };
+          // Report the wall clock that actually fired — the retry runs shorter
+          // than the original timeoutSec, and diagnostics must not claim otherwise.
+          flush([`⚠ timed out after ${outcome.afterSec}s — aborted${retryNote}.`]);
+          return { id: engineId, status: 'timeout', durationMs: Date.now() - engineStart, detail: `exceeded ${outcome.afterSec}s per-engine timeout${retryNote}`, outputPath };
         }
         if (outcome.kind === 'error') {
           flush([`✖ ${outcome.message}${retryNote}`]);
@@ -250,27 +254,29 @@ export const reviewCommand = defineCommand({
         // We deliberately do NOT echo it inline — only a one-line status per
         // engine, then the cross-engine consensus. The consensus IS the
         // summary; the full text lives in the run dir for on-demand reading.
+        // Every terminal path carries retryNote: a seat that only answered on
+        // its second attempt must say so whatever verdict that answer produced.
         if (isPastePlaceholderOnly(rawResponse)) {
           // The capture is the claude TUI paste placeholder, not a review — the
           // prompt never submitted. Never count this as a real verdict.
-          flush(['⚠ captured a paste placeholder, not a review (prompt likely never submitted).']);
-          return { id: engineId, status: 'parse-failure', durationMs: Date.now() - engineStart, detail: 'captured paste placeholder — prompt never submitted', outputPath };
+          flush([`⚠ captured a paste placeholder, not a review (prompt likely never submitted)${retryNote}.`]);
+          return { id: engineId, status: 'parse-failure', durationMs: Date.now() - engineStart, detail: `captured paste placeholder — prompt never submitted${retryNote}`, outputPath };
         }
         if (result.parseFailed && result.unstructured) {
           // Substantive prose review but no machine-parseable verdict even after
           // the repair retry. Still useful to a human — surface as a SUCCESS.
-          flush([`${bold(engineId)}: unstructured (no machine verdict — full review in ${outputPath})`]);
-          return { id: engineId, status: 'unstructured', durationMs: Date.now() - engineStart, detail: 'unstructured review (no machine-parseable findings block)', outputPath };
+          flush([`${bold(engineId)}: unstructured (no machine verdict — full review in ${outputPath})${retryNote}`]);
+          return { id: engineId, status: 'unstructured', durationMs: Date.now() - engineStart, detail: `unstructured review (no machine-parseable findings block)${retryNote}`, outputPath };
         }
         if (result.parseFailed) {
-          flush(['⚠ returned no usable review output.']);
-          return { id: engineId, status: 'parse-failure', durationMs: Date.now() - engineStart, detail: 'empty or unusable response', outputPath };
+          flush([`⚠ returned no usable review output${retryNote}.`]);
+          return { id: engineId, status: 'parse-failure', durationMs: Date.now() - engineStart, detail: `empty or unusable response${retryNote}`, outputPath };
         }
         const counts = formatSeverityCounts(result.severityCounts);
         captureFindings(engineId, rawResponse);
         if (result.blocking) {
-          flush([`⚠ ${bold(engineId)}: blocking, ${counts}`]);
-          return { id: engineId, status: 'blocking', durationMs: Date.now() - engineStart, detail: `blocking, ${counts}`, outputPath };
+          flush([`⚠ ${bold(engineId)}: blocking, ${counts}${retryNote}`]);
+          return { id: engineId, status: 'blocking', durationMs: Date.now() - engineStart, detail: `blocking, ${counts}${retryNote}`, outputPath };
         }
         flush([`${bold(engineId)}: ok, ${counts}${retryNote}`]);
         return { id: engineId, status: 'ok', durationMs: Date.now() - engineStart, detail: `ok, ${counts}${retryNote}`, outputPath };

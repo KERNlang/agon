@@ -122,6 +122,15 @@ describe('room locks', () => {
     expect(listRoomLocks(roomId)).toHaveLength(1);
   });
 
+  it('sanitizes a NaN/huge TTL instead of throwing a RangeError', () => {
+    const { roomId } = createRoom('l');
+    const nan = claimRoomLock(roomId, actor('a'), 'res-nan', Number.NaN, 'x', false);
+    expect(nan.ok).toBe(true);   // floored to the 1-minute minimum
+    const huge = claimRoomLock(roomId, actor('a'), 'res-huge', Number.MAX_SAFE_INTEGER, 'x', false);
+    expect(huge.ok).toBe(true);  // capped at 1 year — Date stays representable
+    expect(new Date(huge.event!.lock!.expiresAt).getTime()).toBeGreaterThan(Date.now());
+  });
+
   it('steal is refused while the lock is active', () => {
     const { roomId } = createRoom('l');
     claimRoomLock(roomId, actor('a'), 'res', 60_000, 'x', false);

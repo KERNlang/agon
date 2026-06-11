@@ -47,13 +47,21 @@ fn name=handleRoomTool params="name:string, args:Record<string,unknown>" returns
         const limit = unreadOnly ? 0 : (Number(args.limit ?? 50) || 50);
         const raw = readEvents(roomId, since, limit);
         const events = raw.map(e => ({ seq: e.seq, kind: e.kind, from: e.actor.callsign, body: e.body, mentions: e.mentions, at: e.createdAt, ...(e.lock ? { lock: e.lock } : {}) }));
+        let cursorAdvanced = false;
         if (markRead && raw.length > 0) {
-          const cli = args.engine ? String(args.engine) : 'mcp';
-          const reader: RoomActor = { actorId: `${cli}:${readerCallsign}`, callsign: readerCallsign, kind: 'external-cli', engineId: args.engine ? String(args.engine) : undefined, cli, humanOwner: process.env.USER || 'local' };
-          advanceReadCursor(roomId, reader, raw[raw.length - 1].seq);
+          // Advance ONLY when the read was gap-free from the cursor (seqs are
+          // dense): a tail-limited read of a larger backlog must not mark the
+          // skipped older events as read. unreadOnly reads are always gap-free.
+          const cursor = getReadCursor(roomId, readerCallsign);
+          if (raw[0].seq <= cursor + 1) {
+            const cli = args.engine ? String(args.engine) : 'mcp';
+            const reader: RoomActor = { actorId: `${cli}:${readerCallsign}`, callsign: readerCallsign, kind: 'external-cli', engineId: args.engine ? String(args.engine) : undefined, cli, humanOwner: process.env.USER || 'local' };
+            advanceReadCursor(roomId, reader, raw[raw.length - 1].seq);
+            cursorAdvanced = true;
+          }
         }
         const unread = readerCallsign ? getUnreadState(roomId, readerCallsign) : undefined;
-        return JSON.stringify({ room: roomId, events, ...(unread ? { unread } : {}) }, null, 2);
+        return JSON.stringify({ room: roomId, events, ...(markRead ? { cursorAdvanced, ...(cursorAdvanced ? {} : { cursorNote: 'cursor NOT advanced — older unread events were outside this window; read with unreadOnly=true to catch up' }) } : {}), ...(unread ? { unread } : {}) }, null, 2);
       }
       if (name === 'RoomWho') {
         if (!roomExists(roomId)) return `Error: no room "${roomId}".`;

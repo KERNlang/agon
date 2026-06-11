@@ -160,7 +160,17 @@ const name=roomCommand type="any"
               for (const ev of events) console.log(renderEvent(ev));
             }
             if (explicitIdentity && !args.peek && events.length > 0) {
-              advanceReadCursor(roomId, actor, events[events.length - 1].seq);
+              // Advance ONLY when the read was gap-free from the cursor (seqs are
+              // dense, so first.seq <= cursor+1 means nothing unseen was skipped).
+              // A tail-limited read of a >limit backlog must NOT mark the skipped
+              // older events as read — that would recreate the stale-board bug
+              // this cursor exists to kill.
+              const cursor = getReadCursor(roomId, actor.callsign);
+              if (events[0].seq <= cursor + 1) {
+                advanceReadCursor(roomId, actor, events[events.length - 1].seq);
+              } else if (!args.json) {
+                info(dim(`(cursor NOT advanced — unread events remain before #${events[0].seq}; catch up with --unread)`));
+              }
             }
             return;
           }

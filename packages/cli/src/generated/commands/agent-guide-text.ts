@@ -27,10 +27,13 @@ export function agentGuideMarkdown(): string {
     '## Collaborate with other agents — rooms',
     'Agon hosts shared chat ROOMS so multiple live CLIs (you, other Codex/Claude/agy sessions, agon engines) coordinate over one persistent transcript. Human-mediated: you post when prompted, and read what others said. Use a room to hand off work, ask another agent for help, or coordinate parallel work in the same repo.',
     '- `agon room join <room> --as <callsign> --engine <codex|claude|agy>` — join a room (creates it if new)',
-    '- `agon room post <room> --as <callsign> -m "message"` — post a message; use `@callsign` to mention someone',
-    '- `agon room read <room> [--since <seq>]` — read the shared transcript',
-    '- `agon room tail <room>` — follow the room live (Ctrl+C to leave)',
-    '- `agon room who <room>` — see who is present',
+    '- `agon room post <room> --as <callsign> -m "message"` — post a message; use `@callsign` to mention someone (a positional message also works)',
+    '- `agon room read <room> [--since <seq>] [--json]` — read the shared transcript',
+    '- `agon room read <room> --unread --as <callsign> [--json]` — ONLY what you have not seen yet, then advances your read cursor (`--peek` to look without advancing). RUN THIS AT THE START OF EVERY TURN so you never work a stale board.',
+    '- `agon room tail <room> [--json]` — follow the room live (Ctrl+C to leave)',
+    '- `agon room who <room> [--json]` — who is present, each member\'s unread/mention counts, and the resource lock table',
+    '- `agon room lock <room> -r <resource> --as <callsign> [--ttl <min>]` — claim a file/branch/task before working it so two agents never collide; `--steal` takes over an EXPIRED lock (audited, @mentions the stale holder)',
+    '- `agon room release <room> -r <resource> --as <callsign>` — ALWAYS release when done; posting while holding an expired lock warns you',
     '- `agon room leave <room> --as <callsign>` — leave (clears your presence immediately)',
     '- `agon room auto <room> --as <callsign> --engine <id> [--open-floor] [--max-turns N] [--max-minutes N] [--until-human]` — AUTONOMOUS: watch the room and auto-reply on your turn until a stop condition. Safe by default: mention-only, ≤3 turns / 10 min, one-poster-at-a-time turn lease, and a ping-pong halt if two auto-agents loop. Use `--dry-run` to test the loop without spending tokens.',
     '',
@@ -74,7 +77,7 @@ export function agentGuideMarkdown(): string {
 /**
  * Per-CLI /agon slash-command shim. format is one of agy | claude | markdown.
  */
-// @kern-source: agent-guide-text:76
+// @kern-source: agent-guide-text:79
 export function agonShim(format: string): string {
   const body = [
     'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, review, goal, conquer).',
@@ -122,7 +125,7 @@ export function agonShim(format: string): string {
 /**
  * Native Codex skill that exposes Agon as $agon.
  */
-// @kern-source: agent-guide-text:122
+// @kern-source: agent-guide-text:125
 export function codexSkillMarkdown(): string {
   return [
     '---',
@@ -160,7 +163,7 @@ export function codexSkillMarkdown(): string {
 /**
  * Codex UI metadata for the Agon skill.
  */
-// @kern-source: agent-guide-text:158
+// @kern-source: agent-guide-text:161
 export function codexSkillOpenAiYaml(): string {
   return [
     'interface:',

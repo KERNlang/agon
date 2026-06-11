@@ -14,6 +14,7 @@ interface name=SeatOutcome export=true
   field name=attempts type=number
   field name=failure type="'timeout' | 'empty' | 'error' | null"
   field name=note type="string | null"
+  field name=detail type="string | null"
 
 const name=RETRY_MIN_TIMEOUT_SEC type=number value=30
 
@@ -27,9 +28,9 @@ fn name=classifySeatFailure params="result:DispatchResult" returns="'timeout' | 
   >>>
 
 fn name=dispatchSeatWithRetry async=true params="adapter:EngineAdapter, opts:{engineId:string, engine:any, prompt:string, systemPrompt?:string, cwd:string, mode:string, timeout:number, outputDir:string, signal?:AbortSignal, extract?:(result:DispatchResult)=>string}" returns="Promise<SeatOutcome>" export=true
-  doc "Dispatch one panel seat; on a transient failure (timeout/empty/error) retry ONCE with ~half the timeout. Never retries a user abort. opts.extract lets a mode keep its own text-extraction (e.g. tribunal's <think> salvage) — an extract throw counts as an 'empty' failure. The outcome note feeds the panel-health banner so degradation is loud."
+  doc "Dispatch one panel seat; on a transient failure (timeout/empty/error) retry ONCE with ~half the timeout (never longer than the first attempt). Never retries a user abort. opts.extract lets a mode keep its own text-extraction (e.g. tribunal's <think> salvage) — an extract throw counts as an 'empty' failure. The outcome note feeds the panel-health banner; detail preserves the underlying stderr/message so diagnosability survives the categorization."
   handler <<<
-    const attemptOnce = async (timeoutSec: number): Promise<{ failure: 'timeout' | 'empty' | 'error' | null; text: string }> => {
+    const attemptOnce = async (timeoutSec: number): Promise<{ failure: 'timeout' | 'empty' | 'error' | null; text: string; detail: string }> => {
       try {
         const result = await adapter.dispatch({
           engine: opts.engine,
@@ -42,32 +43,44 @@ fn name=dispatchSeatWithRetry async=true params="adapter:EngineAdapter, opts:{en
           signal: opts.signal,
         } as any);
         const failure = classifySeatFailure(result);
-        if (failure) return { failure, text: '' };
-        if (!opts.extract) return { failure: null, text: String(result.stdout ?? '') };
-        try {
-          return { failure: null, text: opts.extract(result) };
-        } catch {
-          return { failure: 'empty', text: '' };
+        if (failure) {
+          const detail = result.timedOut
+            ? `timed out after ${timeoutSec}s`
+            : (String(result.stderr ?? '').trim().slice(0, 240) || (failure === 'empty' ? 'empty response (no visible output)' : `exit ${result.exitCode}`));
+          return { failure, text: '', detail };
         }
-      } catch {
-        return { failure: 'error', text: '' };
+        if (!opts.extract) return { failure: null, text: String(result.stdout ?? ''), detail: '' };
+        try {
+          return { failure: null, text: opts.extract(result), detail: '' };
+        } catch (err) {
+          return { failure: 'empty', text: '', detail: err instanceof Error ? err.message : String(err) };
+        }
+      } catch (err) {
+        return { failure: 'error', text: '', detail: err instanceof Error ? err.message : String(err) };
       }
     };
 
+    // Already aborted? Don't burn a dispatch at all.
+    if (opts.signal?.aborted) {
+      return { engineId: opts.engineId, ok: false, text: '', attempts: 0, failure: 'error', note: `${opts.engineId} aborted`, detail: 'aborted before dispatch' };
+    }
+
     const first = await attemptOnce(opts.timeout);
     if (!first.failure) {
-      return { engineId: opts.engineId, ok: true, text: first.text, attempts: 1, failure: null, note: null };
+      return { engineId: opts.engineId, ok: true, text: first.text, attempts: 1, failure: null, note: null, detail: null };
     }
     // A user abort is a decision, not flake — respect it immediately.
     if (opts.signal?.aborted) {
-      return { engineId: opts.engineId, ok: false, text: '', attempts: 1, failure: first.failure, note: `${opts.engineId} aborted` };
+      return { engineId: opts.engineId, ok: false, text: '', attempts: 1, failure: first.failure, note: `${opts.engineId} aborted`, detail: first.detail };
     }
-    const retryTimeout = Math.max(RETRY_MIN_TIMEOUT_SEC, Math.floor(opts.timeout / 2));
+    // Half the original wall clock, floored at 30s, but NEVER longer than the
+    // first attempt — for sub-60s callers a "retry" must not raise the budget.
+    const retryTimeout = Math.min(opts.timeout, Math.max(RETRY_MIN_TIMEOUT_SEC, Math.floor(opts.timeout / 2)));
     const second = await attemptOnce(retryTimeout);
     if (!second.failure) {
-      return { engineId: opts.engineId, ok: true, text: second.text, attempts: 2, failure: null, note: `${opts.engineId} ${first.failure} → retried OK` };
+      return { engineId: opts.engineId, ok: true, text: second.text, attempts: 2, failure: null, note: `${opts.engineId} ${first.failure} → retried OK`, detail: first.detail };
     }
-    return { engineId: opts.engineId, ok: false, text: '', attempts: 2, failure: second.failure, note: `${opts.engineId} ${first.failure} → retry ${second.failure}, dropped` };
+    return { engineId: opts.engineId, ok: false, text: '', attempts: 2, failure: second.failure, note: `${opts.engineId} ${first.failure} → retry ${second.failure}, dropped`, detail: `${first.detail}${second.detail && second.detail !== first.detail ? ` | retry: ${second.detail}` : ''}` };
   >>>
 
 fn name=buildPanelHealth params="outcomes:SeatOutcome[]" returns="{ requested: number; responded: number; degraded: boolean; notes: string[]; banner: string | null }" export=true

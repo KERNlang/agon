@@ -38,6 +38,22 @@ describe('rooms MCP tools', () => {
     expect(handleRoomTool('RoomRead', { room: 'sync', unreadOnly: true })).toMatch(/Error: .*callsign/);
   });
 
+  it('never advances the cursor past a tail-limited window (no silent skip of older unread)', () => {
+    handleRoomTool('RoomJoin', { room: 'backlog', callsign: 'writer' });
+    for (let i = 0; i < 5; i++) handleRoomTool('RoomPost', { room: 'backlog', callsign: 'writer', text: `msg ${i}` });
+
+    // limit=2 shows only the newest tail — the 4 older unread events would be
+    // silently skipped if the cursor advanced here.
+    const gapped = JSON.parse(handleRoomTool('RoomRead', { room: 'backlog', callsign: 'reader', markRead: true, limit: 2 }));
+    expect(gapped.cursorAdvanced).toBe(false);
+    expect(gapped.unread.unreadCount).toBe(5);
+
+    // unreadOnly is gap-free by construction → advances.
+    const caught = JSON.parse(handleRoomTool('RoomRead', { room: 'backlog', callsign: 'reader', unreadOnly: true, markRead: true }));
+    expect(caught.cursorAdvanced).toBe(true);
+    expect(caught.unread.unreadCount).toBe(0);
+  });
+
   it('locks resources with TTL, refuses contention, and releases', () => {
     handleRoomTool('RoomJoin', { room: 'build', callsign: 'a' });
     const locked = JSON.parse(handleRoomTool('RoomLock', { room: 'build', callsign: 'a', resource: 'core.ts' }));

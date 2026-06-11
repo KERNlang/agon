@@ -325,7 +325,9 @@ fn name=runCouncil async=true params="opts:CouncilOptions" returns="Promise<Coun
         opts.onEvent?.({ type: 'engine:failed', data: { engineId, phase, error: first.diag } });
         return { text: first.text, ok: false };
       }
-      const second = await dispatchTextOnce(engineId, prompt, sys, Math.max(30, Math.floor(timeout / 2)));
+      // Half the wall clock, floored at 30s, but never LONGER than the first
+      // attempt — for sub-60s timeouts a "retry" must not raise the budget.
+      const second = await dispatchTextOnce(engineId, prompt, sys, Math.min(timeout, Math.max(30, Math.floor(timeout / 2))));
       if (second.ok) {
         warnings.push(`${phase} (${engineId}) ${first.diag} → retried OK`);
         return { text: second.text, ok: true };

@@ -65,14 +65,37 @@ describe('dispatchSeatWithRetry', () => {
     expect(seat.note).toBe('codex error → retried OK');
   });
 
-  it('never retries after a user abort', async () => {
+  it('never retries after a user abort mid-attempt', async () => {
     const controller = new AbortController();
-    controller.abort();
-    const { adapter, calls } = fakeAdapter([() => timedOut(), () => ok('should not happen')]);
+    const { adapter, calls } = fakeAdapter([() => { controller.abort(); return timedOut(); }, () => ok('should not happen')]);
     const seat = await dispatchSeatWithRetry(adapter, seatOpts(controller.signal));
     expect(seat.ok).toBe(false);
     expect(seat.attempts).toBe(1);
     expect(calls).toHaveLength(1);
+  });
+
+  it('skips dispatch entirely when already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const { adapter, calls } = fakeAdapter([() => ok('should not happen')]);
+    const seat = await dispatchSeatWithRetry(adapter, seatOpts(controller.signal));
+    expect(seat.ok).toBe(false);
+    expect(seat.attempts).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('caps the retry timeout at the original (sub-60s callers never get a longer retry)', async () => {
+    const { adapter, calls } = fakeAdapter([() => timedOut(), () => ok('late')]);
+    const seat = await dispatchSeatWithRetry(adapter, { ...seatOpts(), timeout: 20 });
+    expect(seat.ok).toBe(true);
+    expect(calls).toEqual([20, 20]);   // min(20, max(30, 10)) = 20, never > original
+  });
+
+  it('preserves the underlying failure detail for diagnosability', async () => {
+    const { adapter } = fakeAdapter([() => crashed(), () => crashed()]);
+    const seat = await dispatchSeatWithRetry(adapter, seatOpts());
+    expect(seat.ok).toBe(false);
+    expect(seat.detail).toContain('boom');
   });
 
   it('an extract throw counts as an empty failure and is retried', async () => {

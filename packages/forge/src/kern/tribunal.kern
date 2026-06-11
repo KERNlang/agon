@@ -166,8 +166,12 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
         });
         seatOutcomes.push(seat);
         if (!seat.ok) {
-          console.warn(`[agon] tribunal dispatch (${pos.engineId}) round ${round} failed after ${seat.attempts} attempt(s): ${seat.failure}`);
-          opts.onEvent?.({ type: 'engine:failed' as any, engineId: pos.engineId, data: { engineId: pos.engineId, phase: `tribunal-round-${round}`, error: seat.failure ?? 'failed' } });
+          // Keep the underlying stderr/message in the event + warn line — the
+          // CLI's "Engines that hit errors" section must stay diagnosable, not
+          // collapse to a bare 'timeout'/'error' category.
+          const errDetail = seat.detail ? `${seat.failure}: ${seat.detail}` : (seat.failure ?? 'failed');
+          console.warn(`[agon] tribunal dispatch (${pos.engineId}) round ${round} failed after ${seat.attempts} attempt(s): ${errDetail}`);
+          opts.onEvent?.({ type: 'engine:failed' as any, engineId: pos.engineId, data: { engineId: pos.engineId, phase: `tribunal-round-${round}`, error: errDetail } });
           return { engineId: pos.engineId, argument: '(failed to respond)' };
         }
         return { engineId: pos.engineId, argument: seat.text };

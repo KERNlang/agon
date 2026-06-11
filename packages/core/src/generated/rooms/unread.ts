@@ -12,17 +12,16 @@ export function isUnreadKind(kind: string): boolean {
 }
 
 /**
- * Fold a member's read cursor against the ledger: how far behind are they, and how many of the new events @mention them?
+ * Pure fold of one member's cursor over an already-read ledger slice (events with seq > lastReadSeq are counted; earlier ones are skipped).
  */
 // @kern-source: unread:13
-export function getUnreadState(roomId: string, callsign: string): RoomUnreadState {
-  const lastReadSeq = getReadCursor(roomId, callsign);
-  const fresh = readEvents(roomId, lastReadSeq, 0);
+export function foldUnread(events: RoomEvent[], callsign: string, lastReadSeq: number): RoomUnreadState {
   let unreadCount = 0;
   let mentionCount = 0;
   let headSeq = lastReadSeq;
-  for (const ev of fresh) {
+  for (const ev of events) {
     headSeq = Math.max(headSeq, ev.seq);
+    if (ev.seq <= lastReadSeq) continue;
     if (!isUnreadKind(ev.kind)) continue;
     unreadCount += 1;
     if (Array.isArray(ev.mentions) && ev.mentions.includes(callsign)) mentionCount += 1;
@@ -31,9 +30,21 @@ export function getUnreadState(roomId: string, callsign: string): RoomUnreadStat
 }
 
 /**
- * Unread state for every present member — what `room who` renders so a glance answers 'who is behind?'.
+ * Fold a member's read cursor against the ledger: how far behind are they, and how many of the new events @mention them?
  */
-// @kern-source: unread:30
+// @kern-source: unread:29
+export function getUnreadState(roomId: string, callsign: string): RoomUnreadState {
+  const lastReadSeq = getReadCursor(roomId, callsign);
+  return foldUnread(readEvents(roomId, lastReadSeq, 0), callsign, lastReadSeq);
+}
+
+/**
+ * Unread state for every present member — what `room who` renders so a glance answers 'who is behind?'. Reads the ledger ONCE and folds per member (not O(members × events) re-reads).
+ */
+// @kern-source: unread:36
 export function listUnreadStates(roomId: string): RoomUnreadState[] {
-  return listPresence(roomId).map((p) => getUnreadState(roomId, p.callsign));
+  const members = listPresence(roomId);
+  if (members.length === 0) return [];
+  const events = readEvents(roomId, 0, 0);
+  return members.map((p) => foldUnread(events, p.callsign, p.lastReadSeq ?? 0));
 }

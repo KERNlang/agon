@@ -8,10 +8,14 @@ import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDe
 
 import { takeSnapshot } from '../blocks/file-history.js';
 
+import { evaluateFilePathRules } from './tool-permissions.js';
+
+import { PERMISSION_DENIED_MESSAGE } from '../signals/tool-registry.js';
+
 /**
  * Factory for the Write tool — writes or creates files with safety guards.
  */
-// @kern-source: tool-write:10
+// @kern-source: tool-write:12
 export function createWriteTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Write',
@@ -58,6 +62,19 @@ export function createWriteTool(): ToolHandler {
         message: `Write denied: ${filePath} is outside the working directory`,
         reason: 'path-outside-cwd',
       };
+    }
+
+    // CC-parity allow/deny rules (.agon.json permissions): deny FIRST — before
+    // the auto-allow below — and allow before any ask. Gate on the API / XML
+    // execution path (executeToolCall → handler.checkPermission). F3 path-aware.
+    if ((ctx as any).permissionRules) {
+      const ruleDecision = evaluateFilePathRules('Write', input.file_path as string, ctx.cwd, (ctx as any).permissionRules);
+      if (ruleDecision === 'deny') {
+        return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: Write ${filePath} blocked by a deny rule in .agon.json permissions`, reason: 'permission_rule_deny' };
+      }
+      if (ruleDecision === 'allow') {
+        return { behavior: 'allow' };
+      }
     }
 
     return { behavior: 'allow' };

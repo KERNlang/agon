@@ -1,4 +1,4 @@
-import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createGoalTool,createConquerTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createExitPlanModeTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,createTodoWriteTool,executeToolCall,resolveWorkingDir"
+import from="@kernlang/agon-core" names="ToolRegistry,getProjectFileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createGoalTool,createConquerTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createExitPlanModeTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,createTodoWriteTool,executeToolCall,resolveWorkingDir,parsePermissionRuleSet"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -37,7 +37,7 @@ fn name=createEagerToolContext params="ctx:HandlerContext, config:any, signal:Ab
     let name=cwd value="resolveWorkingDir()"
     let name=fsc value="getProjectFileStateCache(cwd)"
     let name=explorationMode value="(ctx as any).explorationMode ?? false"
-    return value="{ cwd, readFileState: (fsc as any).cache, abortSignal: signal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), }"
+    return value="{ cwd, readFileState: (fsc as any).cache, abortSignal: signal, permissionMode: (config as any).permissionMode ?? 'ask', explorationMode, allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {}, source: 'orchestrator' as const, permissionRules: parsePermissionRuleSet((config as any).permissions), onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }), }"
 
 fn name=parseEagerToolInput params="toolName:string,input:unknown" returns="{ok:boolean,input?:Record<string,unknown>,error?:string,raw:string}" export=true
   doc "Parse a streaming tool input into a JSON object. Malformed input is returned as an explicit retryable error instead of being silently coerced."

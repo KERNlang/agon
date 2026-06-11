@@ -3,6 +3,8 @@
 
 import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolDefinition,PermissionDecision,ToolHandler" types=true
 import from="../blocks/process.js" names="spawnWithTimeout,spawnStream"
+import from="./tool-permissions.js" names="evaluateBashRules"
+import from="../signals/tool-registry.js" names="PERMISSION_DENIED_MESSAGE"
 
 const name=DANGEROUS_PREFIXES type="readonly string[]" value={{ [ 'rm -rf /', 'dd if=', 'mkfs', '> /dev/', 'chmod 777', 'curl | sh', 'wget | sh' ] as const }}
 
@@ -65,10 +67,25 @@ fn name=createBashTool returns=ToolHandler
       const base = extractBaseCommand(command);
       const lower = base.toLowerCase();
 
-      // Check dangerous prefixes — deny immediately
+      // Check dangerous prefixes — deny immediately (hard floor, before rules)
       for (const prefix of DANGEROUS_PREFIXES) {
         if (lower.startsWith(prefix)) {
           return { behavior: 'deny', message: `Blocked dangerous command: ${prefix}`, reason: 'dangerous-prefix' };
+        }
+      }
+
+      // CC-parity allow/deny rules (.agon.json permissions): deny FIRST — before
+      // any mode-based auto-allow — and allow before the ask fall-throughs. This
+      // is the gate consulted on the API / XML tool-execution path (executeToolCall
+      // → handler.checkPermission). F2 compound-command splitting closes the
+      // `<allowed> && rm -rf /` hole; redirection falls through to ask.
+      if ((_ctx as any).permissionRules) {
+        const ruleDecision = evaluateBashRules(command, (_ctx as any).permissionRules);
+        if (ruleDecision === 'deny') {
+          return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: Bash (${command.slice(0, 80)}) blocked by a deny rule in .agon.json permissions`, reason: 'permission_rule_deny' };
+        }
+        if (ruleDecision === 'allow') {
+          return { behavior: 'allow' };
         }
       }
 

@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@kernlang/agon-core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, hasProjectBrief, parsePermissionRuleSet, evaluatePermissionRules } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, hasProjectBrief, parsePermissionRuleSet, evaluatePermissionRules, evaluateToolRules } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -650,14 +650,23 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   input: reqArgs,
                 });
               };
+              // deny-all kill-switch wins over everything, including an allow rule.
+              // Checked BEFORE the rule gate so a permissionMode=deny-all session
+              // cannot be re-opened by a stray allow rule in .agon.json (F4).
+              if (String((cfg as any).permissionMode ?? 'ask') === 'deny-all') {
+                logMcpApproval('denied', 'settings.permissionMode', 'permissionMode=deny-all');
+                writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: false, reason: 'All tool execution is denied (permissionMode=deny-all)' }));
+                continue;
+              }
               // CC-parity allow/deny rules (.agon.json permissions) — deny ALWAYS
               // wins and refuses without prompting; allow auto-approves; neither
-              // falls through to allowedCommands / self-turn / UI prompt.
+              // falls through to allowedCommands / self-turn / UI prompt. Uses the
+              // F2/F3-hardened gate: Bash compound-splitting + file-path resolution.
               const mcpRuleSet = parsePermissionRuleSet((cfg as any).permissions);
               const mcpRuleArg = reqTool === 'Bash'
                 ? String(req.args?.command ?? '')
                 : String(req.args?.file_path ?? '');
-              const mcpRuleDecision = evaluatePermissionRules(reqTool, mcpRuleArg, mcpRuleSet);
+              const mcpRuleDecision = evaluateToolRules(reqTool, mcpRuleArg, resolveWorkingDir(), mcpRuleSet);
               if (mcpRuleDecision === 'deny') {
                 logMcpApproval('denied', 'settings.permissions', `${reqTool} denied by permissions rule`);
                 writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: false, reason: `${reqTool} blocked by deny rule in .agon.json permissions` }));
@@ -1286,6 +1295,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               blockedTools: cesarFastPath ? FAST_PATH_BLOCKED_TOOLS : undefined,
               blockedToolMessage: cesarFastPath ? `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` : undefined,
               source: 'orchestrator' as const,
+              // CC-parity allow/deny rules reach all three XML runToolLoop paths via
+              // this shared toolCtx (runToolLoop → executeToolCalls → executeToolCall
+              // → handler.checkPermission). deny-first, before mode-based auto-allow.
+              permissionRules: parsePermissionRuleSet((config as any).permissions),
         };
         const _lastToolInputs: Record<string, string> = {};
         const xmlToolBridge = createStreamBridge(dispatch as (event: Record<string,unknown>) => void, { initialEngineId: cesarEngineId });

@@ -6,6 +6,8 @@ import from="node:fs" names="readFileSync,writeFileSync,statSync,existsSync,mkdi
 import from="node:path" names="resolve,dirname,relative"
 import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolHandler,ToolDefinition,PermissionDecision" types=true
 import from="../blocks/file-history.js" names="takeSnapshot"
+import from="./tool-permissions.js" names="evaluateFilePathRules"
+import from="../signals/tool-registry.js" names="PERMISSION_DENIED_MESSAGE"
 
 fn name=normalizeCurlyQuotes params="text:string" returns=string export=false
   doc "Replace curly/smart quotes with straight ASCII equivalents."
@@ -81,6 +83,21 @@ fn name=createEditTool returns=ToolHandler
           message: `Edit denied: ${filePath} is outside the working directory`,
           reason: 'path-outside-cwd',
         };
+      }
+
+      // CC-parity allow/deny rules (.agon.json permissions): deny FIRST — before
+      // the agent-mode auto-allow below — and allow before any ask. This is the
+      // gate on the API / XML tool-execution path (executeToolCall →
+      // handler.checkPermission). F3 path-aware: `Edit(/etc:*)` blocks /etc/passwd
+      // and ../ / symlink escapes are resolved before matching.
+      if ((ctx as any).permissionRules) {
+        const ruleDecision = evaluateFilePathRules('Edit', input.file_path as string, ctx.cwd, (ctx as any).permissionRules);
+        if (ruleDecision === 'deny') {
+          return { behavior: 'deny', message: `${PERMISSION_DENIED_MESSAGE}: Edit ${filePath} blocked by a deny rule in .agon.json permissions`, reason: 'permission_rule_deny' };
+        }
+        if (ruleDecision === 'allow') {
+          return { behavior: 'allow' };
+        }
       }
 
       // Auto-allow edits within CWD — agent mode (like Claude Code default)

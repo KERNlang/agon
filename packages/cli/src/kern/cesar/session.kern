@@ -5,7 +5,7 @@ import from="node:fs" names="mkdirSync"
 import from="node:url" names="fileURLToPath,pathToFileURL"
 import from="node:module" names="createRequire"
 import from="@kernlang/agon-core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES,parsePermissionRuleSet,evaluatePermissionRules"
+import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES,parsePermissionRuleSet,evaluatePermissionRules,evaluateToolRules,PERMISSION_DENIED_MESSAGE"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./tools.js" names="createCesarToolRegistry"
@@ -421,6 +421,11 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       toolPermissions: (config as any).toolPermissions ?? {},
       sessionAllowList: getSessionAllowList(),
       source: 'orchestrator' as const,
+      // CC-parity allow/deny rules reach the API tool-execution path here:
+      // executeToolCall → handler.checkPermission consults ctx.permissionRules
+      // (deny-first, before any mode-based auto-allow). Without this, a
+      // Bash(rm:*) deny rule never fires for API engines under 'smart' mode.
+      permissionRules: parsePermissionRuleSet((config as any).permissions),
     };
     return async (name: string, args: Record<string, unknown>, callId: string) => {
       // Plan mode: block execution tools and mutating shell commands before
@@ -664,7 +669,13 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         },
       );
       let output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
-      if (!result.result.ok) {
+      // F6: a permission denial (deny rule / deny-all) is terminal, not a
+      // malformed-input retry. Surface it verbatim so the retry wrapper below
+      // does not burn a [RETRYABLE_TOOL_ERROR] retry on an unrecoverable block.
+      const isPermissionDenial = !result.result.ok
+        && typeof result.result.error === 'string'
+        && result.result.error.includes(PERMISSION_DENIED_MESSAGE);
+      if (!result.result.ok && !isPermissionDenial) {
         // #1 error surfacing: include the tool name + a redacted input snippet so
         // Cesar can see WHAT input was rejected and self-correct, instead of a bare
         // validation/provider string with no offending input.
@@ -718,14 +729,16 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
       const agonTool = toolMap[tool.toLowerCase()] ?? tool;
       const perm = perms[agonTool];
       // CC-parity allow/deny rules (.agon.json permissions). For Bash the
-      // rule command is the shell command; for file tools it is the path
-      // argument (path-prefix rules supported via Edit(path:*)); a bare
-      // tool rule (Edit/Write) matches any invocation. deny ALWAYS wins.
+      // rule command is the shell command (F2: compound `a && b` is split so a
+      // prefix-allow can't approve an appended `rm -rf /`); for file tools it is
+      // the path argument, resolved absolute + symlink-canonical so `Edit(/etc:*)`
+      // blocks `/etc/passwd` and `../` escapes are caught (F3). A bare tool rule
+      // (Edit/Write) matches any invocation. deny ALWAYS wins.
       const ruleSet = parsePermissionRuleSet((cfg as any).permissions);
       const ruleArg = agonTool === 'Bash'
         ? command
         : String((approvalArgsFromCommand(agonTool, command) as any)?.file_path ?? '');
-      const ruleDecision = evaluatePermissionRules(agonTool, ruleArg, ruleSet);
+      const ruleDecision = evaluateToolRules(agonTool, ruleArg, resolveWorkingDir(), ruleSet);
       const turnId = ctx.cesar?.turnId;
       const cwd = resolveWorkingDir();
       const logApproval = (decision: 'approved'|'denied'|'prompted'|'blocked', source: string, reason?: string, args?: Record<string, unknown> | string) => {

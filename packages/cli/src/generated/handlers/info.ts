@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, existsSync, rmSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, getAgonHome, getRatings, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession, resolveWorkingDir } from '@kernlang/agon-core';
 
 import type { AgonConfig, ForgeManifest } from '@kernlang/agon-core';
 
@@ -572,7 +572,10 @@ export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch,
  */
 export function handlePermissions(dispatch: Dispatch): void {
   ensureAgonHome();
-  const cwd = process.cwd();
+  // Use the resolved active workspace dir, not the raw process cwd, so
+  // /permissions inspects the same .agon.json/.agon.local.json scope the
+  // approval gate actually loads (workspace switch / subdir invocation safe).
+  const cwd = resolveWorkingDir();
   const readJsonSafe = (path: string): any => {
     try { return JSON.parse(readFileSync(path, 'utf-8')); }
     catch { return null; }

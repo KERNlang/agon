@@ -15,6 +15,20 @@ interface name=PermissionDecision
   field name=message type=string optional=true
   field name=reason type=string optional=true
 
+// ── CC-parity allow/deny permission rule shapes ───────────────────────
+// A parsed rule and a normalized allow/deny rule set. Defined here (not in
+// tool-permissions) so ToolContext can carry the parsed rule set without a
+// circular import; tool-permissions imports these back as the canonical type.
+
+interface name=ParsedPermissionRule
+  field name=tool type=string
+  field name=command type=string optional=true
+  field name=prefix type=boolean
+
+interface name=PermissionRuleSet
+  field name=allow type="ParsedPermissionRule[]"
+  field name=deny type="ParsedPermissionRule[]"
+
 interface name=ToolContext
   field name=cwd type=string
   field name=readFileState type="Map<string, FileState>"
@@ -32,6 +46,7 @@ interface name=ToolContext
   field name=virtualFs type="any" optional=true
   field name=sessionAllowList type="string[]" optional=true
   field name=source type="'user'|'orchestrator'" optional=true
+  field name=permissionRules type=PermissionRuleSet optional=true
 
 interface name=FileState
   field name=content type=string

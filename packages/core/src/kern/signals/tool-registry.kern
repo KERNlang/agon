@@ -3,6 +3,13 @@
 
 import from="../models/tool-types.js" names="ToolDefinition,ToolCall,ToolCallResult,ToolResult,ToolContext,PermissionDecision,ToolHandler" types=true
 
+// ── Permission-denial marker ──────────────────────────────────────────
+// Stable, typed prefix on the error message produced when a tool is denied
+// (by a deny rule or deny-all). Callers that wrap tool errors with a retry
+// nudge (e.g. the CLI native tool loop) MUST exempt errors carrying this
+// prefix: a permission denial is terminal, not a malformed-input retry.
+const name=PERMISSION_DENIED_MESSAGE type=string value={{ 'PERMISSION_DENIED' }} export=true
+
 service name=ToolRegistry singleton=true
   field name=tools type="Map<string, ToolHandler>"
 

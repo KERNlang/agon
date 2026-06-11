@@ -149,8 +149,14 @@ fn name=shouldQueuePlanModeOnTab params="opts:{replState:string,inputValue:strin
 // "@a.ts," mention "a.ts", not "a.ts." / "a.ts,".
 
 // Path chars that may end a mention as sentence/clause punctuation and should be
-// stripped from the captured path (not part of the filename in normal prose).
-const name=MENTION_TRAILING_PUNCT type="string" value="',.;:!?)]}>\\'\"'"
+// stripped from the captured path (not part of the filename in normal prose):
+//   , . ; : ! ? ) ] } ' "
+// NOTE: built by joining single-char literals so the kern attribute-escaper can
+// never fold a stray backslash / mangled quote into the set (the prior
+// double-quoted attribute form emitted a literal "\\" and broken quotes, so a
+// trailing backslash was wrongly stripped). A backslash is NOT trailing prose
+// punctuation and must stay out of this set.
+const name=MENTION_TRAILING_PUNCT type="string" value={{ [',', '.', ';', ':', '!', '?', ')', ']', '}', "'", '"'].join('') }}
 
 fn name=stripMentionTrailingPunct params="path:string" returns=string export=true
   doc "Trim sentence/clause punctuation from the end of a captured @-mention path so trailing prose punctuation isn't read as part of the filename."

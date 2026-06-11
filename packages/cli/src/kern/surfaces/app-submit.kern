@@ -63,7 +63,7 @@ import from="./app-blocks.js" names="summarizeBtwTranscriptEvent"
 import from="../lib/terminal-notify.js" names="setWindowTitle"
 import from="../signals/app-input.js" names="extractFileMentions"
 import from="node:path" names="join,resolve,relative,sep,isAbsolute"
-import from="node:fs" names="mkdirSync,readFileSync,statSync"
+import from="node:fs" names="mkdirSync,readFileSync,statSync,realpathSync,openSync,readSync,closeSync"
 
 module name=AppSubmit
 
@@ -85,37 +85,66 @@ module name=AppSubmit
   // byte cap, and a max file count. Returns '' when nothing resolved.
   fn name=buildMentionedFilesContext params="text:string, cwd:string" returns=string export=true
     handler <<<
-      const mentions = extractFileMentions(text).slice(0, MENTION_MAX_FILES);
+      const allMentions = extractFileMentions(text);
+      const mentions = allMentions.slice(0, MENTION_MAX_FILES);
       if (mentions.length === 0) return '';
       const root = resolve(cwd);
+      // Confinement is checked against the REAL (symlink-resolved) root so a
+      // symlink inside the tree can't be used to read outside it.
+      let realRoot: string;
+      try { realRoot = realpathSync(root); } catch { realRoot = root; }
       const blocks: string[] = [];
       let totalBytes = 0;
+      // Anything we couldn't include because a cap was hit. Surfaced as a final
+      // note so the engine (and user) know the attachment set is incomplete
+      // rather than silently short — mentions past MENTION_MAX_FILES plus any
+      // file dropped once the total byte cap is exhausted.
+      let dropped = allMentions.length - mentions.length;
       for (const rel of mentions) {
-        // Reject absolute paths and any path that resolves outside the project
-        // root — only project-relative mentions are attachable.
+        // Reject absolute paths and any path that lexically resolves outside the
+        // project root — only project-relative mentions are attachable.
         if (isAbsolute(rel)) continue;
         const abs = resolve(root, rel);
         const within = abs === root || abs.startsWith(root + sep);
         if (!within) continue;
-        let content: string;
+        // Total-cap reached: this and every remaining mention is dropped.
+        if (totalBytes >= MENTION_MAX_TOTAL_BYTES) { dropped++; continue; }
+        const remaining = MENTION_MAX_TOTAL_BYTES - totalBytes;
+        const perFileCap = Math.min(MENTION_MAX_FILE_BYTES, remaining);
         let size: number;
+        let body: string;
+        let truncated = false;
         try {
           const st = statSync(abs);
           if (!st.isFile()) continue;
+          // Re-resolve symlinks and re-check confinement against the real root:
+          // statSync/readFileSync FOLLOW symlinks, so a symlinked path that
+          // passed the lexical check above could still point outside the tree.
+          const real = realpathSync(abs);
+          if (real !== realRoot && !real.startsWith(realRoot + sep)) continue;
           size = st.size;
-          content = readFileSync(abs, 'utf-8');
+          if (size > perFileCap) {
+            // Read only the cap rather than buffering the whole file — a huge
+            // file would otherwise be fully loaded (and >~512MB throws, dropping
+            // it silently) just to slice it back down.
+            const fd = openSync(abs, 'r');
+            try {
+              const buf = Buffer.alloc(perFileCap);
+              const bytesRead = readSync(fd, buf, 0, perFileCap, 0);
+              body = buf.toString('utf-8', 0, bytesRead);
+            } finally {
+              closeSync(fd);
+            }
+            truncated = true;
+          } else {
+            body = readFileSync(abs, 'utf-8');
+            // A multibyte tail can push a small file just over the cap once
+            // decoded; clamp defensively.
+            if (body.length > perFileCap) { body = body.slice(0, perFileCap); truncated = true; }
+          }
         } catch {
           // Non-existent / unreadable — leave the mention as plain text.
           continue;
-        }
-        if (totalBytes >= MENTION_MAX_TOTAL_BYTES) break;
-        const remaining = MENTION_MAX_TOTAL_BYTES - totalBytes;
-        const perFileCap = Math.min(MENTION_MAX_FILE_BYTES, remaining);
-        let body = content;
-        let truncated = false;
-        if (body.length > perFileCap) {
-          body = body.slice(0, perFileCap);
-          truncated = true;
         }
         totalBytes += body.length;
         const display = relative(root, abs) || rel;
@@ -125,7 +154,10 @@ module name=AppSubmit
         blocks.push(`\`\`\`\n// ${header}\n${body}\n\`\`\``);
       }
       if (blocks.length === 0) return '';
-      return `\n\n[Attached files referenced with @ in the message above]\n${blocks.join('\n\n')}`;
+      const note = dropped > 0
+        ? `\n\n[${dropped} more @-mentioned file${dropped === 1 ? '' : 's'} omitted: caps reached]`
+        : '';
+      return `\n\n[Attached files referenced with @ in the message above]\n${blocks.join('\n\n')}${note}`;
     >>>
 
   // ── processInputQueue: drain the next queued line once idle ──

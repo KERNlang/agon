@@ -194,13 +194,13 @@ export function shouldQueuePlanModeOnTab(opts: {replState:string,inputValue:stri
   return true;
 }
 
-// @kern-source: app-input:153
-export const MENTION_TRAILING_PUNCT: string = "',.;:!?)]}>\\'\"'";
+// @kern-source: app-input:159
+export const MENTION_TRAILING_PUNCT: string = [',', '.', ';', ':', '!', '?', ')', ']', '}', "'", '"'].join('');
 
 /**
  * Trim sentence/clause punctuation from the end of a captured @-mention path so trailing prose punctuation isn't read as part of the filename.
  */
-// @kern-source: app-input:155
+// @kern-source: app-input:161
 export function stripMentionTrailingPunct(path: string): string {
   let end = path.length;
   while (end > 0 && MENTION_TRAILING_PUNCT.includes(path[end - 1])) end--;
@@ -210,7 +210,7 @@ export function stripMentionTrailingPunct(path: string): string {
 /**
  * Extract @-mentioned relative paths from submitted composer text. A mention is '@<path>' where '@' is at string start or follows whitespace (so user@host emails are NOT matched). Trailing prose punctuation is trimmed. Returns de-duplicated paths in first-seen order; never includes the leading '@'.
  */
-// @kern-source: app-input:163
+// @kern-source: app-input:169
 export function extractFileMentions(text: string): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -233,7 +233,7 @@ export function extractFileMentions(text: string): string[] {
 /**
  * Given the current composer value, return the active trailing @-mention fragment the picker should filter on, or null if the caret (assumed end-of-input) is not inside a mention. Active means: the last '@' in the value is a valid mention boundary (start or after whitespace) AND no whitespace follows it. The query is the text typed after that '@' (may be empty right after typing '@').
  */
-// @kern-source: app-input:184
+// @kern-source: app-input:190
 export function parseActiveAtMention(value: string): { query: string } | null {
   const at = value.lastIndexOf('@');
   if (at < 0) return null;
@@ -248,7 +248,7 @@ export function parseActiveAtMention(value: string): { query: string } | null {
 /**
  * Subsequence fuzzy score of query against a candidate path (case-insensitive). Returns -1 when query is not a subsequence. Higher is better: contiguous runs, basename hits, and matches near a path segment boundary score higher; earlier matches score higher. Empty query scores all candidates 0 (caller keeps source order).
  */
-// @kern-source: app-input:197
+// @kern-source: app-input:203
 export function fuzzyFileScore(query: string, candidate: string): number {
   if (!query) return 0;
   const q = query.toLowerCase();
@@ -284,7 +284,7 @@ export function fuzzyFileScore(query: string, candidate: string): number {
 /**
  * Rank project file paths against a fuzzy query (subsequence). Non-matches are dropped; ties break on shorter path then lexicographic. Empty query returns the first `limit` files in source order. Capped at `limit` (default 50).
  */
-// @kern-source: app-input:231
+// @kern-source: app-input:237
 export function rankFileMatches(query: string, files: string[], limit?: number): string[] {
   const cap = Math.max(1, Math.floor(limit ?? 50));
   if (!query.trim()) return files.slice(0, cap);
@@ -304,7 +304,7 @@ export function rankFileMatches(query: string, files: string[], limit?: number):
 /**
  * collectSourceFiles wrapped so a bad cwd / fs error never throws into the keystroke path — returns [] instead. Used to lazily populate the @-file picker on first '@'.
  */
-// @kern-source: app-input:249
+// @kern-source: app-input:255
 export function safeCollectSourceFiles(cwd: string): string[] {
   try {
     return collectSourceFiles(cwd);

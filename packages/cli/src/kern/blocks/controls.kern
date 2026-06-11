@@ -35,7 +35,7 @@ screen name=SlashPicker target=ink
       useInput((input: string, key: any) => {
         const isForwardDelete = input === '\x1b[3~';
         const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
-        if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
+        if (key.escape || (key.ctrl && input === 'c') || input === '\x03') { onCancel(); return; }
         if (key.return) {
           if (filtered[currentIndex]) onSelect(filtered[currentIndex].cmd);
           return;
@@ -109,7 +109,12 @@ screen name=AtFilePicker target=ink
   prop name=onSelect type="(path: string) => void"
   prop name=onCancel type="(typed: string) => void"
   state name=selectedIndex type=number initial="0"
-  state name=filter type=string initial="initialQuery"
+  // String(...) forces the kern→ink transpiler to emit the initial VERBATIM as a
+  // variable reference. A bare `initialQuery` identifier is quoted by the
+  // compiler (-> useState<string>('initialQuery'), the literal text), which would
+  // seed the picker filtered by the garbage string "initialQuery" on every open.
+  // Same idiom as status.kern's `AGON_TIPS[...]` / app.kern's `resolveWorkingDir()`.
+  state name=filter type=string initial="String(initialQuery)"
   render
     handler <<<
       const filtered = useMemo(() => rankFileMatches(filter, files, 50), [filter, files]);
@@ -121,7 +126,7 @@ screen name=AtFilePicker target=ink
         // onCancel reports the text that should remain in the composer in place
         // of the picker: '@<filter>' keeps the typed mention as plain text; ''
         // means the leading '@' was backspaced away too.
-        if (key.escape || (key.ctrl && input === 'c')) { onCancel('@' + filter); return; }
+        if (key.escape || (key.ctrl && input === 'c') || input === '\x03') { onCancel('@' + filter); return; }
         if (key.return) {
           if (filtered[currentIndex]) onSelect(filtered[currentIndex]);
           else onCancel('@' + filter);

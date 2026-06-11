@@ -1,14 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   stripMentionTrailingPunct,
   extractFileMentions,
   parseActiveAtMention,
   fuzzyFileScore,
   rankFileMatches,
+  MENTION_TRAILING_PUNCT,
 } from '../../packages/cli/src/generated/signals/app-input.js';
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 import {
   buildMentionedFilesContext,
   MENTION_MAX_FILE_BYTES,
@@ -229,5 +233,95 @@ describe('buildMentionedFilesContext', () => {
     const out = buildMentionedFilesContext(text, dir);
     const blocks = (out.match(/@g\d+\.txt/g) ?? []).length;
     expect(blocks).toBeLessThanOrEqual(MENTION_MAX_FILES);
+  });
+
+  // ── F2: symlink confinement ──────────────────────────────────────────
+  // statSync/readFileSync FOLLOW symlinks, so a symlink that lives inside the
+  // root but points outside it would otherwise leak. realpathSync re-check skips it.
+  it('F2: skips a symlink resolving outside the project root (no leak)', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'agon-outside-link-'));
+    try {
+      const secret = join(outside, 'secret.txt');
+      writeFileSync(secret, 'TOP SECRET CONTENT');
+      const link = join(dir, 'leak.txt');
+      try {
+        symlinkSync(secret, link);
+      } catch {
+        return; // sandbox forbids symlinks — skip
+      }
+      const out = buildMentionedFilesContext('read @leak.txt', dir);
+      expect(out).not.toContain('TOP SECRET CONTENT');
+      expect(out).toBe('');
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('F2: still follows a symlink that stays inside the project root', () => {
+    writeFileSync(join(dir, 'real.ts'), 'inside content here');
+    try {
+      symlinkSync(join(dir, 'real.ts'), join(dir, 'alias.ts'));
+    } catch {
+      return; // sandbox forbids symlinks — skip
+    }
+    const out = buildMentionedFilesContext('@alias.ts', dir);
+    expect(out).toContain('inside content here');
+  });
+
+  // ── F3: dropped mentions are surfaced, not silent ────────────────────
+  it('F3: appends a "caps reached" note when mentions exceed MENTION_MAX_FILES', () => {
+    const extra = 3;
+    for (let i = 0; i < MENTION_MAX_FILES + extra; i++) {
+      writeFileSync(join(dir, `h${i}.ts`), `// ${i}\n`);
+    }
+    const text = Array.from({ length: MENTION_MAX_FILES + extra }, (_, i) => `@h${i}.ts`).join(' ');
+    const out = buildMentionedFilesContext(text, dir);
+    expect(out).toContain('omitted: caps reached');
+    expect(out).toContain(`${extra} more @-mentioned files omitted`);
+  });
+
+  it('F3: no "caps reached" note when nothing is dropped', () => {
+    writeFileSync(join(dir, 'solo.ts'), 'x\n');
+    const out = buildMentionedFilesContext('@solo.ts', dir);
+    expect(out).not.toContain('caps reached');
+  });
+
+  // ── F4: large file is partial-read (size checked before reading) ─────
+  it('F4: truncates a moderately large file via size check + explicit byte marker', () => {
+    const size = MENTION_MAX_FILE_BYTES + 50 * 1024; // ~114 KB, NOT 512 MB
+    writeFileSync(join(dir, 'big.ts'), 'A'.repeat(size));
+    const out = buildMentionedFilesContext('@big.ts', dir);
+    expect(out).toContain('@big.ts (truncated to');
+    expect(out).toContain(`of ${size} bytes)`);
+    expect(out.length).toBeLessThan(size);
+  });
+});
+
+// ── NIT: MENTION_TRAILING_PUNCT must not carry a stray backslash ───────
+describe('MENTION_TRAILING_PUNCT cleanliness (NIT)', () => {
+  it('does NOT contain a backslash', () => {
+    expect(MENTION_TRAILING_PUNCT.includes('\\')).toBe(false);
+  });
+  it('strips intended prose punctuation but keeps a trailing backslash', () => {
+    for (const ch of [',', '.', ';', ':', '!', '?', ')', ']', '}', "'", '"']) {
+      expect(stripMentionTrailingPunct('a.ts' + ch)).toBe('a.ts');
+    }
+    expect(stripMentionTrailingPunct('a\\')).toBe('a\\');
+  });
+});
+
+// ── F1 & F5: generated-output guards against compiler quirks recurring ─
+describe('generated controls.tsx guards', () => {
+  const gen = readFileSync(
+    join(REPO_ROOT, 'packages/cli/src/generated/blocks/controls.tsx'),
+    'utf-8',
+  );
+  it('F1: AtFilePicker filter initial is a variable reference, not a quoted literal', () => {
+    expect(gen).toContain('useState<string>(String(initialQuery))');
+    expect(gen).not.toContain("useState<string>('initialQuery')");
+  });
+  it('F5: pickers accept raw \\x03 (Ctrl+C) to cancel', () => {
+    const matches = gen.match(/input === '\\x03'/g) ?? [];
+    expect(matches.length).toBeGreaterThanOrEqual(2);
   });
 });

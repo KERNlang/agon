@@ -29,7 +29,7 @@ export interface ReviewEvent {
   patchContent: string;
 }
 
-// @kern-source: controls:336
+// @kern-source: controls:341
 export interface ModelPickerEntry {
   providerId: string;
   providerName: string;
@@ -62,7 +62,7 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands:typeof 
   useInput((input: string, key: any) => {
     const isForwardDelete = input === '\x1b[3~';
     const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
-    if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
+    if (key.escape || (key.ctrl && input === 'c') || input === '\x03') { onCancel(); return; }
     if (key.return) {
       if (filtered[currentIndex]) onSelect(filtered[currentIndex].cmd);
       return;
@@ -130,7 +130,7 @@ export function AtFilePicker({ files, prefix, initialQuery, onSelect, onCancel }
 
   const [selectedIndex, _setSelectedIndexRaw] = useState<number>(0);
   const setSelectedIndex = useMemo(() => __inkSafe(_setSelectedIndexRaw), [_setSelectedIndexRaw]);
-  const [filter, _setFilterRaw] = useState<string>('initialQuery');
+  const [filter, _setFilterRaw] = useState<string>(String(initialQuery));
   const setFilter = useMemo(() => __inkSafe(_setFilterRaw), [_setFilterRaw]);
 
   const filtered = useMemo(() => rankFileMatches(filter, files, 50), [filter, files]);
@@ -142,7 +142,7 @@ export function AtFilePicker({ files, prefix, initialQuery, onSelect, onCancel }
     // onCancel reports the text that should remain in the composer in place
     // of the picker: '@<filter>' keeps the typed mention as plain text; ''
     // means the leading '@' was backspaced away too.
-    if (key.escape || (key.ctrl && input === 'c')) { onCancel('@' + filter); return; }
+    if (key.escape || (key.ctrl && input === 'c') || input === '\x03') { onCancel('@' + filter); return; }
     if (key.return) {
       if (filtered[currentIndex]) onSelect(filtered[currentIndex]);
       else onCancel('@' + filter);
@@ -212,7 +212,7 @@ export function AtFilePicker({ files, prefix, initialQuery, onSelect, onCancel }
   );
 }
 
-// @kern-source: controls:196
+// @kern-source: controls:201
 export function EnginePicker({ available, initialSelected, userEngines, modelOverrides, onConfirm, onCancel, onRemove, onSetModel, onBrowseModel }: { available:string[]; initialSelected:string[]; userEngines:Set<string>; modelOverrides:Record<string,string>; onConfirm:(selected: string[]) => void; onCancel:() => void; onRemove:(engineId: string) => void; onSetModel:(engineId: string, model: string | null) => void; onBrowseModel:(engineId: string) => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -351,7 +351,7 @@ export function EnginePicker({ available, initialSelected, userEngines, modelOve
   );
 }
 
-// @kern-source: controls:349
+// @kern-source: controls:354
 export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilter, title, cliGroups, activeEngineIds, onToggleCliEngine, engineEfforts }: { entries:ModelPickerEntry[]; onSelect:(entry: ModelPickerEntry) => void; onCancel:() => void; loading?:boolean; initialFilter?:string; title?:string; cliGroups?:CliProviderGroup[]; activeEngineIds?:string[]; onToggleCliEngine?:(engineId:string, active:boolean) => void; engineEfforts?:Record<string,string> }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -772,7 +772,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   );
 }
 
-// @kern-source: controls:769
+// @kern-source: controls:774
 export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
   const eColor = engineColor(event.winnerId);
   const codeWidth = contentWidth(10);
@@ -811,7 +811,7 @@ export function ReviewBlock({ event, onAction }: { event:ReviewEvent; onAction:(
   );
 }
 
-// @kern-source: controls:811
+// @kern-source: controls:816
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines:string[]; currentCesar:string; onSelect:(engineId: string) => void; onCancel:() => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

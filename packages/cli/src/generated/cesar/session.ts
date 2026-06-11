@@ -14,7 +14,7 @@ import { createRequire } from 'node:module';
 
 import type { PersistentSession, PersistentSessionConfig } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, buildProjectMemoryBlock, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, buildProjectMemoryBlock, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, PERMISSION_DENIED_MESSAGE } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -739,7 +739,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       // error: never wrap it in [RETRYABLE_TOOL_ERROR] (which would invite an
       // immediate re-prompt of the very tool the user just refused, e.g. a denied
       // SaveMemory). Surface the denial verbatim so Cesar accepts it and moves on.
-      const isPermissionDenial = typeof result.result.error === 'string' && result.result.error.includes('User denied permission');
+      const isPermissionDenial = typeof result.result.error === 'string' && result.result.error.includes(PERMISSION_DENIED_MESSAGE);
       if (isPermissionDenial) {
         output = result.result.error as string;
       } else if (used <= 0) {

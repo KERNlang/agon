@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall, extractStrictConfidence, buildEscalationSuggestionLine, ESCALATION_SUGGESTION_THRESHOLD } from '../../packages/cli/src/handlers/cesar-brain.js';
 // Source of truth for these helpers is packages/cli/src/kern/cesar/brain-helpers.kern;
 // the generated/*.js below is regenerated from it (npm run kern:compile) — do not edit by hand.
-import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall, detectFabricatedDelegation } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
+import { eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, splitBeforeToolMarkup, isUserDirectedQuestion, findTrailingUserQuestion, detectAwaitingUserInput, detectMutationIntentStall, detectFabricatedDelegation, isBashToolName, isWriteToolName, stripAgonToolPrefix } from '../../packages/cli/src/generated/cesar/brain-helpers.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 // Rigid DECISION/CONFIDENCE parser for ACTUALLY-FIRED nero/advisor results — C4
 // must leave this untouched (downstream escalation routing depends on it).
@@ -251,6 +251,56 @@ describe('Cesar Brain', () => {
       for (const tool of ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'ReportConfidence']) {
         expect(shouldStopAfterXmlToolCall(tool)).toBe(false);
       }
+    });
+  });
+
+  describe('verify-before-done gate tool classification (native + MCP aliases)', () => {
+    describe('stripAgonToolPrefix', () => {
+      it('strips the Agon orchestration alias prefix case-insensitively', () => {
+        expect(stripAgonToolPrefix('AgonBash')).toBe('Bash');
+        expect(stripAgonToolPrefix('AgonEdit')).toBe('Edit');
+        expect(stripAgonToolPrefix('agonwrite')).toBe('write');
+      });
+      it('leaves bare names and non-Agon names untouched', () => {
+        expect(stripAgonToolPrefix('Bash')).toBe('Bash');
+        expect(stripAgonToolPrefix('Edit')).toBe('Edit');
+        expect(stripAgonToolPrefix('Agent')).toBe('Agent'); // not the 'Agon' prefix
+        expect(stripAgonToolPrefix('')).toBe('');
+      });
+    });
+
+    describe('isBashToolName', () => {
+      it('recognizes a shell call on the native/XML path (bare Bash)', () => {
+        expect(isBashToolName('Bash')).toBe(true);
+        expect(isBashToolName('bash')).toBe(true);
+      });
+      it('recognizes a shell call on the default companion/MCP path (AgonBash)', () => {
+        expect(isBashToolName('AgonBash')).toBe(true);
+        expect(isBashToolName('agonbash')).toBe(true);
+      });
+      it('does not treat non-shell tools as bash', () => {
+        for (const t of ['Edit', 'Write', 'AgonEdit', 'AgonWrite', 'Read', 'SaveMemory', 'Agent']) {
+          expect(isBashToolName(t)).toBe(false);
+        }
+      });
+    });
+
+    describe('isWriteToolName', () => {
+      it('counts native write tools as project write-work', () => {
+        for (const t of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+          expect(isWriteToolName(t)).toBe(true);
+        }
+      });
+      it('counts the MCP orchestration aliases as project write-work', () => {
+        for (const t of ['AgonEdit', 'AgonWrite', 'agonedit', 'AGONWRITE']) {
+          expect(isWriteToolName(t)).toBe(true);
+        }
+      });
+      it('does NOT count SaveMemory or shell/read tools as write-work', () => {
+        for (const t of ['SaveMemory', 'Bash', 'AgonBash', 'Read', 'Grep', 'Glob', 'ReportConfidence']) {
+          expect(isWriteToolName(t)).toBe(false);
+        }
+      });
     });
   });
 

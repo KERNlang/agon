@@ -34,7 +34,7 @@ import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
 
 import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence } from './tool-observability.js';
 
-import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation } from './brain-helpers.js';
+import { yieldToInk, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName } from './brain-helpers.js';
 
 // @kern-source: brain:20
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
@@ -145,9 +145,18 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       if (ctx.cesar) ctx.cesar.gateNudgedClaim = undefined;
       // Per-turn flag: did Cesar actually run something matching the gate this turn?
       let _ranGate = false;
+      // Tool names arrive on TWO paths with DIFFERENT spellings: the native/XML loop
+      // uses bare names ('Bash'/'Edit'/'Write'/...), while the default companion/MCP
+      // path surfaces the orchestration aliases ('AgonBash'/'AgonEdit'/'AgonWrite')
+      // — done.tool on the MCP completion is the ORIGINAL alias, not the mapped kern
+      // tool (see agon-orchestration.kern handleWriteToolCall: writeToolCompletion is
+      // called with `name`, not `kernTool`). A strict bare-name check silently missed
+      // every MCP write/bash, so the verify-before-done gate never armed on the default
+      // path. isBashToolName/isWriteToolName (brain-helpers, unit-tested) strip the
+      // 'Agon' alias prefix + normalize case so BOTH paths classify identically.
       const _noteBashForGate = (toolName: string, rawInput?: string) => {
         if (_ranGate || !_gate.matchers.length) return;
-        if (String(toolName).toLowerCase() !== 'bash') return;
+        if (!isBashToolName(toolName)) return;
         let cmd = String(rawInput ?? '');
         try { const parsed = JSON.parse(cmd); if (parsed && typeof parsed.command === 'string') cmd = parsed.command; } catch { /* not JSON — match the raw string */ }
         if (bashRanGate(cmd, _gate.matchers)) _ranGate = true;
@@ -714,10 +723,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               // Dispatch permission-ask to UI
               logMcpApproval('prompted', 'mcp.user-prompt', 'Cesar wants to execute');
               // SaveMemory shows the memory line + section so the user confirms the
-              // actual durable fact, not an opaque args blob.
-              const askCommand = reqTool === 'SaveMemory'
-                ? `[${String(reqArgs.section ?? '')}] ${String(reqArgs.memory ?? '')}`
-                : String(req.args?.command ?? req.args?.file_path ?? JSON.stringify(req.args));
+              // actual durable fact, not an opaque args blob. Shared with the API-native
+              // and XML-loop permission builders via renderToolPermissionCommand so all
+              // paths render identically (dedupe — was inlined here).
+              const askCommand = renderToolPermissionCommand(reqTool, reqArgs);
               const askReason = reqTool === 'SaveMemory' ? 'Cesar wants to save a durable project memory' : 'Cesar wants to execute';
               dispatch({ type: 'permission-ask', tool: req.tool, command: askCommand, reason: askReason, resolve: (approved: boolean | string) => {
                 const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : approved;
@@ -1910,7 +1919,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // or a completion signal, nudge the engine to keep going. Re-enter the tool
         // pipeline so XML-tool engines (Kimi/Z.AI) actually execute, not just plan.
         // Source: campfire 2026-05-19 + multi-engine review (codex/gemini/...).
-        const _AUTO_CONT_WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+        // Write-work detection uses the path-agnostic isWriteToolName helper
+        // (brain-helpers, unit-tested) so it counts both bare names (Edit/Write/...) and
+        // the MCP orchestration aliases (AgonEdit/AgonWrite). SaveMemory excluded by design.
         const _AUTO_CONT_LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Goal', 'Conquer']);
         // Continue-intent words signal multi-step work in progress; if present alongside
         // a write tool, treat as still-going rather than done. Catches gemini-review #4.
@@ -1923,7 +1934,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // Initial-turn writes alone are too weak a "done" signal: engine could have
         // edited 1 of 3 needed files and stopped (minimax/zai review consensus).
         const _detectTurnState = (resp: string, baselineToolCount: number): 'asks-user' | 'done' | 'stuck' => {
-          const wroteSinceBaseline = _toolsUsed.slice(baselineToolCount).some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
+          const wroteSinceBaseline = _toolsUsed.slice(baselineToolCount).some((t: string) => isWriteToolName(t));
           // A question directed at the user (keyword-addressed OR an either/or fork)
           // means it's THEIR turn — stop, don't auto-continue. Scan the TAIL, not just
           // the literal last line: engines (esp. minimax) routinely ask the question and
@@ -1961,7 +1972,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           if (_ranGate) return false;
           // Only nudge when real WRITE work happened — a pure read-only "done" answer
           // has nothing to verify and must not be dragged into a gate nudge.
-          if (!_toolsUsed.some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t))) return false;
+          if (!_toolsUsed.some((t: string) => isWriteToolName(t))) return false;
           if (ctx.cesar?.gateNudgedClaim === _doneClaimSignature(resp)) return false; // already nudged THIS claim
           return true;
         };
@@ -2123,7 +2134,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // State-rich nudge — name the files Cesar mentioned but didn't touch.
             // File path regex requires a path prefix (./ ../ / ~/ or src/test/etc dir)
             // to reduce false positives like "version 1.0.ts" (minimax review #6).
-            const wroteFiles = _toolsUsed.some((t: string) => _AUTO_CONT_WRITE_TOOLS.has(t));
+            const wroteFiles = _toolsUsed.some((t: string) => isWriteToolName(t));
             const filePathRe = /(?:^|\s|`)((?:\.{1,2}\/|~\/|\/|(?:packages|src|tests|scripts|kern)\/)[\w./-]+\.(?:ts|tsx|kern|js|jsx|py|md|json|yaml|yml|toml|sh|css|scss|html))\b/g;
             const filesMentioned = Array.from(new Set(Array.from(response.matchAll(filePathRe), (m: RegExpMatchArray) => m[1]))).slice(0, 3);
             let nudge: string;

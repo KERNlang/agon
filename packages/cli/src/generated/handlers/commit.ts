@@ -2,7 +2,7 @@
 
 import { execSync, execFileSync } from 'node:child_process';
 
-import { loadConfig, resolveWorkingDir, configGet, appendCoAuthor } from '@kernlang/agon-core';
+import { loadConfig, resolveWorkingDir, configGet, appendAttribution, appendCoAuthor } from '@kernlang/agon-core';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
@@ -89,8 +89,8 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
       agonGenerated = false;
     }
   }
-  // Append the configured Co-Authored-By identity (commitCoAuthor) for commits agon creates; no-op when unset.
-  // appendCoAuthor is paragraph-aware: a user-supplied message already ending in a trailer block gets the identity joined into that final paragraph (git only parses trailers from the last paragraph).
+  // Attribution honesty: the '🤖 Generated with Agon' banner ONLY when agon wrote the message (agonGenerated); a user-typed/edited message gets just the Co-Authored-By trailer — agon co-authored the commit mechanics, it did not generate the text. Both are no-ops when commitCoAuthor is unset (the single opt-out switch).
+  // The underlying trailer append stays paragraph-aware: a user-supplied message already ending in a trailer block keeps its trailers parseable.
   const config = loadConfig(cwd);
   const commitCoAuthor = (config.commitCoAuthor ?? '').trim();
   // commitCoAuthor SUPERSEDES the legacy autoCredit 'Agon AI <agon@local>' line: when an identity is set (the default), agon@local resolves to no GitHub account and two co-author identities for the same tool is noise. autoCredit only applies when commitCoAuthor is opted out ("").
@@ -98,7 +98,7 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
   if (agonGenerated && autoCredit && !commitCoAuthor) {
     commitMsg += '\n\nCo-authored-by: Agon AI <agon@local>';
   }
-  commitMsg = appendCoAuthor(commitMsg, config);
+  commitMsg = agonGenerated ? appendAttribution(commitMsg, config) : appendCoAuthor(commitMsg, config);
   // Step 4: Commit with HEREDOC (safe for special chars)
   dispatch({ type: 'spinner-start', message: 'Committing...' });
   try {

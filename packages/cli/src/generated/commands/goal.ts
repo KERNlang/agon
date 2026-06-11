@@ -6,13 +6,13 @@ import { readFileSync, readdirSync, existsSync, statSync, writeFileSync } from '
 
 import { resolve } from 'node:path';
 
-import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, applyPatch, spawnWithTimeout, estimateCost, worktreePruneOrphaned } from '@kernlang/agon-core';
+import { EngineRegistry, ensureAgonHome, loadConfig, createRunDir, applyPatch, spawnWithTimeout, estimateCost, worktreePruneOrphaned, appendPrAttribution, githubRepoUrl, defaultBaseBranch, prefilledPrUrl } from '@kernlang/agon-core';
 
 import { resolveBuiltinEnginesDir } from '../lib/engines-dir.js';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
-import { runForge, runDelegate, runGoalController, runSupervisor, loadJournal, summarizeGoal, goalDir, isTestFile, parseChangedLines, pickImplementWinner, chooseImplementRoster, runThinkChain, buildOracleCheatPrompt } from '@kernlang/agon-forge';
+import { runForge, runDelegate, runPrText, runGoalController, runSupervisor, loadJournal, summarizeGoal, goalDir, isTestFile, parseChangedLines, pickImplementWinner, chooseImplementRoster, runThinkChain, buildOracleCheatPrompt } from '@kernlang/agon-forge';
 
 import { deriveRoutingHints } from '../cesar/routing.js';
 
@@ -738,19 +738,55 @@ return defineCommand({
     if (done > 0) {
       if (args.push) {
         success(`${done} commit(s) pushed to ${cyan(`${args.remote}/${branch}`)} (one push per task).`);
+        // Engine-written PR text from the branch's real diff, falling back to
+        // the templated summarizeGoal digest on a miss. Delivered two ways:
+        // a prefilled GitHub compare link (no gh/token needed — click, review,
+        // merge) and, with --pr, the gh path for users who have it. The task
+        // pushes went to --remote, so PR history/diff/link MUST use that same
+        // remote — never a hardcoded origin.
+        const prRemote = String(args.remote ?? 'origin');
+        const base = defaultBaseBranch(repoRoot, prRemote);
+        let title = `goal: ${spec.intent}`.slice(0, 72);
+        let body = summarizeGoal(state);
+        const prEngine = (requestedEngines ?? available)[0];
+        const logRes = await spawnWithTimeout({ command: 'git', args: ['log', '--oneline', `${prRemote}/${base}..${branch}`], cwd: repoRoot, timeout: 15_000 });
+        const diffRes = await spawnWithTimeout({ command: 'git', args: ['diff', `${prRemote}/${base}...${branch}`], cwd: repoRoot, timeout: 30_000 });
+        const rawDiff = diffRes.exitCode === 0 ? String(diffRes.stdout ?? '') : '';
+        const diffLines = rawDiff.split('\n');
+        const cappedDiff = diffLines.length > 1200 ? diffLines.slice(0, 1200).join('\n') + `\n... (${diffLines.length - 1200} more lines)` : rawDiff;
+        info(`Writing PR text (${prEngine})…`);
+        const prText = await runPrText({
+          engineId: prEngine,
+          intent: spec.intent,
+          context: `Goal run summary (verified):\n${summarizeGoal(state)}\nFrozen acceptance gate (every commit passed it): ${spec.gate}`,
+          commits: logRes.exitCode === 0 ? String(logRes.stdout ?? '').trim() : '',
+          diff: cappedDiff,
+          registry,
+          adapter,
+          timeout: 300,
+          outputDir: goalDir(goalId),
+          cwd: repoRoot,
+        });
+        if (prText.ok) { title = prText.title; body = prText.body; }
+        else warn('PR-text engine call failed — using the templated run digest.');
+        body = appendPrAttribution(body, config);
+        console.log('');
+        console.log(`${title}\n\n${body}`);
+        console.log('');
         if (args.pr) {
           info('Opening a PR…');
           const pr = await spawnWithTimeout({
             command: 'gh',
-            args: ['pr', 'create', '--head', branch, '--title', `goal: ${spec.intent}`, '--body', summarizeGoal(state)],
+            args: ['pr', 'create', '--head', branch, '--title', title, '--body', body],
             cwd: repoRoot,
             timeout: 120_000,
           });
           if (pr.exitCode === 0) success(`PR: ${pr.stdout.trim()}`);
           else warn(`Could not open PR (${pr.stderr.trim() || 'gh failed'}). Open one manually from ${branch}.`);
-        } else {
-          info(`Open a PR from ${cyan(branch)} when ready (or re-run with --pr).`);
         }
+        const prUrl = prefilledPrUrl({ repoUrl: githubRepoUrl(repoRoot, prRemote), base, branch, title, body });
+        if (prUrl) info(`Open the PR (form prefilled with the text above): ${prUrl}`);
+        else if (!args.pr) info(`Open a PR from ${cyan(branch)} when ready (or re-run with --pr).`);
       } else {
         // Default (no --push): land on the goal branch; the human reviews
         // and pushes. Pass --push for the full review→fix→commit→push cycle.

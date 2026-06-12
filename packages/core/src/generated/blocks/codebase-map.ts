@@ -86,10 +86,10 @@ export function extractSymbols(relPath: string, content: string): string[] {
   const names: string[] = [];
   const push = (n: string | undefined) => { if (n && !names.includes(n)) names.push(n); };
   if (ext === '.kern') {
-    // KERN declarations: `fn name=X`, `service name=X`, `union name=X`,
-    // `interface name=X`, `const name=X`, `screen name=X`, `machine name=X`,
-    // `event name=X`, `type name=X`.
-    const re = /\b(?:fn|service|union|interface|const|screen|machine|event|type)\s+name=([A-Za-z0-9_$]+)/g;
+    // KERN declarations: `fn name=X`, `service name=X`, `class name=X` (KERN 4.0),
+    // `union name=X`, `interface name=X`, `const name=X`, `screen name=X`,
+    // `machine name=X`, `event name=X`, `type name=X`.
+    const re = /\b(?:fn|service|class|union|interface|const|screen|machine|event|type)\s+name=([A-Za-z0-9_$]+)/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(content)) !== null) push(m[1]);
   } else if (ext === '.py') {

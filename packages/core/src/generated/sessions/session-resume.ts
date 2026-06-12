@@ -8,11 +8,13 @@ import { createInterface } from 'node:readline';
 
 import { randomUUID } from 'node:crypto';
 
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 
 import { apiStreamDispatchWithHistory, apiDispatch } from '../api/dispatch.js';
 
 import { findSafeKeepStart, buildCompactionSummary, renderCompactionText, buildSummarizationContext, buildCompactionPrompt } from './compaction.js';
+
+import type { WorkingSetInput } from './compaction.js';
 
 import { encodeImagesForDispatch } from '../blocks/image.js';
 
@@ -53,7 +55,7 @@ import type { PersistentSessionConfig, PersistentSession, SessionChunk, SessionS
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */
-// @kern-source: session-resume:27
+// @kern-source: session-resume:28
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -78,6 +80,31 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   // cross-engine derivation happens ONCE at session setup in start() under
   // sessionContinuity; serialize-to-disk at turn end stays continuity-gated.
   let sessionReadPathRegistry: ReadPathRegistry | null = null;
+  // ── Read dedupe (mode-independent; session-scoped) ──────────────────
+  // CACHEABLE_TOOLS (Grep/Glob) dedupe stable discovery; Read was NOT cached
+  // so an identical re-Read re-fed the full file bytes into messageHistory.
+  // This cache lets an UNCHANGED re-Read return a tiny stub instead. Keyed by
+  // the SAME cacheKey() (name:sortedArgs), so offset/limit slices are distinct
+  // keys and never collide. Entry holds result-META only (never a second copy
+  // of the bytes — those already live in messageHistory): a fs.statSync on the
+  // re-read verifies mtime+size are unchanged before we stub. wasDiskCached +
+  // retrieveResultId let a tier-2 stub point the model at RetrieveResult when
+  // the original read got folded out of context. Kill switch: AGON_READ_DEDUPE
+  // = 'off' | '0' (always MISS).
+  const readResultCache = new Map<string, { callId: string; mtimeMs: number; size: number; byteLength: number; wasDiskCached: boolean; retrieveResultId: string | null }>();
+  // ── compactedToolCallIds: tool results that have been FOLDED OUT of the live
+  // context (compaction tier-1 fold + the in-send tier-1 disk-caching pass add
+  // ids here). A Read-dedupe HIT consults this to pick its stub tier: id NOT in
+  // the set → tier 1 (original full content still in context above); id in the
+  // set + a live disk cache → tier 2 (point at RetrieveResult); id in the set +
+  // no retrievable cache → tier 3 (treat as a clean MISS, re-execute).
+  const compactedToolCallIds = new Set<string>();
+  // ── Feature 2: last diagnostic verifier status, session-scoped ──
+  // doCompact() runs at SESSION scope (via compact(), outside any send()) and
+  // cannot reach the per-send DiagnosticRunner, so the in-send loop mirrors the
+  // most-recent verifier status here after each diagnostic drain. buildCompaction-
+  // Summary's WorkingSet reads it (best-effort; null = no checker ran).
+  let lastVerifierStatus: string | null = null;
   // ── Last REAL token usage from the API (ground truth for the gauge) ──
   // AI SDK v6: usage.inputTokens already INCLUDES cache read+write tokens,
   // so promptTokens + completionTokens = the exact context occupancy of the
@@ -197,8 +224,10 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
 
     // Always build the structured summary — it's the LLM fallback AND the
     // accumulated state (filesRead/Modified/decisions) cross-session memory
-    // reads via onTurnEnd.
-    const newSummary = buildCompactionSummary(old as any[], compactionSummary);
+    // reads via onTurnEnd. Feature 2: thread the working-set input (registry
+    // snapshot + last verifier status) so the summary carries situational
+    // continuity forward (compaction-only — NO per-turn injection, deferred P3).
+    const newSummary = buildCompactionSummary(old as any[], compactionSummary, buildWorkingSetInput());
 
     let summaryText: string | null = null;
     let method: 'llm' | 'regex' = 'regex';
@@ -229,6 +258,11 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
     }
 
     compactionSummary = newSummary;
+    // Read dedupe: every tool result in `old` is now folded out of context.
+    markOldSegmentCompacted(old as any[]);
+    // nit 5: bound compactedToolCallIds — drop ids no longer backed by a live
+    // readResultCache entry (the only thing that ever consults the set).
+    pruneCompactedToolCallIds();
     messageHistory.length = 0;
     messageHistory.push(...system, { role: 'user' as const, content: summaryText }, ...recent);
     lastRealUsage = null; // history rewritten — the next dispatch re-anchors real usage
@@ -255,9 +289,12 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
 
   // ── In-session tool result deduplication ──
   // Avoids repeating stable discovery tools when the engine asks twice.
-  // Do not cache Read here: the Read tool owns mtime-aware dedup and must
-  // run on every explicit re-read so it can refresh the edit/write snapshot
-  // after another tool or process has changed the file.
+  // Grep/Glob dedupe via toolResultCache (full result kept). Read dedupes
+  // separately via readResultCache (META only — the bytes already live once
+  // in messageHistory): an UNCHANGED re-Read returns a stub, a CHANGED file
+  // (mtime/size differ) or a stat failure falls through to a real execution so
+  // the Read tool can refresh its edit/write snapshot. See readResultCache +
+  // dedupeRead below.
   // Keyed by (toolName, serialized args). Values are results.
   const toolResultCache = new Map<string, { result: string; callId: string }>();
   const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
@@ -265,6 +302,199 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
     // Normalize: sort keys for stable hashing
     const sorted = Object.keys(args).sort().map(k => `${k}=${JSON.stringify(args[k])}`).join('&');
     return `${name}:${sorted}`;
+  };
+
+  // ── Read dedupe helpers ─────────────────────────────────────────────
+  const readDedupeEnabled = (): boolean => {
+    const v = process.env.AGON_READ_DEDUPE;
+    return !(v === 'off' || v === '0');
+  };
+  // The Read tool's arg-path (file_path then path). Returns '' for a path-less
+  // call so it never matches a real on-disk file (→ stat fails → MISS).
+  const readArgPath = (args: Record<string, unknown>): string => {
+    const fp = (args.file_path as string | undefined) ?? (args.path as string | undefined);
+    return typeof fp === 'string' ? fp : '';
+  };
+  // Try the Read dedupe for ONE Read call. Returns a stub string on a tier-1/
+  // tier-2 HIT (the bytes are NOT re-fed), or null on a MISS (caller executes
+  // normally and then calls refreshReadEntry with the real result). Pure of
+  // side effects on a HIT except updating retrievability via compactedToolCallIds
+  // — the entry itself is only (re)written by refreshReadEntry.
+  const tryReadDedupe = (name: string, args: Record<string, unknown>): string | null => {
+    if (name !== 'Read' || !readDedupeEnabled()) return null;
+    const key = cacheKey(name, args);
+    const entry = readResultCache.get(key);
+    if (!entry) return null;
+    const path = readArgPath(args);
+    if (path.length === 0) return null;
+    let st: { mtimeMs: number; size: number };
+    try { st = statSync(path); } catch { return null; } // stat-fail → MISS (file deleted/moved)
+    if (st.mtimeMs !== entry.mtimeMs || st.size !== entry.size) return null; // changed → MISS
+    // Unchanged. Pick the tier by whether the original was folded out of context.
+    const folded = compactedToolCallIds.has(entry.callId);
+    // nit 4 (claude 0.8): a slice read (offset/limit args) cached only the bytes of
+    // THAT slice, not the whole file — calling it "full content" would mislead the
+    // model into thinking it already has the entire file. The cacheKey distinguishes
+    // slices (offset/limit are part of the sorted args), so the dedupe HIT here is
+    // for the SAME slice; describe it as a slice, not the full file.
+    const isSlice = args.offset !== undefined || args.limit !== undefined;
+    if (!folded) {
+      // Tier 1: the original read's content is still verbatim in context above.
+      const what = isSlice ? `slice (${entry.byteLength} bytes)` : `full content (${entry.byteLength} bytes)`;
+      return `[unchanged since read ${entry.callId} — ${what} is already in context above; re-issue with different offset/limit args if you need another slice]`;
+    }
+    // Tier 2: folded out but disk-cached + retrievable → point at RetrieveResult.
+    if (entry.wasDiskCached && entry.retrieveResultId) {
+      const stillCached = loadToolResultFromDisk(config.engine.id, entry.retrieveResultId) !== null;
+      if (stillCached) {
+        return `[unchanged since read ${entry.callId} — content (${entry.byteLength} bytes) was compacted out of context; call RetrieveResult with id "${entry.retrieveResultId}" to get it]`;
+      }
+    }
+    // Tier 3: folded out and NOT retrievable → clean MISS (re-execute fully).
+    return null;
+  };
+  // Record/refresh a Read entry after a real execution. ONE statSync on the
+  // path; on stat failure (a transient/deleted file) we DELETE any stale entry
+  // and store nothing — so the next re-read is a clean MISS, not a false HIT.
+  // nit 6 (claude 0.55): the ONLY backstop against a CHANGED file is the stored
+  // mtimeMs+size, compared on the next tryReadDedupe. In-session writes are caught
+  // eagerly (applyReadInvalidation clears the path's entries on Edit/Write/MultiEdit,
+  // and any Bash clears the whole cache). An EXTERNAL-process edit (another tool, a
+  // watcher, a concurrent agent) is NOT explicitly invalidated — it is covered only
+  // by the mtime+size stat check here, which catches any real content change; a
+  // pathological same-mtime+same-size overwrite is the one uncovered edge.
+  // diskCacheId is the caller's prediction (result.length > INLINE_LIMIT ? callId
+  // : null): NON-NULL means this read WILL be truncated to slice(0,2048)+[cached]
+  // when pushed to history this same turn (the in-send push loops below). So a
+  // large read NEVER sits inline in full — the tier-1 "full content is already in
+  // context above" stub would LIE about it. We therefore mark its callId compacted
+  // HERE, at record time, so a later unchanged re-read takes tier-2 (RetrieveResult,
+  // if the disk cache held) or tier-3 (clean re-execute, if it didn't) — never the
+  // false tier-1. (The in-send truncation push loops do not themselves mark the id,
+  // so without this a same-/next-turn re-read before any compaction got the lie.)
+  const refreshReadEntry = (name: string, args: Record<string, unknown>, result: string, callId: string, diskCacheId: string | null): void => {
+    if (name !== 'Read' || !readDedupeEnabled()) return;
+    const path = readArgPath(args);
+    if (path.length === 0) return;
+    const key = cacheKey(name, args);
+    let st: { mtimeMs: number; size: number };
+    try { st = statSync(path); } catch { readResultCache.delete(key); return; }
+    // Bound the cache (nit 6): META-only entries are tiny, but a very long
+    // session reading thousands of distinct files/slices would still grow it
+    // unboundedly. Evict the oldest entry (Map preserves insertion order) when
+    // at the cap and this is a NEW key — a refresh of an existing key just
+    // overwrites. A worst case of an evicted-then-re-read file is harmless: a
+    // clean MISS (full re-execute), never a wrong HIT.
+    const READ_CACHE_CAP = 200;
+    if (!readResultCache.has(key) && readResultCache.size >= READ_CACHE_CAP) {
+      const oldest = readResultCache.keys().next().value;
+      if (oldest !== undefined) readResultCache.delete(oldest);
+    }
+    readResultCache.set(key, {
+      callId,
+      mtimeMs: st.mtimeMs,
+      size: st.size,
+      byteLength: Buffer.byteLength(result, 'utf-8'),
+      wasDiskCached: diskCacheId !== null,
+      retrieveResultId: diskCacheId,
+    });
+    // Large read → truncated inline this turn → not retrievable from history.
+    // Mark it folded-out + retrievable-via-disk so the re-read dedupe skips tier-1.
+    if (diskCacheId !== null) markReadResultCompacted(callId, diskCacheId);
+  };
+  // Explicit invalidation (the belt; mtime is the backstop). A successful
+  // Edit/Write/MultiEdit to a path clears that path's Read entries; a successful
+  // Bash clears the ENTIRE read cache (a command can touch anything).
+  const invalidateReadEntriesForPath = (rawPath: string): void => {
+    if (typeof rawPath !== 'string' || rawPath.length === 0) return;
+    // Keys are `Read:...file_path=<json>...`; match the path inside any Read key.
+    const needle = JSON.stringify(rawPath);
+    for (const k of [...readResultCache.keys()]) {
+      if (k.startsWith('Read:') && k.includes(needle)) readResultCache.delete(k);
+    }
+  };
+  const invalidateAllReadEntries = (): void => { readResultCache.clear(); };
+  // Mark a tool result's id as folded OUT of the live context (consulted by a
+  // Read-dedupe HIT to pick tier 1 vs 2 vs 3). diskCacheId = the RetrieveResult
+  // id when the folded content is still on disk (tier 2), or null when it was
+  // cleared with no disk copy (tier 3). If a Read entry was recorded for this id
+  // back when it lived inline (retrieveResultId null), update it now so a later
+  // unchanged re-read can point at the disk cache.
+  const markReadResultCompacted = (toolCallId: string, diskCacheId: string | null): void => {
+    if (typeof toolCallId !== 'string' || toolCallId.length === 0) return;
+    compactedToolCallIds.add(toolCallId);
+    if (!diskCacheId) return;
+    for (const entry of readResultCache.values()) {
+      if (entry.callId === toolCallId && !entry.retrieveResultId) {
+        entry.wasDiskCached = true;
+        entry.retrieveResultId = diskCacheId;
+      }
+    }
+  };
+  // nit 5 (claude 0.7): bound compactedToolCallIds. readResultCache is capped at
+  // 200 but this Set grew unbounded — a very long session folds out thousands of
+  // tool results and every id stuck around forever. It is consulted ONLY via a
+  // readResultCache entry's callId (tryReadDedupe: compactedToolCallIds.has(entry.
+  // callId)), so any id that is NOT a live readResultCache entry's callId can never
+  // be read and is pure dead weight. Prune to exactly the live entry callIds during
+  // the doCompact rewrite. SAFETY: an over-eager prune of an id whose entry is still
+  // live (impossible here — we keep precisely those) would only ever flip its next
+  // re-read from tier-2/3 to tier-1; we therefore prune ONLY ids with NO live entry,
+  // so a pruned id whose entry was already evicted just degrades to a clean MISS
+  // (tier-3 full re-execute), never a wrong tier-1.
+  const pruneCompactedToolCallIds = (): void => {
+    if (compactedToolCallIds.size === 0) return;
+    const live = new Set<string>();
+    for (const entry of readResultCache.values()) live.add(entry.callId);
+    for (const id of [...compactedToolCallIds]) {
+      if (!live.has(id)) compactedToolCallIds.delete(id);
+    }
+  };
+  // Apply post-execution invalidation for a successfully-executed tool call.
+  const applyReadInvalidation = (name: string, args: Record<string, unknown>): void => {
+    if (name === 'Edit' || name === 'Write' || name === 'MultiEdit') {
+      const p = (args.file_path as string | undefined) ?? (args.path as string | undefined);
+      if (typeof p === 'string') invalidateReadEntriesForPath(p);
+    } else if (name === 'Bash') {
+      invalidateAllReadEntries();
+    }
+  };
+
+  // Mark every tool result in a compacted `old` segment as folded out of
+  // context. A tool message already carrying a `cached — <id>` ref stays
+  // RETRIEVABLE (tier 2 → that id); any other folded tool message is tier 3.
+  // codex FIX (R4): the in-send disk-cache pass writes the cached id in TWO
+  // marker shapes — the simple `[cached — <id>]` (tier-1 fold, auto-exec, and
+  // streaming-chunk paths) AND the large-result `[N lines, M chars — cached —
+  // <id>]` (the >INLINE_LIMIT tool-result push). The old regex only matched the
+  // simple shape, so a folded large result was misclassified non-retrievable →
+  // tier-3 full re-execute on re-read instead of the tier-2 RetrieveResult stub.
+  // Match `cached — <id>]` regardless of any leading `N lines, M chars — ` prefix
+  // inside the bracket so BOTH shapes yield the retrievable id.
+  const markOldSegmentCompacted = (old: any[]): void => {
+    for (const m of old) {
+      if (m?.role !== 'tool') continue;
+      const id = typeof m.tool_call_id === 'string' ? m.tool_call_id : '';
+      if (!id) continue;
+      const ref = typeof m.content === 'string' ? m.content.match(/cached — ([^\]]+)\]/) : null;
+      markReadResultCompacted(id, ref ? ref[1] : null);
+    }
+  };
+
+  // ── Feature 2: build the compaction WorkingSet input (best-effort) ──
+  // filesInPlay = the session ReadPathRegistry snapshot, NEWEST-FIRST (Set
+  // insertion order is chronological; reverse for recency bias), capped at 10.
+  // pendingVerifier = the most-recent diagnostic status mirrored from the in-send
+  // loop. Either may be absent — buildCompactionSummary then derives filesInPlay
+  // from the summary itself and omits the verifier line.
+  const buildWorkingSetInput = (): WorkingSetInput => {
+    let filesInPlay: string[] | undefined;
+    if (sessionReadPathRegistry) {
+      const snap = [...sessionReadPathRegistry.snapshot()];
+      snap.reverse(); // newest-first
+      filesInPlay = snap.slice(0, 10);
+    }
+    return { filesInPlay, pendingVerifier: lastVerifierStatus };
   };
 
   const session: PersistentSession = {
@@ -422,6 +652,21 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         const diagnosticRunner = pipelineActive ? new DiagnosticRunner(config.engine.id, config.diagnosticDeps) : null;
         // Diagnostic message sequence id for the synthetic tool_call_id 'diag-<n>'.
         let diagSeq = 0;
+        // ── Feature 2 (codex 0.88): mirror the most-recent verifier status to
+        // session scope at EVERY drain site, not just the trailing drain.
+        // Diagnostics are drained at the top of each loop iteration AND before the
+        // final response AND on the trailing path; an in-send compaction can fire
+        // right after ANY of those, so the session-scoped mirror must be fresh at
+        // each one or a WorkingSet built mid-send carries a stale/null verifier
+        // line. lastDigest SURVIVES drainPending, so calling this immediately after
+        // a drain captures exactly what was just surfaced. Best-effort; never throws.
+        const mirrorVerifierStatus = (): void => {
+          if (!diagnosticRunner) return;
+          try {
+            const vs = diagnosticRunner.lastVerifierStatus();
+            if (vs !== null) lastVerifierStatus = vs;
+          } catch { /* best-effort */ }
+        };
         // ── FIX 4: provider-correct diagnostic digest re-entry ──
         // A digest was previously appended as a bare {role:'tool', tool_call_id}
         // with NO assistant message carrying a matching tool_calls entry — an
@@ -612,8 +857,15 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               if (entry) {
                 toolCacheManifest.push(entry);
                 msg.content = msg.content.slice(0, 200) + `\n[cached — ${tcId}]`;
+                // Read dedupe: this result is now folded out of context but
+                // RETRIEVABLE — mark it compacted and (if a Read entry points at
+                // this id) wire its tier-2 disk-cache reference so a later
+                // unchanged re-read stubs to RetrieveResult instead of re-feeding.
+                markReadResultCompacted(tcId, tcId);
               } else {
                 msg.content = '[Old tool result cleared]';
+                // Folded out and NOT retrievable → tier 3 (re-execute on re-read).
+                markReadResultCompacted(tcId, null);
               }
               delete msg._tokenEstimate; // invalidate cache — content mutated
             }
@@ -635,8 +887,10 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
 
             if (old.length > 0) {
               try {
-                const newSummary = buildCompactionSummary(old as any[], compactionSummary);
+                const newSummary = buildCompactionSummary(old as any[], compactionSummary, buildWorkingSetInput());
                 compactionSummary = newSummary;
+                // Read dedupe: every tool result in `old` is now folded out.
+                markOldSegmentCompacted(old as any[]);
                 const summary = { role: 'user' as const, content: renderCompactionText(newSummary, old.length) };
                 messageHistory.length = 0;
                 messageHistory.push(...system, summary, ...recent);
@@ -844,6 +1098,10 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               yield { type: 'tool_call' as const, content: 'Diagnostic', metadata: { input: { packageDir: digest.packageDir }, output: digest.text, status: digest.clean ? 'done' : 'error' } };
               if (digest.clean) pipelineEvidence.diagnosticGreen = true;
             }
+            // codex 0.88: refresh the session-scoped verifier mirror at the
+            // loop-top drain too — an in-send compaction later this iteration
+            // must not see a stale/null status from an earlier drain.
+            mirrorVerifierStatus();
           }
 
           // ── Status update so the UI shows activity during API tool loops ──
@@ -1509,14 +1767,30 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                       } else if (tc.name === 'RetrieveResult' && tc.args.id) {
                         const cached = loadToolResultFromDisk(config.engine.id, tc.args.id as string);
                         result = cached ?? `No cached result found for id "${tc.args.id}".`;
+                      } else if (tc.name === 'Read') {
+                        const stub = tryReadDedupe(tc.name, tc.args);
+                        if (stub !== null) { result = stub; }
+                        else {
+                          result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                          const okRead = !(result.startsWith('Error:') || result.startsWith('Unknown tool:'));
+                          if (okRead) refreshReadEntry(tc.name, tc.args, result, tc.id, result.length > INLINE_LIMIT ? tc.id : null);
+                        }
                       } else {
                         result = await config.onToolCall!(tc.name, tc.args, tc.id);
                       }
                     } catch (err: any) { result = `Error: ${err.message ?? String(err)}`; }
                     gwResults.push({ id: tc.id, name: tc.name, args: tc.args, result });
                     const okExec = !(result.startsWith('Error:') || result.startsWith('Unknown tool:'));
+                    // Read dedupe invalidation: a Bash that executes in this batch
+                    // (writes here are blocked) can touch anything → clear the cache.
+                    if (okExec) applyReadInvalidation(tc.name, tc.args as Record<string, unknown>);
                     if (READ_TOOLS.has(tc.name)) readCount++;
                     // Record reads into the registry so the NEXT edit of this path passes.
+                    // On a dedupe HIT `result` is the stub string, NOT file bytes —
+                    // but record() reads ONLY args.file_path/path for a Read (the
+                    // `result` arg is consumed solely for Glob/Grep paths; see
+                    // ReadPathRegistry.record), so the stub content is provably ignored
+                    // and the original real read's path stays recorded.
                     if (readPathRegistry && okExec) {
                       try { readPathRegistry.record(tc.name, tc.args as Record<string, unknown>, result); } catch { /* best-effort */ }
                     }
@@ -1661,6 +1935,14 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                     } else if (tc.name === 'RetrieveResult' && tc.args.id) {
                       const cached = loadToolResultFromDisk(config.engine.id, tc.args.id as string);
                       result = cached ?? `No cached result found for id "${tc.args.id}".`;
+                    } else if (tc.name === 'Read') {
+                      const stub = tryReadDedupe(tc.name, tc.args);
+                      if (stub !== null) { result = stub; }
+                      else {
+                        result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                        const okRead = !(result.startsWith('Error:') || result.startsWith('Unknown tool:'));
+                        if (okRead) refreshReadEntry(tc.name, tc.args, result, tc.id, result.length > INLINE_LIMIT ? tc.id : null);
+                      }
                     } else {
                       result = await config.onToolCall!(tc.name, tc.args, tc.id);
                     }
@@ -1673,6 +1955,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   let result: string;
                   try { result = await config.onToolCall!(tc.name, tc.args, tc.id); } catch (err: any) { result = `Error: ${err.message ?? String(err)}`; }
                   gateResults.push({ ...tc, result });
+                  // Read dedupe invalidation: a Bash here can touch anything.
+                  if (!(result.startsWith('Error:') || result.startsWith('Unknown tool:'))) applyReadInvalidation(tc.name, tc.args as Record<string, unknown>);
                   yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: 'done' } };
                 }
               }
@@ -1711,6 +1995,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             const guardToolExecT0 = performance.now(); // telemetry: wall time around the parallel exec
             const results = await Promise.all(parsedCalls.map(async (tc) => {
               let result: string;
+              let readDedupeHit = false;
               try {
                 // In-session dedup: skip re-executing cacheable reads we already have
                 if (CACHEABLE_TOOLS.has(tc.name)) {
@@ -1726,15 +2011,39 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   // RetrieveResult: read from local disk cache, no need for external tool handler
                   const cached = loadToolResultFromDisk(config.engine.id, tc.args.id as string);
                   result = cached ?? `No cached result found for id "${tc.args.id}". Try re-running the original tool.`;
+                } else if (tc.name === 'Read') {
+                  // Read dedupe: an UNCHANGED re-read returns a stub (bytes already
+                  // in context / on disk), a changed/deleted file re-executes.
+                  const stub = tryReadDedupe(tc.name, tc.args);
+                  if (stub !== null) {
+                    result = stub;
+                    readDedupeHit = true;
+                  } else {
+                    result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                    const okRead = !(result.startsWith('Error:') || result.startsWith('Unknown tool:'));
+                    if (okRead) refreshReadEntry(tc.name, tc.args, result, tc.id, result.length > INLINE_LIMIT ? tc.id : null);
+                  }
                 } else {
                   result = await config.onToolCall!(tc.name, tc.args, tc.id);
                 }
               } catch (err: any) {
                 result = `Error: ${err.message ?? String(err)}`;
               }
-              return { ...tc, result };
+              return { ...tc, result, readDedupeHit };
             }));
-            guardTracker.recordToolExecMs(performance.now() - guardToolExecT0);
+            // ── claude 0.75: consume readDedupeHit so a dedupe hit is NOT charged
+            // as real tool-exec time in guard telemetry. tryReadDedupe returns a
+            // stub SYNCHRONOUSLY (no awaited handler), so a hit contributes ~0 to
+            // the parallel wall-clock already — but when EVERY call in the batch is
+            // a dedupe hit, no real tool ran at all, so charge 0 exec ms rather than
+            // the scheduling/promise overhead. A batch with any real (non-hit) tool
+            // keeps its measured wall-clock (the hits ran in parallel, adding ~0 to
+            // the max). The repeated read STILL reaches the read-spin / info-gain
+            // detectors below via recordToolResult + pendingInfoGainSignals — those
+            // paths are deliberately left untouched (a re-issued identical Read is
+            // stall signal regardless of the dedupe stub).
+            const allDedupeHits = results.length > 0 && results.every((tc) => tc.readDedupeHit);
+            guardTracker.recordToolExecMs(allDedupeHits ? 0 : performance.now() - guardToolExecT0);
 
             // ── Telemetry: record every executed tool result ──
             // ok mirrors the circuit-breaker's error test. For Edit/Write the
@@ -1744,6 +2053,10 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             // 'recovered' (the model acted productively after the nudge).
             for (const tc of results) {
               const okExec = !(tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:'));
+              // Read dedupe invalidation (belt; mtime is the backstop): a
+              // successful Edit/Write/MultiEdit clears that path's Read entries,
+              // a successful Bash clears the whole read cache.
+              if (okExec) applyReadInvalidation(tc.name, tc.args as Record<string, unknown>);
               const rawContent = WRITE_TOOLS.has(tc.name)
                 ? String((tc.args as any)?.new_string ?? (tc.args as any)?.content ?? '')
                 : undefined;
@@ -1776,6 +2089,9 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               // and mark non-read tool success as evidence for the evidence guard.
               if (pipelineActive && okExec) {
                 if (readPathRegistry) {
+                  // On a Read dedupe HIT tc.result is the stub, not bytes — record()
+                  // reads only args.file_path/path for a Read (stub content ignored;
+                  // see ReadPathRegistry.record), so the original read's path stands.
                   try { readPathRegistry.record(tc.name, tc.args as Record<string, unknown>, tc.result); } catch { /* best-effort */ }
                 }
                 // FIX 2: isWriteTool (Edit/Write/MultiEdit) from the guards module
@@ -1918,6 +2234,10 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               if (syntheticCalls.length > 0) {
                 // Execute extracted intent — model narrated, Agon acts
                 yield { type: 'status' as const, content: `auto-executing ${syntheticCalls.map(s => s.name).join(', ')}…` };
+                // nit 6c: same inline/disk-cache threshold the explicit-read path
+                // uses (the main-loop INLINE_LIMIT lives in a sibling block, out of
+                // scope here) — name it instead of repeating the bare 8192 literal.
+                const INLINE_LIMIT = 8192;
                 const autoResults: string[] = [];
                 for (const sc of syntheticCalls) {
                   yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, status: 'running' } };
@@ -1937,6 +2257,12 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   if (pipelineActive && readPathRegistry && !(result.startsWith('Error:') || result.startsWith('Unknown tool:'))) {
                     try { readPathRegistry.record(sc.name, sc.args as Record<string, unknown>, result); } catch { /* best-effort */ }
                   }
+                  // Read dedupe: record an auto-executed synthetic Read so a later
+                  // EXPLICIT re-read of the same unchanged path can stub instead of
+                  // re-feeding. (Synthetic Glob/Grep are not Read-deduped.)
+                  if (!(result.startsWith('Error:') || result.startsWith('Unknown tool:'))) {
+                    refreshReadEntry(sc.name, sc.args as Record<string, unknown>, result, sc.id, result.length > INLINE_LIMIT ? sc.id : null);
+                  }
 
                   // Add to history as proper tool call + result
                   messageHistory.push({
@@ -1944,7 +2270,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                     tool_calls: [{ id: sc.id, type: 'function', function: { name: sc.name, arguments: JSON.stringify(sc.args) } }],
                   } as any);
                   let histContent = result;
-                  if (histContent.length > 8192) {
+                  if (histContent.length > INLINE_LIMIT) {
                     // Disk-backed cache for auto-executed intent results too
                     const cacheEntry = saveToolResultToDisk(config.engine.id, sc.id, sc.name, result);
                     if (cacheEntry) {
@@ -2025,6 +2351,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               yield { type: 'tool_call' as const, content: 'Diagnostic', metadata: { input: { packageDir: digest.packageDir }, output: digest.text, status: digest.clean ? 'done' : 'error' } };
               if (digest.clean) pipelineEvidence.diagnosticGreen = true;
             }
+            // codex 0.88: refresh the mirror at the pre-final drain too.
+            mirrorVerifierStatus();
           }
           if (pipelineActive && !pipelineEvidence.exhausted) {
             const evSnap: GuardSnapshot = {
@@ -2081,6 +2409,11 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               yield { type: 'tool_call' as const, content: 'Diagnostic', metadata: { input: { packageDir: digest.packageDir }, output: digest.text, status: digest.clean ? 'done' : 'error' } };
             }
           } catch { /* best-effort */ }
+          // Feature 2: mirror the most-recent verifier status to session scope so
+          // a later doCompact() (session scope, no per-send runner) can carry the
+          // working-set verifier line forward. Survives drainPending. Best-effort.
+          // (Same helper used at the loop-top + pre-final drains — codex 0.88.)
+          mirrorVerifierStatus();
         }
 
         if (config.sessionContinuity === true) {

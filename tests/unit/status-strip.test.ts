@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { buildPlanChromeSummary } from '../../packages/cli/src/generated/surfaces/app-views.js';
 import { buildExecutionRailTimeline, buildPlanPhaseGauge } from '../../packages/cli/src/generated/surfaces/status.js';
-import { buildGuardTelemetryView, formatStatusLine } from '../../packages/cli/src/generated/surfaces/status-helpers.js';
+import {
+  buildGuardTelemetryView,
+  buildHeartbeatSig,
+  buildHeartbeatSuffix,
+  formatStatusLine,
+  parseHeartbeatPhase,
+} from '../../packages/cli/src/generated/surfaces/status-helpers.js';
 
 describe('buildPlanPhaseGauge', () => {
   it('shows the running step and completion percentage', () => {
@@ -362,5 +368,268 @@ describe('buildGuardTelemetryView', () => {
       'agy/report-confidence',
       'codex/read-spin',
     ]);
+  });
+});
+
+describe('parseHeartbeatPhase', () => {
+  it('PRESERVES the provider-wait subphase verb (no collapse to "thinking")', () => {
+    // The actual spinner strings the brain emits (cesar/brain.kern) must each map
+    // to their real verb so the heartbeat label never contradicts the activity line.
+    expect(parseHeartbeatPhase('Cesar thinking…')).toEqual({ kind: 'waiting', names: [], wait: 'thinking' });
+    expect(parseHeartbeatPhase('Cesar responding…')).toEqual({ kind: 'waiting', names: [], wait: 'responding' });
+    expect(parseHeartbeatPhase('Cesar processing tool results…')).toEqual({ kind: 'waiting', names: [], wait: 'processing' });
+    expect(parseHeartbeatPhase('Cesar processing repaired tool result…')).toEqual({ kind: 'waiting', names: [], wait: 'processing' });
+    expect(parseHeartbeatPhase('Cesar executing…')).toEqual({ kind: 'waiting', names: [], wait: 'executing' });
+    expect(parseHeartbeatPhase('Cesar grounding…')).toEqual({ kind: 'waiting', names: [], wait: 'grounding' });
+    expect(parseHeartbeatPhase('Cesar building plan…')).toEqual({ kind: 'waiting', names: [], wait: 'planning' });
+    expect(parseHeartbeatPhase('Cesar finishing the answer…')).toEqual({ kind: 'waiting', names: [], wait: 'finishing' });
+    expect(parseHeartbeatPhase('Cesar thinking… 12s')).toEqual({ kind: 'waiting', names: [], wait: 'thinking' });
+  });
+
+  it('retrying is a provider-wait (NOT a tool) even though it names a tool', () => {
+    // 'Cesar: retrying <tool> with corrected input…' is a wait, not an in-flight tool.
+    expect(parseHeartbeatPhase('Cesar: retrying Read with corrected input…')).toEqual({ kind: 'waiting', names: [], wait: 'retrying' });
+  });
+
+  it('falls back to waiting/thinking on empty / unrecognized text', () => {
+    expect(parseHeartbeatPhase('')).toEqual({ kind: 'waiting', names: [], wait: 'thinking' });
+    expect(parseHeartbeatPhase(null)).toEqual({ kind: 'waiting', names: [], wait: 'thinking' });
+    expect(parseHeartbeatPhase(undefined)).toEqual({ kind: 'waiting', names: [], wait: 'thinking' });
+    expect(parseHeartbeatPhase('something else entirely')).toEqual({ kind: 'waiting', names: [], wait: 'thinking' });
+  });
+
+  it('parses a single named in-flight tool from the spinner text', () => {
+    expect(parseHeartbeatPhase('Cesar: Read…')).toEqual({ kind: 'tools', names: ['Read'] });
+    expect(parseHeartbeatPhase('Cesar: AgonBash…')).toEqual({ kind: 'tools', names: ['AgonBash'] });
+  });
+
+  it('parses N parallel tools from the "awaiting N tool results" phrase', () => {
+    const phase = parseHeartbeatPhase('Cesar: awaiting 3 tool results…');
+    expect(phase.kind).toBe('tools');
+    expect(phase.names).toHaveLength(3);
+  });
+});
+
+describe('buildHeartbeatSig', () => {
+  // The strip resets the dead-air anchor whenever this fingerprint changes. The
+  // brain re-emits the spinner every ~2s during a wait with an embedded elapsed
+  // counter ('Cesar thinking… 4s' → '… 6s'; 'Cesar timed out after Ns'), so the
+  // fingerprint MUST key off a normalized phase identity (parseHeartbeatPhase
+  // output), NOT the raw message — otherwise the counter tick resets the anchor
+  // every 2s and the heartbeat suffix can never clear its 2s gate during a long
+  // thinking wait (the feature's primary use case).
+
+  it('is STABLE across the brain\'s 2s elapsed-counter re-emits (Cesar thinking… 4s → 6s)', () => {
+    const sig4 = buildHeartbeatSig(parseHeartbeatPhase('Cesar thinking… 4s'), '', '', '');
+    const sig6 = buildHeartbeatSig(parseHeartbeatPhase('Cesar thinking… 6s'), '', '', '');
+    const sig30 = buildHeartbeatSig(parseHeartbeatPhase('Cesar thinking… 30s'), '', '', '');
+    expect(sig4).toBe(sig6);
+    expect(sig6).toBe(sig30);
+  });
+
+  it('is STABLE across the timeout-counter re-emit (Cesar timed out after Ns)', () => {
+    // The timeout message also embeds a growing counter and has no 'Cesar:'
+    // colon prefix → parses to waiting/thinking; must not tick-reset either.
+    const a = buildHeartbeatSig(parseHeartbeatPhase('Cesar timed out after 300s'), '', '', '');
+    const b = buildHeartbeatSig(parseHeartbeatPhase('Cesar timed out after 302s'), '', '', '');
+    expect(a).toBe(b);
+  });
+
+  it('CHANGES across genuine phase transitions (thinking→responding→tools→different tools)', () => {
+    const thinking = buildHeartbeatSig(parseHeartbeatPhase('Cesar thinking… 4s'), '', '', '');
+    const responding = buildHeartbeatSig(parseHeartbeatPhase('Cesar responding…'), '', '', '');
+    const oneTool = buildHeartbeatSig(parseHeartbeatPhase('Cesar: Read…'), '', '', '');
+    const otherTool = buildHeartbeatSig(parseHeartbeatPhase('Cesar: Grep…'), '', '', '');
+    const twoTools = buildHeartbeatSig(parseHeartbeatPhase('Cesar: awaiting 2 tool results…'), '', '', '');
+    // every adjacent transition flips the fingerprint
+    expect(thinking).not.toBe(responding);
+    expect(responding).not.toBe(oneTool);
+    expect(oneTool).not.toBe(otherTool);
+    expect(otherTool).not.toBe(twoTools);
+  });
+
+  it('folds in engine / plan / stream signals (any change flips the fingerprint)', () => {
+    const phase = parseHeartbeatPhase('Cesar thinking… 4s');
+    const base = buildHeartbeatSig(phase, 'claude:building', 'running:1', 'foo');
+    expect(buildHeartbeatSig(phase, 'claude:done', 'running:1', 'foo')).not.toBe(base);
+    expect(buildHeartbeatSig(phase, 'claude:building', 'running:2', 'foo')).not.toBe(base);
+    expect(buildHeartbeatSig(phase, 'claude:building', 'running:1', 'foobar')).not.toBe(base);
+    // identical inputs → identical fingerprint (deterministic)
+    expect(buildHeartbeatSig(phase, 'claude:building', 'running:1', 'foo')).toBe(base);
+  });
+
+  // Model the strip's exact anchor bookkeeping (status.kern): on a sig change OR
+  // the uninitialized sentinel (at === 0), anchor := now; otherwise the anchor is
+  // preserved. With the OLD raw-message fingerprint the sig changed every 2s tick,
+  // so `at` was reset to `now` each tick and elapsed never reached the gate. With
+  // the normalized fingerprint the sig is stable, so the anchor holds. Real
+  // `now`/`Date.now()` is never literally 0, so use a non-zero wall-clock base.
+  const T0 = 1_700_000_000_000;
+
+  it('END-TO-END: a long thinking wait clears the 2s gate (the bug this fixes)', () => {
+    const ref = { sig: '', at: 0 };
+    const advance = (msg: string, now: number) => {
+      const sig = buildHeartbeatSig(parseHeartbeatPhase(msg), '', '', '');
+      if (ref.sig !== sig || ref.at === 0) ref.at = now;
+      ref.sig = sig;
+      return buildHeartbeatSuffix(now, ref.at, parseHeartbeatPhase(msg), true);
+    };
+    // Brain emits the spinner at t=0,2,4,6,8s during a long thinking wait.
+    expect(advance('Cesar thinking… 0s', T0)).toBeNull();        // gate not yet reached
+    expect(advance('Cesar thinking… 2s', T0 + 2_000)).toBe('· thinking… 2s');
+    expect(advance('Cesar thinking… 4s', T0 + 4_000)).toBe('· thinking… 4s');
+    expect(advance('Cesar thinking… 6s', T0 + 6_000)).toBe('· thinking… 6s');
+    expect(advance('Cesar thinking… 8s', T0 + 8_000)).toBe('· thinking… 8s');
+    // The anchor was set ONCE (at t=0) and never reset by the counter ticks.
+    expect(ref.at).toBe(T0);
+  });
+
+  it('END-TO-END: a genuine phase change DOES reset the anchor (restarts the gate)', () => {
+    const ref = { sig: '', at: 0 };
+    const advance = (msg: string, now: number) => {
+      const sig = buildHeartbeatSig(parseHeartbeatPhase(msg), '', '', '');
+      if (ref.sig !== sig || ref.at === 0) ref.at = now;
+      ref.sig = sig;
+      return buildHeartbeatSuffix(now, ref.at, parseHeartbeatPhase(msg), true);
+    };
+    advance('Cesar thinking… 0s', T0);
+    expect(advance('Cesar thinking… 8s', T0 + 8_000)).toBe('· thinking… 8s');
+    // Phase flips thinking→responding at t=9s → anchor resets to 9s → silent again.
+    expect(advance('Cesar responding…', T0 + 9_000)).toBeNull();
+    expect(ref.at).toBe(T0 + 9_000);
+    // 2s after the transition the responding suffix appears.
+    expect(advance('Cesar responding…', T0 + 11_000)).toBe('· responding… 2s');
+  });
+});
+
+describe('buildHeartbeatSuffix', () => {
+  const waiting = { kind: 'waiting' as const, names: [], wait: 'thinking' as const };
+  const oneTool = { kind: 'tools' as const, names: ['Read'] };
+  const multiTool = { kind: 'tools' as const, names: ['Read', 'Grep', 'Bash'] };
+
+  it('returns null when the turn is inactive (no suffix, ticker stopped)', () => {
+    expect(buildHeartbeatSuffix(10_000, 0, waiting, false)).toBeNull();
+    // even with lots of elapsed time, an inactive turn shows nothing
+    expect(buildHeartbeatSuffix(200_000, 0, oneTool, false)).toBeNull();
+  });
+
+  it('silent gate: returns null below 2s of dead air (no flicker on fast turns)', () => {
+    expect(buildHeartbeatSuffix(1_000, 0, waiting, true)).toBeNull();
+    expect(buildHeartbeatSuffix(1_999, 0, waiting, true)).toBeNull();
+  });
+
+  it('waiting label: "· thinking… Ns" once past the 2s gate', () => {
+    expect(buildHeartbeatSuffix(2_000, 0, waiting, true)).toBe('· thinking… 2s');
+    expect(buildHeartbeatSuffix(5_000, 0, waiting, true)).toBe('· thinking… 5s');
+  });
+
+  it('waiting label RENDERS THE PRESERVED VERB (no contradictory "thinking" while responding/processing/retrying)', () => {
+    // The bug this guards: parseHeartbeatPhase collapsed every wait to thinking, so a
+    // 'Cesar responding…' strip showed '… · thinking… 5s'. The verb must round-trip.
+    expect(buildHeartbeatSuffix(5_000, 0, { kind: 'waiting', names: [], wait: 'responding' }, true)).toBe('· responding… 5s');
+    expect(buildHeartbeatSuffix(5_000, 0, { kind: 'waiting', names: [], wait: 'processing' }, true)).toBe('· processing… 5s');
+    expect(buildHeartbeatSuffix(5_000, 0, { kind: 'waiting', names: [], wait: 'retrying' }, true)).toBe('· retrying… 5s');
+    expect(buildHeartbeatSuffix(5_000, 0, { kind: 'waiting', names: [], wait: 'grounding' }, true)).toBe('· grounding… 5s');
+  });
+
+  it('end-to-end: a "Cesar responding…" spinner yields a "responding" suffix, never "thinking"', () => {
+    const phase = parseHeartbeatPhase('Cesar responding…');
+    expect(buildHeartbeatSuffix(5_000, 0, phase, true)).toBe('· responding… 5s');
+  });
+
+  it('defaults to "thinking" when the waiting phase carries no verb', () => {
+    expect(buildHeartbeatSuffix(5_000, 0, { kind: 'waiting', names: [] }, true)).toBe('· thinking… 5s');
+  });
+
+  it('single-tool label: "· running <tool>… Ns"', () => {
+    expect(buildHeartbeatSuffix(4_000, 0, oneTool, true)).toBe('· running Read… 4s');
+  });
+
+  it('falls back to "running tool" when a single tool has no name', () => {
+    expect(buildHeartbeatSuffix(3_000, 0, { kind: 'tools', names: [''] }, true)).toBe('· running tool… 3s');
+  });
+
+  it('multi-tool label: "· running N tools… Ns"', () => {
+    expect(buildHeartbeatSuffix(6_000, 0, multiTool, true)).toBe('· running 3 tools… 6s');
+  });
+
+  it('caps the counter at 120s+ and appends the reassurance while capped (nit 6b)', () => {
+    expect(buildHeartbeatSuffix(120_000, 0, waiting, true)).toBe(
+      '· thinking… 120s+ · still working — engine not stalled',
+    );
+    // keeps ticking the label, never grows the counter past the cap, and the
+    // reassurance is appended on EVERY tick while capped (not once) — nit 6b.
+    expect(buildHeartbeatSuffix(300_000, 0, oneTool, true)).toBe(
+      '· running Read… 120s+ · still working — engine not stalled',
+    );
+  });
+
+  it('below the cap shows no reassurance suffix', () => {
+    expect(buildHeartbeatSuffix(119_000, 0, waiting, true)).toBe('· thinking… 119s');
+  });
+
+  it('resets relative to lastEventAt (a meaningful event restarts the gate + counter)', () => {
+    // 1s after the last event → still silent
+    expect(buildHeartbeatSuffix(11_000, 10_000, waiting, true)).toBeNull();
+    // 3s after the last event → shows 3s, not the wall-clock total
+    expect(buildHeartbeatSuffix(13_000, 10_000, oneTool, true)).toBe('· running Read… 3s');
+  });
+
+  // codex 0.93: streamed text counts as a meaningful event. The strip folds a
+  // stream-progress signal (streamSnippet) into the heartbeat fingerprint, so a
+  // chunk advancing resets lastEventAt to `now`. This pure check models that
+  // contract via buildHeartbeatSuffix: while text is streaming (last chunk just
+  // arrived) the dead-air anchor is fresh, so the suffix stays SILENT under the
+  // 2s gate instead of falsely reading 'thinking… Ns' during visible streaming.
+  it('a fresh stream chunk keeps the suffix silent (no false "thinking" during streaming)', () => {
+    // turn started 30s ago, but the last text chunk landed 0.5s ago (anchor reset
+    // by the streamSnippet change) → under the 2s gate → silent, not '· thinking… 30s'.
+    expect(buildHeartbeatSuffix(30_000, 29_500, waiting, true)).toBeNull();
+    // a chunk 4s ago (stream stalled) → the suffix correctly shows dead air again.
+    expect(buildHeartbeatSuffix(30_000, 26_000, waiting, true)).toBe('· thinking… 4s');
+  });
+});
+
+// codex FIX 2: a JOBS-ONLY active strip (background tribunal/forge job running, no
+// Cesar wait) has NO spinner and NO engine activity, so parseHeartbeatPhase(undefined)
+// yields waiting/'thinking' and the strip used to append a misleading '· thinking… Ns'
+// next to the job label. The call site (status.kern) now gates the heartbeat on a
+// genuine wait — turnActive := isActive && (spinner present OR engines active) — so a
+// jobs-only strip passes turnActive=false and buildHeartbeatSuffix suppresses the
+// suffix; every genuine wait (spinner set, OR multi-engine forge/tribunal progress)
+// is unchanged. This models that exact call-site gate.
+describe('heartbeat call-site gate — jobs-only run suppresses the suffix (codex FIX 2)', () => {
+  // Mirror status.kern's _hbGenuineWait + the suffix call.
+  const genuineWait = (isActive: boolean, spinner: unknown, engines: unknown[] | null) =>
+    isActive && (!!spinner || (Array.isArray(engines) && engines.length > 0));
+  const suffixFor = (
+    now: number,
+    lastEventAt: number,
+    spinnerMessage: string | null | undefined,
+    isActive: boolean,
+    spinner: unknown,
+    engines: unknown[] | null,
+  ) => buildHeartbeatSuffix(now, lastEventAt, parseHeartbeatPhase(spinnerMessage), genuineWait(isActive, spinner, engines));
+
+  it('jobs-only active strip (no spinner, no engines) → NO heartbeat suffix even past the gate', () => {
+    // 30s of "dead air" but it is a background job, not a Cesar wait → suppressed.
+    expect(suffixFor(30_000, 0, undefined, true, null, null)).toBeNull();
+    expect(suffixFor(30_000, 0, undefined, true, null, [])).toBeNull();
+  });
+
+  it('genuine wait WITH a spinner → heartbeat unchanged (suffix shows the wait verb)', () => {
+    const spinner = { message: 'Cesar thinking…' };
+    expect(suffixFor(5_000, 0, spinner.message, true, spinner, null)).toBe('· thinking… 5s');
+  });
+
+  it('genuine multi-engine wait (engines active, no spinner) → heartbeat shown', () => {
+    // A forge/tribunal turn streams engine progress without a Cesar spinner; that IS
+    // a genuine wait, so the suffix still renders (defaults to thinking with no verb).
+    const engines = [{ id: 'claude', status: 'building' }];
+    expect(suffixFor(5_000, 0, undefined, true, null, engines)).toBe('· thinking… 5s');
+  });
+
+  it('inactive strip → suppressed regardless (no spinner, no engines, no jobs)', () => {
+    expect(suffixFor(30_000, 0, 'Cesar thinking…', false, { message: 'Cesar thinking…' }, null)).toBeNull();
   });
 });

@@ -308,6 +308,97 @@ describe('GuardPipeline integration — invariants mode', () => {
     }
   }, 20000);
 
+  it('(c2) codex 0.88: a digest drained at the LOOP-TOP refreshes the session verifier mirror → compaction carries the verifier line', async () => {
+    // Feature 2 + codex 0.88: the session-scoped lastVerifierStatus mirror is now
+    // updated at EVERY diagnostic drain site (loop-top, pre-final, trailing), not
+    // only the trailing drain. Here an Edit fires the runner producing an
+    // INTRODUCED-error digest; subsequent Read steps (which also build enough
+    // history for compaction) keep the loop running, so the digest is drained at a
+    // LOOP-TOP (step 3+'s pre-dispatch drain, after the debounce fires during the
+    // step-2 await). A subsequent session.compact() then reads lastVerifierStatus
+    // via buildWorkingSetInput and must carry the introduced-error verifier line
+    // into the WORKING SET.
+    const prevDisable = process.env.AGON_DISABLE_LLM_COMPACTION;
+    process.env.AGON_DISABLE_LLM_COMPACTION = '1'; // deterministic regex summary — no HTTP
+    const home = setupTestAgonHome('guards-diag-mirror-looptop');
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'diag-mirror-it-'));
+    writeFileSync(join(fixtureRoot, 'package-lock.json'), '{}');
+    const pkg = join(fixtureRoot, 'pkg');
+    mkdirSync(join(pkg, 'src'), { recursive: true });
+    writeFileSync(join(pkg, 'tsconfig.json'), '{}');
+    const editedPath = join(pkg, 'src', 'edited.ts'); // net-new → grounded-write allows
+
+    const spawnFn = vi.fn(async (_opts: SpawnLike): Promise<DispatchResult> => {
+      const errLine = `${pkg}/src/edited.ts(2,5): error TS2304: Cannot find name 'foo'.`;
+      return { exitCode: 2, stdout: errLine, stderr: '', durationMs: 3, timedOut: false };
+    });
+
+    try {
+      const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
+
+      // Read several DISTINCT real files across steps so messageHistory grows past
+      // COMPACT_KEEP_TAIL (so compact() actually folds an old segment). The FIRST
+      // read step also awaits > debounce(400) so the digest is produced+drained at
+      // a LOOP-TOP of a LATER step, not the trailing drain.
+      const files = ['package.json', 'tsconfig.json', 'README.md', 'CLAUDE.md', 'package-lock.json'];
+      apiStreamDispatchWithHistoryMock
+        // Step 1: net-new Edit → grounded-write allows; noteEdit arms the runner.
+        .mockImplementationOnce(() => streamStructuredToolCall('Edit', { file_path: editedPath, old_string: '', new_string: 'export const x = 1;' }, 'call_e_mirror'))
+        // Step 2: a Read that awaits > debounce(400) + slack, so by the NEXT
+        // loop-top drain the digest is produced and surfaced there.
+        .mockImplementationOnce(async function* () {
+          await new Promise((r) => setTimeout(r, 700));
+          yield '\n<tool name="Read">' + JSON.stringify({ file_path: files[0] }) + '</tool>\n';
+          return { parts: [{ kind: 'tool_call', toolName: 'Read', toolCallId: 'call_r_mirror_0', args: { file_path: files[0] } }] };
+        });
+      // Steps 3..n: more distinct reads to grow history; the digest drains at the
+      // loop-top of step 3 (the first iteration after it was produced).
+      for (let i = 1; i < files.length; i++) {
+        apiStreamDispatchWithHistoryMock.mockImplementationOnce(() => streamReadSet([files[i]], i + 10));
+      }
+      // Final: no tools → ends the turn.
+      apiStreamDispatchWithHistoryMock.mockImplementationOnce(() => streamText('Done editing.'));
+
+      const session = createResumeSession({
+        engine: apiEngine('api-diag-mirror', 'invariants'),
+        binaryPath: '',
+        cwd: process.cwd(),
+        systemPrompt: 'You are Cesar.',
+        sessionContinuity: false,
+        nativeTools: [
+          { type: 'function', function: { name: 'Edit', description: 'e', parameters: { type: 'object', properties: {} } } },
+          { type: 'function', function: { name: 'Read', description: 'r', parameters: { type: 'object', properties: {} } } },
+        ] as any,
+        onToolCall: async () => 'ok',
+        diagnosticDeps: { spawnFn },
+        toolLoopBaseBudget: 12,
+        toolLoopMaxBudget: 12,
+      });
+
+      await session.start();
+      await drain(session.send({ message: 'edit then read', toolLoopBaseBudget: 12, toolLoopMaxBudget: 12 }));
+      expect(spawnFn).toHaveBeenCalled();
+
+      // Compact in place — buildWorkingSetInput reads the (now-refreshed) mirror.
+      const result = await session.compact();
+      expect(result.method).not.toBe('none');
+
+      // The compaction summary message must carry the WORKING SET verifier line
+      // with the introduced-error status the loop-top drain mirrored.
+      const history = session.getMessageHistory();
+      const compactionMsg = history.find((m: any) =>
+        typeof m.content === 'string' && m.content.includes('WORKING SET:') && m.content.includes('verifier:'),
+      ) as any;
+      expect(compactionMsg).toBeDefined();
+      expect(String(compactionMsg.content)).toMatch(/verifier:[^\n]*introduced error/);
+    } finally {
+      if (prevDisable === undefined) delete process.env.AGON_DISABLE_LLM_COMPACTION;
+      else process.env.AGON_DISABLE_LLM_COMPACTION = prevDisable;
+      cleanupTestAgonHome(home);
+      try { rmSync(fixtureRoot, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  }, 25000);
+
   it('(d) info-gain: same-file-set re-reads fire the stall nudge; reading DIFFERENT files never does', async () => {
     // 4 consecutive STALL steps (STALL_NUDGE_STEP = 4) fire the nudge. Step 1
     // establishes the read set (new info → not a stall); steps 2-5 re-read the
@@ -857,6 +948,51 @@ describe('GuardPipeline integration — invariants mode', () => {
       cleanupTestAgonHome(home);
     }
   }, 20000);
+
+  it('(ws) Feature 2: a real compact() carries a WORKING SET line (files + recent) into the summary', async () => {
+    // Read several distinct real files across steps (registry fills), then compact
+    // in place. The rendered compaction message must carry a 'WORKING SET:' line
+    // listing the files in play — proving the carry-forward is wired end-to-end.
+    const prevDisable = process.env.AGON_DISABLE_LLM_COMPACTION;
+    process.env.AGON_DISABLE_LLM_COMPACTION = '1'; // deterministic regex summary — no HTTP
+    const home = setupTestAgonHome('guards-working-set');
+    try {
+      const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
+
+      const files = ['package.json', 'tsconfig.json', 'README.md', 'CLAUDE.md', 'package-lock.json', 'vitest.config.ts'];
+      for (let i = 0; i < files.length; i++) {
+        apiStreamDispatchWithHistoryMock.mockImplementationOnce(() => streamReadSet([files[i]], i + 1));
+      }
+      apiStreamDispatchWithHistoryMock.mockImplementationOnce(() => streamText('Read them all.'));
+
+      const session = createResumeSession({
+        engine: apiEngine('api-working-set', 'invariants'),
+        binaryPath: '',
+        cwd: process.cwd(),
+        systemPrompt: 'You are Cesar.',
+        onToolCall: async () => 'file contents here',
+        toolLoopBaseBudget: 10,
+        toolLoopMaxBudget: 10,
+      });
+
+      await session.start();
+      await drain(session.send({ message: 'read the configs', toolLoopBaseBudget: 10, toolLoopMaxBudget: 10 }));
+
+      const result = await session.compact();
+      expect(result.method).not.toBe('none');
+
+      // The in-place compaction summary message carries the WORKING SET line.
+      const history = session.getMessageHistory();
+      const summaryMsg = history.find((m: any) => typeof m.content === 'string' && /\[Context compacted/.test(m.content));
+      expect(summaryMsg).toBeDefined();
+      expect(String(summaryMsg!.content)).toContain('WORKING SET:');
+      expect(String(summaryMsg!.content)).toMatch(/WORKING SET: files: /);
+    } finally {
+      if (prevDisable === undefined) delete process.env.AGON_DISABLE_LLM_COMPACTION;
+      else process.env.AGON_DISABLE_LLM_COMPACTION = prevDisable;
+      cleanupTestAgonHome(home);
+    }
+  }, 25000);
 
   it('(e2) evidence: a completion claim WITH a successful Edit that turn → NO injection', async () => {
     const home = setupTestAgonHome('guards-evidence-supported');

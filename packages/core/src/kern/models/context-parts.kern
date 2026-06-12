@@ -29,6 +29,12 @@ interface name=ReasoningPart
   field name=kind type="'reasoning'"
   field name=text type=string
 
+interface name=WorkingSet
+  doc "Situational continuity carried forward through a compaction so post-compaction turns keep a live working-set picture. filesInPlay = files the session is actively touching (modified-first, recency-biased, cap 10); pendingVerifier = the last DiagnosticDigest status (e.g. '<pkg>: N introduced errors unresolved' or '<pkg>: clean'), null when none; openHypotheses = the most-recent few folded decisions/discoveries (no new extraction). Compaction-only — there is NO per-turn injection of this (deferred, P3)."
+  field name=filesInPlay type="string[]"
+  field name=pendingVerifier type="string|null"
+  field name=openHypotheses type="string[]"
+
 interface name=CompactionSummaryPart
   field name=kind type="'compaction'"
   field name=goal type=string
@@ -40,6 +46,8 @@ interface name=CompactionSummaryPart
   field name=progress type=string
   field name=compactedAt type=number
   field name=messagesCompacted type=number
+  field name=workingSet type="WorkingSet|null" optional=true
+    doc "Carried-forward working set (filesInPlay / pendingVerifier / openHypotheses). Optional + backward-compatible: an old summary without it renders no WORKING SET section, and renderCompactionText degrades gracefully when it's absent/empty."
 
 union name=MessagePart discriminant=kind
   variant type=TextPart

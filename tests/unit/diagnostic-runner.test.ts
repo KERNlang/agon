@@ -321,6 +321,63 @@ describe('DiagnosticRunner — fingerprint baseline diff', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────
+// Runner — lastVerifierStatus (Feature 2: compaction working-set verifier line)
+// ──────────────────────────────────────────────────────────────────────
+
+describe('DiagnosticRunner — lastVerifierStatus', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+
+  it('null before any checker has run', () => {
+    const runner = new Runner('eng', { spawnFn: fakeSpawn(() => tscResult('')), persistFn: vi.fn() });
+    expect(runner.lastVerifierStatus()).toBeNull();
+  });
+
+  it('reports introduced errors and SURVIVES drainPending', async () => {
+    const { pkg, file } = tsPkg();
+    const edited = `${pkg}/src/edited.ts(2,1): error TS2304: Cannot find name 'foo'.`;
+    const runner = new Runner('eng', { spawnFn: fakeSpawn(() => tscResult(edited)), persistFn: vi.fn() });
+
+    runner.noteEdit(file, 'c1');
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 5);
+    runner.drainPending(); // drain — the status must still be available after this
+
+    const status = runner.lastVerifierStatus();
+    expect(status).toContain(pkg);
+    expect(status).toMatch(/1 introduced error unresolved/);
+  });
+
+  it('reports clean when the run found no new errors', async () => {
+    const { pkg, file } = tsPkg();
+    const runner = new Runner('eng', { spawnFn: fakeSpawn(() => tscResult('')), persistFn: vi.fn() });
+
+    runner.noteEdit(file, 'c1');
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 5);
+
+    expect(runner.lastVerifierStatus()).toBe(`${pkg}: clean`);
+  });
+
+  // codex 1.00: a TIMED-OUT run with no parsed errors must NOT report clean.
+  // `clean` is derived only from introduced+ripple===0, so the timedOut check
+  // must precede the clean check or an incomplete run reads as green.
+  it('reports "check timed out (incomplete)" — NOT clean — for a timed-out run with no parsed errors', async () => {
+    const { pkg, file } = tsPkg();
+    const runner = new Runner('eng', {
+      spawnFn: fakeSpawn(async () => tscResult('', { timedOut: true, exitCode: 124 })),
+      persistFn: vi.fn(),
+    });
+
+    runner.noteEdit(file, 'c1');
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 5);
+
+    const status = runner.lastVerifierStatus();
+    expect(status).toBe(`${pkg}: check timed out (incomplete)`);
+    // Must NOT have fallen through to the clean branch despite empty counts.
+    expect(status).not.toContain('clean');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
 // Runner — debounce coalescing
 // ──────────────────────────────────────────────────────────────────────
 

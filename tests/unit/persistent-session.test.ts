@@ -345,7 +345,11 @@ describe('persistent session streaming dedupe', () => {
     }
   });
 
-  it('does not session-cache Read calls above the mtime-aware Read tool in API loops', async () => {
+  it('Read dedupe: an UNCHANGED re-read of a real file returns a tier-1 stub (full bytes NOT re-fed)', async () => {
+    // Feature 1 (READ DEDUPE) replaced the old "Read is never session-cached"
+    // behavior: an identical re-Read of an unchanged file (verified via a single
+    // fs.statSync on mtime+size) now stubs instead of re-feeding the file bytes.
+    // package.json is a REAL repo file, so stat succeeds and the second read HITS.
     const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
     let readCount = 0;
     apiStreamDispatchWithHistoryMock.mockImplementation(() => streamTextToolCall('Read', { file_path: 'package.json' }));
@@ -361,7 +365,7 @@ describe('persistent session streaming dedupe', () => {
       onToolCall: async (name: string) => {
         if (name !== 'Read') return 'unexpected tool';
         readCount++;
-        return `read-${readCount}`;
+        return `the full file contents here, read number ${readCount}`;
       },
       toolLoopBaseBudget: 2,
       toolLoopMaxBudget: 2,
@@ -372,7 +376,54 @@ describe('persistent session streaming dedupe', () => {
       // Drain the generator.
     }
 
-    expect(readCount).toBe(2);
+    // Only the FIRST read executed; the unchanged re-read was deduped to a stub.
+    expect(readCount).toBe(1);
+    const history = session.getMessageHistory();
+    const toolResults = history.filter((m: any) => m.role === 'tool').map((m: any) => String(m.content));
+    // Exactly two Read tool-result messages: the real bytes, then the stub.
+    expect(toolResults.length).toBe(2);
+    expect(toolResults[0]).toContain('the full file contents here, read number 1');
+    // The second result is the tier-1 stub — the bytes were NOT re-fed.
+    expect(toolResults[1]).toMatch(/^\[unchanged since read .+ — full content \(\d+ bytes\) is already in context above/);
+    expect(toolResults[1]).not.toContain('the full file contents here, read number 2');
+  });
+
+  it('Read dedupe: kill-switch AGON_READ_DEDUPE=off → every re-read executes fully', async () => {
+    const prev = process.env.AGON_READ_DEDUPE;
+    process.env.AGON_READ_DEDUPE = 'off';
+    try {
+      const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
+      let readCount = 0;
+      apiStreamDispatchWithHistoryMock.mockImplementation(() => streamTextToolCall('Read', { file_path: 'package.json' }));
+
+      const session = createResumeSession({
+        engine: {
+          id: 'api-test',
+          api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test' },
+        } as any,
+        binaryPath: '',
+        cwd: process.cwd(),
+        systemPrompt: 'You are Cesar.',
+        onToolCall: async (name: string) => {
+          if (name !== 'Read') return 'unexpected tool';
+          readCount++;
+          return `read-${readCount}`;
+        },
+        toolLoopBaseBudget: 2,
+        toolLoopMaxBudget: 2,
+      });
+
+      await session.start();
+      for await (const _chunk of session.send({ message: 'read twice', toolLoopBaseBudget: 2, toolLoopMaxBudget: 2 })) {
+        // Drain the generator.
+      }
+
+      // Kill-switch off → dedupe disabled → both reads execute (legacy behavior).
+      expect(readCount).toBe(2);
+    } finally {
+      if (prev === undefined) delete process.env.AGON_READ_DEDUPE;
+      else process.env.AGON_READ_DEDUPE = prev;
+    }
   });
 
   it('executes native tool calls from structured parts, not the text round-trip (args containing </tool> survive)', async () => {

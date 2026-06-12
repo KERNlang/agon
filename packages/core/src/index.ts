@@ -125,17 +125,17 @@ export type {
 } from './generated/sessions/session-budget.js';
 // ── Compaction primitives (pure helpers shared by session.compact() and the in-send emergency fold) ──
 export {
-  findSafeKeepStart, buildCompactionSummary, renderCompactionText,
+  findSafeKeepStart, buildCompactionSummary, renderCompactionText, renderWorkingSet,
   buildSummarizationContext, buildCompactionPrompt,
 } from './generated/sessions/compaction.js';
-export type { CompactMessage, SummarizationCaps } from './generated/sessions/compaction.js';
+export type { CompactMessage, SummarizationCaps, WorkingSetInput } from './generated/sessions/compaction.js';
 // ── Context Parts (structured message parts + StageContext) ──
 export {
   buildStageContext, renderStageContext,
 } from './context-parts.js';
 export type {
   TextPart, ToolCallPart, ToolResultPart, ReasoningPart, CompactionSummaryPart,
-  MessagePart, ToolCacheEntry, StageContext, StageDecision, ToolResultRef,
+  WorkingSet, MessagePart, ToolCacheEntry, StageContext, StageDecision, ToolResultRef,
 } from './context-parts.js';
 export { runApiAgentLoop } from './generated/api/agent-loop.js';
 export type { ApiAgentOptions, ApiAgentResult } from './generated/api/agent-loop.js';

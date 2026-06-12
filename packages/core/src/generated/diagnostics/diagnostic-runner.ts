@@ -102,6 +102,7 @@ export class DiagnosticRunner {
   private pending: DiagnosticDigest[];
   private diagSeq: number = 0;
   private onDigest: ((d:DiagnosticDigest)=>void)|undefined;
+  private lastDigest: DiagnosticDigest|null = null;
 
   constructor(engineId: string, deps?: DiagnosticDeps) {
     this.engineId = engineId;
@@ -111,6 +112,7 @@ export class DiagnosticRunner {
     this.pending = [];
     this.diagSeq = 0;
     this.onDigest = deps?.onDigest;
+    this.lastDigest = null;
   }
 
   noteEdit(filePath: string, callId: string): void {
@@ -291,6 +293,28 @@ export class DiagnosticRunner {
     if (this.pending.length > QUEUE_CAP) {
       this.pending = this.pending.slice(this.pending.length - QUEUE_CAP);
     }
+    // Remember the most recent digest for the compaction working-set verifier
+    // line — this OUTLIVES drainPending (which empties this.pending).
+    this.lastDigest = digest;
+  }
+
+  lastVerifierStatus(): string|null {
+    const d = this.lastDigest;
+    if (!d) return null;
+    const pkg = d.packageDir;
+    // A timed-out run is incomplete — its empty introduced/ripple is the
+    // absence of a PARSED result, not proof of cleanliness. Check it BEFORE
+    // d.clean so a checker that hit the 4s budget never reads as green.
+    if (d.timedOut) return `${pkg}: check timed out (incomplete)`;
+    if (d.clean) return `${pkg}: clean`;
+    const n = d.introduced.length;
+    if (n > 0) return `${pkg}: ${n} introduced error${n === 1 ? '' : 's'} unresolved`;
+    const r = d.ripple.length;
+    if (r > 0) return `${pkg}: ${r} ripple error${r === 1 ? '' : 's'}`;
+    // Non-clean digest with no introduced/ripple and not timed out: the clean
+    // flag and the counts disagree, so emit a neutral status instead of
+    // falsely claiming 'clean'.
+    return `${pkg}: checked`;
   }
 
   drainPending(): DiagnosticDigest[] {
@@ -324,7 +348,7 @@ export class DiagnosticRunner {
 /**
  * Default spawnFn: delegates to spawnWithTimeout (blocks/process.kern).
  */
-// @kern-source: diagnostic-runner:352
+// @kern-source: diagnostic-runner:379
 async function defaultSpawn(opts: SpawnLike): Promise<DispatchResult> {
   return spawnWithTimeout(opts as never);
 }
@@ -332,7 +356,7 @@ async function defaultSpawn(opts: SpawnLike): Promise<DispatchResult> {
 /**
  * Default persistFn: saveToolResultToDisk. Best-effort; failures are swallowed (the caller already guards).
  */
-// @kern-source: diagnostic-runner:358
+// @kern-source: diagnostic-runner:385
 function defaultPersist(engineId: string, toolCallId: string, toolName: string, content: string): unknown {
   try {
     return saveToolResultToDisk(engineId, toolCallId, toolName, content);
@@ -344,7 +368,7 @@ function defaultPersist(engineId: string, toolCallId: string, toolName: string, 
 /**
  * Package-relative forward-slashed form of an edited file path, matching how parseCheckerOutput relativizes diagnostic paths — so editedSet membership tests line up. Strips a leading packageDir prefix and any ./ prefix.
  */
-// @kern-source: diagnostic-runner:370
+// @kern-source: diagnostic-runner:397
 export function normalizeEditedPath(filePath: string, packageDir: string): string {
   let p = filePath.replace(/\\/g, '/');
   const dir = packageDir.replace(/\\/g, '/').replace(/\/$/, '');
@@ -356,7 +380,7 @@ export function normalizeEditedPath(filePath: string, packageDir: string): strin
 /**
  * Render the model-facing digest text. Header `[diagnostics — <packageDir>]`; up to DIGEST_MAX_LINES error lines (introduced first, then ripple marked); a truncation/RetrieveResult footer when truncated; a green note when clean.
  */
-// @kern-source: diagnostic-runner:380
+// @kern-source: diagnostic-runner:407
 export function renderDigestText(packageDir: string, introduced: CheckerLine[], ripple: CheckerLine[], clean: boolean, truncated: boolean, fullResultId: string|null, timedOut: boolean): string {
   const header = `[diagnostics — ${packageDir}]`;
   if (timedOut) {
@@ -393,7 +417,7 @@ export function renderDigestText(packageDir: string, introduced: CheckerLine[], 
 /**
  * Render the FULL (untruncated) diagnostic listing for the disk cache, so RetrieveResult shows everything the digest summarized.
  */
-// @kern-source: diagnostic-runner:415
+// @kern-source: diagnostic-runner:442
 function renderFullOutput(plan: CheckerPlan, introduced: CheckerLine[], ripple: CheckerLine[], result: DispatchResult): string {
   const out: string[] = [];
   out.push(`Diagnostics for ${plan.packageDir} (${plan.cmd} ${plan.args.join(' ')})`);

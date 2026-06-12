@@ -176,21 +176,108 @@ export function buildExecutionRailTimeline(activePlan: any, lastTool: any, engin
 }
 
 /**
+ * Below this much dead air since the last meaningful event, the heartbeat suffix stays silent — no flicker on fast turns.
+ */
+// @kern-source: status-helpers:180
+export const HEARTBEAT_GATE_MS: number = 2000;
+
+/**
+ * At/after this many seconds the displayed counter stops growing (renders '120s+') and a 'still working — engine not stalled' reassurance is appended (on every tick while capped, not once), so a slow-but-healthy engine never reads as an alarm. Nothing is ever cancelled.
+ */
+// @kern-source: status-helpers:183
+export const HEARTBEAT_CAP_S: number = 120;
+
+/**
+ * Derive the heartbeat phase from the brain's existing spinner text — no new event. The brain encodes the live phase in spinner.message: provider-wait states ('Cesar thinking…', 'Cesar responding…', 'Cesar processing tool results…', 'Cesar: retrying <tool>…', 'Cesar executing…', 'Cesar grounding…', 'Cesar building plan…', 'Cesar finishing the answer…') vs in-flight tools ('Cesar: <tool>…', 'Cesar: awaiting N tool results…'). For a waiting phase the actual verb is preserved in `wait` (thinking/responding/processing/retrying/executing/grounding/finishing/planning) so buildHeartbeatSuffix renders the SAME word the strip already shows — no contradictory 'Cesar responding… · thinking…' strip. Anything unrecognized falls back to waiting/thinking. PURE so the screen stays declarative and the parser is unit-tested. NOTE: the brain's real spinner strings live in cesar/brain.kern (spinner-start/spinner-update messages) — keep this parse aligned with them.
+ */
+// @kern-source: status-helpers:186
+export function parseHeartbeatPhase(spinnerMessage: string|null|undefined): {kind:'waiting'|'tools', names:string[], wait?:'thinking'|'responding'|'processing'|'retrying'|'executing'|'grounding'|'finishing'|'planning'} {
+  const msg = String(spinnerMessage ?? '').trim();
+  if (!msg) return { kind: 'waiting', names: [], wait: 'thinking' };
+  // 'Cesar: awaiting N tool result(s)…' → N parallel tools (names unknown here).
+  const awaiting = msg.match(/awaiting\s+(\d+)\s+tool\s+result/i);
+  if (awaiting) {
+    const n = Math.max(1, Math.min(99, parseInt(awaiting[1], 10) || 1));
+    return { kind: 'tools', names: Array.from({ length: n }, () => '') };
+  }
+  // Provider-wait verbs the brain emits. Each maps the real spinner string to the
+  // word the heartbeat suffix renders, so the strip never contradicts itself.
+  // 'retrying' is a wait, not a tool, even though it carries a tool name in the
+  // spinner ('Cesar: retrying <tool> with corrected input…').
+  if (/retrying\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'retrying' };
+  if (/\bprocessing\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'processing' };
+  if (/\bresponding\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'responding' };
+  if (/\bgrounding\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'grounding' };
+  if (/\bexecuting\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'executing' };
+  if (/building plan\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'planning' };
+  if (/finishing\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'finishing' };
+  if (/\bthinking\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'thinking' };
+  // 'Cesar: <toolName>…' → a single named in-flight tool. The bare 'Cesar:'
+  // prefix (with no tool word) and the wait phrases handled above are NOT tool
+  // calls — they're provider-wait states.
+  const named = msg.match(/^Cesar:\s+([A-Za-z][\w.-]*)…?$/);
+  if (named && !/^(thinking|responding|processing|awaiting|retrying|executing|grounding|finishing|building)$/i.test(named[1])) {
+    return { kind: 'tools', names: [named[1]] };
+  }
+  return { kind: 'waiting', names: [], wait: 'thinking' };
+}
+
+/**
+ * Build the dead-air heartbeat fingerprint from a NORMALIZED phase identity (NOT raw spinner text). The brain re-emits the spinner every ~2s during a wait with an embedded elapsed counter ('Cesar thinking… 4s' → '… 6s', 'Cesar timed out after Ns'); fingerprinting the raw message would tick on every counter mutation, continuously resetting the dead-air anchor so buildHeartbeatSuffix could never clear its 2s gate during a long wait — killing the feature's primary use case. Instead the phase component is parseHeartbeatPhase's output (kind + wait verb + tool names joined): a genuine phase change (thinking→responding→tools→different tools) flips it, but the volatile counter does not. Combined with the engine/plan/stream signals the strip already holds. PURE so the fingerprint identity is unit-tested independent of Ink.
+ */
+// @kern-source: status-helpers:219
+export function buildHeartbeatSig(phase: {kind:'waiting'|'tools', names:string[], wait?:string}, engineSig: string, planSig: string, streamSig: string): string {
+  const names = Array.isArray(phase?.names) ? phase.names.join(',') : '';
+  const wait = (phase && typeof phase.wait === 'string') ? phase.wait : '';
+  const phaseSig = `${phase?.kind ?? ''}:${wait}:${names}`;
+  return `${phaseSig}|${engineSig}|${planSig}|${streamSig}`;
+}
+
+/**
+ * Build the adaptive dead-air suffix for the active-turn status line. UI-ONLY, PURE, no I/O. Returns null when the turn is inactive OR less than HEARTBEAT_GATE_MS (2s) has elapsed since the last meaningful event (silent gate — no flicker on fast turns). At/after the gate it returns a leading '· '-prefixed segment whose label matches the live phase so it never contradicts the activity line the strip already shows: '· <wait>… Ns' for a provider-wait (the actual verb the brain emitted — thinking/responding/processing/retrying/… — preserved by parseHeartbeatPhase.wait, defaulting to 'thinking'), '· running <tool>… Ns' for one in-flight tool, or '· running N tools… Ns' for several. The counter is capped at HEARTBEAT_CAP_S: from 120s it renders '120s+' and appends a dim reassurance '· still working — engine not stalled' while capped (on every tick at/after the cap, not once). Nothing here cancels or aborts anything — it is display only. Caller resets lastEventAt to now on any meaningful event (text chunk, status, tool running/done) so the gate and elapsed restart per phase.
+ */
+// @kern-source: status-helpers:228
+export function buildHeartbeatSuffix(now: number, lastEventAt: number, phase: {kind:'waiting'|'tools', names:string[], wait?:string}, turnActive: boolean): string|null {
+  if (!turnActive) return null;
+  const elapsedMs = Math.max(0, now - lastEventAt);
+  if (elapsedMs < HEARTBEAT_GATE_MS) return null;
+  const elapsedS = Math.floor(elapsedMs / 1000);
+  const capped = elapsedS >= HEARTBEAT_CAP_S;
+  const counter = capped ? `${HEARTBEAT_CAP_S}s+` : `${elapsedS}s`;
+
+  // Default to the phase's preserved waiting verb so the suffix label matches
+  // the activity line (no 'Cesar responding… · thinking…' contradiction). Falls
+  // back to 'thinking' for an absent/unknown verb.
+  let label = (phase && typeof phase.wait === 'string' && phase.wait.length > 0) ? phase.wait : 'thinking';
+  if (phase && phase.kind === 'tools') {
+    const names = Array.isArray(phase.names) ? phase.names : [];
+    if (names.length > 1) {
+      label = `running ${names.length} tools`;
+    } else {
+      const name = String(names[0] ?? '').trim();
+      label = name ? `running ${name}` : 'running tool';
+    }
+  }
+  const base = `· ${label}… ${counter}`;
+  return capped ? `${base} · still working — engine not stalled` : base;
+}
+
+/**
  * Re-read guard-counters.json at most once per 60s for the dashboard. Counters only change when a turn finalizes, so a minute-stale view is fine and keeps the synchronous file read off the hot poll path.
  */
-// @kern-source: status-helpers:182
+// @kern-source: status-helpers:268
 export const GUARD_TELEMETRY_SNAPSHOT_TTL_MS: number = 60 * 1000;
 
 /**
  * Module-level {at, home, value} memo for the dashboard's guard-counters snapshot. `home` keys the entry to the AGON_HOME that produced it so an in-process AGON_HOME change (tests, embedded use) can never serve another home's counters for up to a TTL. Mutated in place by loadGuardTelemetrySnapshot; never frozen at module load.
  */
-// @kern-source: status-helpers:185
+// @kern-source: status-helpers:271
 export const guardTelemetrySnapshotCache = { at: 0, home: '', value: null as (import('@kernlang/agon-core').GuardCounters | null) };
 
 /**
  * Memoized accessor for the guard-telemetry counters used by the StatusDashboard. Calls the synchronous readGuardCounters() at most once per GUARD_TELEMETRY_SNAPSHOT_TTL_MS; returns the cached value (or null when the counters file is absent) on every call in between. Safe to call from the render path — at most one file read per 60s, never per poll tick. Best-effort: any read failure surfaces as null and the section hides.
  */
-// @kern-source: status-helpers:188
+// @kern-source: status-helpers:274
 export function loadGuardTelemetrySnapshot(): GuardCounters | null {
   const now = Date.now();
   // readGuardCounters resolves AGON_HOME per call — key the memo to the
@@ -219,7 +306,7 @@ export function loadGuardTelemetrySnapshot(): GuardCounters | null {
 /**
  * Fold the guard-counters snapshot into compact, render-ready rows for the StatusDashboard. PURE (no I/O) so it's fully unit-testable from synthetic counters. Returns { visible, guardRows, engineRows }. visible is false when counters is null OR has no engine-guard cells AND no turn aggregates. codex FIX 3c: guardRows are PER-GUARD so no row shows a permanently-0% column. Each guardRow carries two GENERIC signal cells (sig1Label/sig1Pct, sig2Label/sig2Pct) whose meaning depends on the guard, plus fires, avgOverheadMs (-1 renders as 'n/a'), and the per-guard recommendation. grounded-write -> CER/PRV over resolved=ceremony+prevented, overhead=overheadMsTotal/fires. read-spin -> WHR/STL over resolved=wouldHaveRecovered+stalled+recovered. report-confidence -> HI-HIT (highConfHit/(highConfHit+highConfMiss)) / LO-HIT (lowConfHit/(lowConfHit+lowConfMiss)), avgOverheadMs=-1, recommendation insufficient-data in Phase 0. The P1 GuardPipeline guards evidence + confidence-escalation carry only fires (no ceremony/prevented/whr/calibration split), so both signal cells render as a PLACEHOLDER: sig*Label '—' + sentinel sig*Pct -1 (the dashboard renders -1 as a dim '—', not a fabricated 0% CER/PRV) — FIRES is their only honest signal. Each non-placeholder pct is 0 when its denominator is 0. Per-engine engineRow: { key, engineId, parallelRatePct, avgRoundTripMs, avgAssembleMs } each 0 when its denominator is 0.
  */
-// @kern-source: status-helpers:215
+// @kern-source: status-helpers:301
 export function buildGuardTelemetryView(counters: GuardCounters | null): any {
   const byEngineGuard: Record<string, Record<string, GuardCounterCell>> = (counters && counters.byEngineGuard) ? counters.byEngineGuard : {};
   const byEngineTurns: Record<string, GuardTurnAggregate> = (counters && counters.byEngineTurns) ? counters.byEngineTurns : {};

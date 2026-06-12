@@ -113,6 +113,8 @@ service name=DiagnosticRunner export=true
   field name=pending type="DiagnosticDigest[]" private=true
   field name=diagSeq type=number private=true default="0"
   field name=onDigest type="((d:DiagnosticDigest)=>void)|undefined" private=true
+  field name=lastDigest type="DiagnosticDigest|null" private=true default="null"
+    doc "The most recent digest produced this session (set in enqueue, SURVIVES drainPending) — read by lastVerifierStatus() so compaction can carry a working-set verifier line forward even after the digest was drained into history."
 
   constructor params="engineId:string, deps?:DiagnosticDeps"
     doc "deps.spawnFn defaults to spawnWithTimeout; deps.persistFn defaults to saveToolResultToDisk — both injected so unit tests use fakes + fake timers. onDigest (optional) fires synchronously when a digest is produced, so the session loop can yield a status chunk immediately in addition to draining."
@@ -124,6 +126,7 @@ service name=DiagnosticRunner export=true
       this.pending = [];
       this.diagSeq = 0;
       this.onDigest = deps?.onDigest;
+      this.lastDigest = null;
     >>>
 
   method name=noteEdit params="filePath:string, callId:string" returns=void
@@ -303,7 +306,7 @@ service name=DiagnosticRunner export=true
     >>>
 
   method name=enqueue params="digest:DiagnosticDigest" returns=void private=true
-    doc "Add a digest to the bounded pending queue: newest-wins per packageDir (a fresh digest replaces an un-drained one for the same package), then cap at QUEUE_CAP by evicting the oldest."
+    doc "Add a digest to the bounded pending queue: newest-wins per packageDir (a fresh digest replaces an un-drained one for the same package), then cap at QUEUE_CAP by evicting the oldest. Also records lastDigest (survives drains) for lastVerifierStatus()."
     handler <<<
       // Newest-wins per package: drop any un-drained digest for the same dir.
       this.pending = this.pending.filter((d) => d.packageDir !== digest.packageDir);
@@ -312,6 +315,30 @@ service name=DiagnosticRunner export=true
       if (this.pending.length > QUEUE_CAP) {
         this.pending = this.pending.slice(this.pending.length - QUEUE_CAP);
       }
+      // Remember the most recent digest for the compaction working-set verifier
+      // line — this OUTLIVES drainPending (which empties this.pending).
+      this.lastDigest = digest;
+    >>>
+
+  method name=lastVerifierStatus params="" returns="string|null"
+    doc "A compact one-line status of the most recent diagnostic run for the compaction WORKING SET (e.g. '<pkg>: N introduced error(s) unresolved' / '<pkg>: clean' / '<pkg>: check timed out (incomplete)'), or null when no checker has run this session. Best-effort, read-only — never throws. `clean` is derived ONLY from introduced+ripple===0, so a TIMED-OUT run with no parsed errors is NOT clean — timedOut is checked FIRST so an incomplete run never reports clean. When a digest is non-clean but carries no introduced/ripple lines and did not time out (a state the digest text/clean flag disagree on), fall back to a neutral '<pkg>: checked' rather than the contradictory 'clean'."
+    handler <<<
+      const d = this.lastDigest;
+      if (!d) return null;
+      const pkg = d.packageDir;
+      // A timed-out run is incomplete — its empty introduced/ripple is the
+      // absence of a PARSED result, not proof of cleanliness. Check it BEFORE
+      // d.clean so a checker that hit the 4s budget never reads as green.
+      if (d.timedOut) return `${pkg}: check timed out (incomplete)`;
+      if (d.clean) return `${pkg}: clean`;
+      const n = d.introduced.length;
+      if (n > 0) return `${pkg}: ${n} introduced error${n === 1 ? '' : 's'} unresolved`;
+      const r = d.ripple.length;
+      if (r > 0) return `${pkg}: ${r} ripple error${r === 1 ? '' : 's'}`;
+      // Non-clean digest with no introduced/ripple and not timed out: the clean
+      // flag and the counts disagree, so emit a neutral status instead of
+      // falsely claiming 'clean'.
+      return `${pkg}: checked`;
     >>>
 
   method name=drainPending params="" returns="DiagnosticDigest[]"

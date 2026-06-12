@@ -32,7 +32,17 @@ export interface ReasoningPart {
   text: string;
 }
 
+/**
+ * Situational continuity carried forward through a compaction so post-compaction turns keep a live working-set picture. filesInPlay = files the session is actively touching (modified-first, recency-biased, cap 10); pendingVerifier = the last DiagnosticDigest status (e.g. '<pkg>: N introduced errors unresolved' or '<pkg>: clean'), null when none; openHypotheses = the most-recent few folded decisions/discoveries (no new extraction). Compaction-only — there is NO per-turn injection of this (deferred, P3).
+ */
 // @kern-source: context-parts:32
+export interface WorkingSet {
+  filesInPlay: string[];
+  pendingVerifier: string|null;
+  openHypotheses: string[];
+}
+
+// @kern-source: context-parts:38
 export interface CompactionSummaryPart {
   kind: 'compaction';
   goal: string;
@@ -44,9 +54,10 @@ export interface CompactionSummaryPart {
   progress: string;
   compactedAt: number;
   messagesCompacted: number;
+  workingSet?: WorkingSet|null;
 }
 
-// @kern-source: context-parts:44
+// @kern-source: context-parts:52
 export type MessagePart =
   | TextPart
   | ToolCallPart
@@ -54,7 +65,7 @@ export type MessagePart =
   | ReasoningPart
   | CompactionSummaryPart;
 
-// @kern-source: context-parts:53
+// @kern-source: context-parts:61
 export interface ToolCacheEntry {
   toolCallId: string;
   toolName: string;
@@ -63,13 +74,13 @@ export interface ToolCacheEntry {
   byteSize: number;
 }
 
-// @kern-source: context-parts:62
+// @kern-source: context-parts:70
 export interface StageDecision {
   choice: string;
   reason: string;
 }
 
-// @kern-source: context-parts:66
+// @kern-source: context-parts:74
 export interface ToolResultRef {
   toolName: string;
   filePath?: string;
@@ -79,7 +90,7 @@ export interface ToolResultRef {
 /**
  * Typed context passed between forge stages. Replaces raw scoutDiff.slice(0,3000).
  */
-// @kern-source: context-parts:71
+// @kern-source: context-parts:79
 export interface StageContext {
   goal: string;
   filesDiscovered: string[];
@@ -97,7 +108,7 @@ export interface StageContext {
 /**
  * Extract structured StageContext from raw forge outputs.
  */
-// @kern-source: context-parts:87
+// @kern-source: context-parts:95
 export function buildStageContext(opts: {engineId:string, pass:boolean, score:number, prompt:string, diff:string, fitnessLogPath?:string, dispatchStdout?:string}): StageContext {
   // Extract goal from prompt (first ## TASK section or first 300 chars)
   const taskMatch = opts.prompt.match(/## TASK\s*\n([\s\S]*?)(?=\n## |$)/);
@@ -175,7 +186,7 @@ export function buildStageContext(opts: {engineId:string, pass:boolean, score:nu
 /**
  * Render StageContext as readable text for injection into forge prompts.
  */
-// @kern-source: context-parts:163
+// @kern-source: context-parts:171
 export function renderStageContext(ctx: StageContext): string {
   const sections: string[] = [`## PRIOR APPROACH (${ctx.engineId} — ${ctx.pass ? 'PASSED' : 'FAILED'}${(ctx.score !== null) ? `, score: ${ctx.score}` : ''})`];
   sections.push(`**Goal:** ${ctx.goal}`);

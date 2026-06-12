@@ -166,6 +166,92 @@ fn name=buildExecutionRailTimeline params="activePlan:any,lastTool:any,engines:a
     return rows.slice(-maxRows);
   >>>
 
+// ── Dead-air heartbeat (UI-only elapsed ticker) ───────────────────────
+//
+// Pure, render-time helper for the always-visible active-turn status strip
+// (CesarStatusStrip). While a turn is streaming/executing it appends an
+// adaptive "…Ns" suffix to the EXISTING activity line so a long-but-healthy
+// wait reads as "still working", not "stalled". It is UI-ONLY: derived from
+// the spinner/engine/plan signals the strip already receives, appends NOTHING
+// to messageHistory, and dispatches no new events. The 2s silent gate keeps
+// fast turns flicker-free; the 120s cap stops the counter from reading as an
+// alarm while the engine is merely slow.
+
+const name=HEARTBEAT_GATE_MS type=number value={{ 2000 }}
+  doc "Below this much dead air since the last meaningful event, the heartbeat suffix stays silent — no flicker on fast turns."
+
+const name=HEARTBEAT_CAP_S type=number value={{ 120 }}
+  doc "At/after this many seconds the displayed counter stops growing (renders '120s+') and a 'still working — engine not stalled' reassurance is appended (on every tick while capped, not once), so a slow-but-healthy engine never reads as an alarm. Nothing is ever cancelled."
+
+fn name=parseHeartbeatPhase params="spinnerMessage:string|null|undefined" returns="{kind:'waiting'|'tools', names:string[], wait?:'thinking'|'responding'|'processing'|'retrying'|'executing'|'grounding'|'finishing'|'planning'}" export=true
+  doc "Derive the heartbeat phase from the brain's existing spinner text — no new event. The brain encodes the live phase in spinner.message: provider-wait states ('Cesar thinking…', 'Cesar responding…', 'Cesar processing tool results…', 'Cesar: retrying <tool>…', 'Cesar executing…', 'Cesar grounding…', 'Cesar building plan…', 'Cesar finishing the answer…') vs in-flight tools ('Cesar: <tool>…', 'Cesar: awaiting N tool results…'). For a waiting phase the actual verb is preserved in `wait` (thinking/responding/processing/retrying/executing/grounding/finishing/planning) so buildHeartbeatSuffix renders the SAME word the strip already shows — no contradictory 'Cesar responding… · thinking…' strip. Anything unrecognized falls back to waiting/thinking. PURE so the screen stays declarative and the parser is unit-tested. NOTE: the brain's real spinner strings live in cesar/brain.kern (spinner-start/spinner-update messages) — keep this parse aligned with them."
+  handler <<<
+    const msg = String(spinnerMessage ?? '').trim();
+    if (!msg) return { kind: 'waiting', names: [], wait: 'thinking' };
+    // 'Cesar: awaiting N tool result(s)…' → N parallel tools (names unknown here).
+    const awaiting = msg.match(/awaiting\s+(\d+)\s+tool\s+result/i);
+    if (awaiting) {
+      const n = Math.max(1, Math.min(99, parseInt(awaiting[1], 10) || 1));
+      return { kind: 'tools', names: Array.from({ length: n }, () => '') };
+    }
+    // Provider-wait verbs the brain emits. Each maps the real spinner string to the
+    // word the heartbeat suffix renders, so the strip never contradicts itself.
+    // 'retrying' is a wait, not a tool, even though it carries a tool name in the
+    // spinner ('Cesar: retrying <tool> with corrected input…').
+    if (/retrying\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'retrying' };
+    if (/\bprocessing\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'processing' };
+    if (/\bresponding\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'responding' };
+    if (/\bgrounding\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'grounding' };
+    if (/\bexecuting\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'executing' };
+    if (/building plan\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'planning' };
+    if (/finishing\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'finishing' };
+    if (/\bthinking\b/i.test(msg)) return { kind: 'waiting', names: [], wait: 'thinking' };
+    // 'Cesar: <toolName>…' → a single named in-flight tool. The bare 'Cesar:'
+    // prefix (with no tool word) and the wait phrases handled above are NOT tool
+    // calls — they're provider-wait states.
+    const named = msg.match(/^Cesar:\s+([A-Za-z][\w.-]*)…?$/);
+    if (named && !/^(thinking|responding|processing|awaiting|retrying|executing|grounding|finishing|building)$/i.test(named[1])) {
+      return { kind: 'tools', names: [named[1]] };
+    }
+    return { kind: 'waiting', names: [], wait: 'thinking' };
+  >>>
+
+fn name=buildHeartbeatSig params="phase:{kind:'waiting'|'tools', names:string[], wait?:string}, engineSig:string, planSig:string, streamSig:string" returns="string" export=true
+  doc "Build the dead-air heartbeat fingerprint from a NORMALIZED phase identity (NOT raw spinner text). The brain re-emits the spinner every ~2s during a wait with an embedded elapsed counter ('Cesar thinking… 4s' → '… 6s', 'Cesar timed out after Ns'); fingerprinting the raw message would tick on every counter mutation, continuously resetting the dead-air anchor so buildHeartbeatSuffix could never clear its 2s gate during a long wait — killing the feature's primary use case. Instead the phase component is parseHeartbeatPhase's output (kind + wait verb + tool names joined): a genuine phase change (thinking→responding→tools→different tools) flips it, but the volatile counter does not. Combined with the engine/plan/stream signals the strip already holds. PURE so the fingerprint identity is unit-tested independent of Ink."
+  handler <<<
+    const names = Array.isArray(phase?.names) ? phase.names.join(',') : '';
+    const wait = (phase && typeof phase.wait === 'string') ? phase.wait : '';
+    const phaseSig = `${phase?.kind ?? ''}:${wait}:${names}`;
+    return `${phaseSig}|${engineSig}|${planSig}|${streamSig}`;
+  >>>
+
+fn name=buildHeartbeatSuffix params="now:number, lastEventAt:number, phase:{kind:'waiting'|'tools', names:string[], wait?:string}, turnActive:boolean" returns="string|null" export=true
+  doc "Build the adaptive dead-air suffix for the active-turn status line. UI-ONLY, PURE, no I/O. Returns null when the turn is inactive OR less than HEARTBEAT_GATE_MS (2s) has elapsed since the last meaningful event (silent gate — no flicker on fast turns). At/after the gate it returns a leading '· '-prefixed segment whose label matches the live phase so it never contradicts the activity line the strip already shows: '· <wait>… Ns' for a provider-wait (the actual verb the brain emitted — thinking/responding/processing/retrying/… — preserved by parseHeartbeatPhase.wait, defaulting to 'thinking'), '· running <tool>… Ns' for one in-flight tool, or '· running N tools… Ns' for several. The counter is capped at HEARTBEAT_CAP_S: from 120s it renders '120s+' and appends a dim reassurance '· still working — engine not stalled' while capped (on every tick at/after the cap, not once). Nothing here cancels or aborts anything — it is display only. Caller resets lastEventAt to now on any meaningful event (text chunk, status, tool running/done) so the gate and elapsed restart per phase."
+  handler <<<
+    if (!turnActive) return null;
+    const elapsedMs = Math.max(0, now - lastEventAt);
+    if (elapsedMs < HEARTBEAT_GATE_MS) return null;
+    const elapsedS = Math.floor(elapsedMs / 1000);
+    const capped = elapsedS >= HEARTBEAT_CAP_S;
+    const counter = capped ? `${HEARTBEAT_CAP_S}s+` : `${elapsedS}s`;
+
+    // Default to the phase's preserved waiting verb so the suffix label matches
+    // the activity line (no 'Cesar responding… · thinking…' contradiction). Falls
+    // back to 'thinking' for an absent/unknown verb.
+    let label = (phase && typeof phase.wait === 'string' && phase.wait.length > 0) ? phase.wait : 'thinking';
+    if (phase && phase.kind === 'tools') {
+      const names = Array.isArray(phase.names) ? phase.names : [];
+      if (names.length > 1) {
+        label = `running ${names.length} tools`;
+      } else {
+        const name = String(names[0] ?? '').trim();
+        label = name ? `running ${name}` : 'running tool';
+      }
+    }
+    const base = `· ${label}… ${counter}`;
+    return capped ? `${base} · still working — engine not stalled` : base;
+  >>>
+
 // ── Guard telemetry (Phase 0) — dashboard helpers ─────────────────────
 //
 // The StatusDashboard surfaces the on-disk guard-fire counters

@@ -496,50 +496,123 @@ describe('persistent session streaming dedupe', () => {
     expect(chunks.some((chunk: any) => chunk.type === 'text' && /Finished after fresh reads/.test(chunk.content))).toBe(true);
   });
 
-  it('breaks a re-read spin with varying batch composition (no new cache-keys)', async () => {
-    const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
-    let readCount = 0;
-    // Steps 2-4 re-read already-seen files in DIFFERENT compositions, so the
-    // byte-identical-signature guard never fires — only the no-new-info counter
-    // catches it. Step 1 establishes the keys; steps 2,3,4 add nothing new.
-    apiStreamDispatchWithHistoryMock
-      .mockImplementationOnce(() => streamReadFiles(['src/a.ts', 'src/b.ts'])) // new keys → counter 0
-      .mockImplementationOnce(() => streamReadFiles(['src/a.ts']))             // no new → 1
-      .mockImplementationOnce(() => streamReadFiles(['src/b.ts']))             // no new → 2
-      .mockImplementationOnce(() => streamReadFiles(['src/a.ts', 'src/b.ts'])) // no new → 3 → recovery (omitted)
-      .mockImplementationOnce(async function* () {
-        yield 'Done after re-read recovery.';
-        return {};
+  it('breaks a re-read spin with varying batch composition (no new cache-keys) — telemetry OFF, immediate recovery', async () => {
+    // Phase-0 guard telemetry DISABLED → byte-identical legacy behavior: the
+    // no-new-info counter crossing 3 omits the duplicate batch and nudges
+    // IMMEDIATELY (no one-step deferral). With telemetry ON the first crossing
+    // is deferred by one step (see the next test).
+    const prevTelemetry = process.env.AGON_GUARD_TELEMETRY;
+    process.env.AGON_GUARD_TELEMETRY = '0';
+    try {
+      const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
+      let readCount = 0;
+      // Steps 2-4 re-read already-seen files in DIFFERENT compositions, so the
+      // byte-identical-signature guard never fires — only the no-new-info counter
+      // catches it. Step 1 establishes the keys; steps 2,3,4 add nothing new.
+      apiStreamDispatchWithHistoryMock
+        .mockImplementationOnce(() => streamReadFiles(['src/a.ts', 'src/b.ts'])) // new keys → counter 0
+        .mockImplementationOnce(() => streamReadFiles(['src/a.ts']))             // no new → 1
+        .mockImplementationOnce(() => streamReadFiles(['src/b.ts']))             // no new → 2
+        .mockImplementationOnce(() => streamReadFiles(['src/a.ts', 'src/b.ts'])) // no new → 3 → recovery (omitted)
+        .mockImplementationOnce(async function* () {
+          yield 'Done after re-read recovery.';
+          return {};
+        });
+
+      const session = createResumeSession({
+        engine: {
+          id: 'api-test',
+          api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test' },
+        } as any,
+        binaryPath: '',
+        cwd: process.cwd(),
+        systemPrompt: 'You are Cesar.',
+        onToolCall: async () => {
+          readCount++;
+          return `read-${readCount}`;
+        },
+        toolLoopBaseBudget: 6,
+        toolLoopMaxBudget: 6,
       });
 
-    const session = createResumeSession({
-      engine: {
-        id: 'api-test',
-        api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test' },
-      } as any,
-      binaryPath: '',
-      cwd: process.cwd(),
-      systemPrompt: 'You are Cesar.',
-      onToolCall: async () => {
-        readCount++;
-        return `read-${readCount}`;
-      },
-      toolLoopBaseBudget: 6,
-      toolLoopMaxBudget: 6,
-    });
+      await session.start();
+      const chunks = [];
+      for await (const chunk of session.send({ message: 'spin', toolLoopBaseBudget: 6, toolLoopMaxBudget: 6 })) {
+        chunks.push(chunk);
+      }
 
-    await session.start();
-    const chunks = [];
-    for await (const chunk of session.send({ message: 'spin', toolLoopBaseBudget: 6, toolLoopMaxBudget: 6 })) {
-      chunks.push(chunk);
+      // Steps 1-3 executed (2 + 1 + 1 = 4 reads); step 4's duplicate batch was omitted.
+      expect(readCount).toBe(4);
+      expect(chunks.some((chunk: any) => chunk.type === 'status' && /recovering from repeated stale read loop/.test(chunk.content))).toBe(true);
+      expect(chunks.some((chunk: any) => chunk.type === 'text' && /Done after re-read recovery/.test(chunk.content))).toBe(true);
+      const history = session.getMessageHistory();
+      expect(history.some((msg: any) => msg.role === 'assistant' && /Agon omitted a duplicate read-only tool batch/.test(String(msg.content)))).toBe(true);
+    } finally {
+      if (prevTelemetry === undefined) delete process.env.AGON_GUARD_TELEMETRY;
+      else process.env.AGON_GUARD_TELEMETRY = prevTelemetry;
     }
+  });
 
-    // Steps 1-3 executed (2 + 1 + 1 = 4 reads); step 4's duplicate batch was omitted.
-    expect(readCount).toBe(4);
-    expect(chunks.some((chunk: any) => chunk.type === 'status' && /recovering from repeated stale read loop/.test(chunk.content))).toBe(true);
-    expect(chunks.some((chunk: any) => chunk.type === 'text' && /Done after re-read recovery/.test(chunk.content))).toBe(true);
-    const history = session.getMessageHistory();
-    expect(history.some((msg: any) => msg.role === 'assistant' && /Agon omitted a duplicate read-only tool batch/.test(String(msg.content)))).toBe(true);
+  it('defers the read-spin recovery by one step when guard telemetry is ON (delayed observation)', async () => {
+    // Phase-0 DELAYED OBSERVATION: the FIRST time the no-new-info counter crosses
+    // 3 (sole trigger), telemetry defers the recovery nudge by one step so the
+    // tracker can observe whether the model would pivot on its own. The duplicate
+    // batch at step 4 EXECUTES (not omitted), then step 5's spontaneous finish
+    // resolves the deferred fire as would_have_recovered — the nudge never fires.
+    const prevTelemetry = process.env.AGON_GUARD_TELEMETRY;
+    process.env.AGON_GUARD_TELEMETRY = '1';
+    const homeDir = setupTestAgonHome('readspin-defer');
+    try {
+      const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
+      const { readGuardCounters } = await import('../../packages/core/src/telemetry.js');
+      let readCount = 0;
+      apiStreamDispatchWithHistoryMock
+        .mockImplementationOnce(() => streamReadFiles(['src/a.ts', 'src/b.ts'])) // new keys → 0
+        .mockImplementationOnce(() => streamReadFiles(['src/a.ts']))             // no new → 1
+        .mockImplementationOnce(() => streamReadFiles(['src/b.ts']))             // no new → 2
+        .mockImplementationOnce(() => streamReadFiles(['src/a.ts', 'src/b.ts'])) // no new → 3 → DEFER (executes)
+        .mockImplementationOnce(async function* () {
+          yield 'Done — pivoted on my own.';
+          return {};
+        });
+
+      const session = createResumeSession({
+        engine: {
+          id: 'api-defer-test',
+          api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test' },
+        } as any,
+        binaryPath: '',
+        cwd: process.cwd(),
+        systemPrompt: 'You are Cesar.',
+        onToolCall: async () => {
+          readCount++;
+          return `read-${readCount}`;
+        },
+        toolLoopBaseBudget: 6,
+        toolLoopMaxBudget: 6,
+      });
+
+      await session.start();
+      const chunks = [];
+      for await (const chunk of session.send({ message: 'spin', toolLoopBaseBudget: 6, toolLoopMaxBudget: 6 })) {
+        chunks.push(chunk);
+      }
+
+      // Step 4's duplicate batch EXECUTED (deferral) → 2+1+1+2 = 6 reads, not 4.
+      expect(readCount).toBe(6);
+      // Recovery nudge was NOT emitted — the model pivoted within the deferral window.
+      expect(chunks.some((chunk: any) => chunk.type === 'status' && /recovering from repeated stale read loop/.test(chunk.content))).toBe(false);
+      expect(chunks.some((chunk: any) => chunk.type === 'text' && /pivoted on my own/.test(chunk.content))).toBe(true);
+      // The deferred read-spin fire flushed to the counters as would_have_recovered.
+      const counters = readGuardCounters();
+      const cell = counters?.byEngineGuard?.['api-defer-test']?.['read-spin'];
+      expect(cell?.fires).toBe(1);
+      expect(cell?.wouldHaveRecovered).toBe(1);
+    } finally {
+      if (prevTelemetry === undefined) delete process.env.AGON_GUARD_TELEMETRY;
+      else process.env.AGON_GUARD_TELEMETRY = prevTelemetry;
+      cleanupTestAgonHome(homeDir);
+    }
   });
 
   it('retries an empty completion before surfacing the empty-response error', async () => {
@@ -601,4 +674,73 @@ describe('persistent session streaming dedupe', () => {
     expect(chunks.filter((chunk: any) => chunk.type === 'status' && /engine returned empty — retrying/.test(chunk.content)).length).toBe(2);
     expect(chunks.some((chunk: any) => chunk.type === 'error' && /empty response/i.test(chunk.content))).toBe(true);
   }, 15000);
+
+  it('codex FIX 1: a turn that ends abnormally (circuit-breaker) finalizes as aborted → open grounded-write fire stays UNRESOLVED, not averted', async () => {
+    // The solo-coding gate fires a grounded-write guard on step 1 (a complex
+    // task writing without investigating). The turn then ends ABNORMALLY via the
+    // circuit breaker (3 consecutive all-failing steps), never reaching the
+    // no-tool-calls terminal path. finalize() must run with reason 'aborted', so
+    // the open fire stays `unresolved` (observedInTurn=false) — NOT mislabelled
+    // `averted` (which the old unconditional guardDoneNormally=true produced,
+    // crediting an aborted turn as completed-turn evidence).
+    const prevTelemetry = process.env.AGON_GUARD_TELEMETRY;
+    process.env.AGON_GUARD_TELEMETRY = '1';
+    const homeDir = setupTestAgonHome('finalize-aborted');
+    try {
+      const { createResumeSession } = await import('../../packages/core/src/persistent-session.js');
+      const { readGuardCounters } = await import('../../packages/core/src/telemetry.js');
+
+      apiStreamDispatchWithHistoryMock
+        // Step 1: write WITHOUT investigating on a complex task → gate fires +
+        // records a grounded-write fire; the write is blocked (not executed).
+        .mockImplementationOnce(() => streamStructuredToolCall('Write', { file_path: 'src/x.ts', content: 'export const x = 1;' }, 'call_w1'))
+        // Steps 2-4: a failing Bash each → 3 consecutive all-fail steps trip the
+        // circuit breaker, ending the turn abnormally (no later ok-write).
+        .mockImplementation(() => streamStructuredToolCall('Bash', { command: 'false' }, 'call_b'));
+
+      const session = createResumeSession({
+        engine: {
+          id: 'api-abort-test',
+          api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test' },
+        } as any,
+        binaryPath: '',
+        cwd: process.cwd(),
+        systemPrompt: 'You are Cesar.',
+        nativeTools: [
+          { type: 'function', function: { name: 'Write', description: 'w', parameters: { type: 'object', properties: {} } } },
+          { type: 'function', function: { name: 'Bash', description: 'b', parameters: { type: 'object', properties: {} } } },
+        ] as any,
+        // Bash always errors → all-fail steps for the circuit breaker.
+        onToolCall: async (name: string) => (name === 'Bash' ? 'Error: command failed' : 'ok'),
+        toolLoopBaseBudget: 6,
+        toolLoopMaxBudget: 6,
+      });
+
+      await session.start();
+      const chunks: any[] = [];
+      // A complex, multi-file task so isComplexTask is true and the gate arms.
+      for await (const chunk of session.send({
+        message: 'refactor the auth module across files and rewrite the token handler',
+        toolLoopBaseBudget: 6,
+        toolLoopMaxBudget: 6,
+      })) {
+        chunks.push(chunk);
+      }
+
+      // The gate fired (blocked the write) and the circuit breaker ended the turn.
+      expect(chunks.some((c: any) => c.type === 'status' && /solo-coding gate/.test(c.content))).toBe(true);
+      expect(chunks.some((c: any) => c.type === 'error' && /circuit breaker/.test(c.content))).toBe(true);
+
+      // The grounded-write fire flushed as UNRESOLVED (aborted finalize), not averted.
+      const counters = readGuardCounters();
+      const cell = counters?.byEngineGuard?.['api-abort-test']?.['grounded-write'];
+      expect(cell?.fires).toBe(1);
+      expect(cell?.unresolved).toBe(1);
+      expect(cell?.averted ?? 0).toBe(0);
+    } finally {
+      if (prevTelemetry === undefined) delete process.env.AGON_GUARD_TELEMETRY;
+      else process.env.AGON_GUARD_TELEMETRY = prevTelemetry;
+      cleanupTestAgonHome(homeDir);
+    }
+  }, 20000);
 });

@@ -22,11 +22,11 @@ import { formatModeRationale } from '../cesar/mode-rationale.js';
 
 import type { ModeRationale } from '../cesar/mode-rationale.js';
 
-import { buildPlanPhaseGauge, buildExecutionRailTimeline } from './status-helpers.js';
+import { buildPlanPhaseGauge, buildExecutionRailTimeline, buildGuardTelemetryView, loadGuardTelemetrySnapshot } from './status-helpers.js';
 
 // ── Module: StatusHelperExports ──
 
-export { buildPlanPhaseGauge, buildExecutionRailTimeline } from './status-helpers.js';
+export { buildPlanPhaseGauge, buildExecutionRailTimeline, buildGuardTelemetryView, loadGuardTelemetrySnapshot } from './status-helpers.js';
 
 // @kern-source: status:26
 export function SpinnerBlock({ message, color }: { message:string; color?:number }) {
@@ -150,6 +150,44 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
     : 'healthy';
   const fallbacks = (recentFallbacks ?? []).slice(-4).reverse();
 
+  // Guard telemetry (Phase 0): pure render from the 60s-memoized counters
+  // snapshot. loadGuardTelemetrySnapshot() reads the file at most once per
+  // minute, so a poll tick never blocks on disk; the folded text is stable
+  // between turns, so it adds no per-tick churn that would wipe selection.
+  // When the counters file is absent/empty the view is hidden entirely.
+  const guard = buildGuardTelemetryView(loadGuardTelemetrySnapshot());
+  const recColor = (rec: string) => rec === 'relax' ? '#4ade80' : rec === 'keep' ? '#fbbf24' : '#6b7280';
+  const guardId = (id: string) => id.length > 16 ? id.slice(0, 15) + '…' : id.padEnd(16, ' ');
+  const engId = (id: string) => id.length > 14 ? id.slice(0, 13) + '…' : id.padEnd(14, ' ');
+  const num = (value: number, width: number) => String(value).padStart(width, ' ');
+  // ── Guard-table column widths (single source of truth so the header lines
+  // up cell-for-cell with the rendered rows below) ──
+  // Guard rows:   short(engineId,16)·' '·guardId(16)·' '·num(fires,5)·' '·
+  //   num(cer,4)%·' '·num(prv,4)%·' '·num(ovhd,4)ms·'  '·rec
+  // Engine rows:  engId(14)·' '·num(par,3)%·'  '·num(rtt,5)ms·' '·num(asm,5)ms
+  // Guard signal cells are now PER-GUARD (codex FIX 3c): each row labels its
+  // own two signals (CER/PRV, WHR/STL, or HI-HIT/LO-HIT) inside the cell, so
+  // the table header is generic. sig cell = label(6) + ' ' + num3 + '%'.
+  const GW = { engine: 16, guard: 16, fires: 5, sig: 11, ovhd: 6 }; // sig = 'LABEL'(6)+' '+num3+'%'; ovhd = num4+'ms' (or 'n/a')
+  const EW = { engine: 14, par: 4, rtt: 7, asm: 7 }; // par = num3+'%'; rtt/asm = num5+'ms'
+  const sigCell = (label: string, value: number) =>
+    `${label.padEnd(6).slice(0, 6)} ${num(value, 3)}%`;
+  // Left-align text columns (padEnd, like the cells); right-align numeric
+  // headers to their column's right edge (padStart, matching padStart cells).
+  const guardHeader =
+    'ENGINE'.padEnd(GW.engine) + ' ' +
+    'GUARD'.padEnd(GW.guard) + ' ' +
+    'FIRES'.padStart(GW.fires) + ' ' +
+    'SIG1'.padEnd(GW.sig) + ' ' +
+    'SIG2'.padEnd(GW.sig) + ' ' +
+    'OVHD'.padStart(GW.ovhd) + '  ' +
+    'REC';
+  const engineHeader =
+    'ENGINE'.padEnd(EW.engine) + ' ' +
+    'PAR%'.padStart(EW.par) + '  ' +
+    'RTT'.padStart(EW.rtt) + ' ' +
+    'ASM'.padStart(EW.asm);
+
   return (
     <Box flexDirection="column" borderStyle="single" borderColor={health === 'critical' ? '#ef4444' : health === 'degraded' ? '#f97316' : '#22d3ee'} paddingX={1}>
       <Text>
@@ -180,12 +218,49 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
       {fallbacks.map((fb: any, index: number) => (
         <Text key={index} color="#f97316">{`  ${fb.from} -> ${fb.to} (${fb.reason})`}</Text>
       ))}
+      {guard.visible ? <Text color="#22d3ee" bold>{'Guard telemetry (Phase 0)'}</Text> : null}
+      {guard.visible && guard.guardRows.length > 0 ? (
+        <Text dimColor>{guardHeader}</Text>
+      ) : null}
+      {guard.guardRows.map((g: any) => (
+        <Text key={g.key}>
+          <Text color={engineColor(g.engineId)} bold>{short(g.engineId, 16)}</Text>
+          <Text dimColor>{' '}</Text>
+          <Text dimColor>{guardId(g.guardId)}</Text>
+          <Text>{' '}</Text>
+          <Text color="#94a3b8">{num(g.fires, 5)}</Text>
+          <Text>{' '}</Text>
+          <Text color="#94a3b8">{sigCell(g.sig1Label, g.sig1Pct)}</Text>
+          <Text>{' '}</Text>
+          <Text color="#94a3b8">{sigCell(g.sig2Label, g.sig2Pct)}</Text>
+          <Text>{' '}</Text>
+          {g.avgOverheadMs < 0
+            ? <Text dimColor>{'   n/a'}</Text>
+            : <Text color={g.avgOverheadMs >= 50 ? '#f97316' : '#94a3b8'}>{`${num(g.avgOverheadMs, 4)}ms`}</Text>}
+          <Text>{'  '}</Text>
+          <Text color={recColor(g.recommendation)}>{g.recommendation === 'insufficient-data' ? 'n/a' : g.recommendation}</Text>
+        </Text>
+      ))}
+      {guard.visible && guard.engineRows.length > 0 ? (
+        <Text dimColor>{engineHeader}</Text>
+      ) : null}
+      {guard.engineRows.map((e: any) => (
+        <Text key={e.key}>
+          <Text color={engineColor(e.engineId)} bold>{engId(e.engineId)}</Text>
+          <Text>{' '}</Text>
+          <Text color="#94a3b8">{`${num(e.parallelRatePct, 3)}%`}</Text>
+          <Text>{'  '}</Text>
+          <Text color="#94a3b8">{`${num(e.avgRoundTripMs, 5)}ms`}</Text>
+          <Text>{' '}</Text>
+          <Text color="#94a3b8">{`${num(e.avgAssembleMs, 5)}ms`}</Text>
+        </Text>
+      ))}
     </Box>
   );
 });
 export { StatusDashboard };
 
-// @kern-source: status:220
+// @kern-source: status:295
 const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
   const planGauge = buildPlanPhaseGauge(activePlan, 10);
   const now = Date.now();
@@ -289,7 +364,7 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
 });
 export { ExecutionRail };
 
-// @kern-source: status:334
+// @kern-source: status:409
 const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive, width, maxRows, focused }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean; width?:number; maxRows?:number; focused?:boolean }) {
   const safeWidth = Math.max(32, Math.floor(Number(width ?? 42)));
   const safeRows = Math.max(8, Math.floor(Number(maxRows ?? 12)));
@@ -400,7 +475,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
 });
 export { ExecutionRailPanel };
 
-// @kern-source: status:460
+// @kern-source: status:535
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -419,7 +494,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:482
+// @kern-source: status:557
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, context, spinner, engines, jobs, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; context?:{pct:number,used:number,limit:number,compacted:number,cached:number,source?:string}|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; jobs?:Job[]; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

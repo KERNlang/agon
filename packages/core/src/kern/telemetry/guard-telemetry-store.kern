@@ -1,0 +1,283 @@
+// ── Phase 0 — Guard-fire telemetry: persistence (Module A2) ───────────
+// Append-only JSONL ledger + a small per-engine×guard counters snapshot,
+// both under ${AGON_HOME|~/.agon}/telemetry. Mirrors the glicko store's
+// persistence discipline: AGON_HOME resolved at CALL time (test isolation),
+// atomic temp-then-rename writes, and the counters read-modify-write under
+// withFileLock so two concurrent turn flushes can't clobber each other.
+//
+// TELEMETRY IS BEST-EFFORT AND MUST NEVER THROW INTO THE SESSION. Every
+// exported store fn wraps its whole body in try/catch and silently no-ops on
+// any failure — a wedged disk or a corrupt counters file degrades telemetry,
+// never the live turn. There is zero hot-path I/O: callers run these only in
+// the post-loop finally block.
+
+import from="node:fs" names="appendFileSync,existsSync,mkdirSync,readFileSync,renameSync,statSync,writeFileSync"
+import from="node:os" names="homedir"
+import from="node:path" names="join,resolve"
+import from="./guard-telemetry.js" names="GuardFireEvent,TurnTelemetryRecord,GuardResolutionLabel,GuardTelemetryThresholds,CalibrationBucket,GuardId" types=true
+import from="./guard-telemetry.js" names="GUARD_TELEMETRY_THRESHOLDS"
+import from="../blocks/file-lock.js" names="withFileLock"
+
+// ── Layout constants ──────────────────────────────────────────────────
+
+const name=GUARD_FIRES_FILE type=string value={{ 'guard-fires.jsonl' }}
+const name=GUARD_COUNTERS_FILE type=string value={{ 'guard-counters.json' }}
+
+const name=GUARD_FIRES_ROTATE_BYTES type=number value={{ 10 * 1024 * 1024 }}
+  doc "Rotate guard-fires.jsonl once it exceeds 10 MB: rename to `.1` (clobbering any prior `.1`) and start a fresh file. One generation of backlog is plenty for a Phase-0 week-1 sample."
+
+const name=GUARD_TELEMETRY_DISABLE_ENV type=string value={{ 'AGON_GUARD_TELEMETRY' }}
+  doc "Set AGON_GUARD_TELEMETRY=0 (or 'false'/'off') to disable all guard-telemetry persistence."
+
+// ── Counters shapes ───────────────────────────────────────────────────
+
+interface name=GuardCounterCell export=true
+  field name=fires type=number
+  field name=ceremony type=number
+  field name=prevented type=number
+  field name=redirected type=number
+  field name=averted type=number
+  field name=recovered type=number
+  field name=stalled type=number
+  field name=wouldHaveRecovered type=number
+  field name=unresolved type=number
+  field name=overheadMsTotal type=number
+  field name=highConfHit type=number optional=true
+    doc "report-confidence calibration buckets (codex FIX 3a). Optional so a counters file written before these fields existed loads fine — emptyCounterCell seeds them to 0 going forward, and the dashboard treats undefined as 0."
+  field name=highConfMiss type=number optional=true
+  field name=lowConfHit type=number optional=true
+  field name=lowConfMiss type=number optional=true
+  field name=noEdit type=number optional=true
+
+interface name=GuardTurnAggregate export=true
+  field name=turns type=number
+  field name=steps type=number
+  field name=totalToolCalls type=number
+  field name=parallelSteps type=number
+  field name=assembleMsTotal type=number
+  field name=roundTripMsTotal type=number
+
+interface name=GuardCounters export=true
+  field name=byEngineGuard type="Record<string, Record<string, GuardCounterCell>>"
+    doc "engineId → guardId → cell."
+  field name=byEngineTurns type="Record<string, GuardTurnAggregate>"
+    doc "engineId → per-engine turn aggregates."
+  field name=lastUpdated type=string
+
+// ── Path helpers (resolve AGON_HOME at call time) ──────────────────────
+
+fn name=guardTelemetryHome returns=string export=false
+  doc "Active Agon storage root, AGON_HOME-overridable. Resolved per-call so test isolation (process.env.AGON_HOME → tmpdir) always applies."
+  handler <<<
+    const override = process.env.AGON_HOME?.trim();
+    return override ? resolve(override) : join(homedir(), '.agon');
+  >>>
+
+fn name=guardTelemetryDir returns=string export=true
+  doc "Directory holding the guard-telemetry ledger + counters: ${AGON_HOME|~/.agon}/telemetry."
+  handler <<<
+    return join(guardTelemetryHome(), 'telemetry');
+  >>>
+
+fn name=guardFiresPath returns=string export=false expr={{ return join(guardTelemetryDir(), GUARD_FIRES_FILE); }}
+
+fn name=guardCountersPath returns=string export=false expr={{ return join(guardTelemetryDir(), GUARD_COUNTERS_FILE); }}
+
+fn name=guardCountersLockPath returns=string export=false expr={{ return guardCountersPath() + '.lock'; }}
+
+// ── Disable switch ────────────────────────────────────────────────────
+
+fn name=guardTelemetryEnabled returns=boolean export=true
+  doc "False when AGON_GUARD_TELEMETRY is set to '0', 'false', or 'off' (case-insensitive). Otherwise true — telemetry is on by default. Wrap every flush call site in this so a single env var fully disables the feature."
+  handler <<<
+    const raw = process.env[GUARD_TELEMETRY_DISABLE_ENV]?.trim().toLowerCase();
+    if (raw === '0' || raw === 'false' || raw === 'off') return false;
+    return true;
+  >>>
+
+// ── Append (JSONL + rotation) ─────────────────────────────────────────
+
+fn name=appendGuardTelemetry params="events:GuardFireEvent[], turn:TurnTelemetryRecord" returns=void export=true
+  doc "Append the turn's guard-fire events + the turn record to guard-fires.jsonl as one JSONL block (single appendFileSync, no fsync). Rotates to `.1` first if the file already exceeds 10 MB. Best-effort: any failure (unwritable dir, full disk) is swallowed — telemetry never throws into the session."
+  handler <<<
+    try {
+      const dir = guardTelemetryDir();
+      mkdirSync(dir, { recursive: true });
+      const path = guardFiresPath();
+
+      // Rotate BEFORE appending if the existing file is over the cap, so the
+      // live file stays bounded. A failed rotate just means we keep appending
+      // to the current file — never a thrown error.
+      try {
+        if (existsSync(path) && statSync(path).size > GUARD_FIRES_ROTATE_BYTES) {
+          renameSync(path, path + '.1');
+        }
+      } catch {
+        /* rotation is best-effort */
+      }
+
+      const lines: string[] = [];
+      for (const ev of events) {
+        // rawContent exists only for in-turn similarity scoring — raw file
+        // bytes never land on disk; the ledger keeps argsPreview + contentHash.
+        const sanitized = Array.isArray(ev.blockedCalls) && ev.blockedCalls.some(bc => bc.rawContent !== undefined)
+          ? { ...ev, blockedCalls: ev.blockedCalls.map(({ rawContent: _raw, ...rest }) => rest) }
+          : ev;
+        lines.push(JSON.stringify(sanitized));
+      }
+      lines.push(JSON.stringify(turn));
+      appendFileSync(path, lines.join('\n') + '\n');
+    } catch {
+      /* telemetry is best-effort — swallow all I/O failures */
+    }
+  >>>
+
+// ── Counters (read-modify-write under lock) ───────────────────────────
+
+fn name=emptyCounterCell returns=GuardCounterCell export=false
+  handler lang="kern"
+    return value="{ fires: 0, ceremony: 0, prevented: 0, redirected: 0, averted: 0, recovered: 0, stalled: 0, wouldHaveRecovered: 0, unresolved: 0, overheadMsTotal: 0, highConfHit: 0, highConfMiss: 0, lowConfHit: 0, lowConfMiss: 0, noEdit: 0 }"
+
+fn name=emptyTurnAggregate returns=GuardTurnAggregate export=false
+  handler lang="kern"
+    return value="{ turns: 0, steps: 0, totalToolCalls: 0, parallelSteps: 0, assembleMsTotal: 0, roundTripMsTotal: 0 }"
+
+fn name=loadGuardCounters returns=GuardCounters export=false
+  doc "Load the counters file, normalizing a missing/corrupt file to an empty record. Never throws."
+  handler <<<
+    try {
+      const parsed = JSON.parse(readFileSync(guardCountersPath(), 'utf-8')) as GuardCounters;
+      parsed.byEngineGuard ??= {};
+      parsed.byEngineTurns ??= {};
+      return parsed;
+    } catch {
+      return { byEngineGuard: {}, byEngineTurns: {}, lastUpdated: new Date().toISOString() };
+    }
+  >>>
+
+fn name=saveGuardCounters params="counters:GuardCounters" returns=void export=false
+  doc "Atomic temp-then-rename write of the counters file. Caller already holds the lock."
+  handler <<<
+    counters.lastUpdated = new Date().toISOString();
+    const path = guardCountersPath();
+    mkdirSync(guardTelemetryDir(), { recursive: true });
+    const tmp = path + '.tmp';
+    writeFileSync(tmp, JSON.stringify(counters, null, 2) + '\n');
+    renameSync(tmp, path);
+  >>>
+
+fn name=labelToCounterKey params="label:GuardResolutionLabel" returns="keyof GuardCounterCell | null" export=false
+  doc "Map a resolution label to the counter cell field it increments. Labels with no own counter (none today) return null."
+  handler <<<
+    switch (label) {
+      case 'ceremony': return 'ceremony';
+      case 'prevented': return 'prevented';
+      case 'redirected': return 'redirected';
+      case 'averted': return 'averted';
+      case 'recovered': return 'recovered';
+      case 'stalled': return 'stalled';
+      case 'would_have_recovered': return 'wouldHaveRecovered';
+      case 'unresolved': return 'unresolved';
+      default: return null;
+    }
+  >>>
+
+fn name=calibrationBucketToCounterKey params="bucket:CalibrationBucket" returns="keyof GuardCounterCell" export=false
+  doc "Map a ReportConfidence calibration bucket to its counter cell field (codex FIX 3a)."
+  handler <<<
+    switch (bucket) {
+      case 'high_conf_hit': return 'highConfHit';
+      case 'high_conf_miss': return 'highConfMiss';
+      case 'low_conf_hit': return 'lowConfHit';
+      case 'low_conf_miss': return 'lowConfMiss';
+      default: return 'noEdit';
+    }
+  >>>
+
+fn name=applyGuardCounters params="counters:GuardCounters, events:GuardFireEvent[], turn:TurnTelemetryRecord" returns=void export=true
+  doc "Pure in-memory fold of one turn's events + record into the counters. Per engineId×guardId: bump fires, the resolution-label tally, overheadMsTotal, AND (codex FIX 3a) the report-confidence calibration bucket from event.calibrationBucket when present. Per engineId: bump the turn aggregates. Exported (no I/O) so the aggregation logic is unit-testable without the fs or the lock."
+  handler <<<
+    for (const ev of events) {
+      const byGuard = (counters.byEngineGuard[ev.engineId] ??= {});
+      const cell = (byGuard[ev.guardId] ??= emptyCounterCell());
+      cell.fires += 1;
+      cell.overheadMsTotal += ev.fireOverheadMs;
+      const key = labelToCounterKey(ev.resolution.label);
+      if (key) (cell[key] as number) += 1;
+      // codex FIX 3a: tally the ReportConfidence calibration bucket so the
+      // report-confidence guard's hit/miss split is countable in the dashboard.
+      if (ev.calibrationBucket) {
+        const bk = calibrationBucketToCounterKey(ev.calibrationBucket);
+        (cell[bk] as number) = ((cell[bk] as number) ?? 0) + 1;
+      }
+    }
+    const agg = (counters.byEngineTurns[turn.engineId] ??= emptyTurnAggregate());
+    agg.turns += 1;
+    agg.steps += turn.steps;
+    agg.totalToolCalls += turn.totalToolCalls;
+    agg.parallelSteps += turn.parallelSteps;
+    agg.assembleMsTotal += turn.assembleMs;
+    for (const ms of turn.roundTripMsPerStep) agg.roundTripMsTotal += ms;
+  >>>
+
+fn name=updateGuardCounters params="events:GuardFireEvent[], turn:TurnTelemetryRecord" returns=void export=true
+  doc "Read-modify-write guard-counters.json under the cross-process lock (load → fold this turn in → atomic save). Best-effort: a contended lock or any I/O failure is swallowed, never thrown into the session."
+  handler <<<
+    try {
+      withFileLock(guardCountersLockPath(), () => {
+        const counters = loadGuardCounters();
+        applyGuardCounters(counters, events, turn);
+        saveGuardCounters(counters);
+      });
+    } catch {
+      /* telemetry is best-effort — swallow lock/I/O failures */
+    }
+  >>>
+
+fn name=readGuardCounters returns="GuardCounters | null" export=true
+  doc "Read the counters snapshot for the status dashboard. Returns null when the file is absent (so the dashboard can hide the section entirely) or unreadable. Never throws."
+  handler <<<
+    try {
+      if (!existsSync(guardCountersPath())) return null;
+      const parsed = JSON.parse(readFileSync(guardCountersPath(), 'utf-8')) as GuardCounters;
+      parsed.byEngineGuard ??= {};
+      parsed.byEngineTurns ??= {};
+      return parsed;
+    } catch {
+      return null;
+    }
+  >>>
+
+// ── Week-1 recommendation ─────────────────────────────────────────────
+
+fn name=recommendGuardAction params="guardId:GuardId, c:GuardCounterCell, t?:GuardTelemetryThresholds" returns="'relax' | 'keep' | 'insufficient-data'" export=true
+  doc "The week-1 relax/keep rule, now PER-GUARD (codex FIX 3b) — the resolved-fire set + the relax test differ by guard, so a single ceremony-based rule was meaningless for read-spin and report-confidence.
+
+  grounded-write: resolved = ceremony + prevented (fires with a confident write-verdict). Below t.minSample resolved → insufficient-data. Else mostly-ceremony (ceremony/resolved > t.ceremonyRate) AND cheap (avg overhead per fire < t.avgOverheadMs) → relax; else keep. Avg overhead is over ALL fires (overheadMsTotal/fires), guarding fires=0.
+
+  read-spin: resolved = wouldHaveRecovered + stalled + recovered. Below readSpin.minSample → insufficient-data. Else wouldHaveRecovered/resolved > readSpin.wouldHaveRecoveredRate (the model usually pivots on its own → the nudge is mostly unnecessary) → relax; else keep.
+
+  report-confidence: ALWAYS insufficient-data in Phase 0. The P1 guard-pipeline program — not this week-1 rule — owns the ReportConfidence demotion decision; Phase 0 only COLLECTS the calibration buckets (highConfHit/Miss, lowConfHit/Miss, noEdit) the dashboard now surfaces, so there is no relax/keep call to make here yet."
+  handler <<<
+    const thresholds = t ?? GUARD_TELEMETRY_THRESHOLDS;
+    if (guardId === 'read-spin') {
+      const rs = thresholds.readSpin ?? GUARD_TELEMETRY_THRESHOLDS.readSpin!;
+      const resolved = (c.wouldHaveRecovered ?? 0) + (c.stalled ?? 0) + (c.recovered ?? 0);
+      if (resolved < rs.minSample) return 'insufficient-data';
+      const whrRatio = resolved > 0 ? (c.wouldHaveRecovered ?? 0) / resolved : 0;
+      return whrRatio > rs.wouldHaveRecoveredRate ? 'relax' : 'keep';
+    }
+    if (guardId === 'report-confidence') {
+      // Phase 0 only collects calibration data; P1 decides demotion (see doc).
+      return 'insufficient-data';
+    }
+    // grounded-write (default)
+    const resolved = c.ceremony + c.prevented;
+    if (resolved < thresholds.minSample) return 'insufficient-data';
+    const avgOverheadMs = c.fires > 0 ? c.overheadMsTotal / c.fires : 0;
+    const ceremonyRatio = resolved > 0 ? c.ceremony / resolved : 0;
+    if (ceremonyRatio > thresholds.ceremonyRate && avgOverheadMs < thresholds.avgOverheadMs) {
+      return 'relax';
+    }
+    return 'keep';
+  >>>

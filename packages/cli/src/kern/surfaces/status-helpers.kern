@@ -1,3 +1,10 @@
+// Guard-telemetry dashboard helpers reach into @kernlang/agon-core for the
+// week-1 relax/keep rule + the on-disk counters snapshot. The render path only
+// ever touches the MEMOIZED snapshot (loadGuardTelemetrySnapshot) so a poll
+// tick never lands a synchronous file read on the Ink event loop.
+import from="@kernlang/agon-core" names="readGuardCounters,recommendGuardAction"
+import from="@kernlang/agon-core" names="GuardCounters,GuardCounterCell,GuardTurnAggregate" types=true
+
 fn name=buildPlanPhaseGauge params="plan:any,width:number=12" returns=any export=true
   doc "Build a compact phase/progress gauge from a CesarPlan-like object. Pure helper so tests can verify plan progress without rendering Ink."
   handler lang="kern"
@@ -157,4 +164,133 @@ fn name=buildExecutionRailTimeline params="activePlan:any,lastTool:any,engines:a
     }
 
     return rows.slice(-maxRows);
+  >>>
+
+// ── Guard telemetry (Phase 0) — dashboard helpers ─────────────────────
+//
+// The StatusDashboard surfaces the on-disk guard-fire counters
+// (${AGON_HOME|~/.agon}/telemetry/guard-counters.json) so the user can watch
+// each engine×guard's ceremony/prevented split and the week-1 relax/keep call.
+// readGuardCounters() is a SYNCHRONOUS file read, so it must never run on every
+// repaint of the always-open StatusBar nor on every telemetry poll tick while
+// the dashboard is open. loadGuardTelemetrySnapshot() memoizes it for 60s
+// (mirroring the cheap-snapshot spirit of runs-store): the render path reads
+// the cached value, and the section's rendered text only changes when a turn
+// actually finishes (rare) or the cache refreshes — so it never introduces
+// per-poll churn that would wipe the user's terminal text selection.
+
+const name=GUARD_TELEMETRY_SNAPSHOT_TTL_MS type=number value={{ 60 * 1000 }}
+  doc "Re-read guard-counters.json at most once per 60s for the dashboard. Counters only change when a turn finalizes, so a minute-stale view is fine and keeps the synchronous file read off the hot poll path."
+
+const name=guardTelemetrySnapshotCache value={{ { at: 0, home: '', value: null as (import('@kernlang/agon-core').GuardCounters | null) } }}
+  doc "Module-level {at, home, value} memo for the dashboard's guard-counters snapshot. `home` keys the entry to the AGON_HOME that produced it so an in-process AGON_HOME change (tests, embedded use) can never serve another home's counters for up to a TTL. Mutated in place by loadGuardTelemetrySnapshot; never frozen at module load."
+
+fn name=loadGuardTelemetrySnapshot returns="GuardCounters | null" export=true
+  doc "Memoized accessor for the guard-telemetry counters used by the StatusDashboard. Calls the synchronous readGuardCounters() at most once per GUARD_TELEMETRY_SNAPSHOT_TTL_MS; returns the cached value (or null when the counters file is absent) on every call in between. Safe to call from the render path — at most one file read per 60s, never per poll tick. Best-effort: any read failure surfaces as null and the section hides."
+  handler <<<
+    const now = Date.now();
+    // readGuardCounters resolves AGON_HOME per call — key the memo to the
+    // current home so an in-process change invalidates instead of serving
+    // another home's counters for up to a TTL.
+    const home = process.env.AGON_HOME?.trim() ?? '';
+    // at !== 0 marks "a read happened" — a cached null (counters file absent)
+    // honours the TTL too, otherwise every render retries the sync read.
+    if (guardTelemetrySnapshotCache.at !== 0
+      && guardTelemetrySnapshotCache.home === home
+      && now - guardTelemetrySnapshotCache.at < GUARD_TELEMETRY_SNAPSHOT_TTL_MS) {
+      return guardTelemetrySnapshotCache.value;
+    }
+    let value: GuardCounters | null;
+    try {
+      value = readGuardCounters();
+    } catch {
+      value = null;
+    }
+    guardTelemetrySnapshotCache.at = now;
+    guardTelemetrySnapshotCache.home = home;
+    guardTelemetrySnapshotCache.value = value;
+    return value;
+  >>>
+
+fn name=buildGuardTelemetryView params="counters:GuardCounters | null" returns=any export=true
+  doc "Fold the guard-counters snapshot into compact, render-ready rows for the StatusDashboard. PURE (no I/O) so it's fully unit-testable from synthetic counters. Returns { visible, guardRows, engineRows }. visible is false when counters is null OR has no engine-guard cells AND no turn aggregates. codex FIX 3c: guardRows are PER-GUARD so no row shows a permanently-0% column. Each guardRow carries two GENERIC signal cells (sig1Label/sig1Pct, sig2Label/sig2Pct) whose meaning depends on the guard, plus fires, avgOverheadMs (-1 renders as 'n/a'), and the per-guard recommendation. grounded-write -> CER/PRV over resolved=ceremony+prevented, overhead=overheadMsTotal/fires. read-spin -> WHR/STL over resolved=wouldHaveRecovered+stalled+recovered. report-confidence -> HI-HIT (highConfHit/(highConfHit+highConfMiss)) / LO-HIT (lowConfHit/(lowConfHit+lowConfMiss)), avgOverheadMs=-1, recommendation insufficient-data in Phase 0. Each pct is 0 when its denominator is 0. Per-engine engineRow: { key, engineId, parallelRatePct, avgRoundTripMs, avgAssembleMs } each 0 when its denominator is 0."
+  handler <<<
+    const byEngineGuard: Record<string, Record<string, GuardCounterCell>> = (counters && counters.byEngineGuard) ? counters.byEngineGuard : {};
+    const byEngineTurns: Record<string, GuardTurnAggregate> = (counters && counters.byEngineTurns) ? counters.byEngineTurns : {};
+
+    const ratio = (num: number, den: number): number => (den > 0 ? num / den : 0);
+    const pct = (num: number, den: number): number => Math.round(ratio(num, den) * 100);
+
+    const guardRows: Array<{
+      key: string; engineId: string; guardId: string; fires: number;
+      sig1Label: string; sig1Pct: number; sig2Label: string; sig2Pct: number;
+      avgOverheadMs: number; // -1 => render 'n/a'
+      recommendation: 'relax' | 'keep' | 'insufficient-data';
+    }> = [];
+
+    // Stable order: engine ids then guard ids, both alphabetical, so the
+    // rendered text is deterministic across polls (no per-tick reordering churn).
+    for (const engineId of Object.keys(byEngineGuard).sort()) {
+      const guards = byEngineGuard[engineId] ?? {};
+      for (const guardId of Object.keys(guards).sort()) {
+        const cell = guards[guardId];
+        if (!cell) continue;
+        const fires = cell.fires ?? 0;
+        // Per-guard signal cells (codex FIX 3c): never a column that is 0% by
+        // construction for this guard.
+        let sig1Label = 'CER'; let sig1Pct = 0;
+        let sig2Label = 'PRV'; let sig2Pct = 0;
+        let avgOverheadMs = fires > 0 ? Math.round((cell.overheadMsTotal ?? 0) / fires) : 0;
+        if (guardId === 'read-spin') {
+          const resolvedRS = (cell.wouldHaveRecovered ?? 0) + (cell.stalled ?? 0) + (cell.recovered ?? 0);
+          sig1Label = 'WHR'; sig1Pct = pct(cell.wouldHaveRecovered ?? 0, resolvedRS);
+          sig2Label = 'STL'; sig2Pct = pct(cell.stalled ?? 0, resolvedRS);
+        } else if (guardId === 'report-confidence') {
+          const hiDen = (cell.highConfHit ?? 0) + (cell.highConfMiss ?? 0);
+          const loDen = (cell.lowConfHit ?? 0) + (cell.lowConfMiss ?? 0);
+          sig1Label = 'HI-HIT'; sig1Pct = pct(cell.highConfHit ?? 0, hiDen);
+          sig2Label = 'LO-HIT'; sig2Pct = pct(cell.lowConfHit ?? 0, loDen);
+          avgOverheadMs = -1; // self-report: no meaningful overhead, REC renders n/a
+        } else {
+          const resolved = (cell.ceremony ?? 0) + (cell.prevented ?? 0);
+          sig1Label = 'CER'; sig1Pct = pct(cell.ceremony ?? 0, resolved);
+          sig2Label = 'PRV'; sig2Pct = pct(cell.prevented ?? 0, resolved);
+        }
+        guardRows.push({
+          key: `${engineId}${guardId}`,
+          engineId,
+          guardId,
+          fires,
+          sig1Label, sig1Pct, sig2Label, sig2Pct,
+          avgOverheadMs,
+          recommendation: recommendGuardAction(guardId as any, cell),
+        });
+      }
+    }
+
+    const engineRows: Array<{
+      key: string; engineId: string; parallelRatePct: number;
+      avgRoundTripMs: number; avgAssembleMs: number; steps: number; turns: number;
+    }> = [];
+    for (const engineId of Object.keys(byEngineTurns).sort()) {
+      const agg = byEngineTurns[engineId];
+      if (!agg) continue;
+      const steps = agg.steps ?? 0;
+      const turns = agg.turns ?? 0;
+      engineRows.push({
+        key: engineId,
+        engineId,
+        parallelRatePct: pct(agg.parallelSteps ?? 0, steps),
+        avgRoundTripMs: steps > 0 ? Math.round((agg.roundTripMsTotal ?? 0) / steps) : 0,
+        avgAssembleMs: turns > 0 ? Math.round((agg.assembleMsTotal ?? 0) / turns) : 0,
+        steps,
+        turns,
+      });
+    }
+
+    return {
+      visible: guardRows.length > 0 || engineRows.length > 0,
+      guardRows,
+      engineRows,
+    };
   >>>

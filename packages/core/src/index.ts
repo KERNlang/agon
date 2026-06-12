@@ -337,3 +337,19 @@ export { getTeamElo, updateTeamElo, predictTeamRating } from './generated/teams/
 export type { TeamCompositionRating, TeamRoleRating, TeamEloRecord } from './generated/teams/team-elo.js';
 export { buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown, embedTexts, embedSidecarHint, ragDir, loadRagIndex, cosineTopK, isGrounded, formatCitedBlocks, formatCitationFootnotes, RAG_DEFAULT_TOP_K, RAG_GROUNDED_MIN_SCORE } from './rag.js';
 export type { RagChunk, RagHit, RagManifest, RagIndexResult, RagQueryResult } from './rag.js';
+// ── Guard-fire telemetry (Phase 0) — pure tracker (Module A) + JSONL/counters store (Module A2) ──
+export {
+  normalizeForHash, contentHashOf, tokenSetJaccard,
+  deriveGroundedWriteResolution, deriveGroundedWriteResolutionMulti, deriveCalibrationBucket,
+  createTurnTracker, GuardTurnTracker,
+  GUARD_TELEMETRY_THRESHOLDS,
+  guardTelemetryDir, guardTelemetryEnabled,
+  appendGuardTelemetry, applyGuardCounters, updateGuardCounters,
+  readGuardCounters, recommendGuardAction,
+} from './telemetry.js';
+export type {
+  GuardId, GuardResolutionLabel, CalibrationBucket,
+  BlockedCallInfo, GuardFireResolution, GuardFireEvent,
+  TurnTelemetryRecord, GuardTelemetryThresholds, ReadSpinThresholds,
+  GuardCounterCell, GuardTurnAggregate, GuardCounters,
+} from './telemetry.js';

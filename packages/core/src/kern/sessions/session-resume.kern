@@ -1,11 +1,15 @@
 import from="node:child_process" names="spawn"
 import from="node:child_process" names="ChildProcess" types=true
 import from="node:readline" names="createInterface"
+import from="node:crypto" names="randomUUID"
 import from="../api/dispatch.js" names="apiStreamDispatchWithHistory,apiDispatch"
 import from="./compaction.js" names="findSafeKeepStart,buildCompactionSummary,renderCompactionText,buildSummarizationContext,buildCompactionPrompt"
 import from="../blocks/image.js" names="encodeImagesForDispatch"
 import from="../signals/session-store.js" names="saveSessionState,loadSessionState,saveToolResultToDisk,loadToolResultFromDisk,pruneToolCache,loadConversation"
 import from="../tools/tool-parser.js" names="parseToolCalls,toolCallsToApiFormat"
+import from="../telemetry/guard-telemetry.js" names="createTurnTracker,contentHashOf"
+import from="../telemetry/guard-telemetry.js" names="BlockedCallInfo" types=true
+import from="../telemetry/guard-telemetry-store.js" names="guardTelemetryEnabled,appendGuardTelemetry,updateGuardCounters"
 import from="../models/context-parts.js" names="CompactionSummaryPart,ToolCacheEntry" types=true
 import from="./persistent-session.js" names="PersistentSessionConfig,PersistentSession,SessionChunk,SessionSendOptions" types=true
 
@@ -255,6 +259,48 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
 
         // API-only engines: use HTTP dispatch with conversation history
         if (config.engine.api && !config.binaryPath) {
+          // ── Phase-0 guard telemetry: per-turn tracker ──
+          // SCOPE: API-path only, BY DESIGN. The three measured guards
+          // (solo-coding gate, read-spin breaker, ReportConfidence) exist only
+          // in this branch — the CLI-binary spawn path below has no guards to
+          // instrument, so its sessions are intentionally absent from the
+          // counters (the per-engine relax decision is API-engines-only).
+          // One tracker per send()/turn. It accumulates guard fires + timing
+          // IN MEMORY only (zero hot-path I/O); the post-loop finally block
+          // flushes it once to disk. assembleMs is the prompt-assembly cost
+          // (send() entry → first dispatch); we mark entry NOW and record it
+          // just before the first apiStreamDispatchWithHistory call below.
+          const guardSendEntryMs = performance.now();
+          const guardTracker = createTurnTracker(config.engine.id, randomUUID());
+          // Evaluate the telemetry kill switch ONCE per turn (reading process.env
+          // per step is needless churn). Reused at the read-spin site and in the
+          // finally flush below. Kill switch: AGON_GUARD_TELEMETRY=0.
+          const guardTelemOn = guardTelemetryEnabled();
+          let guardAssembleRecorded = false;
+          let guardDoneNormally = false;
+          // ── Read-spin deferral cost accounting (FIX 3) ──
+          // The most recent step's measured round-trip wall time. A DEFERRED
+          // read-spin fire that expires into the recovery path (the deferral let
+          // one extra zero-new-info read-only step run before nudging) charges
+          // THAT wasted step's roundTripMs to the fire's fireOverheadMs, so the
+          // week-1 cheap-half (avgOverheadMs) reflects the deferral's real cost.
+          let lastRoundTripMs = 0;
+          // Read-spin delayed-observation state (telemetry-gated; see the
+          // read-spin block below). When the no-new-info counter first crosses
+          // 3 we DEFER the recovery nudge by one step and record a deferred
+          // read-spin fire; the NEXT read-only-step evaluation resolves it.
+          let readSpinDeferredFireId: string | null = null;
+          let readSpinDeferredSeenKeys = 0;
+          // A read-spin fire whose deferral expired and whose recovery nudge has
+          // fired — awaiting a 'recovered' (model acted: write/finish) or
+          // 'stalled' (hard-stop) verdict.
+          let readSpinRecoveryFireId: string | null = null;
+          // The wasted-round-trip cost (FIX 3) carried with readSpinRecoveryFireId:
+          // captured from lastRoundTripMs at the moment the deferral EXPIRED into
+          // the recovery path (= the extra zero-new-info read-only step the guard
+          // let run before nudging). Charged to the fire's fireOverheadMs when the
+          // recovery verdict ('recovered'/'stalled') is recorded.
+          let readSpinRecoveryCostMs = 0;
           // Serialize with any in-flight compact(): it rewrites messageHistory.
           if (compactPromise) {
             try { await compactPromise; } catch { /* compaction failure must not block the turn */ }
@@ -560,6 +606,15 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           const singleFileMatch = opts.message.match(/\b([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})\b/);
           const isSingleFileMention = singleFileMatch && !opts.message.includes(' and ') && !isComplexTask;
 
+          // ── Phase-0 telemetry flush boundary ──
+          // try/finally around the agentic loop + post-turn bookkeeping so the
+          // tracker is finalized + persisted EXACTLY ONCE on every exit path:
+          // normal break/return, budget exhaustion, error break, abort, AND a
+          // consumer abandoning the generator (.return() still runs this finally).
+          // The flush is in-memory finalize() → best-effort disk write; both store
+          // fns swallow their own errors, and the whole body is wrapped in try/catch
+          // so telemetry can NEVER throw into the session. The finally yields nothing.
+          try {
           while (step < budget) {
             step++;
             let fullResponse = '';
@@ -576,6 +631,15 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
             // Anchor for real-usage projection: messages at index >= this were
             // appended AFTER this dispatch (withImages clones, same count).
             const sentHistoryLength = messageHistory.length;
+            // ── Telemetry: assemble + round-trip timing ──
+            // assembleMs = send() entry → the FIRST dispatch (recorded once).
+            // roundTripMs = wall time consuming this step's dispatch stream;
+            // recorded into the tracker when parsedCalls.length is known.
+            if (!guardAssembleRecorded) {
+              guardTracker.recordAssembleMs(performance.now() - guardSendEntryMs);
+              guardAssembleRecorded = true;
+            }
+            const guardRoundTripStart = performance.now();
             const gen = apiStreamDispatchWithHistory(config.engine.api, withImages(messageHistory), config.engine.timeout ?? 180, opts.signal, effectiveTools);
             try {
               while (true) {
@@ -770,6 +834,20 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 repeatedReadOnlyRetrySteps = 0;
               }
               lastReadOnlySignature = readOnlySignature;
+              // ── Telemetry (FIX 4): record this committed model round-trip ONCE,
+              // here — BEFORE the read-spin recovery `continue` and the read-spin
+              // hard-stop `break` below. The wasted duplicate-read round-trips that
+              // TRIGGER recovery are real model round-trips; recording them only at
+              // the post-recovery execute site (the old call site) dropped them
+              // from turn.steps/roundTripMsPerStep and biased avg round-trip
+              // downward exactly on the steps Phase 0 measures. This is the single
+              // recordStep site for every tool-bearing step (the terminal no-tool
+              // path keeps its own recordStep with toolCallCount:0). lastRoundTripMs
+              // is NOT updated here — it is set at the post-recovery execute site so
+              // the deferral-resolution block below still reads the PRIOR step's
+              // round-trip when charging readSpinRecoveryCostMs (FIX 3).
+              const guardStepRoundTripMs = performance.now() - guardRoundTripStart;
+              guardTracker.recordStep(step, { roundTripMs: guardStepRoundTripMs, toolCallCount: parsedCalls.length });
               // ── Generalized re-read spin signal (see decls above) ──
               // Accumulate read-keys across the turn: a read-only step that adds NO
               // new key is an exact re-read (full-arg keys ⇒ different files / wider
@@ -783,7 +861,61 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 noNewInfoReadSteps = 0;
               }
               const readSpin = noNewInfoReadSteps >= 3;
-              if ((readOnlyStep && staleReadRetryText && parsedCalls.length > 20) || repeatedReadOnlyRetrySteps >= 3 || readSpin) {
+              // ── Telemetry: resolve a previously DEFERRED read-spin fire ──
+              // A deferral skipped recovery for one step to observe whether the
+              // model would pivot on its own. Evaluate that here, on the next
+              // read-only-step evaluation: a pivot (this step is not read-only,
+              // OR it introduced new read-keys) means the nudge would have been
+              // unnecessary → 'would_have_recovered'. Still zero-new-info read-
+              // only → the deferral expires and the EXISTING recovery nudge fires
+              // this step (the fire moves into the recovery-verdict phase).
+              // guardTelemOn is the once-per-turn hoist (FIX 4) — no per-step env read.
+              if (readSpinDeferredFireId !== null) {
+                const pivoted = !readOnlyStep || newReadKeys.length > 0 || seenReadKeys.size > readSpinDeferredSeenKeys;
+                if (pivoted) {
+                  // Model pivoted on its own — the nudge never fired, so the guard
+                  // imposed no extra round-trip. No cost is charged (FIX 3).
+                  guardTracker.recordReadSpinOutcome(readSpinDeferredFireId, 'would_have_recovered');
+                  readSpinDeferredFireId = null;
+                } else {
+                  // Deferral expires: hand this fire to the recovery-verdict phase
+                  // and let today's recovery nudge fire below (readSpin is true).
+                  // The deferral let one extra zero-new-info read-only step run
+                  // (lastRoundTripMs = that wasted step's round-trip); carry that
+                  // cost so the recovery verdict charges it to fireOverheadMs (FIX 3).
+                  readSpinRecoveryFireId = readSpinDeferredFireId;
+                  readSpinRecoveryCostMs = lastRoundTripMs;
+                  readSpinDeferredFireId = null;
+                }
+              }
+              // readSpin is the SOLE trigger when neither hard ceiling fires.
+              const readSpinSoleTrigger = readSpin
+                && !(readOnlyStep && staleReadRetryText && parsedCalls.length > 20)
+                && !(repeatedReadOnlyRetrySteps >= 3);
+              // Phase-0 DELAYED OBSERVATION (telemetry-gated): the FIRST time the
+              // no-new-info counter crosses 3 as the sole trigger, record a
+              // deferred read-spin fire, SKIP recovery this step (let the batch
+              // execute normally), and resolve it on the next evaluation above.
+              // Disabled-telemetry behavior is byte-identical to before (no defer).
+              //
+              // INTENTIONAL one-step deferral (NOT a bug): this is the Phase-0
+              // delayed-observation INSTRUMENT — it costs one extra round-trip on
+              // the first crossing so the tracker can measure whether the model
+              // would have pivoted on its own (would_have_recovered) instead of
+              // assuming the nudge was necessary. It was tribunal-validated and is
+              // DEFAULT-ON; the kill switch is AGON_GUARD_TELEMETRY=0 (turns this
+              // whole block off, restoring byte-identical immediate-recovery
+              // behavior). It is EXPECTED TO BE REMOVED/REPLACED when the P1 guard
+              // pipeline ships — at which point the guard decision is made from the
+              // accumulated counters, not re-measured live per turn.
+              if (guardTelemOn && readSpinSoleTrigger && readSpinDeferredFireId === null && readSpinRecoveryFireId === null) {
+                const t0 = performance.now();
+                const fid = guardTracker.recordFire('read-spin', step, [], 0, { deferred: true });
+                guardTracker.addGuardOverheadMs(performance.now() - t0);
+                readSpinDeferredFireId = fid;
+                readSpinDeferredSeenKeys = seenReadKeys.size;
+                // Fall through: do NOT enter the recovery block — the reads run.
+              } else if ((readOnlyStep && staleReadRetryText && parsedCalls.length > 20) || repeatedReadOnlyRetrySteps >= 3 || readSpin) {
                 if (messageHistory[messageHistory.length - 1] === assistToolMsg) {
                   messageHistory.pop();
                 }
@@ -800,6 +932,14 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                   });
                   continue;
                 }
+                // Hard-stop after recovery: a read-spin fire in the recovery phase
+                // stalled (kept spinning past the nudge). Charge the deferral's
+                // wasted-round-trip cost to this fire (FIX 3).
+                if (readSpinRecoveryFireId !== null) {
+                  guardTracker.recordReadSpinOutcome(readSpinRecoveryFireId, 'stalled', readSpinRecoveryCostMs);
+                  readSpinRecoveryFireId = null;
+                  readSpinRecoveryCostMs = 0;
+                }
                 yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after recovery. The engine kept repeating reads instead of finishing, editing, or explaining the blocker.' };
                 messageHistory.push({
                   role: 'assistant',
@@ -815,16 +955,59 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 }
               }
 
+              // ── Telemetry: this step is committed to executing tools ──
+              // recordStep already ran once at the hoisted site above (FIX 4), so
+              // the recovery `continue`/`break` paths that short-circuited before
+              // reaching here were still counted. Only update lastRoundTripMs now —
+              // AFTER the deferral-resolution block consumed the PRIOR step's value
+              // (FIX 3) — so this step's round-trip becomes the "prior" for the next.
+              lastRoundTripMs = guardStepRoundTripMs; // FIX 3: most-recent step's round-trip
+              // ReportConfidence is a self-report tool — record a fire so its
+              // calibration bucket can be resolved from the Edit/Write outcomes
+              // of the same step or the following 3 steps. It still executes
+              // normally as a tool below.
+              for (const tc of parsedCalls) {
+                if (tc.name === 'ReportConfidence') {
+                  guardTracker.recordFire('report-confidence', step, [], 0, { confidenceValue: Number((tc.args as any)?.value) });
+                }
+              }
+
               // ── Solo-coding gate: block writes without investigation ──
               // Architecture enforcement: if the engine tries to write code without
               // reading anything first, block the write and force investigation.
               // Whitelisted: step > 3 (already investigated), single-file tasks,
               // forge context (workers should code), or if reads happened this turn.
+              // ── Telemetry: time the gate's condition evaluation (fired or not) ──
+              const guardGateT0 = performance.now();
               const hasWrites = parsedCalls.some(tc => WRITE_TOOLS.has(tc.name));
               const hasReads = parsedCalls.some(tc => READ_TOOLS.has(tc.name));
               const investigatedAlready = readCount > 0 || hasHistoryToolCall(READ_TOOLS);
               const orchestratedAlready = orchCount > 0 || hasHistoryToolCall(ORCH_TOOLS);
-              if (hasWrites && !investigatedAlready && !orchestratedAlready && step <= 2 && !isSingleFileMention && isComplexTask) {
+              const guardGateFires = hasWrites && !investigatedAlready && !orchestratedAlready && step <= 2 && !isSingleFileMention && isComplexTask;
+              const guardGateOverheadMs = performance.now() - guardGateT0;
+              guardTracker.addGuardOverheadMs(guardGateOverheadMs);
+              if (guardGateFires) {
+                // ── Telemetry: record the grounded-write fire ──
+                // One BlockedCallInfo per blocked WRITE_TOOLS call; rawContent +
+                // contentHash let deriveGroundedWriteResolution recognize a later
+                // near-identical re-issue (ceremony) vs a changed write (prevented).
+                // Gated on the kill switch so disabled telemetry skips the
+                // hash/stringify work too, not just the disk flush.
+                if (guardTelemOn) {
+                  const guardBlockedCalls: BlockedCallInfo[] = parsedCalls
+                    .filter(tc => WRITE_TOOLS.has(tc.name))
+                    .map(tc => {
+                      const content = String((tc.args as any)?.new_string ?? (tc.args as any)?.content ?? '');
+                      return {
+                        name: tc.name,
+                        path: ((tc.args as any)?.file_path ?? (tc.args as any)?.path) as string | undefined,
+                        argsPreview: JSON.stringify(tc.args).slice(0, 80),
+                        contentHash: contentHashOf(content),
+                        rawContent: content,
+                      };
+                    });
+                  guardTracker.recordFire('grounded-write', step, guardBlockedCalls, guardGateOverheadMs);
+                }
                 // Cowboy detected: writing without investigating on a complex task
                 yield { type: 'status' as const, content: 'solo-coding gate: forcing investigation first…' };
                 // Don't execute the writes — return error feedback for write tools only
@@ -865,6 +1048,15 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                     yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: 'done' } };
                   }
                 }
+                // ── Telemetry: record every EXECUTED tool result in the gate path ──
+                // Blocked writes are NOT executed (they get a [BLOCKED] sentinel),
+                // so they are skipped — recording them would mis-resolve the very
+                // grounded-write fire we just raised. Reads/other tools ran for real.
+                for (const tc of gateResults) {
+                  if (WRITE_TOOLS.has(tc.name)) continue; // blocked, not executed
+                  const ok = !(tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:'));
+                  guardTracker.recordToolResult(step, tc.name, tc.args as Record<string, unknown>, ok);
+                }
                 // Add results to history
                 for (const tc of gateResults) {
                   let histContent = tc.result;
@@ -888,6 +1080,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
 
               // Execute all in parallel — intercept RetrieveResult locally (cache is in-process)
               yield { type: 'status' as const, content: `executing ${parsedCalls.length} tool${parsedCalls.length > 1 ? 's' : ''}…` };
+              const guardToolExecT0 = performance.now(); // telemetry: wall time around the parallel exec
               const results = await Promise.all(parsedCalls.map(async (tc) => {
                 let result: string;
                 try {
@@ -913,6 +1106,28 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 }
                 return { ...tc, result };
               }));
+              guardTracker.recordToolExecMs(performance.now() - guardToolExecT0);
+
+              // ── Telemetry: record every executed tool result ──
+              // ok mirrors the circuit-breaker's error test. For Edit/Write the
+              // content/new_string arg is passed as rawContent so a grounded-write
+              // fire can token-compare a later re-issue (ceremony vs prevented).
+              // A successful write also resolves an in-recovery read-spin fire as
+              // 'recovered' (the model acted productively after the nudge).
+              for (const tc of results) {
+                const okExec = !(tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:'));
+                const rawContent = WRITE_TOOLS.has(tc.name)
+                  ? String((tc.args as any)?.new_string ?? (tc.args as any)?.content ?? '')
+                  : undefined;
+                guardTracker.recordToolResult(step, tc.name, tc.args as Record<string, unknown>, okExec, rawContent);
+                if (okExec && WRITE_TOOLS.has(tc.name) && readSpinRecoveryFireId !== null) {
+                  // Acted after the nudge — charge the deferral's wasted-round-trip
+                  // cost to this fire (FIX 3).
+                  guardTracker.recordReadSpinOutcome(readSpinRecoveryFireId, 'recovered', readSpinRecoveryCostMs);
+                  readSpinRecoveryFireId = null;
+                  readSpinRecoveryCostMs = 0;
+                }
+              }
 
               // Emit results and add to history — track errors for circuit breaker
               // Large results are cached to disk; history keeps preview + ref
@@ -949,6 +1164,11 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                   }
                 }
                 messageHistory.push({ role: 'assistant', content: '[Delegation — tool loop stopped]' });
+                // FIX 1: a delegation break IS a productive turn end — evidence
+                // collection for THIS turn genuinely ended (tools continue in the
+                // delegated run, not here). Treat it as 'done' so the turn's open
+                // fires resolve against what was observed, not as 'aborted'.
+                guardDoneNormally = true;
                 break;
               }
 
@@ -1087,11 +1307,39 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
             }
 
             // Final response. Add to history with structured parts for smarter compaction.
+            // ── Telemetry: terminal step (no tool calls) + read-spin resolution ──
+            // The model finished. Record the terminal step's round-trip with a
+            // zero tool-call count, then resolve any open read-spin fire: a
+            // deferred fire → 'would_have_recovered' (the model pivoted to finish
+            // on its own), an in-recovery fire → 'recovered' (acted by finishing).
+            const guardTerminalRoundTripMs = performance.now() - guardRoundTripStart;
+            guardTracker.recordStep(step, { roundTripMs: guardTerminalRoundTripMs, toolCallCount: 0 });
+            lastRoundTripMs = guardTerminalRoundTripMs; // FIX 3: most-recent step's round-trip
+            if (readSpinDeferredFireId !== null) {
+              // Pivoted to finish on its own — no nudge fired, no cost (FIX 3).
+              guardTracker.recordReadSpinOutcome(readSpinDeferredFireId, 'would_have_recovered');
+              readSpinDeferredFireId = null;
+            }
+            if (readSpinRecoveryFireId !== null) {
+              // Acted by finishing after the nudge — charge the deferral's
+              // wasted-round-trip cost to this fire (FIX 3).
+              guardTracker.recordReadSpinOutcome(readSpinRecoveryFireId, 'recovered', readSpinRecoveryCostMs);
+              readSpinRecoveryFireId = null;
+              readSpinRecoveryCostMs = 0;
+            }
             const assistMsg: any = { role: 'assistant', content: fullResponse };
             if (lastDispatchParts && lastDispatchParts.length > 0) {
               assistMsg._parts = lastDispatchParts;
             }
             messageHistory.push(assistMsg);
+            // FIX 1: THIS is the genuine normal-completion path — a final
+            // response with no tool calls. Mark the turn done so finalize('done')
+            // resolves the turn's open fires against the evidence collected. Every
+            // OTHER loop exit (error break, circuit-breaker, read-spin hard-stop,
+            // budget exhaustion) leaves guardDoneNormally=false → finalize('aborted')
+            // so open fires stay unresolved (observedInTurn=false) instead of being
+            // mislabelled as completed-turn evidence.
+            guardDoneNormally = true;
             break;
           }
 
@@ -1114,8 +1362,30 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           }
 
           sendActive = false;
+          // FIX 1: guardDoneNormally is NOT set here. The post-loop `yield done`
+          // is reached by EVERY loop exit — including budget exhaustion, error
+          // breaks, the circuit breaker, and the read-spin hard-stop. Only the
+          // two genuine completion paths (the no-tool-calls terminal break and a
+          // delegation break) set guardDoneNormally=true before breaking; all the
+          // other exits leave it false so finalize('aborted') keeps their open
+          // fires unresolved instead of crediting them as completed-turn evidence.
           yield { type: 'done' as const, content: 'end_turn' };
           return;
+          } finally {
+            // ── Phase-0 telemetry flush — EXACTLY ONCE on every exit path ──
+            // Runs on normal return, break-to-end, error break, budget exhaustion,
+            // abort, AND generator abandonment (.return() invokes this finally).
+            // finalize() is pure/in-memory; both store fns swallow their own I/O
+            // errors. The whole body is still wrapped so telemetry can NEVER throw
+            // into the session. NOTHING is yielded here (a finally must not yield).
+            try {
+              const { events, turn } = guardTracker.finalize(guardDoneNormally ? 'done' : 'aborted');
+              if (guardTelemOn) { // FIX 4: once-per-turn hoist (no per-step env read)
+                appendGuardTelemetry(events, turn);
+                updateGuardCounters(events, turn);
+              }
+            } catch { /* telemetry is best-effort — never throw into the session */ }
+          }
         }
 
         const args: string[] = [];

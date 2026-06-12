@@ -34,6 +34,7 @@ Exit codes:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from typing import Any
 
@@ -41,6 +42,20 @@ from typing import Any
 MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_TOP_K = 10
 MIN_SIMILARITY = 0.15  # below this, the match is effectively noise — drop it
+
+
+def _cache_dir() -> str:
+    """Persistent model cache. fastembed's default is a tmpdir that the OS
+    prunes between runs — a half-pruned snapshot then fails with NO_SUCHFILE
+    on every call. Pin the cache under ~/.agon (or FASTEMBED_CACHE_PATH)."""
+    explicit = os.environ.get("FASTEMBED_CACHE_PATH", "").strip()
+    if explicit:
+        return explicit
+    agon_home = os.environ.get("AGON_HOME", "").strip() or os.path.join(
+        os.path.expanduser("~"), ".agon")
+    path = os.path.join(agon_home, "cache", "fastembed")
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def _read_input() -> dict[str, Any]:
@@ -102,7 +117,7 @@ def _rank(payload: dict[str, Any]) -> list[dict[str, Any]]:
     items: list[dict[str, str]] = payload["items"]
     top_k: int = payload["top_k"]
 
-    embedder = TextEmbedding(MODEL)
+    embedder = TextEmbedding(MODEL, cache_dir=_cache_dir())
     texts = [query] + [item["text"] for item in items]
     embs = np.array(list(embedder.embed(texts)))
 

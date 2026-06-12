@@ -1,10 +1,11 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToolRegistry } from '@kernlang/agon-core';
 import type { ToolContext, ToolHandler } from '@kernlang/agon-core';
 import { buildCesarConversationSnapshot, buildOnApproval, buildOnToolCall, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers } from '../../packages/cli/src/generated/cesar/session.js';
+import { applyInvariantsRule1, _resetInvariantsRule1DriftWarning, CESAR_RULE_1_STRICT, CESAR_RULE_1_INVARIANTS, CESAR_SYSTEM_PROMPT } from '../../packages/cli/src/generated/cesar/session.js';
 
 const testDirs: string[] = [];
 
@@ -458,5 +459,75 @@ describe('cesar MCP session config', () => {
     await expect(onToolCall?.('Read', { file_path: 'package.json' }, 'call_1')).resolves.toBe('read-1');
     await expect(onToolCall?.('Read', { file_path: 'package.json' }, 'call_2')).resolves.toBe('read-2');
     expect(readCount).toBe(2);
+  });
+});
+
+describe('mode-aware RULE 1 — CONFIDENCE (guard mode invariants)', () => {
+  it('CESAR_RULE_1_STRICT matches the RULE 1 paragraph baked into CESAR_SYSTEM_PROMPT verbatim', () => {
+    // The whole mode-aware swap hinges on this exact-string match: if RULE 1's
+    // wording in CESAR_SYSTEM_PROMPT ever drifts out of sync with the const, the
+    // .replace() silently no-ops and invariants would keep the strict ceremony.
+    expect(CESAR_SYSTEM_PROMPT.includes(CESAR_RULE_1_STRICT)).toBe(true);
+  });
+
+  it('strict text orders ReportConfidence FIRST every turn; invariants text demotes it to on-demand', () => {
+    expect(CESAR_RULE_1_STRICT).toContain('Call ReportConfidence(value) FIRST on every turn');
+    expect(CESAR_RULE_1_INVARIANTS).toContain('ONLY when you are about to run a risky command');
+    expect(CESAR_RULE_1_INVARIANTS).toContain('a well-formed Edit after reading the file IS the confidence signal');
+    // The on-demand text must NOT re-introduce the every-turn ceremony.
+    expect(CESAR_RULE_1_INVARIANTS).not.toContain('FIRST on every turn');
+  });
+
+  it('applyInvariantsRule1 swaps ONLY the RULE 1 paragraph, keeping RULE 1b and the rest byte-identical', () => {
+    const rewritten = applyInvariantsRule1(CESAR_SYSTEM_PROMPT);
+    // RULE 1 is rewritten…
+    expect(rewritten).toContain(CESAR_RULE_1_INVARIANTS);
+    expect(rewritten).not.toContain(CESAR_RULE_1_STRICT);
+    // …but RULE 1b (which we keep) and everything else is preserved verbatim.
+    expect(rewritten).toContain('RULE 1b — CONFIDENCE IS NOT AN ANSWER: ReportConfidence is telemetry, not completion.');
+    expect(rewritten).toContain('RULE 10 — TURN CLOSURE');
+    // The transform replaces exactly one paragraph: the only byte delta is
+    // strict→invariants RULE 1. Reconstructing the strict text reverses it.
+    expect(rewritten.replace(CESAR_RULE_1_INVARIANTS, CESAR_RULE_1_STRICT)).toBe(CESAR_SYSTEM_PROMPT);
+  });
+
+  it('is a no-op (returns the prompt unchanged) when the strict RULE 1 text is absent — fail-safe to every-turn ceremony', () => {
+    _resetInvariantsRule1DriftWarning();
+    const noRule1 = 'You are Cesar.\nRULE 2 — YOU DECIDE: ...';
+    expect(applyInvariantsRule1(noRule1)).toBe(noRule1);
+  });
+
+  it('FIX 3: warns ONCE when the strict RULE 1 text is absent (drift observable) and stays silent on a matching prompt', () => {
+    // A deliberately drifted prompt (no CESAR_RULE_1_STRICT paragraph) must make
+    // the drift OBSERVABLE: applyInvariantsRule1 fails safe to the strict ceremony
+    // (returns the prompt unchanged) AND emits exactly ONE console.warn carrying the
+    // exact drift message — gated by a module-level once-flag so the per-turn call
+    // cadence can't spam it.
+    _resetInvariantsRule1DriftWarning();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const drifted = 'You are Cesar.\nRULE 1 — CONFIDENCE: (reworded so the exact strict const no longer matches)';
+      // Sanity: the drifted prompt genuinely lacks the strict paragraph.
+      expect(drifted.includes(CESAR_RULE_1_STRICT)).toBe(false);
+
+      // First call on a drifted prompt → unchanged + one warn with the exact text.
+      expect(applyInvariantsRule1(drifted)).toBe(drifted);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledWith('[agon] invariants RULE 1 rewrite failed — CESAR_SYSTEM_PROMPT drifted from CESAR_RULE_1_STRICT; serving strict confidence ceremony');
+
+      // Second drifted call → still no second warn (once-flag holds).
+      expect(applyInvariantsRule1(drifted)).toBe(drifted);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+
+      // A matching prompt rewrites cleanly and NEVER warns.
+      warnSpy.mockClear();
+      _resetInvariantsRule1DriftWarning();
+      const rewritten = applyInvariantsRule1(CESAR_SYSTEM_PROMPT);
+      expect(rewritten).toContain(CESAR_RULE_1_INVARIANTS);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+      _resetInvariantsRule1DriftWarning();
+    }
   });
 });

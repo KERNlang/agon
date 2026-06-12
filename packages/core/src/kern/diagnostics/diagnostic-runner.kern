@@ -1,0 +1,455 @@
+// ── Diagnostic Runner ────────────────────────────────────────────────
+// One per session. After every successful Edit/Write, the session loop calls
+// noteEdit(filePath, callId); the runner debounces (400ms per packageDir),
+// runs the discovered checker under a hard 4s wall-clock budget, and diffs the
+// result against a LAZY per-package baseline (captured on the first run for
+// that package). It produces a compact DiagnosticDigest (≤20 lines) that the
+// loop drains at the top of each iteration and appends to messageHistory as a
+// tool-role message; the FULL checker output is saved to disk so the model can
+// RetrieveResult it.
+//
+// Baseline semantics (panel-converged b+c blend):
+//   • First run for a packageDir captures a baseline set of fingerprints for
+//     files OTHER than the just-edited ones; for the EDITED file(s) all errors
+//     are reported (we can't know which were pre-existing there, and the point
+//     is to surface what the edit broke).
+//   • A clean first run stores the CLEAN_BASELINE sentinel — every subsequent
+//     error is then trivially "new".
+//   • Fingerprint = relPath|code|sha(normalizedMessage), NO line/col, so a
+//     pre-existing error that merely shifted lines is still filtered.
+//   • New fingerprints in EDITED files → 'introduced'; new fingerprints in
+//     OTHER files → 'ripple' (reported, marked).
+//
+// Concurrency: one in-flight run per packageDir; a fresh noteEdit during a run
+// re-arms the debounce so the NEXT run supersedes nothing it already started
+// (single in-flight — late edits coalesce into one trailing run). Failures
+// NEVER throw: a crashed/timed-out checker degrades to an empty/timed-out
+// digest.
+
+import from="./checker-discovery.js" names="discoverChecker,parseCheckerOutput"
+import from="./checker-discovery.js" names="CheckerPlan,CheckerLine,CheckerLang" types=true
+import from="../models/types.js" names="DispatchResult" types=true
+import from="../blocks/process.js" names="spawnWithTimeout"
+import from="../signals/session-store.js" names="saveToolResultToDisk"
+
+// ── Injected dependency shapes ───────────────────────────────────────
+
+interface name=SpawnLike export=true
+  doc "Minimal spawn signature the runner needs — exactly spawnWithTimeout's. Injected so unit tests pass a fake (no real tsc) and drive it with fake timers."
+  field name=command type=string
+  field name=args type="string[]"
+  field name=cwd type=string
+  field name=timeout type=number
+  field name=signal type=AbortSignal optional=true
+
+// SpawnFn = (opts) => Promise<DispatchResult>; PersistFn = saveToolResultToDisk's
+// (engineId,toolCallId,toolName,content) => unknown (return ignored).
+
+interface name=DiagnosticDeps export=true
+  doc "Injected dependencies for DiagnosticRunner — the constructor's `deps` shape, exported so a session config can carry it as an injection seam (PersistentSessionConfig.diagnosticDeps) and thread a FAKE spawnFn into the per-session runner (no real tsc in unit tests). All optional: spawnFn defaults to spawnWithTimeout, persistFn to saveToolResultToDisk, onDigest is unset."
+  field name=spawnFn type="(opts:SpawnLike)=>Promise<DispatchResult>" optional=true
+  field name=persistFn type="(engineId:string,toolCallId:string,toolName:string,content:string)=>unknown" optional=true
+  field name=onDigest type="(d:DiagnosticDigest)=>void" optional=true
+
+// ── Output digest ────────────────────────────────────────────────────
+
+interface name=DiagnosticDigest export=true
+  doc "The compact, model-facing result of one checker run. introduced = new errors in edited files; ripple = new errors in other files (marked). lines capped at DIGEST_MAX_LINES total; full output is on disk under fullResultId (a RetrieveResult id) when truncated. timedOut/durationMs come from the spawn. clean = true when the run found no new errors at all."
+  field name=packageDir type=string
+  field name=lang type=CheckerLang
+  field name=introduced type="CheckerLine[]"
+  field name=ripple type="CheckerLine[]"
+  field name=truncated type=boolean
+  field name=fullResultId type="string|null"
+  field name=durationMs type=number
+  field name=timedOut type=boolean
+  field name=clean type=boolean
+  field name=text type=string
+    doc "Pre-rendered digest text for direct insertion as a tool-role message. Begins `[diagnostics — <packageDir>]` and names the RetrieveResult id when truncated."
+
+// ── Constants ────────────────────────────────────────────────────────
+
+const name=DEBOUNCE_MS type=number value=400
+  doc "Coalesce a burst of edits to one packageDir into a single checker run."
+
+const name=BUDGET_MS type=number value=4000
+  doc "Hard wall-clock budget per checker run (spawnWithTimeout timeout + abort)."
+
+const name=DIGEST_MAX_LINES type=number value=20
+  doc "Total introduced+ripple lines kept in the digest; the rest live on disk."
+
+const name=QUEUE_CAP type=number value=4
+  doc "Max pending digests held for drain; newest-wins per packageDir, oldest-evicted overall."
+
+const name=CLEAN_BASELINE type=string value="__CLEAN_BASELINE__"
+  doc "Sentinel stored as a packageDir's baseline when its first run was clean — every later error is then trivially new."
+
+// ── Internal per-package state ───────────────────────────────────────
+
+interface name=PackageState export=false
+  field name=baseline type="Set<string>|null"
+    doc "Fingerprints present at first-run time for non-edited files. null = no baseline yet (lazy). A clean first run stores an empty set tagged via baselineClean."
+  field name=baselineClean type=boolean
+    doc "True when the stored baseline came from a clean first run (CLEAN_BASELINE sentinel semantics)."
+  field name=debounceTimer type="ReturnType<typeof setTimeout>|null"
+  field name=pendingEdited type="Set<string>"
+    doc "Files edited since the last run dispatched for this package — the 'edited' set the next run diffs against."
+  field name=running type=boolean
+    doc "Single in-flight guard per packageDir."
+  field name=plan type="CheckerPlan|null"
+    doc "The checker plan for this package (cached from discovery)."
+  field name=rerunRequested type=boolean
+    doc "An edit arrived while a run was in flight → run once more when it finishes."
+
+// ── Runner service ───────────────────────────────────────────────────
+
+service name=DiagnosticRunner export=true
+  doc "Per-session diagnostic runner. Construct one with the session's engineId and (optionally) injected spawn/persist fns + a now() clock for tests. noteEdit() schedules debounced checker runs; drainPending() returns and clears the digests produced since the last drain."
+
+  field name=engineId type=string private=true
+  field name=spawnFn type="(opts:SpawnLike)=>Promise<DispatchResult>" private=true
+  field name=persistFn type="(engineId:string,toolCallId:string,toolName:string,content:string)=>unknown" private=true
+  field name=packages type="Map<string, PackageState>" private=true
+  field name=pending type="DiagnosticDigest[]" private=true
+  field name=diagSeq type=number private=true default="0"
+  field name=onDigest type="((d:DiagnosticDigest)=>void)|undefined" private=true
+  field name=lastDigest type="DiagnosticDigest|null" private=true default="null"
+    doc "The most recent digest produced this session (set in enqueue, SURVIVES drainPending) — read by lastVerifierStatus() so compaction can carry a working-set verifier line forward even after the digest was drained into history."
+
+  constructor params="engineId:string, deps?:DiagnosticDeps"
+    doc "deps.spawnFn defaults to spawnWithTimeout; deps.persistFn defaults to saveToolResultToDisk — both injected so unit tests use fakes + fake timers. onDigest (optional) fires synchronously when a digest is produced, so the session loop can yield a status chunk immediately in addition to draining."
+    handler <<<
+      this.engineId = engineId;
+      this.spawnFn = deps?.spawnFn ?? defaultSpawn;
+      this.persistFn = deps?.persistFn ?? defaultPersist;
+      this.packages = new Map<string, PackageState>();
+      this.pending = [];
+      this.diagSeq = 0;
+      this.onDigest = deps?.onDigest;
+      this.lastDigest = null;
+    >>>
+
+  method name=noteEdit params="filePath:string, callId:string" returns=void
+    doc "Register a successful Edit/Write. Discovers the checker for filePath; if none, no-op. Otherwise records the edited file and (re)arms the per-package 400ms debounce. NEVER throws."
+    handler <<<
+      try {
+        const plan = discoverChecker(filePath, process.cwd());
+        if (!plan) return;
+        const key = plan.packageDir;
+        let st = this.packages.get(key);
+        if (!st) {
+          st = {
+            baseline: null,
+            baselineClean: false,
+            debounceTimer: null,
+            pendingEdited: new Set<string>(),
+            running: false,
+            plan,
+            rerunRequested: false,
+          };
+          this.packages.set(key, st);
+        }
+        st.plan = plan;
+        st.pendingEdited.add(normalizeEditedPath(filePath, plan.packageDir));
+
+        if (st.running) {
+          // A run is in flight — request a trailing rerun instead of racing it.
+          st.rerunRequested = true;
+          return;
+        }
+        // (Re)arm the debounce — bursts coalesce into one run.
+        if (st.debounceTimer) clearTimeout(st.debounceTimer);
+        st.debounceTimer = setTimeout(() => {
+          st!.debounceTimer = null;
+          void this.runChecker(key);
+        }, DEBOUNCE_MS);
+      } catch {
+        // Diagnostics are best-effort — never let a scheduling error escape.
+      }
+    >>>
+
+  method name=runChecker params="key:string" returns="Promise<void>" async=true private=true
+    doc "Execute the checker for one packageDir under the 4s budget, diff against the lazy baseline, enqueue the digest. Single in-flight per package; if edits arrived mid-run, schedules a trailing rerun. NEVER throws."
+    handler <<<
+      const st = this.packages.get(key);
+      if (!st || !st.plan || st.running) return;
+      st.running = true;
+      // Snapshot the edited set this run owns; clear so new edits accumulate fresh.
+      const editedSet = new Set(st.pendingEdited);
+      st.pendingEdited = new Set<string>();
+      const plan = st.plan;
+
+      const controller = new AbortController();
+      const budgetTimer = setTimeout(() => controller.abort(), BUDGET_MS);
+      let result: DispatchResult;
+      try {
+        result = await this.spawnFn({
+          command: plan.cmd,
+          args: plan.args,
+          cwd: plan.packageDir,
+          timeout: BUDGET_MS,
+          signal: controller.signal,
+        });
+      } catch {
+        // Spawn itself blew up — degrade to an empty timed-out-ish digest.
+        result = { exitCode: 1, stdout: '', stderr: '', durationMs: 0, timedOut: false };
+      } finally {
+        clearTimeout(budgetTimer);
+      }
+
+      try {
+        const lines = parseCheckerOutput(
+          result.stdout, result.stderr, plan.lang, plan.cmd, plan.packageDir,
+        );
+        const digest = this.buildDigest(st, plan, editedSet, lines, result);
+        this.enqueue(digest);
+        if (this.onDigest) this.onDigest(digest);
+      } catch {
+        // Parsing/diffing failure must not crash the loop.
+      } finally {
+        st.running = false;
+        // A trailing edit (or one queued during the run) → run once more.
+        if (st.rerunRequested || st.pendingEdited.size > 0) {
+          st.rerunRequested = false;
+          if (st.debounceTimer) clearTimeout(st.debounceTimer);
+          st.debounceTimer = setTimeout(() => {
+            st.debounceTimer = null;
+            void this.runChecker(key);
+          }, DEBOUNCE_MS);
+        }
+      }
+    >>>
+
+  method name=buildDigest params="st:PackageState, plan:CheckerPlan, editedSet:Set<string>, lines:CheckerLine[], result:DispatchResult" returns=DiagnosticDigest private=true
+    doc "Diff parsed lines against the lazy baseline → introduced (edited files) / ripple (other files), capture/seal the baseline on the first run, render the ≤20-line digest text, and persist the full output to disk when truncated."
+    handler <<<
+      const haveBaseline = st.baseline !== null;
+      const baseline = st.baseline ?? new Set<string>();
+
+      const introduced: CheckerLine[] = [];
+      const ripple: CheckerLine[] = [];
+
+      for (const ln of lines) {
+        const inEdited = editedSet.has(ln.relPath);
+        if (!haveBaseline) {
+          // FIRST run for this package: edited-file errors are ALL reported;
+          // other-file errors form the baseline (not reported now).
+          if (inEdited) introduced.push(ln);
+          continue;
+        }
+        // Subsequent runs: filter pre-existing fingerprints.
+        if (st.baselineClean || !baseline.has(ln.fingerprint)) {
+          if (inEdited) introduced.push(ln);
+          else ripple.push(ln);
+        }
+      }
+
+      // Seal the baseline on the first run (non-edited fingerprints, or the
+      // CLEAN sentinel if the whole run was clean).
+      if (!haveBaseline) {
+        if (lines.length === 0) {
+          st.baseline = new Set<string>();
+          st.baselineClean = true;
+        } else {
+          const base = new Set<string>();
+          for (const ln of lines) {
+            if (!editedSet.has(ln.relPath)) base.add(ln.fingerprint);
+          }
+          st.baseline = base;
+          st.baselineClean = false;
+        }
+      } else {
+        // Grow the baseline with newly-seen non-edited fingerprints so a ripple
+        // error reported once isn't re-reported on every later run.
+        if (!st.baselineClean) {
+          for (const ln of ripple) baseline.add(ln.fingerprint);
+          for (const ln of lines) {
+            if (!editedSet.has(ln.relPath)) baseline.add(ln.fingerprint);
+          }
+        }
+      }
+
+      const total = introduced.length + ripple.length;
+      const clean = total === 0;
+      const truncated = total > DIGEST_MAX_LINES;
+
+      let fullResultId: string | null = null;
+      if (truncated || result.timedOut) {
+        this.diagSeq += 1;
+        const id = `diag-${this.diagSeq}`;
+        const full = renderFullOutput(plan, introduced, ripple, result);
+        try {
+          this.persistFn(this.engineId, id, 'Diagnostic', full);
+          fullResultId = id;
+        } catch {
+          fullResultId = null;
+        }
+      }
+
+      const text = renderDigestText(
+        plan.packageDir, introduced, ripple, clean, truncated, fullResultId,
+        result.timedOut,
+      );
+
+      return {
+        packageDir: plan.packageDir,
+        lang: plan.lang,
+        introduced,
+        ripple,
+        truncated,
+        fullResultId,
+        durationMs: result.durationMs,
+        timedOut: result.timedOut,
+        clean,
+        text,
+      };
+    >>>
+
+  method name=enqueue params="digest:DiagnosticDigest" returns=void private=true
+    doc "Add a digest to the bounded pending queue: newest-wins per packageDir (a fresh digest replaces an un-drained one for the same package), then cap at QUEUE_CAP by evicting the oldest. Also records lastDigest (survives drains) for lastVerifierStatus()."
+    handler <<<
+      // Newest-wins per package: drop any un-drained digest for the same dir.
+      this.pending = this.pending.filter((d) => d.packageDir !== digest.packageDir);
+      this.pending.push(digest);
+      // Cap: keep the QUEUE_CAP newest.
+      if (this.pending.length > QUEUE_CAP) {
+        this.pending = this.pending.slice(this.pending.length - QUEUE_CAP);
+      }
+      // Remember the most recent digest for the compaction working-set verifier
+      // line — this OUTLIVES drainPending (which empties this.pending).
+      this.lastDigest = digest;
+    >>>
+
+  method name=lastVerifierStatus params="" returns="string|null"
+    doc "A compact one-line status of the most recent diagnostic run for the compaction WORKING SET (e.g. '<pkg>: N introduced error(s) unresolved' / '<pkg>: clean' / '<pkg>: check timed out (incomplete)'), or null when no checker has run this session. Best-effort, read-only — never throws. `clean` is derived ONLY from introduced+ripple===0, so a TIMED-OUT run with no parsed errors is NOT clean — timedOut is checked FIRST so an incomplete run never reports clean. When a digest is non-clean but carries no introduced/ripple lines and did not time out (a state the digest text/clean flag disagree on), fall back to a neutral '<pkg>: checked' rather than the contradictory 'clean'."
+    handler <<<
+      const d = this.lastDigest;
+      if (!d) return null;
+      const pkg = d.packageDir;
+      // A timed-out run is incomplete — its empty introduced/ripple is the
+      // absence of a PARSED result, not proof of cleanliness. Check it BEFORE
+      // d.clean so a checker that hit the 4s budget never reads as green.
+      if (d.timedOut) return `${pkg}: check timed out (incomplete)`;
+      if (d.clean) return `${pkg}: clean`;
+      const n = d.introduced.length;
+      if (n > 0) return `${pkg}: ${n} introduced error${n === 1 ? '' : 's'} unresolved`;
+      const r = d.ripple.length;
+      if (r > 0) return `${pkg}: ${r} ripple error${r === 1 ? '' : 's'}`;
+      // Non-clean digest with no introduced/ripple and not timed out: the clean
+      // flag and the counts disagree, so emit a neutral status instead of
+      // falsely claiming 'clean'.
+      return `${pkg}: checked`;
+    >>>
+
+  method name=drainPending params="" returns="DiagnosticDigest[]"
+    doc "Return and clear all pending digests (bounded, newest-wins per package). Call at the top of each loop iteration BEFORE dispatch. NEVER throws."
+    handler <<<
+      const out = this.pending;
+      this.pending = [];
+      return out;
+    >>>
+
+  method name=hasPending params="" returns=boolean
+    doc "True if any in-flight or queued diagnostics remain — the loop drains these before finalize so the next turn sees them."
+    handler <<<
+      if (this.pending.length > 0) return true;
+      for (const st of this.packages.values()) {
+        if (st.running || st.debounceTimer || st.pendingEdited.size > 0 || st.rerunRequested) {
+          return true;
+        }
+      }
+      return false;
+    >>>
+
+  method name=dispose params="" returns=void
+    doc "Clear all debounce timers (call on session teardown so pending runs don't fire post-session). Best-effort; never throws."
+    handler <<<
+      try {
+        for (const st of this.packages.values()) {
+          if (st.debounceTimer) {
+            clearTimeout(st.debounceTimer);
+            st.debounceTimer = null;
+          }
+        }
+      } catch { /* best-effort */ }
+    >>>
+
+// ── Default injected deps (lazy so tests never touch real spawn/disk) ─
+
+fn name=defaultSpawn params="opts:SpawnLike" returns="Promise<DispatchResult>" async=true export=false
+  doc "Default spawnFn: delegates to spawnWithTimeout (blocks/process.kern)."
+  handler <<<
+    return spawnWithTimeout(opts as never);
+  >>>
+
+fn name=defaultPersist params="engineId:string, toolCallId:string, toolName:string, content:string" returns="unknown" export=false
+  doc "Default persistFn: saveToolResultToDisk. Best-effort; failures are swallowed (the caller already guards)."
+  handler <<<
+    try {
+      return saveToolResultToDisk(engineId, toolCallId, toolName, content);
+    } catch {
+      return null;
+    }
+  >>>
+
+// ── Pure helpers ─────────────────────────────────────────────────────
+
+fn name=normalizeEditedPath params="filePath:string, packageDir:string" returns=string export=true
+  doc "Package-relative forward-slashed form of an edited file path, matching how parseCheckerOutput relativizes diagnostic paths — so editedSet membership tests line up. Strips a leading packageDir prefix and any ./ prefix."
+  handler <<<
+    let p = filePath.replace(/\\/g, '/');
+    const dir = packageDir.replace(/\\/g, '/').replace(/\/$/, '');
+    if (dir && p.startsWith(dir + '/')) p = p.slice(dir.length + 1);
+    if (p.startsWith('./')) p = p.slice(2);
+    return p;
+  >>>
+
+fn name=renderDigestText params="packageDir:string, introduced:CheckerLine[], ripple:CheckerLine[], clean:boolean, truncated:boolean, fullResultId:string|null, timedOut:boolean" returns=string export=true
+  doc "Render the model-facing digest text. Header `[diagnostics — <packageDir>]`; up to DIGEST_MAX_LINES error lines (introduced first, then ripple marked); a truncation/RetrieveResult footer when truncated; a green note when clean."
+  handler <<<
+    const header = `[diagnostics — ${packageDir}]`;
+    if (timedOut) {
+      const tail = fullResultId ? ` (partial output saved as ${fullResultId} — RetrieveResult to view)` : '';
+      return `${header}\nChecker timed out after ${BUDGET_MS}ms; results may be incomplete.${tail}`;
+    }
+    if (clean) {
+      return `${header}\nNo new type/lint errors introduced by your edits. ✅`;
+    }
+    const out: string[] = [header];
+    let budget = DIGEST_MAX_LINES;
+    for (const ln of introduced) {
+      if (budget <= 0) break;
+      out.push(`  ${ln.relPath}(${ln.line},${ln.col}): ${ln.code} ${ln.message}`);
+      budget -= 1;
+    }
+    for (const ln of ripple) {
+      if (budget <= 0) break;
+      out.push(`  [ripple] ${ln.relPath}(${ln.line},${ln.col}): ${ln.code} ${ln.message}`);
+      budget -= 1;
+    }
+    if (truncated) {
+      const total = introduced.length + ripple.length;
+      const shown = DIGEST_MAX_LINES;
+      const more = total - shown;
+      const tail = fullResultId
+        ? ` Full output saved as ${fullResultId} — RetrieveResult to view all.`
+        : '';
+      out.push(`  … ${more} more error(s) not shown.${tail}`);
+    }
+    return out.join('\n');
+  >>>
+
+fn name=renderFullOutput params="plan:CheckerPlan, introduced:CheckerLine[], ripple:CheckerLine[], result:DispatchResult" returns=string export=false
+  doc "Render the FULL (untruncated) diagnostic listing for the disk cache, so RetrieveResult shows everything the digest summarized."
+  handler <<<
+    const out: string[] = [];
+    out.push(`Diagnostics for ${plan.packageDir} (${plan.cmd} ${plan.args.join(' ')})`);
+    out.push(`exitCode=${result.exitCode} durationMs=${result.durationMs} timedOut=${result.timedOut}`);
+    out.push('');
+    out.push(`Introduced (${introduced.length}):`);
+    for (const ln of introduced) out.push(`  ${ln.raw}`);
+    out.push('');
+    out.push(`Ripple (${ripple.length}):`);
+    for (const ln of ripple) out.push(`  ${ln.raw}`);
+    return out.join('\n');
+  >>>

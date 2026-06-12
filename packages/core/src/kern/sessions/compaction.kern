@@ -2,13 +2,19 @@
 // Shared by session-resume's compact() (LLM compaction owned by the Cesar
 // budget gate / /compact) and its in-send emergency fallback. Pure functions
 // over message arrays — no I/O, no engine calls — so they're unit-testable.
-import from="../models/context-parts.js" names="CompactionSummaryPart" types=true
+import from="../models/context-parts.js" names="CompactionSummaryPart,WorkingSet" types=true
+import from="../guards/grounded-write.js" names="isWriteTool"
 
 interface name=CompactMessage
   field name=role type=string
   field name=content type="any"
   field name=tool_calls type="any[]" optional=true
   field name=tool_call_id type=string optional=true
+
+interface name=WorkingSetInput export=true
+  doc "Optional session-scoped context threaded into buildCompactionSummary so the carried-forward WorkingSet stays accurate. filesInPlay = a recency-biased snapshot of the session ReadPathRegistry (the files actively touched), used to seed WorkingSet.filesInPlay AHEAD of the summary's own filesRead/filesModified. pendingVerifier = the last DiagnosticDigest status string ('<pkg>: N introduced errors unresolved' / '<pkg>: clean'), or null when the session has none. Both optional + best-effort: when the registry/digest is unreachable from the compaction call site, omit them and the WorkingSet degrades to a summary-derived view (modified-first filesInPlay, no verifier line)."
+  field name=filesInPlay type="string[]" optional=true
+  field name=pendingVerifier type="string|null" optional=true
 
 fn name=findSafeKeepStart params="messages:CompactMessage[], targetKeep:number, minStart:number" returns=number export=true
   doc "Boundary-safe cut index for keep-last-N compaction. Returns the index s such that messages.slice(s) is the verbatim tail to keep. Never cuts INSIDE a tool_use/tool_result pair: if the cut would land on a 'tool' role message, it walks back to include the assistant message that issued the tool_calls (Anthropic/OpenAI both reject a tool result whose call is missing from the request). minStart = first compactable index (1 when messages[0] is the system prompt)."
@@ -23,8 +29,8 @@ fn name=findSafeKeepStart params="messages:CompactMessage[], targetKeep:number, 
     return s;
   >>>
 
-fn name=buildCompactionSummary params="old:CompactMessage[], prev:CompactionSummaryPart|null" returns=CompactionSummaryPart export=true
-  doc "Regex/structure extraction over messages about to be compacted: goal (first user message), discoveries + decisions (assistant prose), files read/modified + tool summary (structured _parts first, tool_calls fallback). Merges with the previous summary so state accumulates across compaction cycles. No engine call — this is the deterministic fallback when LLM compaction is unavailable or fails, and the structured state for cross-session memory."
+fn name=buildCompactionSummary params="old:CompactMessage[], prev:CompactionSummaryPart|null, wsInput?:WorkingSetInput" returns=CompactionSummaryPart export=true
+  doc "Regex/structure extraction over messages about to be compacted: goal (first user message), discoveries + decisions (assistant prose), files read/modified + tool summary (structured _parts first, tool_calls fallback). Merges with the previous summary so state accumulates across compaction cycles. No engine call — this is the deterministic fallback when LLM compaction is unavailable or fails, and the structured state for cross-session memory. wsInput (optional) threads the session ReadPathRegistry snapshot + the last DiagnosticDigest status so the carried-forward WorkingSet (situational continuity for post-compaction turns) stays accurate; when absent the WorkingSet is derived from the summary's own filesModified/filesRead + folded decisions/discoveries (modified-first, no new extraction)."
   handler <<<
     const userMsgs = old.filter((m: any) => m.role === 'user' && typeof m.content === 'string');
     const assistMsgs = old.filter((m: any) => m.role === 'assistant' && typeof m.content === 'string');
@@ -42,7 +48,11 @@ fn name=buildCompactionSummary params="old:CompactMessage[], prev:CompactionSumm
           if (part.kind === 'tool_call') {
             const fp = part.args?.file_path || part.args?.path || '';
             if (fp) filesRead.add(fp);
-            if ((part.toolName === 'Edit' || part.toolName === 'Write') && fp) {
+            // codex FIX 3: classify write tools via the shared isWriteTool helper
+            // (Edit/Write/MultiEdit) so MultiEdit-modified files reach filesModified
+            // (and therefore WorkingSet.filesInPlay). The old inline Edit||Write check
+            // dropped MultiEdit, so the most-recently changed files could go missing.
+            if (isWriteTool(part.toolName) && fp) {
               filesModified.add(fp);
             }
             if (toolsSummary.length < 15) {
@@ -60,7 +70,10 @@ fn name=buildCompactionSummary params="old:CompactMessage[], prev:CompactionSumm
             const fp = args.file_path || args.path || '';
 
             if (fp) filesRead.add(fp);
-            if (toolName === 'Edit' || toolName === 'Write') {
+            // codex FIX 3: shared isWriteTool (Edit/Write/MultiEdit) — same fix as the
+            // structured-_parts branch above; the tool_calls fallback path also dropped
+            // MultiEdit before, so a legacy/tool_calls-only history missed it too.
+            if (isWriteTool(toolName)) {
               if (fp) filesModified.add(fp);
             }
             if (toolName && toolsSummary.length < 15) {
@@ -91,18 +104,98 @@ fn name=buildCompactionSummary params="old:CompactMessage[], prev:CompactionSumm
       ? (assistMsgs[assistMsgs.length - 1].content as string).slice(0, 800)
       : '';
 
+    // Merge with the previous summary so state accumulates across cycles.
+    const mergedDiscoveries = [...new Set([...(prev?.discoveries ?? []), ...discoveries])].slice(0, 12);
+    const mergedFilesModified = [...new Set([...(prev?.filesModified ?? []), ...filesModified])].slice(0, 20);
+    const mergedFilesRead = [...new Set([...(prev?.filesRead ?? []), ...filesRead])].slice(0, 30);
+    const mergedToolsSummary = [...new Set([...(prev?.toolsSummary ?? []), ...toolsSummary])].slice(0, 20);
+    const mergedDecisions = [...new Set([...(prev?.decisions ?? []), ...decisions])].slice(0, 10);
+
+    // ── WORKING SET (compaction-only carry-forward; NO per-turn injection — P3) ──
+    // filesInPlay: RECENCY-first (codex 0.90). The freshest signal goes first so the
+    // 10-slot cap never lets OLD modified files (carried in prev.filesModified across
+    // compactions) crowd out the newest live files. Order:
+    //   1. files this CYCLE modified (current-cycle `filesModified`, NOT the merged
+    //      set — the merged set front-loads prev.filesModified, which is exactly the
+    //      stale pinning we're avoiding),
+    //   2. the live ReadPathRegistry snapshot (wsInput.filesInPlay, newest-first as
+    //      provided by the caller),
+    //   3. older summary-derived files as a fallback (mergedFilesModified then
+    //      mergedFilesRead) to fill any remaining slots.
+    // De-duped, capped at 10. NOTE: this only reorders the WORKING-SET view; the
+    // long-term summary's own filesModified merge order (mergedFilesModified, below)
+    // is unchanged. pendingVerifier: the last diagnostic status if the session
+    // threaded one. openHypotheses: the most recent ~3 folded decisions/discoveries
+    // (no NEW extraction — reuse what was already parsed above).
+    const FILES_IN_PLAY_CAP = 10;
+    const filesInPlay: string[] = [];
+    const seenFip = new Set<string>();
+    const pushFip = (f: string): void => {
+      if (typeof f !== 'string' || f.length === 0 || seenFip.has(f)) return;
+      seenFip.add(f);
+      if (filesInPlay.length < FILES_IN_PLAY_CAP) filesInPlay.push(f);
+    };
+    // 1. current-cycle modified (most actionable + newest), 2. live registry snapshot,
+    // 3. older summary-derived modified, 4. read-only files — de-duped, capped.
+    // NEWEST-FIRST within the current cycle: `filesModified` is a Set filled
+    // oldest→newest while scanning `old` (chronological). Iterating it directly would
+    // make the OLDEST edits win and, past the 10-file cap, DROP the newest edits — the
+    // opposite of the recency bias. Reverse it so this cycle's freshest edits fill the
+    // cap first. (Only the WORKING-SET view reorders; mergedFilesModified — the
+    // long-term summary's own field — keeps its insertion-order merge below, unchanged.)
+    const currentCycleModifiedNewestFirst = [...filesModified].reverse();
+    for (const f of currentCycleModifiedNewestFirst) pushFip(f);
+    if (Array.isArray(wsInput?.filesInPlay)) for (const f of wsInput!.filesInPlay) pushFip(f);
+    for (const f of mergedFilesModified) pushFip(f);
+    for (const f of mergedFilesRead) pushFip(f);
+
+    const pendingVerifier = (wsInput && typeof wsInput.pendingVerifier === 'string' && wsInput.pendingVerifier.length > 0)
+      ? wsInput.pendingVerifier
+      : null;
+
+    // openHypotheses: the freshest signal first (decisions are higher-signal than
+    // discoveries), most-recent ~3, no new regex pass.
+    const recent3 = (arr: string[]): string[] => arr.slice(Math.max(0, arr.length - 3));
+    const openHypotheses = [...new Set([...recent3(mergedDecisions), ...recent3(mergedDiscoveries)])].slice(0, 3);
+
+    const hasWorkingSet = filesInPlay.length > 0 || pendingVerifier !== null || openHypotheses.length > 0;
+    const workingSet: WorkingSet | null = hasWorkingSet
+      ? { filesInPlay, pendingVerifier, openHypotheses }
+      : null;
+
     return {
       kind: 'compaction' as const,
       goal: prev?.goal || goal,
-      discoveries: [...new Set([...(prev?.discoveries ?? []), ...discoveries])].slice(0, 12),
-      filesModified: [...new Set([...(prev?.filesModified ?? []), ...filesModified])].slice(0, 20),
-      filesRead: [...new Set([...(prev?.filesRead ?? []), ...filesRead])].slice(0, 30),
-      toolsSummary: [...new Set([...(prev?.toolsSummary ?? []), ...toolsSummary])].slice(0, 20),
-      decisions: [...new Set([...(prev?.decisions ?? []), ...decisions])].slice(0, 10),
+      discoveries: mergedDiscoveries,
+      filesModified: mergedFilesModified,
+      filesRead: mergedFilesRead,
+      toolsSummary: mergedToolsSummary,
+      decisions: mergedDecisions,
       progress: lastProgress || prev?.progress || '',
       compactedAt: Date.now(),
       messagesCompacted: (prev?.messagesCompacted ?? 0) + old.length,
+      workingSet,
     };
+  >>>
+
+fn name=renderWorkingSet params="ws:WorkingSet|null" returns=string export=true
+  doc "Render the carried-forward WorkingSet as a compact, SINGLE-line block for the compaction message. Empty string when there's nothing to carry (absent/empty WorkingSet) so renderCompactionText drops it via the .filter(Boolean). Shape: a 'WORKING SET:' prefix followed by the present segments — files (first few + '(+N more)'), verifier status, and recent hypotheses — concatenated on ONE line joined by ' | '."
+  handler <<<
+    if (!ws) return '';
+    const parts: string[] = [];
+    if (Array.isArray(ws.filesInPlay) && ws.filesInPlay.length > 0) {
+      const shown = ws.filesInPlay.slice(0, 5);
+      const more = ws.filesInPlay.length - shown.length;
+      parts.push(`files: ${shown.join(', ')}${more > 0 ? ` (+${more} more)` : ''}`);
+    }
+    if (typeof ws.pendingVerifier === 'string' && ws.pendingVerifier.length > 0) {
+      parts.push(`verifier: ${ws.pendingVerifier}`);
+    }
+    if (Array.isArray(ws.openHypotheses) && ws.openHypotheses.length > 0) {
+      parts.push(`recent: ${ws.openHypotheses.join('; ')}`);
+    }
+    if (parts.length === 0) return '';
+    return `WORKING SET: ${parts.join(' | ')}`;
   >>>
 
 fn name=renderCompactionText params="summary:CompactionSummaryPart, cycleCount:number" returns=string export=true
@@ -117,6 +210,7 @@ fn name=renderCompactionText params="summary:CompactionSummaryPart, cycleCount:n
       summary.toolsSummary.length > 0 ? `TOOLS USED: ${summary.toolsSummary.join(', ')}` : '',
       summary.decisions.length > 0 ? `DECISIONS:\n${summary.decisions.map((d: string) => `  - ${d}`).join('\n')}` : '',
       summary.progress ? `LATEST PROGRESS: ${summary.progress}` : '',
+      renderWorkingSet(summary.workingSet ?? null),
     ].filter(Boolean).join('\n');
   >>>
 

@@ -125,17 +125,17 @@ export type {
 } from './generated/sessions/session-budget.js';
 // ── Compaction primitives (pure helpers shared by session.compact() and the in-send emergency fold) ──
 export {
-  findSafeKeepStart, buildCompactionSummary, renderCompactionText,
+  findSafeKeepStart, buildCompactionSummary, renderCompactionText, renderWorkingSet,
   buildSummarizationContext, buildCompactionPrompt,
 } from './generated/sessions/compaction.js';
-export type { CompactMessage, SummarizationCaps } from './generated/sessions/compaction.js';
+export type { CompactMessage, SummarizationCaps, WorkingSetInput } from './generated/sessions/compaction.js';
 // ── Context Parts (structured message parts + StageContext) ──
 export {
   buildStageContext, renderStageContext,
 } from './context-parts.js';
 export type {
   TextPart, ToolCallPart, ToolResultPart, ReasoningPart, CompactionSummaryPart,
-  MessagePart, ToolCacheEntry, StageContext, StageDecision, ToolResultRef,
+  WorkingSet, MessagePart, ToolCacheEntry, StageContext, StageDecision, ToolResultRef,
 } from './context-parts.js';
 export { runApiAgentLoop } from './generated/api/agent-loop.js';
 export type { ApiAgentOptions, ApiAgentResult } from './generated/api/agent-loop.js';
@@ -337,3 +337,54 @@ export { getTeamElo, updateTeamElo, predictTeamRating } from './generated/teams/
 export type { TeamCompositionRating, TeamRoleRating, TeamEloRecord } from './generated/teams/team-elo.js';
 export { buildRagIndex, queryRag, collectCorpusFiles, chunkMarkdown, embedTexts, embedSidecarHint, ragDir, loadRagIndex, cosineTopK, isGrounded, formatCitedBlocks, formatCitationFootnotes, RAG_DEFAULT_TOP_K, RAG_GROUNDED_MIN_SCORE } from './rag.js';
 export type { RagChunk, RagHit, RagManifest, RagIndexResult, RagQueryResult } from './rag.js';
+// ── Guard-fire telemetry (Phase 0) — pure tracker (Module A) + JSONL/counters store (Module A2) ──
+export {
+  normalizeForHash, contentHashOf, tokenSetJaccard,
+  deriveGroundedWriteResolution, deriveGroundedWriteResolutionMulti, deriveCalibrationBucket,
+  createTurnTracker, GuardTurnTracker,
+  GUARD_TELEMETRY_THRESHOLDS,
+  guardTelemetryDir, guardTelemetryEnabled,
+  appendGuardTelemetry, applyGuardCounters, updateGuardCounters,
+  readGuardCounters, recommendGuardAction,
+} from './telemetry.js';
+export type {
+  GuardId, GuardResolutionLabel, CalibrationBucket,
+  BlockedCallInfo, GuardFireResolution, GuardFireEvent,
+  TurnTelemetryRecord, GuardTelemetryThresholds, ReadSpinThresholds,
+  GuardCounterCell, GuardTurnAggregate, GuardCounters,
+} from './telemetry.js';
+// ── Diagnostics (Module D2) — post-edit checker discovery + per-session DiagnosticRunner ──
+export {
+  discoverChecker, parseCheckerOutput,
+  normalizeMessage, fingerprintOf,
+  REPO_ROOT_MARKERS, RUFF_CONFIG_FILES,
+  DiagnosticRunner,
+  normalizeEditedPath, renderDigestText,
+  DEBOUNCE_MS, BUDGET_MS, DIGEST_MAX_LINES, QUEUE_CAP, CLEAN_BASELINE,
+} from './diagnostics.js';
+export type {
+  CheckerPlan, CheckerLine, CheckerLang,
+  DiagnosticDigest, SpawnLike,
+} from './diagnostics.js';
+// ── GuardPipeline (P1 Module D1) — pure mode resolution + per-call/per-turn
+//    guard decisions (grounded-write / evidence / information-gain /
+//    confidence-gate) + the per-session read-path registry. ──
+export {
+  resolveGuardMode, readGuardModesFromConfig, asGuardMode,
+  DEFAULT_GUARD_MODE, GUARD_MODES,
+  ReadPathRegistry, canonicalizePath, extractResultPaths,
+  consultGroundedWrite, isWriteTool, writeTargetPath, groundedWriteFeedback,
+  consultFinalText, isCompletionClaim, hasUnresolvedFailure, hasEvidence,
+  stripNonAssertionSpans,
+  computeInfoGain, isStallStep, advanceStall, createInfoGainState, hashBashStdout,
+  STALL_NUDGE_STEP, STALL_STRONG_NUDGE_STEP, STALL_HARD_STOP_STEP, GLOBAL_STALL_HARD_STOP,
+  consultConfidenceGate, isRiskyBash, isGatedCall, gatedCategory,
+  BROAD_WRITE_THRESHOLD, DISPATCH_TOOLS, RISKY_BASH_RE,
+  consultGuard, consultBatch, applyShadow, countDistinctWriteFiles,
+} from './guards.js';
+export type {
+  GuardMode, GuardSnapshot, GuardVerdict, GuardCall,
+  TurnEvidence, SpinState, ConfidenceState,
+  UserGuardConfig, StepObservation, InfoGainState, StallResult,
+  ShadowableVerdict, BatchVerdict,
+} from './guards.js';

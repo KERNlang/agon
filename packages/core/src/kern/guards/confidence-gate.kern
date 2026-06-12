@@ -1,0 +1,63 @@
+// ── GuardPipeline D1 — Confidence gate ─────────────────────────────────
+// In invariants/shadow modes ReportConfidence is telemetry-only EXCEPT before
+// genuinely high-risk actions: a RISKY bash command, a broad (≥3 files) write
+// step, or a Delegate/Agent/Forge/Pipeline dispatch. For those, if confidence
+// was NOT reported this turn, the gate ESCALATEs (the session loop maps this to
+// injecting a one-line observation asking for ReportConfidence + re-issuing the
+// gated call; max once per turn per category, then allow + telemetry). NEVER
+// applies in 'strict' (the existing inline guard owns that path).
+
+import from="./guard-types.js" names="GuardCall,GuardSnapshot,GuardVerdict" types=true
+
+const name=BROAD_WRITE_THRESHOLD type=number value=3
+  doc "A step writing ≥ this many distinct files is a broad write → confidence-gated. Configurable const."
+
+const name=DISPATCH_TOOLS type="Set<string>" value={{ new Set(['Delegate', 'Agent', 'Forge', 'Pipeline', 'Goal', 'Conquer']) }}
+  doc "Orchestration-dispatch tools that gate on confidence (a delegated/forge/pipeline dispatch is a high-stakes, hard-to-reverse action)."
+
+const name=RISKY_BASH_RE type=RegExp value={{ /(?:^|[;&|]\s*|\(\s*)(?:sudo\s+)?(?:rm|mv|git\s+(?:push|commit|reset|checkout|rebase|merge)|npm\s+(?:publish|install|ci)|pnpm\s+(?:publish|install|add)|yarn\s+(?:publish|add)|(?:npx\s+)?(?:vitest|jest|tsc|tsx\s+\S*test|mocha)|npm\s+(?:run\s+)?(?:test|build|typecheck|lint)|pnpm\s+(?:run\s+)?(?:test|build|typecheck|lint))\b|>>?\s*\S|\bsudo\b/ }}
+  doc "RISKY bash: mutating or long-running commands. rm/mv, git push|commit|reset|checkout|rebase|merge, npm/pnpm/yarn publish|install, test/build/typecheck/lint runners (vitest/jest/tsc/mocha + npm-run variants), any output redirection (> / >>), and sudo. Deliberately does NOT match ls/cat/pwd/git status/grep/echo — read-only commands are never gated. Anchored to command-start positions (line start, after ; & |, or after an opening paren) so a path containing 'rm' (e.g. 'charm') doesn't false-fire."
+
+fn name=isRiskyBash params="command:string" returns=boolean export=true
+  doc "True iff a bash command is mutating or long-running (matches RISKY_BASH_RE). ls/cat/pwd/git status/grep/echo and other read-only commands return false."
+  handler <<<
+    const cmd = String(command ?? '');
+    if (cmd.length === 0) return false;
+    return RISKY_BASH_RE.test(cmd);
+  >>>
+
+fn name=isGatedCall params="call:GuardCall, distinctFileCount:number" returns=boolean export=true
+  doc "True iff this call is in a confidence-gated category: a Bash whose command is risky, OR a write step touching ≥ BROAD_WRITE_THRESHOLD distinct files (distinctFileCount is the step's broad-write tally, supplied by the caller), OR a Delegate/Agent/Forge/Pipeline/Goal/Conquer dispatch. distinctFileCount applies to Edit/Write/MultiEdit calls; pass 0 for non-write calls."
+  handler <<<
+    if (call.name === 'Bash') {
+      const command = (call.args.command as string | undefined) ?? '';
+      return isRiskyBash(command);
+    }
+    if (DISPATCH_TOOLS.has(call.name)) return true;
+    if (call.name === 'Edit' || call.name === 'Write' || call.name === 'MultiEdit') {
+      return distinctFileCount >= BROAD_WRITE_THRESHOLD;
+    }
+    return false;
+  >>>
+
+fn name=gatedCategory params="call:GuardCall" returns=string export=true
+  doc "The confidence-gate CATEGORY of a call ('risky-bash' | 'broad-write' | 'dispatch'), used for the once-per-turn-per-category limit. Returns 'other' for a non-gated tool name."
+  handler <<<
+    if (call.name === 'Bash') return 'risky-bash';
+    if (DISPATCH_TOOLS.has(call.name)) return 'dispatch';
+    if (call.name === 'Edit' || call.name === 'Write' || call.name === 'MultiEdit') return 'broad-write';
+    return 'other';
+  >>>
+
+fn name=consultConfidenceGate params="call:GuardCall, snap:GuardSnapshot, distinctFileCount:number" returns=GuardVerdict export=true
+  doc "Confidence-gate decision for one call. Applies ONLY in invariants/shadow modes (strict → allow; the existing inline guard owns strict). If the call is in a gated category (isGatedCall) AND confidence was NOT reported this turn (!snap.confidence.reportedThisTurn) → 'escalate' with guardId 'confidence-escalation'. Otherwise allow. The session loop maps escalate to injecting a one-line ReportConfidence request + re-issuing the gated call, max once per turn per category (the caller enforces the per-category cap, then allow + telemetry). Pure."
+  handler <<<
+    if (snap.mode === 'strict') return { action: 'allow' };
+    if (!isGatedCall(call, distinctFileCount)) return { action: 'allow' };
+    if (snap.confidence.reportedThisTurn) return { action: 'allow' };
+    return {
+      action: 'escalate',
+      guardId: 'confidence-escalation',
+      reason: `confidence-required:${gatedCategory(call)}`,
+    };
+  >>>

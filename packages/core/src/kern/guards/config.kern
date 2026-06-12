@@ -1,0 +1,72 @@
+// ── GuardPipeline D1 — Guard mode resolution ──────────────────────────
+// resolveGuardMode is PURE (params-shaped, unit-tested) so it never imports the
+// CLI config reader. Precedence (highest → lowest):
+//   1. ~/.agon/config.json  guardModes[engineId]   (user per-engine override)
+//   2. ~/.agon/config.json  guardModes.default     (user default override)
+//   3. engines/*.json       `guards`               (engine definition default)
+//   4. 'strict'                                     (built-in default)
+// readGuardModesFromConfig is the convenience reader: best-effort, AGON_HOME-
+// aware, try/catch→null, mirroring the glicko/telemetry-store path-resolution
+// pattern. The D3 wiring calls readGuardModesFromConfig() once per session then
+// hands its result (or null) to resolveGuardMode.
+
+import from="node:fs" names="existsSync,readFileSync"
+import from="node:os" names="homedir"
+import from="node:path" names="join,resolve"
+import from="./guard-types.js" names="GuardMode" types=true
+
+const name=DEFAULT_GUARD_MODE type=GuardMode value={{ 'strict' }}
+  doc "Built-in default when neither user config nor the engine definition specifies a mode. 'strict' = byte-identical to today's behavior."
+
+const name=GUARD_MODES type="Set<string>" value={{ new Set(['strict', 'invariants', 'shadow']) }}
+  doc "The three valid guard modes, for validating untrusted config/engine-def values."
+
+interface name=UserGuardConfig export=true
+  doc "The minimal slice of ~/.agon/config.json resolveGuardMode reads: { guardModes?: Record<string,string> }. Kept narrow + plain (string values, validated at resolution) so resolveGuardMode stays pure and decoupled from the full AgonConfig type."
+  field name=guardModes type="Record<string,string>" optional=true
+
+fn name=asGuardMode params="value:unknown" returns="GuardMode|null" export=true
+  doc "Validate an untrusted value as a GuardMode. Returns the mode iff it is one of strict/invariants/shadow; otherwise null (so an unknown config/engine-def value is ignored rather than crashing)."
+  handler <<<
+    if (typeof value === 'string' && GUARD_MODES.has(value)) return value as GuardMode;
+    return null;
+  >>>
+
+fn name=resolveGuardMode params="engineId:string, engineGuards:GuardMode|undefined, userConfig:UserGuardConfig|null" returns=GuardMode export=true
+  doc "Resolve the effective guard mode for an engine, PURE. Precedence: userConfig.guardModes[engineId] (per-engine override) → userConfig.guardModes.default → engineGuards (the engine definition's `guards` field) → 'strict'. Each candidate is validated via asGuardMode, so an invalid/unknown value at any level falls through to the next. engineGuards is passed pre-extracted from the EngineDefinition (D3 owns adding the `guards?` field to the type) so this fn never imports the engine schema."
+  handler <<<
+    const modes = userConfig?.guardModes;
+    if (modes && typeof modes === 'object') {
+      const perEngine = asGuardMode(modes[engineId]);
+      if (perEngine !== null) return perEngine;
+      const dflt = asGuardMode(modes.default);
+      if (dflt !== null) return dflt;
+    }
+    const fromEngine = asGuardMode(engineGuards);
+    if (fromEngine !== null) return fromEngine;
+    return DEFAULT_GUARD_MODE;
+  >>>
+
+// ── Best-effort config reader (AGON_HOME-aware, try/catch → null) ──────
+
+fn name=guardConfigHome returns=string export=false
+  doc "Active Agon storage root, AGON_HOME-overridable, resolved per-call (test isolation). Mirrors the glicko/telemetry-store pattern."
+  handler <<<
+    const override = process.env.AGON_HOME?.trim();
+    return override ? resolve(override) : join(homedir(), '.agon');
+  >>>
+
+fn name=readGuardModesFromConfig returns="UserGuardConfig|null" export=true
+  doc "Best-effort read of the user's guardModes from ${AGON_HOME|~/.agon}/config.json. Returns { guardModes } when the file exists and parses and carries a guardModes object; null on any miss (no file, parse error, no guardModes key, wrong type). NEVER throws — a malformed config degrades to 'use defaults', never crashes the session. AGON_HOME is resolved at call time so test isolation applies. Pass the result straight to resolveGuardMode."
+  handler <<<
+    try {
+      const path = join(guardConfigHome(), 'config.json');
+      if (!existsSync(path)) return null;
+      const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { guardModes?: unknown };
+      const gm = parsed?.guardModes;
+      if (!gm || typeof gm !== 'object' || Array.isArray(gm)) return null;
+      return { guardModes: gm as Record<string, string> };
+    } catch {
+      return null;
+    }
+  >>>

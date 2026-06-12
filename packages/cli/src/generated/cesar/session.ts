@@ -18,6 +18,10 @@ import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorking
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
+import { resolveGuardMode, readGuardModesFromConfig } from '@kernlang/agon-core';
+
+import type { GuardMode } from '@kernlang/agon-core';
+
 import type { HandlerContext } from '../../handlers/types.js';
 
 import { createCesarToolRegistry } from './tools.js';
@@ -34,7 +38,7 @@ import { approvalToolIsFileMutating, buildApprovalDiffPreview } from './approval
 
 import { recordCesarApprovalDecision, recordCesarToolTimeline, recordCesarConfidence, buildToolErrorDiagnostic } from './tool-observability.js';
 
-// @kern-source: session:19
+// @kern-source: session:21
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator.
 
 CHARACTER — the most trusted advisor who doesn't need you to like him.
@@ -190,9 +194,109 @@ RULE 10 — TURN CLOSURE: End every turn with one clear closing line so the user
   If you END the turn still below ~85%, write CONFIDENCE: NN% once near your closing line — the UI uses that exact shape to offer the user an escalation (nero/tribunal).`;
 
 /**
+ * The EXACT RULE 1 — CONFIDENCE paragraph baked into CESAR_SYSTEM_PROMPT (the every-turn ReportConfidence ceremony). Held here verbatim so the invariants-mode rewrite is an exact string replacement: strict/shadow keep CESAR_SYSTEM_PROMPT byte-identical, invariants swaps this paragraph for CESAR_RULE_1_INVARIANTS. If RULE 1's wording in CESAR_SYSTEM_PROMPT ever changes, this const MUST change in lockstep or the replacement silently no-ops (the prompt stays strict). applyInvariantsRule1 fail-safes to the strict prompt on a mismatch AND emits a one-time console.warn so the drift is observable instead of silent.
+ */
+// @kern-source: session:178
+export const CESAR_RULE_1_STRICT: string = `RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you cannot call tools, write ~X% at the very start instead. No exceptions. On the FIRST turn about a topic, low confidence is expected — investigate, then report your INFORMED confidence. BUT you carry the whole conversation: files you already read, searches you already ran, and conclusions you already reached EARLIER THIS SESSION are still valid context — build on them and report informed confidence immediately. Re-read a file ONLY if it changed or you never saw it. Do NOT restart every turn from zero with "let me check what's going on" when the answer is already in your history — re-discovering what you already know makes you look lost and wastes the user's time.`;
+
+/**
+ * RULE 1 rewrite for guard mode 'invariants'. The GuardPipeline's grounded-write/evidence invariants now ENFORCE the confidence signal structurally (a well-formed Edit after a Read IS the proof), so the every-turn ReportConfidence ceremony is demoted to on-demand. RULE 1b is kept verbatim via the strict template — only this paragraph is swapped.
+ */
+// @kern-source: session:184
+export const CESAR_RULE_1_INVARIANTS: string = `RULE 1 — CONFIDENCE: Report confidence via ReportConfidence ONLY when you are about to run a risky command (Bash mutations, multi-file writes, delegation) or when genuinely uncertain. Do NOT call it ritually every turn — a well-formed Edit after reading the file IS the confidence signal.`;
+
+/**
+ * FIX 3 (R4) — module-level once-flag for applyInvariantsRule1's drift warning. A mutable {warned} holder (mutated in place, never frozen at module load) so the console.warn fires AT MOST ONCE per process even though buildCesarSystemPrompt calls applyInvariantsRule1 on every invariants-mode prompt assembly. Resettable in tests via the exported _resetInvariantsRule1DriftWarning seam.
+ */
+// @kern-source: session:190
+export const invariantsRule1DriftState = { warned: false };
+
+/**
+ * Test-only seam: reset the once-flag so a unit test can re-trigger applyInvariantsRule1's drift warning with a deliberately drifted prompt. Not used in production.
+ */
+// @kern-source: session:193
+export function _resetInvariantsRule1DriftWarning(): void {
+  invariantsRule1DriftState.warned = false;
+}
+
+/**
+ * Rewrite the every-turn RULE 1 — CONFIDENCE ceremony to the on-demand 'invariants' form. Pure string transform on the assembled CESAR_SYSTEM_PROMPT: replaces the exact CESAR_RULE_1_STRICT paragraph with CESAR_RULE_1_INVARIANTS, leaving RULE 1b and everything else byte-identical. Only called on guard mode 'invariants' — strict/shadow never reach here, so the base prompt stays byte-identical for them by construction. If the strict text isn't found (RULE 1 wording in CESAR_SYSTEM_PROMPT drifted out of sync with the CESAR_RULE_1_STRICT const) it FAILS SAFE: it returns the prompt UNCHANGED (serving the stricter every-turn ceremony rather than silently dropping RULE 1) AND emits a one-time console.warn so the drift is observable instead of passing unnoticed. The warning is gated by a module-level once-flag (invariantsRule1DriftState) so it fires at most once per process despite the per-turn call cadence.
+ */
+// @kern-source: session:199
+export function applyInvariantsRule1(prompt: string): string {
+  if (!prompt.includes(CESAR_RULE_1_STRICT)) {
+    if (!invariantsRule1DriftState.warned) {
+      invariantsRule1DriftState.warned = true;
+      console.warn('[agon] invariants RULE 1 rewrite failed — CESAR_SYSTEM_PROMPT drifted from CESAR_RULE_1_STRICT; serving strict confidence ceremony');
+    }
+    return prompt;
+  }
+  return prompt.replace(CESAR_RULE_1_STRICT, CESAR_RULE_1_INVARIANTS);
+}
+
+/**
+ * FIX 6a — re-read ~/.agon/config.json's guardModes at most once per 60s. resolveCesarGuardMode runs on EVERY prompt assembly; the config rarely changes mid-session, so a minute-stale view is fine and keeps the synchronous file read off the per-turn prompt-build path. Mirrors GUARD_TELEMETRY_SNAPSHOT_TTL_MS in status-helpers.
+ */
+// @kern-source: session:212
+export const GUARD_MODES_CONFIG_TTL_MS: number = 60 * 1000;
+
+/**
+ * FIX 6a — module-level {at, home, value} memo for readGuardModesFromConfig(). `home` keys the entry to the AGON_HOME that produced it so an in-process AGON_HOME change (tests, embedded use) can never serve another home's config for up to a TTL. Mutated in place; never frozen at module load.
+ */
+// @kern-source: session:215
+export const guardModesConfigCache = { at: 0, home: '', value: null as (ReturnType<typeof readGuardModesFromConfig>) };
+
+/**
+ * FIX 6a — memoized wrapper over readGuardModesFromConfig(): the synchronous ~/.agon/config.json read happens at most once per GUARD_MODES_CONFIG_TTL_MS, keyed by AGON_HOME so an in-process home change invalidates. Best-effort: a read failure caches null for the TTL. Mirrors loadGuardTelemetrySnapshot's memo pattern in status-helpers.kern.
+ */
+// @kern-source: session:218
+function readGuardModesFromConfigMemoized(): ReturnType<typeof readGuardModesFromConfig> {
+  const now = Date.now();
+  const home = process.env.AGON_HOME?.trim() ?? '';
+  // at !== 0 marks "a read happened" — a cached null (no guardModes key)
+  // honours the TTL too, so it isn't re-read every prompt assembly.
+  if (guardModesConfigCache.at !== 0
+    && guardModesConfigCache.home === home
+    && now - guardModesConfigCache.at < GUARD_MODES_CONFIG_TTL_MS) {
+    return guardModesConfigCache.value;
+  }
+  let value: ReturnType<typeof readGuardModesFromConfig>;
+  try {
+    value = readGuardModesFromConfig();
+  } catch {
+    value = null;
+  }
+  guardModesConfigCache.at = now;
+  guardModesConfigCache.home = home;
+  guardModesConfigCache.value = value;
+  return value;
+}
+
+/**
+ * Resolve the effective guard mode for the engine Cesar's brain is actually running on. Engine id = the live session's engineId (most accurate) → config.cesarEngine → config.forgeFixedStarter → 'claude', mirroring resolveCesarBackend. The engine def's `guards` field is read straight off the typed EngineDefinition (D3 added `guards?: GuardMode` to the type + the engine-schema zod), so no cast is needed. The user-config read is MEMOIZED (FIX 6a — readGuardModesFromConfigMemoized, 60s TTL) so prompt assembly no longer hits ~/.agon/config.json every turn. Best-effort: any registry/config failure degrades to 'strict' (the byte-identical default), never throws into prompt assembly.
+ */
+// @kern-source: session:242
+export function resolveCesarGuardMode(ctx: HandlerContext): GuardMode {
+  try {
+    const config = ctx.config as any;
+    const engineId = ctx.cesarSession?.engineId ?? config?.cesarEngine ?? config?.forgeFixedStarter ?? 'claude';
+    let engineGuards: GuardMode | undefined;
+    try {
+      const engineDef = ctx.registry.get(engineId);
+      engineGuards = engineDef.guards;
+    } catch {
+      engineGuards = undefined;
+    }
+    return resolveGuardMode(engineId, engineGuards, readGuardModesFromConfigMemoized());
+  } catch {
+    return 'strict';
+  }
+}
+
+/**
  * Build the full Cesar system prompt with project context, engine list, and mode flags.
  */
-// @kern-source: session:176
+// @kern-source: session:261
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -206,7 +310,14 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
         } catch { return `- ${id}`; }
       }).join('\n');
 
-      const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
+      // Mode-aware base prompt: in guard mode 'invariants' the GuardPipeline
+      // enforces the confidence signal structurally, so RULE 1's every-turn
+      // ReportConfidence ceremony is demoted to on-demand. strict AND shadow keep
+      // CESAR_SYSTEM_PROMPT byte-identical (shadow MEASURES the old prompt's
+      // behavior) — only 'invariants' rewrites RULE 1, by construction.
+      const guardMode = resolveCesarGuardMode(ctx);
+      const basePrompt = guardMode === 'invariants' ? applyInvariantsRule1(CESAR_SYSTEM_PROMPT) : CESAR_SYSTEM_PROMPT;
+      const systemParts: string[] = [basePrompt];
       if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
       // Codebase atlas: a compact "where things live" index so Cesar locates code
       // from context instead of re-grepping every turn. Cheap + memoized per cwd.
@@ -399,19 +510,19 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:384
+// @kern-source: session:476
 export const CESAR_SNAPSHOT_MSG_CHAR_CAP: number = 4000;
 
-// @kern-source: session:386
+// @kern-source: session:478
 export const CONFIDENCE_BLOCK_LIMIT: number = 2;
 
-// @kern-source: session:388
+// @kern-source: session:480
 export const SEARCH_NUDGE_THRESHOLD: number = 40;
 
 /**
  * Bound one message's text to CESAR_SNAPSHOT_MSG_CHAR_CAP with a truncation marker. Applied on BOTH snapshot paths (direct session history AND the chat-transcript fallback) so oversized content never floods Cesar's continuity context regardless of which path produced it.
  */
-// @kern-source: session:390
+// @kern-source: session:482
 export function capSnapshotMessageContent(content: string): string {
   if (content.length <= CESAR_SNAPSHOT_MSG_CHAR_CAP) return content;
   return `${content.slice(0, CESAR_SNAPSHOT_MSG_CHAR_CAP)}\n… [${content.length - CESAR_SNAPSHOT_MSG_CHAR_CAP} chars truncated for Cesar context]`;
@@ -420,7 +531,7 @@ export function capSnapshotMessageContent(content: string): string {
 /**
  * Render the `command` string shown in a Cesar permission prompt for a tool call. SaveMemory renders the human-readable '[<section>] <memory>' (the durable fact the user is confirming) instead of an opaque JSON args blob; every other tool keeps the existing precedence: args.command -> args.file_path -> JSON.stringify(args). Shared across the API-native and both XML-loop permission builders so they render identically (the MCP watcher in brain.kern already special-cases SaveMemory the same way). Pure; tolerant of non-object args.
  */
-// @kern-source: session:397
+// @kern-source: session:489
 export function renderToolPermissionCommand(tool: string, args: unknown): string {
   const a = (args && typeof args === 'object') ? (args as Record<string, unknown>) : {};
   if (tool === 'SaveMemory') {
@@ -438,7 +549,7 @@ export function renderToolPermissionCommand(tool: string, args: unknown): string
 /**
  * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript. Per-message string content is capped on EITHER path so review/brainstorm spam (or a huge tool result) doesn't flood Cesar's context; tool_calls/tool_call_id and non-string content are preserved untouched.
  */
-// @kern-source: session:413
+// @kern-source: session:505
 export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const directHistory = session?.getMessageHistory?.() ?? [];
   if (directHistory.length > 0) {
@@ -471,13 +582,20 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
 /**
  * Persist the active Cesar conversation before the session is discarded.
  */
-// @kern-source: session:438
+// @kern-source: session:530
 export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
   if (!session) return;
   const snapshot = buildCesarConversationSnapshot(session, chatSession);
   if (snapshot.length === 0) return;
   try {
-    saveConversation(snapshot, session.engineId);
+    // codex FIX 1: carry the SOURCE engine's serialized ReadPathRegistry across
+    // the handoff. getReadPaths() returns undefined when the pipeline is off
+    // (strict), keeping the conversation disk shape byte-identical; when present,
+    // the next engine restores its grounded reads directly (the snapshot's
+    // tool_calls are flattened to text by stripEngineArtifacts, so they can't be
+    // re-derived on load).
+    const readPaths = session.getReadPaths?.();
+    saveConversation(snapshot, session.engineId, readPaths);
   } catch (err) {
     console.warn(`[agon] failed to save Cesar conversation snapshot: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -486,7 +604,7 @@ export function saveCesarConversationSnapshot(session: PersistentSession|null, c
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
-// @kern-source: session:451
+// @kern-source: session:550
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
@@ -826,7 +944,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:789
+// @kern-source: session:888
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -1039,7 +1157,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:1003
+// @kern-source: session:1102
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -1073,7 +1191,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:1037
+// @kern-source: session:1136
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -1097,7 +1215,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:1061
+// @kern-source: session:1160
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) {
     return false;
@@ -1109,7 +1227,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:1068
+// @kern-source: session:1167
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -1129,7 +1247,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Resolve the agon-orchestration MCP server entry. The CLI ships as a tsup BUNDLE that ALSO emits the MCP server to <cli-dist>/mcp/index.js (see tsup.config.ts), so the published install is self-contained — no @kernlang/agon-mcp npm dependency. Resolution order: (0) the bundled sibling <cli-dist>/mcp/index.js (the published, self-contained path), (1) node module resolution of @kernlang/agon-mcp (monorepo-via-symlink / legacy installs), (2) walk up to the repo root containing packages/mcp/dist/index.js (monorepo without a symlink), (3) the original relative guess as a last resort. `fromUrl` is for tests; defaults to this module's URL.
  */
-// @kern-source: session:1086
+// @kern-source: session:1185
 export function resolveAgonMcpServerPath(fromUrl?: string): string {
   const raw = fromUrl ?? import.meta.url;
   // Accept either a file: URL (normal) or a bare path (defensive): fileURLToPath
@@ -1163,7 +1281,7 @@ export function resolveAgonMcpServerPath(fromUrl?: string): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:1118
+// @kern-source: session:1217
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -1188,7 +1306,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:1144
+// @kern-source: session:1243
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

@@ -1,0 +1,51 @@
+// ── GuardPipeline D1 — Grounded-write guard ───────────────────────────
+// Block Edit/Write/MultiEdit to an EXISTING file the engine has not read this
+// session. Net-new files are always allowed; read-then-edit the same path
+// passes instantly. Pure: the target path is ALREADY canonicalized by the
+// read-path registry (which owns realpath); fileExists is injected via the
+// snapshot.
+
+import from="./guard-types.js" names="GuardCall,GuardSnapshot,GuardVerdict" types=true
+
+const name=WRITE_TOOLS type="Set<string>" value={{ new Set(['Edit', 'Write', 'MultiEdit']) }}
+  doc "Tool names the grounded-write guard governs."
+
+fn name=isWriteTool params="name:string" returns=boolean export=true
+  doc "True iff the tool name is one the grounded-write guard governs (Edit/Write/MultiEdit)."
+  handler <<<
+    return WRITE_TOOLS.has(name);
+  >>>
+
+fn name=writeTargetPath params="args:Record<string,unknown>" returns="string|null" export=true
+  doc "Extract the target file path from an Edit/Write/MultiEdit call's args. Reads file_path then path. Returns null when absent (a malformed call the guard lets through to the tool layer's own validation)."
+  handler <<<
+    const fp = args.file_path;
+    if (typeof fp === 'string' && fp.length > 0) return fp;
+    const p = args.path;
+    if (typeof p === 'string' && p.length > 0) return p;
+    return null;
+  >>>
+
+fn name=groundedWriteFeedback params="path:string" returns=string export=true
+  doc "Panel-converged, actionable BLOCK feedback for an ungrounded write."
+  handler <<<
+    return `[BLOCKED: grounded-write] You are editing ${path} but have not read it this session. Read the file first (Read ${path}), then re-issue the edit. Creating a NEW file is always allowed.`;
+  >>>
+
+fn name=consultGroundedWrite params="call:GuardCall, snap:GuardSnapshot" returns=GuardVerdict export=true
+  doc "Per-call grounded-write decision. BLOCKS an Edit/Write/MultiEdit when: the canonicalized target path is known to exist (snap.fileExists(path)) AND it is NOT in readPaths ∪ everReadPaths. A net-new file (fileExists false) is allowed; a path read this session (in either read set) is allowed. Non-write tools and path-less calls allow. Pure — the path is pre-canonicalized by the registry, fileExists is injected."
+  handler <<<
+    if (!isWriteTool(call.name)) return { action: 'allow' };
+    const path = writeTargetPath(call.args);
+    if (path === null) return { action: 'allow' };
+    // Net-new file: nothing to have read. Always allowed.
+    if (!snap.fileExists(path)) return { action: 'allow' };
+    // Read this session (current step or ever)? Allowed.
+    if (snap.readPaths.has(path) || snap.everReadPaths.has(path)) return { action: 'allow' };
+    return {
+      action: 'block',
+      guardId: 'grounded-write',
+      reason: 'ungrounded-write',
+      feedback: groundedWriteFeedback(path),
+    };
+  >>>

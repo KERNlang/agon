@@ -123,6 +123,12 @@ export const EngineDefinitionSchema = z.object({
   modelConfigKey: z.string().optional(),
   adapterType: z.string().optional(),
   capabilities: z.array(z.string()).optional(),
+  // Guard-pipeline mode (P1+P2). Optional enum mirroring EngineDefinition.guards
+  // in types.kern. MUST be modelled here or Zod silently strips it at load
+  // (z.object drops unknown keys), leaving every registry-loaded engine with
+  // guards=undefined → resolveGuardMode falls back to 'strict' and the new
+  // pipeline never activates from an engine config.
+  guards: z.enum(['strict', 'invariants', 'shadow']).optional(),
   imageFlag: z.string().optional(),
   systemPromptFlag: z.string().optional(),
   api: ApiConfigSchema.optional(),

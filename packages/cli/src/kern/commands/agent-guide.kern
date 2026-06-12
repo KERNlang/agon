@@ -6,7 +6,7 @@
 // shims written by `agon install-agent-prompts` just point back here.
 
 import from="citty" names="defineCommand"
-import from="./agent-guide-text.js" names="agentGuideMarkdown"
+import from="./agent-guide-text.js" names="agentGuideMarkdown,modeDocsMarkdown"
 
 const name=agentGuideCommand type=any
   handler <<<
@@ -20,8 +20,18 @@ const name=agentGuideCommand type=any
           type: 'boolean',
           description: 'Emit the mode list as JSON instead of markdown.',
         },
+        docs: {
+          type: 'boolean',
+          description: 'Emit the docs-corpus page (docs/modes.md content) — same guide with a generated-file banner, for RAG indexing.',
+        },
       },
       run({ args }) {
+        if (args.docs) {
+          // modeDocsMarkdown is newline-terminated by construction — write verbatim
+          // so `agon agent-guide --docs > docs/modes.md` matches the sync test exactly.
+          process.stdout.write(modeDocsMarkdown());
+          return;
+        }
         if (args.json) {
           process.stdout.write(JSON.stringify({
             modes: [

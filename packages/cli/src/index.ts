@@ -144,6 +144,24 @@ function consumeContinueFlag() {
   }
 }
 
+// `agon --ground` — opt-in Cesar grounding: each REPL turn retrieves cited
+// context from the repo docs corpus (RAG v0) and injects it as evidence.
+// Stripped from argv wherever it appears (no subcommand defines --ground);
+// cesar/brain.kern reads AGON_GROUND. Persistent alternative:
+// `agon config set cesarGround true`.
+function consumeGroundFlag() {
+  const nextArgv = process.argv.slice(0, 2);
+  const args = process.argv.slice(2);
+  for (const arg of args) {
+    if (arg === '--ground') {
+      process.env.AGON_GROUND = '1';
+      continue;
+    }
+    nextArgv.push(arg);
+  }
+  process.argv = nextArgv;
+}
+
 // Hard guard against recursive agon: a dispatched engine carries AGON_DISPATCH_DEPTH>0
 // (stamped by computeEngineIsolation). If such a child tries to run agon again — e.g. it
 // saw a "use agon" instruction — refuse, so we can't fan out into nested agon processes
@@ -162,6 +180,7 @@ function guardAgainstRecursiveDispatch() {
 
 consumeTelemetryDebugFlags();
 consumeIsolationFlags();
+consumeGroundFlag();
 consumeContinueFlag();
 guardAgainstRecursiveDispatch();
 maybeNotifyIsolationMigration();

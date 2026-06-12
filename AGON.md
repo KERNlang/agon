@@ -70,10 +70,12 @@ npm run typecheck      # tsc -b
 
 v0 (shipped): docs-only corpus (root `*.md` + `docs/`) → markdown-aware chunking → offline MiniLM embeddings (`@kernlang/agon-dedup` embedder.py sidecar, cache `~/.agon/cache/fastembed`) → persistent index `.agon/rag/<corpus-hash>/` → `agon rag index|query|stats` + the `ProjectContext` MCP tool (fail-closed grounding, cited `[n] source Lx-y` blocks).
 
+v0.1 (shipped): **`agon --ground` Cesar wire-up** — opt-in (`--ground` flag or `agon config set cesarGround true`); narrow trigger (skips slash commands + short inputs), retrieves cited doc context per turn and injects it as evidence ahead of the prompt. Fail-OPEN by design: no corpus / no embedder / weak hits → nothing injected, routing never gated on retrieval. Plus **`docs/modes.md`**: the mode catalog (incl. the nero→tribunal→council→conquer escalation ladder) generated from the canonical agent guide (`npm run docs:modes`, drift-guarded by a unit test) so RAG answers "which mode when" with citations — per the 6-engine `cesar-mode-rag` brainstorm verdict (the catalog stays statically injected for routing; RAG carries docs now, experience later).
+
 Deferred, in priority order — each reuses the v0 retriever/embed primitives:
 
-0. **`agon --ground` Cesar wire-up** — narrow-trigger grounding of Cesar replies with dim `⟨file:line⟩` footnotes; deferred from v0 so the Cesar-brain integration gets its own review cycle.
 1. **Session-history corpus** — needs turn-indexed chunking + a redaction story for secrets in transcripts.
+1b. **Run-history "mode experience" corpus** (from the `cesar-mode-rag` brainstorm) — one summarized routing episode per chunk (task shape, mode chosen, alternatives, outcome, lesson) derived from `~/.agon/runs/*/status.json`; advisory-only precedent briefs for Cesar's mode suggestion, gated on min-N (≥3) + similarity thresholds with recency/era weighting; hard-filter aborted/short runs and incompatible router eras. Build only after `--ground` proves stable in use.
 2. **Code/diff corpus for `agon review`** — AST-aware chunker, commit-SHA provenance.
 3. **Network-exposed ProjectContext** for companion CLIs beyond the local MCP server (schema-version pin).
 4. **Live/incremental reindexing** (file watcher) — v0 reindex is manual and corpus-hash short-circuited.

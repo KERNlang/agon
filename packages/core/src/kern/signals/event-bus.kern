@@ -13,7 +13,13 @@ interface name=EventListener
   field name=priority type=number
   field name=source type=string optional=true
 
-service name=EventBus singleton=true
+// KERN-4 class pilot: was `service ... singleton=true`. The singleton attr was
+// a NO-OP in the emitted TS (plain exported class; the one instance is built
+// manually in app.kern), so dropping it is behavior-identical.
+// KERN-GAP: class — no `singleton` equivalent on the class node; if a real
+// module-level singleton emission is ever wanted, that's a class-node feature
+// request (and unknown attrs like singleton= are silently ignored, not rejected).
+class name=EventBus export=true
   field name=listeners type="Map<string, EventListener[]>"
 
   constructor
@@ -51,7 +57,9 @@ service name=EventBus singleton=true
       const isPre = event.startsWith('pre:') || event.endsWith(':before');
 
       if (isPre) {
-        // Pre-events run sequentially — a failure can short-circuit
+        // Pre-events run sequentially. Listener errors are caught and warned —
+        // they do NOT short-circuit later listeners (a misbehaving extension
+        // must not block dispatch).
         for (const listener of list) {
           try {
             await listener.handler(payload);

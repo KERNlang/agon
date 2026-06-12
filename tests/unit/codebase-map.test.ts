@@ -12,6 +12,11 @@ describe('codebase-map — extractSymbols', () => {
     expect(extractSymbols('a.kern', src)).toEqual(['doThing', 'Widget', 'Shape', 'LIMIT', 'Opts']);
   });
 
+  it('pulls KERN 4.0 class declarations (service→class migration)', () => {
+    const src = `class name=Semaphore export=true\n  field name=permits type=number private=true\nclass name=EventBus export=true`;
+    expect(extractSymbols('a.kern', src)).toEqual(['Semaphore', 'EventBus']);
+  });
+
   it('pulls TS exported declarations only (not internal)', () => {
     const src = `const internal = 1;\nexport function publicFn() {}\nexport const PUBLIC = 2;\nexport class Foo {}\nexport interface Bar {}\nexport type Baz = number;`;
     expect(extractSymbols('a.ts', src)).toEqual(['publicFn', 'PUBLIC', 'Foo', 'Bar', 'Baz']);

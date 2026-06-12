@@ -16,7 +16,9 @@ fn name=isHeavyTool params="command:string" returns=boolean export=true expr={{ 
 
 // ── The semaphore primitive ───────────────────────────────────────
 
-service name=Semaphore export=true
+// KERN-4 class pilot: was `service` — `class` is the checked node in KERN 4.0
+// (kern check Liskov/arity/return rules only fire on class declarations).
+class name=Semaphore export=true
   doc "Async semaphore with a fixed permit count + abort-aware acquire. Multiple acquires queue; acquire() resolves when a permit is available; release() lets the next waiter in. Use within an AgentTeam to throttle heavy tool invocations across N members. OpenCode review fix: acquire() and runWith() now accept an optional AbortSignal so a cancelled team can wake queued waiters and reject them instead of running the heavy tool after the user already hit Ctrl-C."
 
   field name=permits type=number private=true

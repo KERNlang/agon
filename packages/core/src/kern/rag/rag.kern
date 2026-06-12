@@ -1,0 +1,93 @@
+// ── RAG v0 — index/query orchestration ───────────────────────────────
+// buildRagIndex: collect → hash → short-circuit on unchanged corpus →
+//                chunk → embed (sidecar) → persist.
+// queryRag:      load index (auto-build when missing) → embed query →
+//                cosine top-k → grounded result.
+
+import from="node:fs" names="readFileSync"
+import from="node:path" names="join"
+import from="./types.js" names="RagChunk,RagIndexResult,RagManifest,RagQueryResult" types=true
+import from="./corpus.js" names="collectCorpusFiles,hashCorpus"
+import from="./chunking.js" names="chunkMarkdown"
+import from="./embed.js" names="embedTexts,embedSidecarHint"
+import from="./store.js" names="loadRagIndex,saveRagIndex"
+import from="./retriever.js" names="cosineTopK"
+import from="./grounding.js" names="isGrounded"
+
+fn name=buildRagIndex params="root:string, force?:boolean" returns="RagIndexResult" export=true
+  doc "Build (or reuse) the persistent docs index for a repo. Unchanged corpus hash → <100ms reuse short-circuit unless force=true. Throws with the sidecar install hint when embeddings are unavailable — an index build with no embedder has nothing useful to persist."
+  handler <<<
+    const startedAt = Date.now();
+    const files = collectCorpusFiles(root);
+    if (files.length === 0) {
+      throw new Error(`rag: no markdown corpus found under ${root} (looked for *.md at the root and docs/)`);
+    }
+    const { corpusHash, entries } = hashCorpus(root, files);
+    if (!force) {
+      const existing = loadRagIndex(root, corpusHash);
+      if (existing) {
+        return {
+          corpusHash,
+          fileCount: entries.length,
+          chunkCount: existing.manifest.chunkCount,
+          durationMs: Date.now() - startedAt,
+          reused: true,
+        };
+      }
+    }
+    const chunks: RagChunk[] = [];
+    for (const entry of entries) {
+      let text = '';
+      try { text = readFileSync(join(root, entry.path), 'utf-8'); } catch { continue; }
+      chunks.push(...chunkMarkdown(text, entry.path));
+    }
+    if (chunks.length === 0) {
+      throw new Error('rag: corpus produced zero chunks — nothing to index');
+    }
+    const embedded = embedTexts(chunks.map(c => c.text));
+    if (!embedded) {
+      throw new Error(embedSidecarHint());
+    }
+    const matrix = new Float32Array(chunks.length * embedded.dims);
+    embedded.vectors.forEach((vec, r) => matrix.set(vec, r * embedded.dims));
+    const manifest: RagManifest = {
+      corpusHash,
+      model: embedded.model,
+      dims: embedded.dims,
+      chunkCount: chunks.length,
+      files: entries,
+      builtAt: Date.now(),
+    };
+    saveRagIndex(root, manifest, chunks, matrix);
+    return {
+      corpusHash,
+      fileCount: entries.length,
+      chunkCount: chunks.length,
+      durationMs: Date.now() - startedAt,
+      reused: false,
+    };
+  >>>
+
+fn name=queryRag params="root:string, query:string, topK?:number" returns="RagQueryResult" export=true
+  doc "Retrieve cited context for a query. Auto-(re)builds the index when missing or when the corpus hash drifted. Fail-closed: zero hits or a weak top hit → grounded:false."
+  handler <<<
+    const files = collectCorpusFiles(root);
+    const { corpusHash } = hashCorpus(root, files);
+    let index = loadRagIndex(root, corpusHash);
+    if (!index) {
+      // Reload with the hash the build ACTUALLY produced — if the corpus
+      // changed between our hashCorpus() and the build's internal rehash,
+      // loading our (stale) hash would miss the fresh index and throw.
+      const built = buildRagIndex(root);
+      index = loadRagIndex(root, built.corpusHash);
+    }
+    if (!index) {
+      throw new Error('rag: index build did not produce a loadable index');
+    }
+    const embedded = embedTexts([query]);
+    if (!embedded) {
+      throw new Error(embedSidecarHint());
+    }
+    const hits = cosineTopK(embedded.vectors[0], index.matrix, index.manifest.dims, index.chunks, topK);
+    return { query, hits, grounded: isGrounded(hits) };
+  >>>

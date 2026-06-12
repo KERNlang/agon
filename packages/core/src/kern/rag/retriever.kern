@@ -1,0 +1,32 @@
+// ── RAG v0 — cosine top-k over the in-memory matrix ──────────────────
+// Rows are L2-normalized by the sidecar, so cosine == dot product.
+
+import from="./types.js" names="RagChunk,RagHit" types=true
+
+const name=RAG_DEFAULT_TOP_K type=number value={{ 4 }}
+
+const name=RAG_MIN_SCORE type=number value={{ 0.25 }}
+  doc "Hits below this are noise for MiniLM cosine on prose and are dropped."
+
+const name=RAG_GROUNDED_MIN_SCORE type=number value={{ 0.35 }}
+  doc "Grounding floor: a result set whose TOP hit scores below this is not presented as grounded (fail-closed)."
+
+fn name=cosineTopK params="queryVec:number[], matrix:Float32Array, dims:number, chunks:RagChunk[], topK?:number, minScore?:number" returns="RagHit[]" export=true
+  doc "Dot-product scores over all rows, then the top-k at or above minScore, highest first. Linear scan — the docs corpus is hundreds of chunks, not millions."
+  handler <<<
+    const k = topK ?? RAG_DEFAULT_TOP_K;
+    const floor = minScore ?? RAG_MIN_SCORE;
+    const rows = Math.floor(matrix.length / dims);
+    const scored: { idx: number, score: number }[] = [];
+    for (let r = 0; r < rows && r < chunks.length; r++) {
+      let dot = 0;
+      const off = r * dims;
+      for (let d = 0; d < dims && d < queryVec.length; d++) dot += matrix[off + d] * queryVec[d];
+      if (dot >= floor) scored.push({ idx: r, score: dot });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, k).map(({ idx, score }) => ({
+      ...chunks[idx],
+      score: Math.round(score * 10000) / 10000,
+    }));
+  >>>

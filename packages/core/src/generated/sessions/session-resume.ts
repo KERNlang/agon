@@ -8,6 +8,8 @@ import { createInterface } from 'node:readline';
 
 import { randomUUID } from 'node:crypto';
 
+import { existsSync } from 'node:fs';
+
 import { apiStreamDispatchWithHistory, apiDispatch } from '../api/dispatch.js';
 
 import { findSafeKeepStart, buildCompactionSummary, renderCompactionText, buildSummarizationContext, buildCompactionPrompt } from './compaction.js';
@@ -24,6 +26,26 @@ import type { BlockedCallInfo } from '../telemetry/guard-telemetry.js';
 
 import { guardTelemetryEnabled, appendGuardTelemetry, updateGuardCounters } from '../telemetry/guard-telemetry-store.js';
 
+import { resolveGuardMode, readGuardModesFromConfig } from '../guards/config.js';
+
+import { ReadPathRegistry, canonicalizePath, readCallPath, extractResultPaths } from '../guards/read-path-registry.js';
+
+import { consultBatch, countDistinctWriteFiles } from '../guards/guard-pipeline.js';
+
+import { isWriteTool } from '../guards/grounded-write.js';
+
+import { createInfoGainState, computeInfoGain, isStallStep, advanceStall, hashBashStdout } from '../guards/information-gain.js';
+
+import type { InfoGainState, StepObservation } from '../guards/information-gain.js';
+
+import { consultFinalText, isEvidenceTool } from '../guards/evidence.js';
+
+import { gatedCategory, isGatedCall } from '../guards/confidence-gate.js';
+
+import type { GuardMode, GuardSnapshot, TurnEvidence, SpinState, ConfidenceState } from '../guards/guard-types.js';
+
+import { DiagnosticRunner } from '../diagnostics/diagnostic-runner.js';
+
 import type { CompactionSummaryPart, ToolCacheEntry } from '../models/context-parts.js';
 
 import type { PersistentSessionConfig, PersistentSession, SessionChunk, SessionSendOptions } from './persistent-session.js';
@@ -31,7 +53,7 @@ import type { PersistentSessionConfig, PersistentSession, SessionChunk, SessionS
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */
-// @kern-source: session-resume:16
+// @kern-source: session-resume:27
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -43,6 +65,19 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   let compactionSummary: CompactionSummaryPart | null = null;
   // Disk-backed tool result cache manifest
   let toolCacheManifest: ToolCacheEntry[] = [];
+  // ── FIX 1: ONE ReadPathRegistry per SESSION object (like messageHistory) ──
+  // Hoisted to createResumeSession scope so reads survive ACROSS send() calls
+  // within a single process — a multi-turn in-process session (sessionContinuity
+  // off, which is the DEFAULT) must remember that turn N Read file X so turn N+1's
+  // grounded-write does not wrongly block the edit of X. The earlier design
+  // created a fresh ReadPathRegistry INSIDE each send() and only restored it from
+  // DISK when sessionContinuity===true, so an in-process session forgot every read
+  // at each turn boundary. Now: created LAZILY on the first pipelineActive send()
+  // (so strict-only sessions never allocate it, and strict never consults it),
+  // then REUSED by every later send(). Disk restore (from saved readPaths) /
+  // cross-engine derivation happens ONCE at session setup in start() under
+  // sessionContinuity; serialize-to-disk at turn end stays continuity-gated.
+  let sessionReadPathRegistry: ReadPathRegistry | null = null;
   // ── Last REAL token usage from the API (ground truth for the gauge) ──
   // AI SDK v6: usage.inputTokens already INCLUDES cache read+write tokens,
   // so promptTokens + completionTokens = the exact context occupancy of the
@@ -199,9 +234,21 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
     lastRealUsage = null; // history rewritten — the next dispatch re-anchors real usage
     const afterTokens = projectContextTokens();
     if (config.sessionContinuity === true) {
-      // The store writes via tmp+rename (atomic) — a crash mid-compact
+      // FIX 2 (R4): persist readPaths on the compaction save too. The turn-end
+      // save (≈L2024) and the on-error save (≈L896) both serialize the hoisted
+      // ReadPathRegistry so grounded reads survive a restart — but doCompact's save
+      // OMITTED readPaths, so a restart right after a compaction forgot every read
+      // and falsely re-blocked edits of files read this session. Mirror the turn-end
+      // save's pipelineActive-aware serialization. doCompact runs at session scope
+      // (outside any send(), via compact()), so the per-send `readPathRegistry`
+      // local isn't reachable — resolve the guard mode the same way send() does and
+      // serialize the hoisted sessionReadPathRegistry only when the pipeline is
+      // active (strict passes undefined, keeping the disk shape byte-identical for
+      // strict). The store writes via tmp+rename (atomic) — a crash mid-compact
       // leaves the previous on-disk state intact.
-      try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest }); } catch (saveErr) { console.warn('[session] failed to persist compaction:', (saveErr as Error).message ?? saveErr); }
+      const compactGuardMode = resolveGuardMode(config.engine.id, config.engine.guards, readGuardModesFromConfig());
+      const compactReadPaths = (compactGuardMode !== 'strict' && sessionReadPathRegistry) ? sessionReadPathRegistry.serialize() : undefined;
+      try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest, readPaths: compactReadPaths }); } catch (saveErr) { console.warn('[session] failed to persist compaction:', (saveErr as Error).message ?? saveErr); }
     }
     return { ok: afterTokens < beforeTokens, method, beforeTokens, afterTokens, limit: CONTEXT_LIMIT };
   };
@@ -255,12 +302,67 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             messageHistory.push(...replayMessages);
             firstTurn = false;
             console.log(`[agon] conversation continuity: loaded ${replayMessages.length} messages from ${conversation!.sourceEngine ?? 'previous engine'}`);
+            // ── codex FIX 1: cross-engine read-path RESTORE (was dead-code derivation) ──
+            // This is a CROSS-ENGINE workspace conversation replay (a different
+            // engine's turns). saved.readPaths is SAME-engine state — stale and
+            // mismatched against this conversation's reads — so do NOT seed from it.
+            // PRIMARY path: restore the registry from conversation.readPaths, the
+            // SOURCE engine's serialized set persisted by saveConversation at handoff.
+            // This is the ONLY reliable source: stripEngineArtifacts (applied on BOTH
+            // save AND load) flattens every assistant tool_calls array to a text marker
+            // and every tool message to "[Tool result …]" prose, so the replayed
+            // history that reaches here has NO tool_calls/tool_call_id left to scan —
+            // the previous derivation below was dead code for any conversation written
+            // through the normal save path.
+            sessionReadPathRegistry = new ReadPathRegistry();
+            if (conversation!.readPaths?.length) {
+              try { sessionReadPathRegistry.restore(conversation!.readPaths); } catch { /* best-effort */ }
+            } else {
+              // FALLBACK (old conversation files only): scan the replayed history's
+              // tool_calls to derive read paths. This ONLY finds anything if the
+              // tool_calls survived stripping (they don't on the normal save path —
+              // see above) — kept solely so a pre-FIX-1 conversation file that somehow
+              // retained structured tool_calls still grounds. New saves carry
+              // readPaths, so this branch is a no-op for them.
+              const replayToolResults = new Map<string, unknown>();
+              for (const m of replayMessages as any[]) {
+                if (m?.role === 'tool' && typeof m?.tool_call_id === 'string') {
+                  replayToolResults.set(m.tool_call_id, m.content);
+                }
+              }
+              for (const m of replayMessages as any[]) {
+                if (!Array.isArray(m?.tool_calls)) continue;
+                for (const tcc of m.tool_calls) {
+                  const fnName = tcc?.function?.name ?? tcc?.name;
+                  if (typeof fnName !== 'string') continue;
+                  let argObj: Record<string, unknown> = {};
+                  const rawArgs = tcc?.function?.arguments ?? tcc?.args;
+                  if (typeof rawArgs === 'string') { try { argObj = JSON.parse(rawArgs); } catch { argObj = {}; } }
+                  else if (rawArgs && typeof rawArgs === 'object') { argObj = rawArgs as Record<string, unknown>; }
+                  const rp = readCallPath(fnName, argObj);
+                  if (rp) { sessionReadPathRegistry.add(rp); continue; }
+                  if (fnName === 'Glob' || fnName === 'Grep') {
+                    const callId = tcc?.id ?? tcc?.tool_call_id;
+                    if (typeof callId === 'string' && replayToolResults.has(callId)) {
+                      try { sessionReadPathRegistry.record(fnName, argObj, replayToolResults.get(callId)); } catch { /* best-effort — malformed entry skipped */ }
+                    }
+                  }
+                }
+              }
+            }
           }
         } else if (hasSavedState) {
           messageHistory.push(...saved!.messageHistory);
           compactionSummary = saved!.compactionSummary ?? null;
           toolCacheManifest = saved!.toolCacheManifest ?? [];
           firstTurn = false; // Not a fresh session — system prompt already in history
+          // ── FIX 1: same-engine restart → restore the registry from the saved
+          // readPaths field (already-canonical entries persisted at last turn end).
+          // ONE registry for the session; later send()s reuse it.
+          if (saved!.readPaths?.length) {
+            sessionReadPathRegistry = new ReadPathRegistry();
+            try { sessionReadPathRegistry.restore(saved!.readPaths); } catch { /* best-effort */ }
+          }
         }
       }
     },
@@ -289,6 +391,87 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         // just before the first apiStreamDispatchWithHistory call below.
         const guardSendEntryMs = performance.now();
         const guardTracker = createTurnTracker(config.engine.id, randomUUID());
+        // ── P1+P2 GuardPipeline mode (resolve ONCE per turn) ──
+        // Precedence: ~/.agon/config.json guardModes > engine.guards > 'strict'.
+        // STRICT (default) = byte-identical to today: the existing inline guards
+        // run unchanged and NONE of the new pipeline code below executes (every
+        // new block is gated `guardMode !== 'strict'`, every legacy guard block
+        // is gated `guardMode === 'strict'` — mutually exclusive by construction).
+        // INVARIANTS = the new pipeline blocks/nudges/escalates for real.
+        // SHADOW = the pipeline evaluates + records telemetry but downgrades
+        // every block/nudge/escalate to allow (applyShadow inside consultGuard).
+        const guardMode: GuardMode = resolveGuardMode(config.engine.id, config.engine.guards, readGuardModesFromConfig());
+        const pipelineActive = guardMode !== 'strict';
+        // ── Per-session pipeline state (FIX 1: ONE registry per session) ──
+        // ReadPathRegistry records every Read/Glob/Grep result so grounded-write
+        // knows what's been read. It is HOISTED to createResumeSession scope
+        // (sessionReadPathRegistry) so reads persist ACROSS send() calls — a
+        // multi-turn in-process session (the DEFAULT: sessionContinuity off) must
+        // remember turn N's reads at turn N+1. Created LAZILY on the first
+        // pipelineActive send() (strict never allocates OR consults it, so strict
+        // stays byte-identical). Under sessionContinuity, start() already seeded it
+        // ONCE (same-engine restore from saved readPaths, OR cross-engine derivation
+        // from the replayed history — FIX 3); no per-send disk re-read.
+        if (pipelineActive && sessionReadPathRegistry === null) {
+          sessionReadPathRegistry = new ReadPathRegistry();
+        }
+        const readPathRegistry = pipelineActive ? sessionReadPathRegistry : null;
+        // DiagnosticRunner: post-edit type/lint checker (invariants/shadow only).
+        // config.diagnosticDeps is the injection seam (tests pass a fake spawnFn so
+        // no real tsc runs; production leaves it unset → real spawnWithTimeout).
+        const diagnosticRunner = pipelineActive ? new DiagnosticRunner(config.engine.id, config.diagnosticDeps) : null;
+        // Diagnostic message sequence id for the synthetic tool_call_id 'diag-<n>'.
+        let diagSeq = 0;
+        // ── FIX 4: provider-correct diagnostic digest re-entry ──
+        // A digest was previously appended as a bare {role:'tool', tool_call_id}
+        // with NO assistant message carrying a matching tool_calls entry — an
+        // ORPHAN tool message. convertMessagesForSdk downgrades orphans to a
+        // "[Recovered orphan tool result …]" user message (OpenAI/Anthropic reject
+        // a tool message with no preceding tool_call), so the model never saw the
+        // diagnostic through the native tool channel. Push a paired SYNTHETIC
+        // assistant tool_call FIRST (Diagnostic, empty args), then the tool result
+        // — the same {id,type:'function',function:{name,arguments}} shape used for
+        // every other assistant tool_calls entry in this file — so the digest is a
+        // well-formed assistant-call + tool-result pair the provider accepts.
+        const pushDiagnosticToHistory = (diagId: string, text: string): void => {
+          messageHistory.push({
+            role: 'assistant',
+            content: '',
+            tool_calls: [{ id: diagId, type: 'function', function: { name: 'Diagnostic', arguments: '{}' } }],
+          } as any);
+          messageHistory.push({ role: 'tool', content: text, tool_call_id: diagId } as any);
+        };
+        // Info-gain stall ladder state (replaces the read-spin counter when active).
+        const infoGainState: InfoGainState | null = pipelineActive ? createInfoGainState() : null;
+        let pipelineSpin: SpinState = { consecutiveStallSteps: 0, globalStallSteps: 0 };
+        // ── FIX 5: result-derived info-gain channels (one-step lag) ──
+        // resultPaths / errorStrings / bashStdout signals exist only AFTER a
+        // step's tools execute, but computeInfoGain runs at the TOP of the next
+        // iteration (before THIS step's tools run). So we accumulate each step's
+        // post-execution result signals here and feed them into the NEXT step's
+        // computeInfoGain. The one-step lag is INHERENT — result signals are not
+        // available until the tools that produced them have run — and is harmless:
+        // the ladder counts CONSECUTIVE stalls, so a genuinely productive step's
+        // signals simply reset the next step's stall instead of the current one.
+        let pendingInfoGainSignals: { resultPaths: string[]; errorStrings: string[]; bashStdout: string[] } =
+          { resultPaths: [], errorStrings: [], bashStdout: [] };
+        // ── R3 FIX 4: grounded-write write-spin ladder ──
+        // In invariants mode a model re-issuing the SAME unread Edit gets a
+        // grounded-write block every step until the budget exhausts — the
+        // info-gain ladder only watches READ-ONLY steps, so a pure write-spin
+        // never trips it. Track CONSECUTIVE grounded-write blocks whose blocked
+        // path set is IDENTICAL to the previous block's set; on the 3rd
+        // identical-set block, hard-stop the loop (mirror the read-spin hard-stop
+        // yield shape). Reset on: blocked set changes, a step with no
+        // grounded-write block, or any read executing (the model investigated).
+        let writeSpinBlockedKey: string | null = null;
+        let writeSpinCount = 0;
+        const WRITE_SPIN_HARD_STOP = 3;
+        // Per-turn evidence accumulator (the evidence guard reads it).
+        const pipelineEvidence: TurnEvidence = { successfulNonReadTool: false, diagnosticGreen: false, exhausted: false };
+        // Per-turn confidence state + the once-per-category escalation cap.
+        const pipelineConfidence: ConfidenceState = { lastValue: null, reportedThisTurn: false };
+        const escalatedCategories = new Set<string>();
         // Evaluate the telemetry kill switch ONCE per turn (reading process.env
         // per step is needless churn). Reused at the read-spin site and in the
         // finally flush below. Kill switch: AGON_GUARD_TELEMETRY=0.
@@ -605,6 +788,15 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         let writeCount = 0;  // Edit, Write calls this turn
         let orchCount = 0;   // Forge, Brainstorm, Tribunal, etc. calls this turn
         const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'RetrieveResult']);
+        // GROUNDING reads only (codex FIX 2): Read/Grep/Glob actually inspect the
+        // filesystem and ground a path, so they count as recovery for the
+        // write-spin hard stop. RetrieveResult is a READ_TOOLS member for the
+        // solo-coding gate, but it only re-fetches a previously-CACHED tool result
+        // — it does NOT read the unread file the blocked Edit needs grounded — so
+        // it must NOT reset the write-spin counter (else a model interleaving
+        // RetrieveResult between identical ungrounded Edits would dodge the hard
+        // stop forever).
+        const GROUNDING_READ_TOOLS = new Set(['Read', 'Grep', 'Glob']);
         const WRITE_TOOLS = new Set(['Edit', 'Write']);
         const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Delegate', 'ProposePlan']);
         const hasHistoryToolCall = (toolNames: Set<string>) => messageHistory.some((msg: any) =>
@@ -637,6 +829,22 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           let fullResponse = '';
           let lastStderr = ''; // captured non-throwing error from the dispatch result
           let lastDispatchParts: any[] | undefined; // Structured parts from dispatch
+
+          // ── P2 DiagnosticRunner: drain pending digests BEFORE this dispatch ──
+          // Post-edit type/lint results that completed since the last iteration
+          // are surfaced to the model as tool-role messages (so the next dispatch
+          // sees what its edits broke) AND yielded as a tool_call-style chunk so
+          // the UI shows them. A CLEAN digest counts as evidence for the evidence
+          // guard (diagnosticGreen). Best-effort: drainPending never throws.
+          if (diagnosticRunner) {
+            for (const digest of diagnosticRunner.drainPending()) {
+              diagSeq++;
+              const diagId = `diag-${diagSeq}`;
+              pushDiagnosticToHistory(diagId, digest.text); // FIX 4: paired assistant tool_call + tool result
+              yield { type: 'tool_call' as const, content: 'Diagnostic', metadata: { input: { packageDir: digest.packageDir }, output: digest.text, status: digest.clean ? 'done' : 'error' } };
+              if (digest.clean) pipelineEvidence.diagnosticGreen = true;
+            }
+          }
 
           // ── Status update so the UI shows activity during API tool loops ──
           if (step === 1) {
@@ -727,8 +935,16 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               }
               // Don't kill session — preserve history for next turn. Disk
               // persistence is opt-in so fresh processes stay clean by default.
+              // R3 FIX 2: persist the FULL turn-end payload (compactionSummary,
+              // toolCacheManifest, readPaths) — not just {messageHistory,confidence}.
+              // The bare save dropped compaction/cache state and, under
+              // sessionContinuity, WIPED the serialized read-path registry from disk
+              // on a stream error (next restart would forget every grounded read and
+              // falsely block edits of files read this turn). Mirror the turn-end
+              // save's pipelineActive-aware readPaths serialization.
               if (config.sessionContinuity === true) {
-                try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch (saveErr) { console.warn('[session] failed to save state on error:', (saveErr as Error).message ?? saveErr); }
+                const serializedReadPathsOnErr = readPathRegistry ? readPathRegistry.serialize() : undefined;
+                try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest, readPaths: serializedReadPathsOnErr }); } catch (saveErr) { console.warn('[session] failed to save state on error:', (saveErr as Error).message ?? saveErr); }
               }
               yield { type: 'error' as const, content: err.message ?? String(err) };
               break;
@@ -878,6 +1094,16 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               noNewInfoReadSteps = 0;
             }
             const readSpin = noNewInfoReadSteps >= 3;
+            // ── STRICT-ONLY: legacy read-spin breaker + Phase-0 deferral ──
+            // In strict mode this whole block runs UNCHANGED (byte-identical):
+            // the deferral-resolution + the Phase-0 delayed-observation instrument
+            // + the recovery nudge / hard-stop. In invariants/shadow the new
+            // information-gain ladder (the `else` below) replaces it entirely —
+            // the ladder subsumes the breaker AND still records 'read-spin' fires
+            // to the SAME tracker, but the Phase-0 deferral instrument does NOT
+            // run (the ladder's hard-stop at consecutiveStallSteps≥8 / global≥12
+            // is the new recovery). See the contract's Wiring-D3 read-spin clause.
+            if (!pipelineActive) {
             // ── Telemetry: resolve a previously DEFERRED read-spin fire ──
             // A deferral skipped recovery for one step to observe whether the
             // model would pivot on its own. Evaluate that here, on the next
@@ -964,6 +1190,92 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               });
               break;
             }
+            } else {
+              // ── INVARIANTS/SHADOW: information-gain stall ladder ──
+              // Replaces the legacy read-spin breaker. A step is a STALL iff it
+              // was read-only, every path it read is already in everReadPaths, and
+              // it produced zero info-gain (new cache-keys / result paths / error
+              // strings / bash-stdout hashes). The ladder escalates on CONSECUTIVE
+              // stalls: 1–3 silent, 4 nudge, 5–7 stronger nudge, 8 hard stop;
+              // a global backstop hard-stops at 12 regardless of resets. Every
+              // non-allow verdict (nudge + hard-stop block) records a 'read-spin'
+              // fire to the SAME tracker so the dashboard keeps one read-spin row.
+              // In shadow mode the ladder still records telemetry but never blocks/
+              // nudges (the verdict is forced to allow below).
+              // FIX 5: feed THIS step's read cache-keys PLUS the PRIOR step's
+              // result-derived signals (paths / errors / bash stdout) accumulated
+              // post-execution last iteration — the one-step lag is inherent (those
+              // signals don't exist until the producing tools have run). computeInfoGain
+              // mutates the seen-sets, so once consumed we clear the pending buffer.
+              const stepObs: StepObservation = {
+                cacheKeys: readKeysThisStep,
+                resultPaths: pendingInfoGainSignals.resultPaths,
+                errorStrings: pendingInfoGainSignals.errorStrings,
+                bashStdout: pendingInfoGainSignals.bashStdout,
+              };
+              const infoGain = infoGainState ? computeInfoGain(stepObs, infoGainState) : 0;
+              pendingInfoGainSignals = { resultPaths: [], errorStrings: [], bashStdout: [] };
+              // FIX 1 (R4): build currentStepReadPaths ONLY from arg-paths the
+              // registry actually tracks — i.e. Read calls, via readCallPath
+              // (which returns the file_path/path arg for Read and NULL for
+              // Glob/Grep). everReadPaths (the registry snapshot) holds Read ARG
+              // paths plus Glob/Grep RESULT paths — it NEVER holds a Glob/Grep
+              // `path` ARG (the search directory). The old code scanned the raw
+              // file_path/path of EVERY read-only call, so a Glob/Grep with a
+              // `path` arg always added a directory that's never in everReadPaths,
+              // making `currentStepReadPaths ⊆ everReadPaths` perpetually FALSE —
+              // an identical search loop never registered as a stall and evaded the
+              // ladder. Using readCallPath makes an all-Glob/Grep duplicate step an
+              // EMPTY set (trivially ⊆ everReadPaths), so it stalls correctly on its
+              // zero info-gain (repeated cache keys / result paths → gain 0).
+              const currentStepReadPaths = new Set<string>();
+              if (readPathRegistry && readOnlyStep) {
+                for (const tc of parsedCalls) {
+                  const rp = readCallPath(tc.name, tc.args as Record<string, unknown>);
+                  if (typeof rp === 'string' && rp.length > 0) currentStepReadPaths.add(canonicalizePath(rp));
+                }
+              }
+              const everRead = readPathRegistry ? readPathRegistry.snapshot() : new Set<string>();
+              const isStall = isStallStep(readOnlyStep, currentStepReadPaths, everRead, infoGain);
+              const stall = advanceStall(isStall, pipelineSpin);
+              pipelineSpin = stall.spin;
+              if (stall.verdict.action !== 'allow') {
+                // Record the fire to the tracker (shadowed or not — telemetry
+                // sees every non-allow verdict). guardId is always 'read-spin'.
+                const t0 = performance.now();
+                guardTracker.recordFire('read-spin', step, [], 0);
+                guardTracker.addGuardOverheadMs(performance.now() - t0);
+              }
+              const ladderBlocks = guardMode === 'invariants' && stall.verdict.action !== 'allow';
+              if (ladderBlocks) {
+                // Pop the assistant tool message — the batch is not executed.
+                if (messageHistory[messageHistory.length - 1] === assistToolMsg) {
+                  messageHistory.pop();
+                }
+                if (stall.verdict.action === 'block') {
+                  // Hard stop (consecutive≥8 or global≥12): end the turn.
+                  yield { type: 'error' as const, content: stall.verdict.feedback };
+                  messageHistory.push({
+                    role: 'assistant',
+                    content: `${cleanText ? `${cleanText}\n` : ''}[Tool loop stopped — information-gain hard stop: too many consecutive zero-information read-only steps]`,
+                  });
+                  break;
+                }
+                // Nudge (4 / 5–7): inject the ladder feedback + continue the loop.
+                // advanceStall only ever yields allow/nudge/block — the action check
+                // narrows away 'escalate' so .feedback is present.
+                if (stall.verdict.action === 'nudge') {
+                  yield { type: 'status' as const, content: 'information-gain nudge: breaking a read loop…' };
+                  messageHistory.push({
+                    role: 'assistant',
+                    content: `${cleanText ? `${cleanText}\n` : ''}[Agon omitted a duplicate read-only tool batch — no new information.]`,
+                  });
+                  messageHistory.push({ role: 'user', content: stall.verdict.feedback });
+                  continue;
+                }
+              }
+              // shadow mode, or an allow verdict → fall through, the batch runs.
+            }
             for (const tc of parsedCalls) {
               if (tc.parseError) {
                 yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: `Malformed tool arguments from API: ${tc.arguments.slice(0, 200)}` } };
@@ -986,7 +1298,303 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             for (const tc of parsedCalls) {
               if (tc.name === 'ReportConfidence') {
                 guardTracker.recordFire('report-confidence', step, [], 0, { confidenceValue: Number((tc.args as any)?.value) });
+                // ── INVARIANTS/SHADOW: feed the confidence-gate state ──
+                // A reported confidence this turn satisfies the gate, so a later
+                // risky/broad/dispatch call won't escalate.
+                if (pipelineActive) {
+                  pipelineConfidence.reportedThisTurn = true;
+                  const v = Number((tc.args as any)?.value);
+                  if (Number.isFinite(v)) pipelineConfidence.lastValue = v;
+                }
               }
+            }
+
+            // ── INVARIANTS/SHADOW: confidence-gate escalation ──
+            // Before a high-risk action (risky Bash, ≥3-file write step, or a
+            // Delegate/Agent/Forge/Pipeline dispatch) without a reported confidence
+            // this turn, inject a one-line observation asking for ReportConfidence
+            // and re-issue the gated call by continuing the loop — MAX ONCE per
+            // category per turn (then allow + telemetry). The pure gate lives in
+            // confidence-gate.kern; the loop owns the per-category cap + the
+            // observation injection. In shadow mode the escalation is recorded but
+            // never injected (the call proceeds). The pure consultBatch path
+            // would also surface this, but the loop needs the once-per-category
+            // cap + the assistant-message pop, so it drives the gate directly here.
+            if (pipelineActive && !pipelineConfidence.reportedThisTurn) {
+              const stepDistinctWrites = countDistinctWriteFiles(
+                parsedCalls.map(tc => ({ name: tc.name, args: tc.args as Record<string, unknown> })),
+              );
+              let escalateCat: string | null = null;
+              for (const tc of parsedCalls) {
+                const gc = { name: tc.name, args: tc.args as Record<string, unknown> };
+                // FIX 2: the guards module's isWriteTool covers MultiEdit; the
+                // legacy WRITE_TOOLS set ({Edit,Write}) omitted it, so a broad
+                // MultiEdit step never reached the broad-write confidence gate.
+                const dfc = isWriteTool(tc.name) ? stepDistinctWrites : 0;
+                if (isGatedCall(gc, dfc)) {
+                  const cat = gatedCategory(gc);
+                  if (!escalatedCategories.has(cat)) { escalateCat = cat; break; }
+                }
+              }
+              if (escalateCat !== null) {
+                const t0 = performance.now();
+                guardTracker.recordFire('confidence-escalation', step, [], 0);
+                guardTracker.addGuardOverheadMs(performance.now() - t0);
+                escalatedCategories.add(escalateCat);
+                if (guardMode === 'invariants') {
+                  // Re-issue the gated call: pop the assistant tool message, inject
+                  // the one-line observation, and loop so the model reports
+                  // confidence then re-calls. Capped once per category per turn.
+                  if (messageHistory[messageHistory.length - 1] === assistToolMsg) {
+                    messageHistory.pop();
+                  }
+                  yield { type: 'status' as const, content: 'confidence-gate: requesting ReportConfidence before a high-risk action…' };
+                  messageHistory.push({
+                    role: 'assistant',
+                    content: `${cleanText ? `${cleanText}\n` : ''}[Agon held a high-risk ${escalateCat} action pending a confidence report.]`,
+                  });
+                  messageHistory.push({
+                    role: 'user',
+                    content: `Before this high-risk action (${escalateCat}), call ReportConfidence with your confidence (0-1) in the approach, then re-issue the action. State briefly what your confidence depends on.`,
+                  });
+                  continue;
+                }
+                // shadow mode: recorded only, the gated call proceeds below.
+              }
+            }
+
+            // ── INVARIANTS/SHADOW: grounded-write batch gate ──
+            // Replaces the strict solo-coding gate. Block an Edit/Write/MultiEdit
+            // to an EXISTING file the engine has not READ this session; net-new
+            // files and read-then-edit pass. The pure pipeline (consultBatch)
+            // decides; the loop mirrors the legacy gate's mechanics — blocked
+            // writes get the verdict feedback as their tool result, reads/other
+            // tools execute. In shadow mode consultGuard pre-downgrades the block
+            // to allow (and exposes .shadowed for telemetry), so nothing is
+            // blocked but the would-have-block is recorded.
+            if (pipelineActive) {
+              const gwT0 = performance.now();
+              const gwCalls = parsedCalls.map(tc => ({ name: tc.name, args: tc.args as Record<string, unknown> }));
+              const fileExistsCanonical = (p: string): boolean => { try { return existsSync(p); } catch { return false; } };
+              // Overseer ruling: a batch that Reads and Edits the SAME path in ONE
+              // step passes — simultaneous grounding counts (Edit's own failure
+              // feedback covers staleness). Seed readPaths with this batch's
+              // Read-call arg-paths (extracted exactly as ReadPathRegistry.record
+              // does; Glob/Grep surface paths only in their RESULT, so they have no
+              // pre-execution arg-path) so a same-step Read-then-Edit grounds the edit.
+              const gwStepReadPaths = new Set<string>();
+              for (const tc of parsedCalls) {
+                const rp = readCallPath(tc.name, tc.args as Record<string, unknown>);
+                if (rp) gwStepReadPaths.add(canonicalizePath(rp));
+              }
+              const gwSnap: GuardSnapshot = {
+                engineId: config.engine.id,
+                step,
+                mode: guardMode,
+                readPaths: gwStepReadPaths,
+                everReadPaths: readPathRegistry ? readPathRegistry.snapshot() : new Set<string>(),
+                fileExists: fileExistsCanonical,
+                evidence: pipelineEvidence,
+                spin: pipelineSpin,
+                confidence: pipelineConfidence,
+              };
+              // consultBatch canonicalizes nothing — feed pre-canonicalized
+              // write paths so grounded-write's membership test lines up with the
+              // canonical everReadPaths set.
+              const gwInput = gwCalls.map(c => {
+                if (!isWriteTool(c.name)) return c;
+                const raw = (c.args.file_path as string | undefined) ?? (c.args.path as string | undefined);
+                if (!raw) return c;
+                return { name: c.name, args: { ...c.args, file_path: canonicalizePath(raw) } };
+              });
+              const batch = consultBatch(gwInput, gwSnap);
+              const blockedIdx = new Set<number>();
+              const blockFeedback = new Map<number, string>();
+              for (const bv of batch) {
+                // .verdict is the EFFECTIVE verdict (allow in shadow); .shadowed is
+                // the suppressed original. Record telemetry for any non-allow.
+                const fired = bv.result.shadowed ?? (bv.result.verdict.action !== 'allow' ? bv.result.verdict : null);
+                if (fired && fired.action === 'block') {
+                  guardTracker.recordFire('grounded-write', step, [{
+                    name: gwInput[bv.index].name,
+                    path: (gwInput[bv.index].args.file_path as string | undefined),
+                    argsPreview: JSON.stringify(gwInput[bv.index].args).slice(0, 80),
+                    contentHash: contentHashOf(String((parsedCalls[bv.index].args as any)?.new_string ?? (parsedCalls[bv.index].args as any)?.content ?? '')),
+                    rawContent: String((parsedCalls[bv.index].args as any)?.new_string ?? (parsedCalls[bv.index].args as any)?.content ?? ''),
+                  }], 0);
+                }
+                // Only an EFFECTIVE block (invariants) actually withholds the write.
+                if (bv.result.verdict.action === 'block') {
+                  blockedIdx.add(bv.index);
+                  blockFeedback.set(bv.index, bv.result.verdict.feedback);
+                }
+              }
+              guardTracker.addGuardOverheadMs(performance.now() - gwT0);
+              if (blockedIdx.size > 0) {
+                // ── R3 FIX 4: write-spin hard stop ──
+                // A model re-issuing the SAME unread Edit gets blocked every step
+                // (the info-gain ladder only watches read-only steps), spinning
+                // until the budget exhausts. Bound it: track CONSECUTIVE
+                // grounded-write blocks whose blocked-path set is IDENTICAL, and
+                // hard-stop on the WRITE_SPIN_HARD_STOP-th. The counter resets when
+                // the blocked set changes OR this same batch executes a GROUNDING
+                // read — Read/Grep/Glob, NOT RetrieveResult (codex FIX 2): only a
+                // real filesystem read grounds the path so the next edit won't even
+                // block, which is exactly the recovery the block asks for. A step
+                // with NO grounded-write block resets it implicitly (this branch is
+                // skipped). Mirrors the read-spin hard-stop yield shape.
+                const blockedPaths = Array.from(blockedIdx)
+                  .map(i => (gwInput[i]?.args?.file_path as string | undefined) ?? '')
+                  .filter(p => p.length > 0)
+                  .sort();
+                const blockedKey = blockedPaths.join('|');
+                // codex FIX 2: count only GROUNDING reads (Read/Grep/Glob) as
+                // write-spin recovery — NOT RetrieveResult, which re-fetches a
+                // cached result and grounds nothing. (READ_TOOLS includes
+                // RetrieveResult for the solo-coding gate; the write-spin reset
+                // must not.)
+                const batchExecutesRead = parsedCalls.some((tc, i) => !blockedIdx.has(i) && GROUNDING_READ_TOOLS.has(tc.name));
+                if (batchExecutesRead) {
+                  // The model is reading this step — recovery in progress. Reset.
+                  writeSpinBlockedKey = null;
+                  writeSpinCount = 0;
+                } else if (blockedKey !== '' && blockedKey === writeSpinBlockedKey) {
+                  writeSpinCount++;
+                } else {
+                  writeSpinBlockedKey = blockedKey === '' ? null : blockedKey;
+                  writeSpinCount = blockedKey === '' ? 0 : 1;
+                }
+                if (guardMode === 'invariants' && writeSpinCount >= WRITE_SPIN_HARD_STOP) {
+                  // Hard stop: the engine kept re-issuing writes to the same unread
+                  // file(s) instead of reading them first. Pop the assistant tool
+                  // message (the batch is not executed) and end the turn — same
+                  // mechanics/yield shape as the read-spin hard stop.
+                  if (messageHistory[messageHistory.length - 1] === assistToolMsg) {
+                    messageHistory.pop();
+                  }
+                  const wsT0 = performance.now();
+                  // Record a 'grounded-write' fire marking the write-spin hard stop
+                  // via the existing recordFire API (no schema change): the synthetic
+                  // BlockedCallInfo's argsPreview carries the 'write-spin-hardstop'
+                  // detail; one real blocked call per spun path keeps the path data.
+                  guardTracker.recordFire('grounded-write', step, blockedPaths.map(p => ({
+                    name: 'Edit',
+                    path: p,
+                    argsPreview: 'write-spin-hardstop',
+                  })), 0);
+                  guardTracker.addGuardOverheadMs(performance.now() - wsT0);
+                  const wsPaths = blockedPaths.join(', ');
+                  yield { type: 'error' as const, content: `Tool loop stopped: the engine kept re-issuing writes to unread file(s) ${wsPaths} instead of reading them first.` };
+                  messageHistory.push({
+                    role: 'assistant',
+                    content: `${cleanText ? `${cleanText}\n` : ''}[Tool loop stopped — write-spin hard stop: the engine re-issued ungrounded writes to ${wsPaths} without reading them]`,
+                  });
+                  break;
+                }
+                yield { type: 'status' as const, content: 'grounded-write: read the file before editing it…' };
+                const gwResults: Array<{ id: string; name: string; args: any; result: string }> = [];
+                for (let bi = 0; bi < parsedCalls.length; bi++) {
+                  const tc = parsedCalls[bi];
+                  if (blockedIdx.has(bi)) {
+                    gwResults.push({ id: tc.id, name: tc.name, args: tc.args, result: blockFeedback.get(bi)! });
+                    yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: 'Blocked: read the file first' } };
+                  } else {
+                    let result: string;
+                    try {
+                      if (CACHEABLE_TOOLS.has(tc.name)) {
+                        const ck = cacheKey(tc.name, tc.args);
+                        const prev = toolResultCache.get(ck);
+                        if (prev) { result = prev.result; }
+                        else { result = await config.onToolCall!(tc.name, tc.args, tc.id); toolResultCache.set(ck, { result, callId: tc.id }); }
+                      } else if (tc.name === 'RetrieveResult' && tc.args.id) {
+                        const cached = loadToolResultFromDisk(config.engine.id, tc.args.id as string);
+                        result = cached ?? `No cached result found for id "${tc.args.id}".`;
+                      } else {
+                        result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                      }
+                    } catch (err: any) { result = `Error: ${err.message ?? String(err)}`; }
+                    gwResults.push({ id: tc.id, name: tc.name, args: tc.args, result });
+                    const okExec = !(result.startsWith('Error:') || result.startsWith('Unknown tool:'));
+                    if (READ_TOOLS.has(tc.name)) readCount++;
+                    // Record reads into the registry so the NEXT edit of this path passes.
+                    if (readPathRegistry && okExec) {
+                      try { readPathRegistry.record(tc.name, tc.args as Record<string, unknown>, result); } catch { /* best-effort */ }
+                    }
+                    yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: okExec ? 'done' : 'error' } };
+                  }
+                }
+                // Telemetry for executed (non-blocked) tools.
+                // FIX 5: gwResults is built in parsedCalls order (the `for bi`
+                // loop pushes one entry per parsedCalls[bi]), so the array index
+                // IS the parsedCalls index — use it directly instead of an O(n)
+                // findIndex per element (which made this loop O(n²)).
+                for (let gi = 0; gi < gwResults.length; gi++) {
+                  if (blockedIdx.has(gi)) continue;
+                  const tc = gwResults[gi];
+                  const ok = !(tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:'));
+                  const rawContent = isWriteTool(tc.name)
+                    ? String((tc.args as any)?.new_string ?? (tc.args as any)?.content ?? '')
+                    : undefined;
+                  guardTracker.recordToolResult(step, tc.name, tc.args as Record<string, unknown>, ok, rawContent);
+                  // FIX 4: this grounded-write-block branch `continue`s before the
+                  // normal exec path's pendingInfoGainSignals accumulation, so the
+                  // result-derived info-gain signals of the tools that DID execute
+                  // here (the non-blocked reads/Bash/Glob/Grep that ran while a
+                  // SIBLING write in the same batch was blocked) were never fed into
+                  // the next step's computeInfoGain — a step could look like a stall
+                  // it wasn't. Accumulate them here too, exactly as the normal path:
+                  // failed tool → its error string; Bash → its stdout hash; Glob/Grep
+                  // → result paths. (Reads' grounding is already recorded above.)
+                  if (!ok) {
+                    pendingInfoGainSignals.errorStrings.push(tc.result);
+                  } else if (tc.name === 'Bash') {
+                    pendingInfoGainSignals.bashStdout.push(hashBashStdout(tc.result));
+                  } else if (tc.name === 'Glob' || tc.name === 'Grep') {
+                    for (const p of extractResultPaths(tc.result)) pendingInfoGainSignals.resultPaths.push(p);
+                  }
+                  // ── R3 FIX 1: mirror the normal exec path's invariants bookkeeping
+                  // for the EXECUTED (non-blocked) siblings of a partially-blocked
+                  // batch. The grounded-write-block branch `continue`s before the
+                  // normal `if (pipelineActive && okExec)` block (≈L1579), so a
+                  // successful allowed Edit/Write here never armed the DiagnosticRunner
+                  // (no post-edit type/lint digest) and a successful evidence-class
+                  // sibling (Bash/orch/write) never set successfulNonReadTool — so the
+                  // evidence guard could wrongly nudge a turn whose only mutating tool
+                  // ran in a partially-blocked step. Read grounding already happened
+                  // above (D3, ≈L1354). Mirror noteEdit + the evidence flag here.
+                  if (ok) {
+                    // A successful allowed write → arm the post-edit checker.
+                    if (isWriteTool(tc.name)) {
+                      const editPath = (tc.args as any)?.file_path ?? (tc.args as any)?.path;
+                      if (diagnosticRunner && typeof editPath === 'string' && editPath.length > 0) {
+                        try { diagnosticRunner.noteEdit(editPath, tc.id); } catch { /* best-effort */ }
+                      }
+                    }
+                    // A successful state-advancing tool (Edit/Write/MultiEdit/Bash/
+                    // orch dispatch) → evidence for the evidence guard. isEvidenceTool
+                    // is the same allowlist the normal path uses (excludes reads /
+                    // ReportConfidence / RetrieveResult).
+                    if (isEvidenceTool(tc.name)) {
+                      pipelineEvidence.successfulNonReadTool = true;
+                    }
+                  }
+                }
+                for (const tc of gwResults) {
+                  let histContent = tc.result;
+                  if (histContent.length > INLINE_LIMIT) {
+                    const cacheEntry = saveToolResultToDisk(config.engine.id, tc.id, tc.name, tc.result);
+                    if (cacheEntry) { toolCacheManifest.push(cacheEntry); histContent = histContent.slice(0, 2048) + `\n...\n[cached — ${tc.id}]`; }
+                    else { histContent = histContent.slice(0, 2048) + '\n...\n[truncated]'; }
+                  }
+                  messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
+                }
+                productiveSteps++;
+                continue; // Loop — model gets feedback and should read first.
+              }
+              // No blocked writes → fall through to normal parallel execution.
+              // R3 FIX 4: a step with NO grounded-write block breaks any write-spin.
+              writeSpinBlockedKey = null;
+              writeSpinCount = 0;
             }
 
             // ── Solo-coding gate: block writes without investigation ──
@@ -994,13 +1602,16 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             // reading anything first, block the write and force investigation.
             // Whitelisted: step > 3 (already investigated), single-file tasks,
             // forge context (workers should code), or if reads happened this turn.
+            // STRICT ONLY — in invariants/shadow the grounded-write batch gate
+            // above replaces this (guardGateFires is forced false so this block
+            // never runs and strict stays byte-identical).
             // ── Telemetry: time the gate's condition evaluation (fired or not) ──
             const guardGateT0 = performance.now();
             const hasWrites = parsedCalls.some(tc => WRITE_TOOLS.has(tc.name));
             const hasReads = parsedCalls.some(tc => READ_TOOLS.has(tc.name));
             const investigatedAlready = readCount > 0 || hasHistoryToolCall(READ_TOOLS);
             const orchestratedAlready = orchCount > 0 || hasHistoryToolCall(ORCH_TOOLS);
-            const guardGateFires = hasWrites && !investigatedAlready && !orchestratedAlready && step <= 2 && !isSingleFileMention && isComplexTask;
+            const guardGateFires = !pipelineActive && hasWrites && !investigatedAlready && !orchestratedAlready && step <= 2 && !isSingleFileMention && isComplexTask;
             const guardGateOverheadMs = performance.now() - guardGateT0;
             guardTracker.addGuardOverheadMs(guardGateOverheadMs);
             if (guardGateFires) {
@@ -1144,6 +1755,50 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 readSpinRecoveryFireId = null;
                 readSpinRecoveryCostMs = 0;
               }
+              // ── FIX 5: accumulate this step's result-derived info-gain signals ──
+              // Feeds the NEXT step's computeInfoGain (one-step lag — these signals
+              // exist only post-execution). Result file paths (Glob/Grep surface them),
+              // error strings (a failed tool IS a distinct signal), and Bash stdout
+              // hashes (a re-run with identical output = no gain). computeInfoGain
+              // de-dupes against the seen-sets, so genuinely-new output counts once.
+              if (pipelineActive) {
+                if (!okExec) {
+                  pendingInfoGainSignals.errorStrings.push(tc.result);
+                } else if (tc.name === 'Bash') {
+                  pendingInfoGainSignals.bashStdout.push(hashBashStdout(tc.result));
+                } else if (tc.name === 'Glob' || tc.name === 'Grep') {
+                  for (const p of extractResultPaths(tc.result)) pendingInfoGainSignals.resultPaths.push(p);
+                }
+              }
+              // ── INVARIANTS/SHADOW: feed the pipeline from executed results ──
+              // Record reads into the registry (grounded-write membership), note
+              // successful Edit/Write to the DiagnosticRunner (post-edit checker),
+              // and mark non-read tool success as evidence for the evidence guard.
+              if (pipelineActive && okExec) {
+                if (readPathRegistry) {
+                  try { readPathRegistry.record(tc.name, tc.args as Record<string, unknown>, tc.result); } catch { /* best-effort */ }
+                }
+                // FIX 2: isWriteTool (Edit/Write/MultiEdit) from the guards module
+                // — replaces the legacy `WRITE_TOOLS.has || ===MultiEdit` patch.
+                if (isWriteTool(tc.name)) {
+                  const editPath = (tc.args as any)?.file_path ?? (tc.args as any)?.path;
+                  if (diagnosticRunner && typeof editPath === 'string' && editPath.length > 0) {
+                    try { diagnosticRunner.noteEdit(editPath, tc.id); } catch { /* best-effort */ }
+                  }
+                }
+                // FIX 2: evidence counts ONLY genuinely state-advancing tools.
+                // isEvidenceTool (guards/evidence.kern) is the allowlist: Edit/
+                // Write/MultiEdit + Bash + the ORCH_TOOLS dispatch tools. It
+                // EXCLUDES ReportConfidence (a self-report) and RetrieveResult /
+                // every read-class tool, which the old `!READ_TOOLS.has(...)`
+                // branch wrongly credited (ReportConfidence isn't in READ_TOOLS, so
+                // a turn whose only success was a confidence report falsely cleared
+                // the evidence guard). Writes ALSO flag evidence — they're in the
+                // allowlist, so the single predicate covers them too.
+                if (isEvidenceTool(tc.name)) {
+                  pipelineEvidence.successfulNonReadTool = true;
+                }
+              }
             }
 
             // Emit results and add to history — track errors for circuit breaker
@@ -1274,6 +1929,15 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   }
                   yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, output: result, status: 'done' } };
 
+                  // FIX 3: record a SUCCESSFUL synthetic Read/Grep/Glob into the
+                  // read-path registry, exactly like the main exec path does — a
+                  // narrated-intent auto-execution grounds those paths too, so a
+                  // later Edit of an auto-read file is not falsely blocked by
+                  // grounded-write. Best-effort; never throws into the loop.
+                  if (pipelineActive && readPathRegistry && !(result.startsWith('Error:') || result.startsWith('Unknown tool:'))) {
+                    try { readPathRegistry.record(sc.name, sc.args as Record<string, unknown>, result); } catch { /* best-effort */ }
+                  }
+
                   // Add to history as proper tool call + result
                   messageHistory.push({
                     role: 'assistant', content: null,
@@ -1344,6 +2008,51 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             readSpinRecoveryFireId = null;
             readSpinRecoveryCostMs = 0;
           }
+          // ── INVARIANTS/SHADOW: evidence invariant on the final response ──
+          // Before accepting a no-tool-call final response, drain any pending
+          // diagnostics (a green digest is evidence) then consult the evidence
+          // guard: a completion claim with NO tool/verifier result this turn AND
+          // not yet exhausted → nudge ONCE. In invariants we inject ONE corrective
+          // user message, flip exhausted, and continue the loop so the model can
+          // verify. In shadow the verdict is recorded but never injected. After the
+          // first nudge the guard passes through (exhausted) so it fires at most
+          // once per turn.
+          if (pipelineActive && diagnosticRunner) {
+            for (const digest of diagnosticRunner.drainPending()) {
+              diagSeq++;
+              const diagId = `diag-${diagSeq}`;
+              pushDiagnosticToHistory(diagId, digest.text); // FIX 4: paired assistant tool_call + tool result
+              yield { type: 'tool_call' as const, content: 'Diagnostic', metadata: { input: { packageDir: digest.packageDir }, output: digest.text, status: digest.clean ? 'done' : 'error' } };
+              if (digest.clean) pipelineEvidence.diagnosticGreen = true;
+            }
+          }
+          if (pipelineActive && !pipelineEvidence.exhausted) {
+            const evSnap: GuardSnapshot = {
+              engineId: config.engine.id,
+              step,
+              mode: guardMode,
+              readPaths: new Set<string>(),
+              everReadPaths: readPathRegistry ? readPathRegistry.snapshot() : new Set<string>(),
+              fileExists: () => false,
+              evidence: pipelineEvidence,
+              spin: pipelineSpin,
+              confidence: pipelineConfidence,
+            };
+            const evVerdict = consultFinalText(fullResponse, evSnap);
+            if (evVerdict.action === 'nudge') {
+              const t0 = performance.now();
+              guardTracker.recordFire('evidence', step, [], 0);
+              guardTracker.addGuardOverheadMs(performance.now() - t0);
+              pipelineEvidence.exhausted = true; // fires at most once per turn
+              if (guardMode === 'invariants' && step < budget) {
+                yield { type: 'status' as const, content: 'evidence invariant: completion claim needs a verifier result…' };
+                messageHistory.push({ role: 'assistant', content: fullResponse });
+                messageHistory.push({ role: 'user', content: evVerdict.feedback });
+                continue;
+              }
+              // shadow mode (or no budget left): recorded only, accept the response.
+            }
+          }
           const assistMsg: any = { role: 'assistant', content: fullResponse };
           if (lastDispatchParts && lastDispatchParts.length > 0) {
             assistMsg._parts = lastDispatchParts;
@@ -1360,9 +2069,29 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           break;
         }
 
+        // ── INVARIANTS/SHADOW: drain trailing diagnostics into history ──
+        // If the turn ended with pending (in-flight or queued) diagnostics, drain
+        // them so the NEXT turn's first dispatch sees what the last edits broke.
+        if (diagnosticRunner) {
+          try {
+            for (const digest of diagnosticRunner.drainPending()) {
+              diagSeq++;
+              const diagId = `diag-${diagSeq}`;
+              pushDiagnosticToHistory(diagId, digest.text); // FIX 4: paired assistant tool_call + tool result
+              yield { type: 'tool_call' as const, content: 'Diagnostic', metadata: { input: { packageDir: digest.packageDir }, output: digest.text, status: digest.clean ? 'done' : 'error' } };
+            }
+          } catch { /* best-effort */ }
+        }
+
         if (config.sessionContinuity === true) {
           // Persist session state to disk after each turn — survives process restart.
-          try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest }); } catch (saveErr) { console.warn('[session] failed to persist turn:', (saveErr as Error).message ?? saveErr); }
+          // Serialize the read-path registry (invariants/shadow) so grounded-write
+          // knowledge survives a restart; strict passes undefined (backward-compat).
+          // FIX 1: the registry is the HOISTED per-session instance — its live state
+          // already carries every read this session, so there is no separate
+          // in-memory seed to refresh (the old sessionReadPaths closure is gone).
+          const serializedReadPaths = readPathRegistry ? readPathRegistry.serialize() : undefined;
+          try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest, readPaths: serializedReadPaths }); } catch (saveErr) { console.warn('[session] failed to persist turn:', (saveErr as Error).message ?? saveErr); }
 
           // ── Cross-session memory: extract learnings for Cesar's brain ──
           if (config.onTurnEnd && compactionSummary) {
@@ -1402,6 +2131,10 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               updateGuardCounters(events, turn);
             }
           } catch { /* telemetry is best-effort — never throw into the session */ }
+          // ── P2 DiagnosticRunner teardown — clear debounce timers ──
+          // Dispose on EVERY exit path so a pending checker run can't fire after
+          // the turn ends. Best-effort; never throws into the session.
+          try { diagnosticRunner?.dispose(); } catch { /* best-effort */ }
         }
       }
 
@@ -1522,6 +2255,14 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
 
     getMessageHistory() {
       return [...messageHistory];
+    },
+
+    getReadPaths() {
+      // codex FIX 1: serialized read-path set for a cross-engine handoff.
+      // undefined when the pipeline is off (strict never allocates the
+      // registry), so saveConversation persists nothing and the conversation
+      // disk shape stays byte-identical for a strict source.
+      return sessionReadPathRegistry ? sessionReadPathRegistry.serialize() : undefined;
     },
 
     getContextUsage() {

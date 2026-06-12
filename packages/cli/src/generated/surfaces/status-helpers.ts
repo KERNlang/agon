@@ -217,7 +217,7 @@ export function loadGuardTelemetrySnapshot(): GuardCounters | null {
 }
 
 /**
- * Fold the guard-counters snapshot into compact, render-ready rows for the StatusDashboard. PURE (no I/O) so it's fully unit-testable from synthetic counters. Returns { visible, guardRows, engineRows }. visible is false when counters is null OR has no engine-guard cells AND no turn aggregates. codex FIX 3c: guardRows are PER-GUARD so no row shows a permanently-0% column. Each guardRow carries two GENERIC signal cells (sig1Label/sig1Pct, sig2Label/sig2Pct) whose meaning depends on the guard, plus fires, avgOverheadMs (-1 renders as 'n/a'), and the per-guard recommendation. grounded-write -> CER/PRV over resolved=ceremony+prevented, overhead=overheadMsTotal/fires. read-spin -> WHR/STL over resolved=wouldHaveRecovered+stalled+recovered. report-confidence -> HI-HIT (highConfHit/(highConfHit+highConfMiss)) / LO-HIT (lowConfHit/(lowConfHit+lowConfMiss)), avgOverheadMs=-1, recommendation insufficient-data in Phase 0. Each pct is 0 when its denominator is 0. Per-engine engineRow: { key, engineId, parallelRatePct, avgRoundTripMs, avgAssembleMs } each 0 when its denominator is 0.
+ * Fold the guard-counters snapshot into compact, render-ready rows for the StatusDashboard. PURE (no I/O) so it's fully unit-testable from synthetic counters. Returns { visible, guardRows, engineRows }. visible is false when counters is null OR has no engine-guard cells AND no turn aggregates. codex FIX 3c: guardRows are PER-GUARD so no row shows a permanently-0% column. Each guardRow carries two GENERIC signal cells (sig1Label/sig1Pct, sig2Label/sig2Pct) whose meaning depends on the guard, plus fires, avgOverheadMs (-1 renders as 'n/a'), and the per-guard recommendation. grounded-write -> CER/PRV over resolved=ceremony+prevented, overhead=overheadMsTotal/fires. read-spin -> WHR/STL over resolved=wouldHaveRecovered+stalled+recovered. report-confidence -> HI-HIT (highConfHit/(highConfHit+highConfMiss)) / LO-HIT (lowConfHit/(lowConfHit+lowConfMiss)), avgOverheadMs=-1, recommendation insufficient-data in Phase 0. The P1 GuardPipeline guards evidence + confidence-escalation carry only fires (no ceremony/prevented/whr/calibration split), so both signal cells render as a PLACEHOLDER: sig*Label '—' + sentinel sig*Pct -1 (the dashboard renders -1 as a dim '—', not a fabricated 0% CER/PRV) — FIRES is their only honest signal. Each non-placeholder pct is 0 when its denominator is 0. Per-engine engineRow: { key, engineId, parallelRatePct, avgRoundTripMs, avgAssembleMs } each 0 when its denominator is 0.
  */
 // @kern-source: status-helpers:215
 export function buildGuardTelemetryView(counters: GuardCounters | null): any {
@@ -251,6 +251,18 @@ export function buildGuardTelemetryView(counters: GuardCounters | null): any {
         const resolvedRS = (cell.wouldHaveRecovered ?? 0) + (cell.stalled ?? 0) + (cell.recovered ?? 0);
         sig1Label = 'WHR'; sig1Pct = pct(cell.wouldHaveRecovered ?? 0, resolvedRS);
         sig2Label = 'STL'; sig2Pct = pct(cell.stalled ?? 0, resolvedRS);
+      } else if (guardId === 'evidence' || guardId === 'confidence-escalation') {
+        // P1 GuardPipeline guards (D1). evidence = an unsupported-completion-
+        // claim nudge; confidence-escalation = a confidence-gate escalate.
+        // Neither resolves into ceremony/prevented (the grounded-write split)
+        // nor whr/stalled (read-spin) nor a calibration bucket — their cells
+        // carry only fires (+ overhead/unresolved). Rendering CER/PRV at 0%
+        // would be a fabricated, permanently-0% column (the exact misleading
+        // label codex FIX 3c exists to avoid). So emit a PLACEHOLDER signal:
+        // sentinel pct -1 + a '—' label, which the dashboard renders as a dim
+        // '—' (no '%') — FIRES is the only honest number these guards carry.
+        sig1Label = '—'; sig1Pct = -1;
+        sig2Label = '—'; sig2Pct = -1;
       } else if (guardId === 'report-confidence') {
         const hiDen = (cell.highConfHit ?? 0) + (cell.highConfMiss ?? 0);
         const loDen = (cell.lowConfHit ?? 0) + (cell.lowConfMiss ?? 0);

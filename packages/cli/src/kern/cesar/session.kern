@@ -7,6 +7,8 @@ import from="node:module" names="createRequire"
 import from="@kernlang/agon-core" names="PersistentSession,PersistentSessionConfig" types=true
 import from="@kernlang/agon-core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,buildCodebaseMap,buildProjectMemoryBlock,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt,isReadOnlyCommand,AGON_MODE_NAMES,parsePermissionRuleSet,parseToolHooks,evaluatePermissionRules,evaluateToolRules,PERMISSION_DENIED_MESSAGE"
 import from="@kernlang/agon-core" names="ToolContext,ToolCallResult" types=true
+import from="@kernlang/agon-core" names="resolveGuardMode,readGuardModesFromConfig"
+import from="@kernlang/agon-core" names="GuardMode" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./tools.js" names="createCesarToolRegistry"
 import from="../signals/output.js" names="getSessionAllowList"
@@ -173,6 +175,89 @@ RULE 10 — TURN CLOSURE: End every turn with one clear closing line so the user
   If you END the turn still below ~85%, write CONFIDENCE: NN% once near your closing line — the UI uses that exact shape to offer the user an escalation (nero/tribunal).`
   >>>
 
+const name=CESAR_RULE_1_STRICT type=string
+  doc "The EXACT RULE 1 — CONFIDENCE paragraph baked into CESAR_SYSTEM_PROMPT (the every-turn ReportConfidence ceremony). Held here verbatim so the invariants-mode rewrite is an exact string replacement: strict/shadow keep CESAR_SYSTEM_PROMPT byte-identical, invariants swaps this paragraph for CESAR_RULE_1_INVARIANTS. If RULE 1's wording in CESAR_SYSTEM_PROMPT ever changes, this const MUST change in lockstep or the replacement silently no-ops (the prompt stays strict). applyInvariantsRule1 fail-safes to the strict prompt on a mismatch AND emits a one-time console.warn so the drift is observable instead of silent."
+  handler <<<
+    `RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you cannot call tools, write ~X% at the very start instead. No exceptions. On the FIRST turn about a topic, low confidence is expected — investigate, then report your INFORMED confidence. BUT you carry the whole conversation: files you already read, searches you already ran, and conclusions you already reached EARLIER THIS SESSION are still valid context — build on them and report informed confidence immediately. Re-read a file ONLY if it changed or you never saw it. Do NOT restart every turn from zero with "let me check what's going on" when the answer is already in your history — re-discovering what you already know makes you look lost and wastes the user's time.`
+  >>>
+
+const name=CESAR_RULE_1_INVARIANTS type=string
+  doc "RULE 1 rewrite for guard mode 'invariants'. The GuardPipeline's grounded-write/evidence invariants now ENFORCE the confidence signal structurally (a well-formed Edit after a Read IS the proof), so the every-turn ReportConfidence ceremony is demoted to on-demand. RULE 1b is kept verbatim via the strict template — only this paragraph is swapped."
+  handler <<<
+    `RULE 1 — CONFIDENCE: Report confidence via ReportConfidence ONLY when you are about to run a risky command (Bash mutations, multi-file writes, delegation) or when genuinely uncertain. Do NOT call it ritually every turn — a well-formed Edit after reading the file IS the confidence signal.`
+  >>>
+
+const name=invariantsRule1DriftState value={{ { warned: false } }}
+  doc "FIX 3 (R4) — module-level once-flag for applyInvariantsRule1's drift warning. A mutable {warned} holder (mutated in place, never frozen at module load) so the console.warn fires AT MOST ONCE per process even though buildCesarSystemPrompt calls applyInvariantsRule1 on every invariants-mode prompt assembly. Resettable in tests via the exported _resetInvariantsRule1DriftWarning seam."
+
+fn name=_resetInvariantsRule1DriftWarning returns=void export=true
+  doc "Test-only seam: reset the once-flag so a unit test can re-trigger applyInvariantsRule1's drift warning with a deliberately drifted prompt. Not used in production."
+  handler <<<
+    invariantsRule1DriftState.warned = false;
+  >>>
+
+fn name=applyInvariantsRule1 params="prompt:string" returns=string export=true
+  doc "Rewrite the every-turn RULE 1 — CONFIDENCE ceremony to the on-demand 'invariants' form. Pure string transform on the assembled CESAR_SYSTEM_PROMPT: replaces the exact CESAR_RULE_1_STRICT paragraph with CESAR_RULE_1_INVARIANTS, leaving RULE 1b and everything else byte-identical. Only called on guard mode 'invariants' — strict/shadow never reach here, so the base prompt stays byte-identical for them by construction. If the strict text isn't found (RULE 1 wording in CESAR_SYSTEM_PROMPT drifted out of sync with the CESAR_RULE_1_STRICT const) it FAILS SAFE: it returns the prompt UNCHANGED (serving the stricter every-turn ceremony rather than silently dropping RULE 1) AND emits a one-time console.warn so the drift is observable instead of passing unnoticed. The warning is gated by a module-level once-flag (invariantsRule1DriftState) so it fires at most once per process despite the per-turn call cadence."
+  handler <<<
+    if (!prompt.includes(CESAR_RULE_1_STRICT)) {
+      if (!invariantsRule1DriftState.warned) {
+        invariantsRule1DriftState.warned = true;
+        console.warn('[agon] invariants RULE 1 rewrite failed — CESAR_SYSTEM_PROMPT drifted from CESAR_RULE_1_STRICT; serving strict confidence ceremony');
+      }
+      return prompt;
+    }
+    return prompt.replace(CESAR_RULE_1_STRICT, CESAR_RULE_1_INVARIANTS);
+  >>>
+
+const name=GUARD_MODES_CONFIG_TTL_MS type=number value={{ 60 * 1000 }}
+  doc "FIX 6a — re-read ~/.agon/config.json's guardModes at most once per 60s. resolveCesarGuardMode runs on EVERY prompt assembly; the config rarely changes mid-session, so a minute-stale view is fine and keeps the synchronous file read off the per-turn prompt-build path. Mirrors GUARD_TELEMETRY_SNAPSHOT_TTL_MS in status-helpers."
+
+const name=guardModesConfigCache value={{ { at: 0, home: '', value: null as (ReturnType<typeof readGuardModesFromConfig>) } }}
+  doc "FIX 6a — module-level {at, home, value} memo for readGuardModesFromConfig(). `home` keys the entry to the AGON_HOME that produced it so an in-process AGON_HOME change (tests, embedded use) can never serve another home's config for up to a TTL. Mutated in place; never frozen at module load."
+
+fn name=readGuardModesFromConfigMemoized returns="ReturnType<typeof readGuardModesFromConfig>" export=false
+  doc "FIX 6a — memoized wrapper over readGuardModesFromConfig(): the synchronous ~/.agon/config.json read happens at most once per GUARD_MODES_CONFIG_TTL_MS, keyed by AGON_HOME so an in-process home change invalidates. Best-effort: a read failure caches null for the TTL. Mirrors loadGuardTelemetrySnapshot's memo pattern in status-helpers.kern."
+  handler <<<
+    const now = Date.now();
+    const home = process.env.AGON_HOME?.trim() ?? '';
+    // at !== 0 marks "a read happened" — a cached null (no guardModes key)
+    // honours the TTL too, so it isn't re-read every prompt assembly.
+    if (guardModesConfigCache.at !== 0
+      && guardModesConfigCache.home === home
+      && now - guardModesConfigCache.at < GUARD_MODES_CONFIG_TTL_MS) {
+      return guardModesConfigCache.value;
+    }
+    let value: ReturnType<typeof readGuardModesFromConfig>;
+    try {
+      value = readGuardModesFromConfig();
+    } catch {
+      value = null;
+    }
+    guardModesConfigCache.at = now;
+    guardModesConfigCache.home = home;
+    guardModesConfigCache.value = value;
+    return value;
+  >>>
+
+fn name=resolveCesarGuardMode params="ctx:HandlerContext" returns="GuardMode" export=true
+  doc "Resolve the effective guard mode for the engine Cesar's brain is actually running on. Engine id = the live session's engineId (most accurate) → config.cesarEngine → config.forgeFixedStarter → 'claude', mirroring resolveCesarBackend. The engine def's `guards` field is read straight off the typed EngineDefinition (D3 added `guards?: GuardMode` to the type + the engine-schema zod), so no cast is needed. The user-config read is MEMOIZED (FIX 6a — readGuardModesFromConfigMemoized, 60s TTL) so prompt assembly no longer hits ~/.agon/config.json every turn. Best-effort: any registry/config failure degrades to 'strict' (the byte-identical default), never throws into prompt assembly."
+  handler <<<
+    try {
+      const config = ctx.config as any;
+      const engineId = ctx.cesarSession?.engineId ?? config?.cesarEngine ?? config?.forgeFixedStarter ?? 'claude';
+      let engineGuards: GuardMode | undefined;
+      try {
+        const engineDef = ctx.registry.get(engineId);
+        engineGuards = engineDef.guards;
+      } catch {
+        engineGuards = undefined;
+      }
+      return resolveGuardMode(engineId, engineGuards, readGuardModesFromConfigMemoized());
+    } catch {
+      return 'strict';
+    }
+  >>>
+
 fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export=true
   doc "Build the full Cesar system prompt with project context, engine list, and mode flags."
   handler <<<
@@ -188,7 +273,14 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export
       } catch { return `- ${id}`; }
     }).join('\n');
 
-    const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
+    // Mode-aware base prompt: in guard mode 'invariants' the GuardPipeline
+    // enforces the confidence signal structurally, so RULE 1's every-turn
+    // ReportConfidence ceremony is demoted to on-demand. strict AND shadow keep
+    // CESAR_SYSTEM_PROMPT byte-identical (shadow MEASURES the old prompt's
+    // behavior) — only 'invariants' rewrites RULE 1, by construction.
+    const guardMode = resolveCesarGuardMode(ctx);
+    const basePrompt = guardMode === 'invariants' ? applyInvariantsRule1(CESAR_SYSTEM_PROMPT) : CESAR_SYSTEM_PROMPT;
+    const systemParts: string[] = [basePrompt];
     if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
     // Codebase atlas: a compact "where things live" index so Cesar locates code
     // from context instead of re-grepping every turn. Cheap + memoized per cwd.
@@ -442,7 +534,14 @@ fn name=saveCesarConversationSnapshot params="session:PersistentSession|null, ch
     const snapshot = buildCesarConversationSnapshot(session, chatSession);
     if (snapshot.length === 0) return;
     try {
-      saveConversation(snapshot, session.engineId);
+      // codex FIX 1: carry the SOURCE engine's serialized ReadPathRegistry across
+      // the handoff. getReadPaths() returns undefined when the pipeline is off
+      // (strict), keeping the conversation disk shape byte-identical; when present,
+      // the next engine restores its grounded reads directly (the snapshot's
+      // tool_calls are flattened to text by stripEngineArtifacts, so they can't be
+      // re-derived on load).
+      const readPaths = session.getReadPaths?.();
+      saveConversation(snapshot, session.engineId, readPaths);
     } catch (err) {
       console.warn(`[agon] failed to save Cesar conversation snapshot: ${err instanceof Error ? err.message : String(err)}`);
     }

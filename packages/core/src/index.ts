@@ -353,3 +353,38 @@ export type {
   TurnTelemetryRecord, GuardTelemetryThresholds, ReadSpinThresholds,
   GuardCounterCell, GuardTurnAggregate, GuardCounters,
 } from './telemetry.js';
+// ── Diagnostics (Module D2) — post-edit checker discovery + per-session DiagnosticRunner ──
+export {
+  discoverChecker, parseCheckerOutput,
+  normalizeMessage, fingerprintOf,
+  REPO_ROOT_MARKERS, RUFF_CONFIG_FILES,
+  DiagnosticRunner,
+  normalizeEditedPath, renderDigestText,
+  DEBOUNCE_MS, BUDGET_MS, DIGEST_MAX_LINES, QUEUE_CAP, CLEAN_BASELINE,
+} from './diagnostics.js';
+export type {
+  CheckerPlan, CheckerLine, CheckerLang,
+  DiagnosticDigest, SpawnLike,
+} from './diagnostics.js';
+// ── GuardPipeline (P1 Module D1) — pure mode resolution + per-call/per-turn
+//    guard decisions (grounded-write / evidence / information-gain /
+//    confidence-gate) + the per-session read-path registry. ──
+export {
+  resolveGuardMode, readGuardModesFromConfig, asGuardMode,
+  DEFAULT_GUARD_MODE, GUARD_MODES,
+  ReadPathRegistry, canonicalizePath, extractResultPaths,
+  consultGroundedWrite, isWriteTool, writeTargetPath, groundedWriteFeedback,
+  consultFinalText, isCompletionClaim, hasUnresolvedFailure, hasEvidence,
+  stripNonAssertionSpans,
+  computeInfoGain, isStallStep, advanceStall, createInfoGainState, hashBashStdout,
+  STALL_NUDGE_STEP, STALL_STRONG_NUDGE_STEP, STALL_HARD_STOP_STEP, GLOBAL_STALL_HARD_STOP,
+  consultConfidenceGate, isRiskyBash, isGatedCall, gatedCategory,
+  BROAD_WRITE_THRESHOLD, DISPATCH_TOOLS, RISKY_BASH_RE,
+  consultGuard, consultBatch, applyShadow, countDistinctWriteFiles,
+} from './guards.js';
+export type {
+  GuardMode, GuardSnapshot, GuardVerdict, GuardCall,
+  TurnEvidence, SpinState, ConfidenceState,
+  UserGuardConfig, StepObservation, InfoGainState, StallResult,
+  ShadowableVerdict, BatchVerdict,
+} from './guards.js';

@@ -2,19 +2,22 @@
 
 import { createHash } from 'node:crypto';
 
+/**
+ * Guard identity for telemetry bucketing. grounded-write / read-spin / report-confidence are the Phase-0 inline guards; 'evidence' (unsupported completion-claim nudge) and 'confidence-escalation' (confidence-gate escalate) are the P1 GuardPipeline guards (Module D1). The counters cells + dashboard key off this string, so new ids appear as new rows automatically.
+ */
 // @kern-source: guard-telemetry:20
-export type GuardId = 'grounded-write' | 'read-spin' | 'report-confidence';
+export type GuardId = 'grounded-write' | 'read-spin' | 'report-confidence' | 'evidence' | 'confidence-escalation';
 
-// @kern-source: guard-telemetry:22
+// @kern-source: guard-telemetry:23
 export type GuardResolutionLabel = 'ceremony' | 'prevented' | 'redirected' | 'averted' | 'recovered' | 'stalled' | 'would_have_recovered' | 'unresolved';
 
 /**
  * high = confidence value ≥ 85; hit = every Edit/Write result within the same step or the following 3 steps succeeded; no_edit = no write within the same step or the following 3 steps.
  */
-// @kern-source: guard-telemetry:24
+// @kern-source: guard-telemetry:25
 export type CalibrationBucket = 'high_conf_hit' | 'high_conf_miss' | 'low_conf_hit' | 'low_conf_miss' | 'no_edit';
 
-// @kern-source: guard-telemetry:29
+// @kern-source: guard-telemetry:30
 export interface BlockedCallInfo {
   name: string;
   path?: string;
@@ -23,7 +26,7 @@ export interface BlockedCallInfo {
   rawContent?: string;
 }
 
-// @kern-source: guard-telemetry:39
+// @kern-source: guard-telemetry:40
 export interface GuardFireResolution {
   label: GuardResolutionLabel;
   divergence?: number;
@@ -32,7 +35,7 @@ export interface GuardFireResolution {
   detail?: string;
 }
 
-// @kern-source: guard-telemetry:47
+// @kern-source: guard-telemetry:48
 export interface GuardFireEvent {
   kind: 'guard_fire';
   id: string;
@@ -48,7 +51,7 @@ export interface GuardFireEvent {
   calibrationBucket?: CalibrationBucket;
 }
 
-// @kern-source: guard-telemetry:61
+// @kern-source: guard-telemetry:62
 export interface TurnTelemetryRecord {
   kind: 'turn';
   turnId: string;
@@ -65,13 +68,13 @@ export interface TurnTelemetryRecord {
   fires: number;
 }
 
-// @kern-source: guard-telemetry:77
+// @kern-source: guard-telemetry:78
 export interface ReadSpinThresholds {
   minSample: number;
   wouldHaveRecoveredRate: number;
 }
 
-// @kern-source: guard-telemetry:81
+// @kern-source: guard-telemetry:82
 export interface GuardTelemetryThresholds {
   minSample: number;
   ceremonyRate: number;
@@ -82,13 +85,13 @@ export interface GuardTelemetryThresholds {
 /**
  * Week-1 relax/keep decision thresholds. grounded-write: minSample = floor on resolved fires (ceremony+prevented) before trustworthy; ceremonyRate = ceremony/resolved above which a guard is mostly ceremony; avgOverheadMs = upper bound under which firing is cheap enough to relax. read-spin (codex FIX 3): readSpin.minSample = floor on resolved read-spin fires (wouldHaveRecovered+stalled+recovered); readSpin.wouldHaveRecoveredRate = wouldHaveRecovered/resolved above which the model usually pivots on its own → relax.
  */
-// @kern-source: guard-telemetry:88
+// @kern-source: guard-telemetry:89
 export const GUARD_TELEMETRY_THRESHOLDS: GuardTelemetryThresholds = { minSample: 20, ceremonyRate: 0.7, avgOverheadMs: 50, readSpin: { minSample: 20, wouldHaveRecoveredRate: 0.5 } };
 
 /**
  * Canonicalize content for content-identity hashing: trim, collapse every run of whitespace to a single space, then take the first 4096 chars. Two edits that differ only in indentation/trailing newline hash identically — so a re-issued write is recognized as the SAME content.
  */
-// @kern-source: guard-telemetry:93
+// @kern-source: guard-telemetry:94
 export function normalizeForHash(content: string): string {
   const collapsed = content.replace(/\s+/g, ' ').trim();
   return collapsed.slice(0, 4096);
@@ -97,7 +100,7 @@ export function normalizeForHash(content: string): string {
 /**
  * sha256 hex of normalizeForHash(content). Used to mark a blocked Edit/Write's content so a later identical re-issue is detectable without keeping the raw bytes.
  */
-// @kern-source: guard-telemetry:100
+// @kern-source: guard-telemetry:101
 export function contentHashOf(content: string): string {
   return createHash('sha256').update(normalizeForHash(content)).digest('hex');
 }
@@ -105,7 +108,7 @@ export function contentHashOf(content: string): string {
 /**
  * Jaccard similarity 0..1 over the lowercased word-token SETS of a and b. 1 = identical token sets, 0 = disjoint. Two empty strings → 1 (both vacuously identical); one empty → 0.
  */
-// @kern-source: guard-telemetry:106
+// @kern-source: guard-telemetry:107
 export function tokenSetJaccard(a: string, b: string): number {
   const tokensOf = (s: string): Set<string> => {
     const out = new Set<string>();
@@ -127,7 +130,7 @@ export function tokenSetJaccard(a: string, b: string): number {
 /**
  * Classify what the model did AFTER a grounded-write guard fired, from the writes it issued later in the same turn. ONLY SUCCESSFUL writes (ok === true) are resolution evidence — a FAILED later edit is not proof the guard prevented/redirected anything, so it's filtered out before classifying. Over the ok-writes: same path + high content similarity (jaccard ≥ 0.9) = `ceremony` (the guard blocked a write the model just re-issued near-identically; divergence = 1 - jaccard). Same path + low similarity = `prevented` (the guard changed what got written). A successful write to a DIFFERENT path only = `redirected`. If later writes existed but NONE succeeded = `unresolved` (observedInTurn=false, detail='only-failed-writes'). No later write at all but the turn finished normally = `averted` (model dropped the write). No evidence / aborted turn = `unresolved` (observedInTurn=false).
  */
-// @kern-source: guard-telemetry:126
+// @kern-source: guard-telemetry:127
 export function deriveGroundedWriteResolution(fire: {path?:string; contentHash?:string; rawContent?:string}, laterWrites: Array<{path?:string; rawContent?:string; ok:boolean}>): GuardFireResolution {
   // Only SUCCESSFUL writes are resolution evidence — a failed later edit does
   // not prove ceremony/prevented/redirected.
@@ -161,7 +164,7 @@ export function deriveGroundedWriteResolution(fire: {path?:string; contentHash?:
 /**
  * Resolve a grounded-write fire against ALL its blocked calls, not just the first (codex FIX 2). A single fire can block multiple Edit/Write calls in one step; each is classified against the later ok-writes via deriveGroundedWriteResolution, then the per-call labels are aggregated into ONE fire label by priority: any ceremony → `ceremony` (divergence = the MIN 1-jaccard across the ceremony matches, i.e. the most-identical re-issue); else any prevented → `prevented` (divergence = min across the prevented matches); else a successful write to some OTHER path only → `redirected`; else (no later ok-writes, turn finished normally) → `averted`; else (later writes existed but all FAILED) → `unresolved` / only-failed-writes. Pure + replayable: same inputs ⇒ same label, so the offline analysis sees what the live finalize() saw.
  */
-// @kern-source: guard-telemetry:158
+// @kern-source: guard-telemetry:159
 export function deriveGroundedWriteResolutionMulti(blockedCalls: Array<{path?:string; contentHash?:string; rawContent?:string}>, laterWrites: Array<{path?:string; rawContent?:string; ok:boolean}>): GuardFireResolution {
   const okWrites = laterWrites.filter((w) => w.ok === true);
   if (okWrites.length === 0 && laterWrites.length > 0) {
@@ -206,7 +209,7 @@ export function deriveGroundedWriteResolutionMulti(blockedCalls: Array<{path?:st
 /**
  * Bucket a ReportConfidence value against the Edit/Write outcomes of the same step or the following 3 steps. No edits in window → `no_edit`. Otherwise hit = ALL those edits succeeded. high = value ≥ 85. Yields the four conf×outcome buckets so calibration drift (confident-but-failing / hesitant-but-succeeding) is countable.
  */
-// @kern-source: guard-telemetry:201
+// @kern-source: guard-telemetry:202
 export function deriveCalibrationBucket(confidence: number, editOutcomes: boolean[]): CalibrationBucket {
   const high = confidence >= 85;
   if (editOutcomes.length === 0) return 'no_edit';
@@ -215,7 +218,7 @@ export function deriveCalibrationBucket(confidence: number, editOutcomes: boolea
   return hit ? 'low_conf_hit' : 'low_conf_miss';
 }
 
-// @kern-source: guard-telemetry:213
+// @kern-source: guard-telemetry:214
 interface OpenGroundedWriteFire {
   fireId: string;
   event: GuardFireEvent;
@@ -223,7 +226,7 @@ interface OpenGroundedWriteFire {
   resolved: boolean;
 }
 
-// @kern-source: guard-telemetry:220
+// @kern-source: guard-telemetry:221
 interface OpenReadSpinFire {
   fireId: string;
   event: GuardFireEvent;
@@ -231,7 +234,7 @@ interface OpenReadSpinFire {
   resolved: boolean;
 }
 
-// @kern-source: guard-telemetry:226
+// @kern-source: guard-telemetry:227
 interface OpenConfidenceFire {
   fireId: string;
   event: GuardFireEvent;
@@ -242,9 +245,18 @@ interface OpenConfidenceFire {
 }
 
 /**
+ * A fire-counting guard (codex FIX 1: 'evidence', 'confidence-escalation') that does NOT enter the report-confidence calibration flow. Finalizes as a plain fire event: label 'unresolved' with observedInTurn=true and NO calibrationBucket. The dashboard renders these as raw FIRES + placeholders.
+ */
+// @kern-source: guard-telemetry:235
+interface PlainFire {
+  fireId: string;
+  event: GuardFireEvent;
+}
+
+/**
  * Turn-local guard-fire + telemetry accumulator. Construct ONE per turn (createTurnTracker). It records guard fires, per-step round-trip + tool-call counts, individual tool results, and the timing buckets, then finalize() resolves every open fire via the pure derive fns and emits the events + the turn record. NO disk I/O — the caller hands finalize()'s output to the store module.
  */
-// @kern-source: guard-telemetry:236
+// @kern-source: guard-telemetry:242
 export class GuardTurnTracker {
   private engineId: string;
   private turnId: string;
@@ -252,6 +264,7 @@ export class GuardTurnTracker {
   private groundedFires: OpenGroundedWriteFire[];
   private readSpinFires: OpenReadSpinFire[];
   private confidenceFires: OpenConfidenceFire[];
+  private plainFires: PlainFire[];
   private laterWrites: Array<{path?:string; rawContent?:string; ok:boolean}>;
   private steps: number = 0;
   private assembleMs: number = 0;
@@ -269,6 +282,7 @@ export class GuardTurnTracker {
     this.groundedFires = [];
     this.readSpinFires = [];
     this.confidenceFires = [];
+    this.plainFires = [];
     this.laterWrites = [];
     this.steps = 0;
     this.assembleMs = 0;
@@ -307,7 +321,9 @@ export class GuardTurnTracker {
       });
     } else if (guardId === 'read-spin') {
       this.readSpinFires.push({ fireId, event, outcome: null, resolved: false });
-    } else {
+    } else if (guardId === 'report-confidence') {
+      // codex FIX 1: ONLY report-confidence enters the confidence/calibration
+      // flow (calibration buckets + averted/recovered labels).
       this.confidenceFires.push({
         fireId,
         event,
@@ -316,6 +332,12 @@ export class GuardTurnTracker {
         editOutcomes: [],
         resolved: false,
       });
+    } else {
+      // codex FIX 1: 'evidence' / 'confidence-escalation' are fire-counting
+      // guards in Phase 0 — finalize them as plain fire events (label
+      // 'unresolved', observedInTurn=true, NO calibrationBucket). The dashboard
+      // already renders them as FIRES + placeholders.
+      this.plainFires.push({ fireId, event });
     }
     return fireId;
   }
@@ -410,6 +432,19 @@ export class GuardTurnTracker {
       events.push(cf.event);
     }
 
+    // codex FIX 1: 'evidence' / 'confidence-escalation' are fire-counting
+    // guards — emit them as plain fire events. On 'done' the fire WAS observed
+    // this turn (label 'unresolved' / observedInTurn=true) but it never enters
+    // the calibration flow, so NO calibrationBucket is set and it can never
+    // touch the averted/recovered/highConf* cells. On 'aborted' it keeps the
+    // initial unresolved/observedInTurn=false state.
+    for (const pf of this.plainFires) {
+      if (reason === 'done') {
+        pf.event.resolution = { label: 'unresolved', observedInTurn: true };
+      }
+      events.push(pf.event);
+    }
+
     const turn: TurnTelemetryRecord = {
       kind: 'turn',
       turnId: this.turnId,
@@ -433,7 +468,7 @@ export class GuardTurnTracker {
 /**
  * Construct a fresh per-turn guard-telemetry tracker. One per send()/turn; never share across turns.
  */
-// @kern-source: guard-telemetry:439
+// @kern-source: guard-telemetry:468
 export function createTurnTracker(engineId: string, turnId: string): GuardTurnTracker {
   return new GuardTurnTracker(engineId, turnId);
 }

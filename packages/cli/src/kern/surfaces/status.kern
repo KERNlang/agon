@@ -201,8 +201,13 @@ screen name=StatusDashboard target=ink memo=true export=named
       // the table header is generic. sig cell = label(6) + ' ' + num3 + '%'.
       const GW = { engine: 16, guard: 16, fires: 5, sig: 11, ovhd: 6 }; // sig = 'LABEL'(6)+' '+num3+'%'; ovhd = num4+'ms' (or 'n/a')
       const EW = { engine: 14, par: 4, rtt: 7, asm: 7 }; // par = num3+'%'; rtt/asm = num5+'ms'
+      // value < 0 is the placeholder sentinel (evidence / confidence-escalation
+      // guards carry no ceremony/prevented split) → render a dim '—' instead of
+      // a fabricated 0% CER/PRV, padded to the same 11-char cell width for alignment.
       const sigCell = (label: string, value: number) =>
-        `${label.padEnd(6).slice(0, 6)} ${num(value, 3)}%`;
+        value < 0
+          ? '—'.padEnd(11)
+          : `${label.padEnd(6).slice(0, 6)} ${num(value, 3)}%`;
       // Left-align text columns (padEnd, like the cells); right-align numeric
       // headers to their column's right edge (padStart, matching padStart cells).
       const guardHeader =

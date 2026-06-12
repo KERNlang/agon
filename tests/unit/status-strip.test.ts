@@ -308,6 +308,42 @@ describe('buildGuardTelemetryView', () => {
     expect(e.avgAssembleMs).toBe(0);
   });
 
+  it('evidence / confidence-escalation rows: FIRES surfaced, signal cells are placeholders (no fabricated 0% CER/PRV)', () => {
+    const view = buildGuardTelemetryView({
+      byEngineGuard: {
+        claude: {
+          // P1 GuardPipeline guards: cells carry only fires (+ unresolved/overhead),
+          // no ceremony/prevented/whr/calibration split → no honest CER/PRV %.
+          evidence: { ...emptyCell(), fires: 7, unresolved: 7 },
+          'confidence-escalation': { ...emptyCell(), fires: 3, unresolved: 3 },
+        },
+      },
+      byEngineTurns: {},
+      lastUpdated: 'x',
+    } as any);
+    expect(view.visible).toBe(true);
+    const ev = view.guardRows.find((r: any) => r.guardId === 'evidence');
+    const ce = view.guardRows.find((r: any) => r.guardId === 'confidence-escalation');
+    expect(ev).toBeDefined();
+    expect(ce).toBeDefined();
+    // FIRES is the one honest number these guards carry — it must surface.
+    expect(ev!.fires).toBe(7);
+    expect(ce!.fires).toBe(3);
+    // Both signal cells are placeholders: '—' label + sentinel pct -1, NEVER a
+    // misleading CER/PRV at 0%. The dashboard renders -1 as a dim '—'.
+    expect(ev!.sig1Label).toBe('—');
+    expect(ev!.sig1Pct).toBe(-1);
+    expect(ev!.sig2Label).toBe('—');
+    expect(ev!.sig2Pct).toBe(-1);
+    expect(ce!.sig1Label).toBe('—');
+    expect(ce!.sig1Pct).toBe(-1);
+    expect(ce!.sig2Label).toBe('—');
+    expect(ce!.sig2Pct).toBe(-1);
+    // Crucially: NOT the grounded-write CER/PRV labels (the misleading 0% columns).
+    expect(ev!.sig1Label).not.toBe('CER');
+    expect(ev!.sig2Label).not.toBe('PRV');
+  });
+
   it('orders engine×guard rows deterministically (engine then guard, alphabetical) for stable repaints', () => {
     const view = buildGuardTelemetryView({
       byEngineGuard: {

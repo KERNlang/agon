@@ -375,6 +375,61 @@ describe('guard-telemetry — tracker end-to-end', () => {
     expect(cell.overheadMsTotal).toBe(4321);
   });
 
+  // ── codex FIX 1: 'evidence' / 'confidence-escalation' are fire-counting ──
+  // guards — they must finalize as PLAIN fires (label 'unresolved',
+  // observedInTurn=true, NO calibrationBucket) and must NEVER route through the
+  // report-confidence calibration flow (no averted/recovered/highConf* cells).
+  it("'evidence' fire finalizes as a plain fire without calibrationBucket (codex FIX 1)", () => {
+    const t = createTurnTracker('codex', 'turn-evidence');
+    t.recordFire('evidence', 1, [], 0);
+    t.recordStep(1, { roundTripMs: 30, toolCallCount: 1 });
+    // A later edit must NOT pull 'evidence' into the calibration window.
+    t.recordToolResult(2, 'Edit', { file_path: '/x.ts', new_string: 'fix' }, true);
+    t.recordStep(2, { roundTripMs: 40, toolCallCount: 1 });
+
+    const { events } = t.finalize('done');
+    const ev = events.find((e) => e.guardId === 'evidence')!;
+    expect(ev).toBeDefined();
+    expect(ev.resolution.label).toBe('unresolved');
+    expect(ev.resolution.observedInTurn).toBe(true);
+    expect(ev.calibrationBucket).toBeUndefined();
+
+    // …and through applyGuardCounters it only bumps fires + unresolved, never
+    // averted/recovered/highConfHit.
+    const counters = { byEngineGuard: {}, byEngineTurns: {}, lastUpdated: '' };
+    storeApply(counters as never, events, turnRecord({ engineId: 'codex' }));
+    const cell = (counters as never as { byEngineGuard: Record<string, Record<string, GuardCounterCell>> }).byEngineGuard['codex']['evidence'];
+    expect(cell.fires).toBe(1);
+    expect(cell.unresolved).toBe(1);
+    expect(cell.averted).toBe(0);
+    expect(cell.recovered).toBe(0);
+    expect(cell.highConfHit ?? 0).toBe(0);
+  });
+
+  it("'confidence-escalation' fire finalizes as a plain fire without calibrationBucket (codex FIX 1)", () => {
+    const t = createTurnTracker('agy', 'turn-escalation');
+    t.recordFire('confidence-escalation', 2, [], 1);
+    t.recordStep(2, { roundTripMs: 50, toolCallCount: 1 });
+    t.recordToolResult(3, 'Write', { file_path: '/y.ts', content: 'new' }, true);
+    t.recordStep(3, { roundTripMs: 45, toolCallCount: 1 });
+
+    const { events } = t.finalize('done');
+    const ev = events.find((e) => e.guardId === 'confidence-escalation')!;
+    expect(ev).toBeDefined();
+    expect(ev.resolution.label).toBe('unresolved');
+    expect(ev.resolution.observedInTurn).toBe(true);
+    expect(ev.calibrationBucket).toBeUndefined();
+
+    const counters = { byEngineGuard: {}, byEngineTurns: {}, lastUpdated: '' };
+    storeApply(counters as never, events, turnRecord({ engineId: 'agy' }));
+    const cell = (counters as never as { byEngineGuard: Record<string, Record<string, GuardCounterCell>> }).byEngineGuard['agy']['confidence-escalation'];
+    expect(cell.fires).toBe(1);
+    expect(cell.unresolved).toBe(1);
+    expect(cell.averted).toBe(0);
+    expect(cell.recovered).toBe(0);
+    expect(cell.highConfHit ?? 0).toBe(0);
+  });
+
   it("finalize('aborted') leaves open fires unresolved", () => {
     const t = createTurnTracker('agy', 'turn-4');
     t.recordFire(
@@ -631,5 +686,18 @@ describe('guard-telemetry-store — recommendGuardAction (week-1 rule)', () => {
     // Even a large, lopsided calibration sample yields no relax/keep call yet.
     const c = cell({ fires: 100, highConfHit: 80, highConfMiss: 20 });
     expect(storeRecommend('report-confidence', c)).toBe('insufficient-data');
+  });
+
+  // ── claude FIX 3 (defensive): non-grounded-write ids never inherit the GW rule ──
+  it("'evidence' and 'confidence-escalation' return insufficient-data even with a GW-relax-shaped cell (claude FIX 3)", () => {
+    // This cell (25 ceremony+prevented resolved, ratio 0.8 > 0.7, avg overhead 10 < 50)
+    // would RELAX under the grounded-write rule. A guard id with no week-1 rule must
+    // NOT fall through to that rule — it must explicitly return insufficient-data.
+    const c = cell({ fires: 25, ceremony: 20, prevented: 5, overheadMsTotal: 250 });
+    // Sanity: this very cell DOES relax for grounded-write (so the test is meaningful).
+    expect(storeRecommend('grounded-write', c)).toBe('relax');
+    // …but the fire-counting guards must not borrow that verdict.
+    expect(storeRecommend('evidence', c)).toBe('insufficient-data');
+    expect(storeRecommend('confidence-escalation', c)).toBe('insufficient-data');
   });
 });

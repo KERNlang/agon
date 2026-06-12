@@ -1,4 +1,5 @@
 import from="../models/types.js" names="EngineDefinition" types=true
+import from="../diagnostics/diagnostic-runner.js" names="DiagnosticDeps" types=true
 import from="./session-companion.js" names="createCompanionSession"
 import from="./session-acp.js" names="createAcpSession"
 import from="./session-streamjson.js" names="createStreamJsonSession"
@@ -34,6 +35,8 @@ interface name=PersistentSessionConfig
   field name=toolLoopMaxBudget type=number optional=true
   field name=answerChannelPath type=string optional=true
   field name=claudePtyLaunchArgs type="string[]" optional=true
+  field name=diagnosticDeps type=DiagnosticDeps optional=true
+    doc "Injection seam for the per-session DiagnosticRunner (invariants/shadow modes). Threaded as `new DiagnosticRunner(engineId, config.diagnosticDeps)` so tests inject a fake spawnFn (no real tsc) + a now-clock; production leaves it unset (real spawnWithTimeout / saveToolResultToDisk)."
 
 interface name=PersistentSession
   field name=alive type=boolean
@@ -50,6 +53,8 @@ interface name=PersistentSession
     doc "API sessions only. In-place Claude-style compaction: summarize older messages (LLM first, deterministic regex fallback), keep a boundary-safe verbatim tail, CONTINUE the same session. Coalesces concurrent calls; defers ('deferred') while a send() is in flight. Policy-owned by the Cesar budget gate and /compact."
   field name=getTurnUsage type="() => {promptTokens:number, completionTokens:number, totalTokens:number, source:'sdk', model?:string} | null" optional=true
     doc "API sessions only. DRAINS the real billed token usage accumulated since the last drain (summed across dispatch steps — each step bills its own full input; resets on read so each token is recorded exactly once). null when nothing real accrued. Callers record cost from this instead of estimating from text length."
+  field name=getReadPaths type="() => string[] | undefined" optional=true
+    doc "API sessions only. Serialized snapshot of the per-session ReadPathRegistry (the P1+P2 grounded-write read set), or undefined when the pipeline is off (strict → the registry is never allocated). saveConversation persists this at a cross-engine handoff so the next engine restores the grounded-read knowledge directly (the replayed history's tool_calls are flattened to text by stripEngineArtifacts and cannot be re-derived)."
 
 fn name=createPersistentSession params="config:PersistentSessionConfig" returns="PersistentSession"
   doc "Factory: picks the right session implementation based on engine config."

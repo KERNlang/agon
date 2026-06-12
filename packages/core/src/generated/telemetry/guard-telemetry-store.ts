@@ -298,13 +298,25 @@ export function recommendGuardAction(guardId: GuardId, c: GuardCounterCell, t?: 
     // Phase 0 only collects calibration data; P1 decides demotion (see doc).
     return 'insufficient-data';
   }
-  // grounded-write (default)
-  const resolved = c.ceremony + c.prevented;
-  if (resolved < thresholds.minSample) return 'insufficient-data';
-  const avgOverheadMs = c.fires > 0 ? c.overheadMsTotal / c.fires : 0;
-  const ceremonyRatio = resolved > 0 ? c.ceremony / resolved : 0;
-  if (ceremonyRatio > thresholds.ceremonyRate && avgOverheadMs < thresholds.avgOverheadMs) {
-    return 'relax';
+  if (guardId === 'grounded-write') {
+    const resolved = c.ceremony + c.prevented;
+    if (resolved < thresholds.minSample) return 'insufficient-data';
+    const avgOverheadMs = c.fires > 0 ? c.overheadMsTotal / c.fires : 0;
+    const ceremonyRatio = resolved > 0 ? c.ceremony / resolved : 0;
+    if (ceremonyRatio > thresholds.ceremonyRate && avgOverheadMs < thresholds.avgOverheadMs) {
+      return 'relax';
+    }
+    return 'keep';
   }
-  return 'keep';
+  // claude FIX 3 (defensive): every OTHER guardId — 'evidence',
+  // 'confidence-escalation', and any future id — has NO week-1 relax/keep rule
+  // yet, so it must EXPLICITLY return 'insufficient-data' rather than fall
+  // through to the grounded-write rule. The grounded-write rule keys off
+  // ceremony+prevented, which a fire-counting guard ('evidence' /
+  // 'confidence-escalation' finalize as 'unresolved') never populates — so
+  // before this default it only INCIDENTALLY returned 'insufficient-data' via
+  // resolved=0 < minSample. Make it intentional so a future guard that does
+  // populate those cells can't accidentally inherit a relax/keep verdict it was
+  // never designed for.
+  return 'insufficient-data';
 }

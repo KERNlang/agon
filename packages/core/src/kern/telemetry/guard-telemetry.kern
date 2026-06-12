@@ -17,7 +17,8 @@ import from="node:crypto" names="createHash"
 
 // ── Stable string-union types ─────────────────────────────────────────
 
-type name=GuardId values="grounded-write|read-spin|report-confidence"
+type name=GuardId values="grounded-write|read-spin|report-confidence|evidence|confidence-escalation"
+  doc "Guard identity for telemetry bucketing. grounded-write / read-spin / report-confidence are the Phase-0 inline guards; 'evidence' (unsupported completion-claim nudge) and 'confidence-escalation' (confidence-gate escalate) are the P1 GuardPipeline guards (Module D1). The counters cells + dashboard key off this string, so new ids appear as new rows automatically."
 
 type name=GuardResolutionLabel values="ceremony|prevented|redirected|averted|recovered|stalled|would_have_recovered|unresolved"
 
@@ -231,6 +232,11 @@ interface name=OpenConfidenceFire export=false
   field name=editOutcomes type="boolean[]"
   field name=resolved type=boolean
 
+interface name=PlainFire export=false
+  doc "A fire-counting guard (codex FIX 1: 'evidence', 'confidence-escalation') that does NOT enter the report-confidence calibration flow. Finalizes as a plain fire event: label 'unresolved' with observedInTurn=true and NO calibrationBucket. The dashboard renders these as raw FIRES + placeholders."
+  field name=fireId type=string
+  field name=event type=GuardFireEvent
+
 // ── Per-turn tracker ──────────────────────────────────────────────────
 
 service name=GuardTurnTracker export=true
@@ -242,6 +248,7 @@ service name=GuardTurnTracker export=true
   field name=groundedFires type="OpenGroundedWriteFire[]" private=true
   field name=readSpinFires type="OpenReadSpinFire[]" private=true
   field name=confidenceFires type="OpenConfidenceFire[]" private=true
+  field name=plainFires type="PlainFire[]" private=true
   field name=laterWrites type="Array<{path?:string; rawContent?:string; ok:boolean}>" private=true
   field name=steps type=number private=true default="0"
   field name=assembleMs type=number private=true default="0"
@@ -260,6 +267,7 @@ service name=GuardTurnTracker export=true
       this.groundedFires = [];
       this.readSpinFires = [];
       this.confidenceFires = [];
+      this.plainFires = [];
       this.laterWrites = [];
       this.steps = 0;
       this.assembleMs = 0;
@@ -300,7 +308,9 @@ service name=GuardTurnTracker export=true
         });
       } else if (guardId === 'read-spin') {
         this.readSpinFires.push({ fireId, event, outcome: null, resolved: false });
-      } else {
+      } else if (guardId === 'report-confidence') {
+        // codex FIX 1: ONLY report-confidence enters the confidence/calibration
+        // flow (calibration buckets + averted/recovered labels).
         this.confidenceFires.push({
           fireId,
           event,
@@ -309,6 +319,12 @@ service name=GuardTurnTracker export=true
           editOutcomes: [],
           resolved: false,
         });
+      } else {
+        // codex FIX 1: 'evidence' / 'confidence-escalation' are fire-counting
+        // guards in Phase 0 — finalize them as plain fire events (label
+        // 'unresolved', observedInTurn=true, NO calibrationBucket). The dashboard
+        // already renders them as FIRES + placeholders.
+        this.plainFires.push({ fireId, event });
       }
       return fireId;
     >>>
@@ -415,6 +431,19 @@ service name=GuardTurnTracker export=true
           };
         }
         events.push(cf.event);
+      }
+
+      // codex FIX 1: 'evidence' / 'confidence-escalation' are fire-counting
+      // guards — emit them as plain fire events. On 'done' the fire WAS observed
+      // this turn (label 'unresolved' / observedInTurn=true) but it never enters
+      // the calibration flow, so NO calibrationBucket is set and it can never
+      // touch the averted/recovered/highConf* cells. On 'aborted' it keeps the
+      // initial unresolved/observedInTurn=false state.
+      for (const pf of this.plainFires) {
+        if (reason === 'done') {
+          pf.event.resolution = { label: 'unresolved', observedInTurn: true };
+        }
+        events.push(pf.event);
       }
 
       const turn: TurnTelemetryRecord = {

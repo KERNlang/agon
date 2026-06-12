@@ -84,6 +84,8 @@ interface name=EngineDefinition
   field name=derivedFrom type=string optional=true
     doc "Engine id this version supersedes (e.g. opus-4.8 derivedFrom opus-4.7). At cold-start the new engine inherits the predecessor's Glicko mu with inflated uncertainty. See seedSuccessorRating."
   field name=capabilities type="string[]" optional=true
+  field name=guards type="'strict'|'invariants'|'shadow'" optional=true
+    doc "Guard-pipeline mode for this engine's API Cesar brain (P1+P2). 'strict' (default when absent) = the existing inline guards run byte-identically to today. 'invariants' = the new GuardPipeline runs and blocks/nudges/escalates for real (grounded-write batch gate, info-gain stall ladder, evidence final-text check, confidence-gate escalation, post-edit DiagnosticRunner). 'shadow' = the pipeline EVALUATES and emits telemetry but every block/nudge/escalate is downgraded to allow. Resolved via resolveGuardMode (user ~/.agon/config.json guardModes override > this field > 'strict')."
   field name=imageFlag type=string optional=true
   field name=systemPromptFlag type=string optional=true
   field name=agent type=EngineModeConfig optional=true

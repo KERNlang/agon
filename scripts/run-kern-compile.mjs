@@ -68,6 +68,19 @@ function stripTrailingWhitespaceTree(rootDir) {
   }
 }
 
+// Pre-compile gate: `kern check` (4.0+) — nominal type checks (override
+// variance, call arity/arg types, declared-return contracts). Zero-FP by
+// design, so a red check is always a real defect; it blocks the compile.
+// AGON_SKIP_KERN_CHECK=1 opts out (e.g. while bisecting compiler versions).
+if (process.env.AGON_SKIP_KERN_CHECK !== '1') {
+  runCommand(
+    'kern:check',
+    selection.candidate.command,
+    [...selection.candidate.commandArgs, 'check', srcDir, '--quiet'],
+    selection.candidate.label,
+  );
+}
+
 runCommand(
   'kern:compile',
   selection.candidate.command,

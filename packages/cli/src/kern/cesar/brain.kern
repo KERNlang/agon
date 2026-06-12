@@ -13,6 +13,7 @@ import from="./context-budget.js" names="enforceContextBudget"
 import from="./tools.js" names="createCesarToolRegistry,createEagerToolContext,executeEagerTool"
 import from="./escalation.js" names="fireQuickNero,fireNero,fireAdvisor,handleSecondOpinion,activateNero,deactivateNero,promptDelegation,promptProtocolEnforcement"
 import from="./routing.js" names="buildRoutingContext,deriveRoutingHints,shouldSpeculate"
+import from="./grounding.js" names="shouldGroundInput,buildGroundingBlock"
 import from="./reliability.js" names="readCesarToolReliability,formatCesarReliabilityLine,shouldDowngradeCesarToolWork,buildWhatHappenedSummary"
 import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval"
 import from="./approval-diff.js" names="approvalToolIsFileMutating,buildApprovalDiffPreview"
@@ -720,6 +721,22 @@ ${reviewFollowup.prompt}`;
           enrichedInput = `[SESSION MEMORY — you already established this earlier this session; build on it, do NOT re-investigate what is already here]\n${sessionDigest}\n\n${enrichedInput}`;
         }
       } catch { /* session memory is best-effort */ }
+
+      // ── Grounded project context (opt-in: `agon --ground` / config.cesarGround) ──
+      // RAG roadmap item 0: retrieve cited doc context for the raw user input and
+      // inject it as evidence. Fail-open: no corpus / no embedder / weak hits /
+      // any error → nothing injected, default behavior byte-identical. The
+      // retrieval is synchronous (python sidecar, ~1-2s warm) — opt-in only.
+      if ((process.env.AGON_GROUND === '1' || (config as any).cesarGround === true) && shouldGroundInput(input)) {
+        try {
+          dispatch({ type: 'spinner-update', message: 'grounding: retrieving cited doc context…' });
+          const groundingBlock = buildGroundingBlock(_turnCwd, input);
+          if (groundingBlock) {
+            enrichedInput = `${groundingBlock}\n\n${enrichedInput}`;
+            dispatch({ type: 'info', message: 'ground: injected cited doc context for this turn' });
+          }
+        } catch { /* grounding is best-effort */ }
+      }
 
       // ── Sequential-thinking scaffold (opt-in: config.cesarThinkFirst) ──
       // The in-loop, dispatch-free form of `agon think`: when enabled, scaffold

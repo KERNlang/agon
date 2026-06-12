@@ -1,0 +1,62 @@
+// ── RAG v0 — offline embeddings via the dedup embedder sidecar ───────
+// Spawns @kernlang/agon-dedup's embedder.py (fastembed MiniLM, ONNX,
+// offline after the one-time model download). Vectors come back
+// L2-normalized, so cosine similarity is a plain dot product downstream.
+
+import from="node:child_process" names="spawnSync"
+import from="../blocks/dedup-resolver.js" names="resolveDedupSidecar"
+
+const name=RAG_EMBED_TIMEOUT_MS type=number value={{ 180000 }}
+  doc "Generous: the FIRST run downloads the ~30MB MiniLM model into ~/.agon/cache/fastembed. Warm runs take seconds. Override with AGON_RAG_EMBED_TIMEOUT_MS."
+
+const name=RAG_EMBED_MAX_BUFFER type=number value={{ 64 * 1024 * 1024 }}
+  doc "Embeddings JSON for a large docs corpus is a few MB; 64MB leaves slack."
+
+interface name=RagEmbedResult
+  field name=model type=string
+  field name=dims type=number
+  field name=vectors type="number[][]"
+    doc "Row order matches the input text order."
+
+fn name=embedTexts params="texts:string[]" returns="RagEmbedResult | null" export=true
+  doc "Embed texts via the embedder.py sidecar. Returns null on ANY failure (no python, fastembed missing — sidecar exit 2 —, timeout, bad output); callers degrade gracefully and surface the install hint. Synchronous by design: used from CLI commands where the spawn IS the work."
+  handler <<<
+    if (texts.length === 0) return null;
+    const sidecar = resolveDedupSidecar('embedder.py');
+    if (!sidecar) return null;
+    const python = process.env.AGON_PYTHON || 'python3';
+    const timeout = Number(process.env.AGON_RAG_EMBED_TIMEOUT_MS) || RAG_EMBED_TIMEOUT_MS;
+    const input = texts.map((text, i) => JSON.stringify({ id: String(i), text })).join('\n') + '\n';
+    let result;
+    try {
+      result = spawnSync(python, [sidecar], {
+        input,
+        timeout,
+        encoding: 'utf-8',
+        maxBuffer: RAG_EMBED_MAX_BUFFER,
+      });
+    } catch {
+      return null;
+    }
+    if (result.error || result.status !== 0 || !result.stdout) return null;
+    try {
+      const parsed = JSON.parse(result.stdout) as {
+        model: string,
+        dims: number,
+        vectors: { id: string, vector: number[] }[],
+      };
+      if (!Array.isArray(parsed.vectors) || parsed.vectors.length !== texts.length) return null;
+      return {
+        model: parsed.model,
+        dims: parsed.dims,
+        vectors: parsed.vectors.map(v => v.vector),
+      };
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=embedSidecarHint params="" returns=string export=true
+  doc "One-line install hint surfaced when embedTexts returns null."
+  handler lang="kern"
+    return value="'RAG embeddings need the python sidecar: pip install fastembed numpy (model downloads once into ~/.agon/cache/fastembed)'"

@@ -65,3 +65,7 @@ npm run typecheck      # tsc -b
 
 - All listed bugs in task-a-bugs.md have been verified as already fixed
 - The generated/ catch blocks are intentionally silent — do not flag as issues
+
+## RAG
+
+Shipped: docs corpus retrieval (`agon rag index|query|stats`), the `ProjectContext` MCP tool, opt-in `agon --ground` Cesar grounding, and the generated `docs/modes.md` page. Future direction is tracked locally (untracked `docs/`), not in this file.

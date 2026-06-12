@@ -1,0 +1,65 @@
+// ── RAG v0 — corpus collection + content hashing ─────────────────────
+// Docs-only corpus by design (brainstorm deferral #1: session history
+// needs a redaction story first): markdown at the repo root plus docs/.
+
+import from="node:fs" names="existsSync,readdirSync,readFileSync,statSync"
+import from="node:path" names="join,relative"
+import from="node:crypto" names="createHash"
+import from="./types.js" names="RagCorpusFile" types=true
+
+const name=RAG_MAX_FILE_BYTES type=number value={{ 512 * 1024 }}
+  doc "Files larger than this are skipped — the docs corpus is prose, not data dumps."
+
+// KERN-GAP: codegen — `doc` text containing `*/` (e.g. the glob docs/**/*.md)
+// is emitted verbatim into a /** JSDoc */ block and terminates it early,
+// producing invalid TS. The emitter should escape `*/` (e.g. as `*\/`).
+fn name=collectCorpusFiles params="root:string" returns="string[]" export=true
+  doc "Collect the docs-only corpus: markdown at the repo root plus everything under docs/ (recursive). Returns paths RELATIVE to root, sorted, so the corpus hash is stable across machines."
+  handler <<<
+    const out: string[] = [];
+    const pushIfDoc = (abs: string, rel: string) => {
+      if (!rel.toLowerCase().endsWith('.md')) return;
+      let st;
+      try { st = statSync(abs); } catch { return; }
+      if (!st.isFile() || st.size > RAG_MAX_FILE_BYTES) return;
+      out.push(rel);
+    };
+    let rootEntries: string[] = [];
+    try { rootEntries = readdirSync(root); } catch { return []; }
+    for (const entry of rootEntries) {
+      pushIfDoc(join(root, entry), entry);
+    }
+    const docsDir = join(root, 'docs');
+    if (existsSync(docsDir)) {
+      const stack = ['docs'];
+      while (stack.length > 0) {
+        const relDir = stack.pop()!;
+        let entries: string[] = [];
+        try { entries = readdirSync(join(root, relDir)); } catch { continue; }
+        for (const entry of entries) {
+          const rel = join(relDir, entry);
+          const abs = join(root, rel);
+          let st;
+          try { st = statSync(abs); } catch { continue; }
+          if (st.isDirectory()) { stack.push(rel); continue; }
+          pushIfDoc(abs, rel);
+        }
+      }
+    }
+    return out.sort();
+  >>>
+
+fn name=hashCorpus params="root:string, files:string[]" returns="{ corpusHash: string, entries: RagCorpusFile[] }" export=true
+  doc "Per-file sha256 + a corpus hash over the sorted (path, sha) pairs. The corpus hash is the index cache key: unchanged hash → reuse the index (<100ms short-circuit acceptance criterion)."
+  handler <<<
+    const entries: RagCorpusFile[] = [];
+    for (const rel of [...files].sort()) {
+      let content: Buffer;
+      try { content = readFileSync(join(root, rel)); } catch { continue; }
+      const sha = createHash('sha256').update(content).digest('hex');
+      entries.push({ path: rel, sha });
+    }
+    const corpus = createHash('sha256');
+    for (const e of entries) corpus.update(`${e.path}\n${e.sha}\n`);
+    return { corpusHash: corpus.digest('hex').slice(0, 16), entries };
+  >>>

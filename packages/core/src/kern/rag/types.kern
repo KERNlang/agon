@@ -1,0 +1,45 @@
+// ── RAG v0 — shared types ────────────────────────────────────────────
+// First RAG slice (6-engine brainstorm `rag-first-slice`, 2026-06-12):
+// docs-only corpus → markdown-aware chunks → offline MiniLM embeddings
+// (dedup embedder.py sidecar) → cosine top-k → cited context blocks.
+
+interface name=RagChunk
+  field name=id type=string
+  field name=source type=string
+  field name=startLine type=number
+  field name=endLine type=number
+  field name=text type=string
+
+interface name=RagHit
+  field name=id type=string
+  field name=source type=string
+  field name=startLine type=number
+  field name=endLine type=number
+  field name=text type=string
+  field name=score type=number
+
+interface name=RagCorpusFile
+  field name=path type=string
+  field name=sha type=string
+
+interface name=RagManifest
+  field name=corpusHash type=string
+  field name=model type=string
+  field name=dims type=number
+  field name=chunkCount type=number
+  field name=files type="RagCorpusFile[]"
+  field name=builtAt type=number
+
+interface name=RagIndexResult
+  field name=corpusHash type=string
+  field name=fileCount type=number
+  field name=chunkCount type=number
+  field name=durationMs type=number
+  field name=reused type=boolean
+    doc "True when the corpus hash matched the existing index and the build was short-circuited."
+
+interface name=RagQueryResult
+  field name=query type=string
+  field name=hits type="RagHit[]"
+  field name=grounded type=boolean
+    doc "Fail-closed: false when there are zero hits or the top score is below the grounding floor — callers must not present ungrounded output as cited."

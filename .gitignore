@@ -4,7 +4,14 @@ dist-tsc/
 *.tsbuildinfo
 .DS_Store
 coverage/
-docs/
+# docs/ stays local-only (design docs, never tracked) — `docs/*` instead of
+# `docs/` so git can still descend for the single tracked exception below.
+docs/*
+# Exception: docs/modes.md is GENERATED public reference (the agent guide
+# re-emitted for the RAG docs corpus, `npm run docs:modes`) — not a design
+# doc. It must be tracked: the mode-docs-sync unit test reads it and the
+# docs corpus indexes it on every clone.
+!docs/modes.md
 .design-docs-local/
 # Local-only design/agent docs — kept on disk, never tracked (purged from history 2026-06-02)
 CLAUDE.md

@@ -32,12 +32,27 @@ Exit codes:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from typing import Any
 
 
 THRESHOLD = 0.55
 MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+
+def _cache_dir() -> str:
+    """Persistent model cache. fastembed's default is a tmpdir that the OS
+    prunes between runs — a half-pruned snapshot then fails with NO_SUCHFILE
+    on every call. Pin the cache under ~/.agon (or FASTEMBED_CACHE_PATH)."""
+    explicit = os.environ.get("FASTEMBED_CACHE_PATH", "").strip()
+    if explicit:
+        return explicit
+    agon_home = os.environ.get("AGON_HOME", "").strip() or os.path.join(
+        os.path.expanduser("~"), ".agon")
+    path = os.path.join(agon_home, "cache", "fastembed")
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def _read_input() -> list[dict[str, str]]:
@@ -77,7 +92,7 @@ def _cluster(items: list[dict[str, str]]) -> list[dict[str, Any]]:
               file=sys.stderr)
         sys.exit(2)
 
-    embedder = TextEmbedding(MODEL)
+    embedder = TextEmbedding(MODEL, cache_dir=_cache_dir())
     texts = [item["text"] for item in items]
     embs = np.array(list(embedder.embed(texts)))
 

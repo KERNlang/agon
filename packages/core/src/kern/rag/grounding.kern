@@ -1,0 +1,33 @@
+// ── RAG v0 — grounding + citation rendering ──────────────────────────
+// Fail-closed: a query with zero hits (or a weak top hit) is grounded:false
+// and MUST NOT be presented as cited context. Citations render as plain
+// text that survives copy-paste from scrollback.
+
+import from="./types.js" names="RagHit,RagQueryResult" types=true
+import from="./retriever.js" names="RAG_GROUNDED_MIN_SCORE"
+
+fn name=isGrounded params="hits:RagHit[]" returns=boolean export=true
+  doc "True iff there is at least one hit and the strongest one clears the grounding floor."
+  handler lang="kern"
+    return value="hits.length > 0 && hits[0].score >= RAG_GROUNDED_MIN_SCORE"
+
+fn name=formatCitedBlocks params="result:RagQueryResult" returns=string export=true
+  doc "Human-readable cited context blocks for the CLI demo path: `[n] source Lx-y (score 0.81)` + an indented excerpt. Ungrounded results render an explicit no-citation marker instead of pretending."
+  handler <<<
+    if (!result.grounded || result.hits.length === 0) {
+      return `(no grounded context for: ${result.query})`;
+    }
+    const blocks: string[] = [];
+    result.hits.forEach((hit, i) => {
+      const excerpt = hit.text.length > 400 ? hit.text.slice(0, 400) + '…' : hit.text;
+      const indented = excerpt.split('\n').map(line => '    ' + line).join('\n');
+      blocks.push(`[${i + 1}] ${hit.source} L${hit.startLine}-${hit.endLine} (score ${hit.score.toFixed(2)})\n${indented}`);
+    });
+    return blocks.join('\n');
+  >>>
+
+fn name=formatCitationFootnotes params="hits:RagHit[]" returns=string export=true
+  doc "Compact one-line-per-source footnotes (`[1] AGON.md L88-104`) — the copy-paste-safe ⟨file:line⟩ form consumers append under a grounded answer."
+  handler <<<
+    return hits.map((hit, i) => `[${i + 1}] ${hit.source} L${hit.startLine}-${hit.endLine}`).join('\n');
+  >>>

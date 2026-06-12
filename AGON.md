@@ -65,3 +65,18 @@ npm run typecheck      # tsc -b
 
 - All listed bugs in task-a-bugs.md have been verified as already fixed
 - The generated/ catch blocks are intentionally silent — do not flag as issues
+
+## RAG Roadmap
+
+v0 (shipped): docs-only corpus (root `*.md` + `docs/`) → markdown-aware chunking → offline MiniLM embeddings (`@kernlang/agon-dedup` embedder.py sidecar, cache `~/.agon/cache/fastembed`) → persistent index `.agon/rag/<corpus-hash>/` → `agon rag index|query|stats` + the `ProjectContext` MCP tool (fail-closed grounding, cited `[n] source Lx-y` blocks).
+
+Deferred, in priority order — each reuses the v0 retriever/embed primitives:
+
+0. **`agon --ground` Cesar wire-up** — narrow-trigger grounding of Cesar replies with dim `⟨file:line⟩` footnotes; deferred from v0 so the Cesar-brain integration gets its own review cycle.
+1. **Session-history corpus** — needs turn-indexed chunking + a redaction story for secrets in transcripts.
+2. **Code/diff corpus for `agon review`** — AST-aware chunker, commit-SHA provenance.
+3. **Network-exposed ProjectContext** for companion CLIs beyond the local MCP server (schema-version pin).
+4. **Live/incremental reindexing** (file watcher) — v0 reindex is manual and corpus-hash short-circuited.
+5. **Hybrid search (BM25 + vector)** — swap-in retriever variant, same contract.
+6. **Multi-repo corpus federation** — own design doc.
+7. **Citation UX beyond plain text** — collapsible file-rail panel integration.

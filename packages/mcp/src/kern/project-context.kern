@@ -1,0 +1,52 @@
+// ── Project Context — MCP tool (RAG v0) ──────────────────────────────
+// Exposes the docs-corpus retriever to MCP-capable companion engines:
+// query in, cited context blocks out. requireCitations is structurally
+// enforced — the response carries `grounded`, and an ungrounded result
+// returns NO context text, only the explicit no-citation marker, so a
+// consumer can never quietly present weak hits as citations (fail-closed).
+
+import from="@kernlang/agon-core" names="queryRag,formatCitedBlocks,formatCitationFootnotes"
+
+const name=PROJECT_CONTEXT_TOOLS type="Array<{name:string,description:string,inputSchema:Record<string,unknown>}>" value={{ [
+  {
+    name: 'ProjectContext',
+    description: 'Retrieve cited project context from the repo docs corpus (offline MiniLM retrieval over *.md + docs/). Returns context blocks with [n] source Lx-y provenance and a grounded flag. Ungrounded queries return no context — never invent citations beyond the returned blocks.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What you need project context about' },
+        topK: { type: 'number', description: 'Max context blocks (default 4)' },
+      },
+      required: ['query'],
+    },
+  },
+] }}
+
+fn name=isProjectContextTool params="name:string" returns="boolean" export=true expr={{ return PROJECT_CONTEXT_TOOLS.some(t => t.name === name); }}
+
+fn name=handleProjectContextTool params="name:string, args:Record<string,unknown>" returns="string" export=true
+  doc "Dispatch a project-context tool call. Returns JSON: { grounded, hits, context, footnotes } — context/footnotes are empty strings when ungrounded."
+  handler <<<
+    try {
+      if (name === 'ProjectContext') {
+        const query = String(args.query ?? '').trim();
+        if (!query) return JSON.stringify({ error: 'query is required' });
+        // Deliberately NO root parameter: an MCP client must not be able to
+        // point the retriever (which reads docs AND persists .agon/rag/) at an
+        // arbitrary filesystem path. The tool serves the server's repo only;
+        // multi-root access is the network-exposure roadmap item.
+        const root = process.cwd();
+        const topK = typeof args.topK === 'number' && args.topK >= 1 ? Math.floor(args.topK) : undefined;
+        const result = queryRag(root, query, topK);
+        return JSON.stringify({
+          grounded: result.grounded,
+          hits: result.hits.map(h => ({ source: h.source, startLine: h.startLine, endLine: h.endLine, score: h.score })),
+          context: result.grounded ? formatCitedBlocks(result) : '',
+          footnotes: result.grounded ? formatCitationFootnotes(result.hits) : '',
+        });
+      }
+      return JSON.stringify({ error: `unknown project-context tool: ${name}` });
+    } catch (err) {
+      return JSON.stringify({ error: (err as Error).message });
+    }
+  >>>

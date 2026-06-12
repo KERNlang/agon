@@ -24,6 +24,7 @@ import { goalCommand } from './commands/goal.js';
 import { synthesisCommand } from './commands/synthesis.js';
 import { askCommand } from './commands/ask.js';
 import { thinkCommand } from './commands/think.js';
+import { ragCommand } from './commands/rag.js';
 import { neroCommand } from './commands/nero.js';
 import { councilCommand } from './commands/council.js';
 import { conquerCommand } from './commands/conquer.js';
@@ -197,6 +198,7 @@ const main = defineCommand({
     synthesis: synthesisCommand,
     ask: askCommand,
     think: thinkCommand,
+    rag: ragCommand,
     nero: neroCommand,
     council: councilCommand,
     conquer: conquerCommand,

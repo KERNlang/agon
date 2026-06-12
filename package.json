@@ -53,20 +53,20 @@
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
-    "@kernlang/cli": "~3.5.8",
-    "@kernlang/core": "~3.5.8",
-    "@kernlang/evolve": "~3.5.8",
-    "@kernlang/express": "~3.5.8",
-    "@kernlang/mcp": "~3.5.8",
-    "@kernlang/metrics": "~3.5.8",
-    "@kernlang/native": "~3.5.8",
-    "@kernlang/protocol": "~3.5.8",
-    "@kernlang/python": "~3.5.8",
-    "@kernlang/react": "~3.5.8",
-    "@kernlang/review": "~3.5.8",
-    "@kernlang/review-mcp": "~3.5.8",
-    "@kernlang/terminal": "~3.5.8",
-    "@kernlang/test": "~3.5.8",
-    "@kernlang/vue": "~3.5.8"
+    "@kernlang/cli": "~4.0.0",
+    "@kernlang/core": "~4.0.0",
+    "@kernlang/evolve": "~4.0.0",
+    "@kernlang/express": "~4.0.0",
+    "@kernlang/mcp": "~4.0.0",
+    "@kernlang/metrics": "~4.0.0",
+    "@kernlang/native": "~4.0.0",
+    "@kernlang/protocol": "~4.0.0",
+    "@kernlang/python": "~4.0.0",
+    "@kernlang/react": "~4.0.0",
+    "@kernlang/review": "~4.0.0",
+    "@kernlang/review-mcp": "~4.0.0",
+    "@kernlang/terminal": "~4.0.0",
+    "@kernlang/test": "~4.0.0",
+    "@kernlang/vue": "~4.0.0"
   }
 }

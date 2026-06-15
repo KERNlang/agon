@@ -37,7 +37,7 @@
   "api": {
     "baseUrl": "https://api.anthropic.com",
     "apiKeyEnv": "ANTHROPIC_API_KEY",
-    "model": "claude-sonnet-4-20250514",
+    "model": "claude-sonnet-4-6",
     "maxTokens": 8192,
     "format": "anthropic"
   },

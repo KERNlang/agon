@@ -19,6 +19,7 @@
     "kern:review": "node scripts/run-kern-review.mjs",
     "kern:test": "node scripts/run-kern-test.mjs",
     "kern-gaps": "node scripts/run-kern-gaps.mjs",
+    "docs:modes": "npm run build:cli && node scripts/generate-mode-docs.mjs",
     "rebuild": "npm run kern:compile && npm run build",
     "build": "npm run build:cli && npm run build:types",
     "build:types": "tsc -b --force",

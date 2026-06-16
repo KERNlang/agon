@@ -72,7 +72,22 @@ fn name=agentGuideMarkdown returns=string export=true
       '- drive a whole task queue to done    -> goal',
       '- build a whole open-ended thing       -> conquer',
       '',
+      'Escalation ladder for decisions — pick the CHEAPEST rung that fits the stakes: `nero` (one adversary attacks your decision) -> `tribunal` (two-sided debate) -> `council` (whole panel in roles + a chair) -> `conquer` (a whole supervised build, not one decision).',
+      '',
       'Run `agon <mode> --help` for the full flag list.',
+    ].join('\n');
+  >>>
+
+fn name=modeDocsMarkdown returns=string export=true
+  doc "docs/modes.md content — the agent guide re-emitted as a docs-corpus page so RAG ('agon rag query', the ProjectContext MCP tool, --ground) answers mode questions like 'tribunal vs council' with citations. The guide stays the single source of truth; regenerate with npm run docs:modes."
+  handler <<<
+    return [
+      '<!-- GENERATED — do not edit. Source: packages/cli/src/kern/commands/agent-guide-text.kern (agentGuideMarkdown). Regenerate: npm run docs:modes -->',
+      '',
+      '# Agon modes — what exists and when to use what',
+      '',
+      agentGuideMarkdown(),
+      '',
     ].join('\n');
   >>>
 

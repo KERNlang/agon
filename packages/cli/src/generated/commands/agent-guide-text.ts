@@ -70,14 +70,31 @@ export function agentGuideMarkdown(): string {
     '- drive a whole task queue to done    -> goal',
     '- build a whole open-ended thing       -> conquer',
     '',
+    'Escalation ladder for decisions — pick the CHEAPEST rung that fits the stakes: `nero` (one adversary attacks your decision) -> `tribunal` (two-sided debate) -> `council` (whole panel in roles + a chair) -> `conquer` (a whole supervised build, not one decision).',
+    '',
     'Run `agon <mode> --help` for the full flag list.',
+  ].join('\n');
+}
+
+/**
+ * docs/modes.md content — the agent guide re-emitted as a docs-corpus page so RAG ('agon rag query', the ProjectContext MCP tool, --ground) answers mode questions like 'tribunal vs council' with citations. The guide stays the single source of truth; regenerate with npm run docs:modes.
+ */
+// @kern-source: agent-guide-text:81
+export function modeDocsMarkdown(): string {
+  return [
+    '<!-- GENERATED — do not edit. Source: packages/cli/src/kern/commands/agent-guide-text.kern (agentGuideMarkdown). Regenerate: npm run docs:modes -->',
+    '',
+    '# Agon modes — what exists and when to use what',
+    '',
+    agentGuideMarkdown(),
+    '',
   ].join('\n');
 }
 
 /**
  * Per-CLI /agon slash-command shim. format is one of agy | claude | markdown.
  */
-// @kern-source: agent-guide-text:79
+// @kern-source: agent-guide-text:94
 export function agonShim(format: string): string {
   const body = [
     'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, review, goal, conquer).',
@@ -125,7 +142,7 @@ export function agonShim(format: string): string {
 /**
  * Native Codex skill that exposes Agon as $agon.
  */
-// @kern-source: agent-guide-text:125
+// @kern-source: agent-guide-text:140
 export function codexSkillMarkdown(): string {
   return [
     '---',
@@ -163,7 +180,7 @@ export function codexSkillMarkdown(): string {
 /**
  * Codex UI metadata for the Agon skill.
  */
-// @kern-source: agent-guide-text:161
+// @kern-source: agent-guide-text:176
 export function codexSkillOpenAiYaml(): string {
   return [
     'interface:',

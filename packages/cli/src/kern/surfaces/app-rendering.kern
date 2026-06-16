@@ -1112,16 +1112,18 @@ module name=AppRendering
           }
           case 'cesar-recap': {
             const files = Array.isArray((event as any).files) ? (event as any).files : [];
-            const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
             const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
             const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
             const checkpoints = Array.isArray((event as any).checkpoints) ? (event as any).checkpoints : [];
             const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
             const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
             const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
-            const failedTools = Number((event as any).failedTools ?? 0);
-            const statusIcon = failedTools > 0 ? icons().warning : icons().success;
-            const statusColor = failedTools > 0 ? '#fbbf24' : '#4ade80';
+            const failed = (event as any).failed === true;
+            const nonFatalCount = Number((event as any).nonFatalCount ?? 0);
+            const failureLines = Array.isArray((event as any).failureLines) ? (event as any).failureLines : [];
+            const failureOverflow = Number((event as any).failureOverflow ?? 0);
+            const statusIcon = failed ? icons().warning : icons().success;
+            const statusColor = failed ? '#fbbf24' : '#4ade80';
             const toolLine = toolSummary.length > 0
               ? `${(event as any).toolCount ?? toolSummary.length} tools: ${toolSummary.slice(0, 8).join(', ')}${toolSummary.length > 8 ? ', ...' : ''}`
               : `${(event as any).toolCount ?? 0} tools`;
@@ -1134,6 +1136,47 @@ module name=AppRendering
               confidence ? { text: ` · ${confidence}`, dimColor: true } : null,
               seconds ? { text: ` · ${seconds}`, dimColor: true } : null,
             ].filter(Boolean));
+            // Unrecovered consequential failures — highest body priority, right
+            // under the headline. Headline stays green per the outcome; these are
+            // the one thing the user must see. Plumbing/recovered failures fold
+            // into the dim "N non-fatal" tool line below instead.
+            failureLines.forEach((f: any, index: number) => {
+              pushSegmentsRow(`${baseKey}-recap-fail-${index}`, 1, [
+                { text: '  ' },
+                { text: icons().fail, color: '#ef4444' },
+                { text: ` ${f.action} failed`, color: '#ef4444', bold: true },
+                { text: ` · ${f.command}`, dimColor: true },
+                f.reason ? { text: ` → ${f.reason}`, dimColor: true } : null,
+              ].filter(Boolean));
+            });
+            if (failureOverflow > 0) {
+              pushSegmentsRow(`${baseKey}-recap-fail-more`, 1, [{ text: `  +${failureOverflow} more failed`, color: '#ef4444' }]);
+            }
+            // changes: / verified: — the success summary, kept in parity with the
+            // live Ink recap so a completed turn reads the same in scrollback.
+            const change = (event as any).changeSummary ?? { created: 0, edited: 0, read: 0 };
+            const createdCount = Number(change.created ?? 0);
+            const editedCount = Number(change.edited ?? 0);
+            const readCount = Number(change.read ?? 0);
+            const changedTotal = createdCount + editedCount;
+            const changeParts: string[] = [];
+            if (createdCount > 0) changeParts.push(`+${createdCount} created`);
+            if (editedCount > 0) changeParts.push(`~${editedCount} edited`);
+            pushSegmentsRow(`${baseKey}-recap-changes`, 1, [
+              { text: '  changes: ', color: changedTotal > 0 ? '#4ade80' : '#fbbf24', bold: true },
+              { text: changedTotal > 0 ? changeParts.join(', ') : 'none (explored only)', color: changedTotal > 0 ? '#4ade80' : '#fbbf24' },
+              readCount > 0 ? { text: ` · ${readCount} read`, dimColor: true } : null,
+            ].filter(Boolean));
+            const verification = Array.isArray((event as any).verification) ? (event as any).verification : [];
+            if (verification.length > 0) {
+              const verifySegs: any[] = [{ text: '  verified: ', dimColor: true }];
+              verification.forEach((v: any, vi: number) => {
+                verifySegs.push({ text: v.ok ? icons().success : icons().fail, color: v.ok ? '#4ade80' : '#ef4444' });
+                verifySegs.push({ text: ` ${v.label}` });
+                if (vi < verification.length - 1) verifySegs.push({ text: ' · ', dimColor: true });
+              });
+              pushSegmentsRow(`${baseKey}-recap-verified`, 1, verifySegs);
+            }
             const recapTodos = (event as any).todos;
             if (recapTodos && Number(recapTodos.total ?? 0) > 0) {
               const tDone = Number(recapTodos.done ?? 0);
@@ -1143,18 +1186,10 @@ module name=AppRendering
                 { text: `${tDone}/${tTotal} done`, color: tDone >= tTotal ? '#4ade80' : '#fbbf24' },
               ]);
             }
-            pushSegmentsRow(`${baseKey}-recap-tools`, 1, [{ text: `  ${toolLine}${failedTools > 0 ? ` · ${failedTools} failed` : ''}`, dimColor: true }]);
+            pushSegmentsRow(`${baseKey}-recap-tools`, 1, [{ text: `  ${toolLine}${nonFatalCount > 0 ? ` · ${nonFatalCount} non-fatal` : ''}`, dimColor: true }]);
             if ((event as any).confidenceReasoning) {
               pushSegmentsRow(`${baseKey}-recap-why`, 1, [{ text: `  why: ${(event as any).confidenceReasoning}`, italic: true, color: '#a8a8a8' }]);
             }
-            commands.slice(0, 5).forEach((cmd: any, index: number) => {
-              const failed = String(cmd.status).toLowerCase() === 'error';
-              pushSegmentsRow(`${baseKey}-recap-cmd-${index}`, 1, [
-                { text: `  ${failed ? icons().fail : icons().success}`, color: failed ? '#ef4444' : '#4ade80' },
-                { text: ` ${cmd.label}` },
-                { text: ` · ${cmd.command}`, dimColor: true },
-              ]);
-            });
             if (files.length > 0) {
               pushSegmentsRow(`${baseKey}-recap-files`, 1, [{
                 text: `  files: ${files.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}${files.length > 5 ? `, +${files.length - 5} more` : ''}`,

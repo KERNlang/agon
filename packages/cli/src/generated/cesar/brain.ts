@@ -18,6 +18,8 @@ import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge, extractStrictConfid
 
 import { parseSuggestion } from './suggestion.js';
 
+import { extractAdjacentForkOptions } from './fork-options.js';
+
 import { parseLiveTodos, parsePreamble } from './todos-marker.js';
 
 import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend, renderToolPermissionCommand } from './session.js';
@@ -44,7 +46,7 @@ import { markSteeringTurn, drainSteering, releaseSteeringTurn } from './steering
 
 import { yieldToInk, recordCesarTurn, splitBeforeToolMarkup, XML_TOOL_MARKUP_HOLD_CHARS, createTodosDisplayStripper, createPreambleStripper, findTrailingUserQuestion, detectAwaitingUserInput, detectNarratedToolStall, detectMutationIntentStall, detectFabricatedDelegation, shouldDeescalateGuard, eagerFailedToolNames, shouldRunEagerRepairTool, shouldStopAfterXmlToolCall, buildReviewFollowupPrompt, extractDelegation, isBashToolName, isWriteToolName } from './brain-helpers.js';
 
-// @kern-source: brain:24
+// @kern-source: brain:25
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR (when only a speculative preview
   // draft sits on the pane) drops the draft without committing — safe no-op when
@@ -75,7 +77,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:50
+// @kern-source: brain:51
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   // streaming-end commits a real stream OR drops a lingering speculative preview
   // draft without committing — safe no-op when there's no entry at all.
@@ -106,10 +108,10 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...telemetry ?? {} };
 }
 
-// @kern-source: brain:75
-export const _noBriefNudged: Set<string> = new Set<string>();
+// @kern-source: brain:76
+export const _noBriefNudged: WeakMap<object, boolean> = new WeakMap<object, boolean>();
 
-// @kern-source: brain:77
+// @kern-source: brain:78
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -118,12 +120,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       // #6b: one-time-per-session nudge when the working dir has no usable project
       // brief. Quiet warning event only — never injected into the prompt or history.
       try {
-        const _sid = String(ctx.chatSession?.id ?? '');
-        if (_sid && !_noBriefNudged.has(_sid)) {
-          // Mark first: race-safe, and we check the brief only once per session (not
-          // every turn). Cap the set so a long-lived process can't grow it unbounded.
-          if (_noBriefNudged.size > 5000) _noBriefNudged.clear();
-          _noBriefNudged.add(_sid);
+        const _session = ctx.chatSession as object | undefined;
+        if (_session && !_noBriefNudged.has(_session)) {
+          // Track on the session OBJECT (WeakMap), not a module-level Set keyed by
+          // id: the flag is per-session, can't collide across sessions, and is
+          // garbage-collected when the session ends — no unbounded process-lifetime
+          // growth (so no crude size-cap wipe needed). Mark first (race-safe).
+          _noBriefNudged.set(_session, true);
           if (!hasProjectBrief(_turnCwd)) {
             dispatch({ type: 'warning', message: 'No project brief found in this repo. Create AGON.md or .agon/project.md so Cesar has project context from turn 1.' });
           }
@@ -239,7 +242,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       // event itself (via raw dispatch, with durationMs already attached). For
       // those we record NO start time on 'running' (eager:true) so the map entry
       // never leaks and the more-accurate eager-computed duration is the one shown.
-      const _toolStartMs = new Map<string, number>();
+      // Per-key FIFO of pending start times. When toolCallId is present the key is
+      // unique per call; when it falls back to the tool NAME, two same-name tools
+      // running concurrently would clobber a single-value entry (the first's start
+      // lost, its duration wrong). A queue pairs each terminal event with the
+      // oldest in-flight start of that key — identical to a single value in the
+      // sequential common case (length ≤ 1), correct under same-name overlap.
+      const _toolStartMs = new Map<string, number[]>();
       const dispatchToolCall = (
         evt: { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running' | 'done' | 'error'; output?: string; durationMs?: number },
         opts?: { toolCallId?: string; eager?: boolean; standalone?: boolean },
@@ -249,7 +258,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (evt.status === 'running') {
           // Eager calls supply their own duration on the terminal event — don't
           // record a start here (avoids a stale, never-cleared map entry).
-          if (!opts?.eager && !opts?.standalone) _toolStartMs.set(key, Date.now());
+          if (!opts?.eager && !opts?.standalone) {
+            const pending = _toolStartMs.get(key) ?? [];
+            pending.push(Date.now());
+            _toolStartMs.set(key, pending);
+          }
         } else if (opts?.standalone) {
           // Standalone terminal events (MCP side-channel / signal-file completions
           // from companion engines) have NO correlating 'running' in this map and
@@ -258,12 +271,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           // would both mis-attribute a duration here AND wipe the native tool's
           // pending start, corrupting its duration. Keep their own durationMs as-is.
         } else {
-          const startedAt = _toolStartMs.get(key);
-          if (startedAt !== undefined) {
-            // A terminal event that already carries durationMs (eager path) wins;
-            // either way clear the entry so it never leaks.
+          const pending = _toolStartMs.get(key);
+          if (pending && pending.length > 0) {
+            // Oldest in-flight start of this key (FIFO). A terminal event that
+            // already carries durationMs (eager path) wins; either way drain the
+            // entry so it never leaks.
+            const startedAt = pending.shift() as number;
             if (durationMs === undefined) durationMs = Date.now() - startedAt;
-            _toolStartMs.delete(key);
+            if (pending.length === 0) _toolStartMs.delete(key); else _toolStartMs.set(key, pending);
           }
         }
         dispatch({ ...evt, ...(durationMs !== undefined ? { durationMs } : {}) } as any);
@@ -2442,7 +2457,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               nudge = '[SYSTEM] You paused without finishing or asking me a question. Either complete the task using Edit/Write/Bash tools, or ask me a direct question ending with "?" if you need information.';
             }
             _continuations++;
-            dispatch({ type: 'warning', message: `Cesar paused mid-task — auto-continuing (${_continuations}/${MAX_CONTINUATIONS}).` });
+            dispatch({ type: 'warning', message: `Cesar paused mid-task — auto-continuing (${_continuations}/${MAX_CONTINUATIONS}).`, transient: true });
             dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
             let contResponse = '';
             try {
@@ -2720,20 +2735,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           // its literal key OR its 1-based position, so digits and letters both work;
           // Escape resolves to 'n' (decide later) — never hangs the await.
           const lastLine = response.split('\n').filter((l: string) => l.trim()).pop()?.trim() ?? '';
-          // Fork: 2-6 option lines like "A) … — …" / "1. …" in the response tail,
-          // closed by a question line. Each option becomes a numbered choice.
-          const _forkLineRe = /^\s*(?:([A-Fa-f])|([1-9]))[)\].:]\s+(.+\S)\s*$/;
-          const _forkOptions: { key: string; label: string; full: string }[] = [];
-          const _seenForkKeys = new Set<string>();
-          for (const _raw of response.split('\n').slice(-14)) {
-            const m = _raw.match(_forkLineRe);
-            if (!m) continue;
-            const key = (m[1] ?? m[2]).toLowerCase();
-            if (_seenForkKeys.has(key)) continue;
-            _seenForkKeys.add(key);
-            const full = m[3].trim();
-            _forkOptions.push({ key, label: full.length > 60 ? full.slice(0, 59) + '…' : full, full });
-          }
+          // Fork: a CONTIGUOUS block of "A) …" / "1. …" option lines sitting
+          // DIRECTLY above the closing question. extractAdjacentForkOptions returns
+          // [] when prose separates the list from the question — so a numbered
+          // DESCRIPTION (e.g. a shipped-work recap closed by an unrelated "what's
+          // next?") never gets mis-rendered as a picker.
+          const _forkOptions = extractAdjacentForkOptions(response);
           // Only offer end-of-turn PICK prompts (fork / confirm) on ACTION turns —
           // never when the user is just chatting. A chat/answer turn that ends in a
           // question is conversational ("...do you want to dig into the arena?", or a

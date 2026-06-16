@@ -231,7 +231,10 @@ describe('app scroll helpers', () => {
     const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
     expect(text).toContain('Cesar recap');
     expect(text).toContain('91% confidence');
-    expect(text).toContain('tests');
+    // Clean turn: the per-command list is gone; the tool rollup line renders and
+    // there are no failure / non-fatal markers (every tool succeeded).
+    expect(text).toContain('3 tools');
+    expect(text).not.toContain('non-fatal');
     expect(text).toContain('a.ts');
     expect(text).toContain('checkpoint: abc12345');
     expect(text).toContain('/undo abc12345');

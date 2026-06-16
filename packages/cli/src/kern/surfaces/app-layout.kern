@@ -244,7 +244,13 @@ module name=AppLayout
         case 'response-meta':
           return 1;
         case 'cesar-recap': {
-          const commandRows = Math.min(5, Array.isArray((event as any).commands) ? (event as any).commands.length : 0);
+          // Per-command rows were removed from the renderer; it now draws only the
+          // unrecovered red ✗ failure lines (capped at 3) plus one overflow row.
+          const failureRows = Math.min(3, Array.isArray((event as any).failureLines) ? (event as any).failureLines.length : 0)
+            + (Number((event as any).failureOverflow ?? 0) > 0 ? 1 : 0);
+          // changes: line always renders; verified: only when there are checks.
+          const changeRows = 1;
+          const verifiedRows = Array.isArray((event as any).verification) && (event as any).verification.length > 0 ? 1 : 0;
           const fileRows = Array.isArray((event as any).files) && (event as any).files.length > 0 ? 1 : 0;
           const checkpointRows = Array.isArray((event as any).checkpoints) && (event as any).checkpoints.length > 0 ? 1 : 0;
           const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
@@ -252,7 +258,7 @@ module name=AppLayout
           const warningRows = Math.min(3, Array.isArray((event as any).warnings) ? (event as any).warnings.length : 0);
           const reasoningRows = (event as any).confidenceReasoning ? 1 : 0;
           const todoRows = (event as any).todos && Number((event as any).todos.total ?? 0) > 0 ? 1 : 0;
-          return 3 + commandRows + fileRows + checkpointRows + diffRows + warningRows + reasoningRows + todoRows;
+          return 3 + failureRows + changeRows + verifiedRows + fileRows + checkpointRows + diffRows + warningRows + reasoningRows + todoRows;
         }
         case 'file-changes':
           return 1 + (((event as any).files as any[])?.length ?? 0);

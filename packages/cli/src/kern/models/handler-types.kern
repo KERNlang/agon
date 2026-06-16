@@ -52,6 +52,7 @@ union name=OutputEvent discriminant=type
     field name=message type=string
   variant name=warning
     field name=message type=string
+    field name=transient type=boolean optional=true
   variant name=info
     field name=message type=string
   variant name=plan
@@ -172,6 +173,15 @@ union name=OutputEvent discriminant=type
     field name=confidenceReasoning type=string optional=true
     field name=toolCount type=number
     field name=failedTools type=number optional=true
+    doc "True only when the TURN genuinely failed (engine did not respond) — drives the ⚠ headline. Never set from intermediate tool exit codes."
+    field name=failed type=boolean optional=true
+    doc "Failed tools that did NOT become a red ✗ line (recovered retries, plumbing non-zero exits, non-command tool errors). Rendered as the dim '· N non-fatal' suffix."
+    field name=nonFatalCount type=number optional=true
+    doc "Unrecovered CONSEQUENTIAL command failures, promoted to bright red ✗ lines under the headline (capped at 3; the rest counted by failureOverflow)."
+    field name=failureLines type="Array<{ action: string; command: string; reason: string }>" optional=true
+    field name=failureOverflow type=number optional=true
+    field name=changeSummary type="{ created: number; edited: number; read: number }" optional=true
+    field name=verification type="Array<{ label: string; ok: boolean }>" optional=true
     field name=toolSummary type="string[]"
     field name=commands type="Array<{ label: string; command: string; status: string }>"
     field name=files type="Array<{ path: string; relPath: string; status: string; touchCount: number }>"

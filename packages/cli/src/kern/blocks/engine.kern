@@ -57,7 +57,7 @@ fn name=resolvePackageVersion params="resolveSpecifier:string|null, wantName:str
 // The literals are last-resort fallbacks if resolution fails.
 const name=VERSION type=string value={{ resolvePackageVersion(null, '@kernlang/agon', '0.2.0') }}
 
-const name=KERN_VERSION type=string value={{ resolvePackageVersion('@kernlang/terminal/runtime', '@kernlang/terminal', '3.5.7') }}
+const name=KERN_VERSION type=string value={{ resolvePackageVersion('@kernlang/terminal/runtime', '@kernlang/terminal', '4.0.0') }}
 
 
 // ── Interface: OutputBlock ──────────────────────────────────────────
@@ -182,16 +182,18 @@ screen name=CesarRecapBlock target=ink memo=true
   render
     handler <<<
       const files = Array.isArray((event as any).files) ? (event as any).files : [];
-      const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
       const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
       const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
       const checkpoints = Array.isArray((event as any).checkpoints) ? (event as any).checkpoints : [];
       const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
       const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
       const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
-      const failedTools = Number((event as any).failedTools ?? 0);
-      const statusColor = failedTools > 0 ? '#fbbf24' : '#4ade80';
-      const statusIcon = failedTools > 0 ? icons().warning : icons().success;
+      const failed = (event as any).failed === true;
+      const nonFatalCount = Number((event as any).nonFatalCount ?? 0);
+      const failureLines = Array.isArray((event as any).failureLines) ? (event as any).failureLines : [];
+      const failureOverflow = Number((event as any).failureOverflow ?? 0);
+      const statusColor = failed ? '#fbbf24' : '#4ade80';
+      const statusIcon = failed ? icons().warning : icons().success;
       const change = (event as any).changeSummary ?? { created: 0, edited: 0, read: 0 };
       const createdCount = Number(change.created ?? 0);
       const editedCount = Number(change.edited ?? 0);
@@ -205,7 +207,6 @@ screen name=CesarRecapBlock target=ink memo=true
       const toolLine = toolSummary.length > 0
         ? `${(event as any).toolCount ?? toolSummary.length} tools: ${toolSummary.slice(0, 8).join(', ')}${toolSummary.length > 8 ? ', ...' : ''}`
         : `${(event as any).toolCount ?? 0} tools`;
-      const commandStatus = (status: string) => String(status).toLowerCase() === 'error' ? icons().fail : icons().success;
       const fileGlyph = (status: string) => status === 'edited' ? 'M' : status === 'created' ? '+' : 'r';
       return (
         <Box flexDirection="column" paddingLeft={1} marginTop={1}>
@@ -217,6 +218,17 @@ screen name=CesarRecapBlock target=ink memo=true
             {confidence ? <Text dimColor>{' \u00b7 '}{confidence}</Text> : null}
             {seconds ? <Text dimColor>{' \u00b7 '}{seconds}</Text> : null}
           </Text>
+          {failureLines.map((f: any, index: number) => (
+            <Text key={`fail-${index}`}>
+              <Text color="#ef4444">{'  '}{icons().fail}</Text>
+              <Text color="#ef4444" bold>{' '}{f.action}{' failed'}</Text>
+              <Text dimColor>{' \u00b7 '}{f.command}</Text>
+              {f.reason ? <Text dimColor>{' \u2192 '}{f.reason}</Text> : null}
+            </Text>
+          ))}
+          {failureOverflow > 0 ? (
+            <Text color="#ef4444">{'  +'}{failureOverflow}{' more failed'}</Text>
+          ) : null}
           {changedTotal > 0 ? (
             <Text>
               <Text color="#4ade80" bold>{'  changes: '}</Text>
@@ -248,17 +260,10 @@ screen name=CesarRecapBlock target=ink memo=true
               <Text color={Number((event as any).todos.done ?? 0) >= Number((event as any).todos.total ?? 0) ? '#4ade80' : '#fbbf24'}>{Number((event as any).todos.done ?? 0)}{'/'}{Number((event as any).todos.total ?? 0)}{' done'}</Text>
             </Text>
           ) : null}
-          <Text dimColor>{'  '}{toolLine}{failedTools > 0 ? ` · ${failedTools} failed` : ''}</Text>
+          <Text dimColor>{'  '}{toolLine}{nonFatalCount > 0 ? ` · ${nonFatalCount} non-fatal` : ''}</Text>
           {(event as any).confidenceReasoning ? (
             <Text italic color="#a8a8a8">{'  why: '}{(event as any).confidenceReasoning}</Text>
           ) : null}
-          {commands.slice(0, 5).map((cmd: any, index: number) => (
-            <Text key={`cmd-${index}`}>
-              <Text color={String(cmd.status).toLowerCase() === 'error' ? '#ef4444' : '#4ade80'}>{'  '}{commandStatus(cmd.status)}</Text>
-              <Text>{' '}{cmd.label}</Text>
-              <Text dimColor>{' · '}{cmd.command}</Text>
-            </Text>
-          ))}
           {changedFiles.length > 0 && (
             <Text dimColor>{'  files: '}{changedFiles.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}{changedFiles.length > 5 ? `, +${changedFiles.length - 5} more` : ''}</Text>
           )}

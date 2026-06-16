@@ -74,10 +74,11 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   const pendingImageCount = Math.max(0, Math.floor(Number(opts?.pendingImageCount) || 0));
   const inputQueueCount = Math.max(0, Math.floor(Number(opts?.inputQueueCount) || 0));
   const hasLiveSpinner = !(!opts?.hasLiveSpinner);
+  const hasPlanChip = !(!opts?.hasPlanChip);
   const hasStream = !(!opts?.hasStream);
   const hasProgress = !(!opts?.hasProgress);
   const agentCount = Math.max(0, Math.floor(Number(opts?.agentCount) || 0));
-  const bottomChromeExtraRows = estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner);
+  const bottomChromeExtraRows = estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner, hasPlanChip);
   const pinnedLiveRows = estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount, Math.max(0, Math.floor(Number(opts?.toolStreamCount) || 0)));
   const visibleBudget = estimateVisibleBlockBudget(termHeight, mode, bottomChromeExtraRows + pinnedLiveRows);
   const transcriptBlocks = (terminalMode === 'native') ? nativeTranscriptBlocksForStatic(blocks) : historyBlocksForTranscript(blocks);
@@ -88,5 +89,7 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   const fileRailExpanded = !(!opts?.fileRailExpanded);
   const fileRailWidth = fileRailOpen ? fileRailWidthForTerminal(termWidth, fileRailExpanded) : 0;
   const fileRailRows = fileRailOpen ? fileRailMaxRowsForTerminal(termHeight, terminalMode, fileRailExpanded) : 0;
-  return { terminalMode: terminalMode, mode: mode, termWidth: termWidth, termHeight: termHeight, visibleBudget: visibleBudget, transcriptRowCount: transcriptRowCount, staticBlockCount: staticBlockCount, liveBlockCount: liveBlocks.length, fileRailWidth: fileRailWidth, fileRailRows: fileRailRows, headerRows: 1, lowerChromeRows: (mode === 'chat') ? 7 : 8 + bottomChromeExtraRows };
+  const baseChromeRows = (mode === 'chat') ? 7 : 8;
+  const lowerChromeRows = baseChromeRows + bottomChromeExtraRows;
+  return { terminalMode: terminalMode, mode: mode, termWidth: termWidth, termHeight: termHeight, visibleBudget: visibleBudget, transcriptRowCount: transcriptRowCount, staticBlockCount: staticBlockCount, liveBlockCount: liveBlocks.length, fileRailWidth: fileRailWidth, fileRailRows: fileRailRows, headerRows: 1, lowerChromeRows: lowerChromeRows };
 }

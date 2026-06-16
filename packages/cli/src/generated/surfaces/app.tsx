@@ -86,7 +86,7 @@ import { contentWidth, withContentWidthOverride, color256toHex, engineColor, COD
 
 import { LOGO_LINES, VERSION, BRAND } from '../../generated/blocks/engine.js';
 
-import { ChromeBar, ToolDetailBlock, TranscriptRowView, LiveStreamSection, BtwSidePanel, RailTakeoverPanel, BottomChromeSection } from './app-views.js';
+import { ChromeBar, ToolDetailBlock, TranscriptRowView, LiveStreamSection, BtwSidePanel, RailTakeoverPanel, BottomChromeSection, buildPlanChromeSummary } from './app-views.js';
 
 import { recordToolCall, listFiles, getFileTrackerVersion, clearFileTracker } from '../signals/file-tracker.js';
 
@@ -678,9 +678,13 @@ export function App() {
           return (enginePickerOpen || modelPickerOpen || cesarPickerOpen || !(!reviewEvent)) ? 4 : 0;
   }, [enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, btwPanel, termHeight]);
 
+  const planChipVisible = useMemo(() => {
+          return buildPlanChromeSummary(activePlan, activePlan?.state ?? null, planModeQueued, autoModeQueued).visible;
+  }, [activePlan,planModeQueued,autoModeQueued]);
+
   const bottomChromeReservedRows = useMemo(() => {
-          return estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !(!liveSpinner));
-  }, [mode,questionState,termWidth,pendingImages,inputQueue,liveSpinner]);
+          return estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !(!liveSpinner), planChipVisible);
+  }, [mode,questionState,termWidth,pendingImages,inputQueue,liveSpinner,planChipVisible]);
 
   const overlayActive = useMemo(() => {
           return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !(!reviewEvent) || !(!toolDetailEvent);
@@ -1709,10 +1713,16 @@ export function App() {
     () => nativeLiveRows.map((row: any) => <TranscriptRowView key={row.key} row={row} />),
     [nativeLiveRows],
   );
+  // Whenever the bottom-chrome PlanChip is showing it already carries the
+  // plan glance (Step N/M · bar · % · current step), so the inline TodoList
+  // suppresses the duplicate plan-step rows (they live in the Ctrl+G rail).
+  // Keyed on planChipVisible — the SAME predicate that drives the chip — so
+  // the two surfaces stay in lockstep across every plan state (incl. the
+  // post-done retain window). Live (non-plan) todos always render.
   const lowerPanel = (
   <Box flexDirection="column" flexShrink={0}>
-    <ChromeBar mode={mode} cwdLabel={workspacePath.split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} />
-    <TodoList todos={todos} />
+    <ChromeBar mode={mode} cwdLabel={workspacePath.split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
+    <TodoList todos={todos} planActive={planChipVisible} />
     <BackgroundJobRail jobs={runningJobs} />
     {startupUseDashboardView && (displayRows.length === 0 || terminalMode === 'native') && (
       <Box flexDirection="column">
@@ -2059,7 +2069,7 @@ export function App() {
 // @kern-source: app:92
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:1871
+// @kern-source: app:1887
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

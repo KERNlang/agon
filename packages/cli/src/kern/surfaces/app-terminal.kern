@@ -58,10 +58,11 @@ module name=AppTerminal
       let name=pendingImageCount value="Math.max(0, Math.floor(Number(opts?.pendingImageCount) || 0))"
       let name=inputQueueCount value="Math.max(0, Math.floor(Number(opts?.inputQueueCount) || 0))"
       let name=hasLiveSpinner value="!!opts?.hasLiveSpinner"
+      let name=hasPlanChip value="!!opts?.hasPlanChip"
       let name=hasStream value="!!opts?.hasStream"
       let name=hasProgress value="!!opts?.hasProgress"
       let name=agentCount value="Math.max(0, Math.floor(Number(opts?.agentCount) || 0))"
-      let name=bottomChromeExtraRows value="estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner)"
+      let name=bottomChromeExtraRows value="estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner, hasPlanChip)"
       let name=pinnedLiveRows value="estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount, Math.max(0, Math.floor(Number(opts?.toolStreamCount) || 0)))"
       let name=visibleBudget value="estimateVisibleBlockBudget(termHeight, mode, bottomChromeExtraRows + pinnedLiveRows)"
       let name=transcriptBlocks value="terminalMode === 'native' ? nativeTranscriptBlocksForStatic(blocks) : historyBlocksForTranscript(blocks)"
@@ -72,4 +73,12 @@ module name=AppTerminal
       let name=fileRailExpanded value="!!opts?.fileRailExpanded"
       let name=fileRailWidth value="fileRailOpen ? fileRailWidthForTerminal(termWidth, fileRailExpanded) : 0"
       let name=fileRailRows value="fileRailOpen ? fileRailMaxRowsForTerminal(termHeight, terminalMode, fileRailExpanded) : 0"
-      return value="{ terminalMode, mode, termWidth, termHeight, visibleBudget, transcriptRowCount, staticBlockCount, liveBlockCount: liveBlocks.length, fileRailWidth, fileRailRows, headerRows: 1, lowerChromeRows: (mode === 'chat' ? 7 : 8) + bottomChromeExtraRows, }"
+      // KERN-GAP: codegen — a parenthesized ternary as the LEFT operand of a binary
+      // op inside an object-literal value loses its grouping: the source
+      // `(mode === 'chat' ? 7 : 8) + bottomChromeExtraRows` emits as
+      // `(mode === 'chat') ? 7 : 8 + bottomChromeExtraRows`, so the `+` wrongly binds
+      // to the false branch only. Worked around by computing the base in its own
+      // `let` (a bare ternary emits correctly) and adding two identifiers.
+      let name=baseChromeRows value="mode === 'chat' ? 7 : 8"
+      let name=lowerChromeRows value="baseChromeRows + bottomChromeExtraRows"
+      return value="{ terminalMode, mode, termWidth, termHeight, visibleBudget, transcriptRowCount, staticBlockCount, liveBlockCount: liveBlocks.length, fileRailWidth, fileRailRows, headerRows: 1, lowerChromeRows, }"

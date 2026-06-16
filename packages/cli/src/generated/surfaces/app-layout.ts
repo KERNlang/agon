@@ -20,7 +20,8 @@ export function estimateVisibleBlockBudget(rows: number, mode: string, overlayRe
   // Chat mode keeps 7 rows for the composer/status chrome at minimum:
   // margin + bordered composer (3) + Cesar strip + two-line status bar.
   // Using 6 makes the startup dashboard overflow by one line.
-  const reservedRows = (mode === 'chat') ? 7 : 8 + Math.max(0, overlayReservedRows);
+  const baseReserved = (mode === 'chat') ? 7 : 8;
+  const reservedRows = baseReserved + Math.max(0, overlayReservedRows);
   return Math.max(1, rows - reservedRows);
 }
 
@@ -83,9 +84,9 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
 }
 
 /**
- * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and chat spinner rows.
+ * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, chat spinner rows, and the one-line plan chip (PlanChip) pinned directly above the composer.
  */
-export function estimateBottomChromeExtraRows(mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, hasLiveSpinner: boolean): number {
+export function estimateBottomChromeExtraRows(mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, hasLiveSpinner: boolean, hasPlanChip: boolean = false): number {
   let extraRows = 0;
   if (pendingImageCount > 0) {
     extraRows += 1;
@@ -94,6 +95,9 @@ export function estimateBottomChromeExtraRows(mode: string, questionState: any, 
     extraRows += 1;
   }
   if (mode === 'chat' && hasLiveSpinner && !questionState) {
+    extraRows += 1;
+  }
+  if (hasPlanChip) {
     extraRows += 1;
   }
   extraRows += estimateQuestionReservedRows(questionState, termWidth);

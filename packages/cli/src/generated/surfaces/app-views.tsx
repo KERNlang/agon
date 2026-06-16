@@ -32,21 +32,34 @@ import { FileRail } from '../blocks/file-rail.js';
 
 import type { AgentProgressSnapshot } from '../signals/output.js';
 
-// @kern-source: app-views:86
-const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, replState, runningJobs, planModeQueued, autoModeQueued, activePlanState, activePlan }: { mode:string; cwdLabel:string; engineCount:number; replState:string; runningJobs:Job[]; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any }) {
+// @kern-source: app-views:92
+const PlanChip = React.memo(function PlanChip({ activePlan, activePlanState, planModeQueued, autoModeQueued }: { activePlan?:any; activePlanState?:string|null; planModeQueued?:boolean; autoModeQueued?:boolean }) {
   const planChrome = buildPlanChromeSummary(activePlan, activePlanState, planModeQueued, autoModeQueued);
-  const planRow = planChrome.visible ? (
-    <Text>
-      <Text color={planChrome.color} bold>{'\u25c8 '}{String(planChrome.label).toUpperCase()}</Text>
-      {planChrome.shortId ? <Text color={planChrome.color} bold>{' \u00b7 PLAN '}{planChrome.shortId}</Text> : null}
-      {planChrome.stepLabel ? <Text dimColor>{' \u00b7 '}{planChrome.stepLabel}</Text> : null}
-      {planChrome.bar ? <Text color={planChrome.color}>{' '}{planChrome.bar}</Text> : null}
-      {planChrome.bar ? <Text dimColor>{' '}{planChrome.pct}{'%'}</Text> : null}
-      {planChrome.failed > 0 ? <Text color="#ef4444">{' \u00b7 '}{planChrome.failed}{' failed'}</Text> : null}
-      {planChrome.current ? <Text dimColor>{' \u00b7 '}{String(planChrome.current).slice(0, 72)}</Text> : null}
-      {planChrome.action ? <Text dimColor>{' \u00b7 '}{planChrome.action}</Text> : null}
-    </Text>
-  ) : null;
+  if (!planChrome.visible) return null;
+  // wrap="truncate-end" pins the chip to exactly one row even when the
+  // assembled line (state + id + step + bar + % + current + action) exceeds a
+  // narrow terminal's width — so it never wraps past the single row reserved
+  // for it in estimateBottomChromeExtraRows (hasPlanChip), which would
+  // otherwise under-budget the transcript and clip/jitter the last row.
+  return (
+    <Box>
+      <Text wrap="truncate-end">
+        <Text color={planChrome.color} bold>{'◈ '}{String(planChrome.label).toUpperCase()}</Text>
+        {planChrome.shortId ? <Text color={planChrome.color} bold>{' · PLAN '}{planChrome.shortId}</Text> : null}
+        {planChrome.stepLabel ? <Text dimColor>{' · '}{planChrome.stepLabel}</Text> : null}
+        {planChrome.bar ? <Text color={planChrome.color}>{' '}{planChrome.bar}</Text> : null}
+        {planChrome.bar ? <Text dimColor>{' '}{planChrome.pct}{'%'}</Text> : null}
+        {planChrome.failed > 0 ? <Text color="#ef4444">{' · '}{planChrome.failed}{' failed'}</Text> : null}
+        {planChrome.current ? <Text dimColor>{' · '}{String(planChrome.current).slice(0, 72)}</Text> : null}
+        {planChrome.action ? <Text dimColor>{' · '}{planChrome.action}</Text> : null}
+      </Text>
+    </Box>
+  );
+});
+export { PlanChip };
+
+// @kern-source: app-views:123
+const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, replState, runningJobs }: { mode:string; cwdLabel:string; engineCount:number; replState:string; runningJobs:Job[] }) {
   if (mode === 'chat') {
     return (
       <Box paddingX={1} flexDirection="column">
@@ -57,7 +70,6 @@ const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, r
           {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
           {runningJobs.length > 0 && (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{runningJobs.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>)}
         </Text>
-        {planRow}
       </Box>
     );
   }
@@ -72,13 +84,12 @@ const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, r
         {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
         {runningJobs.length > 0 && (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{runningJobs.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>)}
       </Text>
-      {planRow}
     </Box>
   );
 });
 export { ChromeBar };
 
-// @kern-source: app-views:142
+// @kern-source: app-views:160
 const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:any }) {
   const borderPrefix = row.borderColor ? <Text color={row.borderColor}>{'\u2502 '}</Text> : null;
   const selectionRail = <Text color={row.selected ? '#60a5fa' : '#2b2b2b'}>{row.selected ? '\u258c' : ' '}</Text>;
@@ -210,7 +221,7 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
 });
 export { TranscriptRowView };
 
-// @kern-source: app-views:276
+// @kern-source: app-views:294
 export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisibleRows, onClose }: { title:string; subtitle:string; accentColor:string; rows:any[]; maxVisibleRows:number; onClose:() => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -287,7 +298,7 @@ export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisible
   );
 }
 
-// @kern-source: app-views:366
+// @kern-source: app-views:384
 const StreamingView = React.memo(function StreamingView({ streamingText, mode, liveProgress, liveToolStreams, liveToolTailFrozen }: { streamingText:{engineId:string,content:string,draft?:boolean} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,any>; liveToolTailFrozen?:Record<string,boolean> }) {
   const frozenToolOutputRef = useRef<Record<string, string>>({});
 
@@ -543,7 +554,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
 });
 export { StreamingView };
 
-// @kern-source: app-views:632
+// @kern-source: app-views:650
 const LiveStreamSection = React.memo(function LiveStreamSection({ activeStream, mode, liveProgress, liveToolStreams, liveToolTailFrozen, agentProgress }: { activeStream:{engineId:string,content:string,draft?:boolean} | null; mode:string; liveProgress:EngineProgress[] | null; liveToolStreams?:Record<string,any>; liveToolTailFrozen?:Record<string,boolean>; agentProgress:Record<string,AgentProgressSnapshot> }) {
   return (
     <>
@@ -576,7 +587,7 @@ const LiveStreamSection = React.memo(function LiveStreamSection({ activeStream, 
 });
 export { LiveStreamSection };
 
-// @kern-source: app-views:675
+// @kern-source: app-views:693
 const BtwSidePanel = React.memo(function BtwSidePanel({ btwPanel }: { btwPanel:any }) {
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="#22d3ee" paddingX={1} marginY={1}>
@@ -616,7 +627,7 @@ const BtwSidePanel = React.memo(function BtwSidePanel({ btwPanel }: { btwPanel:a
 });
 export { BtwSidePanel };
 
-// @kern-source: app-views:720
+// @kern-source: app-views:738
 const RailTakeoverPanel = React.memo(function RailTakeoverPanel({ showFileRail, showExecutionRail, fileRailFiles, sideRailMaxRows, termWidth, fileRailOpen, fileRailSelectedIdx, fileRailExpandedPath, liveSpinner, liveProgress, activePlan, latestToolEvent, recentFallbacks, executionRailStats, toolOutputExpanded, chatStartTime, isActive, executionRailOpen }: { showFileRail:boolean; showExecutionRail:boolean; fileRailFiles:any[]; sideRailMaxRows:number; termWidth:number; fileRailOpen:boolean; fileRailSelectedIdx:number; fileRailExpandedPath:string|null; liveSpinner:any; liveProgress:EngineProgress[] | null; activePlan:any; latestToolEvent:any; recentFallbacks:any[]; executionRailStats:any; toolOutputExpanded:boolean; chatStartTime:number; isActive:boolean; executionRailOpen:boolean }) {
   return (
     <>
@@ -645,7 +656,7 @@ const RailTakeoverPanel = React.memo(function RailTakeoverPanel({ showFileRail, 
 });
 export { RailTakeoverPanel };
 
-// @kern-source: app-views:771
+// @kern-source: app-views:789
 const UpdateBanner = React.memo(function UpdateBanner({ updateInfo, updateChecking }: { updateInfo:any; updateChecking:boolean }) {
   return (
     <Box flexDirection="row" borderStyle="round" borderColor="#fbbf24" paddingX={1} marginBottom={1}>
@@ -671,7 +682,7 @@ const UpdateBanner = React.memo(function UpdateBanner({ updateInfo, updateChecki
 });
 export { UpdateBanner };
 
-// @kern-source: app-views:806
+// @kern-source: app-views:824
 const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo, updateChecking, questionState, pendingImages, imageVisionNote, inputQueue, steeringCount, liveSpinner, mode, statusDashboardOpen, telemetryVitals, recentFallbacks, termWidth, termHeight, statusDashboardFilter, replState, planModeQueued, autoModeQueued, activePlan, slashPickerOpen, atPickerOpen, atPickerFiles, atPickerPrefix, atPickerQuery, onAtSelect, onAtCancel, inputValue, handleInputChange, handlePasteInput, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionAnswer, selectedChoiceIndex, questionOtherActive, onQuestionAnswerChange, onQuestionAnswerSubmit, updateBannerActive, onCtrlShortcut, cesarId, cesarConfidence, cesarContext, liveProgress, runningJobs, chatStartTime, streamSnippet, statusStats, statusCwd, statusBranch, explorationMode, toolOutputExpanded, fullscreenEnabled }: { updateInfo:any; updateChecking:boolean; questionState:any; pendingImages:any[]; imageVisionNote?:string|null; inputQueue:string[]; steeringCount:number; liveSpinner:any; mode:'chat'|'campfire'|'brainstorm'|'tribunal'; statusDashboardOpen:boolean; telemetryVitals:Map<string, any>; recentFallbacks:any[]; termWidth:number; termHeight:number; statusDashboardFilter:any; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlan:any; slashPickerOpen:boolean; atPickerOpen:boolean; atPickerFiles:string[]; atPickerPrefix:string; atPickerQuery:string; onAtSelect:(path:string) => void; onAtCancel:(typed:string) => void; inputValue:string; handleInputChange:(value:string) => void; handlePasteInput:(raw:string) => string; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionAnswer:string; selectedChoiceIndex:number; questionOtherActive:boolean; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; updateBannerActive:boolean; onCtrlShortcut:(shortcut:string) => void; cesarId:string; cesarConfidence:any; cesarContext:any; liveProgress:EngineProgress[] | null; runningJobs:Job[]; chatStartTime:number; streamSnippet:any; statusStats:any; statusCwd:string; statusBranch:string; explorationMode:any; toolOutputExpanded:boolean; fullscreenEnabled:boolean }) {
   const isActive = replState !== 'idle' || runningJobs.length > 0;
   return (
@@ -705,6 +716,10 @@ const BottomChromeSection = React.memo(function BottomChromeSection({ updateInfo
           <Text color="#fbbf24">{liveSpinner.message}</Text>
         </Box>
       )}
+      {/* One-line plan glance pinned directly above the composer — the
+          chip relocated out of the top ChromeBar so plan state sits at the
+          user's point of focus (the input). Renders nothing when no plan. */}
+      <PlanChip activePlan={activePlan} activePlanState={activePlan?.state ?? null} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} />
       {statusDashboardOpen ? (
         <StatusDashboard telemetryVitals={telemetryVitals} recentFallbacks={recentFallbacks} width={termWidth} height={termHeight} filter={statusDashboardFilter} />
       ) : (
@@ -805,7 +820,7 @@ export function buildPlanChromeSummary(activePlan: any, activePlanState?: string
   return { visible: true, label: label, color: gauge.visible ? gauge.color : '#c084fc', shortId: gauge.shortId ?? '', bar: gauge.bar ?? '', pct: Number(gauge.pct ?? 0), stepLabel: gauge.label ?? '', current: gauge.current ?? '', failed: failed, action: action };
 }
 
-// @kern-source: app-views:353
+// @kern-source: app-views:371
 export function contextualizeSlicedMarkdown(prefix: string, slicedText: string): string {
   const parts = prefix.split('```');
   if (parts.length % 2 === 0) {

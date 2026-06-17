@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 3,
+  "id": "kimi-code",
+  "displayName": "Kimi Code",
+  "binary": "kimi",
+  "searchPaths": [
+    "${HOME}/.local/bin",
+    "${HOME}/.npm-global/bin",
+    "/usr/local/bin"
+  ],
+  "versionCmd": ["--version"],
+  "isLocal": false,
+  "tier": "builtin",
+  "installHint": "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash",
+  "timeout": 180,
+
+  "exec": {
+    "args": ["--output-format", "text", "-p", "{prompt}"]
+  },
+  "agent": {
+    "args": ["--output-format", "text", "-p", "{prompt}"]
+  },
+
+  "companion": {
+    "protocol": "acp",
+    "serverCmd": ["acp"]
+  },
+
+  "test": { "args": ["--version"] }
+}

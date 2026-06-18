@@ -4,6 +4,7 @@
   "displayName": "Kimi Code",
   "binary": "kimi",
   "searchPaths": [
+    "${HOME}/.kimi-code/bin",
     "${HOME}/.local/bin",
     "${HOME}/.npm-global/bin",
     "/usr/local/bin"
@@ -21,10 +22,19 @@
     "args": ["--output-format", "text", "-p", "{prompt}"]
   },
 
+  "model": {
+    "configKey": "kimi_code_model",
+    "flag": "--model"
+  },
+
   "companion": {
     "protocol": "acp",
     "serverCmd": ["acp"]
   },
 
-  "test": { "args": ["--version"] }
+  "test": { "args": ["--version"] },
+
+  "cliModels": {
+    "dynamicListCmd": ["__pty:/model"]
+  }
 }

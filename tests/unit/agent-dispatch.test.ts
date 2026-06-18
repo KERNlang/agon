@@ -86,6 +86,25 @@ describe('Agent Dispatch', () => {
       expect(args).not.toContain('--plan');
     });
 
+    it('injects --model before -p when a Kimi Code model is configured', () => {
+      const engine = loadKimiCodeEngine();
+      const binary = '/usr/local/bin/kimi';
+      const prev = process.env.KIMI_CODE_MODEL;
+      process.env.KIMI_CODE_MODEL = 'kimi-k2-test';
+      try {
+        const { args } = buildCommand(engine, 'agent', 'fix the bug', '/tmp', 180, binary);
+        expect(args).toEqual(['--output-format', 'text', '--model', 'kimi-k2-test', '-p', 'fix the bug']);
+      } finally {
+        if (prev === undefined) delete process.env.KIMI_CODE_MODEL;
+        else process.env.KIMI_CODE_MODEL = prev;
+      }
+    });
+
+    it('lists the canonical Kimi Code install dir first in searchPaths so discovery works out of box', () => {
+      const engine = loadKimiCodeEngine();
+      expect(engine.searchPaths?.[0]).toBe('${HOME}/.kimi-code/bin');
+    });
+
     it('throws for engines without agent config', () => {
       const reg = loadRegistry();
       const engine = reg.get('ollama');

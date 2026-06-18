@@ -495,13 +495,14 @@ Each engine is a separate CLI you install once. Built-ins (in `engines/*.json`):
 | **Claude** (Anthropic) | `npm install -g @anthropic-ai/claude-code` | `claude` then `/login` (subscription) or `ANTHROPIC_API_KEY` |
 | **Codex** (OpenAI) | `npm install -g @openai/codex` | `codex` then sign in, or `OPENAI_API_KEY` |
 | **Antigravity** (Google) | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` | `agy` then sign in, or `GOOGLE_API_KEY` |
+| **Kimi Code** | `curl -fsSL https://code.kimi.com/kimi-code/install.sh \| bash` | `kimi` then `/login` |
 | **OpenCode** | `curl -fsSL https://opencode.ai/install \| bash` | `opencode auth login` (provider keys) |
 | **Aider** | `pip install aider-chat` | provider API key |
 | **Ollama** (local) | [ollama.com/download](https://ollama.com/download) | none (runs locally) |
 | **OpenRouter** | `npm install -g openrouter-cli` | `OPENROUTER_API_KEY` |
 | **Mistral** / **Qwen** | `pip install mistral-cli` / `qwen-cli` | provider API key |
 
-Subscription/CLI-authed engines (Claude, Codex, Antigravity, OpenCode) bill through their own login — no API key needed in your environment. The rest read an API key from the env var shown above.
+Subscription/CLI-authed engines (Claude, Codex, Antigravity, Kimi Code, OpenCode) bill through their own login — no API key needed in your environment. The rest read an API key from the env var shown above.
 
 ### 2. Verify what Agon can see
 

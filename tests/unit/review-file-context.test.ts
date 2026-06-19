@@ -1,11 +1,18 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { gatherReviewFileContext } from '../../packages/cli/src/generated/handlers/review.js';
+import { gatherReviewFileContext, resolveReviewTarget } from '../../packages/cli/src/generated/handlers/review.js';
 
 let dir: string | undefined;
-afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }); dir = undefined; });
+afterEach(() => {
+  if (dir) {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(`${dir}-outside`, { recursive: true, force: true });
+  }
+  dir = undefined;
+});
 
 function setup(): string {
   dir = mkdtempSync(join(tmpdir(), 'agon-fctx-'));
@@ -63,6 +70,57 @@ describe('gatherReviewFileContext (repo grounding)', () => {
     writeFileSync(join(d, 'src', 'bin.dat'), Buffer.from([0x66, 0x00, 0x6f, 0x6f]));
     const out = gatherReviewFileContext(diffFor('src/bin.dat'), d);
     expect(out).toBe('');
+  });
+
+  it('does not put NUL bytes from untracked binary files into review diffs', () => {
+    const d = setup();
+    execFileSync('git', ['init'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.email', 'agon-test@example.test'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.name', 'Agon Test'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['add', 'src/foo.ts', 'src/generated/foo.ts'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'base'], { cwd: d, stdio: 'ignore' });
+
+    writeFileSync(join(d, 'src', 'new.bin'), Buffer.from([0x66, 0x00, 0x6f, 0x6f]));
+
+    const { diff } = resolveReviewTarget('uncommitted', d);
+    expect(diff).not.toContain('\u0000');
+    expect(diff).toContain('src/new.bin');
+    expect(diff).toContain('[binary or unreadable]');
+  });
+
+  it('does not follow untracked symlinks outside the repo when synthesizing review diffs', () => {
+    const d = setup();
+    execFileSync('git', ['init'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.email', 'agon-test@example.test'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.name', 'Agon Test'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['add', 'src/foo.ts', 'src/generated/foo.ts'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'base'], { cwd: d, stdio: 'ignore' });
+
+    const outside = `${d}-outside`;
+    writeFileSync(outside, 'SECRET_OUTSIDE_REPO\n');
+    symlinkSync(outside, join(d, 'src', 'outside-link.txt'));
+
+    const { diff } = resolveReviewTarget('uncommitted', d);
+    expect(diff).not.toContain('SECRET_OUTSIDE_REPO');
+    expect(diff).not.toContain('outside-link.txt');
+  });
+
+  it('explicit-base branch reviews do not trigger the self-diff fallback', () => {
+    const d = setup();
+    execFileSync('git', ['init'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.email', 'agon-test@example.test'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.name', 'Agon Test'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['add', 'src/foo.ts', 'src/generated/foo.ts'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'base'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['branch', '-m', 'main'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['switch', '-c', 'feature'], { cwd: d, stdio: 'ignore' });
+    writeFileSync(join(d, 'src', 'foo.ts'), 'export function foo() { return 43; }\n');
+    execFileSync('git', ['add', 'src/foo.ts'], { cwd: d, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'feature'], { cwd: d, stdio: 'ignore' });
+
+    const { diff, label } = resolveReviewTarget('branch:feature', d, 'main');
+    expect(label).toBe('branch feature vs main');
+    expect(diff).toContain('return 43');
   });
 
   it('enforces a HARD total cap (does not overshoot by a full block)', () => {

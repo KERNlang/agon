@@ -149,7 +149,8 @@ export { FileStateCache, fileStateCache, getProjectFileStateCache, clearProjectF
 export { ToolRegistry, executeToolCall, executeToolCalls, PERMISSION_DENIED_MESSAGE } from './tool-registry.js';
 export { isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
 export { parsePermissionRule, parsePermissionRuleSet, ruleMatches, evaluatePermissionRules, evaluateToolRules, evaluateBashRules, evaluateFilePathRules, hasShellControl, hasRedirection, hasSubstitution, splitShellSegments, resolveRulePath, pathRuleMatches } from './tool-permissions.js';
-export { createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createAgentTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, createQuickNeroTool } from './tools.js';
+export { createReadTool, createEditTool, createMultiEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createGoalTool, createConquerTool, createReviewTool, createAgentTool, createProposePlanTool, createExitPlanModeTool, createListPlansTool, createRetrieveResultTool, createWebFetchTool, parseAndValidateUrl, htmlToText, createTodoWriteTool, normalizeTodos, createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS, createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults, createQuickNeroTool, classifyQuery, cleanQuery, buildAuthoritativeRequest, parseAuthoritativeResults, extractCitations, judgeProbe, formatCitationReport, probeCitation, verifyCitations } from './tools.js';
+export type { SearchResult, SearchRequest, ResearchIntent, CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './tools.js';
 export { formatCesarPlanMarkdown } from './generated/cesar/plan-formatter.js';
 export { generateToolPrompt, toolsToOpenAIFormat } from './generated/tools/tool-prompt.js';
 export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './generated/tools/tool-parser.js';
@@ -320,7 +321,7 @@ export { EngineHealth, engineHealth, classifyDispatchFailure } from './engine-he
 export type { EngineHealthRecord } from './engine-health.js';
 export type { ValidatedEngineDefinition } from './schemas/engine-schema.js';
 export { sessionContext } from './session-context.js';
-export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData, ThinkResultData, CouncilResultData, SynthesisResultData, NeroResultData, ReviewResultData } from './generated/models/session-result-types.js';
+export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData, ThinkResultData, CouncilResultData, SynthesisResultData, NeroResultData, ReviewResultData, ResearchResultData } from './generated/models/session-result-types.js';
 export {
   splitPromptBlocks, mergeBlocksByRole,
 } from './prompt-builder.js';

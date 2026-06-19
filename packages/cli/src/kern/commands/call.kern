@@ -30,6 +30,8 @@ interface name=CallCommandOptions export=true
   field name=roles type=string optional=true
   field name=chairman type=string optional=true
   field name=oracleGate type=string optional=true
+  field name=count type=string optional=true
+  field name=engine type=string optional=true
 
 interface name=BuiltCallCommands export=true
   field name=cwd type=string
@@ -192,6 +194,19 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
         ...timeout,
         ...engines,
       ]);
+    } else if (workflow === 'research') {
+      // Keyless web-grounded, cited research. Agon discovers sources (npm/GitHub/
+      // MDN/IETF/Stack Overflow/Wikipedia — no key), an engine drafts a cited
+      // answer, Agon verifies the citations. --count sets sources; --engines the pool.
+      const question = requireInput(workflow, opts.input);
+      commands.push([
+        'research',
+        question,
+        ...textFlag('--count', opts.count),
+        ...textFlag('--engine', opts.engine),
+        ...timeout,
+        ...engines,
+      ]);
     } else if (workflow === 'review') {
       commands.push(['review', opts.input?.trim() || 'uncommitted', ...timeout, ...engines]);
     } else if (workflow === 'goal') {
@@ -237,7 +252,7 @@ fn name=buildCallCommands params="opts:CallCommandOptions" returns="BuiltCallCom
       commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
       commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
     } else {
-      throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, conquer, pipeline, review, goal, doctor, or a team-* workflow.`);
+      throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, pipeline, review, goal, doctor, or a team-* workflow.`);
     }
 
     return { cwd, commands };
@@ -413,6 +428,14 @@ const name=callCommand type="any"
           type: 'string',
           description: 'For goal: oracle red-team pre-flight (off|warn|strict) — panel tries to game each verify before forging',
         },
+        count: {
+          type: 'string',
+          description: 'For research: number of sources to discover and read (1-10)',
+        },
+        engine: {
+          type: 'string',
+          description: 'For research: force a specific engine to draft the answer (skips rating-based selection)',
+        },
       },
       async run({ args }) {
         assertNoRemovedEngines(args.engines);
@@ -444,6 +467,8 @@ const name=callCommand type="any"
             roles: args.roles,
             chairman: args.chairman,
             oracleGate: args.oracleGate,
+            count: args.count,
+            engine: args.engine,
           });
         } catch (err) {
           exitWithFailure(err instanceof Error ? err.message : String(err));

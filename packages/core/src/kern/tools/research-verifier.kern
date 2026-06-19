@@ -1,0 +1,255 @@
+// ── Citation Verifier (keyless, layer 2 of research) ─────────────────
+// After an engine produces a cited answer, Agon re-fetches each cited URL
+// itself and rejects citations that are dead, redirect to a different host
+// (link-rot / parking domains), or whose page doesn't mention the cited
+// terms. This is Agon's trust-per-line edge — the model can hallucinate a
+// URL, but it can't make our fetch of that URL succeed.
+//
+// The probe reuses WebFetch's SSRF guard + manual-redirect discipline (every
+// hop re-validated) so a citation can't be used to reach an internal host.
+// The DECISION logic (extractCitations, judgeProbe) is pure and unit-tested
+// with fixtures; only probeCitation/verifyCitations touch the network.
+
+import from="./tool-web-fetch.js" names="parseAndValidateUrl,htmlToText"
+
+type name=CitationStatus values="verified|dead|redirected|unreachable|irrelevant|blocked" export=true
+
+interface name=CitationProbe export=true
+  field name=url type=string
+  field name=ok type=boolean
+  field name=status type=number
+  field name=finalUrl type=string
+  field name=crossHostRedirect type=boolean
+  field name=sample type=string
+  field name=error type=string optional=true
+
+interface name=CitationVerdict export=true
+  field name=url type=string
+  field name=verdict type=CitationStatus
+  field name=httpStatus type=number
+  field name=finalUrl type=string
+  field name=detail type=string
+
+interface name=CitationReport export=true
+  field name=total type=number
+  field name=verified type=number
+  field name=rejected type=number doc="Genuinely-bad citations (dead/redirected/unreachable/irrelevant). Excludes `blocked`, which is inconclusive — not disproven."
+  field name=blocked type=number doc="Citations whose host refused/throttled OUR re-fetch (401/403/429/999). The citation is neither verified nor disproven — common for bot-blocked pages (e.g. npmjs.com 403s our user-agent)."
+  field name=results type="CitationVerdict[]"
+
+fn name=extractCitations params="text:string, max?:number" returns="string[]" export=true
+  doc "Pull the http(s) URLs out of a (markdown or plain) answer — covers markdown links and bare URLs. KEEPS balanced parens/brackets inside a URL (e.g. .../Example_(disambiguation)) but trims trailing sentence punctuation and an UNbalanced closing bracket/paren (from `(see https://x)`). De-dupes case-insensitively, caps the count (default 20, hard max 50). Pure."
+  handler <<<
+    const cap = typeof max === 'number' && max > 0 ? Math.min(max, 50) : 20;
+    const s = String(text ?? '');
+    const urls: string[] = [];
+    const seen = new Set<string>();
+    // Allow brackets/parens in the body (Wikipedia-style URLs); only whitespace,
+    // angle brackets and quotes terminate the match. Unbalanced trailing brackets
+    // are trimmed afterwards so a wrapping `(…)`/`[…]` doesn't corrupt the URL.
+    const re = /\bhttps?:\/\/[^\s<>"'`]+/gi;
+    const count = (str: string, ch: string): number => {
+      let k = 0;
+      for (const c of str) if (c === ch) k++;
+      return k;
+    };
+    const closers: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(s)) !== null) {
+      let u = m[0].replace(/[.,;:!?]+$/, '');
+      // Drop trailing closers that have no matching opener inside the URL.
+      let trimmed = true;
+      while (trimmed && u.length > 0) {
+        trimmed = false;
+        const last = u[u.length - 1];
+        const opener = closers[last];
+        if (opener && count(u, last) > count(u, opener)) {
+          u = u.slice(0, -1).replace(/[.,;:!?]+$/, '');
+          trimmed = true;
+        }
+      }
+      if (!u) continue;
+      const key = u.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        urls.push(u);
+        if (urls.length >= cap) break;
+      }
+    }
+    return urls;
+  >>>
+
+fn name=judgeProbe params="probe:CitationProbe, claimTerms?:string[]" returns=CitationVerdict export=true
+  doc "Classify a probe outcome into a verdict. unreachable (no response) -> blocked (401/403/429/999: access denied / rate-limited / bot-block — NOT disproven) -> dead (other >=400: gone) -> redirected (unresolved 3xx OR resolved to a different host) -> irrelevant (claimTerms given but none appear in the page sample) -> verified. Pure + deterministic. The blocked/dead split matters: bot-protected hosts (e.g. npmjs.com) 403 our re-fetch even though the citation is perfectly valid — calling that 'dead' is a false negative."
+  handler <<<
+    const base = { url: probe.url, httpStatus: probe.status, finalUrl: probe.finalUrl || probe.url };
+    if (!probe.ok) {
+      return { ...base, verdict: 'unreachable', detail: probe.error || 'no response' };
+    }
+    // Auth / forbidden / rate-limit / bot-block: the resource almost certainly
+    // EXISTS — access was denied or throttled. That is inconclusive, not dead.
+    if (probe.status === 401 || probe.status === 403 || probe.status === 429 || probe.status === 999) {
+      return { ...base, verdict: 'blocked', detail: `HTTP ${probe.status} — access blocked or rate-limited (citation not disproven)` };
+    }
+    if (probe.status >= 400) {
+      return { ...base, verdict: 'dead', detail: `HTTP ${probe.status}` };
+    }
+    if (probe.status >= 300) {
+      return { ...base, verdict: 'redirected', detail: `unresolved redirect (HTTP ${probe.status})` };
+    }
+    if (probe.crossHostRedirect) {
+      return { ...base, verdict: 'redirected', detail: `redirected to a different host: ${probe.finalUrl}` };
+    }
+    // Only run the relevance check against claim terms long enough to be
+    // meaningful (>2 chars). If every supplied term is noise, skip the check
+    // rather than reject a live page on no real signal.
+    const usableTerms = (Array.isArray(claimTerms) ? claimTerms : [])
+      .map((t) => String(t ?? '').toLowerCase().trim())
+      .filter((k) => k.length > 2);
+    if (usableTerms.length > 0) {
+      const hay = String(probe.sample ?? '').toLowerCase();
+      if (!usableTerms.some((k) => hay.includes(k))) {
+        return { ...base, verdict: 'irrelevant', detail: 'page text does not mention the cited terms' };
+      }
+    }
+    return { ...base, verdict: 'verified', detail: `HTTP ${probe.status}` };
+  >>>
+
+fn name=formatCitationReport params="report:CitationReport" returns=string export=true
+  doc "Render a CitationReport as a readable verified/total summary (plus a `· N blocked` note when any host refused our re-fetch) and one line per citation: ✓ verified, ⚠ blocked (inconclusive), ✗ + reason otherwise."
+  handler <<<
+    if (!report || report.total === 0) return 'No citations to verify.';
+    const lines = report.results.map((r) => {
+      const mark = r.verdict === 'verified' ? '✓' : r.verdict === 'blocked' ? '⚠' : '✗';
+      const why = r.verdict === 'verified' ? '' : ` — ${r.detail}`;
+      return `${mark} [${r.verdict}] ${r.url}${why}`;
+    });
+    const blocked = report.blocked ? ` · ${report.blocked} blocked` : '';
+    return `Citations: ${report.verified}/${report.total} verified${blocked}\n` + lines.join('\n');
+  >>>
+
+fn name=probeCitation params="url:string, timeoutMs?:number, signal?:AbortSignal" returns="Promise<CitationProbe>" async=true export=true
+  doc "SSRF-guarded liveness probe of one citation URL. Follows redirects by hand (each hop re-validated like WebFetch), flags a redirect that lands on a different host, and reads a small (16 KiB) text sample for relevance checking. Never throws — failures come back as ok:false with a reason. Honors a caller AbortSignal."
+  handler <<<
+    const v = parseAndValidateUrl(String(url ?? ''));
+    if (!v.ok || !v.url) {
+      return { url: String(url ?? ''), ok: false, status: 0, finalUrl: '', crossHostRedirect: false, sample: '', error: v.reason ?? 'invalid URL' };
+    }
+    const normHost = (h: string): string => h.toLowerCase().replace(/^www\./, '');
+    let startHost = '';
+    try { startHost = normHost(new URL(v.url).hostname); } catch { /* validated above */ }
+
+    const MAX_REDIRECTS = 5;
+    const MAX_BYTES = 16 * 1024; // a small relevance sample — not the whole page
+    const HEADERS = { 'user-agent': 'agon-research/0.1 (+https://github.com/KERNlang/agon)', accept: 'text/html,text/plain,application/json;q=0.9,*/*;q=0.5' };
+
+    const controller = new AbortController();
+    const ms = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : 10000;
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, ms);
+    const onAbort = () => controller.abort();
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    try {
+      // Caller already cancelled — bail before any network I/O.
+      if (controller.signal.aborted) {
+        return { url: v.url, ok: false, status: 0, finalUrl: v.url, crossHostRedirect: false, sample: '', error: signal?.aborted ? 'probe aborted by caller' : 'probe aborted' };
+      }
+      let currentUrl = v.url;
+      let crossHost = false;
+      let res: Response | null = null;
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        res = await fetch(currentUrl, { signal: controller.signal, redirect: 'manual', headers: HEADERS });
+        const loc = res.headers.get('location');
+        if (res.status >= 300 && res.status < 400 && loc) {
+          let next: string;
+          try { next = new URL(loc, currentUrl).toString(); } catch { break; }
+          const rv = parseAndValidateUrl(next);
+          if (!rv.ok || !rv.url) {
+            return { url: v.url, ok: false, status: res.status, finalUrl: currentUrl, crossHostRedirect: crossHost, sample: '', error: `blocked redirect → ${rv.reason ?? next}` };
+          }
+          try { if (normHost(new URL(rv.url).hostname) !== startHost) crossHost = true; } catch { /* keep prior */ }
+          currentUrl = rv.url;
+          res = null;
+          continue;
+        }
+        break;
+      }
+      if (!res) {
+        return { url: v.url, ok: false, status: 0, finalUrl: currentUrl, crossHostRedirect: crossHost, sample: '', error: `too many redirects (> ${MAX_REDIRECTS})` };
+      }
+      // A leftover 3xx (broke out on a malformed Location, or ran out of hops)
+      // is not a usable final response — report it as unverifiable rather than
+      // claiming ok:true with a redirect status.
+      if (res.status >= 300 && res.status < 400) {
+        return { url: v.url, ok: false, status: res.status, finalUrl: currentUrl, crossHostRedirect: crossHost, sample: '', error: `unresolved redirect (HTTP ${res.status})` };
+      }
+
+      let sample = '';
+      if (res.ok && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let received = 0;
+        let raw = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            received += value.byteLength;
+            raw += decoder.decode(value, { stream: true });
+            if (received > MAX_BYTES) { await reader.cancel(); break; }
+          }
+        }
+        raw += decoder.decode();
+        const ct = res.headers.get('content-type') ?? '';
+        sample = /html/i.test(ct) ? htmlToText(raw, 4000) : raw.slice(0, 4000);
+      }
+      return { url: v.url, ok: true, status: res.status, finalUrl: currentUrl, crossHostRedirect: crossHost, sample };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return {
+        url: v.url,
+        ok: false,
+        status: 0,
+        finalUrl: v.url,
+        crossHostRedirect: false,
+        sample: '',
+        error: timedOut ? `probe timed out after ${ms}ms` : (signal?.aborted ? 'probe aborted by caller' : `probe failed: ${msg}`),
+      };
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+    }
+  >>>
+
+fn name=verifyCitations params="urls:string[], claimTerms?:string[], concurrency?:number, signal?:AbortSignal" returns="Promise<CitationReport>" async=true export=true
+  doc "Probe every citation URL (bounded concurrency, default 4 / hard max 8), judge each, and summarize verified / blocked / rejected. `blocked` (access-denied/rate-limited re-fetches) is counted separately from `rejected` (genuinely-bad) because it does not disprove the citation. Order of results matches the input order. Honors a caller AbortSignal — an already-aborted signal yields all-unreachable verdicts without network I/O."
+  handler <<<
+    const list = (Array.isArray(urls) ? urls : []).filter((u) => typeof u === 'string' && u.trim());
+    const limit = typeof concurrency === 'number' && concurrency > 0 ? Math.min(concurrency, 8) : 4;
+    const results: CitationVerdict[] = [];
+    let i = 0;
+    const worker = async (): Promise<void> => {
+      while (i < list.length) {
+        const idx = i++;
+        try {
+          const probe = await probeCitation(list[idx], undefined, signal);
+          results[idx] = judgeProbe(probe, claimTerms);
+        } catch (e) {
+          // probeCitation is contracted never to throw, but guarantee no holes
+          // in results[] (and that Promise.all never rejects) even if it ever does.
+          const msg = e instanceof Error ? e.message : String(e);
+          results[idx] = { url: list[idx], verdict: 'unreachable', httpStatus: 0, finalUrl: list[idx], detail: msg };
+        }
+      }
+    };
+    const workers = Array.from({ length: Math.min(limit, list.length) }, () => worker());
+    await Promise.all(workers);
+    const final = results.filter(Boolean);
+    const verified = final.filter((r) => r.verdict === 'verified').length;
+    const blocked = final.filter((r) => r.verdict === 'blocked').length;
+    return { total: list.length, verified, blocked, rejected: list.length - verified - blocked, results: final };
+  >>>

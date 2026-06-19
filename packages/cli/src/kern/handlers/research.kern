@@ -1,0 +1,134 @@
+// REPL handler for `/research <question>` — keyless web-grounded, cited research.
+// Mirrors the `agon research` CLI command but renders via dispatch events and
+// appends the grounded answer to the chat session so Cesar can build on it.
+// Agon discovers sources keylessly (npm/GitHub/MDN/IETF/Stack Overflow/Wikipedia),
+// an engine drafts a cited answer, and Agon verifies every citation.
+
+import from="node:path" names="join"
+import from="node:fs" names="mkdirSync"
+import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,tracker,appendMessage,resolveWorkingDir"
+import from="@kernlang/agon-forge" names="runResearch,formatResearchResult"
+import from="../models/session-results.js" names="sessionResultStore"
+import from="../../telemetry/index.js" names="recordRun,formatRunSummary"
+import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
+import from="./engine-filter.js" names="filterDefaultOrchestrationEngines"
+
+fn name=handleResearch params="question:string, dispatch:Dispatch, ctx:HandlerContext, opts?:{engine?:string, count?:number}" returns="Promise<void>" async=true
+  signal name=rsAbort
+  handler <<<
+    ensureAgonHome();
+
+    if (!question || !question.trim()) {
+      dispatch({ type: 'warning', message: 'No question provided. Usage: /research <question>' });
+      return;
+    }
+
+    let pool = filterDefaultOrchestrationEngines(ctx.activeEngines());
+    if (pool.length === 0) {
+      dispatch({ type: 'error', message: 'No engines available.' });
+      return;
+    }
+
+    let forced: string | undefined;
+    if (opts?.engine && opts.engine.trim()) {
+      const resolved = ctx.registry.resolveId(opts.engine.trim());
+      if (ctx.registry.activeIds(ctx.config as any).includes(resolved)) {
+        forced = resolved;
+        if (!pool.includes(forced)) pool = [forced, ...pool];
+      } else {
+        dispatch({ type: 'info', message: `Engine '${opts.engine.trim()}' is not available — using rating-based selection.` });
+      }
+    }
+
+    dispatch({ type: 'header', title: 'Research · keyless web-grounded' });
+    dispatch({ type: 'info', message: question.length > 120 ? question.slice(0, 120) + '…' : question });
+
+    const outputDir = join(RUNS_DIR, `research-${Date.now()}`);
+    mkdirSync(outputDir, { recursive: true });
+
+    ctx.setActiveAbort(rsAbort);
+
+    const startTime = Date.now();
+    const progressInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const progress: EngineProgress[] = [{ id: forced ?? 'research', status: `researching… ${elapsed}s`, elapsed, done: false, failed: false }];
+      dispatch({ type: 'progress-update', engines: progress });
+    }, 250);
+
+    let progressCleared = false;
+    function clearProgress(): void {
+      if (progressCleared) return;
+      progressCleared = true;
+      clearInterval(progressInterval);
+      dispatch({ type: 'progress-clear' });
+    }
+
+    let result: any;
+    try {
+      result = await runResearch({
+        question,
+        engines: pool,
+        engine: forced,
+        registry: ctx.registry,
+        adapter: ctx.adapter,
+        count: opts?.count,
+        timeout: 120,
+        outputDir,
+        cwd: resolveWorkingDir(),
+        signal: rsAbort.signal,
+        // Surface discover/read/draft/verify narration in the REPL transcript.
+        onStatus: (m: string) => dispatch({ type: 'info', message: m }),
+      });
+    } catch (err) {
+      clearProgress();
+      throw err;
+    }
+    clearProgress();
+
+    if (!result.ok) {
+      dispatch({ type: 'error', message: `No grounded answer${result.note ? `: ${result.note}` : '.'}` });
+      // Append a fresh note so Cesar's recent-engine-context reflects THIS run
+      // (collectRecentEngineContext reads the global tail — without this, a failed
+      // research lets Cesar summarize stale prior engine output as if it were ours).
+      appendMessage(ctx.chatSession, { role: 'user', content: `[research] ${question}`, timestamp: new Date().toISOString() });
+      appendMessage(ctx.chatSession, { role: 'engine', engineId: result.engineId || 'research', content: `Research found no grounded answer.${result.note ? ` (${result.note})` : ''}`, timestamp: new Date().toISOString() });
+      return;
+    }
+
+    dispatch({ type: 'info', message: `${result.engineId} · ${result.intent} · ${result.citations.verified}/${result.citations.total} citations verified` });
+    dispatch({ type: 'engine-block', engineId: result.engineId, color: 39, content: formatResearchResult(result) });
+
+    appendMessage(ctx.chatSession, { role: 'user', content: `[research] ${question}`, timestamp: new Date().toISOString() });
+    appendMessage(ctx.chatSession, { role: 'engine', engineId: result.engineId, content: result.answer, timestamp: new Date().toISOString() });
+    tracker.record(result.engineId, { prompt: question, response: result.answer });
+
+    sessionResultStore.add({
+      type: 'research',
+      timestamp: new Date().toISOString(),
+      question,
+      engines: result.engineId ? [result.engineId] : [],
+      winner: result.engineId ?? null,
+      data: {
+        intent: result.intent,
+        answer: result.answer,
+        engineId: result.engineId ?? '',
+        sources: (result.sources ?? []).map((s: any) => ({ title: s.title, url: s.url })),
+        citationsVerified: result.citations.verified,
+        citationsTotal: result.citations.total,
+      },
+    });
+
+    const runRecord = recordRun({
+      mode: 'research',
+      intent: question,
+      winner: result.engineId ?? undefined,
+      success: true,
+      durationMs: Date.now() - startTime,
+      engineIds: result.engineId ? [result.engineId] : [],
+      completionState: 'completed',
+    });
+    if (!process.env.AGON_NO_SUMMARY) dispatch({ type: 'info', message: formatRunSummary(runRecord) });
+  >>>
+  cleanup <<<
+    ctx.setActiveAbort(null);
+  >>>

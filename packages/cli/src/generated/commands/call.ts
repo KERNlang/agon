@@ -37,21 +37,23 @@ export interface CallCommandOptions {
   roles?: string;
   chairman?: string;
   oracleGate?: string;
+  count?: string;
+  engine?: string;
 }
 
-// @kern-source: call:34
+// @kern-source: call:36
 export interface BuiltCallCommands {
   cwd: string;
   commands: string[][];
 }
 
-// @kern-source: call:38
+// @kern-source: call:40
 export function textFlag(flag: string, value: string|undefined): string[] {
   const text = value?.trim();
   return text ? [flag, text] : [];
 }
 
-// @kern-source: call:44
+// @kern-source: call:46
 export function requireInput(workflow: string, input: string|undefined): string {
   const text = input?.trim();
   if (!text) {
@@ -60,7 +62,7 @@ export function requireInput(workflow: string, input: string|undefined): string 
   return text;
 }
 
-// @kern-source: call:53
+// @kern-source: call:55
 export function exitWithFailure(message: string): never {
   fail(message);
   process.exit(1);
@@ -70,7 +72,7 @@ export function exitWithFailure(message: string): never {
 /**
  * Enforce the HARD removedEngines denylist at the external-CLI boundary, BEFORE any --engines list is forwarded to a subcommand. Without this, an external CLI (Codex/Antigravity) that passes --engines a,b,<removed> would resurrect a hard-removed engine, since explicit -e lists bypass the registry's auto roster. Fails loudly (pre-run error) rather than silently dropping — silent roster rewrite is the trust hazard (Council batch-2 verdict).
  */
-// @kern-source: call:60
+// @kern-source: call:62
 export function assertNoRemovedEngines(enginesCsv: string|undefined): void {
   const text = enginesCsv?.trim();
   if (!text) return;
@@ -90,12 +92,12 @@ export function assertNoRemovedEngines(enginesCsv: string|undefined): void {
   }
 }
 
-// @kern-source: call:81
+// @kern-source: call:83
 export function normalizeCallWorkflow(workflow: string): string {
   return workflow.trim().toLowerCase().replace(/_/g, '-');
 }
 
-// @kern-source: call:86
+// @kern-source: call:88
 export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
   const workflow = normalizeCallWorkflow(opts.workflow);
   const cwd = opts.cwd?.trim() || process.cwd();
@@ -204,6 +206,19 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
       ...timeout,
       ...engines,
     ]);
+  } else if (workflow === 'research') {
+    // Keyless web-grounded, cited research. Agon discovers sources (npm/GitHub/
+    // MDN/IETF/Stack Overflow/Wikipedia — no key), an engine drafts a cited
+    // answer, Agon verifies the citations. --count sets sources; --engines the pool.
+    const question = requireInput(workflow, opts.input);
+    commands.push([
+      'research',
+      question,
+      ...textFlag('--count', opts.count),
+      ...textFlag('--engine', opts.engine),
+      ...timeout,
+      ...engines,
+    ]);
   } else if (workflow === 'review') {
     commands.push(['review', opts.input?.trim() || 'uncommitted', ...timeout, ...engines]);
   } else if (workflow === 'goal') {
@@ -249,18 +264,18 @@ export function buildCallCommands(opts: CallCommandOptions): BuiltCallCommands {
     commands.push(['forge', task, '--test', fitness, '--cwd', cwd, ...timeout, ...engines]);
     commands.push(['tribunal', `Review the pipeline result for: ${task}`, '--rounds', opts.rounds?.trim() || '1', ...tribunalMode, ...timeout, ...engines]);
   } else {
-    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, conquer, pipeline, review, goal, doctor, or a team-* workflow.`);
+    throw new Error(`Unknown call workflow: ${opts.workflow}. Use forge, brainstorm, synthesis, tribunal, council, campfire, think, nero, research, conquer, pipeline, review, goal, doctor, or a team-* workflow.`);
   }
 
   return { cwd, commands };
 }
 
-// @kern-source: call:246
+// @kern-source: call:261
 export function writeJsonl(event: Record<string,unknown>): void {
   process.stdout.write(`${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n`);
 }
 
-// @kern-source: call:251
+// @kern-source: call:266
 export async function runCommand(command: string, args: string[], cwd: string, jsonl: boolean): Promise<number> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
@@ -304,7 +319,7 @@ export async function runCommand(command: string, args: string[], cwd: string, j
   });
 }
 
-// @kern-source: call:295
+// @kern-source: call:310
 export const callCommand: any = defineCommand({
   meta: {
     name: 'call',
@@ -424,6 +439,14 @@ export const callCommand: any = defineCommand({
       type: 'string',
       description: 'For goal: oracle red-team pre-flight (off|warn|strict) — panel tries to game each verify before forging',
     },
+    count: {
+      type: 'string',
+      description: 'For research: number of sources to discover and read (1-10)',
+    },
+    engine: {
+      type: 'string',
+      description: 'For research: force a specific engine to draft the answer (skips rating-based selection)',
+    },
   },
   async run({ args }) {
     assertNoRemovedEngines(args.engines);
@@ -455,6 +478,8 @@ export const callCommand: any = defineCommand({
         roles: args.roles,
         chairman: args.chairman,
         oracleGate: args.oracleGate,
+        count: args.count,
+        engine: args.engine,
       });
     } catch (err) {
       exitWithFailure(err instanceof Error ? err.message : String(err));

@@ -116,6 +116,7 @@ Pick by the **shape** of the problem, not the topic:
 | Open exploration, no decision yet | **campfire** | Relaxed multi-engine discussion — no scoring, no winner. |
 | A problem decomposed before you act | **think** | Sequential thinking — linear or reflexion (forced self-critique), optional branches; surfaces open questions + a `goal` handoff. |
 | Your own decision pressure-tested | **nero** | Adversarial self-challenge — the top-rated *critic* (by tribunal rating, not the best builder) attacks it and returns a verdict. |
+| A library/repo/spec/fact looked up with sources | **research** | Keyless, web-grounded, *cited* research — Agon discovers sources (npm/GitHub/MDN/IETF/Stack Overflow/Wikipedia, **no API key**), an engine drafts a grounded answer, and Agon **verifies every citation**. |
 | Code built competitively against a test | **forge** | Engines race on the same task in isolated worktrees; the best test-passing patch is applied. |
 | The **first** passing solution, fast | **speculate** | N engines race; the first to pass the test wins and is applied immediately. |
 | A routine build with one engine | **pipeline** | Single-engine build → review → fix loop; no competition overhead. |
@@ -136,6 +137,7 @@ Pick by the **shape** of the problem, not the topic:
 - Need a task queue executed → `goal`
 - Need to think a problem through before acting → `think`
 - Need your own decision attacked before you commit → `nero`
+- Need a library/repo/spec/fact looked up with trustworthy, verified sources → `research`
 - Need the whole panel on a high-stakes, hard-to-reverse call → `council`
 - Need a whole open-ended thing built unattended, away from the desk → `conquer`
 
@@ -202,6 +204,20 @@ agon nero "..." --json                                          # emit the NeroR
 - **For external CLIs too** — `agon nero` (and `agon call nero "<decision>" --jsonl`) is the mode Codex / Antigravity / Claude should reach for instead of an internal self-critique; it gives them a genuinely different model as the adversary.
 
 > **New-model cold-start (applies to all ratings).** When a new model version drops, declare its lineage in the engine JSON (`"derivedFrom": "opus-4.7"`). On its first competition it inherits the predecessor's Glicko rating instead of starting at 1500 — with **inflated uncertainty** so a genuinely better model converges fast, a **low-side clamp** (a below-average predecessor is inherited at full strength, no uncertainty bonus — you can't shed a bad rating by version-bumping), and a **min-games gate** (a near-empty predecessor rating is too noisy to inherit, so the successor starts fresh).
+
+### Research
+Keyless, web-grounded, **cited** research. The Agon edge here isn't engine competition — it's that *discovery and verification happen in Agon, around the model, with no API key*: Agon classifies the question and pulls sources from first-party endpoints that need no key (**npm registry, GitHub repo search, MDN, IETF/RFC datatracker, Stack Overflow, Wikipedia**), WebFetches them (SSRF-guarded), an engine drafts an answer grounded **only** in that content with inline `[n]` citations, and Agon then **re-fetches and verifies every citation**, flagging any that are dead, redirected to another host, or whose page doesn't mention the cited terms. The model can hallucinate a URL — it can't make Agon's fetch of that URL succeed.
+
+```bash
+agon research "how does the p-retry npm package back off?"
+agon research "the WHATWG URL parsing spec" --count 8           # more sources
+agon research "RFC 7231 cacheability rules" --engine codex       # force the drafting engine
+agon research "what is a Merkle tree?" --json                    # emit the ResearchResult, pipe-friendly
+```
+
+- **No API key, no setup.** It never signs up for Brave/Tavily/Exa or runs a search-engine container — it talks to keyless first-party JSON APIs. A truly-general web query that has no keyless lane is reported honestly rather than answered ungrounded.
+- **Citations are verified, not trusted.** Every cited URL is re-fetched; dead/redirected/mismatched ones are surfaced so you know which lines to trust.
+- **For external CLIs too** — `agon call research "<question>" --jsonl` lets Codex / Antigravity / Claude get web-grounded, citation-checked answers without their own search key.
 
 ### Brainstorm
 Engines bid their confidence level on how they would tackle a complex problem. Engines with higher confidence bids are allocated more tokens and priority.

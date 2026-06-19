@@ -98,4 +98,41 @@ describe('parseSynthesisJudgeOutput — calibration', () => {
     expect(scores[1].confidence).toBeCloseTo(0.40);   // "40%" → 0.40
     expect(scores[1].unhandled).toBe('race condition');
   });
+
+  it('tolerates markdown-wrapped score, confidence, unhandled, winner, and reasoning labels', () => {
+    const text = [
+      '**SCORE_1:** 82',
+      '**CONFIDENCE_1:** 74%',
+      '**UNHANDLED_1:** none',
+      '*SCORE-2:* 91',
+      '_CONFIDENCE-2:_ 0.88',
+      '**UNHANDLED-2:** empty state',
+      '**WINNER:** **ENTRY_2**',
+      '**REASONING:** second is stronger',
+    ].join('\n');
+
+    const { scores, winner, reasoning } = parseSynthesisJudgeOutput(text, ['kimi', 'minimax-api']);
+
+    expect(winner).toBe('minimax-api');
+    expect(reasoning).toBe('second is stronger');
+    expect(scores[0]).toMatchObject({ engineId: 'kimi', score: 82, confidence: 0.74 });
+    expect(scores[0].unhandled).toBeUndefined();
+    expect(scores[1]).toMatchObject({ engineId: 'minimax-api', score: 91, confidence: 0.88, unhandled: 'empty state' });
+  });
+
+  it('does not confuse lower entry labels with entry 10', () => {
+    const engineIds = Array.from({ length: 10 }, (_, i) => `engine-${i + 1}`);
+    const text = [
+      'SCORE_1: 10',
+      'SCORE_10: 99',
+      'WINNER: ENTRY_10',
+      'REASONING: tenth wins',
+    ].join('\n');
+
+    const { scores, winner } = parseSynthesisJudgeOutput(text, engineIds);
+
+    expect(winner).toBe('engine-10');
+    expect(scores.find((s) => s.engineId === 'engine-1')?.score).toBe(10);
+    expect(scores.find((s) => s.engineId === 'engine-10')?.score).toBe(99);
+  });
 });

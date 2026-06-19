@@ -137,21 +137,44 @@ export function shuffleSynthesisEnginesInPlace(arr: any[]): any[] {
 }
 
 // @kern-source: synthesis-modus:127
+export function normalizeSynthesisWinner(raw: string, engineIds: string[]): string {
+  if (engineIds.length === 0) return '';
+  const rawWinner = String(raw || '')
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .trim()
+    .replace(/^(?:\*\*|__|\*|_)\s*|\s*(?:\*\*|__|\*|_)$/g, '')
+    .trim()
+    .replace(/[.。]+$/g, '');
+  const entryMatch = rawWinner.match(/^(?:entry[_\s-]*)?(\d+)$/i);
+  const entryIndex = entryMatch ? parseInt(entryMatch[1], 10) - 1 : -1;
+  return entryIndex >= 0 && engineIds[entryIndex]
+    ? engineIds[entryIndex]
+    : engineIds.find((id) => id.toLowerCase() === rawWinner.toLowerCase()) ?? engineIds[0];
+}
+
+// @kern-source: synthesis-modus:144
 export function parseSynthesisJudgeOutput(text: string, engineIds: string[]): {scores:SynthesisScore[];winner:string;reasoning:string} {
+  const labelWrap = '(?:\\*\\*|__|\\*|_)?';
+  const labelPattern = (name: string, label?: string) => {
+    const suffix = label ? `[_\\s-]*${label}` : '';
+    return `${labelWrap}\\s*${name}${suffix}\\s*${labelWrap}\\s*:\\s*${labelWrap}`;
+  };
   const scores: SynthesisScore[] = [];
   for (let i = 0; i < engineIds.length; i += 1) {
-    const re = new RegExp(`SCORE_${i + 1}\\s*:\\s*(\\d{1,3})`, 'i');
+    const label = `${i + 1}`;
+    const re = new RegExp(`${labelPattern('SCORE', label)}\\s*(\\d{1,3})`, 'i');
     const m = text.match(re);
 
     let confidence: number | undefined;
-    const confMatch = text.match(new RegExp(`CONFIDENCE_${i + 1}\\s*:\\s*([0-9]*\\.?[0-9]+)`, 'i'));
+    const confMatch = text.match(new RegExp(`${labelPattern('CONFIDENCE', label)}\\s*([0-9]*\\.?[0-9]+)\\s*%?`, 'i'));
     if (confMatch) {
       let v = parseFloat(confMatch[1]);
       if (v > 1) v = v / 100; // tolerate 0-100 / percentage outputs (e.g. "75" or "75%") instead of 0-1
       confidence = Math.max(0, Math.min(1, v));
     }
 
-    const unhMatch = text.match(new RegExp(`UNHANDLED_${i + 1}\\s*:\\s*(.+)`, 'i'));
+    const unhMatch = text.match(new RegExp(`${labelPattern('UNHANDLED', label)}\\s*(.+)`, 'i'));
     const unhandledRaw = unhMatch ? unhMatch[1].trim().replace(/^["']|["']$/g, '').trim() : undefined;
     // Suppress "none" and its punctuated variants ("None.", "NONE!", "none ").
     const unhandled = unhandledRaw && !/^none[.!\s]*$/i.test(unhandledRaw) ? unhandledRaw : undefined;
@@ -165,10 +188,10 @@ export function parseSynthesisJudgeOutput(text: string, engineIds: string[]): {s
     });
   }
 
-  const winnerMatch = text.match(/WINNER:\s*"?([^"\n]+)"?/i);
-  const winner = winnerMatch ? winnerMatch[1].trim() : engineIds[0];
+  const winnerMatch = text.match(new RegExp(`${labelPattern('WINNER')}\\s*"?([^"\\n]+)"?`, 'i'));
+  const winner = normalizeSynthesisWinner(winnerMatch ? winnerMatch[1] : '', engineIds);
 
-  const reasonMatch = text.match(/REASONING:\s*"?([^"\n]+)"?/i);
+  const reasonMatch = text.match(new RegExp(`${labelPattern('REASONING')}\\s*"?([^"\\n]+)"?`, 'i'));
   const reasoning = reasonMatch ? reasonMatch[1].trim() : 'No reasoning provided';
 
   return { scores, winner, reasoning };
@@ -177,7 +200,7 @@ export function parseSynthesisJudgeOutput(text: string, engineIds: string[]): {s
 /**
  * Routing guard. synthesis selects a winner by LLM judgment with NO fitness test — fine for prose/design where no clean pass/fail exists, but a liability for testable code (an LLM judge once scored a broken implementation 91/100). For code-shaped tasks, advise forge, which selects by a real fitness test. Returns null for docs/ambiguous tasks (synthesis is the right tool).
  */
-// @kern-source: synthesis-modus:165
+// @kern-source: synthesis-modus:188
 export function synthesisRoutingAdvice(prompt: string): string | null {
   const cls = classifyTask(prompt);
   const codeClasses = ['algorithm', 'refactor', 'bugfix', 'feature', 'test'];
@@ -193,7 +216,7 @@ export function synthesisRoutingAdvice(prompt: string): string | null {
   ].join(' ');
 }
 
-// @kern-source: synthesis-modus:182
+// @kern-source: synthesis-modus:205
 export async function runSynthesisModus(opts: SynthesisOptions): Promise<SynthesisResult> {
   const { prompt, registry, adapter, timeout, outputDir } = opts;
   const swapRounds = Math.max(0, opts.swaps ?? 1);

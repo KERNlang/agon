@@ -193,12 +193,25 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
       // ── In-place path (API brain): summarize older turns INSIDE the live
       // session, keep the recent tail, keep the session running — Claude
       // Code's /compact semantics. No reboot, no lost engine context.
+      //
+      // A live "Compacting conversation…" spinner runs through the (often
+      // multi-second) summarization so it isn't a dead pause. It is stopped
+      // right before the completion message on EVERY exit path, and a finally
+      // net guarantees it can never be left spinning even if something throws.
+      let compactSpinnerStopped = false;
+      // The spinner-stop is best-effort UI: guard the dispatch so that, when
+      // called from the finally net, it can never throw and mask a real error
+      // propagating out of the try block.
+      const stopCompactSpinner = () => { if (!compactSpinnerStopped) { compactSpinnerStopped = true; try { cb.dispatch({ type: 'spinner-stop' }); } catch { /* best-effort */ } } };
+      cb.dispatch({ type: 'spinner-start', message: 'Compacting conversation…' });
+      try {
       const liveSession = cb.ctx.cesarSession as any;
       if (liveSession && typeof liveSession.compact === 'function') {
         let res: { ok: boolean; method: string; beforeTokens: number; afterTokens: number; limit: number } | null = null;
         try { res = await liveSession.compact(); } catch { res = null; }
         if (res && res.ok) {
           const pctOf = (n: number) => res!.limit > 0 ? Math.max(0, Math.round((n / res!.limit) * 100)) : 0;
+          stopCompactSpinner();
           cb.setMode('chat');
           cb.dispatch({ type: 'success', message: `⤵ Context compacted: ${pctOf(res.beforeTokens)}% → ${pctOf(res.afterTokens)}% of the window (${res.method === 'llm' ? 'older turns summarized by the engine' : 'older turns folded into a structured summary'}). Session continues — Cesar's brain stays warm, nothing to re-prompt.` });
           // Refresh the gauge immediately so the strip matches the message
@@ -207,6 +220,7 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
           break;
         }
         if (res && res.method === 'none') {
+          stopCompactSpinner();
           cb.setMode('chat');
           cb.dispatch({ type: 'info', message: 'Nothing to compact yet — the conversation is still short. The session continues unchanged.' });
           break;
@@ -245,6 +259,7 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
       try {
         cb.ctx.cesarMemory?.clearSession?.();
       } catch { /* best-effort */ }
+      stopCompactSpinner();
       cb.setMode('chat');
       if (summaryError) {
         const displayError = summaryError.length > 160 ? `${summaryError.slice(0, 157)}...` : summaryError;
@@ -269,6 +284,9 @@ export async function dispatchSkillsUiIntent(intent: any, input: string, cb: Dis
         cb.dispatch({ type: 'info', message: `Cleared persisted engine context: ${clearedEngineIds.join(', ')}` });
       }
       break;
+      } finally {
+        stopCompactSpinner();
+      }
     }
     case 'clear': {
       // Option 3: Save context before clearing, kill brain, reset everything

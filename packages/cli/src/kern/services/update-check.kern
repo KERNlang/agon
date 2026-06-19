@@ -153,6 +153,64 @@ fn name=runNpmViewVersion async=true params="packageName:string, timeoutMs:numbe
     });
   >>>
 
+// PRIMARY version resolver: a direct, keyless HTTPS GET to the npm registry.
+// `https://registry.npmjs.org/<pkg>/latest` returns just the latest dist-tag's
+// manifest; we read `.version`. This needs NO `npm` binary on PATH and spawns
+// NO process — the previous `npm view` path silently returned '' whenever agon's
+// child process couldn't find `npm` (installed via nvm/volta/fnm, or launched
+// from a GUI terminal with a trimmed PATH), which is exactly why real npm users
+// never saw the update banner. Returns '' on ANY failure (non-2xx, malformed
+// JSON, network error, abort/timeout) so the caller can fall back. Never throws.
+fn name=fetchLatestFromRegistry async=true params="packageName:string, timeoutMs:number" returns="Promise<string>" export=true
+  handler <<<
+    const ms = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : 5000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    try {
+      // Scoped names must URL-encode every '/' ( @scope/name -> @scope%2Fname ).
+      // A global replace (not encodeURIComponent, which would also escape the
+      // leading '@' the registry needs literal) keeps a future multi-segment
+      // input correct too.
+      const encoded = String(packageName ?? '').replace(/\//g, '%2F');
+      if (!encoded) return '';
+      const res = await fetch(`https://registry.npmjs.org/${encoded}/latest`, {
+        signal: controller.signal,
+        headers: { accept: 'application/json', 'user-agent': 'agon-update-check' },
+      });
+      if (!res || !res.ok) return '';
+      const data: any = await res.json();
+      return data && typeof data.version === 'string' ? data.version.trim() : '';
+    } catch {
+      // network down, abort/timeout, or JSON parse error — fail closed.
+      return '';
+    } finally {
+      clearTimeout(timer);
+    }
+  >>>
+
+// Resolve the latest published version: try the direct registry fetch FIRST
+// (no npm/PATH dependency), then fall back to spawning `npm view` — which still
+// works in corporate setups where direct egress to registry.npmjs.org is blocked
+// but npm itself is proxy-configured. '' only when BOTH paths fail.
+//
+// The two attempts SHARE one time budget so a hung direct fetch can never double
+// the worst-case startup latency: the fallback gets only the time the fetch left
+// unused. A fast-failing fetch (refused / 404 / DNS error — the common corporate
+// case) leaves nearly the whole budget for `npm view`; a fetch that burns the
+// budget (a true hang) skips the fallback entirely — if the network is hanging,
+// `npm view` would hang too, and the check is best-effort. This also clamps a
+// non-positive timeout for BOTH paths.
+fn name=resolveLatestVersion async=true params="packageName:string, timeoutMs:number" returns="Promise<string>" export=true
+  handler <<<
+    const budget = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : 5000;
+    const startedAt = Date.now();
+    const direct = await fetchLatestFromRegistry(packageName, budget);
+    if (direct) return direct;
+    const remaining = budget - (Date.now() - startedAt);
+    if (remaining < 500) return ''; // budget spent on the fetch — never start a second full timeout
+    return await runNpmViewVersion(packageName, remaining);
+  >>>
+
 // Public API. `opts.packageName` defaults to '@kernlang/agon';
 // `opts.registryTimeoutMs` defaults to 5000. Returns a populated result even
 // on error — the caller decides whether to show the banner (we never show it
@@ -170,7 +228,7 @@ fn name=checkForUpdate async=true params="currentVersion:string, opts:UpdateChec
     };
     let raw: string;
     try {
-      raw = await runNpmViewVersion(packageName, timeoutMs);
+      raw = await resolveLatestVersion(packageName, timeoutMs);
     } catch (err) {
       const e = err as any;
       result.error = e && e.message ? e.message : String(e);
@@ -187,7 +245,10 @@ fn name=checkForUpdate async=true params="currentVersion:string, opts:UpdateChec
       return result;
     }
     result.latestVersion = normalized;
-    result.hasUpdate = semverGte(normalized, currentVersion) && normalized !== currentVersion;
+    // Compare against the v-stripped current version so 'v0.2.0' vs '0.2.0' is not
+    // a false "update available" (semverGte already strips a leading 'v' internally).
+    const curNorm = (typeof currentVersion === 'string' ? currentVersion : '').trim().replace(/^v/i, '');
+    result.hasUpdate = semverGte(normalized, currentVersion) && normalized !== curNorm;
     return result;
   >>>
 

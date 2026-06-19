@@ -21,6 +21,8 @@ import {
   loadDismissedVersion,
   saveDismissedVersion,
   isLinkedDevInstall,
+  fetchLatestFromRegistry,
+  resolveLatestVersion,
 } from '../../packages/cli/src/generated/services/update-check.js';
 
 function makeFakeChild(stdout: string, exitCode: number = 0) {
@@ -50,6 +52,27 @@ function makeFakeChild(stdout: string, exitCode: number = 0) {
       for (const cb of handlers.error || []) cb(err);
     },
   };
+}
+
+// Install a one-shot execFile mock that fires the service's callback with the
+// given stdout (or an Error) before returning the fake child. Synchronous so the
+// awaiting Promise resolves on the same tick. Module-scope so both the fallback
+// tests and the resolveLatestVersion tests can use it.
+function stubExecFile(stdout: string, exitErr?: Error) {
+  execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: any) => {
+    const fake = makeFakeChild(stdout);
+    if (exitErr) {
+      if (typeof cb === 'function') cb(exitErr, '');
+    } else if (typeof cb === 'function') {
+      cb(null, stdout);
+    }
+    return fake.child;
+  });
+}
+
+// Minimal Response-like stub for the global `fetch` the registry resolver uses.
+function fetchResponse(body: unknown, ok = true, status = ok ? 200 : 500) {
+  return { ok, status, json: async () => body } as any;
 }
 
 describe('update-check service', () => {
@@ -150,28 +173,15 @@ describe('update-check service', () => {
     });
   });
 
-  describe('checkForUpdate', () => {
+  describe('checkForUpdate (npm-view fallback path)', () => {
     beforeEach(() => {
       execFileMock.mockReset();
+      // Force the PRIMARY direct-registry fetch to fail so these cases
+      // deterministically exercise the `npm view` fallback — where the execFile
+      // assertions below live.
+      vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no direct egress'); }));
     });
-
-    // Helper: install a one-shot execFile mock that fires the service's
-    // callback with the given stdout (or with an Error) before returning the
-    // fake child. Synchronous so the awaiting Promise resolves on the same
-    // tick — no dangling timers, no setImmediate in the test.
-    function stubExecFile(stdout: string, exitErr?: Error) {
-      execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: any) => {
-        const fake = makeFakeChild(stdout);
-        if (exitErr) {
-          // Mimic execFile's "error" path: the callback fires with the error
-          // and an empty stdout.
-          if (typeof cb === 'function') cb(exitErr, '');
-        } else if (typeof cb === 'function') {
-          cb(null, stdout);
-        }
-        return fake.child;
-      });
-    }
+    afterEach(() => vi.unstubAllGlobals());
 
     it('returns hasUpdate=true when registry reports a newer version', async () => {
       stubExecFile('0.2.0\n');
@@ -229,6 +239,86 @@ describe('update-check service', () => {
       expect(call[0]).toBe('npm');
       expect(call[1]).toEqual(['view', '@kernlang/agon', 'version']);
       expect(call[2] && call[2].timeout).toBe(5000);
+    });
+  });
+
+  describe('fetchLatestFromRegistry (direct registry GET)', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('reads .version from the keyless /latest manifest (scoped name URL-encoded)', async () => {
+      const f = vi.fn(async () => fetchResponse({ version: '1.4.2' }));
+      vi.stubGlobal('fetch', f);
+      expect(await fetchLatestFromRegistry('@kernlang/agon', 1000)).toBe('1.4.2');
+      // keyless, no `npm` binary: a plain GET to the encoded /latest endpoint
+      expect(f.mock.calls[0][0]).toBe('https://registry.npmjs.org/@kernlang%2Fagon/latest');
+    });
+
+    it('returns "" on a non-2xx response', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => fetchResponse({}, false, 404)));
+      expect(await fetchLatestFromRegistry('@kernlang/agon', 1000)).toBe('');
+    });
+
+    it('returns "" when the manifest has no version field', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => fetchResponse({ name: '@kernlang/agon' })));
+      expect(await fetchLatestFromRegistry('@kernlang/agon', 1000)).toBe('');
+    });
+
+    it('returns "" (never throws) when fetch rejects', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNREFUSED'); }));
+      expect(await fetchLatestFromRegistry('@kernlang/agon', 1000)).toBe('');
+    });
+  });
+
+  describe('resolveLatestVersion (fetch first, npm-view fallback)', () => {
+    beforeEach(() => execFileMock.mockReset());
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('uses the direct fetch and never spawns npm when it succeeds', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => fetchResponse({ version: '2.0.0' })));
+      expect(await resolveLatestVersion('@kernlang/agon', 1000)).toBe('2.0.0');
+      expect(execFileMock).not.toHaveBeenCalled();
+    });
+
+    it('falls back to `npm view` when the direct fetch yields nothing', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('blocked'); }));
+      stubExecFile('3.1.0\n');
+      expect(await resolveLatestVersion('@kernlang/agon', 1000)).toBe('3.1.0');
+      expect(execFileMock).toHaveBeenCalled();
+    });
+
+    it('shares one time budget: a fetch that exhausts it does NOT start a second full npm-view timeout', async () => {
+      // fetch hangs until its own AbortController fires at the (tiny) budget, then
+      // rejects. With the budget spent, the fallback must be skipped so the
+      // worst-case startup latency can never double.
+      vi.stubGlobal('fetch', vi.fn((_url: string, opts: any) => new Promise((_res, rej) => {
+        opts?.signal?.addEventListener('abort', () => rej(new Error('aborted')), { once: true });
+      })));
+      stubExecFile('9.9.9\n'); // would be returned IF the fallback wrongly ran
+      const out = await resolveLatestVersion('@kernlang/agon', 60);
+      expect(out).toBe('');
+      expect(execFileMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('checkForUpdate (primary registry-fetch path)', () => {
+    beforeEach(() => execFileMock.mockReset());
+    afterEach(() => vi.unstubAllGlobals());
+
+    // The exact work-PC scenario: on 0.2.0 with 0.2.1 published, the banner now
+    // fires from a direct registry GET — no `npm` on PATH required.
+    it('detects 0.2.0 -> 0.2.1 via the registry fetch WITHOUT spawning npm', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => fetchResponse({ version: '0.2.1' })));
+      const result = await checkForUpdate('0.2.0', { packageName: '@kernlang/agon', registryTimeoutMs: 1000 });
+      expect(result.hasUpdate).toBe(true);
+      expect(result.latestVersion).toBe('0.2.1');
+      expect(result.error).toBe('');
+      expect(execFileMock).not.toHaveBeenCalled();
+    });
+
+    it('does not flag an update when the current version carries a v-prefix (v0.2.0 vs 0.2.0)', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => fetchResponse({ version: '0.2.0' })));
+      const result = await checkForUpdate('v0.2.0', { packageName: '@kernlang/agon', registryTimeoutMs: 1000 });
+      expect(result.hasUpdate).toBe(false);
     });
   });
 });

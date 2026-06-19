@@ -1,8 +1,14 @@
 import { describe, expect, it, afterEach } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { EngineRegistry } from '../../packages/core/src/engine-registry.js';
 import type { AgonConfig, EngineDefinition } from '../../packages/core/src/generated/models/types.js';
 
 const envKey = 'AGON_TEST_ENGINE_KEY';
+const kimiPathEnvKey = 'KIMI-CODE_PATH';
+const tempDirs: string[] = [];
+const savedAgonHome = process.env.AGON_HOME;
 
 function makeEngine(id: string): EngineDefinition {
   return {
@@ -15,6 +21,25 @@ function makeEngine(id: string): EngineDefinition {
     exec: { args: [] },
     api: { baseUrl: 'https://example.invalid/v1', apiKeyEnv: envKey, model: id, format: 'openai' },
   };
+}
+
+function makeKimiCodeEngine(overrides: Partial<EngineDefinition> = {}): EngineDefinition {
+  return {
+    schemaVersion: 3,
+    id: 'kimi-code',
+    displayName: 'Kimi Code',
+    binary: 'kimi',
+    searchPaths: [],
+    versionCmd: ['--version'],
+    isLocal: false,
+    tier: 'builtin',
+    timeout: 180,
+    exec: { args: ['--output-format', 'text', '-p', '{prompt}'] },
+    agent: { args: ['--output-format', 'text', '-p', '{prompt}'] },
+    companion: { protocol: 'acp', serverCmd: ['acp'] },
+    test: { args: ['--version'] },
+    ...overrides,
+  } as EngineDefinition;
 }
 
 function makeConfig(overrides: Partial<AgonConfig>): Pick<Required<AgonConfig>, 'engineActivationMode'|'forgeEnabledEngines'|'hiddenEngines'|'removedEngines'> {
@@ -30,6 +55,12 @@ function makeConfig(overrides: Partial<AgonConfig>): Pick<Required<AgonConfig>, 
 describe('engine activation', () => {
   afterEach(() => {
     delete process.env[envKey];
+    delete process.env[kimiPathEnvKey];
+    if (savedAgonHome === undefined) delete process.env.AGON_HOME;
+    else process.env.AGON_HOME = savedAgonHome;
+    for (const dir of tempDirs.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('resolves short engine aliases to canonical ids (prefix + substring)', () => {
@@ -168,5 +199,45 @@ describe('engine activation', () => {
 
     expect(registry.getFallbackChain('api-sonnet', 'bugfix', active)).toEqual(['codex']);
     expect(registry.getFallbackChain('api-sonnet', 'bugfix', active)).not.toContain('claude');
+  });
+
+  it('keeps kimi-code active by default when the kimi binary is discoverable', () => {
+    const binDir = mkdtempSync(join(tmpdir(), 'agon-kimi-bin-'));
+    tempDirs.push(binDir);
+    const kimiPath = join(binDir, 'kimi');
+    writeFileSync(kimiPath, '#!/bin/sh\n');
+    process.env[kimiPathEnvKey] = kimiPath;
+
+    const registry = new EngineRegistry();
+    registry.register(makeKimiCodeEngine());
+
+    expect(registry.resolveId('kimi-code')).toBe('kimi-code');
+    expect(registry.findBinary(registry.get('kimi-code'))).toBe(kimiPath);
+    expect(registry.activeIds(makeConfig({ engineActivationMode: 'auto' }))).toEqual(['kimi-code']);
+  });
+
+  it('allows user engine files to override builtin kimi-code by exact id', () => {
+    const builtinDir = mkdtempSync(join(tmpdir(), 'agon-kimi-builtin-'));
+    const agonHome = mkdtempSync(join(tmpdir(), 'agon-kimi-home-'));
+    tempDirs.push(builtinDir, agonHome);
+    const userDir = join(agonHome, 'engines');
+    mkdirSync(userDir, { recursive: true });
+    process.env.AGON_HOME = agonHome;
+
+    writeFileSync(
+      join(builtinDir, 'kimi-code.json'),
+      JSON.stringify(makeKimiCodeEngine({ displayName: 'Builtin Kimi Code', tier: 'builtin' }), null, 2),
+    );
+    writeFileSync(
+      join(userDir, 'kimi-code.json'),
+      JSON.stringify(makeKimiCodeEngine({ displayName: 'User Kimi Code', tier: 'user', timeout: 45 }), null, 2),
+    );
+
+    const registry = new EngineRegistry();
+    registry.load(builtinDir);
+
+    expect(registry.get('kimi-code').displayName).toBe('User Kimi Code');
+    expect(registry.get('kimi-code').tier).toBe('user');
+    expect(registry.get('kimi-code').timeout).toBe(45);
   });
 });

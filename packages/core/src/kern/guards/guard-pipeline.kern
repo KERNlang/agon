@@ -1,0 +1,73 @@
+// ── GuardPipeline D1 — Orchestrator ───────────────────────────────────
+// The single entry point the session loop calls. consultGuard composes the
+// per-call guards (grounded-write, then confidence-gate) for ONE tool call;
+// consultBatch maps it over a step's calls. In 'shadow' mode the pipeline
+// downgrades every block/nudge/escalate to allow but preserves the original
+// verdict in a `shadowed` field so telemetry records what WOULD have happened.
+// The evidence (consultFinalText) and information-gain (advanceStall) guards
+// have their own per-turn entry points and are re-exported here.
+
+import from="./guard-types.js" names="GuardCall,GuardSnapshot,GuardVerdict" types=true
+import from="./grounded-write.js" names="consultGroundedWrite,isWriteTool,writeTargetPath"
+import from="./confidence-gate.js" names="consultConfidenceGate"
+
+// ── Shadowed verdict wrapper ──────────────────────────────────────────
+
+interface name=ShadowableVerdict export=true
+  doc "A verdict the pipeline returns. In strict/invariants modes it IS the verdict. In shadow mode the effective verdict is forced to 'allow' and the original (block/nudge/escalate) is preserved in `shadowed` so telemetry can record what WOULD have happened — and the live turn is never blocked."
+  field name=verdict type=GuardVerdict
+    doc "The EFFECTIVE verdict the caller acts on. In shadow mode this is always 'allow'."
+  field name=shadowed type=GuardVerdict optional=true
+    doc "Present ONLY in shadow mode when a guard fired: the original block/nudge/escalate the pipeline suppressed. Telemetry records this with the right guardId."
+
+fn name=applyShadow params="verdict:GuardVerdict, mode:string" returns=ShadowableVerdict export=true
+  doc "Apply shadow-mode semantics. In 'shadow' mode a non-allow verdict is downgraded to allow with the original kept in `shadowed`. In strict/invariants the verdict passes through unchanged (shadowed undefined). Pure."
+  handler <<<
+    if (mode === 'shadow' && verdict.action !== 'allow') {
+      return { verdict: { action: 'allow' }, shadowed: verdict };
+    }
+    return { verdict };
+  >>>
+
+// ── Per-call consult ──────────────────────────────────────────────────
+
+fn name=consultGuard params="call:GuardCall, snap:GuardSnapshot, distinctFileCount?:number" returns=ShadowableVerdict export=true
+  doc "Consult the per-call guards for ONE tool call, in order: grounded-write (block an ungrounded Edit/Write/MultiEdit), then confidence-gate (escalate a risky/broad/dispatch call when confidence is unreported). The FIRST non-allow verdict wins (grounded-write's block dominates the confidence escalation for the same write). The result is shadow-wrapped per snap.mode. distinctFileCount is the step's broad-write tally for the confidence gate (default 0). Pure — composes the pure per-call guards. In strict mode every guard internally allows except grounded-write, which the D3 wiring does NOT call in strict (strict runs the inline guard); callers gate the whole pipeline on mode !== 'strict'."
+  handler <<<
+    const fileCount = distinctFileCount ?? 0;
+    // 1) grounded-write — a hard block dominates.
+    const gw = consultGroundedWrite(call, snap);
+    if (gw.action !== 'allow') return applyShadow(gw, snap.mode);
+    // 2) confidence-gate — escalate a gated call when confidence is unreported.
+    const cg = consultConfidenceGate(call, snap, fileCount);
+    if (cg.action !== 'allow') return applyShadow(cg, snap.mode);
+    return { verdict: { action: 'allow' } };
+  >>>
+
+interface name=BatchVerdict export=true
+  doc "One call's verdict within a consultBatch result: the call's index in the input array + its shadow-wrapped verdict."
+  field name=index type=number
+  field name=call type=GuardCall
+  field name=result type=ShadowableVerdict
+
+fn name=consultBatch params="calls:GuardCall[], snap:GuardSnapshot, distinctFileCount?:number" returns="BatchVerdict[]" export=true
+  doc "Map consultGuard over a step's calls (loop convenience). Returns one BatchVerdict per input call, in order. distinctFileCount is the step's broad-write tally (the same value applies to each write call in the step — the caller computes the distinct-file count across the whole step's writes). Pure."
+  handler <<<
+    const out: BatchVerdict[] = [];
+    for (let i = 0; i < calls.length; i++) {
+      out.push({ index: i, call: calls[i], result: consultGuard(calls[i], snap, distinctFileCount) });
+    }
+    return out;
+  >>>
+
+fn name=countDistinctWriteFiles params="calls:GuardCall[]" returns=number export=true
+  doc "Count the DISTINCT target file paths across the Edit/Write/MultiEdit calls in a step — the broad-write tally the confidence gate uses (≥ BROAD_WRITE_THRESHOLD → gated). Args paths are taken as-is (canonicalization is the registry's job; distinct-count is robust to that since the same call shape yields the same path)."
+  handler <<<
+    const seen = new Set<string>();
+    for (const c of calls) {
+      if (!isWriteTool(c.name)) continue;
+      const p = writeTargetPath(c.args);
+      if (p) seen.add(p);
+    }
+    return seen.size;
+  >>>

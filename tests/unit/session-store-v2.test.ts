@@ -238,4 +238,65 @@ describe('session-store v2.1: conversation continuity store', () => {
       { role: 'assistant', content: 'hi' },
     ]);
   });
+
+  // ── codex FIX 1: cross-engine readPaths handoff round-trip ──
+  it('round-trips readPaths so a cross-engine handoff carries the source registry', () => {
+    // The SOURCE engine's serialized ReadPathRegistry must survive save→load so
+    // the next engine can restore grounded reads directly. stripEngineArtifacts
+    // flattens tool_calls to text, so the readPaths field is the ONLY reliable
+    // channel — derivation from the replayed history is impossible.
+    const readPaths = ['/repo/package.json', '/repo/src/app.ts'];
+    saveConversation(
+      [
+        { role: 'user', content: 'read the manifest' },
+        { role: 'assistant', content: null, tool_calls: [{ id: 'c1', function: { name: 'Read', arguments: '{}' } }] },
+        { role: 'tool', content: 'contents', tool_call_id: 'c1' },
+      ],
+      'kimi',
+      readPaths,
+    );
+
+    const loaded = loadConversation();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.readPaths).toEqual(readPaths);
+    // The history was still stripped (tool_calls → text marker), proving readPaths
+    // is the only surviving source of the read set.
+    expect(loaded!.messageHistory.some((m: any) => Array.isArray(m.tool_calls))).toBe(false);
+  });
+
+  it('defaults readPaths to [] for an old conversation file written without the field', () => {
+    // Backward-compatible: a v1/pre-FIX-1 conversation file (no readPaths key)
+    // loads fine, with readPaths normalized to [].
+    const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
+    const sessionsDir = join(testHome, 'sessions');
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(join(sessionsDir, `conversation-${cwdHash}.json`), JSON.stringify({
+      schemaVersion: 1,
+      savedAt: Date.now(),
+      sourceEngine: 'codex',
+      messageHistory: [{ role: 'user', content: 'hi' }],
+    }), 'utf-8');
+
+    const loaded = loadConversation();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.readPaths).toEqual([]);
+  });
+
+  it('omits the readPaths key entirely when the source ran strict (undefined)', () => {
+    // A strict-source save passes readPaths === undefined; JSON.stringify drops
+    // an undefined field, so the on-disk JSON has NO readPaths key — byte-identical
+    // to the pre-FIX-1 conversation shape.
+    saveConversation(
+      [{ role: 'user', content: 'hello' }, { role: 'assistant', content: 'hi' }],
+      'claude',
+      // readPaths intentionally omitted (undefined) — strict source.
+    );
+    const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
+    const raw = readFileSync(join(testHome, 'sessions', `conversation-${cwdHash}.json`), 'utf-8');
+    const parsed = JSON.parse(raw);
+    expect('readPaths' in parsed).toBe(false);
+    // And it still loads, normalizing to [].
+    const loaded = loadConversation();
+    expect(loaded!.readPaths).toEqual([]);
+  });
 });

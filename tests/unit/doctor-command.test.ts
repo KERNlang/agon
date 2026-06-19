@@ -86,6 +86,29 @@ describe('doctor command helpers', () => {
     expect(entry.detail).toContain('set AGON_DOCTOR_TEST_KEY_MISSING');
   });
 
+  it('reports Kimi Code missing binary without requiring live auth', () => {
+    const entry = diagnoseEngineDoctorEntry({
+      id: 'kimi-code',
+      displayName: 'Kimi Code',
+      schemaVersion: 3,
+      binary: 'kimi',
+      isLocal: false,
+      tier: 'builtin',
+      timeout: 180,
+      installHint: 'curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash',
+      exec: { args: ['--output-format', 'text', '-p', '{prompt}'] },
+      agent: { args: ['--output-format', 'text', '-p', '{prompt}'] },
+      companion: { protocol: 'acp', serverCmd: ['acp'] },
+    } as any, { findBinary: () => null } as any, ['kimi-code']);
+
+    expect(entry.status).toBe('fail');
+    expect(entry.backend).toBe('cli missing:kimi');
+    expect(entry.modes).toBe('exec, agent, companion');
+    expect(entry.detail).toContain('install kimi');
+    expect(entry.detail).toContain('forge-enabled');
+    expect(entry.detail).toContain('companion:acp');
+  });
+
   it('builds a harness doctor report for the selected Cesar engine', () => {
     const registry = {
       get: (id: string) => ({

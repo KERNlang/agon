@@ -66,7 +66,7 @@ fn name=classifyRecapCommand params="command:string" returns=string export=true
       return value="'build'"
     if cond="/\\bnpm\\s+run\\s+lint\\b|\\beslint\\b/.test(lower)"
       return value="'lint'"
-    if cond="/\\bnpm\\s+test\\b|\\bvitest\\b|\\bpytest\\b|\\bcargo\\s+test\\b|\\bgo\\s+test\\b/.test(lower)"
+    if cond="/\\bnpm\\s+(run\\s+)?test\\b|\\bvitest\\b|\\bpytest\\b|\\bcargo\\s+test\\b|\\bgo\\s+test\\b/.test(lower)"
       return value="'tests'"
     if cond="/\\bgit\\s+commit\\b/.test(lower)"
       return value="'commit'"
@@ -156,7 +156,16 @@ fn name=recordCesarRecapEvent params="capture:any,event:any" returns=void export
       return;
     }
     if (type === 'warning' && event.message) {
-      capture.warnings.push(shortenRecapText(event.message, 180));
+      const msg = String(event.message);
+      // Benign, recovered internal nudges (the brain re-prompting ITSELF to
+      // finish a paused turn) are not turn problems — keep them out of the
+      // recap so a successful turn never reads as a failure. They still render
+      // live while they happen; this only suppresses them from the summary.
+      // Primary signal: an explicit `transient` flag stamped at the source, so
+      // suppression survives any rewording. The regex is a fallback for any
+      // benign nudge that predates the flag.
+      if (event.transient === true || /paused mid-task|auto-continuing/i.test(msg)) return;
+      capture.warnings.push(shortenRecapText(msg, 180));
       return;
     }
     if (type === 'error' && event.message) {
@@ -223,6 +232,57 @@ fn name=buildCesarRecapDiffPreview params="files:any[],diffsByPath:Record<string
       do value="previews.push({ path, relPath, status, additions, deletions, lines: visibleLines, omitted: Math.max(0, candidateLines - visibleLines.length), })"
     return value="{ files: previews, totalFiles: previews.length }"
 
+type name=FinalAction values="commit|push|compile|typecheck|build|lint|tests|deploy|run" export=true
+
+fn name=classifyConsequence params="tool:unknown,command:string" returns="FinalAction|null" export=true
+  doc "Single source of truth for whether a FAILED command deserves a bright red ✗ line in the recap (CONSEQUENTIAL) or folds silently into the dim 'non-fatal' count (PLUMBING). Returns a typed FinalAction string (commit | push | compile | typecheck | build | lint | tests | deploy | run) for consequential commands, or null for plumbing / non-commands. PLUMBING = navigation/inspection/staging/probes whose non-zero exit is noise (cd, ls, echo, cat, git status/add/diff/log, node --check, empty {} calls). Everything else fails OPEN to the generic 'run' action so an unknown build/deploy script can NEVER be silently swallowed. Only bash-family tools classify; reads/edits/searches return null (their effects show in the files line, not as command failures)."
+  handler <<<
+    const key = String(tool ?? '').toLowerCase();
+    if (key !== 'bash' && key !== 'run' && key !== 'agonbash') return null;
+    const cmd = String(command ?? '').trim();
+    if (!cmd || cmd === '{}' || cmd === '{ }') return null;
+    // Classify each CHAINED segment independently, then combine: the command is
+    // consequential if ANY segment is. This makes `cd repo && git commit` a
+    // commit and `cd repo && ./deploy.sh` a (fail-open) run — a leading plumbing
+    // step (cd/git add) can no longer MASK a consequential one that follows it.
+    const classifySegment = (seg: string): string => {
+      if (!seg) return 'plumbing';
+      // STRING-ARG commands first: their arguments are DATA, not sub-commands, so
+      // an action mentioned inside (`echo 'git commit done'`, `grep kern:compile`)
+      // must NOT be read as that action. Short-circuit them to plumbing before the
+      // specific checks below, which otherwise match anywhere in the segment.
+      if (/^(echo|printf|cat|head|tail|grep|rg|sed|awk|ls|pwd|wc|which|type|env|export|find|test|\[)\b/.test(seg)) return 'plumbing';
+      // SPECIFIC actions — matched anywhere in the segment (so `npm test | tee log`
+      // still recognizes the test on the left of a pipe).
+      if (/\bgit\s+commit\b/.test(seg)) return 'commit';
+      if (/\bgit\s+push\b/.test(seg)) return 'push';
+      if (/\bkern:compile\b/.test(seg)) return 'compile';
+      if (/\bnpm\s+run\s+typecheck\b|\btsc\b/.test(seg)) return 'typecheck';
+      if (/\bnpm\s+run\s+build\b|\bcargo\s+build\b|\bgo\s+build\b/.test(seg)) return 'build';
+      if (/\bnpm\s+run\s+lint\b|\beslint\b/.test(seg)) return 'lint';
+      if (/\bnpm\s+(run\s+)?test\b|\bvitest\b|\bpytest\b|\bcargo\s+test\b|\bgo\s+test\b/.test(seg)) return 'tests';
+      // OTHER PLUMBING — navigation/staging/probes whose non-zero exit is noise.
+      const plumbing = /^(cd|set|true|:|sleep|mkdir|touch|node\s+--check|command\s+-v)\b/.test(seg)
+        || /^git\s+(status|add|diff|log|show|stash\s+list|rev-parse|branch|remote|config\s+--get)\b/.test(seg);
+      return plumbing ? 'plumbing' : 'run'; // unknown → consequential (fail open)
+    };
+    // Split on command separators (&&, ||, ;) only — NOT a bare pipe (`|` inside a
+    // quoted/regex arg) and NOT a single `&`, which would fragment redirections
+    // like `2>&1` / `&>file` and misclassify benign plumbing as a `run` failure.
+    // A consequential action chained after a single `&` is still caught by the
+    // anywhere-matching SPECIFIC checks above; only the rarer unknown-after-`&`
+    // case is missed — an acceptable trade for not breaking `2>&1`.
+    const segments = cmd.toLowerCase().split(/&&|\|\||;/).map((s: string) => s.trim());
+    let action: FinalAction | null = null;
+    for (const seg of segments) {
+      const c = classifySegment(seg);
+      if (c === 'plumbing') continue;
+      action = c as FinalAction; // non-plumbing → a concrete FinalAction
+      if (c !== 'run') break; // a specific action wins over a generic fail-open run
+    }
+    return action; // null when every segment is plumbing
+  >>>
+
 fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[],afterFiles:any[]" returns=any export=true
   handler <<<
     const orderedTools = (capture?.toolOrder ?? [])
@@ -232,10 +292,18 @@ fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[
     let failedTools = 0;
     const commands: any[] = [];
     const checkpoints: any[] = [];
+    // Unrecovered CONSEQUENTIAL command failures — promoted to bright red ✗
+    // lines so a real problem is never buried under a green ✓. Because the
+    // capture dedupes tool events by tool+input keeping the LAST status, an
+    // exact retry that later succeeded is already 'done' here and never lands
+    // in this list ("unrecovered" for free).
+    const failureLines: any[] = [];
+    const seenFailures = new Set<string>();
     for (const t of orderedTools) {
       const label = recapToolLabel(t.tool);
       toolCounts[label] = (toolCounts[label] ?? 0) + 1;
-      if (String(t.status).toLowerCase() === 'error') failedTools += 1;
+      const isError = String(t.status).toLowerCase() === 'error';
+      if (isError) failedTools += 1;
       const checkpoint = String(t.output ?? '').match(/\bcheckpoint\s+([a-z0-9]{6,12})\b/i);
       if (checkpoint && !checkpoints.some((c: any) => c.id === checkpoint[1])) {
         checkpoints.push({ id: checkpoint[1], label });
@@ -247,6 +315,27 @@ fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[
           command: shortenRecapText(command.split('\n')[0] ?? command, 120),
           status: String(t.status ?? 'done'),
         });
+        const consequence = classifyConsequence(t.tool, command);
+        if (isError && consequence) {
+          const firstLineCommand = command.split('\n')[0] ?? command;
+          const shortCommand = shortenRecapText(firstLineCommand, 80);
+          // Dedup on the FULL first-line command (not the 80-char display form)
+          // so two distinct long commands that share a prefix never collapse.
+          const dedupKey = `${consequence} ${firstLineCommand}`;
+          // Don't let a repeated identical failure eat the 3-line cap and push a
+          // DISTINCT failure into the overflow. (The capture already dedupes
+          // exact tool+input; this also collapses same-action/same-command pairs.)
+          if (!seenFailures.has(dedupKey)) {
+            seenFailures.add(dedupKey);
+            const reason = String(t.output ?? '')
+              .split('\n').map((l: string) => l.trim()).filter(Boolean)[0] ?? '';
+            failureLines.push({
+              action: consequence,
+              command: shortCommand,
+              reason: shortenRecapText(reason, 70),
+            });
+          }
+        }
       }
     }
     const toolSummary = Object.entries(toolCounts)
@@ -257,6 +346,17 @@ fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[
     const outcome = delegated
       ? `Handed off to ${action || mode}`
       : result?.responded === false ? 'No response' : 'Completed';
+    // Headline status is derived from the TURN outcome (did the engine respond),
+    // NEVER from intermediate tool exit codes. A turn that finished is a green ✓
+    // even if probes/retries failed along the way; ⚠ is reserved for a turn that
+    // genuinely failed (no response / engine error / failed handoff).
+    const failed = result?.responded === false;
+    const shownFailures = failureLines.slice(0, 3);
+    const failureOverflow = Math.max(0, failureLines.length - shownFailures.length);
+    // Non-fatal = every failed tool that did NOT become a red ✗ line: recovered
+    // retries, plumbing non-zero exits, and non-command tool errors. By
+    // construction this count can never contain a real, unrecovered problem.
+    const nonFatalCount = Math.max(0, failedTools - failureLines.length);
     const confidence = capture?.confidence ?? null;
     const durationMs = Number.isFinite(Number(capture?.durationMs))
       ? Number(capture.durationMs)
@@ -283,24 +383,32 @@ fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[
     }).length;
     const todos = todoTotal > 0 ? { done: todoDone, total: todoTotal } : null;
     const verifyLabels = new Set(['compile', 'typecheck', 'build', 'tests', 'lint']);
-    const verification: any[] = [];
-    const seenVerify = new Set<string>();
+    // Per label, the LAST attempt's status wins — an early failed `tests`/`build`
+    // that a later retry turned green must read as ✓, not stay red on the first
+    // attempt. First-seen order is preserved for stable rendering.
+    const verifyOrder: string[] = [];
+    const verifyOk = new Map<string, boolean>();
     for (const c of commands) {
       const label = String(c.label);
-      if (!verifyLabels.has(label) || seenVerify.has(label)) continue;
-      seenVerify.add(label);
-      verification.push({ label, ok: String(c.status).toLowerCase() !== 'error' });
+      if (!verifyLabels.has(label)) continue;
+      if (!verifyOk.has(label)) verifyOrder.push(label);
+      verifyOk.set(label, String(c.status).toLowerCase() !== 'error');
     }
+    const verification = verifyOrder.map((label) => ({ label, ok: verifyOk.get(label) === true }));
     return {
       type: 'cesar-recap',
       engineId: String(result?.cesarEngineId ?? capture?.engineId ?? 'cesar'),
       mode,
       outcome,
+      failed,
       durationMs,
       confidence,
       confidenceReasoning: String(capture?.confidenceReasoning ?? ''),
       toolCount: orderedTools.length,
       failedTools,
+      nonFatalCount,
+      failureLines: shownFailures,
+      failureOverflow,
       toolSummary,
       commands,
       files,
@@ -313,18 +421,26 @@ fn name=buildCesarTurnRecapEvent params="capture:any,result:any,beforeFiles:any[
   >>>
 
 fn name=shouldEmitCesarRecap params="event:any" returns=boolean export=true
-  doc "Gate the end-of-turn recap. A delegation always recaps. Otherwise emit only when the turn produced real FINDINGS — touched/changed files, ran commands, a diff, todo progress, or warnings/errors — OR did more than one tool call. SKIP a trivial turn (no findings AND toolCount <= 1): a bare ReportConfidence turn is exactly this case (toolCount 1, confidence set, nothing else) and must stay quiet — confidence alone is not a finding."
+  doc "Gate the end-of-turn recap. A delegation, a genuinely failed turn, or one with an unrecovered red ✗ failure always recaps. Otherwise emit only when the turn produced real FINDINGS — touched/changed files, a diff, a ran verification (build/test/…), todo progress, or warnings/errors — OR did more than one tool call. SKIP a trivial turn (no findings AND toolCount <= 1): a bare ReportConfidence turn, or a lone plumbing command like `git status` (which renders no actionable row), must stay quiet."
   handler lang="kern"
     if cond="!event || event.type !== 'cesar-recap'"
       return value="false"
     if cond="String(event.outcome ?? '').startsWith('Handed off to ')"
       return value="true"
+    comment raw="// A genuinely FAILED turn, or one with an unrecovered red ✗ failure, always"
+    comment raw="// recaps — the user must see the problem even if nothing else happened."
+    if cond="event.failed === true || (Array.isArray(event.failureLines) && event.failureLines.length > 0)"
+      return value="true"
     let name=hasFiles value="Array.isArray(event.files) && event.files.some((f: any) => String(f?.status ?? '') !== 'read')"
     let name=hasDiff value="!!(event.diffPreview && Array.isArray(event.diffPreview.files) && event.diffPreview.files.length > 0)"
-    let name=hasCommands value="Array.isArray(event.commands) && event.commands.length > 0"
+    comment raw="// Per-command rows were removed from the renderers, so a lone PLUMBING command"
+    comment raw="// (git status / cd) renders nothing actionable — it must NOT force a recap."
+    comment raw="// A ran VERIFICATION (build/test/…) is a real visible signal; consequential"
+    comment raw="// failures already force-emit above via failureLines."
+    let name=hasVerification value="Array.isArray(event.verification) && event.verification.length > 0"
     let name=hasWarnings value="Array.isArray(event.warnings) && event.warnings.length > 0"
     let name=hasTodos value="!!(event.todos && Number(event.todos.total ?? 0) > 0)"
-    let name=hasFindings value="hasFiles || hasDiff || hasCommands || hasWarnings || hasTodos"
+    let name=hasFindings value="hasFiles || hasDiff || hasVerification || hasWarnings || hasTodos"
     let name=toolCount value="Number(event.toolCount ?? 0)"
     comment raw="// SKIP the trivial turn: no findings AND at most one tool call (the bare"
     comment raw="// ReportConfidence turn — toolCount 1, confidence set, nothing else)."

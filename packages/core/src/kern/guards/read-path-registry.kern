@@ -1,0 +1,144 @@
+// ── GuardPipeline D1 — Read-path registry (service, per session) ──────
+// Records every path the engine has READ this session (Read → its path; Glob →
+// every path in the result list; Grep → matched file paths), canonicalized via
+// realpathSync where the file exists. The grounded-write guard reads this set;
+// session-resume serializes/restores it so readPaths survive process restarts
+// like messageHistory does. This is the ONLY guards module that does fs I/O
+// (realpath canonicalization) — the decision fns stay pure and take
+// pre-canonicalized paths from here.
+
+import from="node:fs" names="existsSync,realpathSync"
+import from="node:path" names="resolve"
+
+fn name=canonicalizePath params="p:string" returns=string export=true
+  doc "Canonicalize a filesystem path: resolve() to an absolute path, then realpathSync to follow symlinks WHEN the file exists (existsSync guard so a net-new target that doesn't exist yet still canonicalizes deterministically to its resolved absolute form). Best-effort: any realpath failure falls back to the resolved path. Pure of side effects (reads the fs but mutates nothing)."
+  handler <<<
+    const abs = resolve(p);
+    try {
+      if (existsSync(abs)) return realpathSync(abs);
+    } catch {
+      // realpath can throw on races / permission — fall back to resolved.
+    }
+    return abs;
+  >>>
+
+fn name=readCallPath params="toolName:string, args:Record<string,unknown>" returns="string|null" export=true
+  doc "Extract the path a Read-style call's ARGS name, matching how ReadPathRegistry.record reads a Read call (file_path then path). Glob/Grep surface their paths only in their RESULT (unknown before execution) so they have no arg-path — returns null. Used by session-resume to seed same-step Read paths into the grounded-write snapshot's readPaths BEFORE the batch executes, so a Read-then-Edit of the same path in ONE step grounds the edit. Returns null for non-Read tools and path-less calls. Does NOT canonicalize (callers canonicalize via canonicalizePath to line up with everReadPaths)."
+  handler <<<
+    if (toolName !== 'Read') return null;
+    const fp = args.file_path;
+    if (typeof fp === 'string' && fp.length > 0) return fp;
+    const p = args.path;
+    if (typeof p === 'string' && p.length > 0) return p;
+    return null;
+  >>>
+
+service name=ReadPathRegistry export=true
+  doc "Per-session record of canonicalized read paths. record() ingests a tool result (Read/Glob/Grep) and adds the path(s) it surfaced; isKnown() answers the grounded-write membership test; serialize()/restore() persist the set across process restarts. grepAsRead (constructor-configurable, default true) controls whether Grep-matched files count as reads."
+
+  field name=paths type="Set<string>" private=true
+  field name=grepAsRead type=boolean private=true default="true"
+
+  constructor params="opts?:{grepAsRead?:boolean}"
+    handler <<<
+      this.paths = new Set<string>();
+      this.grepAsRead = opts?.grepAsRead ?? true;
+    >>>
+
+  method name=add params="rawPath:string" returns=void
+    doc "Canonicalize and record one raw path."
+    handler <<<
+      if (typeof rawPath !== 'string' || rawPath.length === 0) return;
+      this.paths.add(canonicalizePath(rawPath));
+    >>>
+
+  method name=record params="toolName:string, args:Record<string,unknown>, result:unknown" returns=void
+    doc "Ingest one executed tool result. Read → its file_path/path arg. Glob → every path string in the result list (array of strings, or {path}/{file} objects, or a newline string). Grep → matched file paths (when grepAsRead). Any other tool → no-op. Best-effort: malformed shapes are skipped, never thrown."
+    handler <<<
+      try {
+        if (toolName === 'Read') {
+          const fp = (args.file_path as string | undefined) ?? (args.path as string | undefined);
+          if (fp) this.add(fp);
+          return;
+        }
+        if (toolName === 'Glob' || (toolName === 'Grep' && this.grepAsRead)) {
+          for (const p of extractResultPaths(result)) this.add(p);
+          return;
+        }
+      } catch {
+        // Best-effort — never let a malformed result throw into the session.
+      }
+    >>>
+
+  method name=isKnown params="rawPath:string" returns=boolean
+    doc "True iff the canonicalized form of rawPath has been recorded as read this session."
+    handler <<<
+      return this.paths.has(canonicalizePath(rawPath));
+    >>>
+
+  method name=hasCanonical params="canonicalPath:string" returns=boolean
+    doc "Membership test over an ALREADY-canonicalized path (the snapshot's everReadPaths feeds the decision fns this way — no re-canonicalization)."
+    handler <<<
+      return this.paths.has(canonicalPath);
+    >>>
+
+  method name=snapshot returns="Set<string>"
+    doc "A defensive copy of the current canonical read-path set, for building a GuardSnapshot.everReadPaths without exposing the live set."
+    handler <<<
+      return new Set(this.paths);
+    >>>
+
+  method name=size returns=number
+    handler <<<
+      return this.paths.size;
+    >>>
+
+  method name=serialize returns="string[]"
+    doc "Serialize the read-path set to a plain string[] for saveSessionState (sessionContinuity persists it like messageHistory)."
+    handler <<<
+      return Array.from(this.paths);
+    >>>
+
+  method name=restore params="paths:string[]" returns=void
+    doc "Restore from a serialized string[] (already-canonical entries from a prior session). Merges into the current set — an old session file WITHOUT readPaths simply restores nothing. Entries are taken as-is (already canonical when they were serialized)."
+    handler <<<
+      if (!Array.isArray(paths)) return;
+      for (const p of paths) {
+        if (typeof p === 'string' && p.length > 0) this.paths.add(p);
+      }
+    >>>
+
+fn name=extractResultPaths params="result:unknown" returns="string[]" export=true
+  doc "Best-effort path extraction from a Glob/Grep tool result. Accepts: a string[] of paths; an array of {path|file|file_path} objects; a single newline-delimited string; or {paths|files|matches} carrying any of those. Returns the flat list of non-empty path strings. Never throws."
+  handler <<<
+    const out: string[] = [];
+    const pushPath = (v: unknown): void => {
+      if (typeof v === 'string') {
+        const s = v.trim();
+        if (s.length > 0) out.push(s);
+      } else if (v && typeof v === 'object') {
+        const o = v as Record<string, unknown>;
+        const p = (o.path ?? o.file ?? o.file_path ?? o.filePath) as unknown;
+        if (typeof p === 'string' && p.trim().length > 0) out.push(p.trim());
+      }
+    };
+    const ingest = (val: unknown): void => {
+      if (val == null) return;
+      if (Array.isArray(val)) {
+        for (const item of val) pushPath(item);
+        return;
+      }
+      if (typeof val === 'string') {
+        for (const line of val.split('\n')) pushPath(line);
+        return;
+      }
+      if (typeof val === 'object') {
+        const o = val as Record<string, unknown>;
+        const inner = o.paths ?? o.files ?? o.matches ?? o.filenames;
+        if (inner !== undefined) { ingest(inner); return; }
+        pushPath(val);
+      }
+    };
+    ingest(result);
+    return out;
+  >>>

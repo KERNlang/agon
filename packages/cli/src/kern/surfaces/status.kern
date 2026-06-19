@@ -16,10 +16,10 @@ import from="../cesar/scoreboard.js" names="renderScoreboard"
 import from="../cesar/scoreboard.js" names="Scoreboard" types=true
 import from="../cesar/mode-rationale.js" names="formatModeRationale"
 import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
-import from="./status-helpers.js" names="buildPlanPhaseGauge,buildExecutionRailTimeline"
+import from="./status-helpers.js" names="buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
 
 module name=StatusHelperExports
-  export from="./status-helpers.js" names="buildPlanPhaseGauge,buildExecutionRailTimeline"
+  export from="./status-helpers.js" names="buildPlanPhaseGauge,buildExecutionRailTimeline,buildGuardTelemetryView,loadGuardTelemetrySnapshot,buildHeartbeatSuffix,buildHeartbeatSig,parseHeartbeatPhase"
 
 // ── Screen: SpinnerBlock ────────────────────────────────────────────
 
@@ -181,6 +181,49 @@ screen name=StatusDashboard target=ink memo=true export=named
         : 'healthy';
       const fallbacks = (recentFallbacks ?? []).slice(-4).reverse();
 
+      // Guard telemetry (Phase 0): pure render from the 60s-memoized counters
+      // snapshot. loadGuardTelemetrySnapshot() reads the file at most once per
+      // minute, so a poll tick never blocks on disk; the folded text is stable
+      // between turns, so it adds no per-tick churn that would wipe selection.
+      // When the counters file is absent/empty the view is hidden entirely.
+      const guard = buildGuardTelemetryView(loadGuardTelemetrySnapshot());
+      const recColor = (rec: string) => rec === 'relax' ? '#4ade80' : rec === 'keep' ? '#fbbf24' : '#6b7280';
+      const guardId = (id: string) => id.length > 16 ? id.slice(0, 15) + '…' : id.padEnd(16, ' ');
+      const engId = (id: string) => id.length > 14 ? id.slice(0, 13) + '…' : id.padEnd(14, ' ');
+      const num = (value: number, width: number) => String(value).padStart(width, ' ');
+      // ── Guard-table column widths (single source of truth so the header lines
+      // up cell-for-cell with the rendered rows below) ──
+      // Guard rows:   short(engineId,16)·' '·guardId(16)·' '·num(fires,5)·' '·
+      //   num(cer,4)%·' '·num(prv,4)%·' '·num(ovhd,4)ms·'  '·rec
+      // Engine rows:  engId(14)·' '·num(par,3)%·'  '·num(rtt,5)ms·' '·num(asm,5)ms
+      // Guard signal cells are now PER-GUARD (codex FIX 3c): each row labels its
+      // own two signals (CER/PRV, WHR/STL, or HI-HIT/LO-HIT) inside the cell, so
+      // the table header is generic. sig cell = label(6) + ' ' + num3 + '%'.
+      const GW = { engine: 16, guard: 16, fires: 5, sig: 11, ovhd: 6 }; // sig = 'LABEL'(6)+' '+num3+'%'; ovhd = num4+'ms' (or 'n/a')
+      const EW = { engine: 14, par: 4, rtt: 7, asm: 7 }; // par = num3+'%'; rtt/asm = num5+'ms'
+      // value < 0 is the placeholder sentinel (evidence / confidence-escalation
+      // guards carry no ceremony/prevented split) → render a dim '—' instead of
+      // a fabricated 0% CER/PRV, padded to the same 11-char cell width for alignment.
+      const sigCell = (label: string, value: number) =>
+        value < 0
+          ? '—'.padEnd(11)
+          : `${label.padEnd(6).slice(0, 6)} ${num(value, 3)}%`;
+      // Left-align text columns (padEnd, like the cells); right-align numeric
+      // headers to their column's right edge (padStart, matching padStart cells).
+      const guardHeader =
+        'ENGINE'.padEnd(GW.engine) + ' ' +
+        'GUARD'.padEnd(GW.guard) + ' ' +
+        'FIRES'.padStart(GW.fires) + ' ' +
+        'SIG1'.padEnd(GW.sig) + ' ' +
+        'SIG2'.padEnd(GW.sig) + ' ' +
+        'OVHD'.padStart(GW.ovhd) + '  ' +
+        'REC';
+      const engineHeader =
+        'ENGINE'.padEnd(EW.engine) + ' ' +
+        'PAR%'.padStart(EW.par) + '  ' +
+        'RTT'.padStart(EW.rtt) + ' ' +
+        'ASM'.padStart(EW.asm);
+
       return (
         <Box flexDirection="column" borderStyle="single" borderColor={health === 'critical' ? '#ef4444' : health === 'degraded' ? '#f97316' : '#22d3ee'} paddingX={1}>
           <Text>
@@ -210,6 +253,43 @@ screen name=StatusDashboard target=ink memo=true export=named
           {fallbacks.length > 0 ? <Text dimColor>{'recent fallback:'}</Text> : null}
           {fallbacks.map((fb: any, index: number) => (
             <Text key={index} color="#f97316">{`  ${fb.from} -> ${fb.to} (${fb.reason})`}</Text>
+          ))}
+          {guard.visible ? <Text color="#22d3ee" bold>{'Guard telemetry (Phase 0)'}</Text> : null}
+          {guard.visible && guard.guardRows.length > 0 ? (
+            <Text dimColor>{guardHeader}</Text>
+          ) : null}
+          {guard.guardRows.map((g: any) => (
+            <Text key={g.key}>
+              <Text color={engineColor(g.engineId)} bold>{short(g.engineId, 16)}</Text>
+              <Text dimColor>{' '}</Text>
+              <Text dimColor>{guardId(g.guardId)}</Text>
+              <Text>{' '}</Text>
+              <Text color="#94a3b8">{num(g.fires, 5)}</Text>
+              <Text>{' '}</Text>
+              <Text color="#94a3b8">{sigCell(g.sig1Label, g.sig1Pct)}</Text>
+              <Text>{' '}</Text>
+              <Text color="#94a3b8">{sigCell(g.sig2Label, g.sig2Pct)}</Text>
+              <Text>{' '}</Text>
+              {g.avgOverheadMs < 0
+                ? <Text dimColor>{'   n/a'}</Text>
+                : <Text color={g.avgOverheadMs >= 50 ? '#f97316' : '#94a3b8'}>{`${num(g.avgOverheadMs, 4)}ms`}</Text>}
+              <Text>{'  '}</Text>
+              <Text color={recColor(g.recommendation)}>{g.recommendation === 'insufficient-data' ? 'n/a' : g.recommendation}</Text>
+            </Text>
+          ))}
+          {guard.visible && guard.engineRows.length > 0 ? (
+            <Text dimColor>{engineHeader}</Text>
+          ) : null}
+          {guard.engineRows.map((e: any) => (
+            <Text key={e.key}>
+              <Text color={engineColor(e.engineId)} bold>{engId(e.engineId)}</Text>
+              <Text>{' '}</Text>
+              <Text color="#94a3b8">{`${num(e.parallelRatePct, 3)}%`}</Text>
+              <Text>{'  '}</Text>
+              <Text color="#94a3b8">{`${num(e.avgRoundTripMs, 5)}ms`}</Text>
+              <Text>{' '}</Text>
+              <Text color="#94a3b8">{`${num(e.avgAssembleMs, 5)}ms`}</Text>
+            </Text>
           ))}
         </Box>
       );
@@ -497,6 +577,7 @@ screen name=CesarStatusStrip target=ink memo=true export=named
   prop name=rationale type="ModeRationale|null" optional=true
   state name=now type=number initial="Date.now()"
   animation name=now interval=1000 update="Date.now()" active="isActive"
+  ref name=heartbeatRef type="{ sig: string; at: number }" initial="{ sig: '', at: 0 }"
   render
     handler <<<
       // Idle: single dimmed line (no colored nesting issues)
@@ -566,6 +647,85 @@ screen name=CesarStatusStrip target=ink memo=true export=named
         snippetStr = streamSnippet.line.length > maxLen ? streamSnippet.line.slice(0, maxLen) + '\u2026' : streamSnippet.line;
       }
 
+      // \u2500\u2500 Dead-air heartbeat (UI-only) \u2500\u2500
+      // While a turn is active, append an adaptive "\u2026Ns" suffix to the EXISTING
+      // activity line so a long-but-healthy wait reads as "still working", not
+      // "stalled". Pure-derived from signals the strip already has (spinner text
+      // + engine/plan state + the live stream snippet) \u2014 NO new event, nothing
+      // appended to history. The
+      // `now` animation (gated to isActive) drives the per-second tick; when the
+      // turn ends isActive flips false, the animation stops, and the strip drops
+      // to the idle branch above \u2014 so the ticker adds ZERO idle repaints.
+      //
+      // 'Last meaningful event' = a change in the spinner phase text, the
+      // in-flight engine set, the active plan step, OR streamed text advancing.
+      // We fingerprint those and store {sig, at} in a ref; when the fingerprint
+      // changes we reset `at` to now, restarting the 2s silent gate + the elapsed
+      // counter for the new phase. The ref is render-time bookkeeping only \u2014
+      // mutating it never triggers a repaint (the animation owns re-rendering).
+      //
+      // codex 0.93: fold a CHEAP stream-progress signal into the fingerprint so a
+      // visibly STREAMING response never reads 'thinking\u2026 Ns'. The strip already
+      // receives `streamSnippet` (the cleaned last line of the live stream buffer,
+      // derived in app.kern from activeStream.content), which advances every chunk
+      // as text accumulates \u2014 no new event into messageHistory or the engine
+      // protocol, just a signal the strip already holds. snippetStr is the same
+      // \u226440-char slice rendered below, so this adds no extra work. It only
+      // matters while a turn is active (the idle branch returns before this code),
+      // so it causes no idle repaints. Residual limitation: granularity is bounded
+      // by the stream THROTTLE (streamSnippet is throttled upstream), so the anchor
+      // can still lag the true last byte by up to one throttle interval \u2014 well
+      // under the 2s silent gate, so the suffix stays correct in practice.
+      // codex 0.99: fingerprint on a NORMALIZED phase identity, NOT the raw
+      // spinner text. The brain re-emits the spinner every ~2s during a wait
+      // with an embedded elapsed counter ('Cesar thinking… 4s' → '… 6s';
+      // 'Cesar timed out after Ns' — brain.kern heartbeat setInterval). Hashing
+      // the raw message ticked the fingerprint on every counter mutation, which
+      // reset the dead-air anchor each tick so buildHeartbeatSuffix could NEVER
+      // clear its 2s gate during a long thinking wait — the feature's primary
+      // use case. buildHeartbeatSig keys the phase component off
+      // parseHeartbeatPhase's output (kind + wait verb + tool names) instead, so
+      // a genuine phase change (thinking→responding→tools→different tools) still
+      // resets the anchor but the counter mutation no longer does.
+      const _hbPhase = parseHeartbeatPhase(spinner?.message);
+      const _hbEngineSig = Array.isArray(engines)
+        ? engines.map((e: any) => `${e?.id ?? ''}:${String(e?.status ?? '')}`).join(',')
+        : '';
+      const _hbPlanSig = activePlan && Array.isArray(activePlan.steps)
+        ? `${activePlan.state ?? ''}:${activePlan.steps.findIndex((s: any) => String(s?.state ?? '') === 'running')}`
+        : '';
+      // NIT (claude 0.5, residual): _hbStreamSig is the same ≤40-char truncated
+      // last-line snippet rendered below. A single streaming line longer than 40
+      // chars stops changing once truncated, so a still-streaming long line can
+      // fall through the gate and momentarily read 'thinking… Ns'. The clean fix
+      // is a cheap monotone signal (e.g. activeStream.content.length), but the
+      // strip only receives streamSnippet {engineId, line} — folding length in
+      // would require new prop plumbing from app.kern, so it is intentionally
+      // left as a residual edge. The throttle-bounded lag stays well under the
+      // 2s gate in the common (short-line) case.
+      const _hbStreamSig = snippetStr;
+      const _hbSig = buildHeartbeatSig(_hbPhase, _hbEngineSig, _hbPlanSig, _hbStreamSig);
+      if (heartbeatRef.current.sig !== _hbSig || heartbeatRef.current.at === 0) {
+        heartbeatRef.current = { sig: _hbSig, at: now };
+      }
+      // Clamp the event anchor to this turn's start: a stale ref carried from a
+      // PREVIOUS turn whose first phase signature happens to match (e.g. both
+      // open on 'Cesar thinking…') must never report dead air that predates the
+      // current turn. startTime is the turn's wall-clock start, so the counter
+      // can never exceed "time since this turn began".
+      const _hbAnchor = startTime > 0 ? Math.max(heartbeatRef.current.at, startTime) : heartbeatRef.current.at;
+      // codex FIX 2: a JOBS-ONLY active strip (background tribunal/forge job running,
+      // no Cesar wait) has NO spinner and NO engine activity — activityStr falls back
+      // to the job label. parseHeartbeatPhase(undefined) yields waiting/'thinking', so
+      // without this guard the strip appended a misleading '· thinking… Ns' next to the
+      // job label even though Cesar isn't waiting on anything. A genuine Cesar wait
+      // ALWAYS carries a spinner message ('Cesar thinking…' etc.) or, for a multi-engine
+      // forge/tribunal turn, live engine progress; gate the heartbeat on that so a
+      // jobs-only strip suppresses the suffix entirely (buildHeartbeatSuffix returns null
+      // when turnActive is false) while every genuine wait is unchanged.
+      const _hbGenuineWait = isActive && (!!spinner || (Array.isArray(engines) && engines.length > 0));
+      const heartbeatStr = buildHeartbeatSuffix(now, _hbAnchor, _hbPhase, _hbGenuineWait);
+
       const scoreboardLines = scoreboard ? renderScoreboard(scoreboard) : '';
       const rationaleStr = rationale ? formatModeRationale(rationale) : '';
 
@@ -579,6 +739,7 @@ screen name=CesarStatusStrip target=ink memo=true export=named
               <Text dimColor>{' \u2502 '}</Text>
               <Text color="#fbbf24">{activityStr}</Text>
               {elapsedStr ? <Text dimColor>{elapsedStr}</Text> : null}
+              {heartbeatStr ? <Text dimColor>{' '}{heartbeatStr}</Text> : null}
             </Text>
             <Text>
               {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}

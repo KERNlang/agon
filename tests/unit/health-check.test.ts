@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { EngineRegistry } from '../../packages/core/src/engine-registry.js';
+import { healthCheckEngine } from '../../packages/forge/src/generated/health-check.js';
 import { runForge } from '../../packages/forge/src/generated/forge.js';
 
 const tempDirs: string[] = [];
@@ -50,6 +51,44 @@ describe('forge pre-flight health check', () => {
 
   afterEach(() => {
     process.env.AGON_DISABLE_FORGE_HEALTH_CHECK = '1';
+  });
+
+  it('probes agent-capable Kimi Code through dispatchAgent in a scratch cwd', async () => {
+    const repoDir = makeRepo();
+    const registry = new EngineRegistry();
+    registry.register({
+      id: 'kimi-code',
+      displayName: 'Kimi Code',
+      binary: 'kimi',
+      timeout: 180,
+      tier: 'builtin',
+      schemaVersion: 3,
+      isLocal: false,
+      exec: { args: ['--output-format', 'text', '-p', '{prompt}'] },
+      agent: { args: ['--output-format', 'text', '-p', '{prompt}'] },
+      companion: { protocol: 'acp', serverCmd: ['acp'] },
+    } as any);
+
+    const seen: Array<{ prompt: string; cwd: string; mode: string; outputDir: string }> = [];
+    const adapter = {
+      dispatch: async () => {
+        throw new Error('Kimi Code health probe should use agent dispatch');
+      },
+      dispatchAgent: async ({ prompt, cwd, mode, outputDir }: any) => {
+        seen.push({ prompt, cwd, mode, outputDir });
+        return { exitCode: 0, stdout: 'ok', stderr: '', timedOut: false, diff: '', diffLines: 0, filesChanged: 0 };
+      },
+    };
+
+    const result = await healthCheckEngine('kimi-code', registry, adapter as any, repoDir, 5, HEALTH_PROBE_PROMPT);
+
+    expect(result.ok).toBe(true);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].prompt).toBe(HEALTH_PROBE_PROMPT);
+    expect(seen[0].mode).toBe('agent');
+    expect(seen[0].cwd).not.toBe(repoDir);
+    expect(seen[0].cwd).toContain('agon-healthcheck-kimi-code-');
+    expect(seen[0].outputDir).toBe(seen[0].cwd);
   });
 
   it('filters out engines that fail the health probe', async () => {

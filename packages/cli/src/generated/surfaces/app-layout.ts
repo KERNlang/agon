@@ -20,7 +20,8 @@ export function estimateVisibleBlockBudget(rows: number, mode: string, overlayRe
   // Chat mode keeps 7 rows for the composer/status chrome at minimum:
   // margin + bordered composer (3) + Cesar strip + two-line status bar.
   // Using 6 makes the startup dashboard overflow by one line.
-  const reservedRows = (mode === 'chat') ? 7 : 8 + Math.max(0, overlayReservedRows);
+  const baseReserved = (mode === 'chat') ? 7 : 8;
+  const reservedRows = baseReserved + Math.max(0, overlayReservedRows);
   return Math.max(1, rows - reservedRows);
 }
 
@@ -83,9 +84,9 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
 }
 
 /**
- * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and chat spinner rows.
+ * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, chat spinner rows, and the one-line plan chip (PlanChip) pinned directly above the composer.
  */
-export function estimateBottomChromeExtraRows(mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, hasLiveSpinner: boolean): number {
+export function estimateBottomChromeExtraRows(mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, hasLiveSpinner: boolean, hasPlanChip: boolean = false): number {
   let extraRows = 0;
   if (pendingImageCount > 0) {
     extraRows += 1;
@@ -94,6 +95,9 @@ export function estimateBottomChromeExtraRows(mode: string, questionState: any, 
     extraRows += 1;
   }
   if (mode === 'chat' && hasLiveSpinner && !questionState) {
+    extraRows += 1;
+  }
+  if (hasPlanChip) {
     extraRows += 1;
   }
   extraRows += estimateQuestionReservedRows(questionState, termWidth);
@@ -276,7 +280,13 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
     case 'response-meta':
       return 1;
     case 'cesar-recap': {
-      const commandRows = Math.min(5, Array.isArray((event as any).commands) ? (event as any).commands.length : 0);
+      // Per-command rows were removed from the renderer; it now draws only the
+      // unrecovered red ✗ failure lines (capped at 3) plus one overflow row.
+      const failureRows = Math.min(3, Array.isArray((event as any).failureLines) ? (event as any).failureLines.length : 0)
+        + (Number((event as any).failureOverflow ?? 0) > 0 ? 1 : 0);
+      // changes: line always renders; verified: only when there are checks.
+      const changeRows = 1;
+      const verifiedRows = Array.isArray((event as any).verification) && (event as any).verification.length > 0 ? 1 : 0;
       const fileRows = Array.isArray((event as any).files) && (event as any).files.length > 0 ? 1 : 0;
       const checkpointRows = Array.isArray((event as any).checkpoints) && (event as any).checkpoints.length > 0 ? 1 : 0;
       const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
@@ -284,7 +294,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
       const warningRows = Math.min(3, Array.isArray((event as any).warnings) ? (event as any).warnings.length : 0);
       const reasoningRows = (event as any).confidenceReasoning ? 1 : 0;
       const todoRows = (event as any).todos && Number((event as any).todos.total ?? 0) > 0 ? 1 : 0;
-      return 3 + commandRows + fileRows + checkpointRows + diffRows + warningRows + reasoningRows + todoRows;
+      return 3 + failureRows + changeRows + verifiedRows + fileRows + checkpointRows + diffRows + warningRows + reasoningRows + todoRows;
     }
     case 'file-changes':
       return 1 + (((event as any).files as any[])?.length ?? 0);

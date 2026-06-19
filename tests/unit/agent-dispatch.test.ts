@@ -4,6 +4,7 @@ import { EngineRegistry } from '../../packages/core/src/engine-registry.js';
 import type { EngineDefinition, EngineModeConfig } from '../../packages/core/src/types.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ENGINES_DIR = join(__dirname, '../../engines');
@@ -12,6 +13,10 @@ function loadRegistry(): EngineRegistry {
   const reg = new EngineRegistry();
   reg.load(ENGINES_DIR);
   return reg;
+}
+
+function loadKimiCodeEngine(): EngineDefinition {
+  return JSON.parse(readFileSync(join(ENGINES_DIR, 'kimi-code.json'), 'utf-8')) as EngineDefinition;
 }
 
 describe('Agent Dispatch', () => {
@@ -59,6 +64,47 @@ describe('Agent Dispatch', () => {
       expect(args[printIdx + 1]).toBe('fix the bug');
     });
 
+    it('uses Kimi Code agent args without permissive flags', () => {
+      const engine = loadKimiCodeEngine();
+      const binary = '/usr/local/bin/kimi';
+      const { args } = buildCommand(engine, 'agent', 'fix the bug', '/tmp', 180, binary);
+      expect(args).toEqual(['--output-format', 'text', '-p', 'fix the bug']);
+      expect(args).not.toContain('--auto');
+      expect(args).not.toContain('-y');
+      expect(args).not.toContain('--yolo');
+      expect(args).not.toContain('--plan');
+    });
+
+    it('uses Kimi Code exec args without permissive flags', () => {
+      const engine = loadKimiCodeEngine();
+      const binary = '/usr/local/bin/kimi';
+      const { args } = buildCommand(engine, 'exec', 'explain this', '/tmp', 180, binary);
+      expect(args).toEqual(['--output-format', 'text', '-p', 'explain this']);
+      expect(args).not.toContain('--auto');
+      expect(args).not.toContain('-y');
+      expect(args).not.toContain('--yolo');
+      expect(args).not.toContain('--plan');
+    });
+
+    it('injects --model before -p when a Kimi Code model is configured', () => {
+      const engine = loadKimiCodeEngine();
+      const binary = '/usr/local/bin/kimi';
+      const prev = process.env.KIMI_CODE_MODEL;
+      process.env.KIMI_CODE_MODEL = 'kimi-k2-test';
+      try {
+        const { args } = buildCommand(engine, 'agent', 'fix the bug', '/tmp', 180, binary);
+        expect(args).toEqual(['--output-format', 'text', '--model', 'kimi-k2-test', '-p', 'fix the bug']);
+      } finally {
+        if (prev === undefined) delete process.env.KIMI_CODE_MODEL;
+        else process.env.KIMI_CODE_MODEL = prev;
+      }
+    });
+
+    it('lists the canonical Kimi Code install dir first in searchPaths so discovery works out of box', () => {
+      const engine = loadKimiCodeEngine();
+      expect(engine.searchPaths?.[0]).toBe('${HOME}/.kimi-code/bin');
+    });
+
     it('throws for engines without agent config', () => {
       const reg = loadRegistry();
       const engine = reg.get('ollama');
@@ -73,6 +119,10 @@ describe('Agent Dispatch', () => {
       expect(supportsAgentMode(reg.get('claude'))).toBe(true);
       expect(supportsAgentMode(reg.get('codex'))).toBe(true);
       expect(supportsAgentMode(reg.get('agy'))).toBe(true);
+    });
+
+    it('returns true for Kimi Code built-in agent config', () => {
+      expect(supportsAgentMode(loadKimiCodeEngine())).toBe(true);
     });
 
     it('returns false for text-only engines', () => {

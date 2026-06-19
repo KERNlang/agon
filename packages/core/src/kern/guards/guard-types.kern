@@ -1,0 +1,78 @@
+// ── GuardPipeline D1 — shared pure types ──────────────────────────────
+// Immutable snapshot inputs + the verdict union + the supporting evidence /
+// spin shapes the decision fns read. NO logic here — only types — so every
+// decision module (grounded-write, evidence, information-gain, confidence-
+// gate, guard-pipeline) can import a single canonical contract.
+
+import from="../telemetry/guard-telemetry.js" names="GuardId" types=true
+
+// ── Mode ──────────────────────────────────────────────────────────────
+
+type name=GuardMode values="strict|invariants|shadow"
+  doc "Guard pipeline mode. 'strict' (default) = the existing inline guards run exactly as today; the new pipeline must not run. 'invariants' = the new pipeline runs and blocks/nudges/escalates for real. 'shadow' = the pipeline EVALUATES and emits telemetry but every block/nudge/escalate is downgraded to allow (the original verdict is preserved in shadowed)."
+
+// ── Evidence + spin sub-shapes (read by the decision fns) ──────────────
+
+interface name=TurnEvidence export=true
+  doc "Per-turn evidence accumulator the evidence guard reads. The session loop mutates it as tool results land; the guard only READS it."
+  field name=successfulNonReadTool type=boolean
+    doc "True once this turn had ≥1 successful NON-read tool result (Edit/Write/Bash/orchestration). A successful Read does NOT count."
+  field name=diagnosticGreen type=boolean
+    doc "True once a diagnostic digest this turn reported no introduced errors (a green digest counts as evidence — set by the D3 wiring from the DiagnosticRunner)."
+  field name=exhausted type=boolean
+    doc "True once the evidence guard has already nudged this turn. After the first nudge the guard passes through (telemetry only) so it fires at most once per turn. The caller flips this after acting on the nudge."
+
+interface name=SpinState export=true
+  doc "Per-turn stall bookkeeping the information-gain guard reads + writes-through the registry. The pipeline returns updated counters; the caller persists them across steps."
+  field name=consecutiveStallSteps type=number
+    doc "Consecutive zero-info read-only steps. Resets to 0 on ANY information gain or non-read step."
+  field name=globalStallSteps type=number
+    doc "Backstop counter — total stall steps this turn regardless of resets. Hard stop at 12."
+
+interface name=ConfidenceState export=true
+  doc "Per-turn confidence reporting state the confidence-gate reads."
+  field name=lastValue type="number|null"
+    doc "The most recent ReportConfidence value this turn, or null if none reported."
+  field name=reportedThisTurn type=boolean
+    doc "True once ReportConfidence was called this turn. The gate only escalates when this is false for a gated (risky) call."
+
+// ── Snapshot — immutable inputs to a guard consult ────────────────────
+
+interface name=GuardSnapshot export=true
+  doc "Immutable inputs to consultGuard / consultBatch / consultFinalText. The caller builds ONE per step (or per final-text check) from the session's registry + evidence + spin + confidence state. The decision fns NEVER mutate it. All paths in readPaths/everReadPaths are already canonicalized by the registry; fileExists is injected so core stays pure (the registry owns realpath canonicalization)."
+  field name=engineId type=string
+  field name=step type=number
+  field name=mode type=GuardMode
+  field name=readPaths type="Set<string>"
+    doc "Canonicalized paths read in the CURRENT step (used for the stall ⊆-everRead test)."
+  field name=everReadPaths type="Set<string>"
+    doc "Canonicalized paths read at any point this session (grounded-write membership + stall test)."
+  field name=fileExists type="(p:string)=>boolean"
+    doc "Injected existence probe over an ALREADY-canonicalized path. Pure-core takes pre-canonicalized paths; the registry owns the realpathSync/existsSync canonicalization."
+  field name=evidence type=TurnEvidence
+  field name=spin type=SpinState
+  field name=confidence type=ConfidenceState
+
+// ── Tool call shape (the unit consultGuard inspects) ──────────────────
+
+interface name=GuardCall export=true
+  doc "The minimal tool-call shape a per-call guard consult inspects: the tool name + its args (already-canonicalized target path where applicable)."
+  field name=name type=string
+  field name=args type="Record<string,unknown>"
+
+// ── Verdict union ─────────────────────────────────────────────────────
+
+union name=GuardVerdict discriminant=action export=true
+  doc "A guard decision. 'allow' = let the call/break proceed. 'block' = reject the call with actionable feedback (grounded-write). 'nudge' = let it proceed but inject feedback (evidence, info-gain ladder). 'escalate' = route to the permission layer's 'ask' path (confidence-gate); the pipeline itself never prompts."
+  variant name=allow
+    doc "No guard fired."
+  variant name=block
+    field name=guardId type=GuardId
+    field name=reason type=string
+    field name=feedback type=string
+  variant name=nudge
+    field name=guardId type=GuardId
+    field name=feedback type=string
+  variant name=escalate
+    field name=guardId type=GuardId
+    field name=reason type=string

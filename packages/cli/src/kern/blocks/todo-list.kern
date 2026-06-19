@@ -13,19 +13,29 @@ const name=TODO_STATE_ICONS type="Record<string,{icon:string,color:string}>" val
 
 screen name=TodoList target=ink memo=true
   prop name=todos type="Todo[]"
+  prop name=planActive type=boolean optional=true
   render
     handler <<<
       if (!todos || todos.length === 0) return null;
-      const done = todos.filter((t) => t.state === 'done').length;
-      const running = todos.filter((t) => t.state === 'running');
+      // While the bottom-chrome PlanChip is showing it already carries the plan
+      // glance (Step N/M · bar · % · current step), so the full plan-step checklist
+      // here is redundant — that duplication is what reads as "the plan is
+      // cluttering the chat". planActive is the chip's own visibility predicate, so
+      // the two stay in lockstep across every plan state. Suppress plan-sourced rows
+      // inline (the Ctrl+G rail is their home) and keep only live (non-plan) todos,
+      // which have no other surface. Absent source ⇒ plan, so a live turn renders.
+      const shown = planActive ? todos.filter((t) => t.source === 'live') : todos;
+      if (shown.length === 0) return null;
+      const done = shown.filter((t) => t.state === 'done').length;
+      const running = shown.filter((t) => t.state === 'running');
       return (
         <Box flexDirection="column" paddingLeft={2} marginTop={1}>
           <Box>
             <Text dimColor>{'Todos '}</Text>
-            <Text dimColor>{String(done)}{'/'}{String(todos.length)}</Text>
+            <Text dimColor>{String(done)}{'/'}{String(shown.length)}</Text>
             {running.length > 0 && <Text color="#fbbf24">{' ●'}</Text>}
           </Box>
-          {todos.map((t) => {
+          {shown.map((t) => {
             const cfg = TODO_STATE_ICONS[t.state] ?? TODO_STATE_ICONS.pending;
             // Live (non-plan) turns render dimmer than plan todos: the icon loses
             // its accent color and the active-row text drops to dim, so a self-

@@ -231,7 +231,10 @@ describe('app scroll helpers', () => {
     const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
     expect(text).toContain('Cesar recap');
     expect(text).toContain('91% confidence');
-    expect(text).toContain('tests');
+    // Clean turn: the per-command list is gone; the tool rollup line renders and
+    // there are no failure / non-fatal markers (every tool succeeded).
+    expect(text).toContain('3 tools');
+    expect(text).not.toContain('non-fatal');
     expect(text).toContain('a.ts');
     expect(text).toContain('checkpoint: abc12345');
     expect(text).toContain('/undo abc12345');
@@ -545,6 +548,27 @@ describe('app scroll helpers', () => {
         true,
       ),
     ).toBe(2);
+  });
+
+  it('reserves exactly one bottom-chrome row for the pinned plan chip', () => {
+    // Baseline: no chip, no other extras → zero extra rows.
+    expect(estimateBottomChromeExtraRows('chat', null, 100, 0, 0, false, false)).toBe(0);
+    // The PlanChip pinned above the composer costs exactly one row.
+    expect(estimateBottomChromeExtraRows('chat', null, 100, 0, 0, false, true)).toBe(1);
+    // It stacks with the other dynamic rows (image + queue + spinner + chip = 4).
+    expect(estimateBottomChromeExtraRows('chat', null, 100, 1, 1, true, true)).toBe(4);
+    // Omitting the arg defaults to no chip — back-compat with pre-existing callers.
+    expect(estimateBottomChromeExtraRows('chat', null, 100, 0, 0, false)).toBe(0);
+  });
+
+  it('shrinks the visible transcript budget by one row while the plan chip shows', () => {
+    const opts = { terminalMode: 'native' as const, mode: 'chat', termWidth: 100, termHeight: 30, fileRailOpen: false };
+    const without = buildTerminalReplaySnapshot([], opts);
+    const withChip = buildTerminalReplaySnapshot([], { ...opts, hasPlanChip: true });
+    // The chip's reserved row flows through both the lower-chrome height and the
+    // transcript budget — so a plan running never over-allocates scrollback by a row.
+    expect(withChip.lowerChromeRows).toBe(without.lowerChromeRows + 1);
+    expect(withChip.visibleBudget).toBe(without.visibleBudget - 1);
   });
 
   it('treats expanded bash output as multi-row transcript history', () => {

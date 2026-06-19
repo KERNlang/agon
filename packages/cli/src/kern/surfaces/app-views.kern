@@ -82,6 +82,43 @@ fn name=buildPlanChromeSummary params="activePlan:any,activePlanState?:string|nu
     let name=failed value="Number(gauge.failed ?? 0)"
     return value="{ visible: true, label, color: gauge.visible ? gauge.color : '#c084fc', shortId: gauge.shortId ?? '', bar: gauge.bar ?? '', pct: Number(gauge.pct ?? 0), stepLabel: gauge.label ?? '', current: gauge.current ?? '', failed, action, }"
 
+// ── PlanChip — one-line plan glance, pinned directly above the composer ──
+// The sticky plan-progress line (◈ STATE · PLAN id · Step n/m · bar · % ·
+// current step · action). Rendered by BottomChromeSection immediately above the
+// chat input so plan state is glanceable right at the point of focus — the full
+// step checklist no longer crowds the chat (it lives in the Ctrl+G rail, and
+// TodoList suppresses the inline duplicate). Renders nothing when no plan is
+// active, so it costs zero rows outside of plan execution.
+screen name=PlanChip target=ink memo=true
+  prop name=activePlan type=any optional=true
+  prop name=activePlanState type="string|null" optional=true
+  prop name=planModeQueued type=boolean optional=true
+  prop name=autoModeQueued type=boolean optional=true
+  render
+    handler <<<
+      const planChrome = buildPlanChromeSummary(activePlan, activePlanState, planModeQueued, autoModeQueued);
+      if (!planChrome.visible) return null;
+      // wrap="truncate-end" pins the chip to exactly one row even when the
+      // assembled line (state + id + step + bar + % + current + action) exceeds a
+      // narrow terminal's width — so it never wraps past the single row reserved
+      // for it in estimateBottomChromeExtraRows (hasPlanChip), which would
+      // otherwise under-budget the transcript and clip/jitter the last row.
+      return (
+        <Box>
+          <Text wrap="truncate-end">
+            <Text color={planChrome.color} bold>{'◈ '}{String(planChrome.label).toUpperCase()}</Text>
+            {planChrome.shortId ? <Text color={planChrome.color} bold>{' · PLAN '}{planChrome.shortId}</Text> : null}
+            {planChrome.stepLabel ? <Text dimColor>{' · '}{planChrome.stepLabel}</Text> : null}
+            {planChrome.bar ? <Text color={planChrome.color}>{' '}{planChrome.bar}</Text> : null}
+            {planChrome.bar ? <Text dimColor>{' '}{planChrome.pct}{'%'}</Text> : null}
+            {planChrome.failed > 0 ? <Text color="#ef4444">{' · '}{planChrome.failed}{' failed'}</Text> : null}
+            {planChrome.current ? <Text dimColor>{' · '}{String(planChrome.current).slice(0, 72)}</Text> : null}
+            {planChrome.action ? <Text dimColor>{' · '}{planChrome.action}</Text> : null}
+          </Text>
+        </Box>
+      );
+    >>>
+
 // ── ChromeBar — compact session strip ──
 screen name=ChromeBar target=ink memo=true
   prop name=mode type="string"
@@ -89,25 +126,8 @@ screen name=ChromeBar target=ink memo=true
   prop name=engineCount type="number"
   prop name=replState type="string"
   prop name=runningJobs type="Job[]"
-  prop name=planModeQueued type=boolean optional=true
-  prop name=autoModeQueued type=boolean optional=true
-  prop name=activePlanState type="string|null" optional=true
-  prop name=activePlan type=any optional=true
   render
     handler <<<
-      const planChrome = buildPlanChromeSummary(activePlan, activePlanState, planModeQueued, autoModeQueued);
-      const planRow = planChrome.visible ? (
-        <Text>
-          <Text color={planChrome.color} bold>{'\u25c8 '}{String(planChrome.label).toUpperCase()}</Text>
-          {planChrome.shortId ? <Text color={planChrome.color} bold>{' \u00b7 PLAN '}{planChrome.shortId}</Text> : null}
-          {planChrome.stepLabel ? <Text dimColor>{' \u00b7 '}{planChrome.stepLabel}</Text> : null}
-          {planChrome.bar ? <Text color={planChrome.color}>{' '}{planChrome.bar}</Text> : null}
-          {planChrome.bar ? <Text dimColor>{' '}{planChrome.pct}{'%'}</Text> : null}
-          {planChrome.failed > 0 ? <Text color="#ef4444">{' \u00b7 '}{planChrome.failed}{' failed'}</Text> : null}
-          {planChrome.current ? <Text dimColor>{' \u00b7 '}{String(planChrome.current).slice(0, 72)}</Text> : null}
-          {planChrome.action ? <Text dimColor>{' \u00b7 '}{planChrome.action}</Text> : null}
-        </Text>
-      ) : null;
       if (mode === 'chat') {
         return (
           <Box paddingX={1} flexDirection="column">
@@ -118,7 +138,6 @@ screen name=ChromeBar target=ink memo=true
               {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
               {runningJobs.length > 0 && (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{runningJobs.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>)}
             </Text>
-            {planRow}
           </Box>
         );
       }
@@ -133,7 +152,6 @@ screen name=ChromeBar target=ink memo=true
             {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
             {runningJobs.length > 0 && (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{runningJobs.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>)}
           </Text>
-          {planRow}
         </Box>
       );
     >>>
@@ -892,6 +910,10 @@ screen name=BottomChromeSection target=ink memo=true
               <Text color="#fbbf24">{liveSpinner.message}</Text>
             </Box>
           )}
+          {/* One-line plan glance pinned directly above the composer — the
+              chip relocated out of the top ChromeBar so plan state sits at the
+              user's point of focus (the input). Renders nothing when no plan. */}
+          <PlanChip activePlan={activePlan} activePlanState={activePlan?.state ?? null} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} />
           {statusDashboardOpen ? (
             <StatusDashboard telemetryVitals={telemetryVitals} recentFallbacks={recentFallbacks} width={termWidth} height={termHeight} filter={statusDashboardFilter} />
           ) : (

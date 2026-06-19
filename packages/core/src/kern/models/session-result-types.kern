@@ -48,10 +48,19 @@ interface name=ReviewResultData export=true
   field name=reviews type="{ engineId: string; status: string; reviewOutput: string }[]"
     doc "Each engine's full prose review, in completion order. status is 'ok' | 'unstructured' | 'timeout' | 'error' ('unstructured' = valid prose but no machine-parseable findings block)."
 
+interface name=ResearchResultData export=true
+  doc "A keyless web-grounded research run: Agon discovers sources via the authoritative router (npm/GitHub/MDN/IETF/Stack Overflow/Wikipedia, no API key), an engine drafts a cited answer from the fetched content, and Agon verifies the citations. citationsVerified/Total drive the trust line; the full answer + per-source list live in the results pager."
+  field name=intent type=string
+  field name=answer type=string
+  field name=engineId type=string
+  field name=sources type="{ title: string; url: string }[]"
+  field name=citationsVerified type=number
+  field name=citationsTotal type=number
+
 interface name=SessionResult export=true
-  field name=type type="'brainstorm' | 'campfire' | 'tribunal' | 'forge' | 'think' | 'council' | 'synthesis' | 'nero' | 'review'"
+  field name=type type="'brainstorm' | 'campfire' | 'tribunal' | 'forge' | 'think' | 'council' | 'synthesis' | 'nero' | 'review' | 'research'"
   field name=timestamp type=string
   field name=question type=string
   field name=engines type="string[]"
   field name=winner type="string | null"
-  field name=data type="BrainstormResultData | CampfireResultData | TribunalResultData | ForgeResultData | ThinkResultData | CouncilResultData | SynthesisResultData | NeroResultData | ReviewResultData"
+  field name=data type="BrainstormResultData | CampfireResultData | TribunalResultData | ForgeResultData | ThinkResultData | CouncilResultData | SynthesisResultData | NeroResultData | ReviewResultData | ResearchResultData"

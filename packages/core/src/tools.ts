@@ -15,3 +15,8 @@ export { createWebFetchTool, parseAndValidateUrl, htmlToText } from './generated
 export { createTodoWriteTool, normalizeTodos } from './generated/tools/tool-todo-write.js';
 export { createSaveMemoryTool, appendMemoryLine, normalizeMemoryLine, todayPrefix, canonicalMemorySection, MEMORY_SECTIONS } from './generated/tools/tool-save-memory.js';
 export { createWebSearchTool, buildSearchRequest, parseSearchResults, formatSearchResults } from './generated/tools/tool-web-search.js';
+export type { SearchResult, SearchRequest } from './generated/tools/tool-web-search.js';
+export { classifyQuery, cleanQuery, buildAuthoritativeRequest, parseAuthoritativeResults } from './generated/tools/research-router.js';
+export type { ResearchIntent } from './generated/tools/research-router.js';
+export { extractCitations, judgeProbe, formatCitationReport, probeCitation, verifyCitations } from './generated/tools/research-verifier.js';
+export type { CitationStatus, CitationProbe, CitationVerdict, CitationReport } from './generated/tools/research-verifier.js';

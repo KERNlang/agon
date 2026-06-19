@@ -22,6 +22,7 @@ fn name=agentGuideMarkdown returns=string export=true
       '- `agon campfire "<topic>"` — open multi-engine discussion, no winner. For exploration.',
       '- `agon think "<problem>" [--strategy linear|reflexion] [--steps N] [--branches N]` — sequential thinking: decompose a problem into structured thoughts (reflexion forces a self-critique+revision per step; --branches explores alternatives), surface open questions, and emit a refined spec to hand to `agon goal`. Use to think before acting, or for engines with weak built-in reasoning.',
       '- `agon nero "<decision>" [--reasoning "<why>"] [--focus "<concern>"] [--confidence N]` — adversarial self-challenge. The top-rated CRITIC (picked by tribunal-discipline rating, not the best builder) attacks your decision with concrete failure scenarios and returns a verdict (FLAWED | PROCEED WITH CAUTION | SOUND) plus its own confidence the original is correct. Use this INSTEAD of an internal evil-twin / devil\'s-advocate pass — it gives you a real second model, not your own reasoning mirrored.',
+      '- `agon research "<question>" [--count N] [--engine <id>]` — keyless, web-grounded, CITED research. Agon (not the model) discovers sources via first-party endpoints that need NO API key — npm registry, GitHub repo search, MDN, IETF/RFC datatracker, Stack Overflow, Wikipedia — WebFetches them, an engine drafts an answer grounded ONLY in that content with inline [n] citations, and Agon then re-fetches and VERIFIES every citation (rejecting dead/redirected/mismatched URLs). Use it to look up a library/repo/spec/Q&A/encyclopedic fact and get an answer with sources you can trust. A truly-general web query (no keyless lane) reports that rather than guessing.',
       '- `agon review <uncommitted|branch:NAME|commit:SHA>` — non-interactive multi-engine code review.',
       '- `agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"` — autonomous controller: drives a task queue to completion unattended, looping build -> witness -> gate -> review (panel + judge) -> fix -> commit per task on a goal/ branch. Bound it with `--max-hours`/`--budget`; `--push` pushes each task. Long-running (designed for 8-24h).',
       '- `agon conquer "<task>" --gate "<test cmd>"` — supervised-autonomous BUILD of an OPEN-ENDED task. Cesar drives a pluggable builder CLI (codex/claude/agy) in agent mode turn by turn; when the builder hits a fork it asks and Cesar convenes the cheapest sufficient consult (nero/tribunal/brainstorm/council) and feeds back a compact verdict; when it claims done, a layered done-oracle runs (the `--gate` command + diff acceptance-drift + a nero falsification round) and it STOPS at a HUMAN merge gate — it never auto-merges to main. The open-ended sibling to `goal`: use `conquer` when you CANNOT write a clean discriminating oracle up front (build a whole tool), `goal` when you can. `--push` needs a clean tree; bound it with `--max-turns`/`--max-hours`.',
@@ -95,7 +96,7 @@ fn name=agonShim params="format:string" returns=string export=true
   doc "Per-CLI /agon slash-command shim. format is one of agy | claude | markdown."
   handler <<<
     const body = [
-      'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, review, goal, conquer).',
+      'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, research, review, goal, conquer).',
       'First run `agon agent-guide` in the shell to see exactly how to call it, then use the right Agon mode to handle the request.',
       'Call agon with your normal shell/Bash tool — there is no MCP and nothing is loaded until you invoke it.',
     ].join('\n');
@@ -143,7 +144,7 @@ fn name=codexSkillMarkdown returns=string export=true
     return [
       '---',
       'name: agon',
-      'description: "Use when the user explicitly asks for Agon, $agon, /agon, or wants Agon multi-AI orchestration modes such as forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, review, or goal."',
+      'description: "Use when the user explicitly asks for Agon, $agon, /agon, or wants Agon multi-AI orchestration modes such as forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, research, review, or goal."',
       '---',
       '',
       '# Agon',

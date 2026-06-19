@@ -4,17 +4,19 @@ import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDe
 
 import { getAuthKey } from '../signals/auth-store.js';
 
-// @kern-source: tool-web-search:11
+import { classifyQuery, buildAuthoritativeRequest, parseAuthoritativeResults } from './research-router.js';
+
+// @kern-source: tool-web-search:12
 export type SearchProvider = 'brave' | 'tavily';
 
-// @kern-source: tool-web-search:13
+// @kern-source: tool-web-search:14
 export interface SearchResult {
   title: string;
   url: string;
   snippet: string;
 }
 
-// @kern-source: tool-web-search:18
+// @kern-source: tool-web-search:19
 export interface SearchRequest {
   url: string;
   method: 'GET'|'POST';
@@ -25,7 +27,7 @@ export interface SearchRequest {
 /**
  * Construct the HTTP request for a search provider. Brave = GET with X-Subscription-Token; Tavily = POST with the key + query in the JSON body.
  */
-// @kern-source: tool-web-search:24
+// @kern-source: tool-web-search:25
 export function buildSearchRequest(provider: SearchProvider, query: string, key: string, count?: number): SearchRequest {
   const n = typeof count === 'number' && count > 0 ? Math.min(count, 10) : 5;
   if (provider === 'tavily') {
@@ -48,7 +50,7 @@ export function buildSearchRequest(provider: SearchProvider, query: string, key:
 /**
  * Normalize a provider's JSON response to SearchResult[]. Returns [] on malformed payloads.
  */
-// @kern-source: tool-web-search:45
+// @kern-source: tool-web-search:46
 export function parseSearchResults(provider: SearchProvider, raw: string): SearchResult[] {
   let data: any;
   try { data = JSON.parse(raw); } catch { return []; }
@@ -71,7 +73,7 @@ export function parseSearchResults(provider: SearchProvider, raw: string): Searc
 /**
  * Render search results as a numbered, readable list for the model.
  */
-// @kern-source: tool-web-search:66
+// @kern-source: tool-web-search:67
 export function formatSearchResults(results: SearchResult[]): string {
   if (!results || results.length === 0) return 'No results found.';
   return results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`).join('\n\n');
@@ -80,7 +82,7 @@ export function formatSearchResults(results: SearchResult[]): string {
 /**
  * Pick a configured search provider by which API key is present (Brave preferred). Reads env then ~/.agon/auth.json via getAuthKey.
  */
-// @kern-source: tool-web-search:73
+// @kern-source: tool-web-search:74
 function detectProvider(): { provider: 'brave' | 'tavily'; key: string } | null {
   const brave = getAuthKey('BRAVE_API_KEY');
   if (brave) return { provider: 'brave', key: brave };
@@ -92,11 +94,11 @@ function detectProvider(): { provider: 'brave' | 'tavily'; key: string } | null 
 /**
  * Factory for the WebSearch tool — keyed web search via Brave or Tavily.
  */
-// @kern-source: tool-web-search:83
+// @kern-source: tool-web-search:84
 export function createWebSearchTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'WebSearch',
-    description: 'Search the web and get a ranked list of result titles, URLs, and snippets. Use to find documentation, error explanations, library references, or current information, then WebFetch a result URL for full content. Requires a search provider key (BRAVE_API_KEY or TAVILY_API_KEY). Input: { query, count? }.',
+    description: 'Search the web and get a ranked list of result titles, URLs, and snippets. Keyless for package/library, GitHub repo, and encyclopedic lookups (npm, GitHub, Wikipedia — no API key); broader web search additionally uses a Brave/Tavily key when one is set. Use to find docs, libraries, repos, or facts, then WebFetch a result URL for full content. Input: { query, count? }.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -123,13 +125,55 @@ export function createWebSearchTool(): ToolHandler {
     const query = String(input.query ?? '').trim();
     if (!query) return { ok: false, content: '', error: 'empty query' };
     const count = typeof input.count === 'number' ? input.count : 5;
+    // Honor a caller that cancelled before we did any work.
+    if (ctx.abortSignal?.aborted) return { ok: false, content: '', error: 'search aborted' };
 
+    // ── Lane 1: keyless authoritative discovery (no API key) ──
+    // Route by intent to a first-party JSON endpoint (npm / GitHub / Wikipedia).
+    // A hit returns immediately; a miss or an unroutable intent (standard/general)
+    // falls through to the keyed provider below.
+    const intent = classifyQuery(query);
+    const authReq = buildAuthoritativeRequest(intent, query, count);
+    if (authReq) {
+      const ctrl = new AbortController();
+      // 8s (not 15s): the keyed lane below may add its own 15s, so a tight
+      // budget here keeps the worst-case total bounded (~23s, not ~30s).
+      const authTimer = setTimeout(() => ctrl.abort(), 8000);
+      const onAuthAbort = () => ctrl.abort();
+      if (ctx.abortSignal) ctx.abortSignal.addEventListener('abort', onAuthAbort);
+      try {
+        const res = await fetch(authReq.url, { method: authReq.method, headers: authReq.headers, body: authReq.body, signal: ctrl.signal });
+        if (res.ok) {
+          const raw = await res.text();
+          // Bound every lane to the requested count — some endpoints (e.g. MDN)
+          // don't take a server-side limit, so slice here for a uniform cap.
+          const results = parseAuthoritativeResults(intent, raw).slice(0, count);
+          if (results.length > 0) {
+            return {
+              ok: true,
+              content: formatSearchResults(results),
+              metadata: { lane: 'authoritative', intent, query, count: results.length },
+            };
+          }
+        }
+      } catch {
+        // If the CALLER cancelled, stop here — don't run more network I/O on
+        // the keyed lane. A miss from our own 8s timer (ctx not aborted) still
+        // falls through to the keyed provider below.
+        if (ctx.abortSignal?.aborted) return { ok: false, content: '', error: 'search aborted' };
+      } finally {
+        clearTimeout(authTimer);
+        if (ctx.abortSignal) ctx.abortSignal.removeEventListener('abort', onAuthAbort);
+      }
+    }
+
+    // ── Lane 2: keyed general web search (Brave/Tavily), only if a key is set ──
     const cfg = detectProvider();
     if (!cfg) {
       return {
         ok: false,
         content: '',
-        error: 'No search provider configured. Set BRAVE_API_KEY or TAVILY_API_KEY (env or `agon provider`), then retry. Use WebFetch directly if you already have a URL.',
+        error: `No keyless results for this query (routed as '${intent}') and no general search provider configured. Keyless lanes cover package/library, GitHub repo, and encyclopedic lookups. For broad web search set BRAVE_API_KEY or TAVILY_API_KEY (env or \`agon provider\`), or use WebFetch with a known URL.`,
       };
     }
 
@@ -154,10 +198,15 @@ export function createWebSearchTool(): ToolHandler {
       };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      const aborted = controller.signal.aborted;
       return {
         ok: false,
         content: '',
-        error: controller.signal.aborted ? `search timed out after ${timeoutMs}ms` : `search failed: ${msg}`,
+        // Distinguish a caller-cancel from our own timeout — the abort may
+        // have come from ctx.abortSignal, not the internal timer.
+        error: aborted
+          ? (ctx.abortSignal?.aborted ? 'search aborted' : `search timed out after ${timeoutMs}ms`)
+          : `search failed: ${msg}`,
       };
     } finally {
       clearTimeout(timer);

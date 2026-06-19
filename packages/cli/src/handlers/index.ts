@@ -43,3 +43,4 @@ export { handleCouncil } from '../generated/handlers/council.js';
 export { handleConquer } from '../generated/handlers/conquer.js';
 export { handleSynthesis } from '../generated/handlers/synthesis.js';
 export { handleNeroChallenge } from '../generated/handlers/nero-challenge.js';
+export { handleResearch } from '../generated/handlers/research.js';

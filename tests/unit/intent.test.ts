@@ -119,6 +119,20 @@ describe('Intent Detection — Slash Commands', () => {
     expect((r as any).input).toBe('write a rate limiter');
   });
 
+  it('/research parses the question', () => {
+    const r = detectIntent('/research how does the p-retry npm package back off?');
+    expect(r.type).toBe('research');
+    expect((r as any).question).toBe('how does the p-retry npm package back off?');
+  });
+
+  it('/research parses --count and --engine out of the question', () => {
+    const r = detectIntent('/research the WHATWG URL spec --count 8 --engine codex');
+    expect(r.type).toBe('research');
+    expect((r as any).question).toBe('the WHATWG URL spec');
+    expect((r as any).count).toBe(8);
+    expect((r as any).engineId).toBe('codex');
+  });
+
   it('bare /nero toggles in-session adversarial mode', () => {
     const r = detectIntent('/nero');
     expect(r.type).toBe('nero');

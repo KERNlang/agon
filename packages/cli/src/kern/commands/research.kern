@@ -1,0 +1,189 @@
+// `agon research` — keyless, web-grounded, cited research as a standalone,
+// external-callable mode.
+//
+// Agon discovers sources via the authoritative router (npm / GitHub / MDN /
+// IETF / Stack Overflow / Wikipedia — no API key), WebFetches them, an engine
+// drafts an answer grounded ONLY in that content with inline [n] citations, and
+// Agon re-fetches and VERIFIES every citation. No keyless lane for a truly-
+// general web query → it reports that rather than guessing ungrounded.
+
+import from="citty" names="defineCommand"
+import from="@kernlang/agon-core" names="EngineRegistry,ensureAgonHome,loadConfig,createRunDir,writeRunStatus,printRunSummary"
+import from="@kernlang/agon-core" names="RunStatus,RunStatusEngine" types=true
+import from="../lib/engines-dir.js" names="resolveBuiltinEnginesDir"
+import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
+import from="@kernlang/agon-forge" names="runResearch,formatResearchResult,joinProblemInput"
+import from="../blocks/output-format.js" names="header,info,dim"
+import from="../handlers/engine-filter.js" names="filterDefaultOrchestrationEngines"
+
+const name=researchCommand type=any
+  handler <<<
+    defineCommand({
+      meta: {
+        name: 'research',
+        description: 'Keyless web-grounded research — Agon discovers sources (npm/GitHub/MDN/IETF/Stack Overflow/Wikipedia, no API key), an engine drafts a cited answer, and Agon verifies every citation. `agon research "<question>"`.',
+      },
+      args: {
+        question: {
+          type: 'positional',
+          description: 'The research question (e.g. "how does the npm fetch-retry package back off?").',
+          required: false,
+        },
+        engine: {
+          type: 'string',
+          description: 'Force a specific engine to draft the answer (skips rating-based selection).',
+        },
+        engines: {
+          type: 'string',
+          alias: 'e',
+          description: 'Constrain the candidate pool (comma-separated). Default: all active orchestration engines.',
+        },
+        count: {
+          type: 'string',
+          description: 'Number of sources to discover and read (1-10).',
+          default: '5',
+        },
+        timeout: {
+          type: 'string',
+          description: 'Engine timeout in seconds.',
+          default: '120',
+        },
+        json: {
+          type: 'boolean',
+          description: 'Emit the full ResearchResult as JSON on stdout (pipe-friendly).',
+        },
+        quiet: {
+          type: 'boolean',
+          description: 'Print only the answer.',
+        },
+        label: {
+          type: 'string',
+          description: 'Human-readable suffix baked into the run dir name.',
+        },
+      },
+      async run({ args }) {
+        ensureAgonHome();
+        const config = loadConfig(process.cwd());
+
+        const registry = new EngineRegistry();
+        registry.load(resolveBuiltinEnginesDir());
+        const adapter = createCliAdapter(registry);
+
+        // citty mirrors the named positional into `_`; joinProblemInput drops the
+        // duplicate first extra so the question isn't sent twice (as nero/think/council do).
+        const positionals = Array.isArray((args as any)._) ? (args as any)._.map(String) : [];
+        const question = joinProblemInput(args.question as string | undefined, positionals);
+        if (!question) {
+          console.error('Provide a question. Usage: agon research "your question" [--engine codex] [--count 5]');
+          process.exitCode = 1;
+          return;
+        }
+
+        // Validate the pool up front — registry.get() THROWS on unknown ids and
+        // resolveId() echoes an unknown id back, so a typo would crash deep in runResearch.
+        const known = new Set(registry.listIds());
+        let pool = filterDefaultOrchestrationEngines(registry.activeIds(config as any));
+        if (typeof args.engines === 'string' && args.engines.trim()) {
+          const requested = args.engines.split(',').map((s) => s.trim()).filter(Boolean);
+          const wanted = requested.map((s) => registry.resolveId(s)).filter((id) => known.has(id));
+          const unknown = requested.filter((s) => !known.has(registry.resolveId(s)));
+          if (unknown.length > 0) {
+            console.error(`Unknown engine${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}. Run \`agon engine list\` to see available engines.`);
+            process.exitCode = 1;
+            return;
+          }
+          if (wanted.length > 0) pool = wanted;
+        }
+
+        let forced: string | undefined;
+        if (typeof args.engine === 'string' && args.engine.trim()) {
+          const resolved = registry.resolveId(args.engine.trim());
+          if (!known.has(resolved)) {
+            console.error(`Unknown engine '${args.engine.trim()}'. Run \`agon engine list\` to see available engines.`);
+            process.exitCode = 1;
+            return;
+          }
+          forced = resolved;
+          if (!pool.includes(forced)) pool = [forced, ...pool];
+        }
+
+        if (pool.length === 0) {
+          console.error('No active engines. Run `agon engine list` or `agon engine add <id>`.');
+          process.exitCode = 1;
+          return;
+        }
+
+        const quiet = !!args.quiet;
+        const json = !!args.json;
+        const timeoutSec = parseInt(String(args.timeout ?? '120'), 10) || 120;
+        const countRaw = parseInt(String(args.count ?? '5'), 10);
+        const count = Number.isNaN(countRaw) ? 5 : Math.max(1, Math.min(10, countRaw));
+
+        const startedAt = new Date().toISOString();
+        const { path: outputDir } = createRunDir({ mode: 'research', label: args.label, announce: false });
+
+        if (!quiet && !json) {
+          header('Research · keyless web-grounded');
+          info(question.length > 120 ? question.slice(0, 120) + '...' : question);
+          console.log('');
+        }
+
+        const result = await runResearch({
+          question,
+          engines: pool,
+          engine: forced,
+          registry,
+          adapter,
+          count,
+          timeout: timeoutSec,
+          outputDir,
+          cwd: process.cwd(),
+          // Narrate discover/read/draft/verify to stderr so --json stdout stays clean.
+          onStatus: (m: string) => { if (!json && !quiet) console.error(dim(m)); },
+        });
+
+        const engineStatus: RunStatusEngine = {
+          id: result.engineId || '(none)',
+          status: result.ok ? 'ok' : 'error',
+          detail: result.ok
+            ? `${result.intent} · ${result.citations.verified}/${result.citations.total} citations verified`
+            : (result.note ?? 'no grounded answer'),
+        };
+        const status: RunStatus = {
+          mode: 'research',
+          label: args.label,
+          startedAt,
+          endedAt: new Date().toISOString(),
+          engines: [engineStatus],
+          summary: result.ok
+            ? `${result.engineId}: ${result.citations.verified}/${result.citations.total} citations verified (${result.intent})`
+            : `research produced no grounded answer${result.note ? ` (${result.note})` : ''}`,
+          ok: result.ok,
+          requested: result.engineId ? [result.engineId] : [],
+          timeoutSec,
+        };
+        writeRunStatus(outputDir, status);
+
+        if (json) {
+          console.log(JSON.stringify(result, null, 2));
+          if (!result.ok) process.exitCode = 1;
+          return;
+        }
+
+        if (!result.ok) {
+          console.error(`No grounded answer${result.note ? `: ${result.note}` : '.'}`);
+          process.exitCode = 1;
+          return;
+        }
+
+        if (quiet) {
+          console.log(result.answer);
+        } else {
+          console.log(formatResearchResult(result));
+          console.log('');
+          info(dim(`Saved: ${outputDir}`));
+          printRunSummary(status);
+        }
+      },
+    })
+  >>>

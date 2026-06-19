@@ -231,14 +231,19 @@ describe('update-check service', () => {
       expect(result.error).toBe('registry-unreachable');
     });
 
-    it('defaults to @kernlang/agon and 5s timeout when opts is undefined', async () => {
+    it('defaults to @kernlang/agon and ~5s timeout when opts is undefined', async () => {
       stubExecFile('0.2.0\n');
       const result = await checkForUpdate('0.1.3', undefined);
       expect(result.latestVersion).toBe('0.2.0');
       const call = execFileMock.mock.calls[0];
       expect(call[0]).toBe('npm');
       expect(call[1]).toEqual(['view', '@kernlang/agon', 'version']);
-      expect(call[2] && call[2].timeout).toBe(5000);
+      // Shared budget: the fallback gets the 5s default MINUS the (negligible)
+      // time the primary fetch already consumed — so it's ~5000, not exactly
+      // 5000 (the fetch-throw burns ~0-1ms). Asserting an exact 5000 is a timing
+      // race; assert it's the near-full remaining budget instead.
+      expect(call[2] && call[2].timeout).toBeGreaterThan(4000);
+      expect(call[2] && call[2].timeout).toBeLessThanOrEqual(5000);
     });
   });
 

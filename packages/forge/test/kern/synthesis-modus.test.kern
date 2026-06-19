@@ -1,0 +1,11 @@
+test name="Synthesis modus contracts" target="../../src/kern/synthesis-modus.kern"
+  it name="synthesis source stays valid KERN"
+    expect no=schemaViolations
+    expect no=semanticViolations
+    expect no=codegenErrors
+
+  it name="judge winner aliases map back to engine ids"
+    expect fn=normalizeSynthesisWinner args={{["ENTRY_1", ["minimax-api", "minimax"]]}} equals="minimax-api"
+    expect fn=normalizeSynthesisWinner args={{["2", ["codex", "gemini"]]}} equals="gemini"
+    expect fn=normalizeSynthesisWinner args={{["Gemini.", ["codex", "gemini"]]}} equals="gemini"
+    expect fn=normalizeSynthesisWinner args={{["ENTRY_1", []]}} equals=""

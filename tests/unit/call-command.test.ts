@@ -97,6 +97,25 @@ describe('agon call command mapping', () => {
     ]);
   });
 
+  it('maps research to the keyless-research bridge with --count and --engine', () => {
+    expect(buildCallCommands({
+      workflow: 'research',
+      input: 'how does the npm p-retry package back off?',
+      count: '6',
+      engine: 'codex',
+      engineTimeout: '90',
+      engines: 'codex,agy',
+    }).commands).toEqual([
+      ['research', 'how does the npm p-retry package back off?', '--count', '6', '--engine', 'codex', '--timeout', '90', '--engines', 'codex,agy'],
+    ]);
+  });
+
+  it('maps research with just the question', () => {
+    expect(buildCallCommands({ workflow: 'research', input: 'what is the WHATWG URL spec?' }).commands).toEqual([
+      ['research', 'what is the WHATWG URL spec?'],
+    ]);
+  });
+
   it('maps council to the roundtable bridge with roles/chairman', () => {
     expect(buildCallCommands({
       workflow: 'council',

@@ -8,7 +8,7 @@ import type { Dispatch } from '../../../handlers/types.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleConquer, handleBuild, handleReviewMany, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
+import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleConquer, handleBuild, handleReviewMany, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -118,6 +118,19 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
         await handleCouncil(intent.question, cb.dispatch, cb.ctx);
         const chatContext = collectRecentEngineContext(cb.ctx, 14, 1500);
         if (chatContext) await continueCesarAfterResult(`Council deliberated on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the chairman verdict and the strongest dissent, then recommend the next step.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'research': {
+      if (!intent.question?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /research <question> [--count N] [--engine X]' }); return { handled: true, ranAsJob: false }; }
+      const _rsCwd = resolveWorkingDir();
+      const _rsLabel = intent.question?.slice(0, 40) ?? 'research';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('research', _rsLabel, withThreadOutcome(_rsCwd, 'research', _rsLabel, async () => {
+        await handleResearch(intent.question, cb.dispatch, cb.ctx, { engine: intent.engineId, count: intent.count });
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 2000);
+        if (chatContext) await continueCesarAfterResult(`Research (keyless, web-grounded, cited) on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the findings WITH their citations, flag any unverified ones, then take the next concrete step.`, cb, continuationEpoch, continuationUserTurns);
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
     }

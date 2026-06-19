@@ -1,4 +1,4 @@
-import from="@kernlang/agon-core" names="SessionResult,BrainstormResultData,CampfireResultData,TribunalResultData,ForgeResultData,ThinkResultData,CouncilResultData,SynthesisResultData,NeroResultData,ReviewResultData,ChatSession" types=true
+import from="@kernlang/agon-core" names="SessionResult,BrainstormResultData,CampfireResultData,TribunalResultData,ForgeResultData,ThinkResultData,CouncilResultData,SynthesisResultData,NeroResultData,ReviewResultData,ResearchResultData,ChatSession" types=true
 
 const name=BOLD type=string value={{ '\x1b[1m' }}
 
@@ -204,6 +204,26 @@ fn name=formatNero params="r:SessionResult, idx:number" returns=string
       do value="lines.push('')"
     return value="lines.join('\\n')"
 
+fn name=formatResearch params="r:SessionResult, idx:number" returns=string
+  handler lang="kern"
+    let name=data value="r.data as ResearchResultData"
+    let name=lines type="string[]" value="[]"
+    do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
+    do value="lines.push(`${BOLD} RESEARCH #${idx} ${DIM}· ${formatTime(r.timestamp)} · ${RESET}${BOLD}\"${r.question}\"${RESET}`)"
+    do value="lines.push(`${DIM} ${data.intent} · engine ${data.engineId} · ${data.citationsVerified}/${data.citationsTotal} citations verified${RESET}`)"
+    do value="lines.push(`${BOLD}${CYAN}${RULE}${RESET}`)"
+    do value="lines.push('')"
+    if cond="data.answer"
+      do value="lines.push(data.answer)"
+      do value="lines.push('')"
+    if cond="data.sources && data.sources.length > 0"
+      do value="lines.push(`${BOLD}── Sources ──${RESET}`)"
+      each name=s in="data.sources"
+        do value="lines.push(`  ${s.title || s.url}`)"
+        do value="lines.push(`  ${DIM}${s.url}${RESET}`)"
+      do value="lines.push('')"
+    return value="lines.join('\\n')"
+
 fn name=formatReview params="r:SessionResult, idx:number" returns=string
   handler lang="kern"
     let name=data value="r.data as ReviewResultData"
@@ -228,7 +248,7 @@ fn name=formatReview params="r:SessionResult, idx:number" returns=string
 fn name=formatSessionResults params="results:SessionResult[]" returns=string export=true
   handler <<<
     if (results.length === 0) {
-      return `${DIM}No results in this session yet. Run /brainstorm, /campfire, /tribunal, /forge, /think, /council, /synthesis, /nero, or /review first.${RESET}\n`;
+      return `${DIM}No results in this session yet. Run /brainstorm, /campfire, /tribunal, /forge, /think, /council, /synthesis, /nero, /research, or /review first.${RESET}\n`;
     }
 
     const sections: string[] = [];
@@ -246,6 +266,7 @@ fn name=formatSessionResults params="results:SessionResult[]" returns=string exp
         case 'council': sections.push(formatCouncil(r, idx)); break;
         case 'synthesis': sections.push(formatSynthesis(r, idx)); break;
         case 'nero': sections.push(formatNero(r, idx)); break;
+        case 'research': sections.push(formatResearch(r, idx)); break;
         case 'review': sections.push(formatReview(r, idx)); break;
       }
     }

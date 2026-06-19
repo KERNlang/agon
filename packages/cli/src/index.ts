@@ -27,6 +27,7 @@ import { thinkCommand } from './commands/think.js';
 import { ragCommand } from './commands/rag.js';
 import { neroCommand } from './commands/nero.js';
 import { councilCommand } from './commands/council.js';
+import { researchCommand } from './commands/research.js';
 import { conquerCommand } from './commands/conquer.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { attachCommand } from './commands/attach.js';
@@ -220,6 +221,7 @@ const main = defineCommand({
     rag: ragCommand,
     nero: neroCommand,
     council: councilCommand,
+    research: researchCommand,
     conquer: conquerCommand,
     worktree: worktreeCommand,
     wt: worktreeCommand,

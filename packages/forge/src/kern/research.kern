@@ -1,0 +1,212 @@
+// `agon research` — keyless, web-grounded, CITED research.
+//
+// The agon edge here is NOT engine competition — it's that DISCOVERY and
+// VERIFICATION happen in Agon, keylessly, around the model:
+//   1. classify the question and discover sources via the authoritative router
+//      (npm / GitHub / MDN / IETF / Stack Overflow / Wikipedia — no API key);
+//   2. WebFetch the top sources (SSRF-guarded) to get real content;
+//   3. an engine drafts an answer grounded ONLY in that fetched content, with
+//      inline [n] citations;
+//   4. Agon re-fetches and VERIFIES every citation, rejecting dead/redirected/
+//      mismatched URLs — the model can hallucinate a URL, but it can't make
+//      Agon's fetch of that URL succeed.
+//
+// v1 uses a single top-rated engine for the draft; the pure prompt builder and
+// the discover→fetch→verify pipeline are engine-count-agnostic, so a competing
+// multi-engine panel is a later drop-in. Truly-'general' web queries (no keyless
+// authoritative lane) return ok:false with guidance rather than an ungrounded guess.
+
+import from="@kernlang/agon-core" names="EngineAdapter,EngineRegistry,RatingRecord,SearchResult,CitationReport,ResearchIntent" types=true
+import from="@kernlang/agon-core" names="resolveWorkingDir,getRatings,pickTopRatedEngine,seedNewEnginesFromRegistry,classifyQuery,buildAuthoritativeRequest,parseAuthoritativeResults,createWebFetchTool,extractCitations,verifyCitations"
+
+interface name=ResearchOptions
+  field name=question type=string
+  field name=engines type="string[]"
+  field name=engine type="string | undefined" optional=true
+  field name=registry type=EngineRegistry
+  field name=adapter type=EngineAdapter
+  field name=count type="number | undefined" optional=true
+  field name=timeout type=number
+  field name=outputDir type=string
+  field name=cwd type="string | undefined" optional=true
+  field name=signal type="AbortSignal | undefined" optional=true
+  field name=ratings type="RatingRecord | undefined" optional=true doc="Injectable ratings for deterministic engine-pick tests; defaults to the on-disk Glicko store."
+  field name=onStatus type="((msg: string) => void) | undefined" optional=true doc="Best-effort progress narration (discover/read/draft/verify). CLI routes to stderr; REPL dispatches info events."
+
+interface name=ResearchSource
+  field name=title type=string
+  field name=url type=string
+  field name=snippet type=string
+  field name=fetched type=boolean
+
+interface name=ResearchResult
+  field name=ok type=boolean
+  field name=question type=string
+  field name=intent type=ResearchIntent
+  field name=engineId type=string
+  field name=answer type=string
+  field name=sources type="ResearchSource[]"
+  field name=citations type=CitationReport
+  field name=outputDir type=string
+  field name=note type="string | undefined" optional=true
+
+fn name=buildResearchPrompt params="question:string, sources:{ title:string; url:string; snippet?:string; content?:string }[]" returns=string export=true
+  doc "Build the grounded-research prompt: the question plus each numbered source's URL and fetched content. Instructs the engine to answer ONLY from the sources, cite inline as [n], and end with a Sources: list. Pure — exported for testing."
+  handler <<<
+    const lines: string[] = [];
+    lines.push('You are a careful research assistant. Answer the QUESTION using ONLY the SOURCES below.');
+    lines.push('Do NOT use prior knowledge or invent facts or URLs. If the sources do not answer the question, say so plainly.');
+    lines.push('');
+    lines.push('QUESTION:');
+    lines.push(String(question ?? '').trim());
+    lines.push('');
+    lines.push('SOURCES:');
+    (sources ?? []).forEach((s, i) => {
+      lines.push(`[${i + 1}] ${s.title || s.url}`);
+      lines.push(`    ${s.url}`);
+      const body = String(s.content ?? '').trim() || String(s.snippet ?? '').trim();
+      if (body) lines.push(`    ${body.replace(/\s+/g, ' ').slice(0, 3500)}`);
+      lines.push('');
+    });
+    lines.push('INSTRUCTIONS:');
+    lines.push('1. Answer the question directly and concisely, grounded in the sources.');
+    lines.push('2. Cite every claim inline with the source number in brackets, e.g. [1], [2].');
+    lines.push('3. Do not cite a source you did not use; do not invent sources or URLs.');
+    lines.push('4. End with a "Sources:" section listing each [n] and its URL.');
+    return lines.join('\n');
+  >>>
+
+fn name=formatResearchResult params="r:ResearchResult" returns=string export=true
+  doc "Render a ResearchResult as readable text: the cited answer, the source list, and a citation-verification summary (flagging any unverified citations). Pure — exported for testing."
+  handler <<<
+    if (!r.ok) return r.note ? `Research produced no grounded answer — ${r.note}` : 'Research produced no grounded answer.';
+    const lines: string[] = [];
+    lines.push(r.answer);
+    lines.push('');
+    const blockedNote = r.citations.blocked ? ` · ${r.citations.blocked} blocked` : '';
+    lines.push(`Sources (${r.sources.length}) · citations ${r.citations.verified}/${r.citations.total} verified${blockedNote} · ${r.intent} · engine ${r.engineId}`);
+    r.sources.forEach((s, i) => {
+      lines.push(`  [${i + 1}] ${s.title || s.url}`);
+      lines.push(`      ${s.url}`);
+    });
+    // Genuinely-bad citations (dead/redirected/unreachable/irrelevant) are a trust
+    // problem; `blocked` ones (host refused OUR re-fetch) are merely unconfirmed —
+    // keep them visually distinct so a bot-blocked-but-valid link isn't read as broken.
+    const failed = r.citations.results.filter((c) => c.verdict !== 'verified' && c.verdict !== 'blocked');
+    if (failed.length > 0) {
+      lines.push('');
+      lines.push('⚠ Unverified citations:');
+      failed.forEach((c) => lines.push(`  ✗ [${c.verdict}] ${c.url} — ${c.detail}`));
+    }
+    const blocked = r.citations.results.filter((c) => c.verdict === 'blocked');
+    if (blocked.length > 0) {
+      lines.push('');
+      lines.push('ⓘ Could not verify (host blocked our re-fetch — citation not disproven):');
+      blocked.forEach((c) => lines.push(`  ⚠ [${c.verdict}] ${c.url} — ${c.detail}`));
+    }
+    return lines.join('\n');
+  >>>
+
+fn name=runResearch async=true params="opts:ResearchOptions" returns="Promise<ResearchResult>" export=true
+  doc "Run a keyless web-grounded research pass: discover (authoritative router) -> WebFetch sources -> one top-rated engine drafts a cited answer -> Agon verifies the citations. Returns ok:false with guidance when there is no keyless lane (general) or no sources/engine/answer. Never throws."
+  handler <<<
+    const question = String(opts.question ?? '').trim();
+    const K = typeof opts.count === 'number' && opts.count > 0 ? Math.min(opts.count, 10) : 5;
+    const cwd = opts.cwd ?? resolveWorkingDir();
+    const emptyReport: CitationReport = { total: 0, verified: 0, blocked: 0, rejected: 0, results: [] };
+    const intent: ResearchIntent = question ? classifyQuery(question) : 'general';
+    const fail = (note: string, engineId = ''): ResearchResult => ({ ok: false, question, intent, engineId, answer: '', sources: [], citations: emptyReport, outputDir: opts.outputDir, note });
+
+    if (!question) return fail('empty question');
+
+    // 1) Keyless discovery via the authoritative router.
+    opts.onStatus?.(`discovering sources (${intent})…`);
+    let found: SearchResult[] = [];
+    const req = buildAuthoritativeRequest(intent, question, K);
+    if (req) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 12000);
+      const onAbort = () => ctrl.abort();
+      if (opts.signal) {
+        if (opts.signal.aborted) ctrl.abort();
+        else opts.signal.addEventListener('abort', onAbort, { once: true });
+      }
+      try {
+        const res = await fetch(req.url, { method: req.method, headers: req.headers, body: req.body, signal: ctrl.signal });
+        if (res.ok) found = parseAuthoritativeResults(intent, await res.text()).slice(0, K);
+      } catch { /* no sources — handled below */ } finally {
+        clearTimeout(t);
+        if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
+      }
+    }
+    if (opts.signal?.aborted) return fail('aborted');
+    if (found.length === 0) {
+      return fail(req
+        ? `no keyless sources found for this '${intent}' query`
+        : `no keyless authoritative lane for a '${intent}' query — try a package, repo, docs/spec, Stack Overflow, or encyclopedic topic`);
+    }
+
+    // 2) Fetch source content (SSRF-guarded WebFetch), bounded per source.
+    opts.onStatus?.(`reading ${found.length} sources…`);
+    const fetchTool = createWebFetchTool();
+    const toolCtx: any = { cwd, readFileState: new Map(), abortSignal: opts.signal };
+    const fetched = await Promise.all(found.map(async (s) => {
+      let content = '';
+      try {
+        const r = await fetchTool.execute({ url: s.url, maxChars: 3500 }, toolCtx);
+        if (r.ok) content = r.content;
+      } catch { /* leave content empty; the snippet still grounds it */ }
+      return { title: s.title, url: s.url, snippet: s.snippet, content, fetched: content.length > 0 };
+    }));
+    if (opts.signal?.aborted) return fail('aborted');
+
+    // 3) Pick an engine and draft a grounded, cited answer.
+    seedNewEnginesFromRegistry(opts.registry);
+    const ratings = opts.ratings ?? getRatings();
+    const forced = opts.engine?.trim();
+    let engineId = forced && opts.engines.includes(forced) ? forced : '';
+    if (!engineId) {
+      const picked = pickTopRatedEngine(opts.engines, ratings, {});
+      engineId = picked.engineId || opts.engines[0] || '';
+    }
+    if (!engineId) return fail('no engine available to draft the answer');
+
+    let engine: any;
+    try {
+      engine = opts.registry.get(engineId);
+    } catch (err) {
+      return fail(`engine '${engineId}' unavailable: ${err instanceof Error ? err.message : String(err)}`, engineId);
+    }
+
+    opts.onStatus?.(`${engineId} drafting a grounded answer…`);
+    const prompt = buildResearchPrompt(question, fetched);
+    const sysPrompt = 'You are a careful research assistant. Use ONLY the provided sources, cite them inline as [n], and never fabricate URLs or facts. Respond as plain text; do NOT use tools, read files, or run commands.';
+    let answer = '';
+    try {
+      const result = await opts.adapter.dispatch({
+        engine,
+        prompt,
+        systemPrompt: sysPrompt,
+        cwd,
+        mode: 'exec' as any,
+        timeout: opts.timeout,
+        outputDir: opts.outputDir,
+        signal: opts.signal,
+      });
+      answer = (result.stdout ?? '').trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+      if (!answer && result.timedOut) return fail(`engine '${engineId}' timed out`, engineId);
+    } catch (err) {
+      if (opts.signal?.aborted || (err as any)?.name === 'AbortError') return fail('aborted', engineId);
+      return fail(`engine dispatch failed: ${err instanceof Error ? err.message : String(err)}`, engineId);
+    }
+    if (!answer) return fail(`engine '${engineId}' produced no answer`, engineId);
+
+    // 4) Verify citations: the source URLs we provided PLUS any URLs in the answer
+    // (so a hallucinated URL is caught). De-duped; bounded concurrency.
+    opts.onStatus?.('verifying citations…');
+    const urls = Array.from(new Set([...fetched.map((f) => f.url), ...extractCitations(answer)]));
+    const citations = await verifyCitations(urls, undefined, 4, opts.signal);
+
+    const sources: ResearchSource[] = fetched.map((f) => ({ title: f.title, url: f.url, snippet: f.snippet, fetched: f.fetched }));
+    return { ok: true, question, intent, engineId, answer, sources, citations, outputDir: opts.outputDir };
+  >>>

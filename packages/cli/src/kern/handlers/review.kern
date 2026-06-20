@@ -3,7 +3,7 @@
 
 import from="node:child_process" names="execFileSync"
 import from="node:path" names="join,resolve,sep"
-import from="node:fs" names="mkdirSync,readFileSync,statSync"
+import from="node:fs" names="mkdirSync,readFileSync,statSync,lstatSync,openSync,readSync,closeSync,constants"
 import from="@kernlang/agon-core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,scanProjectContext,resolveWorkingDir,rankByTaskClass"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../blocks/consensus.js" names="buildConsensus,formatConsensusRow"
@@ -39,8 +39,8 @@ fn name=resolveReviewTarget params="target:string|undefined, cwd:string, base:st
         diff = execFileSync('git', ['diff', baseRef || 'HEAD'], { cwd, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }).trim();
 
         // Also include untracked files so new files aren't silently omitted.
-        // FU-6: read each untracked file directly via fs.readFileSync and
-        // synthesize a git-style diff in memory, instead of spawning a
+        // FU-6: read each untracked file directly and synthesize a git-style
+        // diff in memory, instead of spawning a
         // `git diff --no-index` process per file. The old path was O(N)
         // sync spawns with a 5MB ExecFileSync buffer per file — both
         // ENOBUFS-prone on large refactors and a hard event-loop stall.
@@ -49,19 +49,37 @@ fn name=resolveReviewTarget params="target:string|undefined, cwd:string, base:st
           const MAX_UNTRACKED_FILE_BYTES = 512 * 1024;   // skip files > 512KB
           const untrackedFiles = untrackedRaw.split('\n').filter(Boolean);
           const untrackedDiffs: string[] = [];
+          const repoRoot = resolve(cwd);
           for (const f of untrackedFiles) {
             try {
-              const fullPath = join(cwd, f);
-              const stat = statSync(fullPath);
+              const fullPath = resolve(repoRoot, f);
+              if (fullPath !== repoRoot && !fullPath.startsWith(repoRoot + sep)) continue;
+              const stat = lstatSync(fullPath);
               if (!stat.isFile()) continue;
               if (stat.size > MAX_UNTRACKED_FILE_BYTES) {
                 untrackedDiffs.push(`diff --git a/${f} b/${f}\nnew file mode 100644\nindex 0000000..0000000\n--- /dev/null\n+++ b/${f}\n@@ [untracked file ${f} skipped — ${stat.size} bytes exceeds ${MAX_UNTRACKED_FILE_BYTES} byte cap] @@`);
                 continue;
               }
               let content: string;
+              let fd: number | undefined;
               try {
-                content = readFileSync(fullPath, 'utf-8');
+                fd = openSync(fullPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+                const buffer = Buffer.alloc(MAX_UNTRACKED_FILE_BYTES + 1);
+                const bytesRead = readSync(fd, buffer, 0, buffer.length, 0);
+                if (bytesRead > MAX_UNTRACKED_FILE_BYTES) {
+                  untrackedDiffs.push(`diff --git a/${f} b/${f}\nnew file mode 100644\nindex 0000000..0000000\n--- /dev/null\n+++ b/${f}\n@@ [untracked file ${f} skipped — exceeds ${MAX_UNTRACKED_FILE_BYTES} byte cap] @@`);
+                  continue;
+                }
+                content = buffer.subarray(0, bytesRead).toString('utf-8');
               } catch {
+                untrackedDiffs.push(`diff --git a/${f} b/${f}\nnew file mode 100644\nindex 0000000..0000000\n--- /dev/null\n+++ b/${f}\n@@ [binary or unreadable] @@`);
+                continue;
+              } finally {
+                if (fd !== undefined) {
+                  try { closeSync(fd); } catch { /* ignore close failures */ }
+                }
+              }
+              if (content.includes('\u0000')) {
                 untrackedDiffs.push(`diff --git a/${f} b/${f}\nnew file mode 100644\nindex 0000000..0000000\n--- /dev/null\n+++ b/${f}\n@@ [binary or unreadable] @@`);
                 continue;
               }
@@ -112,30 +130,29 @@ fn name=resolveReviewTarget params="target:string|undefined, cwd:string, base:st
         } catch (err) {
           throw new Error(`Failed to diff ${baseRef}...${branch}: ${err instanceof Error ? err.message : String(err)}`);
         }
-        if (diff.length > 100_000) diff = diff.slice(0, 100_000) + '\n... [truncated — diff exceeds 100K chars]';
-        return { diff, label };
-      }
-      // `git diff BRANCH...HEAD` reviews HEAD's changes relative to BRANCH as the
-      // base — correct when BRANCH is the base (e.g. branch:main). The footgun:
-      // when BRANCH resolves to the same commit as HEAD (targeting the branch you
-      // are currently on), it's an empty self-diff that surfaces as a silent
-      // "No changes to review" — which a caller (or Cesar) can mistake for a clean
-      // review. Detect that and fail LOUDLY with the right targets instead.
-      let branchSha = '';
-      let headSha = '';
-      try {
-        branchSha = execFileSync('git', ['rev-parse', branch], { cwd, encoding: 'utf-8' }).trim();
-        headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf-8' }).trim();
-      } catch (err) {
-        throw new Error(`Failed to resolve branch "${branch}": ${err instanceof Error ? err.message : String(err)}`);
-      }
-      if (branchSha && branchSha === headSha) {
-        throw new Error(`branch:${branch} points at the commit you are currently on, so diffing it against HEAD yields nothing to review. Use "branch:main" (or your base branch) to review this branch's commits, or "uncommitted" to review working-tree changes.`);
-      }
-      try {
-        diff = execFileSync('git', ['diff', `${branch}...HEAD`], { cwd, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }).trim();
-      } catch (err) {
-        throw new Error(`Failed to get branch diff for ${branch}: ${err instanceof Error ? err.message : String(err)}`);
+      } else {
+        // `git diff BRANCH...HEAD` reviews HEAD's changes relative to BRANCH as the
+        // base — correct when BRANCH is the base (e.g. branch:main). The footgun:
+        // when BRANCH resolves to the same commit as HEAD (targeting the branch you
+        // are currently on), it's an empty self-diff that surfaces as a silent
+        // "No changes to review" — which a caller (or Cesar) can mistake for a clean
+        // review. Detect that and fail LOUDLY with the right targets instead.
+        let branchSha = '';
+        let headSha = '';
+        try {
+          branchSha = execFileSync('git', ['rev-parse', branch], { cwd, encoding: 'utf-8' }).trim();
+          headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf-8' }).trim();
+        } catch (err) {
+          throw new Error(`Failed to resolve branch "${branch}": ${err instanceof Error ? err.message : String(err)}`);
+        }
+        if (branchSha && branchSha === headSha) {
+          throw new Error(`branch:${branch} points at the commit you are currently on, so diffing it against HEAD yields nothing to review. Use "branch:main" (or your base branch) to review this branch's commits, or "uncommitted" to review working-tree changes.`);
+        }
+        try {
+          diff = execFileSync('git', ['diff', `${branch}...HEAD`], { cwd, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }).trim();
+        } catch (err) {
+          throw new Error(`Failed to get branch diff for ${branch}: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
     } else if (t.startsWith('commit:')) {
       const sha = t.slice(7);
@@ -148,6 +165,10 @@ fn name=resolveReviewTarget params="target:string|undefined, cwd:string, base:st
     } else {
       throw new Error(`Unknown review target: "${t}". Use "uncommitted", "branch:NAME", "commit:SHA", or "range:BASE...TARGET".`);
     }
+
+    // Engine CLIs receive the review prompt as an argv string; Node refuses
+    // argv entries containing NUL, so never let binary diff content through.
+    diff = diff.replace(/\u0000/g, '');
 
     // Cap diff at 100K chars
     if (diff.length > 100_000) {

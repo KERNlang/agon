@@ -127,11 +127,16 @@ service name=EngineRegistry
   method name=resolveId params="id:string" returns=string
     doc "Resolve a possibly-abbreviated engine id to a canonical registered id. An exact id wins. Otherwise, case-insensitively: a unique exact match, then a unique prefix match (kimi -> kimi-for-coding-k2p6), then a unique substring match (zai -> zai-coding-plan-glm-5.1). Ambiguous or no match returns the input unchanged so the caller fails loudly with the original name rather than guessing wrong."
     handler <<<
+      return this.resolveIdAgainst(id, Array.from(this.engines.keys()));
+    >>>
+
+  method name=resolveIdAgainst params="id:string, ids:string[]" returns=string private=true
+    doc "Resolve an engine id or alias against a specific candidate list. This keeps explicit activation scoped to available engines while the public resolveId still considers the full registry."
+    handler <<<
       if (!id) return id;
-      if (this.engines.has(id)) return id;
+      if (ids.includes(id)) return id;
       const needle = id.trim().toLowerCase();
       if (!needle) return id;
-      const ids = Array.from(this.engines.keys());
       const ci = ids.filter((k) => k.toLowerCase() === needle);
       if (ci.length === 1) return ci[0];
       const prefix = ids.filter((k) => k.toLowerCase().startsWith(needle));
@@ -139,6 +144,22 @@ service name=EngineRegistry
       const substr = ids.filter((k) => k.toLowerCase().includes(needle));
       if (substr.length === 1) return substr[0];
       return id;
+    >>>
+
+  method name=resolveFilterIdsAgainst params="id:string, ids:string[]" returns="string[]" private=true
+    doc "Resolve a filter/denylist id against a candidate list. Exact ids stay exact; aliases expand to every matching id so hidden/removed aliases fail closed instead of missing all matches when ambiguous."
+    handler <<<
+      if (!id) return [];
+      if (ids.includes(id)) return [id];
+      const needle = id.trim().toLowerCase();
+      if (!needle) return [];
+      const ci = ids.filter((k) => k.toLowerCase() === needle);
+      if (ci.length > 0) return ci;
+      const prefix = ids.filter((k) => k.toLowerCase().startsWith(needle));
+      if (prefix.length > 0) return prefix;
+      const substr = ids.filter((k) => k.toLowerCase().includes(needle));
+      if (substr.length > 0) return substr;
+      return [id];
     >>>
 
   method name=get params="id:string" returns=EngineDefinition
@@ -214,12 +235,27 @@ service name=EngineRegistry
   method name=activeEngines params="config?:Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'|'hiddenEngines'|'removedEngines'>" returns="EngineDefinition[]"
     doc "Available engines filtered through user activation settings. Both hiddenEngines (soft) and removedEngines (hard) are excluded from the automatic roster in every mode. In auto mode every available engine that is neither hidden nor removed is active; in explicit mode only such forgeEnabledEngines are active. Explicit -e/--engines requests bypass this method — use partitionRoster to enforce the HARD removedEngines denylist on those."
     handler lang="kern"
-      let name=excluded value="new Set([...(config?.hiddenEngines ?? []), ...(config?.removedEngines ?? [])])"
+      let name=allIds value="this.listIds()"
+      let name=excluded value="new Set<string>()"
+      each name=rawExcluded in="[...(config?.hiddenEngines ?? []), ...(config?.removedEngines ?? [])]"
+        each name=id in="this.resolveFilterIdsAgainst(String(rawExcluded ?? '').trim(), allIds)"
+          do value="excluded.add(id)"
       let name=available value="this.availableEngines().filter((e: EngineDefinition) => !excluded.has(e.id))"
       if cond="!config || config.engineActivationMode !== 'explicit'"
         return value="available"
-      let name=selected value="new Set(config.forgeEnabledEngines ?? [])"
-      return value="available.filter((e: EngineDefinition) => selected.has(e.id))"
+      let name=availableIds value="available.map((e: EngineDefinition) => e.id)"
+      let name=byId value="new Map(available.map((e: EngineDefinition) => [e.id, e]))"
+      let name=seen value="new Set<string>()"
+      let name=active type="EngineDefinition[]" value="[]"
+      each name=rawId in="config.forgeEnabledEngines ?? []"
+        let name=id value="this.resolveIdAgainst(String(rawId ?? '').trim(), availableIds)"
+        if cond="seen.has(id)"
+          continue
+        let name=engine value="byId.get(id)"
+        if cond="engine"
+          do value="seen.add(id)"
+          do value="active.push(engine)"
+      return value="active"
 
   method name=activeIds params="config?:Pick<Required<AgonConfig>,'engineActivationMode'|'forgeEnabledEngines'|'hiddenEngines'|'removedEngines'>" returns="string[]"
     handler lang="kern"
@@ -230,14 +266,27 @@ service name=EngineRegistry
     handler lang="kern"
       if cond="!requested"
         return value="{ active: this.activeIds(config), removed: [] }"
-      let name=removedSet value="new Set(config?.removedEngines ?? [])"
+      let name=allIds value="this.listIds()"
+      let name=removedSet value="new Set<string>()"
+      each name=rawRemoved in="config?.removedEngines ?? []"
+        each name=id in="this.resolveFilterIdsAgainst(String(rawRemoved ?? '').trim(), allIds)"
+          do value="removedSet.add(id)"
+      let name=availableIds value="this.availableIds()"
       let name=active type="string[]" value="[]"
       let name=removed type="string[]" value="[]"
       each name=raw in="requested"
-        let name=id value="this.resolveId(String(raw ?? '').trim())"
+        let name=rawId value="String(raw ?? '').trim()"
+        let name=availableResolved value="this.resolveIdAgainst(rawId, availableIds)"
+        let name=id value="availableResolved !== rawId ? availableResolved : this.resolveIdAgainst(rawId, allIds)"
+        let name=removedMatches value="this.resolveFilterIdsAgainst(rawId, allIds).filter((candidate: string) => removedSet.has(candidate))"
+        let name=rawRemovedAlias value="id === rawId && removedMatches.length > 0"
         if cond="id && removedSet.has(id) && !removed.includes(id)"
           do value="removed.push(id)"
-        if cond="id && !removedSet.has(id) && !active.includes(id)"
+        if cond="id && rawRemovedAlias"
+          each name=removedId in="removedMatches"
+            if cond="!removed.includes(removedId)"
+              do value="removed.push(removedId)"
+        if cond="id && !removedSet.has(id) && !rawRemovedAlias && !active.includes(id)"
           do value="active.push(id)"
       return value="{ active, removed }"
 

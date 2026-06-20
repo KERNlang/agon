@@ -197,6 +197,14 @@ export {
   parseDaemonRequest, parseDaemonResponse, splitFrames,
 } from './generated/sessions/daemon-protocol.js';
 export type { DaemonRequest, DaemonResponse } from './generated/sessions/daemon-protocol.js';
+// ── BrainClient — daemon↔brain boundary for the Agon Everywhere bridge (client/server split M4) ──
+export { conservativeControlCapabilities } from './generated/sessions/brain-client.js';
+export type {
+  BrainClient, BrainClientConfig, BrainEvent, BrainTurnRequest, BrainTurnResult,
+  ControlAck, ControlCapabilities, ClientRef, ApprovalResponse, AnswerResponse,
+  SteerRequest, CancelRequest, CapabilitySpec, CapabilityRegistration,
+  CapabilityUnregister, CapabilityResult, BrainHealth,
+} from './generated/sessions/brain-client.js';
 export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
 export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';
 export { apiDispatch, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';

@@ -1,0 +1,254 @@
+// ── BrainClient — the daemon↔brain boundary for the Agon Everywhere bridge ────
+//
+// Design rationale — "A's architecture with B's brain". This file encodes the
+// boundary that keeps the daemon as the mediator that
+// owns the session, the event ledger, and the multi-client wire; the BRAIN sits
+// behind THIS interface. The first implementation wraps the existing CLI
+// `handleCesarBrain` in a subprocess the daemon spawns and monitors (B's
+// battle-tested brain); a future native headless brain is an IMPLEMENTATION SWAP
+// behind this same interface — no protocol break, no client change.
+//
+// Why this lives in @kernlang/agon-core and is FULLY SERIALIZABLE:
+//   The session layer is single-writer (concurrent send() corrupts history) and
+//   the event ledger strips the in-process `resolve` callbacks carried by the
+//   CLI OutputEvent DU
+//   (`question.resolve(answer)`, `permission-ask.resolve(approved)`). The wire is
+//   therefore TRANSPORT-identical but NOT CONTROL-STATE-identical. So this
+//   contract must NOT leak a callback, an AbortSignal, or any CLI type: every
+//   control path that was an in-process callback or a process-global singleton
+//   (the steering FIFO) is re-expressed here as a REQUEST-ID-CORRELATED message
+//   carrying the originating `clientId`. The CLI BrainClient impl adapts
+//   OutputEvent→BrainEvent and CesarTurnOutcome→BrainTurnResult; it never exports
+//   a callback across this boundary.
+//
+// THE NON-NEGOTIABLE (the single biggest risk this contract must defend against):
+//   This interface DESCRIBES THE MULTI-CLIENT END-STATE — concurrent approval
+//   arbitration, per-session steering, client-provided capabilities — even
+//   though the v1 (single CLI-host) implementation will honestly return
+//   { status: 'unsupported' } for the concurrent paths via `ControlAck` and
+//   declare its limits in `ControlCapabilities`. The interface must encode where
+//   it is going, NOT what v1 can do, so the eventual headless brain is a swap and
+//   not a re-spec. `conservativeControlCapabilities()` is exactly what a v1 host
+//   should declare.
+//
+//   surface client ──▶ agon-serve / agond (mediator: session, ledger, auth) ──▶ BrainClient ──▶ brain
+//
+// This is the M4 "remote-attach client" contract anticipated by daemon-protocol.kern.
+
+// ── Who is driving — every control message names its origin ──────────────────
+
+interface name=ClientRef
+  doc "A surface attached to a session. `clientId` is minted by the daemon at attach time and is what every control message (approve/answer/steer/capability) carries so the brain can arbitrate (e.g. host-only vs first-wins) and route a capability request to the client that owns it. `surface` lets the brain reason about origin — e.g. a screenshot capability lives on a 'browser' client; 'agent' is a headless automation peer."
+  field name=clientId type=string
+  field name=surface type="'cli'|'browser'|'electron'|'headless'|'agent'"
+  field name=label type=string optional=true
+
+// ── ControlAck — the honest answer, including 'unsupported' for v1 ───────────
+
+union name=ControlAck discriminant=status export=true
+  doc "The reply to every inbound control method (steer/provideApproval/provideAnswer/registerCapability/provideCapabilityResult/cancel). `accepted` = applied. `rejected` = a valid request the brain declined (stale requestId, wrong turn, not the arbitration winner) — carries a human reason. `unsupported` = the v1 implementation does not implement this multi-client path yet; the method EXISTS in the contract (so the end-state is fixed) but this host can't honor it — distinct from `rejected` so a client can tell 'never, on this host' from 'no, this time'."
+  variant name=accepted
+  variant name=rejected
+    field name=reason type=string
+  variant name=unsupported
+    field name=reason type=string
+
+// ── ControlCapabilities — the support matrix a host DECLARES up front ─────────
+
+interface name=ControlCapabilities
+  doc "What multi-client control the implementation actually supports. Declared statically by every BrainClient so the daemon can route or refuse BEFORE dispatching (and so a client UI can grey out an approve button it can't win). v1 (single CLI host) declares the conservative matrix from conservativeControlCapabilities(): turns serialize per session, steering/approvals/questions are host-only, cancellation is per-turn, and client-provided capabilities ARE supported (the frontend-inspector screenshot path works even in v1). The axes are the END-STATE vocabulary; widening them later is an implementation change, not a contract change."
+  field name=concurrentTurns type="'per-session-serialized'|'unsupported'"
+  field name=concurrentSteering type="'broadcast'|'serialized'|'host-only'|'unsupported'"
+  field name=approvalArbitration type="'first-wins'|'host-only'|'quorum'|'unsupported'"
+  field name=questionArbitration type="'first-wins'|'host-only'|'unsupported'"
+  field name=clientCapabilities type="'supported'|'unsupported'"
+  field name=cancellation type="'per-turn'|'unsupported'"
+
+// ── BrainEvent — the serializable projection of the CLI OutputEvent DU ────────
+
+union name=BrainEvent discriminant=kind export=true
+  doc "What the brain streams out of a turn, projected to a JSON-serializable shape the daemon appends to the event ledger and fans out to every subscribed client. This is NOT the CLI OutputEvent (which carries `resolve` callbacks and 56 render-specific variants); it is the bridge projection. The output variants (text/engine/tool/notice/recap/confidence/context) are coarse, lossless-enough renderings of their OutputEvent counterparts. The three *-request variants are the crux: each carries a `requestId` INSTEAD of a callback — the brain pauses that turn until the matching provideApproval/provideAnswer/provideCapabilityResult arrives (routed by the daemon from whichever client the arbitration policy admits)."
+  variant name=text
+    field name=content type=string
+  variant name=engine
+    field name=engineId type=string
+    field name=content type=string
+  variant name=tool
+    field name=engineId type=string optional=true
+    field name=tool type=string
+    field name=status type="'running'|'done'|'error'"
+    field name=input type=string optional=true
+    field name=output type=string optional=true
+  variant name=notice
+    field name=level type="'info'|'success'|'warning'|'error'"
+    field name=message type=string
+  variant name=recap
+    field name=engineId type=string
+    field name=mode type=string
+    field name=outcome type=string
+    field name=durationMs type=number
+    field name=confidence type="number|null" optional=true
+    field name=toolCount type=number
+  variant name=confidence
+    field name=value type="number|null"
+  variant name=context
+    field name=pct type=number
+    field name=used type=number
+    field name=limit type=number
+  variant name=approval-request
+    doc "Projects OutputEvent 'permission-ask' — the `resolve(approved)` callback is REPLACED by `requestId`, answered out-of-band via provideApproval. `diffPreview` is carried as an opaque serializable blob mirroring the OutputEvent diffPreview."
+    field name=requestId type=string
+    field name=tool type=string
+    field name=command type=string
+    field name=reason type=string
+    field name=description type=string optional=true
+    field name=fallbackNote type=string optional=true
+    field name=diffPreview type="Record<string,unknown>" optional=true
+  variant name=question-request
+    doc "Projects OutputEvent 'question' — the `resolve(answer)` callback is REPLACED by `requestId`, answered via provideAnswer. `choices`/`defaultChoiceKey` carry the SAME menu metadata the CLI 'question' event dispatches (fork menus, escalation choices, plan approvals — see cesar/escalation.kern + cesar/brain.kern); without them a remote client would silently degrade a constrained menu into a free-text prompt. Absent `choices` = free-text question; `defaultChoiceKey` is the pre-selected option key."
+    field name=requestId type=string
+    field name=prompt type=string
+    field name=choices type="Array<{ key: string; label: string; color?: string }>" optional=true
+    field name=defaultChoiceKey type=string optional=true
+  variant name=capability-request
+    doc "The brain needs a capability that lives in a CLIENT, not the host — e.g. a 'screenshot' or 'page-content' the browser extension provides (the frontend-inspector path). The daemon routes this to a client that registered `capability` (preferring `targetClientId` if set); the client runs it and replies via provideCapabilityResult. This is how a brain running in one process invokes a tool whose execute() lives in another surface."
+    field name=requestId type=string
+    field name=capability type=string
+    field name=input type="Record<string,unknown>"
+    field name=targetClientId type=string optional=true
+
+// ── Turn request / result — the serialized WRITE path ────────────────────────
+
+interface name=BrainTurnRequest
+  doc "One unit of work submitted to the brain. The daemon serializes these per session (single-writer) via a Rooms TurnLease; concurrent submits for one session queue or are rejected per ControlCapabilities.concurrentTurns. `clientId` is the submitting surface (origin provenance — logged per-frame in the ledger, the security tripwire). `images` are references/data-URLs (serializable), matching SessionSendOptions.images."
+  field name=sessionId type=string
+  field name=turnId type=string
+  field name=clientId type=string
+  field name=input type=string
+  field name=images type="string[]" optional=true
+  field name=hintClass type="'code'|'question'|'ambiguous'" optional=true
+  field name=mode type=string optional=true
+
+interface name=BrainTurnResult
+  doc "The terminal outcome of a turn — the serializable, core-level projection of the CLI CesarTurnOutcome (the CLI impl maps the rich outcome down to this). Returned as the AsyncGenerator return value of runTurn so the daemon can record the turn's disposition. `awaitingUserInput` true means the turn ended pending a client answer (a question/approval that was never resolved within the turn)."
+  field name=turnId type=string
+  field name=delegated type=boolean
+  field name=responded type=boolean
+  field name=mode type=string optional=true
+  field name=action type=string optional=true
+  field name=engineId type=string optional=true
+  field name=awaitingUserInput type=boolean optional=true
+  field name=reason type=string optional=true
+
+// ── Inbound control messages — request-id correlated, client-attributed ──────
+
+interface name=ApprovalResponse
+  doc "A client's answer to a BrainEvent 'approval-request'. `decision` mirrors the CLI onApproval contract (Promise<boolean|string>): approve/deny once, approve-session/deny-session to remember for the session, abort to cancel the turn. Arbitration: per ControlCapabilities.approvalArbitration — v1 accepts only the host client and returns { unsupported } otherwise."
+  field name=sessionId type=string
+  field name=requestId type=string
+  field name=clientId type=string
+  field name=decision type="'approve'|'approve-session'|'deny'|'deny-session'|'abort'"
+
+interface name=AnswerResponse
+  doc "A client's answer to a BrainEvent 'question-request'. Arbitration per ControlCapabilities.questionArbitration (v1: host-only)."
+  field name=sessionId type=string
+  field name=requestId type=string
+  field name=clientId type=string
+  field name=answer type=string
+
+interface name=SteerRequest
+  doc "Mid-turn input injection — the serializable replacement for the process-global steering FIFO (pushSteering/markSteeringTurn). `turnId` optional: omit to steer whatever turn is active for the session. Arbitration per ControlCapabilities.concurrentSteering (v1: host-only; end-state: broadcast/serialized across clients)."
+  field name=sessionId type=string
+  field name=clientId type=string
+  field name=input type=string
+  field name=images type="string[]" optional=true
+  field name=turnId type=string optional=true
+
+interface name=CancelRequest
+  doc "Abort an in-flight turn — the serializable replacement for an AbortSignal (which cannot cross the boundary). The impl translates this into its internal AbortController."
+  field name=sessionId type=string
+  field name=turnId type=string
+  field name=clientId type=string
+  field name=reason type=string optional=true
+
+// ── Client-provided capabilities — the frontend-inspector path ───────────────
+
+interface name=CapabilitySpec
+  doc "A tool a CLIENT offers TO the brain — e.g. the browser extension registering 'screenshot' or 'page-content' so the brain can inspect a live frontend. Mirrors core ToolDefinition (name/description/inputSchema/isReadOnly/isDestructive) so the brain can surface it as a normal tool; invoking it emits a BrainEvent 'capability-request' routed back to the owning client."
+  field name=name type=string
+  field name=description type=string
+  field name=inputSchema type="Record<string,unknown>"
+  field name=isReadOnly type=boolean
+  field name=isDestructive type=boolean optional=true
+
+interface name=CapabilityRegistration
+  field name=sessionId type=string
+  field name=clientId type=string
+  field name=spec type=CapabilitySpec
+
+interface name=CapabilityUnregister
+  field name=sessionId type=string
+  field name=clientId type=string
+  field name=name type=string
+
+interface name=CapabilityResult
+  doc "A client's reply to a BrainEvent 'capability-request' (e.g. the browser returning a screenshot data-URL in `output`). `ok=false` with `error` surfaces a capture failure to the brain so it can recover instead of hanging."
+  field name=sessionId type=string
+  field name=requestId type=string
+  field name=clientId type=string
+  field name=ok type=boolean
+  field name=output type=string optional=true
+  field name=error type=string optional=true
+
+// ── Brain lifecycle + health (the daemon monitors and can restart) ───────────
+
+interface name=BrainClientConfig
+  doc "What the daemon hands the brain at open(). `ledgerPath` lets a native headless brain append directly to the same event ledger the daemon fans out; a subprocess impl may instead stream BrainEvents back over its stdio and let the daemon append."
+  field name=sessionId type=string
+  field name=engineId type=string
+  field name=cwd type=string
+  field name=systemPrompt type=string optional=true
+  field name=ledgerPath type=string optional=true
+
+interface name=BrainHealth
+  doc "Liveness/occupancy for the daemon's supervisor — so it can restart a crashed CLI host (and Electron can bundle a hidden host). `activeTurnId` null = idle; `queuedTurns` is the single-writer backlog."
+  field name=alive type=boolean
+  field name=engineId type=string
+  field name=pid type="number|null" optional=true
+  field name=activeTurnId type="string|null" optional=true
+  field name=queuedTurns type=number
+  field name=uptimeMs type=number
+
+// ── The contract ─────────────────────────────────────────────────────────────
+
+interface name=BrainClient
+  doc "The boundary the daemon uses to drive a brain. v1 implementation wraps the CLI `handleCesarBrain` in a spawned subprocess; vN is a native headless brain — same interface, swapped behind it. Every method is serializable end-to-end (no callbacks, no AbortSignal, no CLI types). `controlCapabilities` is declared statically so the daemon can route/refuse before dispatch. `runTurn` is the single-writer WRITE path (daemon serializes per session) and streams BrainEvents with a BrainTurnResult return; the inbound control methods (steer/provideApproval/provideAnswer/provideCapabilityResult/cancel) answer the *-request BrainEvents by requestId; the capability methods let clients lend tools to the brain; notifyClient* keeps the brain's live client set current for arbitration and capability routing. Consume runTurn by draining the generator (for-await over the BrainEvents); the terminal BrainTurnResult is the generator's RETURN value — the `value` of the final next(), not a yielded event."
+  field name=controlCapabilities type=ControlCapabilities
+  field name=open type="(config: BrainClientConfig) => Promise<void>"
+  field name=runTurn type="(req: BrainTurnRequest) => AsyncGenerator<BrainEvent, BrainTurnResult, void>"
+  field name=steer type="(req: SteerRequest) => Promise<ControlAck>"
+  field name=provideApproval type="(res: ApprovalResponse) => Promise<ControlAck>"
+  field name=provideAnswer type="(res: AnswerResponse) => Promise<ControlAck>"
+  field name=registerCapability type="(reg: CapabilityRegistration) => Promise<ControlAck>"
+  field name=unregisterCapability type="(req: CapabilityUnregister) => Promise<ControlAck>"
+  field name=provideCapabilityResult type="(res: CapabilityResult) => Promise<ControlAck>"
+  field name=cancel type="(req: CancelRequest) => Promise<ControlAck>"
+  field name=notifyClientAttached type="(sessionId: string, client: ClientRef) => void"
+  field name=notifyClientDetached type="(sessionId: string, clientId: string) => void"
+  field name=health type="() => Promise<BrainHealth>"
+  field name=close type="() => Promise<void>"
+
+// ── What a v1 single-CLI-host should declare ─────────────────────────────────
+
+fn name=conservativeControlCapabilities returns="ControlCapabilities" export=true
+  doc "The honest support matrix for the v1 brain (one CLI host behind the daemon). Turns serialize per session; steering, approvals and questions are HOST-ONLY (a non-host client's control message gets { status: 'unsupported' }); cancellation is per-turn; client-provided capabilities ARE supported so the browser-extension screenshot/page-content path works in v1. Widening any axis later is an implementation change behind the unchanged BrainClient interface — never a re-spec."
+  handler <<<
+    return {
+      concurrentTurns: 'per-session-serialized',
+      concurrentSteering: 'host-only',
+      approvalArbitration: 'host-only',
+      questionArbitration: 'host-only',
+      clientCapabilities: 'supported',
+      cancellation: 'per-turn',
+    };
+  >>>

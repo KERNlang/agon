@@ -837,9 +837,22 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
       const controller = new AbortController();
       controllers.push(controller);
       let timedOut = false;
-      const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutSec * 1000);
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        const result = await runReviewCore(diff, label, engineId, ctx, controller.signal);
+        const timeoutPromise = new Promise<null>((resolve) => {
+          timer = setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+            resolve(null);
+          }, timeoutSec * 1000);
+        });
+        const corePromise = runReviewCore(diff, label, engineId, ctx, controller.signal);
+        corePromise.catch(() => undefined);
+        const result = await Promise.race([corePromise, timeoutPromise]);
+        if (result === null) {
+          dispatch({ type: 'warning', message: `${engineId}: timed out after ${timeoutSec}s — skipped.` });
+          return { engineId, reviewOutput: '', unstructured: false, status: 'timeout' };
+        }
         const response = (result.response ?? '').trim();
         if (timedOut) {
           dispatch({ type: 'warning', message: `${engineId}: timed out after ${timeoutSec}s — skipped.` });
@@ -867,7 +880,7 @@ export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, 
         dispatch({ type: 'error', message: `${engineId}: ${msg}` });
         return { engineId, reviewOutput: '', unstructured: false, status: 'error', note: msg };
       } finally {
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
       }
     };
 

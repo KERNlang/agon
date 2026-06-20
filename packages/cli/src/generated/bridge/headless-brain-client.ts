@@ -59,9 +59,14 @@ export class HeadlessTurnBrainClient implements BrainClient {
   }
 
   async *runTurn(req: BrainTurnRequest): AsyncGenerator<BrainEvent, BrainTurnResult, void> {
+    // KERN-GAP: kern-review (undefined-reference) — in a raw `<<<` stream handler,
+    // `yield { ...objectLiteral }` is mis-parsed and the literal's keys are flagged
+    // as undeclared references. Workaround: assign each BrainEvent to a typed const
+    // and `yield` the variable (the pattern adapter.kern's dispatchStream uses).
     if (this.activeTurnId !== null) {
       const reason = `brain busy with turn ${this.activeTurnId} (single-writer)`;
-      yield { kind: 'notice', level: 'error', message: reason };
+      const busy: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+      yield busy;
       return { turnId: req.turnId, delegated: false, responded: false, engineId: this.engineId, reason };
     }
     this.activeTurnId = req.turnId;
@@ -82,7 +87,8 @@ export class HeadlessTurnBrainClient implements BrainClient {
         const att = buildImageAttachment(p, this.cwd);
         if (att) images.push(att);
       }
-      yield { kind: 'notice', level: 'info', message: `${this.engineId} working…` };
+      const working: BrainEvent = { kind: 'notice', level: 'info', message: `${this.engineId} working…` };
+      yield working;
       const result = await this.adapter.dispatch({
         engine,
         prompt: req.input,
@@ -96,7 +102,8 @@ export class HeadlessTurnBrainClient implements BrainClient {
       });
       const answer = (result.stdout || '').trim();
       if (result.exitCode === 0 && !result.timedOut && answer.length > 0) {
-        yield { kind: 'engine', engineId: this.engineId, content: answer };
+        const ans: BrainEvent = { kind: 'engine', engineId: this.engineId, content: answer };
+        yield ans;
         return { turnId: req.turnId, delegated: false, responded: true, engineId: this.engineId };
       }
       const reason = ctrl.signal.aborted
@@ -104,18 +111,21 @@ export class HeadlessTurnBrainClient implements BrainClient {
         : result.timedOut
           ? `${this.engineId} timed out`
           : `${this.engineId} produced no answer (exit ${result.exitCode})`;
-      yield { kind: 'notice', level: ctrl.signal.aborted ? 'warning' : 'error', message: reason };
+      const note: BrainEvent = { kind: 'notice', level: ctrl.signal.aborted ? 'warning' : 'error', message: reason };
+      yield note;
       return { turnId: req.turnId, delegated: false, responded: false, engineId: this.engineId, reason };
     } catch (err) {
       // An adapter that REJECTS with an AbortError on cancel must still read as a
       // cancel, not a generic failure.
       if (ctrl.signal.aborted) {
         const reason = 'cancelled by client';
-        yield { kind: 'notice', level: 'warning', message: reason };
+        const cancelled: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
+        yield cancelled;
         return { turnId: req.turnId, delegated: false, responded: false, engineId: this.engineId, reason };
       }
       const reason = `turn failed: ${err instanceof Error ? err.message : String(err)}`;
-      yield { kind: 'notice', level: 'error', message: reason };
+      const failed: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+      yield failed;
       return { turnId: req.turnId, delegated: false, responded: false, engineId: this.engineId, reason };
     } finally {
       this.aborts.delete(req.turnId);
@@ -177,7 +187,7 @@ export class HeadlessTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring the session-factory idiom (createXxxSession): build the v1 single-engine BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: headless-brain-client:209
+// @kern-source: headless-brain-client:219
 export function createHeadlessTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new HeadlessTurnBrainClient(registry);
 }

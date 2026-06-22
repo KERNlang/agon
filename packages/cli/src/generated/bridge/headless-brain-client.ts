@@ -2,7 +2,7 @@
 
 import type { BrainClient, BrainClientConfig, BrainEvent, BrainTurnRequest, BrainTurnResult, ControlAck, ControlCapabilities, ClientRef, ApprovalResponse, AnswerResponse, SteerRequest, CancelRequest, CapabilityRegistration, CapabilityUnregister, CapabilityResult, BrainHealth, EngineAdapter, EngineRegistry } from '@kernlang/agon-core';
 
-import { buildImageAttachment } from '@kernlang/agon-core';
+import { buildImageAttachment, decodeDataUrlToImageFile, MAX_DISPATCH_IMAGES } from '@kernlang/agon-core';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
@@ -74,7 +74,11 @@ export class HeadlessTurnBrainClient implements BrainClient {
     this.aborts.set(req.turnId, ctrl);
     // Per-turn scratch dir; sanitize the client-supplied turnId so it can never
     // escape tmpdir via '../'. Removed in finally so dirs don't accumulate.
-    const turnDir = join(tmpdir(), 'agon-brain-turns', req.turnId.replace(/[^a-zA-Z0-9_-]/g, '_'));
+    // Fall back to a fixed name when the sanitized turnId is empty (all-special
+    // or '') — otherwise the path collapses to the parent agon-brain-turns dir and
+    // the finally rmSync would wipe EVERY turn's scratch (not just this one).
+    const safeTurn = req.turnId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200) || 'turn';
+    const turnDir = join(tmpdir(), 'agon-brain-turns', safeTurn);
     try {
       const engine = this.registry.get(this.engineId);
       // User-initiated vision input (a screenshot the client attached to the turn).
@@ -83,9 +87,31 @@ export class HeadlessTurnBrainClient implements BrainClient {
       // separate, deferred path (controlCapabilities.clientCapabilities='unsupported').
       type Att = NonNullable<ReturnType<typeof buildImageAttachment>>;
       const images: Att[] = [];
-      for (const p of (req.images ?? [])) {
-        const att = buildImageAttachment(p, this.cwd);
-        if (att) images.push(att);
+      const allImages = req.images ?? [];
+      const rawImages = allImages.slice(0, MAX_DISPATCH_IMAGES);
+      if (allImages.length > rawImages.length) {
+        const capped: BrainEvent = { kind: 'notice', level: 'warning', message: `only the first ${MAX_DISPATCH_IMAGES} of ${allImages.length} images are used` };
+        yield capped;
+      }
+      for (let i = 0; i < rawImages.length; i++) {
+        const raw = rawImages[i];
+        if (raw.startsWith('data:')) {
+          // Browser-supplied screenshot (base64 data URL): the sandbox can't write
+          // a file, so materialize it into this turn's scratch dir — gated by
+          // decodeDataUrlToImageFile (MIME + size + magic-byte checks) — then run
+          // the SAME path-based pipeline a CLI file drop uses.
+          const decoded = decodeDataUrlToImageFile(raw, turnDir, i);
+          if (decoded.path) {
+            const att = buildImageAttachment(decoded.path, this.cwd);
+            if (att) images.push(att);
+          } else if (decoded.reason) {
+            const skip: BrainEvent = { kind: 'notice', level: 'warning', message: `image skipped: ${decoded.reason}` };
+            yield skip;
+          }
+        } else {
+          const att = buildImageAttachment(raw, this.cwd);
+          if (att) images.push(att);
+        }
       }
       const working: BrainEvent = { kind: 'notice', level: 'info', message: `${this.engineId} working…` };
       yield working;
@@ -187,7 +213,7 @@ export class HeadlessTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring the session-factory idiom (createXxxSession): build the v1 single-engine BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: headless-brain-client:219
+// @kern-source: headless-brain-client:245
 export function createHeadlessTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new HeadlessTurnBrainClient(registry);
 }

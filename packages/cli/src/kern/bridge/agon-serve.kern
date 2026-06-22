@@ -26,10 +26,17 @@
 // hands in a HeadlessTurnBrainClient).
 
 import from="@kernlang/agon-core" names="BrainClient" types=true
-import from="@kernlang/agon-core" names="getSessionHost,eventLogAppend,eventLogFlush"
+import from="@kernlang/agon-core" names="getSessionHost,eventLogAppend,eventLogFlush,MAX_DISPATCH_IMAGES,MAX_DISPATCH_IMAGE_BYTES"
 import from="node:http" names="createServer"
 import from="node:http" names="IncomingMessage,ServerResponse,Server" types=true
 import from="node:crypto" names="randomUUID,timingSafeEqual"
+
+comment raw="// /send may carry inline base64 images for the frontend-inspector path. Size the"
+comment raw="// body cap to the SAME contract the brain enforces (up to MAX_DISPATCH_IMAGES"
+comment raw="// images, each up to MAX_DISPATCH_IMAGE_BYTES raw → ×4/3 base64) plus 1 MiB JSON"
+comment raw="// slack — so a legitimate multi-image turn isn't rejected at 413 before the"
+comment raw="// per-image caps in decodeDataUrlToImageFile run, while still bounding a hostile body."
+const name=MAX_SEND_BODY_BYTES type=number value={{ Math.ceil((MAX_DISPATCH_IMAGES * MAX_DISPATCH_IMAGE_BYTES * 4) / 3) + 1024 * 1024 }} export=true
 
 service name=AgonServe
   doc "Loopback HTTP bridge fronting ONE Agon session. start() binds 127.0.0.1 and returns { url, token }; clients pass `Authorization: Bearer <token>`. Routes: OPTIONS (CORS preflight); POST /attach → { sessionId, lastSeq }; POST /send → drive a BrainClient turn, append events to the ledger, return the BrainTurnResult; GET /events?from=N → SSE tail of the ledger (multi-client fan-out); POST /cancel → BrainClient.cancel."
@@ -76,7 +83,9 @@ service name=AgonServe
     handler <<<
       const server = this.server;
       this.server = null;
-      for (const conn of this.sse) {
+      // Iterate a COPY: conn.res.end() can fire a 'close' that deletes conn from
+      // this.sse, mutating the Set mid-iteration.
+      for (const conn of [...this.sse]) {
         try { clearInterval(conn.ping); conn.unsubscribe(); conn.res.end(); } catch { /* best-effort */ }
       }
       this.sse.clear();
@@ -219,14 +228,14 @@ service name=AgonServe
     >>>
 
   method name=readJson params="req:IncomingMessage" returns="Promise<Record<string, unknown>>" async=true private=true
-    doc "Read + parse a JSON request body, capped at 256 KiB (bodies are short text + image path refs). Throws 'request body too large' (→413) or 'invalid JSON body' (→400), both mapped by handle()."
+    doc "Read + parse a JSON request body, capped at MAX_SEND_BODY_BYTES. Text turns are tiny, but /send may carry inline base64 images (browser screenshots) for the frontend-inspector path — the cap is sized to the brain's image contract (MAX_DISPATCH_IMAGES × MAX_DISPATCH_IMAGE_BYTES, base64-expanded, + slack) so a legitimate multi-image turn isn't 413'd before the per-image caps in decodeDataUrlToImageFile run, while still bounding a hostile/oversize body. Throws 'request body too large' (→413) or 'invalid JSON body' (→400), both mapped by handle()."
     handler <<<
       const chunks: Buffer[] = [];
       let size = 0;
       for await (const chunk of req) {
         const buf = typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer);
         size += buf.length;
-        if (size > 256 * 1024) throw new Error('request body too large');
+        if (size > MAX_SEND_BODY_BYTES) throw new Error('request body too large');
         chunks.push(buf);
       }
       if (chunks.length === 0) return {};

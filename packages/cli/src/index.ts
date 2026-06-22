@@ -32,6 +32,7 @@ import { conquerCommand } from './commands/conquer.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { attachCommand } from './commands/attach.js';
 import { daemonCommand } from './commands/daemon.js';
+import { serveCommand } from './commands/serve.js';
 import { loginCommand } from './commands/login.js';
 import { updateCommand } from './commands/update.js';
 import { startRepl } from './repl.js';
@@ -227,6 +228,7 @@ const main = defineCommand({
     wt: worktreeCommand,
     attach: attachCommand,
     daemon: daemonCommand,
+    serve: serveCommand,
     login: loginCommand,
     update: updateCommand,
     upgrade: updateCommand,

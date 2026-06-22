@@ -9,4 +9,9 @@ export {
   normalizeDroppedPath,
   encodeImagesForDispatch,
   visionSupportNote,
+  decodeDataUrlToImageFile,
+  sniffImageMime,
+  MAX_DISPATCH_IMAGES,
+  MAX_DISPATCH_IMAGE_BYTES,
 } from './generated/blocks/image.js';
+export type { DataUrlImageResult } from './generated/blocks/image.js';

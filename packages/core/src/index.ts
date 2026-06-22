@@ -165,7 +165,9 @@ export {
   isImagePath, mimeFromExt, resolveImagePath,
   buildImageAttachment, extractImagesFromInput, normalizeDroppedPath,
   encodeImagesForDispatch, visionSupportNote,
+  decodeDataUrlToImageFile, sniffImageMime, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES,
 } from './image.js';
+export type { DataUrlImageResult } from './image.js';
 // ── Agon Rooms — multi-party room ledger (file-first; CLI/MCP/daemon are adapters) ──
 export {
   roomsDir, roomDir, createRoom, listRooms, roomExists, closeRoom, isRoomClosed,

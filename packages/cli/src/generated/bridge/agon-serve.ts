@@ -2,7 +2,7 @@
 
 import type { BrainClient } from '@kernlang/agon-core';
 
-import { getSessionHost, eventLogAppend, eventLogFlush } from '@kernlang/agon-core';
+import { getSessionHost, eventLogAppend, eventLogFlush, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES } from '@kernlang/agon-core';
 
 import { createServer } from 'node:http';
 
@@ -10,10 +10,13 @@ import type { IncomingMessage, ServerResponse, Server } from 'node:http';
 
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 
+// @kern-source: agon-serve:39
+export const MAX_SEND_BODY_BYTES: number = Math.ceil((MAX_DISPATCH_IMAGES * MAX_DISPATCH_IMAGE_BYTES * 4) / 3) + 1024 * 1024;
+
 /**
  * Loopback HTTP bridge fronting ONE Agon session. start() binds 127.0.0.1 and returns { url, token }; clients pass `Authorization: Bearer <token>`. Routes: OPTIONS (CORS preflight); POST /attach → { sessionId, lastSeq }; POST /send → drive a BrainClient turn, append events to the ledger, return the BrainTurnResult; GET /events?from=N → SSE tail of the ledger (multi-client fan-out); POST /cancel → BrainClient.cancel.
  */
-// @kern-source: agon-serve:34
+// @kern-source: agon-serve:41
 export class AgonServe {
   private brain: BrainClient;
   private sessionId: string;
@@ -54,7 +57,9 @@ export class AgonServe {
   async close(): Promise<void> {
     const server = this.server;
     this.server = null;
-    for (const conn of this.sse) {
+    // Iterate a COPY: conn.res.end() can fire a 'close' that deletes conn from
+    // this.sse, mutating the Set mid-iteration.
+    for (const conn of [...this.sse]) {
       try { clearInterval(conn.ping); conn.unsubscribe(); conn.res.end(); } catch { /* best-effort */ }
     }
     this.sse.clear();
@@ -193,7 +198,7 @@ export class AgonServe {
     for await (const chunk of req) {
       const buf = typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer);
       size += buf.length;
-      if (size > 256 * 1024) throw new Error('request body too large');
+      if (size > MAX_SEND_BODY_BYTES) throw new Error('request body too large');
       chunks.push(buf);
     }
     if (chunks.length === 0) return {};
@@ -215,7 +220,7 @@ export class AgonServe {
 /**
  * Factory: build the loopback bridge for a session given an opened BrainClient and the session id.
  */
-// @kern-source: agon-serve:248
+// @kern-source: agon-serve:257
 export function createAgonServe(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[] }): AgonServe {
   return new AgonServe(opts);
 }

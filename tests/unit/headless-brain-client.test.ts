@@ -99,6 +99,32 @@ describe('HeadlessTurnBrainClient — single-engine turn streaming', () => {
     expect((seen as unknown[]).length).toBe(1);
     expect((seen as Array<{ path: string }>)[0].path).toBe(png);
   });
+
+  it('materializes a base64 data-URL screenshot (the browser inspector path) to a scratch file and forwards it', async () => {
+    // A browser sends a base64 data URL, not a path; the brain must decode + write
+    // it to its per-turn scratch dir, then forward the FILE (not the data URL).
+    const pngDataUrl = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString('base64')}`;
+    let seen: unknown;
+    const client = makeClient(async (opts) => { seen = opts.images; return ok('the spacing is tight'); });
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: process.cwd() });
+
+    const { result } = await drain(client.runTurn({ sessionId: 's', turnId: 't-img', clientId: 'c-browser', input: 'review this UI', images: [pngDataUrl] }));
+    expect(result.responded).toBe(true);
+    expect(Array.isArray(seen)).toBe(true);
+    expect((seen as unknown[]).length).toBe(1);
+    expect((seen as Array<{ path: string }>)[0].path).toMatch(/agon-brain-turns.*[/\\]img-0\.png$/);
+  });
+
+  it('drops a malformed data-URL image (bad MIME) and still answers, no attachment forwarded', async () => {
+    const badDataUrl = `data:text/plain;base64,${Buffer.from('not an image').toString('base64')}`;
+    let seen: unknown;
+    const client = makeClient(async (opts) => { seen = opts.images; return ok('answered without the image'); });
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: process.cwd() });
+
+    const { result } = await drain(client.runTurn({ sessionId: 's', turnId: 't-bad', clientId: 'c-browser', input: 'review', images: [badDataUrl] }));
+    expect(result.responded).toBe(true);
+    expect(seen).toBeUndefined(); // no valid images → dispatch gets `undefined`, not an empty array
+  });
 });
 
 describe('HeadlessTurnBrainClient — single-writer + cancellation', () => {

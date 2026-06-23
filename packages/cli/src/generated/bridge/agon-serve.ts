@@ -22,17 +22,21 @@ export class AgonServe {
   private sessionId: string;
   private token: string;
   private allowedOrigins: string[];
+  private engines: string[];
+  private defaultEngineId: string;
   private server: Server|null;
   private port: number;
   private turnCounter: number;
   private turnTail: Promise<void>;
   private sse: Set<{ res: ServerResponse, ping: ReturnType<typeof setInterval>, unsubscribe: () => void }>;
 
-  constructor(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[] }) {
+  constructor(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string }) {
     this.brain = opts.brain;
     this.sessionId = opts.sessionId;
     this.token = randomUUID();
     this.allowedOrigins = opts.allowedOrigins ?? [];
+    this.engines = opts.engines ?? [];
+    this.defaultEngineId = opts.engineId ?? '';
     this.server = null;
     this.port = 0;
     this.turnCounter = 0;
@@ -109,7 +113,9 @@ export class AgonServe {
       const url = new URL(req.url ?? '/', 'http://127.0.0.1');
       const path = url.pathname;
       if (method === 'POST' && path === '/attach') {
-        this.sendJson(res, 200, { sessionId: this.sessionId, lastSeq: getSessionHost().latestSeq(this.sessionId) }, origin);
+        // engines + the current default let a client render an engine selector and
+        // drive a per-turn engine via /send { engineId } (the brain validates + falls back).
+        this.sendJson(res, 200, { sessionId: this.sessionId, lastSeq: getSessionHost().latestSeq(this.sessionId), engines: this.engines, engineId: this.defaultEngineId }, origin);
         return;
       }
       if (method === 'GET' && path === '/events') {
@@ -165,6 +171,9 @@ export class AgonServe {
     if (!input) { this.sendJson(res, 400, { error: 'missing input' }, origin); return; }
     const clientId = typeof body.clientId === 'string' ? body.clientId : 'http';
     const images = Array.isArray(body.images) ? (body.images as unknown[]).filter((x): x is string => typeof x === 'string') : undefined;
+    // Optional per-turn engine override (the brain validates against its registry and
+    // falls back to the session's bound engine on an unknown id).
+    const engineId = (typeof body.engineId === 'string' && body.engineId) ? body.engineId : undefined;
     const turnId = `${this.sessionId}-${++this.turnCounter}`;
     // Serialize sends per session: wait my turn, then publish the tail for the next.
     const prev = this.turnTail;
@@ -173,7 +182,7 @@ export class AgonServe {
     try {
       await prev;
       eventLogAppend(this.sessionId, { kind: 'provenance', clientId, origin, turnId }, { kind: 'bridge' });
-      const gen = this.brain.runTurn({ sessionId: this.sessionId, turnId, clientId, input, images });
+      const gen = this.brain.runTurn({ sessionId: this.sessionId, turnId, clientId, input, images, engineId });
       let r = await gen.next();
       while (!r.done) { eventLogAppend(this.sessionId, r.value, { kind: 'bridge' }); r = await gen.next(); }
       eventLogFlush(this.sessionId);
@@ -220,7 +229,7 @@ export class AgonServe {
 /**
  * Factory: build the loopback bridge for a session given an opened BrainClient and the session id.
  */
-// @kern-source: agon-serve:257
-export function createAgonServe(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[] }): AgonServe {
+// @kern-source: agon-serve:266
+export function createAgonServe(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string }): AgonServe {
   return new AgonServe(opts);
 }

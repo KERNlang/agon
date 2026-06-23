@@ -18,6 +18,7 @@ import {
   serveConnectionPath,
   writeServeConnectionFile,
   removeServeConnectionFile,
+  emitServeConnectionLine,
   buildServeRuntime,
   runServe,
 } from '../../packages/cli/src/generated/commands/serve.js';
@@ -92,6 +93,26 @@ describe('agon serve — session seeding + ready frame', () => {
   });
 });
 
+describe('agon serve — machine-readable connection line (--emit-connection)', () => {
+  it('emits exactly one __AGON_CONNECTION__ JSON line carrying url+token+session to stdout', () => {
+    const writes: string[] = [];
+    const orig = process.stdout.write.bind(process.stdout);
+    // @ts-expect-error narrow stub of stdout.write for capture
+    process.stdout.write = (chunk: string | Uint8Array): boolean => { writes.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf-8')); return true; };
+    try {
+      emitServeConnectionLine('http://127.0.0.1:8787', 'tok-xyz', 'serve-42', 'claude', ['chrome-extension://abc'], '/p/serve-42.json');
+    } finally {
+      process.stdout.write = orig;
+    }
+    const out = writes.join('');
+    expect(out.startsWith('__AGON_CONNECTION__ ')).toBe(true);
+    expect(out.endsWith('\n')).toBe(true);
+    expect(out.match(/__AGON_CONNECTION__/g)?.length).toBe(1); // exactly one line
+    const json = JSON.parse(out.slice('__AGON_CONNECTION__ '.length));
+    expect(json).toMatchObject({ url: 'http://127.0.0.1:8787', token: 'tok-xyz', sessionId: 'serve-42', engineId: 'claude' });
+  });
+});
+
 describe('agon serve — 0600 connection file', () => {
   it('writes a 0600 JSON file with the token + url and removes it', () => {
     const sessionId = newServeSessionId(1700000000003);
@@ -126,6 +147,10 @@ describe('agon serve — runtime wiring (integration)', () => {
       const body = await r.json();
       expect(body.sessionId).toBe(runtime.sessionId);
       expect(body.lastSeq).toBeGreaterThanOrEqual(1);
+      // The roster + bound default drive the panel's engine selector.
+      expect(Array.isArray(body.engines)).toBe(true);
+      expect(body.engines).toContain('claude');
+      expect(body.engineId).toBe('claude');
 
       // SSE replay shows the seeded boot event (fan-out off the ledger, no live engine).
       const ctrl = new AbortController();
@@ -164,7 +189,7 @@ describe('agon serve — runtime wiring (integration)', () => {
     try {
       // Must RESOLVE (not reject/hang): the bind failure is caught, the opened
       // brain is closed, and the command fails closed with exit 2.
-      await runServe(port, 'claude', []);
+      await runServe(port, 'claude', [], false);
       expect(process.exitCode).toBe(2);
     } finally {
       process.exitCode = prevExit; // don't poison the test runner's exit code

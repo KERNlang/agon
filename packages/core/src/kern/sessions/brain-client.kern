@@ -96,7 +96,7 @@ union name=BrainEvent discriminant=kind export=true
     field name=used type=number
     field name=limit type=number
   variant name=approval-request
-    doc "Projects OutputEvent 'permission-ask' — the `resolve(approved)` callback is REPLACED by `requestId`, answered out-of-band via provideApproval. `diffPreview` is carried as an opaque serializable blob mirroring the OutputEvent diffPreview."
+    doc "Projects OutputEvent 'permission-ask' — the `resolve(approved)` callback is REPLACED by `requestId`, answered out-of-band via provideApproval. `diffPreview` is carried as an opaque serializable blob mirroring the OutputEvent diffPreview. `targetClientId` (when set) names the client whose approval the brain is awaiting (the turn's submitter, by host-only arbitration) so a multi-client session routes the prompt to ONE surface: a client renders the approval ONLY when targetClientId is absent or equals its own id, and the brain rejects a provideApproval whose clientId doesn't match. This stops the browser panel from also popping a modal for a terminal-driven (`agon drive`) turn."
     field name=requestId type=string
     field name=tool type=string
     field name=command type=string
@@ -104,6 +104,7 @@ union name=BrainEvent discriminant=kind export=true
     field name=description type=string optional=true
     field name=fallbackNote type=string optional=true
     field name=diffPreview type="Record<string,unknown>" optional=true
+    field name=targetClientId type=string optional=true
   variant name=question-request
     doc "Projects OutputEvent 'question' — the `resolve(answer)` callback is REPLACED by `requestId`, answered via provideAnswer. `choices`/`defaultChoiceKey` carry the SAME menu metadata the CLI 'question' event dispatches (fork menus, escalation choices, plan approvals — see cesar/escalation.kern + cesar/brain.kern); without them a remote client would silently degrade a constrained menu into a free-text prompt. Absent `choices` = free-text question; `defaultChoiceKey` is the pre-selected option key."
     field name=requestId type=string

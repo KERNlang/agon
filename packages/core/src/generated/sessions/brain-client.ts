@@ -44,14 +44,14 @@ export type BrainEvent =
   | { kind: 'recap'; engineId: string; mode: string; outcome: string; durationMs: number; confidence?: number|null; toolCount: number }
   | { kind: 'confidence'; value: number|null }
   | { kind: 'context'; pct: number; used: number; limit: number }
-  | { kind: 'approval-request'; requestId: string; tool: string; command: string; reason: string; description?: string; fallbackNote?: string; diffPreview?: Record<string,unknown> }
+  | { kind: 'approval-request'; requestId: string; tool: string; command: string; reason: string; description?: string; fallbackNote?: string; diffPreview?: Record<string,unknown>; targetClientId?: string }
   | { kind: 'question-request'; requestId: string; prompt: string; choices?: Array<{ key: string; label: string; color?: string }>; defaultChoiceKey?: string }
   | { kind: 'capability-request'; requestId: string; capability: string; input: Record<string,unknown>; targetClientId?: string };
 
 /**
  * One unit of work submitted to the brain. The daemon serializes these per session (single-writer) via a Rooms TurnLease; concurrent submits for one session queue or are rejected per ControlCapabilities.concurrentTurns. `clientId` is the submitting surface (origin provenance — logged per-frame in the ledger, the security tripwire). `images` are references/data-URLs (serializable), matching SessionSendOptions.images.
  */
-// @kern-source: brain-client:122
+// @kern-source: brain-client:123
 export interface BrainTurnRequest {
   sessionId: string;
   turnId: string;
@@ -66,7 +66,7 @@ export interface BrainTurnRequest {
 /**
  * The terminal outcome of a turn — the serializable, core-level projection of the CLI CesarTurnOutcome (the CLI impl maps the rich outcome down to this). Returned as the AsyncGenerator return value of runTurn so the daemon can record the turn's disposition. `awaitingUserInput` true means the turn ended pending a client answer (a question/approval that was never resolved within the turn).
  */
-// @kern-source: brain-client:133
+// @kern-source: brain-client:134
 export interface BrainTurnResult {
   turnId: string;
   delegated: boolean;
@@ -81,7 +81,7 @@ export interface BrainTurnResult {
 /**
  * A client's answer to a BrainEvent 'approval-request'. `decision` mirrors the CLI onApproval contract (Promise<boolean|string>): approve/deny once, approve-session/deny-session to remember for the session, abort to cancel the turn. Arbitration: per ControlCapabilities.approvalArbitration — v1 accepts only the host client and returns { unsupported } otherwise.
  */
-// @kern-source: brain-client:146
+// @kern-source: brain-client:147
 export interface ApprovalResponse {
   sessionId: string;
   requestId: string;
@@ -92,7 +92,7 @@ export interface ApprovalResponse {
 /**
  * A client's answer to a BrainEvent 'question-request'. Arbitration per ControlCapabilities.questionArbitration (v1: host-only).
  */
-// @kern-source: brain-client:153
+// @kern-source: brain-client:154
 export interface AnswerResponse {
   sessionId: string;
   requestId: string;
@@ -103,7 +103,7 @@ export interface AnswerResponse {
 /**
  * Mid-turn input injection — the serializable replacement for the process-global steering FIFO (pushSteering/markSteeringTurn). `turnId` optional: omit to steer whatever turn is active for the session. Arbitration per ControlCapabilities.concurrentSteering (v1: host-only; end-state: broadcast/serialized across clients).
  */
-// @kern-source: brain-client:160
+// @kern-source: brain-client:161
 export interface SteerRequest {
   sessionId: string;
   clientId: string;
@@ -115,7 +115,7 @@ export interface SteerRequest {
 /**
  * Abort an in-flight turn — the serializable replacement for an AbortSignal (which cannot cross the boundary). The impl translates this into its internal AbortController.
  */
-// @kern-source: brain-client:168
+// @kern-source: brain-client:169
 export interface CancelRequest {
   sessionId: string;
   turnId: string;
@@ -126,7 +126,7 @@ export interface CancelRequest {
 /**
  * A tool a CLIENT offers TO the brain — e.g. the browser extension registering 'screenshot' or 'page-content' so the brain can inspect a live frontend. Mirrors core ToolDefinition (name/description/inputSchema/isReadOnly/isDestructive) so the brain can surface it as a normal tool; invoking it emits a BrainEvent 'capability-request' routed back to the owning client.
  */
-// @kern-source: brain-client:177
+// @kern-source: brain-client:178
 export interface CapabilitySpec {
   name: string;
   description: string;
@@ -135,14 +135,14 @@ export interface CapabilitySpec {
   isDestructive?: boolean;
 }
 
-// @kern-source: brain-client:185
+// @kern-source: brain-client:186
 export interface CapabilityRegistration {
   sessionId: string;
   clientId: string;
   spec: CapabilitySpec;
 }
 
-// @kern-source: brain-client:190
+// @kern-source: brain-client:191
 export interface CapabilityUnregister {
   sessionId: string;
   clientId: string;
@@ -152,7 +152,7 @@ export interface CapabilityUnregister {
 /**
  * A client's reply to a BrainEvent 'capability-request' (e.g. the browser returning a screenshot data-URL in `output`). `ok=false` with `error` surfaces a capture failure to the brain so it can recover instead of hanging.
  */
-// @kern-source: brain-client:195
+// @kern-source: brain-client:196
 export interface CapabilityResult {
   sessionId: string;
   requestId: string;
@@ -165,7 +165,7 @@ export interface CapabilityResult {
 /**
  * What the daemon hands the brain at open(). `ledgerPath` lets a native headless brain append directly to the same event ledger the daemon fans out; a subprocess impl may instead stream BrainEvents back over its stdio and let the daemon append.
  */
-// @kern-source: brain-client:206
+// @kern-source: brain-client:207
 export interface BrainClientConfig {
   sessionId: string;
   engineId: string;
@@ -177,7 +177,7 @@ export interface BrainClientConfig {
 /**
  * Liveness/occupancy for the daemon's supervisor — so it can restart a crashed CLI host (and Electron can bundle a hidden host). `activeTurnId` null = idle; `queuedTurns` is the single-writer backlog.
  */
-// @kern-source: brain-client:214
+// @kern-source: brain-client:215
 export interface BrainHealth {
   alive: boolean;
   engineId: string;
@@ -190,7 +190,7 @@ export interface BrainHealth {
 /**
  * The boundary the daemon uses to drive a brain. v1 implementation wraps the CLI `handleCesarBrain` in a spawned subprocess; vN is a native headless brain — same interface, swapped behind it. Every method is serializable end-to-end (no callbacks, no AbortSignal, no CLI types). `controlCapabilities` is declared statically so the daemon can route/refuse before dispatch. `runTurn` is the single-writer WRITE path (daemon serializes per session) and streams BrainEvents with a BrainTurnResult return; the inbound control methods (steer/provideApproval/provideAnswer/provideCapabilityResult/cancel) answer the *-request BrainEvents by requestId; the capability methods let clients lend tools to the brain; notifyClient* keeps the brain's live client set current for arbitration and capability routing. Consume runTurn by draining the generator (for-await over the BrainEvents); the terminal BrainTurnResult is the generator's RETURN value — the `value` of the final next(), not a yielded event.
  */
-// @kern-source: brain-client:225
+// @kern-source: brain-client:226
 export interface BrainClient {
   controlCapabilities: ControlCapabilities;
   open: (config: BrainClientConfig) => Promise<void>;
@@ -211,7 +211,7 @@ export interface BrainClient {
 /**
  * The honest support matrix for the v1 brain (one CLI host behind the daemon). Turns serialize per session; steering, approvals and questions are HOST-ONLY (a non-host client's control message gets { status: 'unsupported' }); cancellation is per-turn; client-provided capabilities ARE supported so the browser-extension screenshot/page-content path works in v1. Widening any axis later is an implementation change behind the unchanged BrainClient interface — never a re-spec.
  */
-// @kern-source: brain-client:244
+// @kern-source: brain-client:245
 export function conservativeControlCapabilities(): ControlCapabilities {
   return {
     concurrentTurns: 'per-session-serialized',

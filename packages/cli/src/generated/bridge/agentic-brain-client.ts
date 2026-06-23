@@ -334,7 +334,10 @@ export class AgenticTurnBrainClient implements BrainClient {
             continue;
           }
           const apId = randomUUID();
-          const ask: BrainEvent = { kind: 'approval-request', requestId: apId, tool: call.name, command: describeAgentAction(call.name, call.input), reason: cap.spec.description };
+          // targetClientId = the turn submitter: the brain awaits THIS client's approval
+          // (host-only arbitration), so naming it lets every other SSE-subscribed client
+          // (e.g. the browser panel for an `agon drive` turn) skip rendering the prompt.
+          const ask: BrainEvent = { kind: 'approval-request', requestId: apId, tool: call.name, command: describeAgentAction(call.name, call.input), reason: cap.spec.description, targetClientId: req.clientId };
           yield ask;
           let decision: string;
           try { decision = await this.waitForApproval(apId, req.clientId, ctrl.signal); }
@@ -493,7 +496,7 @@ export class AgenticTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: agentic-brain-client:519
+// @kern-source: agentic-brain-client:522
 export function createAgenticTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new AgenticTurnBrainClient(registry);
 }

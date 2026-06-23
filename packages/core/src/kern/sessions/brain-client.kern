@@ -128,6 +128,7 @@ interface name=BrainTurnRequest
   field name=images type="string[]" optional=true
   field name=hintClass type="'code'|'question'|'ambiguous'" optional=true
   field name=mode type=string optional=true
+  field name=engineId type=string optional=true
 
 interface name=BrainTurnResult
   doc "The terminal outcome of a turn — the serializable, core-level projection of the CLI CesarTurnOutcome (the CLI impl maps the rich outcome down to this). Returned as the AsyncGenerator return value of runTurn so the daemon can record the turn's disposition. `awaitingUserInput` true means the turn ended pending a client answer (a question/approval that was never resolved within the turn)."

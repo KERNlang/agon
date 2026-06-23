@@ -175,14 +175,16 @@ export async function buildServeRuntime(opts: ServeOptions): Promise<ServeRuntim
 
   seedServeSession(sessionId, opts.engineId);
 
-  const serve = createAgonServe({ brain, sessionId, allowedOrigins: opts.allowedOrigins });
+  // Hand the bridge the full engine roster + the bound default so an attached client
+  // can offer an engine selector and drive a per-turn engine via /send { engineId }.
+  const serve = createAgonServe({ brain, sessionId, allowedOrigins: opts.allowedOrigins, engines: registry.listIds(), engineId: opts.engineId });
   return { serve, brain, sessionId, engineId: opts.engineId };
 }
 
 /**
  * Print the connection card once: URL, bearer token, the 0600 connection-file path, owned session + engine, allowed Origins, and ready-to-paste attach/smoke hints. Warns loudly when the allowlist is empty (no browser can connect until you pass --origin).
  */
-// @kern-source: serve:178
+// @kern-source: serve:180
 function printServeBanner(url: string, token: string, tokenPath: string, sessionId: string, engineId: string, allowedOrigins: string[]): void {
   header('agon serve — bridge up');
   info(`  ${bold('url')}      ${cyan(url)}`);
@@ -201,10 +203,18 @@ function printServeBanner(url: string, token: string, tokenPath: string, session
 }
 
 /**
+ * Print ONE machine-readable connection line to stdout, prefixed __AGON_CONNECTION__, so the native-messaging host reads the url+token directly instead of scraping the ANSI banner or guessing the fresh sessionId. Gated by serve's --emit-connection so a human run is never cluttered.
+ */
+// @kern-source: serve:199
+export function emitServeConnectionLine(url: string, token: string, sessionId: string, engineId: string, allowedOrigins: string[], file: string): void {
+  process.stdout.write(`__AGON_CONNECTION__ ${JSON.stringify({ url, token, sessionId, engineId, allowedOrigins, file })}\n`);
+}
+
+/**
  * The foreground command: resolve + validate the engine, assemble the runtime, bind the loopback port, write the 0600 connection file, record the ready/provenance frame, print the connection card, then HOLD the process open until Ctrl+C / SIGTERM — on which it tears down in order (serve.close stops intake + ends SSE → brain.close aborts any in-flight turn → flush ledger → remove the connection file) and resolves. An engine/bind failure sets exit code 2 and returns without starting. stdin is resumed to keep the event loop alive (the bridge's timers are unref'd), then restored on exit, mirroring `agon attach`'s follow loop.
  */
-// @kern-source: serve:197
-export async function runServe(port: number, engine: string|undefined, allowedOrigins: string[]): Promise<void> {
+// @kern-source: serve:205
+export async function runServe(port: number, engine: string|undefined, allowedOrigins: string[], emitConnection: boolean): Promise<void> {
   ensureAgonHome();
   const cwd = process.cwd();
   const engineId = resolveServeEngine(engine, cwd);
@@ -226,7 +236,13 @@ export async function runServe(port: number, engine: string|undefined, allowedOr
   try {
     const started = await runtime.serve.start(port);
     const tokenPath = writeServeConnectionFile(runtime.sessionId, started.url, started.token, engineId, allowedOrigins);
+    // Record the provenance frame BEFORE handing out the URL: a client that reads the
+    // machine-readable line and immediately attaches must find the "which brain @ where"
+    // frame already in the ledger (the documented verify-before-you-send invariant).
     recordServeReady(runtime.sessionId, engineId, started.url, allowedOrigins);
+    // Machine-readable handoff (the native host reads this line), then the human banner.
+    // Gated so a normal `agon serve` is unchanged.
+    if (emitConnection) emitServeConnectionLine(started.url, started.token, runtime.sessionId, engineId, allowedOrigins, tokenPath);
     printServeBanner(started.url, started.token, tokenPath, runtime.sessionId, engineId, allowedOrigins);
   } catch (err) {
     warn(`failed to start: ${err instanceof Error ? err.message : String(err)}`);
@@ -270,7 +286,7 @@ export async function runServe(port: number, engine: string|undefined, allowedOr
   });
 }
 
-// @kern-source: serve:267
+// @kern-source: serve:281
 export const serveCommand: any = defineCommand({
   meta: {
     name: 'serve',
@@ -299,8 +315,13 @@ export const serveCommand: any = defineCommand({
       description: 'RESERVED — binding an existing session is not supported in v1 (would split-brain writes). Lands as read-only tail later.',
       required: false,
     },
+    'emit-connection': {
+      type: 'boolean',
+      description: 'Print one machine-readable __AGON_CONNECTION__ {json} line on ready (for the native-messaging host). Off by default.',
+      required: false,
+    },
   },
-  async run({ args }: { args: { port?: string; engine?: string; origin?: string | string[]; session?: string } }) {
+  async run({ args }: { args: { port?: string; engine?: string; origin?: string | string[]; session?: string; 'emit-connection'?: boolean } }) {
     ensureAgonHome();
     // --session is reserved + refused in v1 (the brainstorm's FORK-1 verdict):
     // a browser turn on an existing session would be answered by THIS single-
@@ -318,6 +339,6 @@ export const serveCommand: any = defineCommand({
     }
     const port = validPort ? Math.floor(rawPort) : 0;
     const allowedOrigins = parseOrigins(args.origin);
-    await runServe(port, args.engine, allowedOrigins);
+    await runServe(port, args.engine, allowedOrigins, args['emit-connection'] === true);
   },
 });

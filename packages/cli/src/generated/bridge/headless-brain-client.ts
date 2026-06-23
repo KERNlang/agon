@@ -63,11 +63,18 @@ export class HeadlessTurnBrainClient implements BrainClient {
     // `yield { ...objectLiteral }` is mis-parsed and the literal's keys are flagged
     // as undeclared references. Workaround: assign each BrainEvent to a typed const
     // and `yield` the variable (the pattern adapter.kern's dispatchStream uses).
+    //
+    // Per-turn engine override: a client (e.g. the browser panel's engine selector)
+    // may choose WHICH engine answers THIS turn via req.engineId. The registry holds
+    // every engine and runTurn already resolves per-turn, so honor a VALID override
+    // and fall back to the session's bound engine on an unknown/absent id. This is
+    // the seam that makes the bridge multi-engine without re-opening the brain.
+    const turnEngineId = (req.engineId && this.registry.listIds().includes(req.engineId)) ? req.engineId : this.engineId;
     if (this.activeTurnId !== null) {
       const reason = `brain busy with turn ${this.activeTurnId} (single-writer)`;
       const busy: BrainEvent = { kind: 'notice', level: 'error', message: reason };
       yield busy;
-      return { turnId: req.turnId, delegated: false, responded: false, engineId: this.engineId, reason };
+      return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
     }
     this.activeTurnId = req.turnId;
     const ctrl = new AbortController();
@@ -80,7 +87,7 @@ export class HeadlessTurnBrainClient implements BrainClient {
     const safeTurn = req.turnId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200) || 'turn';
     const turnDir = join(tmpdir(), 'agon-brain-turns', safeTurn);
     try {
-      const engine = this.registry.get(this.engineId);
+      const engine = this.registry.get(turnEngineId);
       // User-initiated vision input (a screenshot the client attached to the turn).
       // The engine sees it IF it is vision-capable — that is the frontend-inspector
       // flow. The brain autonomously PULLING a client capability mid-turn is the
@@ -113,7 +120,7 @@ export class HeadlessTurnBrainClient implements BrainClient {
           if (att) images.push(att);
         }
       }
-      const working: BrainEvent = { kind: 'notice', level: 'info', message: `${this.engineId} working…` };
+      const working: BrainEvent = { kind: 'notice', level: 'info', message: `${turnEngineId} working…` };
       yield working;
       const result = await this.adapter.dispatch({
         engine,
@@ -128,18 +135,18 @@ export class HeadlessTurnBrainClient implements BrainClient {
       });
       const answer = (result.stdout || '').trim();
       if (result.exitCode === 0 && !result.timedOut && answer.length > 0) {
-        const ans: BrainEvent = { kind: 'engine', engineId: this.engineId, content: answer };
+        const ans: BrainEvent = { kind: 'engine', engineId: turnEngineId, content: answer };
         yield ans;
-        return { turnId: req.turnId, delegated: false, responded: true, engineId: this.engineId };
+        return { turnId: req.turnId, delegated: false, responded: true, engineId: turnEngineId };
       }
       const reason = ctrl.signal.aborted
         ? 'cancelled by client'
         : result.timedOut
-          ? `${this.engineId} timed out`
-          : `${this.engineId} produced no answer (exit ${result.exitCode})`;
+          ? `${turnEngineId} timed out`
+          : `${turnEngineId} produced no answer (exit ${result.exitCode})`;
       const note: BrainEvent = { kind: 'notice', level: ctrl.signal.aborted ? 'warning' : 'error', message: reason };
       yield note;
-      return { turnId: req.turnId, delegated: false, responded: false, engineId: this.engineId, reason };
+      return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
     } catch (err) {
       // An adapter that REJECTS with an AbortError on cancel must still read as a
       // cancel, not a generic failure.
@@ -147,12 +154,12 @@ export class HeadlessTurnBrainClient implements BrainClient {
         const reason = 'cancelled by client';
         const cancelled: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
         yield cancelled;
-        return { turnId: req.turnId, delegated: false, responded: false, engineId: this.engineId, reason };
+        return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
       }
       const reason = `turn failed: ${err instanceof Error ? err.message : String(err)}`;
       const failed: BrainEvent = { kind: 'notice', level: 'error', message: reason };
       yield failed;
-      return { turnId: req.turnId, delegated: false, responded: false, engineId: this.engineId, reason };
+      return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
     } finally {
       this.aborts.delete(req.turnId);
       if (this.activeTurnId === req.turnId) this.activeTurnId = null;
@@ -213,7 +220,7 @@ export class HeadlessTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring the session-factory idiom (createXxxSession): build the v1 single-engine BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: headless-brain-client:245
+// @kern-source: headless-brain-client:252
 export function createHeadlessTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new HeadlessTurnBrainClient(registry);
 }

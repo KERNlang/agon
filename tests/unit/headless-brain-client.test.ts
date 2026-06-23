@@ -221,3 +221,48 @@ describe('HeadlessTurnBrainClient — honest capability surface', () => {
     expect(typeof h.uptimeMs).toBe('number');
   });
 });
+
+describe('HeadlessTurnBrainClient — per-turn engine override', () => {
+  // A registry stub WITH listIds (the resolver checks the override against it).
+  function makeClientWithRoster(roster: string[], onGet?: (id: string) => void): HeadlessTurnBrainClient {
+    const registry = {
+      get: (id: string) => { onGet?.(id); return { id }; },
+      listIds: () => roster,
+    } as unknown as EngineRegistry;
+    const client = new HeadlessTurnBrainClient(registry);
+    (client as unknown as { adapter: EngineAdapter }).adapter = { dispatch: async () => ok('answer'), isAvailable: async () => true } as unknown as EngineAdapter;
+    return client;
+  }
+
+  it('a valid req.engineId overrides the bound engine for that turn (answer + result + dispatch all use it)', async () => {
+    let dispatchedEngine: string | undefined;
+    const client = makeClientWithRoster(['claude', 'codex'], (id) => { dispatchedEngine = id; });
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+
+    const { events, result } = await drain(client.runTurn({ sessionId: 's', turnId: 't1', clientId: 'c', input: 'hi', engineId: 'codex' }));
+    expect(events.find((e) => e.kind === 'engine')).toMatchObject({ engineId: 'codex' });
+    expect(result).toMatchObject({ responded: true, engineId: 'codex' });
+    expect(dispatchedEngine).toBe('codex'); // registry.get resolved the OVERRIDE, not the bound engine
+  });
+
+  it('an unknown req.engineId falls back to the session-bound engine', async () => {
+    const client = makeClientWithRoster(['claude', 'codex']);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    const { result } = await drain(client.runTurn({ sessionId: 's', turnId: 't1', clientId: 'c', input: 'hi', engineId: 'ghost-engine' }));
+    expect(result).toMatchObject({ responded: true, engineId: 'claude' }); // not in the roster → bound engine
+  });
+
+  it('no req.engineId answers with the bound engine and never consults the roster', async () => {
+    let listIdsCalled = false;
+    const registry = {
+      get: (id: string) => ({ id }),
+      listIds: () => { listIdsCalled = true; return ['claude']; },
+    } as unknown as EngineRegistry;
+    const client = new HeadlessTurnBrainClient(registry);
+    (client as unknown as { adapter: EngineAdapter }).adapter = { dispatch: async () => ok('a'), isAvailable: async () => true } as unknown as EngineAdapter;
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    const { result } = await drain(client.runTurn({ sessionId: 's', turnId: 't1', clientId: 'c', input: 'hi' }));
+    expect(result).toMatchObject({ engineId: 'claude' });
+    expect(listIdsCalled).toBe(false); // short-circuit: no override → no roster lookup
+  });
+});

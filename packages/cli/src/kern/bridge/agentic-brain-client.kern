@@ -35,6 +35,7 @@ import from="node:crypto" names="randomUUID"
 
 const name=AGENT_TOOL_MARKER type=string value={{ '__AGON_TOOL__' }} export=true
 const name=MAX_AGENT_STEPS type=number value={{ 8 }} export=true
+const name=MAX_NARRATION_RETRIES type=number value={{ 2 }} export=true
 const name=CAPABILITY_RESULT_TIMEOUT_MS type=number value={{ 60_000 }}
 const name=APPROVAL_TIMEOUT_MS type=number value={{ 180_000 }}
 
@@ -99,11 +100,18 @@ fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string" ret
     }
     lines.push(
       '',
-      'TO USE A TOOL, reply with EXACTLY one line and nothing else:',
+      'HOW TO ACT — this is strict. To use a tool, your reply MUST be EXACTLY one line,',
+      'the tool call, and NOTHING ELSE (no preamble, no explanation):',
       `${AGENT_TOOL_MARKER} {"name":"<toolName>","input":{ ... }}`,
-      'Use ONE tool per step. You will then receive its result and may call another tool or answer.',
-      'Read the page before acting on it. Never fabricate a tool result or claim an action you did not take.',
-      'When you have the final answer for the user, reply normally in prose with NO tool line.',
+      '',
+      `Example — read the page:   ${AGENT_TOOL_MARKER} {"name":"readPage","input":{}}`,
+      `Example — click a button:  ${AGENT_TOOL_MARKER} {"name":"click","input":{"selector":"#submit"}}`,
+      '',
+      'CRITICAL: Do NOT narrate ("Let me…", "I will…", "I\'m going to…") and then stop —',
+      'narration alone does NOTHING; only a tool line acts. If you intend to act, EMIT THE',
+      'TOOL LINE NOW. One tool per step — you then get its result and may call another tool.',
+      'Read the page before acting on it. Never fabricate a result or claim an action you',
+      'did not take. Reply in prose ONLY when giving the user your FINAL answer (no tool line).',
     );
     return lines.join('\n');
   >>>
@@ -123,6 +131,16 @@ fn name=renderAgentTranscript params="userInput:string, steps:Array<{ name: stri
     }
     lines.push('', 'Based on the results above, call the next tool or give your final answer.');
     return lines.join('\n');
+  >>>
+
+fn name=looksLikeActionIntent params="text:string" returns="boolean" export=true
+  doc "True when an engine's reply DESCRIBES an action ('Let me navigate…', 'I'll click…') but emitted no tool call — a short intent preamble, not a final answer. Used to NUDGE the engine to actually emit the tool line instead of treating the narration as a final answer (the common weak-engine failure). Looks only at the head + caps length to avoid matching a real prose answer that happens to say 'review' or 'let me know'."
+  handler <<<
+    const head = text.trim().slice(0, 200).toLowerCase();
+    if (/\blet me know\b/.test(head)) return false; // a sign-off, not an action
+    const intent = /\b(let me|i'?ll|i will|i'?m going to|i am going to|let's|first,? i|now i'?ll|going to)\b/.test(head);
+    const verb = /\b(navigat|click|type|go to|open|fill|select|read|review|look at|check|press|scroll|enter|search|find)\b/.test(head);
+    return intent && verb && text.trim().length < 500;
   >>>
 
 fn name=describeAgentAction params="name:string, input:Record<string, unknown>" returns="string" export=true
@@ -263,6 +281,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
         const sysPrompt = buildAgentSystemPrompt(tools, this.systemPrompt);
         const steps: Array<{ name: string; input: Record<string, unknown>; output: string }> = [];
         let imgSeq = rawImages.length;
+        let narrationRetries = 0; // budget for nudging an engine that narrates an action but emits no tool call
 
         for (let step = 0; step < MAX_AGENT_STEPS; step++) {
           if (ctrl.signal.aborted) break;
@@ -287,7 +306,17 @@ service name=AgenticTurnBrainClient implements=BrainClient
 
           const call = parseAgentToolCall(stdout);
           if (!call) {
-            // No tool call → the engine's final answer.
+            // No tool call. If the engine NARRATED an action ("Let me navigate…") but emitted
+            // no tool line, nudge it to actually act instead of ending — the common weak-engine
+            // failure where the agent says it will do something and then stops. Bounded retries.
+            if (tools.length > 0 && narrationRetries < MAX_NARRATION_RETRIES && looksLikeActionIntent(stdout)) {
+              narrationRetries++;
+              const nudge: BrainEvent = { kind: 'notice', level: 'warning', message: 'the engine described an action but sent no tool call — asking it to actually act' };
+              yield nudge;
+              steps.push({ name: 'reminder', input: {}, output: `You said: "${stdout.trim().slice(0, 160)}" — but you emitted NO tool call, so nothing happened. To act, your NEXT reply must be EXACTLY one ${AGENT_TOOL_MARKER} {"name":...,"input":...} line and nothing else. If you are truly finished, give your final prose answer.` });
+              continue;
+            }
+            // Otherwise it's the engine's final answer.
             const ans: BrainEvent = { kind: 'engine', engineId: turnEngineId, content: stdout };
             yield ans;
             return { turnId: req.turnId, delegated: false, responded: true, engineId: turnEngineId };

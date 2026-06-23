@@ -7,6 +7,7 @@ import {
   buildAgentSystemPrompt,
   renderAgentTranscript,
   describeAgentAction,
+  looksLikeActionIntent,
   AGENT_TOOL_MARKER as MARK,
 } from '../../packages/cli/src/generated/bridge/agentic-brain-client.js';
 import type { BrainEvent, BrainTurnResult, EngineAdapter, EngineRegistry, CapabilitySpec } from '@kernlang/agon-core';
@@ -105,6 +106,13 @@ describe('agent prompt + transcript helpers', () => {
     expect(describeAgentAction('click', { selector: '#buy' })).toBe('click({"selector":"#buy"})');
     expect(describeAgentAction('type', { v: 'x'.repeat(500) }).length).toBeLessThanOrEqual(170 + 'type()'.length);
   });
+  it('looksLikeActionIntent flags a "Let me…" preamble but not a real final answer', () => {
+    expect(looksLikeActionIntent('Let me navigate to your LinkedIn profile to review it.')).toBe(true);
+    expect(looksLikeActionIntent("I'll click the submit button now.")).toBe(true);
+    expect(looksLikeActionIntent('Your profile looks strong — clear headline and a good photo.')).toBe(false);
+    expect(looksLikeActionIntent('Done. Let me know if you want me to review a specific section.')).toBe(false);
+    expect(looksLikeActionIntent('Here is my detailed review of the page. '.repeat(40))).toBe(false); // too long = a real answer
+  });
 });
 
 describe('AgenticTurnBrainClient — the ReAct loop', () => {
@@ -198,6 +206,34 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     });
     expect(approvalAsked).toBe(true); // gated despite isDestructive omitted (default-deny)
     expect(events.some((e) => e.kind === 'approval-request')).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
+  it('nudges an engine that narrates an action without a tool call, then it acts', async () => {
+    const client = makeAgent([
+      'Let me navigate to your profile to review it.', // narration, no tool → nudge
+      `${MARK} {"name":"readPage","input":{}}`,         // now it actually acts
+      'Your profile looks good.',                       // final answer
+    ]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: () => ({ ok: true, output: 'PAGE' }),
+      approval: () => 'approve',
+    });
+    expect(events.some((e) => e.kind === 'notice' && /tool call/.test((e as { message: string }).message))).toBe(true);
+    expect(events.some((e) => e.kind === 'capability-request')).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
+  it('gives up nudging after the retry budget and returns the prose (no infinite loop)', async () => {
+    const client = makeAgent(['Let me click the button.']); // always narrates, never emits a tool
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true }), approval: () => 'approve' });
+    const nudges = events.filter((e) => e.kind === 'notice' && /tool call/.test((e as { message: string }).message)).length;
+    expect(nudges).toBe(2); // MAX_NARRATION_RETRIES — bounded
+    expect(events.find((e) => e.kind === 'engine')).toMatchObject({ content: 'Let me click the button.' });
     expect(result.responded).toBe(true);
   });
 

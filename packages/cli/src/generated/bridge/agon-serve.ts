@@ -231,6 +231,13 @@ export class AgonServe {
       isReadOnly: spec.isReadOnly === true,
       isDestructive: spec.isDestructive === true,
     };
+    // Bound a single tool spec: its name/description/inputSchema are serialized into
+    // EVERY subsequent dispatch's system prompt, so an unbounded spec would inflate the
+    // token cost of the whole turn. 4 KiB is generous for a real tool, tiny for an attack.
+    if (JSON.stringify(clean).length > 4096) {
+      this.sendJson(res, 400, { error: 'capability spec too large (max 4096 bytes)' }, origin);
+      return;
+    }
     const ack = await this.brain.registerCapability({ sessionId: this.sessionId, clientId, spec: clean });
     this.sendJson(res, 200, ack, origin);
   }
@@ -295,7 +302,7 @@ export class AgonServe {
 /**
  * Factory: build the loopback bridge for a session given an opened BrainClient and the session id.
  */
-// @kern-source: agon-serve:339
+// @kern-source: agon-serve:346
 export function createAgonServe(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string }): AgonServe {
   return new AgonServe(opts);
 }

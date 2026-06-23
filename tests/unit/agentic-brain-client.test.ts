@@ -186,6 +186,21 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     expect(result.responded).toBe(true);
   });
 
+  it('FAIL-SAFE gate: a tool that is not explicitly read-only is gated even without isDestructive', async () => {
+    const client = makeAgent([`${MARK} {"name":"mutate","input":{}}`, 'did it']);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    // Neither isReadOnly:true nor isDestructive:true — a mis-/under-declared mutating tool.
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: { name: 'mutate', description: 'changes things', inputSchema: {}, isReadOnly: false } });
+    let approvalAsked = false;
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: () => ({ ok: true, output: 'ok' }),
+      approval: () => { approvalAsked = true; return 'approve'; },
+    });
+    expect(approvalAsked).toBe(true); // gated despite isDestructive omitted (default-deny)
+    expect(events.some((e) => e.kind === 'approval-request')).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
   it('an unknown tool is reported back and the loop recovers to an answer', async () => {
     const client = makeAgent([`${MARK} {"name":"teleport","input":{}}`, 'I cannot do that here.']);
     await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
@@ -252,6 +267,31 @@ describe('AgenticTurnBrainClient — control surface', () => {
     while (!fin.done) fin = await gen.next();
     expect((fin.value as BrainTurnResult).responded).toBe(false);
     expect((fin.value as BrainTurnResult).reason).toBe('cancelled by client');
+  });
+
+  it('ownership: a capability result from a non-owner client is rejected; the owner is accepted', async () => {
+    const client = makeAgent([`${MARK} {"name":"readPage","input":{}}`, 'done reading']);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'owner', spec: readSpec() });
+    const gen = client.runTurn({ sessionId: 's', turnId: 't1', clientId: 'owner', input: 'read it' });
+    let attackerAck = '';
+    let ownerAck = '';
+    let r = await gen.next();
+    while (!r.done) {
+      if (r.value.kind === 'capability-request') {
+        const reqId = (r.value as { requestId: string }).requestId;
+        queueMicrotask(async () => {
+          // A second token-holding client (different clientId) cannot answer the request…
+          attackerAck = (await client.provideCapabilityResult({ sessionId: 's', requestId: reqId, clientId: 'attacker', ok: true, output: 'X' })).status;
+          // …but the owner can, and the turn then completes.
+          ownerAck = (await client.provideCapabilityResult({ sessionId: 's', requestId: reqId, clientId: 'owner', ok: true, output: 'PAGE' })).status;
+        });
+      }
+      r = await gen.next();
+    }
+    expect(attackerAck).toBe('rejected');
+    expect(ownerAck).toBe('accepted');
+    expect((r.value as BrainTurnResult).responded).toBe(true);
   });
 
   it('factory builds an interface-conformant agent reporting liveness', async () => {

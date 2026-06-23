@@ -90,9 +90,11 @@ fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string" ret
       lines.push('  (none registered — answer from your own knowledge.)');
     } else {
       for (const t of tools) {
-        const tag = t.isDestructive ? '(ACTS on the page — the user must approve)' : '(read-only)';
+        // Label by isReadOnly (fail-safe): anything NOT explicitly read-only ACTS and is
+        // gated — matching the runTurn gate, so the engine never sees a mutating tool as "read-only".
+        const tag = t.isReadOnly ? '(read-only)' : '(ACTS on the page — the user must approve)';
         lines.push(`- ${t.name} ${tag}: ${t.description}`);
-        lines.push(`    input: ${JSON.stringify(t.inputSchema)}`);
+        lines.push(`    input: ${JSON.stringify(t.inputSchema).slice(0, 800)}`);
       }
     }
     lines.push(
@@ -145,8 +147,8 @@ service name=AgenticTurnBrainClient implements=BrainClient
   field name=activeTurnId type="string|null" private=true
   field name=aborts type="Map<string, AbortController>" private=true
   field name=caps type="Map<string, { clientId: string; spec: CapabilitySpec }>" private=true
-  field name=pendingCaps type="Map<string, (r: CapabilityResult) => void>" private=true
-  field name=pendingApprovals type="Map<string, (decision: string) => void>" private=true
+  field name=pendingCaps type="Map<string, { clientId: string; resolve: (r: CapabilityResult) => void }>" private=true
+  field name=pendingApprovals type="Map<string, { clientId: string; resolve: (decision: string) => void }>" private=true
   field name=approvedSession type="Set<string>" private=true
   field name=deniedSession type="Set<string>" private=true
   field name=controlCapabilities type=ControlCapabilities
@@ -189,8 +191,8 @@ service name=AgenticTurnBrainClient implements=BrainClient
       this.systemPrompt = config.systemPrompt;
     >>>
 
-  method name=waitForCapabilityResult params="requestId:string, signal:AbortSignal" returns="Promise<CapabilityResult>" async=true private=true
-    doc "Suspend the turn until the owning client POSTs its CapabilityResult (provideCapabilityResult resolves the pending entry by requestId). Rejects on the turn's abort or after CAPABILITY_RESULT_TIMEOUT_MS so a closed/unresponsive panel can never hang the brain."
+  method name=waitForCapabilityResult params="requestId:string, ownerClientId:string, signal:AbortSignal" returns="Promise<CapabilityResult>" async=true private=true
+    doc "Suspend the turn until the OWNING client (ownerClientId — the one that registered the tool) POSTs its CapabilityResult; provideCapabilityResult resolves the pending entry by requestId only when the reply's clientId matches. Rejects on the turn's abort or after CAPABILITY_RESULT_TIMEOUT_MS so a closed/unresponsive panel can never hang the brain."
     handler <<<
       return new Promise<CapabilityResult>((resolve, reject) => {
         if (signal.aborted) { reject(new Error('aborted')); return; }
@@ -198,12 +200,12 @@ service name=AgenticTurnBrainClient implements=BrainClient
         const onAbort = () => { this.pendingCaps.delete(requestId); clearTimeout(timer); reject(new Error('aborted')); };
         timer = setTimeout(() => { this.pendingCaps.delete(requestId); signal.removeEventListener('abort', onAbort); reject(new Error('timeout')); }, CAPABILITY_RESULT_TIMEOUT_MS);
         signal.addEventListener('abort', onAbort, { once: true });
-        this.pendingCaps.set(requestId, (r: CapabilityResult) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(r); });
+        this.pendingCaps.set(requestId, { clientId: ownerClientId, resolve: (r: CapabilityResult) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(r); } });
       });
     >>>
 
-  method name=waitForApproval params="requestId:string, signal:AbortSignal" returns="Promise<string>" async=true private=true
-    doc "Suspend the turn until the user answers the approval-request (provideApproval resolves by requestId with the decision). Rejects on abort; on APPROVAL_TIMEOUT_MS resolves to 'deny' (a no-answer is a safe no, not a hang)."
+  method name=waitForApproval params="requestId:string, ownerClientId:string, signal:AbortSignal" returns="Promise<string>" async=true private=true
+    doc "Suspend the turn until the OWNING client (ownerClientId — the turn's submitter, the host for v1) answers the approval-request; provideApproval resolves by requestId only when the reply's clientId matches (host-only arbitration). Rejects on abort; on APPROVAL_TIMEOUT_MS resolves to 'deny' (a no-answer is a safe no, not a hang)."
     handler <<<
       return new Promise<string>((resolve, reject) => {
         if (signal.aborted) { reject(new Error('aborted')); return; }
@@ -211,7 +213,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
         const onAbort = () => { this.pendingApprovals.delete(requestId); clearTimeout(timer); reject(new Error('aborted')); };
         timer = setTimeout(() => { this.pendingApprovals.delete(requestId); signal.removeEventListener('abort', onAbort); resolve('deny'); }, APPROVAL_TIMEOUT_MS);
         signal.addEventListener('abort', onAbort, { once: true });
-        this.pendingApprovals.set(requestId, (decision: string) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(decision); });
+        this.pendingApprovals.set(requestId, { clientId: ownerClientId, resolve: (decision: string) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(decision); } });
       });
     >>>
 
@@ -301,8 +303,10 @@ service name=AgenticTurnBrainClient implements=BrainClient
           const running: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'running', input: describeAgentAction(call.name, call.input) };
           yield running;
 
-          // Approval gate for destructive tools (skipped if approved-for-session).
-          if (cap.spec.isDestructive && !this.approvedSession.has(call.name)) {
+          // Approval gate — FAIL-SAFE: gate anything that is not EXPLICITLY read-only
+          // (a tool the client mis-/under-declares still asks, never silently acts).
+          // Skipped only once the user approved this tool for the session.
+          if (!cap.spec.isReadOnly && !this.approvedSession.has(call.name)) {
             if (this.deniedSession.has(call.name)) {
               const denied: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: 'denied for this session' };
               yield denied;
@@ -313,7 +317,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
             const ask: BrainEvent = { kind: 'approval-request', requestId: apId, tool: call.name, command: describeAgentAction(call.name, call.input), reason: cap.spec.description };
             yield ask;
             let decision: string;
-            try { decision = await this.waitForApproval(apId, ctrl.signal); }
+            try { decision = await this.waitForApproval(apId, req.clientId, ctrl.signal); }
             catch {
               const reason = 'cancelled by client';
               const note: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
@@ -342,7 +346,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
           const capReq: BrainEvent = { kind: 'capability-request', requestId: reqId, capability: call.name, input: call.input, targetClientId: cap.clientId };
           yield capReq;
           let capRes: CapabilityResult;
-          try { capRes = await this.waitForCapabilityResult(reqId, ctrl.signal); }
+          try { capRes = await this.waitForCapabilityResult(reqId, cap.clientId, ctrl.signal); }
           catch (err) {
             const aborted = ctrl.signal.aborted;
             const failNote: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: aborted ? 'cancelled' : 'the browser did not respond' };
@@ -417,28 +421,33 @@ service name=AgenticTurnBrainClient implements=BrainClient
     >>>
 
   method name=unregisterCapability params="req:CapabilityUnregister" returns="Promise<ControlAck>" async=true
+    doc "Ownership-checked: a client may only unregister a tool IT registered, so one attached client can't strip another's capabilities."
     handler <<<
+      const existing = this.caps.get(req.name);
+      if (existing && existing.clientId !== req.clientId) return { status: 'rejected', reason: `capability "${req.name}" is owned by another client` };
       this.caps.delete(req.name);
       return { status: 'accepted' };
     >>>
 
   method name=provideCapabilityResult params="res:CapabilityResult" returns="Promise<ControlAck>" async=true
-    doc "A client's reply to a capability-request — resolves the pending turn await by requestId. Rejected (not unsupported) if no such request is outstanding (stale/duplicate)."
+    doc "A client's reply to a capability-request — resolves the pending turn await by requestId, but ONLY when the reply's clientId matches the client the request was routed to. A mismatched clientId is rejected WITHOUT consuming the pending entry, so a second token-holding client can't spoof another's tool result. Stale/duplicate requestId is also rejected."
     handler <<<
-      const resolve = this.pendingCaps.get(res.requestId);
-      if (!resolve) return { status: 'rejected', reason: `no pending capability request ${res.requestId}` };
+      const pending = this.pendingCaps.get(res.requestId);
+      if (!pending) return { status: 'rejected', reason: `no pending capability request ${res.requestId}` };
+      if (pending.clientId && res.clientId !== pending.clientId) return { status: 'rejected', reason: `capability ${res.requestId} is owned by another client` };
       this.pendingCaps.delete(res.requestId);
-      resolve(res);
+      pending.resolve(res);
       return { status: 'accepted' };
     >>>
 
   method name=provideApproval params="res:ApprovalResponse" returns="Promise<ControlAck>" async=true
-    doc "The user's decision on an approval-request — resolves the pending gate by requestId. Arbitration is host-only; a stale/duplicate requestId is rejected."
+    doc "The user's decision on an approval-request — resolves the pending gate by requestId, but ONLY from the client that submitted the turn (host-only arbitration enforced, not just declared). A mismatched clientId is rejected without consuming the gate, so one client can't approve another's destructive action. Stale/duplicate requestId is rejected."
     handler <<<
-      const resolve = this.pendingApprovals.get(res.requestId);
-      if (!resolve) return { status: 'rejected', reason: `no pending approval ${res.requestId}` };
+      const pending = this.pendingApprovals.get(res.requestId);
+      if (!pending) return { status: 'rejected', reason: `no pending approval ${res.requestId}` };
+      if (pending.clientId && res.clientId !== pending.clientId) return { status: 'rejected', reason: `approval ${res.requestId} belongs to another client` };
       this.pendingApprovals.delete(res.requestId);
-      resolve(res.decision);
+      pending.resolve(res.decision);
       return { status: 'accepted' };
     >>>
 

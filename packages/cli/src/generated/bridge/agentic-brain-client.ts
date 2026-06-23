@@ -80,9 +80,11 @@ export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string): 
     lines.push('  (none registered — answer from your own knowledge.)');
   } else {
     for (const t of tools) {
-      const tag = t.isDestructive ? '(ACTS on the page — the user must approve)' : '(read-only)';
+      // Label by isReadOnly (fail-safe): anything NOT explicitly read-only ACTS and is
+      // gated — matching the runTurn gate, so the engine never sees a mutating tool as "read-only".
+      const tag = t.isReadOnly ? '(read-only)' : '(ACTS on the page — the user must approve)';
       lines.push(`- ${t.name} ${tag}: ${t.description}`);
-      lines.push(`    input: ${JSON.stringify(t.inputSchema)}`);
+      lines.push(`    input: ${JSON.stringify(t.inputSchema).slice(0, 800)}`);
     }
   }
   lines.push(
@@ -99,7 +101,7 @@ export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string): 
 /**
  * The growing ReAct transcript re-sent to the (stateless, exec-mode) engine each step: the original request plus every prior tool call and its result, ending with a nudge to act or answer.
  */
-// @kern-source: agentic-brain-client:109
+// @kern-source: agentic-brain-client:111
 export function renderAgentTranscript(userInput: string, steps: Array<{ name: string; input: Record<string, unknown>; output: string }>): string {
   const lines: string[] = [`User request: ${userInput}`, ''];
   if (steps.length === 0) {
@@ -118,7 +120,7 @@ export function renderAgentTranscript(userInput: string, steps: Array<{ name: st
 /**
  * A compact, human-readable one-liner for the approval popup's `command` field — what the agent is about to do.
  */
-// @kern-source: agentic-brain-client:126
+// @kern-source: agentic-brain-client:128
 export function describeAgentAction(name: string, input: Record<string, unknown>): string {
   let arg = '';
   try { arg = JSON.stringify(input); } catch { arg = '{…}'; }
@@ -129,7 +131,7 @@ export function describeAgentAction(name: string, input: Record<string, unknown>
 /**
  * v2 BrainClient: a bounded ReAct tool-loop over one engine, with client-lent capabilities (registerCapability) the brain pulls mid-turn via capability-request, and a per-action approval gate for destructive tools. Construct with the daemon's EngineRegistry; open() binds engine/cwd; runTurn() drives the loop; provideCapabilityResult/provideApproval answer the *-request events by requestId.
  */
-// @kern-source: agentic-brain-client:137
+// @kern-source: agentic-brain-client:139
 export class AgenticTurnBrainClient implements BrainClient {
   private registry: EngineRegistry;
   private adapter: EngineAdapter;
@@ -140,8 +142,8 @@ export class AgenticTurnBrainClient implements BrainClient {
   private activeTurnId: string|null;
   private aborts: Map<string, AbortController>;
   private caps: Map<string, { clientId: string; spec: CapabilitySpec }>;
-  private pendingCaps: Map<string, (r: CapabilityResult) => void>;
-  private pendingApprovals: Map<string, (decision: string) => void>;
+  private pendingCaps: Map<string, { clientId: string; resolve: (r: CapabilityResult) => void }>;
+  private pendingApprovals: Map<string, { clientId: string; resolve: (decision: string) => void }>;
   private approvedSession: Set<string>;
   private deniedSession: Set<string>;
   controlCapabilities: ControlCapabilities;
@@ -182,25 +184,25 @@ export class AgenticTurnBrainClient implements BrainClient {
     this.systemPrompt = config.systemPrompt;
   }
 
-  private async waitForCapabilityResult(requestId: string, signal: AbortSignal): Promise<CapabilityResult> {
+  private async waitForCapabilityResult(requestId: string, ownerClientId: string, signal: AbortSignal): Promise<CapabilityResult> {
     return new Promise<CapabilityResult>((resolve, reject) => {
       if (signal.aborted) { reject(new Error('aborted')); return; }
       let timer: ReturnType<typeof setTimeout>;
       const onAbort = () => { this.pendingCaps.delete(requestId); clearTimeout(timer); reject(new Error('aborted')); };
       timer = setTimeout(() => { this.pendingCaps.delete(requestId); signal.removeEventListener('abort', onAbort); reject(new Error('timeout')); }, CAPABILITY_RESULT_TIMEOUT_MS);
       signal.addEventListener('abort', onAbort, { once: true });
-      this.pendingCaps.set(requestId, (r: CapabilityResult) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(r); });
+      this.pendingCaps.set(requestId, { clientId: ownerClientId, resolve: (r: CapabilityResult) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(r); } });
     });
   }
 
-  private async waitForApproval(requestId: string, signal: AbortSignal): Promise<string> {
+  private async waitForApproval(requestId: string, ownerClientId: string, signal: AbortSignal): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       if (signal.aborted) { reject(new Error('aborted')); return; }
       let timer: ReturnType<typeof setTimeout>;
       const onAbort = () => { this.pendingApprovals.delete(requestId); clearTimeout(timer); reject(new Error('aborted')); };
       timer = setTimeout(() => { this.pendingApprovals.delete(requestId); signal.removeEventListener('abort', onAbort); resolve('deny'); }, APPROVAL_TIMEOUT_MS);
       signal.addEventListener('abort', onAbort, { once: true });
-      this.pendingApprovals.set(requestId, (decision: string) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(decision); });
+      this.pendingApprovals.set(requestId, { clientId: ownerClientId, resolve: (decision: string) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(decision); } });
     });
   }
 
@@ -288,8 +290,10 @@ export class AgenticTurnBrainClient implements BrainClient {
         const running: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'running', input: describeAgentAction(call.name, call.input) };
         yield running;
 
-        // Approval gate for destructive tools (skipped if approved-for-session).
-        if (cap.spec.isDestructive && !this.approvedSession.has(call.name)) {
+        // Approval gate — FAIL-SAFE: gate anything that is not EXPLICITLY read-only
+        // (a tool the client mis-/under-declares still asks, never silently acts).
+        // Skipped only once the user approved this tool for the session.
+        if (!cap.spec.isReadOnly && !this.approvedSession.has(call.name)) {
           if (this.deniedSession.has(call.name)) {
             const denied: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: 'denied for this session' };
             yield denied;
@@ -300,7 +304,7 @@ export class AgenticTurnBrainClient implements BrainClient {
           const ask: BrainEvent = { kind: 'approval-request', requestId: apId, tool: call.name, command: describeAgentAction(call.name, call.input), reason: cap.spec.description };
           yield ask;
           let decision: string;
-          try { decision = await this.waitForApproval(apId, ctrl.signal); }
+          try { decision = await this.waitForApproval(apId, req.clientId, ctrl.signal); }
           catch {
             const reason = 'cancelled by client';
             const note: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
@@ -329,7 +333,7 @@ export class AgenticTurnBrainClient implements BrainClient {
         const capReq: BrainEvent = { kind: 'capability-request', requestId: reqId, capability: call.name, input: call.input, targetClientId: cap.clientId };
         yield capReq;
         let capRes: CapabilityResult;
-        try { capRes = await this.waitForCapabilityResult(reqId, ctrl.signal); }
+        try { capRes = await this.waitForCapabilityResult(reqId, cap.clientId, ctrl.signal); }
         catch (err) {
           const aborted = ctrl.signal.aborted;
           const failNote: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: aborted ? 'cancelled' : 'the browser did not respond' };
@@ -400,23 +404,27 @@ export class AgenticTurnBrainClient implements BrainClient {
   }
 
   async unregisterCapability(req: CapabilityUnregister): Promise<ControlAck> {
+    const existing = this.caps.get(req.name);
+    if (existing && existing.clientId !== req.clientId) return { status: 'rejected', reason: `capability "${req.name}" is owned by another client` };
     this.caps.delete(req.name);
     return { status: 'accepted' };
   }
 
   async provideCapabilityResult(res: CapabilityResult): Promise<ControlAck> {
-    const resolve = this.pendingCaps.get(res.requestId);
-    if (!resolve) return { status: 'rejected', reason: `no pending capability request ${res.requestId}` };
+    const pending = this.pendingCaps.get(res.requestId);
+    if (!pending) return { status: 'rejected', reason: `no pending capability request ${res.requestId}` };
+    if (pending.clientId && res.clientId !== pending.clientId) return { status: 'rejected', reason: `capability ${res.requestId} is owned by another client` };
     this.pendingCaps.delete(res.requestId);
-    resolve(res);
+    pending.resolve(res);
     return { status: 'accepted' };
   }
 
   async provideApproval(res: ApprovalResponse): Promise<ControlAck> {
-    const resolve = this.pendingApprovals.get(res.requestId);
-    if (!resolve) return { status: 'rejected', reason: `no pending approval ${res.requestId}` };
+    const pending = this.pendingApprovals.get(res.requestId);
+    if (!pending) return { status: 'rejected', reason: `no pending approval ${res.requestId}` };
+    if (pending.clientId && res.clientId !== pending.clientId) return { status: 'rejected', reason: `approval ${res.requestId} belongs to another client` };
     this.pendingApprovals.delete(res.requestId);
-    resolve(res.decision);
+    pending.resolve(res.decision);
     return { status: 'accepted' };
   }
 
@@ -452,7 +460,7 @@ export class AgenticTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: agentic-brain-client:481
+// @kern-source: agentic-brain-client:490
 export function createAgenticTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new AgenticTurnBrainClient(registry);
 }

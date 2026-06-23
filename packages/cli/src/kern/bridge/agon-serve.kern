@@ -268,6 +268,13 @@ service name=AgonServe
         isReadOnly: spec.isReadOnly === true,
         isDestructive: spec.isDestructive === true,
       };
+      // Bound a single tool spec: its name/description/inputSchema are serialized into
+      // EVERY subsequent dispatch's system prompt, so an unbounded spec would inflate the
+      // token cost of the whole turn. 4 KiB is generous for a real tool, tiny for an attack.
+      if (JSON.stringify(clean).length > 4096) {
+        this.sendJson(res, 400, { error: 'capability spec too large (max 4096 bytes)' }, origin);
+        return;
+      }
       const ack = await this.brain.registerCapability({ sessionId: this.sessionId, clientId, spec: clean });
       this.sendJson(res, 200, ack, origin);
     >>>

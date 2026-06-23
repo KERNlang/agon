@@ -23,7 +23,9 @@ import {
   runServe,
 } from '../../packages/cli/src/generated/commands/serve.js';
 import { resolveBuiltinEnginesDir } from '../../packages/cli/src/generated/lib/engines-dir.js';
+import { createAgonServe } from '../../packages/cli/src/generated/bridge/agon-serve.js';
 import { EngineRegistry, getSessionHost } from '@kernlang/agon-core';
+import type { BrainClient } from '@kernlang/agon-core';
 
 describe('agon serve — pure helpers', () => {
   it('parseOrigins: comma-separated string → trimmed, deduped list', () => {
@@ -178,6 +180,101 @@ describe('agon serve — runtime wiring (integration)', () => {
       buildServeRuntime({ engineId: 'definitely-not-an-engine', cwd: process.cwd(), allowedOrigins: [] }),
     ).rejects.toThrow(/Unknown engine/);
   });
+
+  it('register-capability validates the spec + accepts a valid one (the AGENTIC brain is wired, not the unsupported v1)', async () => {
+    const runtime = await buildServeRuntime({ engineId: 'claude', cwd: process.cwd(), allowedOrigins: ['https://ext.example'] });
+    const { url, token } = await runtime.serve.start(0);
+    const H = { Authorization: `Bearer ${token}`, Origin: 'https://ext.example', 'Content-Type': 'application/json' };
+    try {
+      // A spec missing name/description → 400 (the spec is client-supplied/untrusted).
+      const bad = await fetch(`${url}/register-capability`, { method: 'POST', headers: H, body: JSON.stringify({ clientId: 'c', spec: { description: 'x' } }) });
+      expect(bad.status).toBe(400);
+      // A valid spec → 200 accepted. The headless v1 returned { unsupported } here; an
+      // 'accepted' proves serve now binds the agentic tool-loop brain.
+      const good = await fetch(`${url}/register-capability`, { method: 'POST', headers: H, body: JSON.stringify({ clientId: 'c', spec: { name: 'readPage', description: 'read the page', inputSchema: {}, isReadOnly: true } }) });
+      expect(good.status).toBe(200);
+      expect(await good.json()).toEqual({ status: 'accepted' });
+      // /approval validates the decision enum.
+      const badDec = await fetch(`${url}/approval`, { method: 'POST', headers: H, body: JSON.stringify({ requestId: 'r', decision: 'maybe' }) });
+      expect(badDec.status).toBe(400);
+      // A stale capability-result is a 200 carrying a rejected ack (no pending request).
+      const stale = await fetch(`${url}/capability-result`, { method: 'POST', headers: H, body: JSON.stringify({ requestId: 'nope', ok: true }) });
+      expect(stale.status).toBe(200);
+      expect((await stale.json()).status).toBe('rejected');
+    } finally {
+      await runtime.serve.close();
+      await runtime.brain.close();
+    }
+  });
+
+  it('capability round-trip over the wire: send blocks on a capability-request (SSE) until /capability-result lands — no deadlock', async () => {
+    // A fake agentic brain: runTurn yields a capability-request, AWAITS its result via
+    // provideCapabilityResult, then yields the answer. Proves AgonServe ships the request
+    // over SSE while /send still holds the turn lock, and the separate /capability-result
+    // endpoint resolves that suspended turn (the whole reason control endpoints bypass turnTail).
+    const pending = new Map<string, (r: { ok: boolean; output?: string }) => void>();
+    const fakeBrain = {
+      runTurn: async function* (req: { turnId: string }) {
+        yield { kind: 'capability-request', requestId: 'cap-req-1', capability: 'readPage', input: {}, targetClientId: 'c-ext' };
+        const r = await new Promise<{ ok: boolean; output?: string }>((resolve) => pending.set('cap-req-1', resolve));
+        yield { kind: 'engine', engineId: 'x', content: `the page says: ${r.output ?? ''}` };
+        return { turnId: req.turnId, delegated: false, responded: true, engineId: 'x' };
+      },
+      provideCapabilityResult: async (res: { requestId: string; ok: boolean; output?: string }) => {
+        const resolve = pending.get(res.requestId);
+        if (!resolve) return { status: 'rejected', reason: 'none' };
+        pending.delete(res.requestId);
+        resolve({ ok: res.ok, output: res.output });
+        return { status: 'accepted' };
+      },
+    } as unknown as BrainClient;
+
+    const sessionId = newServeSessionId(1700000009999);
+    seedServeSession(sessionId, 'x'); // give the SSE replay a floor
+    const serve = createAgonServe({ brain: fakeBrain, sessionId, allowedOrigins: ['https://ext.example'], engines: ['x'], engineId: 'x' });
+    const { url, token } = await serve.start(0);
+    const H = { Authorization: `Bearer ${token}`, Origin: 'https://ext.example' };
+    const ctrl = new AbortController();
+    try {
+      const ev = await fetch(`${url}/events?from=0`, { headers: { ...H }, signal: ctrl.signal });
+      const reader = ev.body!.getReader();
+      const dec = new TextDecoder();
+
+      // Fire /send but DON'T await — it cannot resolve until we answer the capability.
+      const sendP = fetch(`${url}/send`, { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify({ input: 'what is on the page', clientId: 'c-ext' }) });
+
+      // Read SSE frames until the capability-request arrives.
+      let buf = '';
+      let reqId = '';
+      for (let i = 0; i < 60 && !reqId; i++) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value);
+        for (const line of buf.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const entry = JSON.parse(line.slice(6)) as { event?: { kind?: string; requestId?: string } };
+            if (entry.event?.kind === 'capability-request') reqId = entry.event.requestId ?? '';
+          } catch { /* partial frame — next read completes it */ }
+        }
+      }
+      expect(reqId).toBe('cap-req-1');
+
+      // Answer the capability via its own endpoint while /send is still pending.
+      const capRes = await fetch(`${url}/capability-result`, { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: reqId, ok: true, output: 'HELLO WORLD', clientId: 'c-ext' }) });
+      expect(capRes.status).toBe(200);
+      expect((await capRes.json()).status).toBe('accepted');
+
+      // NOW /send completes, carrying the brain's terminal result.
+      const sendRes = await sendP;
+      expect(sendRes.status).toBe(200);
+      const body = await sendRes.json();
+      expect(body.result).toMatchObject({ responded: true, engineId: 'x' });
+    } finally {
+      ctrl.abort();
+      await serve.close();
+    }
+  }, 15000);
 
   it('runServe fails CLOSED (exit 2) when the port is in use — no crash, no hang, brain torn down', async () => {
     // Occupy a loopback port so AgonServe.start(port) rejects (EADDRINUSE).

@@ -173,16 +173,32 @@ export async function buildServeRuntime(opts: ServeOptions): Promise<ServeRuntim
 
   seedServeSession(sessionId, opts.engineId);
 
-  // Hand the bridge the full engine roster + the bound default so an attached client
-  // can offer an engine selector and drive a per-turn engine via /send { engineId }.
-  const serve = createAgonServe({ brain, sessionId, allowedOrigins: opts.allowedOrigins, engines: registry.listIds(), engineId: opts.engineId });
+  // Hand the bridge ONLY the engines that can actually answer — registry.activeIds(config):
+  // available (an API key env var is set OR the engine's CLI binary is on PATH) AND not in the
+  // user's hiddenEngines/removedEngines, honoring engineActivationMode. NOT every definition on
+  // disk (registry.listIds()). So the attached client's engine picker shows just the connected,
+  // usable, non-hidden models — not the full catalogue. loadConfig guarantees the four fields.
+  const cfg = loadConfig(opts.cwd) as { engineActivationMode?: 'auto' | 'explicit'; forgeEnabledEngines?: string[]; hiddenEngines?: string[]; removedEngines?: string[] };
+  const available = registry.activeIds({
+    engineActivationMode: cfg.engineActivationMode === 'explicit' ? 'explicit' : 'auto',
+    forgeEnabledEngines: cfg.forgeEnabledEngines ?? [],
+    hiddenEngines: cfg.hiddenEngines ?? [],
+    removedEngines: cfg.removedEngines ?? [],
+  });
+  // Canonicalize the bound default before comparing: an alias-started serve (e.g. `--engine
+  // kimi`) must not double-list against activeIds' canonical id (kimi-for-coding-*). Then
+  // force-include it on a FRESH array (never mutate a method's return) so it always shows as
+  // the current selection — and pass the canonical id as the default so the picker selects it.
+  const defaultId = registry.resolveId(opts.engineId);
+  const engines = available.includes(defaultId) ? [...available] : [defaultId, ...available];
+  const serve = createAgonServe({ brain, sessionId, allowedOrigins: opts.allowedOrigins, engines, engineId: defaultId });
   return { serve, brain, sessionId, engineId: opts.engineId };
 }
 
 /**
  * Print the connection card once: URL, bearer token, the 0600 connection-file path, owned session + engine, allowed Origins, and ready-to-paste attach/smoke hints. Warns loudly when the allowlist is empty (no browser can connect until you pass --origin).
  */
-// @kern-source: serve:178
+// @kern-source: serve:194
 function printServeBanner(url: string, token: string, tokenPath: string, sessionId: string, engineId: string, allowedOrigins: string[]): void {
   header('agon serve — bridge up');
   info(`  ${bold('url')}      ${cyan(url)}`);
@@ -203,7 +219,7 @@ function printServeBanner(url: string, token: string, tokenPath: string, session
 /**
  * Print ONE machine-readable connection line to stdout, prefixed __AGON_CONNECTION__, so the native-messaging host reads the url+token directly instead of scraping the ANSI banner or guessing the fresh sessionId. Gated by serve's --emit-connection so a human run is never cluttered.
  */
-// @kern-source: serve:197
+// @kern-source: serve:213
 export function emitServeConnectionLine(url: string, token: string, sessionId: string, engineId: string, allowedOrigins: string[], file: string): void {
   process.stdout.write(`__AGON_CONNECTION__ ${JSON.stringify({ url, token, sessionId, engineId, allowedOrigins, file })}\n`);
 }
@@ -211,7 +227,7 @@ export function emitServeConnectionLine(url: string, token: string, sessionId: s
 /**
  * The foreground command: resolve + validate the engine, assemble the runtime, bind the loopback port, write the 0600 connection file, record the ready/provenance frame, print the connection card, then HOLD the process open until Ctrl+C / SIGTERM — on which it tears down in order (serve.close stops intake + ends SSE → brain.close aborts any in-flight turn → flush ledger → remove the connection file) and resolves. An engine/bind failure sets exit code 2 and returns without starting. stdin is resumed to keep the event loop alive (the bridge's timers are unref'd), then restored on exit, mirroring `agon attach`'s follow loop.
  */
-// @kern-source: serve:203
+// @kern-source: serve:219
 export async function runServe(port: number, engine: string|undefined, allowedOrigins: string[], emitConnection: boolean): Promise<void> {
   ensureAgonHome();
   const cwd = process.cwd();
@@ -284,7 +300,7 @@ export async function runServe(port: number, engine: string|undefined, allowedOr
   });
 }
 
-// @kern-source: serve:279
+// @kern-source: serve:295
 export const serveCommand: any = defineCommand({
   meta: {
     name: 'serve',

@@ -167,9 +167,25 @@ fn name=buildServeRuntime params="opts:ServeOptions" returns="Promise<ServeRunti
 
     seedServeSession(sessionId, opts.engineId);
 
-    // Hand the bridge the full engine roster + the bound default so an attached client
-    // can offer an engine selector and drive a per-turn engine via /send { engineId }.
-    const serve = createAgonServe({ brain, sessionId, allowedOrigins: opts.allowedOrigins, engines: registry.listIds(), engineId: opts.engineId });
+    // Hand the bridge ONLY the engines that can actually answer — registry.activeIds(config):
+    // available (an API key env var is set OR the engine's CLI binary is on PATH) AND not in the
+    // user's hiddenEngines/removedEngines, honoring engineActivationMode. NOT every definition on
+    // disk (registry.listIds()). So the attached client's engine picker shows just the connected,
+    // usable, non-hidden models — not the full catalogue. loadConfig guarantees the four fields.
+    const cfg = loadConfig(opts.cwd) as { engineActivationMode?: 'auto' | 'explicit'; forgeEnabledEngines?: string[]; hiddenEngines?: string[]; removedEngines?: string[] };
+    const available = registry.activeIds({
+      engineActivationMode: cfg.engineActivationMode === 'explicit' ? 'explicit' : 'auto',
+      forgeEnabledEngines: cfg.forgeEnabledEngines ?? [],
+      hiddenEngines: cfg.hiddenEngines ?? [],
+      removedEngines: cfg.removedEngines ?? [],
+    });
+    // Canonicalize the bound default before comparing: an alias-started serve (e.g. `--engine
+    // kimi`) must not double-list against activeIds' canonical id (kimi-for-coding-*). Then
+    // force-include it on a FRESH array (never mutate a method's return) so it always shows as
+    // the current selection — and pass the canonical id as the default so the picker selects it.
+    const defaultId = registry.resolveId(opts.engineId);
+    const engines = available.includes(defaultId) ? [...available] : [defaultId, ...available];
+    const serve = createAgonServe({ brain, sessionId, allowedOrigins: opts.allowedOrigins, engines, engineId: defaultId });
     return { serve, brain, sessionId, engineId: opts.engineId };
   >>>
 

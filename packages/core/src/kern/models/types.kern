@@ -111,6 +111,8 @@ interface name=DispatchOptions
   field name=systemPrompt type=string optional=true
   field name=tools type="Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>" optional=true
     doc "Native function-calling tool specs (OpenAI-function shape). When present AND the dispatch resolves to the API path (binary-less engine + usable key), the adapter sends them to the model's native tool API and returns any structured call in DispatchResult.parts. IGNORED on the CLI/companion paths — those engines use the in-prompt text-marker protocol. Lets the browser brain's ReAct loop get reliable native tool calls from API-only coding-plan engines that otherwise forget to emit the text marker (narrate-and-stop)."
+  field name=messages type="Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>" optional=true
+    doc "Full conversation history (OpenAI wire format) for the NATIVE API+tools path. When present, the adapter dispatches this structured assistant/tool thread (prepending the project-context system prompt) instead of the flat `prompt`, so the model sees a real tool conversation it can prompt-cache. IGNORED on the CLI/companion paths (they use `prompt`) and when no tools are sent. The browser brain reconstructs it from its step log each turn (Phase 2)."
   field name=onApproval type="(tool:string, command:string, reason?:string) => Promise<boolean|string>" optional=true
   field name=permissionMode type="'auto'|'smart'|'ask'|'deny-all'" optional=true
   field name=allowedCommands type="string[]" optional=true

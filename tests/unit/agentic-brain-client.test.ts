@@ -8,6 +8,8 @@ import {
   capsToNativeTools,
   buildAgentSystemPrompt,
   renderAgentTranscript,
+  renderAgentMessages,
+  AGENT_MSG_KEEP_FULL,
   describeAgentAction,
   looksLikeActionIntent,
   looksLikeDeferral,
@@ -537,13 +539,17 @@ describe('AgenticTurnBrainClient — control surface', () => {
 // empty-stdout guard never misfires. Captures every dispatch options object.
 type NativePart = { kind: string; toolName?: string; toolCallId?: string; args?: Record<string, unknown>; text?: string };
 type Step = string | { parts: NativePart[]; stdout?: string };
-function makeAgentSteps(steps: Step[]): { client: AgenticTurnBrainClient; dispatches: Array<{ tools?: Array<{ type: string; function: { name: string } }> }> } {
+type CapturedDispatch = {
+  tools?: Array<{ type: string; function: { name: string } }>;
+  messages?: Array<{ role: string; content: unknown; tool_calls?: Array<{ id: string }> }>;
+};
+function makeAgentSteps(steps: Step[]): { client: AgenticTurnBrainClient; dispatches: CapturedDispatch[] } {
   let i = 0;
-  const dispatches: Array<{ tools?: Array<{ type: string; function: { name: string } }> }> = [];
+  const dispatches: CapturedDispatch[] = [];
   const registry = { get: (id: string) => ({ id }), listIds: () => ['claude', 'codex'] } as unknown as EngineRegistry;
   const client = new AgenticTurnBrainClient(registry);
   (client as unknown as { adapter: EngineAdapter }).adapter = {
-    dispatch: async (opts: { tools?: Array<{ type: string; function: { name: string } }> }) => {
+    dispatch: async (opts: CapturedDispatch) => {
       dispatches.push(opts);
       const step = steps[Math.min(i++, steps.length - 1)];
       if (typeof step === 'string') return { exitCode: 0, stdout: step, stderr: '', durationMs: 1, timedOut: false };
@@ -597,7 +603,74 @@ describe('capsToNativeTools — capability specs → OpenAI function shape', () 
   });
 });
 
+describe('renderAgentMessages — native message thread (Phase 2)', () => {
+  it('empty steps → goal + first-action user messages only', () => {
+    const m = renderAgentMessages('find jobs', []);
+    expect(m).toHaveLength(2);
+    expect(m.every((x) => x.role === 'user')).toBe(true);
+    expect(String(m[0].content)).toContain('find jobs');
+  });
+
+  it('a tool step becomes a contiguous assistant{tool_calls} + tool{result} pair', () => {
+    const m = renderAgentMessages('goal', [{ name: 'readPage', input: { x: 1 }, output: 'PAGE TEXT' }]);
+    const ai = m.findIndex((x) => x.role === 'assistant');
+    const asst = m[ai] as { tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }> };
+    expect(asst.tool_calls?.[0]).toMatchObject({ type: 'function', function: { name: 'readPage', arguments: JSON.stringify({ x: 1 }) } });
+    const id = asst.tool_calls?.[0].id;
+    expect(m[ai + 1]).toMatchObject({ role: 'tool', tool_call_id: id, content: 'PAGE TEXT' }); // contiguous + paired by id
+  });
+
+  it('does not throw when a tool input is circular/unserializable (safe-stringify guard)', () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(() => renderAgentMessages('goal', [{ name: 'click', input: circular, output: 'ok' }])).not.toThrow();
+    const m = renderAgentMessages('goal', [{ name: 'click', input: circular, output: 'ok' }]);
+    const asst = m.find((x) => x.role === 'assistant') as { tool_calls?: Array<{ function: { arguments: string } }> };
+    expect(asst.tool_calls?.[0].function.arguments).toBe('{}'); // degraded, not crashed
+  });
+
+  it('a reminder step renders as a user instruction, not a tool pair', () => {
+    const m = renderAgentMessages('goal', [{ name: 'reminder', input: {}, output: 'do something different' }]);
+    expect(m.some((x) => x.role === 'assistant')).toBe(false);
+    expect(m.some((x) => x.role === 'user' && x.content === 'do something different')).toBe(true);
+  });
+
+  it('bounds context: older tool results are trimmed, the last AGENT_MSG_KEEP_FULL stay verbatim', () => {
+    const steps = Array.from({ length: AGENT_MSG_KEEP_FULL + 2 }, (_, i) => ({ name: 'readPage', input: { i }, output: `r${i}:${'x'.repeat(400)}` }));
+    const toolMsgs = renderAgentMessages('goal', steps).filter((x) => x.role === 'tool');
+    expect(toolMsgs).toHaveLength(steps.length);
+    expect(String(toolMsgs[0].content)).toContain('[trimmed'); // oldest two trimmed
+    expect(String(toolMsgs[1].content)).toContain('[trimmed');
+    for (let k = 2; k < toolMsgs.length; k++) {
+      expect(String(toolMsgs[k].content)).not.toContain('[trimmed'); // last KEEP_FULL kept whole
+      expect(String(toolMsgs[k].content).length).toBeGreaterThan(400);
+    }
+  });
+});
+
 describe('AgenticTurnBrainClient — native function-calling drives the loop', () => {
+  it('passes a reconstructed message thread to the adapter; it grows the tool pair after a call', async () => {
+    const { client, dispatches } = makeAgentSteps([
+      { parts: [{ kind: 'tool_call', toolName: 'readPage', toolCallId: 't1', args: {} }] },
+      'Done.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true, output: 'PAGE' }), approval: () => 'approve' });
+    expect(Array.isArray(dispatches[0].messages)).toBe(true);
+    expect(dispatches[0].messages?.[0]).toMatchObject({ role: 'user' });
+    // second dispatch (after readPage ran): the thread now carries the assistant/tool pair
+    expect(dispatches[1].messages?.some((mm) => mm.role === 'assistant' && !!mm.tool_calls)).toBe(true);
+    expect(dispatches[1].messages?.some((mm) => mm.role === 'tool' && mm.content === 'PAGE')).toBe(true);
+  });
+
+  it('omits messages when no capability is registered (nothing to call natively)', async () => {
+    const { client, dispatches } = makeAgentSteps(['Just answering.']);
+    await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
+    await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true }), approval: () => 'approve' });
+    expect(dispatches[0].messages).toBeUndefined();
+  });
+
   it('offers tools[] to the adapter on every dispatch (so API engines can call natively)', async () => {
     const { client, dispatches } = makeAgentSteps(['Just answering directly.']);
     await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });

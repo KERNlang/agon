@@ -196,6 +196,43 @@ fn name=renderAgentTranscript params="userInput:string, steps:Array<{ name: stri
     return lines.join('\n');
   >>>
 
+const name=AGENT_MSG_KEEP_FULL type=number value={{ 4 }} export=true
+const name=AGENT_MSG_TRIM_HEAD type=number value={{ 240 }} export=true
+
+fn name=safeStringifyArgs params="input:unknown" returns="string" export=false
+  doc "JSON.stringify a tool call's input, defaulting to {} on any throw — guards renderAgentMessages so one circular/unserializable input can never crash the whole message reconstruction (and thus the turn)."
+  handler <<<
+    try { return JSON.stringify(input ?? {}); } catch { return '{}'; }
+  >>>
+
+fn name=renderAgentMessages params="userInput:string, steps:Array<{ name: string; input: Record<string, unknown>; output: string }>" returns="Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>" export=true
+  doc "Phase 2: reconstruct the ReAct progress as a NATIVE OpenAI message thread for the API+tools path — user(goal), then per executed step an assistant{tool_calls} + tool{result} PAIR (a 'reminder' step becomes a user instruction). The model attends to a real tool conversation (vs the flat user-prompt transcript renderAgentTranscript builds for CLI engines), and the stable prefix is prompt-cacheable. BOUNDS context: only the last AGENT_MSG_KEEP_FULL tool results stay verbatim; older ones truncate to a short head — this is what keeps a long browse from bloating to the step backstop. Tool-call ids are synthetic+contiguous (call_<i>), all convertMessagesForSdk needs to pair each assistant call with its result. The system prompt is NOT included here — the adapter prepends the project-context one."
+  handler <<<
+    const messages: Array<{role:string, content:any, tool_calls?:any[], tool_call_id?:string}> = [];
+    messages.push({ role: 'user', content: `YOUR GOAL — keep working until this is fully achieved, then report the result: ${userInput}` });
+    if (steps.length === 0) {
+      messages.push({ role: 'user', content: 'Nothing done yet. Take the FIRST action toward the goal now (a tool call). Answer directly only if the goal is already met.' });
+      return messages;
+    }
+    // Step indices of real tool calls (reminders excluded); only the last AGENT_MSG_KEEP_FULL keep
+    // their full output, so the conversation stays bounded as the browse grows.
+    const toolIdx: number[] = [];
+    for (let i = 0; i < steps.length; i++) { if (steps[i].name !== 'reminder') toolIdx.push(i); }
+    const keepFrom = toolIdx.length > AGENT_MSG_KEEP_FULL ? toolIdx[toolIdx.length - AGENT_MSG_KEEP_FULL] : 0;
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      if (s.name === 'reminder') { messages.push({ role: 'user', content: s.output }); continue; }
+      const id = `call_${i}`;
+      messages.push({ role: 'assistant', content: '', tool_calls: [{ id, type: 'function', function: { name: s.name, arguments: safeStringifyArgs(s.input) } }] });
+      const out = (i >= keepFrom || s.output.length <= AGENT_MSG_TRIM_HEAD)
+        ? s.output
+        : `${s.output.slice(0, AGENT_MSG_TRIM_HEAD)} …[trimmed ${s.output.length - AGENT_MSG_TRIM_HEAD} chars of an earlier result — re-read or scroll if you need it again]`;
+      messages.push({ role: 'tool', tool_call_id: id, content: out });
+    }
+    messages.push({ role: 'user', content: 'You are NOT done until the GOAL is met. Call the next tool to make progress, or give the final RESULT (never a question back to the user).' });
+    return messages;
+  >>>
+
 fn name=looksLikeActionIntent params="text:string" returns="boolean" export=true
   doc "True when an engine's reply DESCRIBES an action ('Let me navigate…', 'Ich suche…') but emitted no tool call — a short intent preamble, not a final answer — so the loop can NUDGE it to actually emit the tool line (the common weak-engine failure: the brain says it will act, then stops). Covers English + German narration, the panel's two languages; other languages degrade to no-nudge (the proactivity system prompt still pushes the model to act in any language — this is only the backstop). Bounded to short replies so a real prose answer that mentions 'review'/'search' isn't misread as narration."
   handler <<<
@@ -377,10 +414,14 @@ service name=AgenticTurnBrainClient implements=BrainClient
           const prompt = renderAgentTranscript(req.input, steps);
           const dispatchImages = nextImages.length > 0 ? nextImages : undefined;
           nextImages = []; // images are shown once, on the dispatch right after capture
+          // Native API+tools path uses the reconstructed message thread (Phase 2); built only when
+          // there are tools to offer (CLI engines ignore `messages` and use `prompt`). Bounded, so
+          // a long browse stays small instead of re-sending an ever-growing flat transcript.
+          const nativeMessages = nativeTools.length > 0 ? renderAgentMessages(req.input, steps) : undefined;
           const result = await this.adapter.dispatch({
             engine, prompt, cwd: this.cwd, mode: 'exec', timeout: 120,
             outputDir: turnDir, signal: ctrl.signal, systemPrompt: sysPrompt, images: dispatchImages,
-            tools: nativeTools,
+            tools: nativeTools, messages: nativeMessages,
           });
           const stdout = (result.stdout || '').trim();
           // Transport-agnostic call extraction: an API engine returns the call as a STRUCTURED

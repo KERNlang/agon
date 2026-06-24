@@ -191,10 +191,54 @@ export function renderAgentTranscript(userInput: string, steps: Array<{ name: st
   return lines.join('\n');
 }
 
+// @kern-source: agentic-brain-client:199
+export const AGENT_MSG_KEEP_FULL: number = 4;
+
+// @kern-source: agentic-brain-client:200
+export const AGENT_MSG_TRIM_HEAD: number = 240;
+
+/**
+ * JSON.stringify a tool call's input, defaulting to {} on any throw — guards renderAgentMessages so one circular/unserializable input can never crash the whole message reconstruction (and thus the turn).
+ */
+// @kern-source: agentic-brain-client:202
+function safeStringifyArgs(input: unknown): string {
+  try { return JSON.stringify(input ?? {}); } catch { return '{}'; }
+}
+
+/**
+ * Phase 2: reconstruct the ReAct progress as a NATIVE OpenAI message thread for the API+tools path — user(goal), then per executed step an assistant{tool_calls} + tool{result} PAIR (a 'reminder' step becomes a user instruction). The model attends to a real tool conversation (vs the flat user-prompt transcript renderAgentTranscript builds for CLI engines), and the stable prefix is prompt-cacheable. BOUNDS context: only the last AGENT_MSG_KEEP_FULL tool results stay verbatim; older ones truncate to a short head — this is what keeps a long browse from bloating to the step backstop. Tool-call ids are synthetic+contiguous (call_<i>), all convertMessagesForSdk needs to pair each assistant call with its result. The system prompt is NOT included here — the adapter prepends the project-context one.
+ */
+// @kern-source: agentic-brain-client:208
+export function renderAgentMessages(userInput: string, steps: Array<{ name: string; input: Record<string, unknown>; output: string }>): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
+  const messages: Array<{role:string, content:any, tool_calls?:any[], tool_call_id?:string}> = [];
+  messages.push({ role: 'user', content: `YOUR GOAL — keep working until this is fully achieved, then report the result: ${userInput}` });
+  if (steps.length === 0) {
+    messages.push({ role: 'user', content: 'Nothing done yet. Take the FIRST action toward the goal now (a tool call). Answer directly only if the goal is already met.' });
+    return messages;
+  }
+  // Step indices of real tool calls (reminders excluded); only the last AGENT_MSG_KEEP_FULL keep
+  // their full output, so the conversation stays bounded as the browse grows.
+  const toolIdx: number[] = [];
+  for (let i = 0; i < steps.length; i++) { if (steps[i].name !== 'reminder') toolIdx.push(i); }
+  const keepFrom = toolIdx.length > AGENT_MSG_KEEP_FULL ? toolIdx[toolIdx.length - AGENT_MSG_KEEP_FULL] : 0;
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    if (s.name === 'reminder') { messages.push({ role: 'user', content: s.output }); continue; }
+    const id = `call_${i}`;
+    messages.push({ role: 'assistant', content: '', tool_calls: [{ id, type: 'function', function: { name: s.name, arguments: safeStringifyArgs(s.input) } }] });
+    const out = (i >= keepFrom || s.output.length <= AGENT_MSG_TRIM_HEAD)
+      ? s.output
+      : `${s.output.slice(0, AGENT_MSG_TRIM_HEAD)} …[trimmed ${s.output.length - AGENT_MSG_TRIM_HEAD} chars of an earlier result — re-read or scroll if you need it again]`;
+    messages.push({ role: 'tool', tool_call_id: id, content: out });
+  }
+  messages.push({ role: 'user', content: 'You are NOT done until the GOAL is met. Call the next tool to make progress, or give the final RESULT (never a question back to the user).' });
+  return messages;
+}
+
 /**
  * True when an engine's reply DESCRIBES an action ('Let me navigate…', 'Ich suche…') but emitted no tool call — a short intent preamble, not a final answer — so the loop can NUDGE it to actually emit the tool line (the common weak-engine failure: the brain says it will act, then stops). Covers English + German narration, the panel's two languages; other languages degrade to no-nudge (the proactivity system prompt still pushes the model to act in any language — this is only the backstop). Bounded to short replies so a real prose answer that mentions 'review'/'search' isn't misread as narration.
  */
-// @kern-source: agentic-brain-client:199
+// @kern-source: agentic-brain-client:236
 export function looksLikeActionIntent(text: string): boolean {
   const s = text.trim();
   if (s.length === 0 || s.length >= 500) return false; // a substantive reply is a real answer, not a preamble
@@ -216,7 +260,7 @@ export function looksLikeActionIntent(text: string): boolean {
 /**
  * True when the engine, instead of acting, ASKS the user how to proceed / for permission / to pick an option ('How would you like me to proceed?', 'Which option would you like?', 'Soll ich…?'). The classic non-agentic stall: it hands the wheel back to the user. The loop nudges it to decide and continue (the user still approves each page-changing action via the SEPARATE gate, so the agent never needs to ask in prose). Kept to strong, unambiguous phrases (EN + DE) so a completed answer that merely ends 'let me know if you want more' is NOT misread as a stall.
  */
-// @kern-source: agentic-brain-client:219
+// @kern-source: agentic-brain-client:256
 export function looksLikeDeferral(text: string): boolean {
   const t = text.toLowerCase();
   return /(how would you like me to proceed|how (should|shall|do) (i|we) proceed|which (one|option)( would you| do you want| should i)|would you like me to\b|do you want me to\b|let me know which|wie soll ich (fortfahren|vorgehen|weitermachen)|möchtest du, dass ich|soll ich\b.*\?|welche (option|möglichkeit))/.test(t);
@@ -225,7 +269,7 @@ export function looksLikeDeferral(text: string): boolean {
 /**
  * A compact, human-readable one-liner for the approval popup's `command` field — what the agent is about to do.
  */
-// @kern-source: agentic-brain-client:226
+// @kern-source: agentic-brain-client:263
 export function describeAgentAction(name: string, input: Record<string, unknown>): string {
   let arg = '';
   try { arg = JSON.stringify(input); } catch { arg = '{…}'; }
@@ -236,7 +280,7 @@ export function describeAgentAction(name: string, input: Record<string, unknown>
 /**
  * v2 BrainClient: a bounded ReAct tool-loop over one engine, with client-lent capabilities (registerCapability) the brain pulls mid-turn via capability-request, and a per-action approval gate for destructive tools. Construct with the daemon's EngineRegistry; open() binds engine/cwd; runTurn() drives the loop; provideCapabilityResult/provideApproval answer the *-request events by requestId.
  */
-// @kern-source: agentic-brain-client:237
+// @kern-source: agentic-brain-client:274
 export class AgenticTurnBrainClient implements BrainClient {
   private registry: EngineRegistry;
   private adapter: EngineAdapter;
@@ -371,10 +415,14 @@ export class AgenticTurnBrainClient implements BrainClient {
         const prompt = renderAgentTranscript(req.input, steps);
         const dispatchImages = nextImages.length > 0 ? nextImages : undefined;
         nextImages = []; // images are shown once, on the dispatch right after capture
+        // Native API+tools path uses the reconstructed message thread (Phase 2); built only when
+        // there are tools to offer (CLI engines ignore `messages` and use `prompt`). Bounded, so
+        // a long browse stays small instead of re-sending an ever-growing flat transcript.
+        const nativeMessages = nativeTools.length > 0 ? renderAgentMessages(req.input, steps) : undefined;
         const result = await this.adapter.dispatch({
           engine, prompt, cwd: this.cwd, mode: 'exec', timeout: 120,
           outputDir: turnDir, signal: ctrl.signal, systemPrompt: sysPrompt, images: dispatchImages,
-          tools: nativeTools,
+          tools: nativeTools, messages: nativeMessages,
         });
         const stdout = (result.stdout || '').trim();
         // Transport-agnostic call extraction: an API engine returns the call as a STRUCTURED
@@ -665,7 +713,7 @@ export class AgenticTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: agentic-brain-client:688
+// @kern-source: agentic-brain-client:729
 export function createAgenticTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new AgenticTurnBrainClient(registry);
 }

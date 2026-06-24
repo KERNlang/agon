@@ -239,6 +239,55 @@ The deeper recommendation is sharper than the first pass:
    aliases, default options, expected inputs, expected artifacts, mutation/apply
    behavior, and runner identity.
 
+## Plugin-System Implication
+
+This same contract table is also the right foundation for future workflow
+plugins.
+
+Verified analogy:
+
+- Transformers supports a known task inventory, task aliases, defaults, and
+  task-specific implementations behind one public entrypoint.
+- A workflow plugin system would need the same shape: a plugin declares which
+  workflow ids it provides, which aliases it claims, which inputs it accepts,
+  what it mutates, what artifacts it produces, and which runner implements it.
+
+Inference:
+
+If Agon adds plugins before workflow contracts are explicit, plugins will inherit
+the current routing drift. A plugin could expose one behavior through MCP,
+another through slash commands, and a third through plan-mode unless the host has
+a single canonical workflow contract to validate against.
+
+Useful plugin-facing fields would likely include:
+
+- plugin id and version
+- provided workflow ids
+- aliases and slash names
+- required capabilities
+- accepted inputs and option schema
+- default values
+- mutates-workspace flag
+- apply behavior
+- artifact contract
+- permission requirements
+- whether the workflow can run in plan-mode
+- whether it can run through MCP direct mode
+- whether it can run through in-session Cesar routing
+- docs text generated from the same contract
+
+This argues for a conservative sequence:
+
+1. Fix and document first-party workflow contracts.
+2. Add parity tests for built-in workflows.
+3. Extract the host-side workflow contract type.
+4. Only then allow plugins to register workflows against that type.
+
+Do not start with arbitrary plugin hooks. Start with declarative workflow
+metadata plus a narrow runner boundary. That gives plugins the useful part of
+Transformers' architecture: predictable task discovery and routing, not a large
+runtime inheritance model.
+
 ## Agon Analysis Runs
 
 External model passes used in this investigation:

@@ -126,28 +126,31 @@ export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string): 
 }
 
 /**
- * The growing ReAct transcript re-sent to the (stateless, exec-mode) engine each step: the original request plus every prior tool call and its result, ending with a nudge to act or answer.
+ * The growing ReAct transcript re-sent to the (stateless, exec-mode) engine each step. The user's request is framed as a standing GOAL (restated every step so a stateless engine never loses sight of it) plus the progress so far, ending with: you are NOT done until the goal is met — act, or give the RESULT.
  */
 // @kern-source: agentic-brain-client:140
 export function renderAgentTranscript(userInput: string, steps: Array<{ name: string; input: Record<string, unknown>; output: string }>): string {
-  const lines: string[] = [`User request: ${userInput}`, ''];
+  // Frame the request as the GOAL the agent must ACHIEVE, not a one-off question. Re-sent every
+  // step (the engine is stateless in exec mode), so it keeps pursuing the goal to completion
+  // instead of doing one thing and stopping.
+  const lines: string[] = [`YOUR GOAL — keep working until this is fully achieved, then report the result: ${userInput}`, ''];
   if (steps.length === 0) {
-    lines.push('No tools have run yet. Decide your first tool call, or answer directly.');
+    lines.push('Nothing done yet. Take the FIRST action toward the goal now (a tool call). Answer directly only if the goal is already met.');
     return lines.join('\n');
   }
-  lines.push('Tool history so far (most recent last):');
+  lines.push('Progress so far (most recent last):');
   for (const s of steps) {
     lines.push(`> ${s.name}(${JSON.stringify(s.input)})`);
     lines.push(`< ${s.output}`);
   }
-  lines.push('', 'Based on the results above, call the next tool or give your final answer.');
+  lines.push('', 'You are NOT done until the GOAL above is fully achieved. If it is not yet met, call the next tool to make progress. Give your final answer ONLY when the goal is met — and make it the actual RESULT (e.g. the matching jobs and why each fits), never a question back to the user.');
   return lines.join('\n');
 }
 
 /**
  * True when an engine's reply DESCRIBES an action ('Let me navigate…', 'Ich suche…') but emitted no tool call — a short intent preamble, not a final answer — so the loop can NUDGE it to actually emit the tool line (the common weak-engine failure: the brain says it will act, then stops). Covers English + German narration, the panel's two languages; other languages degrade to no-nudge (the proactivity system prompt still pushes the model to act in any language — this is only the backstop). Bounded to short replies so a real prose answer that mentions 'review'/'search' isn't misread as narration.
  */
-// @kern-source: agentic-brain-client:157
+// @kern-source: agentic-brain-client:160
 export function looksLikeActionIntent(text: string): boolean {
   const s = text.trim();
   if (s.length === 0 || s.length >= 500) return false; // a substantive reply is a real answer, not a preamble
@@ -169,7 +172,7 @@ export function looksLikeActionIntent(text: string): boolean {
 /**
  * True when the engine, instead of acting, ASKS the user how to proceed / for permission / to pick an option ('How would you like me to proceed?', 'Which option would you like?', 'Soll ich…?'). The classic non-agentic stall: it hands the wheel back to the user. The loop nudges it to decide and continue (the user still approves each page-changing action via the SEPARATE gate, so the agent never needs to ask in prose). Kept to strong, unambiguous phrases (EN + DE) so a completed answer that merely ends 'let me know if you want more' is NOT misread as a stall.
  */
-// @kern-source: agentic-brain-client:177
+// @kern-source: agentic-brain-client:180
 export function looksLikeDeferral(text: string): boolean {
   const t = text.toLowerCase();
   return /(how would you like me to proceed|how (should|shall|do) (i|we) proceed|which (one|option)( would you| do you want| should i)|would you like me to\b|do you want me to\b|let me know which|wie soll ich (fortfahren|vorgehen|weitermachen)|möchtest du, dass ich|soll ich\b.*\?|welche (option|möglichkeit))/.test(t);
@@ -178,7 +181,7 @@ export function looksLikeDeferral(text: string): boolean {
 /**
  * A compact, human-readable one-liner for the approval popup's `command` field — what the agent is about to do.
  */
-// @kern-source: agentic-brain-client:184
+// @kern-source: agentic-brain-client:187
 export function describeAgentAction(name: string, input: Record<string, unknown>): string {
   let arg = '';
   try { arg = JSON.stringify(input); } catch { arg = '{…}'; }
@@ -189,7 +192,7 @@ export function describeAgentAction(name: string, input: Record<string, unknown>
 /**
  * v2 BrainClient: a bounded ReAct tool-loop over one engine, with client-lent capabilities (registerCapability) the brain pulls mid-turn via capability-request, and a per-action approval gate for destructive tools. Construct with the daemon's EngineRegistry; open() binds engine/cwd; runTurn() drives the loop; provideCapabilityResult/provideApproval answer the *-request events by requestId.
  */
-// @kern-source: agentic-brain-client:195
+// @kern-source: agentic-brain-client:198
 export class AgenticTurnBrainClient implements BrainClient {
   private registry: EngineRegistry;
   private adapter: EngineAdapter;
@@ -566,7 +569,7 @@ export class AgenticTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: agentic-brain-client:594
+// @kern-source: agentic-brain-client:597
 export function createAgenticTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new AgenticTurnBrainClient(registry);
 }

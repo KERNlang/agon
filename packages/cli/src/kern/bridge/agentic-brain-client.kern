@@ -138,19 +138,22 @@ fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string" ret
   >>>
 
 fn name=renderAgentTranscript params="userInput:string, steps:Array<{ name: string; input: Record<string, unknown>; output: string }>" returns="string" export=true
-  doc "The growing ReAct transcript re-sent to the (stateless, exec-mode) engine each step: the original request plus every prior tool call and its result, ending with a nudge to act or answer."
+  doc "The growing ReAct transcript re-sent to the (stateless, exec-mode) engine each step. The user's request is framed as a standing GOAL (restated every step so a stateless engine never loses sight of it) plus the progress so far, ending with: you are NOT done until the goal is met — act, or give the RESULT."
   handler <<<
-    const lines: string[] = [`User request: ${userInput}`, ''];
+    // Frame the request as the GOAL the agent must ACHIEVE, not a one-off question. Re-sent every
+    // step (the engine is stateless in exec mode), so it keeps pursuing the goal to completion
+    // instead of doing one thing and stopping.
+    const lines: string[] = [`YOUR GOAL — keep working until this is fully achieved, then report the result: ${userInput}`, ''];
     if (steps.length === 0) {
-      lines.push('No tools have run yet. Decide your first tool call, or answer directly.');
+      lines.push('Nothing done yet. Take the FIRST action toward the goal now (a tool call). Answer directly only if the goal is already met.');
       return lines.join('\n');
     }
-    lines.push('Tool history so far (most recent last):');
+    lines.push('Progress so far (most recent last):');
     for (const s of steps) {
       lines.push(`> ${s.name}(${JSON.stringify(s.input)})`);
       lines.push(`< ${s.output}`);
     }
-    lines.push('', 'Based on the results above, call the next tool or give your final answer.');
+    lines.push('', 'You are NOT done until the GOAL above is fully achieved. If it is not yet met, call the next tool to make progress. Give your final answer ONLY when the goal is met — and make it the actual RESULT (e.g. the matching jobs and why each fits), never a question back to the user.');
     return lines.join('\n');
   >>>
 

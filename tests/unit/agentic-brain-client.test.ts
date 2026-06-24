@@ -96,10 +96,12 @@ describe('agent prompt + transcript helpers', () => {
     expect(p.startsWith('BASE-PROMPT')).toBe(true);
     expect(p).toContain('none registered');
   });
-  it('renderAgentTranscript shows the request and the running tool history', () => {
-    expect(renderAgentTranscript('hello', [])).toContain('No tools have run yet');
+  it('renderAgentTranscript frames the request as a GOAL and shows the running tool history', () => {
+    expect(renderAgentTranscript('hello', [])).toContain('Nothing done yet');
     const t = renderAgentTranscript('hello', [{ name: 'readPage', input: {}, output: 'PAGE' }]);
-    expect(t).toContain('User request: hello');
+    expect(t).toContain('GOAL');
+    expect(t).toContain('hello');
+    expect(t).toContain('NOT done until the GOAL');
     expect(t).toContain('> readPage({})');
     expect(t).toContain('< PAGE');
   });

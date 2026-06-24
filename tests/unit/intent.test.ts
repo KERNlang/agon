@@ -39,6 +39,12 @@ describe('Intent Detection — Slash Commands', () => {
     if (r.type === 'tribunal') expect(r.question).toBe('React vs Svelte');
   });
 
+  it('/chrome parses the task into input (not aliased to another mode)', () => {
+    const r = detectIntent('/chrome open the pricing page and check the hero');
+    expect(r.type).toBe('chrome');
+    expect(r.input).toBe('open the pricing page and check the hero');
+  });
+
   it('/raw parses with no index', () => {
     const r = detectIntent('/raw');
     expect(r.type).toBe('raw');

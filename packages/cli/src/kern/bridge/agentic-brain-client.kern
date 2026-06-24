@@ -1,0 +1,526 @@
+// ── AgenticTurnBrainClient — the v2 BrainClient: an autonomous tool-loop ──────
+//
+// Where HeadlessTurnBrainClient (the v1 "ask" brain) does ONE engine dispatch per
+// turn and declares clientCapabilities:'unsupported', THIS brain implements the
+// agent tool-loop the contract (brain-client.kern) always anticipated: a CLIENT
+// (the browser extension) lends the brain tools via registerCapability, and the
+// brain — mid-turn — autonomously pulls them. It runs a bounded ReAct loop over the
+// SAME adapter.dispatch({mode:'exec'}) path:
+//
+//   dispatch(engine, transcript) → parse a __AGON_TOOL__ {name,input} sentinel
+//     → yield a capability-request BrainEvent (the daemon/SSE routes it to the
+//       owning client) → await provideCapabilityResult → feed the result back into
+//       the transcript → dispatch again … until the engine answers with no tool
+//       call, or a step/abort/timeout limit trips.
+//
+// Destructive tools (CapabilitySpec.isDestructive) first yield an approval-request
+// and await provideApproval — the load-bearing "ask before acting" gate (the panel
+// toggle decides whether the client auto-approves). approve-session / deny-session
+// are remembered per turn-brain so the agent isn't gated twice for the same tool.
+//
+// This is ENGINE-AGNOSTIC: any text engine that can emit the sentinel drives the
+// loop (claude/codex are reliable; the parse is forgiving — fences/prose around the
+// JSON are tolerated, a missing/garbled sentinel reads as a final answer). It is a
+// NEW brain behind the UNCHANGED BrainClient interface — no protocol/client break,
+// exactly the swap the contract promised. The fuller headless-Cesar brain (routing,
+// confidence gate, steering) remains the deferred swap; this is the focused agent.
+
+import from="@kernlang/agon-core" names="BrainClient,BrainClientConfig,BrainEvent,BrainTurnRequest,BrainTurnResult,ControlAck,ControlCapabilities,ClientRef,ApprovalResponse,AnswerResponse,SteerRequest,CancelRequest,CapabilityRegistration,CapabilityUnregister,CapabilityResult,CapabilitySpec,BrainHealth,EngineAdapter,EngineRegistry" types=true
+import from="@kernlang/agon-core" names="buildImageAttachment,decodeDataUrlToImageFile,MAX_DISPATCH_IMAGES"
+import from="@kernlang/agon-adapter-cli" names="createCliAdapter"
+import from="node:path" names="join"
+import from="node:os" names="tmpdir"
+import from="node:fs" names="rmSync"
+import from="node:crypto" names="randomUUID"
+
+const name=AGENT_TOOL_MARKER type=string value={{ '__AGON_TOOL__' }} export=true
+const name=MAX_AGENT_STEPS type=number value={{ 8 }} export=true
+const name=MAX_NARRATION_RETRIES type=number value={{ 2 }} export=true
+const name=CAPABILITY_RESULT_TIMEOUT_MS type=number value={{ 60_000 }}
+const name=APPROVAL_TIMEOUT_MS type=number value={{ 180_000 }}
+
+// ── Pure helpers (exported for unit tests) ───────────────────────────────────
+
+fn name=parseAgentToolCall params="stdout:string" returns="{ name: string; input: Record<string, unknown> } | null" export=true
+  doc "Extract an agent tool call from an engine's stdout: locate the AGENT_TOOL_MARKER and parse the first balanced {…} JSON object after it. Forgiving — surrounding prose or a ```code fence``` is tolerated, and a missing/garbled sentinel returns null (the caller treats null as a final prose answer). Returns null unless the object has a string `name`; a non-object `input` defaults to {}."
+  handler <<<
+    const idx = stdout.indexOf(AGENT_TOOL_MARKER);
+    if (idx === -1) return null;
+    const after = stdout.slice(idx + AGENT_TOOL_MARKER.length);
+    const start = after.indexOf('{');
+    if (start === -1) return null;
+    let depth = 0;
+    let end = -1;
+    let inStr = false;
+    let esc = false;
+    for (let i = start; i < after.length; i++) {
+      const c = after[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === '\\') esc = true;
+        else if (c === '"') inStr = false;
+        continue;
+      }
+      if (c === '"') inStr = true;
+      else if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    if (end === -1) return null;
+    try {
+      const obj = JSON.parse(after.slice(start, end + 1)) as { name?: unknown; input?: unknown };
+      if (obj && typeof obj.name === 'string') {
+        const input = (obj.input && typeof obj.input === 'object') ? obj.input as Record<string, unknown> : {};
+        return { name: obj.name, input };
+      }
+    } catch { return null; }
+    return null;
+  >>>
+
+fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string" returns="string" export=true
+  doc "The agent's system prompt: the ReAct tool protocol plus the catalog of client-lent capabilities. Read-only vs destructive is surfaced so the engine knows which actions trigger the user's approval gate."
+  handler <<<
+    const lines: string[] = [];
+    if (base && base.trim().length > 0) { lines.push(base.trim(), ''); }
+    lines.push(
+      "You are Agon, an AI agent operating INSIDE the user's web browser via a side panel.",
+      'You can inspect and act on the page the user is viewing, using ONLY the tools below.',
+      '',
+      'TOOLS:',
+    );
+    if (tools.length === 0) {
+      lines.push('  (none registered — answer from your own knowledge.)');
+    } else {
+      for (const t of tools) {
+        // Label by isReadOnly (fail-safe): anything NOT explicitly read-only ACTS and is
+        // gated — matching the runTurn gate, so the engine never sees a mutating tool as "read-only".
+        const tag = t.isReadOnly ? '(read-only)' : '(ACTS on the page — the user must approve)';
+        lines.push(`- ${t.name} ${tag}: ${t.description}`);
+        lines.push(`    input: ${JSON.stringify(t.inputSchema).slice(0, 800)}`);
+      }
+    }
+    lines.push(
+      '',
+      'HOW TO ACT — this is strict. To use a tool, your reply MUST be EXACTLY one line,',
+      'the tool call, and NOTHING ELSE (no preamble, no explanation):',
+      `${AGENT_TOOL_MARKER} {"name":"<toolName>","input":{ ... }}`,
+      '',
+      `Example — read the page:   ${AGENT_TOOL_MARKER} {"name":"readPage","input":{}}`,
+      `Example — click a button:  ${AGENT_TOOL_MARKER} {"name":"click","input":{"selector":"#submit"}}`,
+      '',
+      'CRITICAL: Do NOT narrate ("Let me…", "I will…", "I\'m going to…") and then stop —',
+      'narration alone does NOTHING; only a tool line acts. If you intend to act, EMIT THE',
+      'TOOL LINE NOW. One tool per step — you then get its result and may call another tool.',
+      'Read the page before acting on it. Never fabricate a result or claim an action you',
+      'did not take. Reply in prose ONLY when giving the user your FINAL answer (no tool line).',
+    );
+    return lines.join('\n');
+  >>>
+
+fn name=renderAgentTranscript params="userInput:string, steps:Array<{ name: string; input: Record<string, unknown>; output: string }>" returns="string" export=true
+  doc "The growing ReAct transcript re-sent to the (stateless, exec-mode) engine each step: the original request plus every prior tool call and its result, ending with a nudge to act or answer."
+  handler <<<
+    const lines: string[] = [`User request: ${userInput}`, ''];
+    if (steps.length === 0) {
+      lines.push('No tools have run yet. Decide your first tool call, or answer directly.');
+      return lines.join('\n');
+    }
+    lines.push('Tool history so far (most recent last):');
+    for (const s of steps) {
+      lines.push(`> ${s.name}(${JSON.stringify(s.input)})`);
+      lines.push(`< ${s.output}`);
+    }
+    lines.push('', 'Based on the results above, call the next tool or give your final answer.');
+    return lines.join('\n');
+  >>>
+
+fn name=looksLikeActionIntent params="text:string" returns="boolean" export=true
+  doc "True when an engine's reply DESCRIBES an action ('Let me navigate…', 'I'll click…') but emitted no tool call — a short intent preamble, not a final answer. Used to NUDGE the engine to actually emit the tool line instead of treating the narration as a final answer (the common weak-engine failure). Looks only at the head + caps length to avoid matching a real prose answer that happens to say 'review' or 'let me know'."
+  handler <<<
+    const head = text.trim().slice(0, 200).toLowerCase();
+    if (/\blet me know\b/.test(head)) return false; // a sign-off, not an action
+    const intent = /\b(let me|i'?ll|i will|i'?m going to|i am going to|let's|first,? i|now i'?ll|going to)\b/.test(head);
+    const verb = /\b(navigat|click|type|go to|open|fill|select|read|review|look at|check|press|scroll|enter|search|find)\b/.test(head);
+    return intent && verb && text.trim().length < 500;
+  >>>
+
+fn name=describeAgentAction params="name:string, input:Record<string, unknown>" returns="string" export=true
+  doc "A compact, human-readable one-liner for the approval popup's `command` field — what the agent is about to do."
+  handler <<<
+    let arg = '';
+    try { arg = JSON.stringify(input); } catch { arg = '{…}'; }
+    if (arg.length > 160) arg = arg.slice(0, 157) + '…';
+    return `${name}(${arg})`;
+  >>>
+
+// ── The agentic brain ────────────────────────────────────────────────────────
+
+service name=AgenticTurnBrainClient implements=BrainClient
+  doc "v2 BrainClient: a bounded ReAct tool-loop over one engine, with client-lent capabilities (registerCapability) the brain pulls mid-turn via capability-request, and a per-action approval gate for destructive tools. Construct with the daemon's EngineRegistry; open() binds engine/cwd; runTurn() drives the loop; provideCapabilityResult/provideApproval answer the *-request events by requestId."
+  field name=registry type=EngineRegistry private=true
+  field name=adapter type=EngineAdapter private=true
+  field name=engineId type=string private=true
+  field name=cwd type=string private=true
+  field name=systemPrompt type="string|undefined" private=true
+  field name=startedAtMs type=number private=true
+  field name=activeTurnId type="string|null" private=true
+  field name=aborts type="Map<string, AbortController>" private=true
+  field name=caps type="Map<string, { clientId: string; spec: CapabilitySpec }>" private=true
+  field name=pendingCaps type="Map<string, { clientId: string; resolve: (r: CapabilityResult) => void }>" private=true
+  field name=pendingApprovals type="Map<string, { clientId: string; resolve: (decision: string) => void }>" private=true
+  field name=approvedSession type="Set<string>" private=true
+  field name=deniedSession type="Set<string>" private=true
+  field name=controlCapabilities type=ControlCapabilities
+
+  constructor params="registry:EngineRegistry"
+    handler lang="kern"
+      assign target="this.registry" value="registry"
+      assign target="this.adapter" value="createCliAdapter(registry)"
+      assign target="this.engineId" value="'claude'"
+      assign target="this.cwd" value="process.cwd()"
+      assign target="this.systemPrompt" value="undefined"
+      assign target="this.startedAtMs" value="Date.now()"
+      assign target="this.activeTurnId" value="null"
+      assign target="this.aborts" value="new Map()"
+      assign target="this.caps" value="new Map()"
+      assign target="this.pendingCaps" value="new Map()"
+      assign target="this.pendingApprovals" value="new Map()"
+      assign target="this.approvedSession" value="new Set()"
+      assign target="this.deniedSession" value="new Set()"
+      assign target="this.controlCapabilities" value="{ concurrentTurns: 'per-session-serialized', concurrentSteering: 'unsupported', approvalArbitration: 'host-only', questionArbitration: 'unsupported', clientCapabilities: 'supported', cancellation: 'per-turn' }"
+      assign target="this.open" value="this.open.bind(this)"
+      assign target="this.runTurn" value="this.runTurn.bind(this)"
+      assign target="this.steer" value="this.steer.bind(this)"
+      assign target="this.provideApproval" value="this.provideApproval.bind(this)"
+      assign target="this.provideAnswer" value="this.provideAnswer.bind(this)"
+      assign target="this.registerCapability" value="this.registerCapability.bind(this)"
+      assign target="this.unregisterCapability" value="this.unregisterCapability.bind(this)"
+      assign target="this.provideCapabilityResult" value="this.provideCapabilityResult.bind(this)"
+      assign target="this.cancel" value="this.cancel.bind(this)"
+      assign target="this.notifyClientAttached" value="this.notifyClientAttached.bind(this)"
+      assign target="this.notifyClientDetached" value="this.notifyClientDetached.bind(this)"
+      assign target="this.health" value="this.health.bind(this)"
+      assign target="this.close" value="this.close.bind(this)"
+
+  method name=open params="config:BrainClientConfig" returns="Promise<void>" async=true
+    doc "Bind the session: which engine answers, the cwd dispatches run in, and an optional system prompt prepended to the agent protocol prompt."
+    handler <<<
+      this.engineId = config.engineId;
+      this.cwd = config.cwd;
+      this.systemPrompt = config.systemPrompt;
+    >>>
+
+  method name=waitForCapabilityResult params="requestId:string, ownerClientId:string, signal:AbortSignal" returns="Promise<CapabilityResult>" async=true private=true
+    doc "Suspend the turn until the OWNING client (ownerClientId — the one that registered the tool) POSTs its CapabilityResult; provideCapabilityResult resolves the pending entry by requestId only when the reply's clientId matches. Rejects on the turn's abort or after CAPABILITY_RESULT_TIMEOUT_MS so a closed/unresponsive panel can never hang the brain."
+    handler <<<
+      return new Promise<CapabilityResult>((resolve, reject) => {
+        if (signal.aborted) { reject(new Error('aborted')); return; }
+        let timer: ReturnType<typeof setTimeout>;
+        const onAbort = () => { this.pendingCaps.delete(requestId); clearTimeout(timer); reject(new Error('aborted')); };
+        timer = setTimeout(() => { this.pendingCaps.delete(requestId); signal.removeEventListener('abort', onAbort); reject(new Error('timeout')); }, CAPABILITY_RESULT_TIMEOUT_MS);
+        signal.addEventListener('abort', onAbort, { once: true });
+        this.pendingCaps.set(requestId, { clientId: ownerClientId, resolve: (r: CapabilityResult) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(r); } });
+      });
+    >>>
+
+  method name=waitForApproval params="requestId:string, ownerClientId:string, signal:AbortSignal" returns="Promise<string>" async=true private=true
+    doc "Suspend the turn until the OWNING client (ownerClientId — the turn's submitter, the host for v1) answers the approval-request; provideApproval resolves by requestId only when the reply's clientId matches (host-only arbitration). Rejects on abort; on APPROVAL_TIMEOUT_MS resolves to 'deny' (a no-answer is a safe no, not a hang)."
+    handler <<<
+      return new Promise<string>((resolve, reject) => {
+        if (signal.aborted) { reject(new Error('aborted')); return; }
+        let timer: ReturnType<typeof setTimeout>;
+        const onAbort = () => { this.pendingApprovals.delete(requestId); clearTimeout(timer); reject(new Error('aborted')); };
+        timer = setTimeout(() => { this.pendingApprovals.delete(requestId); signal.removeEventListener('abort', onAbort); resolve('deny'); }, APPROVAL_TIMEOUT_MS);
+        signal.addEventListener('abort', onAbort, { once: true });
+        this.pendingApprovals.set(requestId, { clientId: ownerClientId, resolve: (decision: string) => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); resolve(decision); } });
+      });
+    >>>
+
+  method name=runTurn params="req:BrainTurnRequest" returns="BrainEvent, BrainTurnResult, void" async=true stream=true
+    doc "Run the bounded ReAct tool-loop for one turn, streaming BrainEvents (thinking notices, tool start/done, capability-request + approval-request, and the final engine answer); the BrainTurnResult is the generator RETURN value. Single-writer: rejects a concurrent turn. Cancellable per turn via the AbortController."
+    handler <<<
+      // KERN-GAP: kern-review (undefined-reference) — in a raw `<<<` stream handler a
+      // `yield { ...objectLiteral }` is mis-parsed (its keys flagged undeclared).
+      // Workaround used throughout: assign each BrainEvent to a typed const, yield it.
+      const turnEngineId = (req.engineId && this.registry.listIds().includes(req.engineId)) ? req.engineId : this.engineId;
+      if (this.activeTurnId !== null) {
+        const reason = `brain busy with turn ${this.activeTurnId} (single-writer)`;
+        const busy: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+        yield busy;
+        return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+      }
+      this.activeTurnId = req.turnId;
+      const ctrl = new AbortController();
+      this.aborts.set(req.turnId, ctrl);
+      const safeTurn = req.turnId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200) || 'turn';
+      const turnDir = join(tmpdir(), 'agon-brain-turns', safeTurn);
+      try {
+        const engine = this.registry.get(turnEngineId);
+        // Step-0 vision: a screenshot the user attached to the turn (frontend-inspector).
+        // A screenshot the AGENT later captures (a 'data:' capability result) is decoded
+        // and shown on the NEXT dispatch so the agent can actually SEE what it grabbed.
+        type Att = NonNullable<ReturnType<typeof buildImageAttachment>>;
+        let nextImages: Att[] = [];
+        const allImages = req.images ?? [];
+        const rawImages = allImages.slice(0, MAX_DISPATCH_IMAGES);
+        if (allImages.length > rawImages.length) {
+          const capped: BrainEvent = { kind: 'notice', level: 'warning', message: `only the first ${MAX_DISPATCH_IMAGES} of ${allImages.length} images are used` };
+          yield capped;
+        }
+        for (let i = 0; i < rawImages.length; i++) {
+          const raw = rawImages[i];
+          if (raw.startsWith('data:')) {
+            const decoded = decodeDataUrlToImageFile(raw, turnDir, i);
+            if (decoded.path) { const att = buildImageAttachment(decoded.path, this.cwd); if (att) nextImages.push(att); }
+            else if (decoded.reason) { const skip: BrainEvent = { kind: 'notice', level: 'warning', message: `image skipped: ${decoded.reason}` }; yield skip; }
+          } else {
+            const att = buildImageAttachment(raw, this.cwd); if (att) nextImages.push(att);
+          }
+        }
+
+        const tools = [...this.caps.values()].map((c) => c.spec);
+        const sysPrompt = buildAgentSystemPrompt(tools, this.systemPrompt);
+        const steps: Array<{ name: string; input: Record<string, unknown>; output: string }> = [];
+        let imgSeq = rawImages.length;
+        let narrationRetries = 0; // budget for nudging an engine that narrates an action but emits no tool call
+
+        for (let step = 0; step < MAX_AGENT_STEPS; step++) {
+          if (ctrl.signal.aborted) break;
+          const thinking: BrainEvent = { kind: 'notice', level: 'info', message: `${turnEngineId} thinking… (step ${step + 1}/${MAX_AGENT_STEPS})` };
+          yield thinking;
+          const prompt = renderAgentTranscript(req.input, steps);
+          const dispatchImages = nextImages.length > 0 ? nextImages : undefined;
+          nextImages = []; // images are shown once, on the dispatch right after capture
+          const result = await this.adapter.dispatch({
+            engine, prompt, cwd: this.cwd, mode: 'exec', timeout: 120,
+            outputDir: turnDir, signal: ctrl.signal, systemPrompt: sysPrompt, images: dispatchImages,
+          });
+          const stdout = (result.stdout || '').trim();
+          if (result.exitCode !== 0 || result.timedOut || stdout.length === 0) {
+            const reason = ctrl.signal.aborted ? 'cancelled by client'
+              : result.timedOut ? `${turnEngineId} timed out`
+              : `${turnEngineId} produced no answer (exit ${result.exitCode})`;
+            const note: BrainEvent = { kind: 'notice', level: ctrl.signal.aborted ? 'warning' : 'error', message: reason };
+            yield note;
+            return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+          }
+
+          const call = parseAgentToolCall(stdout);
+          if (!call) {
+            // No tool call. If the engine NARRATED an action ("Let me navigate…") but emitted
+            // no tool line, nudge it to actually act instead of ending — the common weak-engine
+            // failure where the agent says it will do something and then stops. Bounded retries.
+            if (tools.length > 0 && narrationRetries < MAX_NARRATION_RETRIES && looksLikeActionIntent(stdout)) {
+              narrationRetries++;
+              const nudge: BrainEvent = { kind: 'notice', level: 'warning', message: 'the engine described an action but sent no tool call — asking it to actually act' };
+              yield nudge;
+              steps.push({ name: 'reminder', input: {}, output: `You said: "${stdout.trim().slice(0, 160)}" — but you emitted NO tool call, so nothing happened. To act, your NEXT reply must be EXACTLY one ${AGENT_TOOL_MARKER} {"name":...,"input":...} line and nothing else. If you are truly finished, give your final prose answer.` });
+              continue;
+            }
+            // Otherwise it's the engine's final answer.
+            const ans: BrainEvent = { kind: 'engine', engineId: turnEngineId, content: stdout };
+            yield ans;
+            return { turnId: req.turnId, delegated: false, responded: true, engineId: turnEngineId };
+          }
+
+          const cap = this.caps.get(call.name);
+          if (!cap) {
+            const avail = [...this.caps.keys()].join(', ') || '(none)';
+            steps.push({ name: call.name, input: call.input, output: `ERROR: no tool "${call.name}". Available tools: ${avail}.` });
+            continue;
+          }
+
+          const running: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'running', input: describeAgentAction(call.name, call.input) };
+          yield running;
+
+          // Approval gate — FAIL-SAFE: gate anything that is not EXPLICITLY read-only
+          // (a tool the client mis-/under-declares still asks, never silently acts).
+          // Skipped only once the user approved this tool for the session.
+          if (!cap.spec.isReadOnly && !this.approvedSession.has(call.name)) {
+            if (this.deniedSession.has(call.name)) {
+              const denied: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: 'denied for this session' };
+              yield denied;
+              steps.push({ name: call.name, input: call.input, output: 'DENIED by the user for this session — do not retry this tool; try another approach or tell the user.' });
+              continue;
+            }
+            const apId = randomUUID();
+            // targetClientId = the turn submitter: the brain awaits THIS client's approval
+            // (host-only arbitration), so naming it lets every other SSE-subscribed client
+            // (e.g. the browser panel for an `agon drive` turn) skip rendering the prompt.
+            const ask: BrainEvent = { kind: 'approval-request', requestId: apId, tool: call.name, command: describeAgentAction(call.name, call.input), reason: cap.spec.description, targetClientId: req.clientId };
+            yield ask;
+            let decision: string;
+            try { decision = await this.waitForApproval(apId, req.clientId, ctrl.signal); }
+            catch {
+              const reason = 'cancelled by client';
+              const note: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
+              yield note;
+              return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+            }
+            if (decision === 'abort') {
+              const reason = 'the user aborted the turn at an approval prompt';
+              const note: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
+              yield note;
+              return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+            }
+            if (decision === 'approve-session') this.approvedSession.add(call.name);
+            if (decision === 'deny' || decision === 'deny-session') {
+              if (decision === 'deny-session') this.deniedSession.add(call.name);
+              const denied: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: 'denied by the user' };
+              yield denied;
+              steps.push({ name: call.name, input: call.input, output: 'DENIED by the user — do not retry; try another approach or explain what you would have done.' });
+              continue;
+            }
+            // 'approve' / 'approve-session' fall through to execution.
+          }
+
+          // Execute: pull the capability from the owning client.
+          const reqId = randomUUID();
+          const capReq: BrainEvent = { kind: 'capability-request', requestId: reqId, capability: call.name, input: call.input, targetClientId: cap.clientId };
+          yield capReq;
+          let capRes: CapabilityResult;
+          try { capRes = await this.waitForCapabilityResult(reqId, cap.clientId, ctrl.signal); }
+          catch (err) {
+            const aborted = ctrl.signal.aborted;
+            const failNote: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: 'error', output: aborted ? 'cancelled' : 'the browser did not respond' };
+            yield failNote;
+            const reason = aborted ? 'cancelled by client' : `tool "${call.name}" timed out (the browser client did not respond)`;
+            const note: BrainEvent = { kind: 'notice', level: aborted ? 'warning' : 'error', message: reason };
+            yield note;
+            return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+          }
+
+          const rawOut = capRes.ok ? (capRes.output ?? '(no output)') : `ERROR: ${capRes.error ?? 'the tool failed'}`;
+          // A 'data:' image result (e.g. an agent screenshot) is decoded and shown to
+          // the engine on the next dispatch as vision, not dumped into the text transcript.
+          let transcriptOut = rawOut;
+          if (capRes.ok && rawOut.startsWith('data:')) {
+            const decoded = decodeDataUrlToImageFile(rawOut, turnDir, imgSeq++);
+            if (decoded.path) {
+              const att = buildImageAttachment(decoded.path, this.cwd);
+              if (att) { nextImages = [att]; transcriptOut = '(screenshot captured — it is attached to your view this step)'; }
+              else transcriptOut = '(screenshot captured but could not be attached)';
+            } else {
+              transcriptOut = `(screenshot could not be read${decoded.reason ? `: ${decoded.reason}` : ''})`;
+            }
+          }
+          const done: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: capRes.ok ? 'done' : 'error', output: transcriptOut.slice(0, 400) };
+          yield done;
+          steps.push({ name: call.name, input: call.input, output: transcriptOut.slice(0, 4000) });
+        }
+
+        if (ctrl.signal.aborted) {
+          const reason = 'cancelled by client';
+          const cancelled: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
+          yield cancelled;
+          return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+        }
+        const reason = `reached the ${MAX_AGENT_STEPS}-step limit without a final answer`;
+        const limit: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
+        yield limit;
+        return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+      } catch (err) {
+        if (ctrl.signal.aborted) {
+          const reason = 'cancelled by client';
+          const cancelled: BrainEvent = { kind: 'notice', level: 'warning', message: reason };
+          yield cancelled;
+          return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+        }
+        const reason = `turn failed: ${err instanceof Error ? err.message : String(err)}`;
+        const failed: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+        yield failed;
+        return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+      } finally {
+        this.aborts.delete(req.turnId);
+        if (this.activeTurnId === req.turnId) this.activeTurnId = null;
+        try { rmSync(turnDir, { recursive: true, force: true }); } catch { /* best-effort scratch cleanup */ }
+      }
+    >>>
+
+  method name=cancel params="req:CancelRequest" returns="Promise<ControlAck>" async=true
+    doc "Abort an in-flight turn by turnId — also rejects any capability/approval the loop is awaiting, so a cancel breaks the loop immediately."
+    handler <<<
+      const ctrl = this.aborts.get(req.turnId);
+      if (!ctrl) return { status: 'rejected', reason: `no active turn ${req.turnId}` };
+      ctrl.abort();
+      return { status: 'accepted' };
+    >>>
+
+  method name=registerCapability params="reg:CapabilityRegistration" returns="Promise<ControlAck>" async=true
+    doc "A client lends the brain a tool. Stored by name with its owning clientId so a capability-request can be routed back. Re-registering a name replaces it (the latest client wins)."
+    handler <<<
+      this.caps.set(reg.spec.name, { clientId: reg.clientId, spec: reg.spec });
+      return { status: 'accepted' };
+    >>>
+
+  method name=unregisterCapability params="req:CapabilityUnregister" returns="Promise<ControlAck>" async=true
+    doc "Ownership-checked: a client may only unregister a tool IT registered, so one attached client can't strip another's capabilities."
+    handler <<<
+      const existing = this.caps.get(req.name);
+      if (existing && existing.clientId !== req.clientId) return { status: 'rejected', reason: `capability "${req.name}" is owned by another client` };
+      this.caps.delete(req.name);
+      return { status: 'accepted' };
+    >>>
+
+  method name=provideCapabilityResult params="res:CapabilityResult" returns="Promise<ControlAck>" async=true
+    doc "A client's reply to a capability-request — resolves the pending turn await by requestId, but ONLY when the reply's clientId matches the client the request was routed to. A mismatched clientId is rejected WITHOUT consuming the pending entry, so a second token-holding client can't spoof another's tool result. Stale/duplicate requestId is also rejected."
+    handler <<<
+      const pending = this.pendingCaps.get(res.requestId);
+      if (!pending) return { status: 'rejected', reason: `no pending capability request ${res.requestId}` };
+      if (pending.clientId && res.clientId !== pending.clientId) return { status: 'rejected', reason: `capability ${res.requestId} is owned by another client` };
+      this.pendingCaps.delete(res.requestId);
+      pending.resolve(res);
+      return { status: 'accepted' };
+    >>>
+
+  method name=provideApproval params="res:ApprovalResponse" returns="Promise<ControlAck>" async=true
+    doc "The user's decision on an approval-request — resolves the pending gate by requestId, but ONLY from the client that submitted the turn (host-only arbitration enforced, not just declared). A mismatched clientId is rejected without consuming the gate, so one client can't approve another's destructive action. Stale/duplicate requestId is rejected."
+    handler <<<
+      const pending = this.pendingApprovals.get(res.requestId);
+      if (!pending) return { status: 'rejected', reason: `no pending approval ${res.requestId}` };
+      if (pending.clientId && res.clientId !== pending.clientId) return { status: 'rejected', reason: `approval ${res.requestId} belongs to another client` };
+      this.pendingApprovals.delete(res.requestId);
+      pending.resolve(res.decision);
+      return { status: 'accepted' };
+    >>>
+
+  method name=steer params="_req:SteerRequest" returns="Promise<ControlAck>" async=true
+    handler <<<
+      return { status: 'unsupported', reason: 'agent v2 has no mid-turn steering yet (controlCapabilities.concurrentSteering)' };
+    >>>
+
+  method name=provideAnswer params="_res:AnswerResponse" returns="Promise<ControlAck>" async=true
+    handler <<<
+      return { status: 'unsupported', reason: 'agent v2 asks no free-text mid-turn questions yet (controlCapabilities.questionArbitration)' };
+    >>>
+
+  method name=notifyClientAttached params="_sessionId:string, _client:ClientRef" returns="void"
+    handler <<<
+      /* capabilities are (re)registered explicitly by the client on attach; nothing to pre-track */
+    >>>
+
+  method name=notifyClientDetached params="_sessionId:string, clientId:string" returns="void"
+    doc "Drop the detached client's lent tools so a closed panel leaves no phantom capabilities the brain might try to pull."
+    handler <<<
+      for (const [name, c] of [...this.caps]) { if (c.clientId === clientId) this.caps.delete(name); }
+    >>>
+
+  method name=health returns="Promise<BrainHealth>" async=true
+    handler <<<
+      return { alive: true, engineId: this.engineId, pid: null, activeTurnId: this.activeTurnId, queuedTurns: 0, uptimeMs: Date.now() - this.startedAtMs };
+    >>>
+
+  method name=close returns="Promise<void>" async=true
+    doc "Best-effort teardown: abort all in-flight turns (which rejects their pending capability/approval awaits) and clear state."
+    handler <<<
+      for (const ctrl of this.aborts.values()) ctrl.abort();
+      this.aborts.clear();
+      this.pendingCaps.clear();
+      this.pendingApprovals.clear();
+      this.activeTurnId = null;
+    >>>
+
+fn name=createAgenticTurnBrainClient params="registry:EngineRegistry" returns="BrainClient" export=true
+  doc "Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry."
+  handler <<<
+    return new AgenticTurnBrainClient(registry);
+  >>>

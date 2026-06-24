@@ -8,7 +8,7 @@ import type { Dispatch } from '../../../handlers/types.js';
 
 import { ENGINE_COLORS } from '../../blocks/output-format.js';
 
-import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleConquer, handleBuild, handleReviewMany, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
+import { handleForge, handleBrainstorm, handleCampfire, handleTribunal, handleThink, handleCouncil, handleSynthesis, handleNeroChallenge, handleResearch, handleChrome, handleConquer, handleBuild, handleReviewMany, runAgentMode, runAgentTeam } from '../../../handlers/index.js';
 
 import { handleTeamTribunal } from '../../handlers/team-tribunal.js';
 
@@ -118,6 +118,20 @@ export async function dispatchOrchestrationIntent(intent: any, input: string, cb
         await handleCouncil(intent.question, cb.dispatch, cb.ctx);
         const chatContext = collectRecentEngineContext(cb.ctx, 14, 1500);
         if (chatContext) await continueCesarAfterResult(`Council deliberated on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the chairman verdict and the strongest dissent, then recommend the next step.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    }
+    case 'chrome': {
+      if (!intent.input?.trim()) { cb.dispatch({ type: 'warning', message: 'Usage: /chrome <task> — e.g. /chrome "open the pricing page and tell me if the hero is cluttered"' }); return { handled: true, ranAsJob: false }; }
+      const _chrCwd = resolveWorkingDir();
+      const _chrLabel = intent.input?.slice(0, 40) ?? 'chrome';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('chrome', _chrLabel, withThreadOutcome(_chrCwd, 'chrome', _chrLabel, async () => {
+        const produced = await handleChrome(intent.input, cb.dispatch, cb.ctx);
+        if (!produced) return; // no browser result this turn → don't feed Cesar stale context
+        const chatContext = collectRecentEngineContext(cb.ctx, 8, 2000);
+        if (chatContext) await continueCesarAfterResult(`Browser task: "${(intent.input ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize what the browser agent found/did and recommend the next step.`, cb, continuationEpoch, continuationUserTurns);
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
     }

@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path';
 
 import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@kernlang/agon-core';
 
-import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, sessionContext, resolveWorkingDir, engineHealth, classifyDispatchFailure } from '@kernlang/agon-core';
+import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiDispatchTools, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, sessionContext, resolveWorkingDir, engineHealth, classifyDispatchFailure } from '@kernlang/agon-core';
 
 import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth, shouldUseCompanionForAgent, shouldUseClaudePty, runClaudePtyDispatch, runClaudePtyStreamDispatch, resolveClaudePtyExtraArgs, computeEngineIsolation } from './adapter-helpers.js';
 
@@ -51,7 +51,8 @@ export class CliAdapter implements EngineAdapter {
             sysPrompt = [sysPrompt ?? '', `## PROJECT CONTEXT\n${projectCtx}`].filter(Boolean).join('\n\n');
           }
         }
-        const result = await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt);
+        // NATIVE function-calling when the caller lent tool specs (the browser brain's ReAct loop). apiDispatchTools sends them to the model's native tool API and returns any structured call in result.parts; otherwise plain text-only apiDispatch. CLI/companion paths above never reach here, so they keep the in-prompt text-marker protocol untouched.
+        const result = (options.tools && options.tools.length) ? (await apiDispatchTools(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt, options.tools)) : (await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt));
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
         writeFileSync(outputPath, result.stdout);

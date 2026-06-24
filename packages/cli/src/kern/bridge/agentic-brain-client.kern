@@ -80,6 +80,39 @@ fn name=parseAgentToolCall params="stdout:string" returns="{ name: string; input
     return null;
   >>>
 
+fn name=extractNativeToolCall params="parts?:Array<{kind:string,toolName?:string,args?:Record<string,unknown>}>" returns="{ name: string; input: Record<string, unknown> } | null" export=true
+  doc "Pull the FIRST native tool call out of a DispatchResult.parts array. API-capable engines emit a structured tool_call part (via native function-calling) instead of typing the __AGON_TOOL__ text marker; this returns the SAME {name,input} shape as parseAgentToolCall so the ReAct loop is transport-agnostic. Returns only the first call by design: the loop is sequential AND stateless (each step re-sends the transcript as a fresh single-turn, never continuing the native message thread), so a model that emits parallel calls in one response has its extras harmlessly re-decided on the next step — no dangling-tool-result is ever owed. Null when there is no tool_call part (a prose-only final answer, or a CLI engine whose result has no parts)."
+  handler <<<
+    if (!parts || parts.length === 0) return null;
+    for (const p of parts) {
+      if (p && p.kind === 'tool_call' && typeof p.toolName === 'string' && p.toolName) {
+        const input = (p.args && typeof p.args === 'object') ? p.args as Record<string, unknown> : {};
+        return { name: p.toolName, input };
+      }
+    }
+    return null;
+  >>>
+
+const name=TOOL_NAME_RE type="RegExp" value={{ /^[a-zA-Z0-9_-]{1,64}$/ }}
+
+fn name=capsToNativeTools params="specs:CapabilitySpec[]" returns="Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>" export=true
+  doc "Convert client-lent capability specs to the OpenAI-function tool shape the API dispatch path expects, so an API-capable engine can call them via NATIVE function-calling. The spec.inputSchema (a JSON schema) becomes the function parameters; a missing schema degrades to an empty object schema. SKIPS any spec whose name violates the providers' function-name constraint (^[a-zA-Z0-9_-]{1,64}$): a single malformed name would otherwise make the provider REJECT the entire tools[] array and break native calling for EVERY tool that turn. A skipped tool still works via the in-prompt marker path (the prompt lists it and parseAgentToolCall matches by name), so coverage degrades gracefully for that one tool instead of poisoning the whole request. Agon's own page tools (readPage/click/type/selectOption/scroll) all satisfy the constraint, so nothing is skipped in practice."
+  handler <<<
+    const tools: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}> = [];
+    for (const s of specs) {
+      if (!s || typeof s.name !== 'string' || !TOOL_NAME_RE.test(s.name)) continue;
+      tools.push({
+        type: 'function',
+        function: {
+          name: s.name,
+          description: typeof s.description === 'string' ? s.description : '',
+          parameters: (s.inputSchema && typeof s.inputSchema === 'object') ? s.inputSchema as Record<string, unknown> : { type: 'object', properties: {} },
+        },
+      });
+    }
+    return tools;
+  >>>
+
 fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string" returns="string" export=true
   doc "The agent's system prompt: the ReAct tool protocol plus the catalog of client-lent capabilities. Read-only vs destructive is surfaced so the engine knows which actions trigger the user's approval gate."
   handler <<<
@@ -325,6 +358,11 @@ service name=AgenticTurnBrainClient implements=BrainClient
         }
 
         const tools = [...this.caps.values()].map((c) => c.spec);
+        // NATIVE function-calling specs, offered on EVERY dispatch. The adapter uses them only on
+        // the API path (binary-less engines: the coding-plan models) and ignores them on the CLI
+        // path — so claude/codex keep the text-marker protocol while API-only engines get reliable
+        // structured tool calls. The system prompt still lists the marker format for the CLI case.
+        const nativeTools = capsToNativeTools(tools);
         const sysPrompt = buildAgentSystemPrompt(tools, this.systemPrompt);
         const steps: Array<{ name: string; input: Record<string, unknown>; output: string }> = [];
         let imgSeq = rawImages.length;
@@ -342,9 +380,17 @@ service name=AgenticTurnBrainClient implements=BrainClient
           const result = await this.adapter.dispatch({
             engine, prompt, cwd: this.cwd, mode: 'exec', timeout: 120,
             outputDir: turnDir, signal: ctrl.signal, systemPrompt: sysPrompt, images: dispatchImages,
+            tools: nativeTools,
           });
           const stdout = (result.stdout || '').trim();
-          if (result.exitCode !== 0 || result.timedOut || stdout.length === 0) {
+          // Transport-agnostic call extraction: an API engine returns the call as a STRUCTURED
+          // part (native function-calling) — prefer it; fall back to parsing the __AGON_TOOL__
+          // text marker for CLI engines. Extracted BEFORE the no-answer guard so a NATIVE
+          // tool-only turn is never misread as "no answer" when its stdout is empty: emptiness
+          // means no-answer ONLY when there is also no structured call. (Does not rely on the
+          // streaming layer echoing a <tool> marker into stdout — that coupling was implicit.)
+          const call = extractNativeToolCall(result.parts) ?? parseAgentToolCall(stdout);
+          if (result.exitCode !== 0 || result.timedOut || (stdout.length === 0 && !call)) {
             const reason = ctrl.signal.aborted ? 'cancelled by client'
               : result.timedOut ? `${turnEngineId} timed out`
               : `${turnEngineId} produced no answer (exit ${result.exitCode})`;
@@ -353,7 +399,6 @@ service name=AgenticTurnBrainClient implements=BrainClient
             return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
           }
 
-          const call = parseAgentToolCall(stdout);
           if (!call) {
             // No tool call. Two NON-AGENTIC stalls get a bounded nudge to keep going instead of
             // ending the turn: (1) NARRATION — it described an action but emitted no tool line;

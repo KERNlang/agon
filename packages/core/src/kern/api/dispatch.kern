@@ -296,6 +296,31 @@ fn name=apiStreamDispatch generator=true async=true params="config:ApiConfig, pr
     do value="messages.push({ role: 'user', content: prompt })"
     return value="yield * apiStreamDispatchWithHistory(config, messages, timeout, signal)"
 
+fn name=apiDispatchTools async=true params="config:ApiConfig, prompt:string, timeout:number, signal?:AbortSignal, systemPrompt?:string, tools?:Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>" returns="Promise<DispatchResult>"
+  handler <<<
+    // Non-streaming NATIVE function-calling. Drives the streaming history dispatch
+    // with a tools[] array and drains it to the final DispatchResult — whose `parts`
+    // carry any structured tool_call the model emitted. This lets the non-streaming
+    // dispatch() path (the browser brain's bounded ReAct loop) get native function
+    // calling instead of asking the model to TYPE a text marker (__AGON_TOOL__),
+    // which the coding-plan engines routinely forget to do (narrate-and-stop).
+    const messages: Array<{role: string, content: string}> = [];
+    if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+    messages.push({ role: 'user', content: prompt });
+    const gen = apiStreamDispatchWithHistory(config, messages, timeout, signal, tools);
+    try {
+      while (true) {
+        const next = await gen.next();
+        if (next.done) return next.value;
+      }
+    } finally {
+      // Dispose the underlying SSE stream if we exit early via a throw from gen.next()
+      // (the inner generator normally catches its own errors and RETURNS, so the happy
+      // path falls out of the loop and return() here is a no-op on a finished generator).
+      try { await gen.return(undefined as unknown as DispatchResult); } catch { /* best-effort disposal */ }
+    }
+  >>>
+
 // Rate-limit the format mismatch hint: once we've surfaced it for a given host
 // within a process lifetime, further stalls/errors from the same host return
 // the bare error without tacking on the same hint every turn (just noise).

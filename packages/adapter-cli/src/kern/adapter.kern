@@ -1,7 +1,7 @@
 import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
 import from="@kernlang/agon-core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
-import from="@kernlang/agon-core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiStreamDispatch,companionDispatch,runHooks,hooksFailed,runApiAgentLoop,sessionContext,resolveWorkingDir,engineHealth,classifyDispatchFailure"
+import from="@kernlang/agon-core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiDispatchTools,apiStreamDispatch,companionDispatch,runHooks,hooksFailed,runApiAgentLoop,sessionContext,resolveWorkingDir,engineHealth,classifyDispatchFailure"
 import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,resolveModel,stripStreamJson,usesStreamJson,recordDispatchHealth,shouldUseCompanionForAgent,shouldUseClaudePty,runClaudePtyDispatch,runClaudePtyStreamDispatch,resolveClaudePtyExtraArgs,computeEngineIsolation"
 
 service name=CliAdapter implements=EngineAdapter
@@ -42,7 +42,8 @@ service name=CliAdapter implements=EngineAdapter
             let name=projectCtx value="sessionContext.get(options.cwd || resolveWorkingDir())"
             if cond="projectCtx"
               assign target="sysPrompt" value="[sysPrompt ?? '', `## PROJECT CONTEXT\\n${projectCtx}`].filter(Boolean).join('\\n\\n')"
-          let name=result value="await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt)"
+          comment raw="// NATIVE function-calling when the caller lent tool specs (the browser brain's ReAct loop). apiDispatchTools sends them to the model's native tool API and returns any structured call in result.parts; otherwise plain text-only apiDispatch. CLI/companion paths above never reach here, so they keep the in-prompt text-marker protocol untouched."
+          let name=result value="options.tools && options.tools.length ? await apiDispatchTools(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt, options.tools) : await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt)"
           let name=outputPath value="join(options.outputDir, `${options.engine.id}-output.txt`)"
           do value="mkdirSync(dirname(outputPath), { recursive: true })"
           do value="writeFileSync(outputPath, result.stdout)"

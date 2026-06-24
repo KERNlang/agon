@@ -209,7 +209,7 @@ export type {
 } from './generated/sessions/brain-client.js';
 export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
 export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';
-export { apiDispatch, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';
+export { apiDispatch, apiDispatchTools, apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';
 export type { ApiConfig } from './api-dispatch.js';
 export { companionDispatch } from './companion-dispatch.js';
 export type { CompanionResult } from './companion-dispatch.js';

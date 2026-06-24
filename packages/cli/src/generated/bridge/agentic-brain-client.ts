@@ -67,9 +67,47 @@ export function parseAgentToolCall(stdout: string): { name: string; input: Recor
 }
 
 /**
- * The agent's system prompt: the ReAct tool protocol plus the catalog of client-lent capabilities. Read-only vs destructive is surfaced so the engine knows which actions trigger the user's approval gate.
+ * Pull the FIRST native tool call out of a DispatchResult.parts array. API-capable engines emit a structured tool_call part (via native function-calling) instead of typing the __AGON_TOOL__ text marker; this returns the SAME {name,input} shape as parseAgentToolCall so the ReAct loop is transport-agnostic. Returns only the first call by design: the loop is sequential AND stateless (each step re-sends the transcript as a fresh single-turn, never continuing the native message thread), so a model that emits parallel calls in one response has its extras harmlessly re-decided on the next step — no dangling-tool-result is ever owed. Null when there is no tool_call part (a prose-only final answer, or a CLI engine whose result has no parts).
  */
 // @kern-source: agentic-brain-client:83
+export function extractNativeToolCall(parts?: Array<{kind:string,toolName?:string,args?:Record<string,unknown>}>): { name: string; input: Record<string, unknown> } | null {
+  if (!parts || parts.length === 0) return null;
+  for (const p of parts) {
+    if (p && p.kind === 'tool_call' && typeof p.toolName === 'string' && p.toolName) {
+      const input = (p.args && typeof p.args === 'object') ? p.args as Record<string, unknown> : {};
+      return { name: p.toolName, input };
+    }
+  }
+  return null;
+}
+
+// @kern-source: agentic-brain-client:96
+export const TOOL_NAME_RE: RegExp = /^[a-zA-Z0-9_-]{1,64}$/;
+
+/**
+ * Convert client-lent capability specs to the OpenAI-function tool shape the API dispatch path expects, so an API-capable engine can call them via NATIVE function-calling. The spec.inputSchema (a JSON schema) becomes the function parameters; a missing schema degrades to an empty object schema. SKIPS any spec whose name violates the providers' function-name constraint (^[a-zA-Z0-9_-]{1,64}$): a single malformed name would otherwise make the provider REJECT the entire tools[] array and break native calling for EVERY tool that turn. A skipped tool still works via the in-prompt marker path (the prompt lists it and parseAgentToolCall matches by name), so coverage degrades gracefully for that one tool instead of poisoning the whole request. Agon's own page tools (readPage/click/type/selectOption/scroll) all satisfy the constraint, so nothing is skipped in practice.
+ */
+// @kern-source: agentic-brain-client:98
+export function capsToNativeTools(specs: CapabilitySpec[]): Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}> {
+  const tools: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}> = [];
+  for (const s of specs) {
+    if (!s || typeof s.name !== 'string' || !TOOL_NAME_RE.test(s.name)) continue;
+    tools.push({
+      type: 'function',
+      function: {
+        name: s.name,
+        description: typeof s.description === 'string' ? s.description : '',
+        parameters: (s.inputSchema && typeof s.inputSchema === 'object') ? s.inputSchema as Record<string, unknown> : { type: 'object', properties: {} },
+      },
+    });
+  }
+  return tools;
+}
+
+/**
+ * The agent's system prompt: the ReAct tool protocol plus the catalog of client-lent capabilities. Read-only vs destructive is surfaced so the engine knows which actions trigger the user's approval gate.
+ */
+// @kern-source: agentic-brain-client:116
 export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string): string {
   const lines: string[] = [];
   if (base && base.trim().length > 0) { lines.push(base.trim(), ''); }
@@ -134,7 +172,7 @@ export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string): 
 /**
  * The growing ReAct transcript re-sent to the (stateless, exec-mode) engine each step. The user's request is framed as a standing GOAL (restated every step so a stateless engine never loses sight of it) plus the progress so far, ending with: you are NOT done until the goal is met — act, or give the RESULT.
  */
-// @kern-source: agentic-brain-client:146
+// @kern-source: agentic-brain-client:179
 export function renderAgentTranscript(userInput: string, steps: Array<{ name: string; input: Record<string, unknown>; output: string }>): string {
   // Frame the request as the GOAL the agent must ACHIEVE, not a one-off question. Re-sent every
   // step (the engine is stateless in exec mode), so it keeps pursuing the goal to completion
@@ -156,7 +194,7 @@ export function renderAgentTranscript(userInput: string, steps: Array<{ name: st
 /**
  * True when an engine's reply DESCRIBES an action ('Let me navigate…', 'Ich suche…') but emitted no tool call — a short intent preamble, not a final answer — so the loop can NUDGE it to actually emit the tool line (the common weak-engine failure: the brain says it will act, then stops). Covers English + German narration, the panel's two languages; other languages degrade to no-nudge (the proactivity system prompt still pushes the model to act in any language — this is only the backstop). Bounded to short replies so a real prose answer that mentions 'review'/'search' isn't misread as narration.
  */
-// @kern-source: agentic-brain-client:166
+// @kern-source: agentic-brain-client:199
 export function looksLikeActionIntent(text: string): boolean {
   const s = text.trim();
   if (s.length === 0 || s.length >= 500) return false; // a substantive reply is a real answer, not a preamble
@@ -178,7 +216,7 @@ export function looksLikeActionIntent(text: string): boolean {
 /**
  * True when the engine, instead of acting, ASKS the user how to proceed / for permission / to pick an option ('How would you like me to proceed?', 'Which option would you like?', 'Soll ich…?'). The classic non-agentic stall: it hands the wheel back to the user. The loop nudges it to decide and continue (the user still approves each page-changing action via the SEPARATE gate, so the agent never needs to ask in prose). Kept to strong, unambiguous phrases (EN + DE) so a completed answer that merely ends 'let me know if you want more' is NOT misread as a stall.
  */
-// @kern-source: agentic-brain-client:186
+// @kern-source: agentic-brain-client:219
 export function looksLikeDeferral(text: string): boolean {
   const t = text.toLowerCase();
   return /(how would you like me to proceed|how (should|shall|do) (i|we) proceed|which (one|option)( would you| do you want| should i)|would you like me to\b|do you want me to\b|let me know which|wie soll ich (fortfahren|vorgehen|weitermachen)|möchtest du, dass ich|soll ich\b.*\?|welche (option|möglichkeit))/.test(t);
@@ -187,7 +225,7 @@ export function looksLikeDeferral(text: string): boolean {
 /**
  * A compact, human-readable one-liner for the approval popup's `command` field — what the agent is about to do.
  */
-// @kern-source: agentic-brain-client:193
+// @kern-source: agentic-brain-client:226
 export function describeAgentAction(name: string, input: Record<string, unknown>): string {
   let arg = '';
   try { arg = JSON.stringify(input); } catch { arg = '{…}'; }
@@ -198,7 +236,7 @@ export function describeAgentAction(name: string, input: Record<string, unknown>
 /**
  * v2 BrainClient: a bounded ReAct tool-loop over one engine, with client-lent capabilities (registerCapability) the brain pulls mid-turn via capability-request, and a per-action approval gate for destructive tools. Construct with the daemon's EngineRegistry; open() binds engine/cwd; runTurn() drives the loop; provideCapabilityResult/provideApproval answer the *-request events by requestId.
  */
-// @kern-source: agentic-brain-client:204
+// @kern-source: agentic-brain-client:237
 export class AgenticTurnBrainClient implements BrainClient {
   private registry: EngineRegistry;
   private adapter: EngineAdapter;
@@ -314,6 +352,11 @@ export class AgenticTurnBrainClient implements BrainClient {
       }
 
       const tools = [...this.caps.values()].map((c) => c.spec);
+      // NATIVE function-calling specs, offered on EVERY dispatch. The adapter uses them only on
+      // the API path (binary-less engines: the coding-plan models) and ignores them on the CLI
+      // path — so claude/codex keep the text-marker protocol while API-only engines get reliable
+      // structured tool calls. The system prompt still lists the marker format for the CLI case.
+      const nativeTools = capsToNativeTools(tools);
       const sysPrompt = buildAgentSystemPrompt(tools, this.systemPrompt);
       const steps: Array<{ name: string; input: Record<string, unknown>; output: string }> = [];
       let imgSeq = rawImages.length;
@@ -331,9 +374,17 @@ export class AgenticTurnBrainClient implements BrainClient {
         const result = await this.adapter.dispatch({
           engine, prompt, cwd: this.cwd, mode: 'exec', timeout: 120,
           outputDir: turnDir, signal: ctrl.signal, systemPrompt: sysPrompt, images: dispatchImages,
+          tools: nativeTools,
         });
         const stdout = (result.stdout || '').trim();
-        if (result.exitCode !== 0 || result.timedOut || stdout.length === 0) {
+        // Transport-agnostic call extraction: an API engine returns the call as a STRUCTURED
+        // part (native function-calling) — prefer it; fall back to parsing the __AGON_TOOL__
+        // text marker for CLI engines. Extracted BEFORE the no-answer guard so a NATIVE
+        // tool-only turn is never misread as "no answer" when its stdout is empty: emptiness
+        // means no-answer ONLY when there is also no structured call. (Does not rely on the
+        // streaming layer echoing a <tool> marker into stdout — that coupling was implicit.)
+        const call = extractNativeToolCall(result.parts) ?? parseAgentToolCall(stdout);
+        if (result.exitCode !== 0 || result.timedOut || (stdout.length === 0 && !call)) {
           const reason = ctrl.signal.aborted ? 'cancelled by client'
             : result.timedOut ? `${turnEngineId} timed out`
             : `${turnEngineId} produced no answer (exit ${result.exitCode})`;
@@ -342,7 +393,6 @@ export class AgenticTurnBrainClient implements BrainClient {
           return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
         }
 
-        const call = parseAgentToolCall(stdout);
         if (!call) {
           // No tool call. Two NON-AGENTIC stalls get a bounded nudge to keep going instead of
           // ending the turn: (1) NARRATION — it described an action but emitted no tool line;
@@ -615,7 +665,7 @@ export class AgenticTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: agentic-brain-client:643
+// @kern-source: agentic-brain-client:688
 export function createAgenticTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new AgenticTurnBrainClient(registry);
 }

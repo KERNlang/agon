@@ -34,6 +34,7 @@ import { attachCommand } from './commands/attach.js';
 import { daemonCommand } from './commands/daemon.js';
 import { serveCommand } from './commands/serve.js';
 import { driveCommand } from './commands/drive.js';
+import { chromeCommand } from './commands/chrome.js';
 import { extCommand } from './commands/ext.js';
 import { loginCommand } from './commands/login.js';
 import { updateCommand } from './commands/update.js';
@@ -232,6 +233,7 @@ const main = defineCommand({
     daemon: daemonCommand,
     serve: serveCommand,
     drive: driveCommand,
+    chrome: chromeCommand,
     ext: extCommand,
     login: loginCommand,
     update: updateCommand,

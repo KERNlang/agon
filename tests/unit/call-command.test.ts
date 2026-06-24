@@ -175,6 +175,32 @@ describe('agon call command mapping', () => {
     expect(commands[0]).not.toContain('--oracle-gate');
   });
 
+  it('maps chrome to the browser-driving bridge', () => {
+    expect(buildCallCommands({ workflow: 'chrome', input: 'check the pricing page design' }).commands).toEqual([
+      ['chrome', 'check the pricing page design'],
+    ]);
+  });
+
+  it('maps chrome with --auto-approve and --engine', () => {
+    expect(buildCallCommands({
+      workflow: 'chrome',
+      input: 'click the login button and screenshot the form',
+      autoApprove: true,
+      engine: 'codex',
+    }).commands).toEqual([
+      ['chrome', 'click the login button and screenshot the form', '--auto-approve', '--engine', 'codex'],
+    ]);
+  });
+
+  it('omits --auto-approve for chrome when not set', () => {
+    const { commands } = buildCallCommands({ workflow: 'chrome', input: 'read the page' });
+    expect(commands[0]).not.toContain('--auto-approve');
+  });
+
+  it('requires input for chrome', () => {
+    expect(() => buildCallCommands({ workflow: 'chrome' })).toThrow('agon call chrome requires a prompt/task argument');
+  });
+
   it('maps synthesis to the synthesis command bridge', () => {
     expect(buildCallCommands({
       workflow: 'synthesis',

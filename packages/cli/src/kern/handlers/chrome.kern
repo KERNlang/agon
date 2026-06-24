@@ -14,6 +14,7 @@ import from="@kernlang/agon-core" names="ensureAgonHome,appendMessage,resolveWor
 import from="node:crypto" names="randomUUID"
 import from="../signals/chrome-bridge.js" names="ensureChromeBridge"
 import from="../commands/drive.js" names="parseSseChunk,approvalTargetsClient"
+import from="../models/session-results.js" names="sessionResultStore"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../telemetry/index.js" names="recordRun"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
@@ -171,6 +172,17 @@ fn name=handleChrome params="task:string, dispatch:Dispatch, ctx:HandlerContext"
     const produced = answer.trim().length > 0;
     if (produced) {
       appendMessage(ctx.chatSession, { role: 'engine', engineId: answerEngine || 'agon', content: answer, timestamp: new Date().toISOString() });
+      // Record for the Ctrl+R results pager / `agon last` — the full browser-turn
+      // answer lives here so the transcript stays compact. pageActivity reflects whether
+      // the panel actually drove the page (vs a text-only answer with no panel attached).
+      sessionResultStore.add({
+        type: 'chrome',
+        timestamp: new Date().toISOString(),
+        question: task,
+        engines: answerEngine ? [answerEngine] : [],
+        winner: answerEngine || null,
+        data: { task, answer, engineId: answerEngine || 'agon', pageActivity: sawBrowserActivity },
+      });
     }
     const ok = produced && !failed && !streamFailed && !endedReason;
     recordRun({ mode: 'chrome', intent: task, winner: undefined, success: ok, durationMs: Date.now() - startTime, engineIds: answerEngine ? [answerEngine] : [], completionState: (failed || endedReason) ? 'aborted' : 'completed' });

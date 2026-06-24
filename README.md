@@ -117,6 +117,7 @@ Pick by the **shape** of the problem, not the topic:
 | A problem decomposed before you act | **think** | Sequential thinking — linear or reflexion (forced self-critique), optional branches; surfaces open questions + a `goal` handoff. |
 | Your own decision pressure-tested | **nero** | Adversarial self-challenge — the top-rated *critic* (by tribunal rating, not the best builder) attacks it and returns a verdict. |
 | A library/repo/spec/fact looked up with sources | **research** | Keyless, web-grounded, *cited* research — Agon discovers sources (npm/GitHub/MDN/IETF/Stack Overflow/Wikipedia, **no API key**), an engine drafts a grounded answer, and Agon **verifies every citation**. |
+| Your **own browser** driven to research / check a page | **chrome** | Drive your real browser (navigate / read / screenshot / click) from the REPL, the CLI, or Cesar — reuses a running agon the side panel is on, else embeds a transient bridge. Needs the Agon browser extension. |
 | Code built competitively against a test | **forge** | Engines race on the same task in isolated worktrees; the best test-passing patch is applied. |
 | The **first** passing solution, fast | **speculate** | N engines race; the first to pass the test wins and is applied immediately. |
 | A routine build with one engine | **pipeline** | Single-engine build → review → fix loop; no competition overhead. |
@@ -138,6 +139,7 @@ Pick by the **shape** of the problem, not the topic:
 - Need to think a problem through before acting → `think`
 - Need your own decision attacked before you commit → `nero`
 - Need a library/repo/spec/fact looked up with trustworthy, verified sources → `research`
+- Need your own browser driven to research or check a page design → `chrome`
 - Need the whole panel on a high-stakes, hard-to-reverse call → `council`
 - Need a whole open-ended thing built unattended, away from the desk → `conquer`
 
@@ -218,6 +220,22 @@ agon research "what is a Merkle tree?" --json                    # emit the Rese
 - **No API key, no setup.** It never signs up for Brave/Tavily/Exa or runs a search-engine container — it talks to keyless first-party JSON APIs. A truly-general web query that has no keyless lane is reported honestly rather than answered ungrounded.
 - **Citations are verified, not trusted.** Every cited URL is re-fetched; dead/redirected/mismatched ones are surfaced so you know which lines to trust.
 - **For external CLIs too** — `agon call research "<question>" --jsonl` lets Codex / Antigravity / Claude get web-grounded, citation-checked answers without their own search key.
+
+### Chrome
+Drive your **own browser** from Agon — to research live pages or check a design without leaving the flow. Where `research` reads keyless source APIs, `chrome` drives the *real* browser you're logged into: it navigates, reads the rendered page, screenshots it, and (with approval) clicks and types. The agentic ReAct brain runs the turn through a loopback bridge the **Agon browser extension's side panel** attaches to — the panel lends the page tools and executes them in your Chrome.
+
+```bash
+/chrome open news.ycombinator.com and summarize the top 3 posts   # in the agon REPL
+/chrome check the pricing page design — is the hero cluttered?
+agon chrome "open the staging dashboard and tell me if the chart overflows"   # from the CLI
+agon chrome "..." --auto-approve            # act on the page without prompting (unattended)
+agon call chrome "<task>" [--auto-approve]  # machine bridge for external CLIs (Codex/Antigravity)
+```
+
+- **Reuse-or-embed, no separate terminal.** `chrome` reuses a running agon (`agon serve` or the REPL) the side panel is already attached to; if nothing's running it embeds a transient in-process bridge just for the turn and writes the 0600 connection file the panel auto-connects through. The REPL `/chrome` hosts the bridge itself, so the panel auto-connects to your live agon.
+- **Your approval is the backstop.** Read-only page tools (navigate / read / screenshot) run without prompting; page-changing actions (click / type) prompt with Agon's own Y/N gate (the REPL permission UI, or a terminal prompt from the CLI). `--auto-approve` allows them unattended — required for a non-interactive caller (`agon call chrome`) to act on the page. Page content is treated as untrusted: the approval gate is the prompt-injection backstop.
+- **Never Cesar.** The browser turn runs on the agentic brain, never your live Cesar session (no split-brain); its result is fed back to Cesar so the conversation builds on what the browser found. In the REPL it's also recorded for `Ctrl+R` / `agon last`.
+- **Requires the Agon browser extension** with its side panel open + attached. With no panel attached, the brain answers in text only (and says so).
 
 ### Brainstorm
 Engines bid their confidence level on how they would tackle a complex problem. Engines with higher confidence bids are allocated more tokens and priority.

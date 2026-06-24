@@ -113,6 +113,17 @@ describe('agent prompt + transcript helpers', () => {
     expect(looksLikeActionIntent('Done. Let me know if you want me to review a specific section.')).toBe(false);
     expect(looksLikeActionIntent('Here is my detailed review of the page. '.repeat(40))).toBe(false); // too long = a real answer
   });
+
+  it('looksLikeActionIntent catches NON-English narration (the panel is multilingual)', () => {
+    // The exact failure from the field: glm-5.2 narrated a job search in German and stopped,
+    // never calling a tool — the English-only matcher accepted it as a final answer.
+    expect(looksLikeActionIntent(
+      'Ich suche auf LinkedIn Jobs nach passenden Stellen für dich. Basierend auf deinem Profil starte ich mit einer gezielten Suche.',
+    )).toBe(true);
+    expect(looksLikeActionIntent('Ich navigiere jetzt zu deinem Profil und lese die Seite.')).toBe(true);
+    // A German FINAL answer (advice, no action intent) must NOT be nudged.
+    expect(looksLikeActionIntent('Dein Profil sieht stark aus — klare Überschrift und ein gutes Foto.')).toBe(false);
+  });
 });
 
 describe('AgenticTurnBrainClient — the ReAct loop', () => {

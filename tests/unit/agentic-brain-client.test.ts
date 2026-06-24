@@ -245,6 +245,36 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     expect(result.responded).toBe(true);
   });
 
+  it('drives a multi-site browse from a GERMAN narration: nudge → navigate → read → navigate → read → answer', async () => {
+    // The field scenario: the brain narrates a job search in German, then (once nudged) actually
+    // switches sites and reads each. Proves the loop does autonomous multi-step browsing — open a
+    // site, check it, open another, check it — not just a single read.
+    const navSpec: CapabilitySpec = { name: 'navigate', description: 'navigate the tab to a url', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true };
+    const client = makeAgent([
+      'Ich öffne zuerst die LinkedIn-Jobs-Seite und suche passende Stellen für dich.', // German narration, no tool → nudge
+      `${MARK} {"name":"navigate","input":{"url":"https://www.linkedin.com/jobs/"}}`,   // switch to site 1
+      `${MARK} {"name":"readPage","input":{}}`,                                          // check site 1
+      `${MARK} {"name":"navigate","input":{"url":"https://www.linkedin.com/jobs/view/42"}}`, // switch to site 2
+      `${MARK} {"name":"readPage","input":{}}`,                                          // check site 2
+      'Ich habe zwei passende Stellen gefunden, die zu AI Tooling und React passen.',    // final answer
+    ]);
+    await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: navSpec });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+
+    let approvals = 0;
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'kannst du mir gute jobs suchen')), {
+      capability: () => ({ ok: true, output: 'PAGE CONTENT' }),
+      approval: () => { approvals++; return 'approve-session'; }, // approve navigate once, for the session
+    });
+
+    const caps = events.filter((e) => e.kind === 'capability-request');
+    expect(events.some((e) => e.kind === 'notice' && /tool call/.test((e as { message: string }).message))).toBe(true); // German narration WAS nudged
+    expect(caps.length).toBe(4);   // navigate, readPage, navigate, readPage — it switched sites twice and checked each
+    expect(approvals).toBe(1);     // the 2nd navigate isn't re-gated (approve-session)
+    expect(result.responded).toBe(true);
+  });
+
   it('gives up nudging after the retry budget and returns the prose (no infinite loop)', async () => {
     const client = makeAgent(['Let me click the button.']); // always narrates, never emits a tool
     await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });

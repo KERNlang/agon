@@ -114,15 +114,23 @@ describe('agent prompt + transcript helpers', () => {
     expect(looksLikeActionIntent('Here is my detailed review of the page. '.repeat(40))).toBe(false); // too long = a real answer
   });
 
-  it('looksLikeActionIntent catches NON-English narration (the panel is multilingual)', () => {
+  it('looksLikeActionIntent catches German narration (the panel is multilingual)', () => {
     // The exact failure from the field: glm-5.2 narrated a job search in German and stopped,
     // never calling a tool — the English-only matcher accepted it as a final answer.
     expect(looksLikeActionIntent(
       'Ich suche auf LinkedIn Jobs nach passenden Stellen für dich. Basierend auf deinem Profil starte ich mit einer gezielten Suche.',
     )).toBe(true);
     expect(looksLikeActionIntent('Ich navigiere jetzt zu deinem Profil und lese die Seite.')).toBe(true);
-    // A German FINAL answer (advice, no action intent) must NOT be nudged.
+    expect(looksLikeActionIntent('Ich öffne die Stellenseite und tippe deine Suchbegriffe ein.')).toBe(true); // umlaut-initial verb must match
+  });
+
+  it('looksLikeActionIntent does NOT nudge a German/English FINAL answer (advice, not action)', () => {
     expect(looksLikeActionIntent('Dein Profil sieht stark aus — klare Überschrift und ein gutes Foto.')).toBe(false);
+    // "ich finde X gut" = opinion, not self-action; bare "jetzt" must not trigger.
+    expect(looksLikeActionIntent('Jetzt sieht dein Profil besser aus und ich finde den Abschnitt hilfreich.')).toBe(false);
+    // "such"/"enter" as ordinary English words must not be read as verbs.
+    expect(looksLikeActionIntent('This is such a strong profile; no changes needed.')).toBe(false);
+    expect(looksLikeActionIntent('That headline is entertainment-industry specific and reads well.')).toBe(false);
   });
 });
 

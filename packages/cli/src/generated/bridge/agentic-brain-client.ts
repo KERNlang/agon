@@ -136,28 +136,31 @@ export function renderAgentTranscript(userInput: string, steps: Array<{ name: st
 }
 
 /**
- * True when an engine's reply DESCRIBES an action ('Let me navigate…', 'Ich suche…') but emitted no tool call — a short intent preamble, not a final answer. Used to NUDGE the engine to actually emit the tool line instead of treating the narration as a final answer (the common weak-engine failure). MULTILINGUAL on purpose: the browser side panel is used in any language, so a non-English 'I'll search' (e.g. German 'starte ich … Suche') must be caught too — otherwise a weak engine narrates in the user's language, no nudge fires, and nothing happens. Looks only at the head + caps total length to avoid matching a real prose answer that happens to say 'review' or 'let me know'.
+ * True when an engine's reply DESCRIBES an action ('Let me navigate…', 'Ich suche…') but emitted no tool call — a short intent preamble, not a final answer — so the loop can NUDGE it to actually emit the tool line (the common weak-engine failure: the brain says it will act, then stops). Covers English + German narration, the panel's two languages; other languages degrade to no-nudge (the proactivity system prompt still pushes the model to act in any language — this is only the backstop). Bounded to short replies so a real prose answer that mentions 'review'/'search' isn't misread as narration.
  */
 // @kern-source: agentic-brain-client:144
 export function looksLikeActionIntent(text: string): boolean {
-  const head = text.trim().slice(0, 200).toLowerCase();
+  const s = text.trim();
+  if (s.length === 0 || s.length >= 500) return false; // a substantive reply is a real answer, not a preamble
+  const head = s.slice(0, 200).toLowerCase();
   if (/\blet me know\b/.test(head)) return false; // a sign-off, not an action
-  // Future-action phrasing — EN + DE + a couple FR/ES openers. The panel's users write
-  // in any language; an English-only matcher let German narration slip through as a "final
-  // answer" (the brain said "starte ich … Suche" and then stopped, never calling a tool).
-  const intent = /\b(let me|i'?ll|i will|i'?m going to|i am going to|let's|first,?\s*i|now i'?ll|going to|ich werde|ich möchte|ich gehe|lass mich|zuerst|jetzt|starte ich|beginne ich)\b/.test(head);
-  // Action verb stems — EN + DE. Anchored at the word START only (no trailing \b) so a
-  // STEM matches its inflections: 'such' → 'suche/suchen', 'navigat' → 'navigate', 'klick'
-  // → 'klicke'. (A trailing \b would require the stem to be a whole word, so none of the
-  // stems ever fired — the old English matcher only worked via the complete word 'review'.)
-  const verb = /\b(navigat|click|type|go to|open|fill|select|read|review|look at|check|press|scroll|enter|search|find|brows|such|navigier|klick|tippe|fülle|wähl|prüf|lese|öffne|gehe zu|drück|blätter|finde|schau)/.test(head);
-  return intent && verb && text.trim().length < 500;
+  // English: a first-person "about to act" opener AND an action verb. Verb stems anchor at
+  // the word START only (no trailing \b), so a stem matches its inflections (navigat→navigate).
+  const enIntent = /\b(let me|i'?ll|i will|i'?m going to|i am going to|let's|now i'?ll|going to)\b/.test(head);
+  const enVerb = /\b(navigat|go to|open|fill|select|read|review|look at|check|press|scroll|click|type|search|find|brows)/.test(head);
+  // German: a first-person SELF-action ("ich suche/navigiere/öffne…", "starte ich"). Listed as
+  // explicit "ich <verb>" pairs (not a bare adverb or a stem) so opinion phrasing like
+  // "ich finde X gut" (I think X is good) and "jetzt sieht …" (now … looks) are NOT misread as
+  // intent. ASCII-anchored before "ich", which sidesteps the \b-vs-umlaut problem (\b fails
+  // before 'ö', so a bare "\böffne" never matched).
+  const deAction = /\b(ich\s+(werde|möchte|gehe|navigiere|klicke|tippe|öffne|lese|suche|scrolle|wähle|prüfe|fülle|drücke|starte|beginne|rufe|schaue)|starte ich|beginne ich|lass mich)\b/.test(head);
+  return (enIntent && enVerb) || deAction;
 }
 
 /**
  * A compact, human-readable one-liner for the approval popup's `command` field — what the agent is about to do.
  */
-// @kern-source: agentic-brain-client:161
+// @kern-source: agentic-brain-client:164
 export function describeAgentAction(name: string, input: Record<string, unknown>): string {
   let arg = '';
   try { arg = JSON.stringify(input); } catch { arg = '{…}'; }
@@ -168,7 +171,7 @@ export function describeAgentAction(name: string, input: Record<string, unknown>
 /**
  * v2 BrainClient: a bounded ReAct tool-loop over one engine, with client-lent capabilities (registerCapability) the brain pulls mid-turn via capability-request, and a per-action approval gate for destructive tools. Construct with the daemon's EngineRegistry; open() binds engine/cwd; runTurn() drives the loop; provideCapabilityResult/provideApproval answer the *-request events by requestId.
  */
-// @kern-source: agentic-brain-client:172
+// @kern-source: agentic-brain-client:175
 export class AgenticTurnBrainClient implements BrainClient {
   private registry: EngineRegistry;
   private adapter: EngineAdapter;
@@ -511,7 +514,7 @@ export class AgenticTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: agentic-brain-client:537
+// @kern-source: agentic-brain-client:540
 export function createAgenticTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new AgenticTurnBrainClient(registry);
 }

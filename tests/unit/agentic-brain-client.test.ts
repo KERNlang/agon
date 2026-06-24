@@ -8,6 +8,7 @@ import {
   renderAgentTranscript,
   describeAgentAction,
   looksLikeActionIntent,
+  looksLikeDeferral,
   AGENT_TOOL_MARKER as MARK,
 } from '../../packages/cli/src/generated/bridge/agentic-brain-client.js';
 import type { BrainEvent, BrainTurnResult, EngineAdapter, EngineRegistry, CapabilitySpec } from '@kernlang/agon-core';
@@ -95,10 +96,12 @@ describe('agent prompt + transcript helpers', () => {
     expect(p.startsWith('BASE-PROMPT')).toBe(true);
     expect(p).toContain('none registered');
   });
-  it('renderAgentTranscript shows the request and the running tool history', () => {
-    expect(renderAgentTranscript('hello', [])).toContain('No tools have run yet');
+  it('renderAgentTranscript frames the request as a GOAL and shows the running tool history', () => {
+    expect(renderAgentTranscript('hello', [])).toContain('Nothing done yet');
     const t = renderAgentTranscript('hello', [{ name: 'readPage', input: {}, output: 'PAGE' }]);
-    expect(t).toContain('User request: hello');
+    expect(t).toContain('GOAL');
+    expect(t).toContain('hello');
+    expect(t).toContain('NOT done until the GOAL');
     expect(t).toContain('> readPage({})');
     expect(t).toContain('< PAGE');
   });
@@ -131,6 +134,17 @@ describe('agent prompt + transcript helpers', () => {
     // "such"/"enter" as ordinary English words must not be read as verbs.
     expect(looksLikeActionIntent('This is such a strong profile; no changes needed.')).toBe(false);
     expect(looksLikeActionIntent('That headline is entertainment-industry specific and reads well.')).toBe(false);
+  });
+
+  it('looksLikeDeferral flags "how would you like me to proceed" but not a completed answer', () => {
+    // The field stall (Image #7): it read the page then asked the user to drive.
+    expect(looksLikeDeferral('How would you like me to proceed? Here are some options I can help with: 1. Open a specific job …')).toBe(true);
+    expect(looksLikeDeferral('Just let me know which one you’d like to do.')).toBe(true);
+    expect(looksLikeDeferral('Would you like me to open the NVIDIA role or refine the search?')).toBe(true);
+    expect(looksLikeDeferral('Soll ich die Stelle bei NVIDIA öffnen?')).toBe(true);
+    // A genuinely COMPLETE answer (offers more but didn't stall) must NOT be flagged.
+    expect(looksLikeDeferral('I found 5 roles that fit: NVIDIA, AWS, Ashby … Let me know if you want details on any.')).toBe(false);
+    expect(looksLikeDeferral('Here are the matching jobs, ranked by fit. The AWS role is the strongest match.')).toBe(false);
   });
 });
 
@@ -280,10 +294,124 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
     await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
     const { events, result } = await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true }), approval: () => 'approve' });
-    const nudges = events.filter((e) => e.kind === 'notice' && /tool call/.test((e as { message: string }).message)).length;
-    expect(nudges).toBe(2); // MAX_NARRATION_RETRIES — bounded
+    const nudges = events.filter((e) => e.kind === 'notice' && /actually act|decide and continue/.test((e as { message: string }).message)).length;
+    expect(nudges).toBe(3); // MAX_NARRATION_RETRIES — bounded (consecutive, no progress to reset it)
     expect(events.find((e) => e.kind === 'engine')).toMatchObject({ content: 'Let me click the button.' });
     expect(result.responded).toBe(true);
+  });
+
+  it('resets the narration budget on progress: narrate→act→narrate→act→narrate→act→answer completes', async () => {
+    // The minimax field bug: it made real progress (navigate/screenshot/click) but the budget was
+    // CUMULATIVE, so a later narration killed the turn mid-task. With reset-on-progress, three
+    // narrations spread across a progressing turn each get nudged and the turn still COMPLETES.
+    const client = makeAgent([
+      'I will read the listings.',                                  // narrate → nudge (consecutive=1)
+      `${MARK} {"name":"navigate","input":{"url":"https://a.com"}}`, // DISTINCT act → reset budget
+      'Let me check the next site.',                                // narrate → nudge (consecutive=1 again)
+      `${MARK} {"name":"navigate","input":{"url":"https://b.com"}}`, // distinct act → reset
+      "I'll review the third option.",                              // narrate → nudge (consecutive=1)
+      `${MARK} {"name":"navigate","input":{"url":"https://c.com"}}`, // distinct act → reset
+      'Here is my final summary.',                                  // final answer (NOT a narration)
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-coding-plan-minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: { name: 'navigate', description: 'go', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true } });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true, output: 'PAGE' }), approval: () => 'approve-session' });
+    const nudges = events.filter((e) => e.kind === 'notice' && /actually act/.test((e as { message: string }).message)).length;
+    expect(nudges).toBe(3);          // each narration nudged — the budget reset after every tool call
+    expect(result.responded).toBe(true);
+    expect(events.find((e) => e.kind === 'engine')).toMatchObject({ content: 'Here is my final summary.' }); // completed, NOT killed on a narration
+  });
+
+  it('nudges a DEFERRAL ("how would you like me to proceed?") into deciding and acting', async () => {
+    // The "not agentic at all" failure (Image #7): it read the page then asked the user to drive.
+    const client = makeAgent([
+      'I can see the LinkedIn jobs page. How would you like me to proceed? 1. Open a job 2. Refine 3. Try another query.', // deferral, no tool → nudge
+      `${MARK} {"name":"readPage","input":{}}`,        // now it decides and acts
+      'I found 3 roles that fit your AI-tooling + frontend-lead profile: …',  // final RESULT
+    ]);
+    await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'find me cool jobs')), { capability: () => ({ ok: true, output: 'JOBS' }), approval: () => 'approve' });
+    expect(events.some((e) => e.kind === 'notice' && /decide and continue/.test((e as { message: string }).message))).toBe(true); // deferral was caught
+    expect(events.some((e) => e.kind === 'capability-request')).toBe(true); // it then actually acted
+    expect(result.responded).toBe(true);
+    expect(events.find((e) => e.kind === 'engine')).toMatchObject({ content: expect.stringContaining('3 roles that fit') });
+  });
+
+  it('detects an identical-action LOOP: blocks the repeat (no re-approval) and stops if it persists', async () => {
+    // The double-approval bug (Image #5): the engine re-emits the SAME click. The loop must NOT
+    // re-run it (so the user isn't re-prompted for the same approval), and must give up if it
+    // keeps looping — termination by no-progress, not by a step count.
+    const sameClick = `${MARK} {"name":"click","input":{"selector":"a[href*='/jobs/view/']"}}`;
+    const client = makeAgent([sameClick, sameClick, sameClick, sameClick]);
+    await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    let approvals = 0;
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: () => ({ ok: true, output: 'clicked' }),
+      approval: () => { approvals++; return 'approve'; },
+    });
+    expect(approvals).toBe(1); // only the FIRST click prompted; the identical repeats were blocked, not re-approved
+    expect(events.filter((e) => e.kind === 'capability-request').length).toBe(1); // only the first actually executed
+    expect(result.responded).toBe(false);
+    expect(result.reason).toMatch(/stuck|repeated/);
+  });
+
+  it('a DISTINCT repeat of the same tool (different input) is progress, not a loop', async () => {
+    const client = makeAgent([
+      `${MARK} {"name":"navigate","input":{"url":"https://a.com"}}`,
+      `${MARK} {"name":"navigate","input":{"url":"https://b.com"}}`, // same tool, different url → NOT a loop
+      'Visited both.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: { name: 'navigate', description: 'go', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true } });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true, output: 'ok' }), approval: () => 'approve-session' });
+    expect(events.filter((e) => e.kind === 'capability-request').length).toBe(2); // both navigations ran
+    expect(result.responded).toBe(true);
+  });
+
+  it('re-view detector: an identical read-only result (after another tool) is flagged NO CHANGE', async () => {
+    // The flail: readPage, a different read-only tool, then readPage AGAIN returning the SAME view.
+    // The two readPages are not CONSECUTIVE (so the repeat detector stays quiet), but the second is
+    // identical content → it must carry the NO-CHANGE feedback that pushes a scroll/act. One re-view
+    // alone (noProgress 1 < budget) does NOT stop the turn — it reaches the final answer.
+    const client = makeAgent([
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"inspect","input":{}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      'Final answer.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec('readPage') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec('inspect') });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: (ev) => ({ ok: true, output: (ev as unknown as { capability: string }).capability === 'readPage' ? 'SAME VIEW' : `fresh-${(ev as unknown as { requestId: string }).requestId}` }),
+      approval: () => 'approve',
+    });
+    const reads = events.filter((e) => e.kind === 'tool' && (e as unknown as { tool: string; status: string }).tool === 'readPage' && (e as unknown as { status: string }).status === 'done') as unknown as Array<{ output: string }>;
+    expect(reads.length).toBe(2);
+    expect(reads[0].output).not.toMatch(/NO CHANGE/);   // first read is fresh
+    expect(reads[1].output).toMatch(/NO CHANGE/);         // identical re-view is flagged
+    expect(result.responded).toBe(true);
+  });
+
+  it('re-view detector STOPS the turn when the agent keeps re-viewing the same screens (no progress)', async () => {
+    // Both read-only tools return CONSTANT output → every read after the first is a re-view. With
+    // nothing ever changing and no action taken, noProgress climbs past the budget and the turn
+    // stops as STUCK instead of spinning to the 30-step backstop (the screenshot↔readPage flail).
+    const r = (n: string) => `${MARK} {"name":"${n}","input":{}}`;
+    const client = makeAgent([r('readPage'), r('inspect'), r('readPage'), r('inspect'), r('readPage'), r('inspect'), r('readPage')]);
+    await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec('readPage') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec('inspect') });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: (ev) => ({ ok: true, output: (ev as unknown as { capability: string }).capability === 'readPage' ? 'PAGE' : 'INSP' }),
+      approval: () => 'approve',
+    });
+    expect(result.responded).toBe(false);
+    expect(result.reason).toMatch(/stuck|re-?view|same/i);
+    // It stopped WELL short of the 30-step backstop (a handful of re-views, not 30).
+    expect(events.filter((e) => e.kind === 'capability-request').length).toBeLessThan(10);
   });
 
   it('an unknown tool is reported back and the loop recovers to an answer', async () => {
@@ -295,14 +423,23 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     expect(result.responded).toBe(true);
   });
 
-  it('stops at the step limit when the engine never stops calling tools', async () => {
-    const client = makeAgent([`${MARK} {"name":"readPage","input":{}}`]); // always a tool call
+  it('the step backstop bounds an engine that keeps making DISTINCT tool calls without ever finishing', async () => {
+    // No identical repeat (so the loop detector doesn't fire) and no final answer → only the
+    // MAX_AGENT_STEPS safety backstop ends it. Proves the backstop still bounds a runaway turn,
+    // and that the turn now runs well past the old 8-step ceiling (it's goal/progress-driven).
+    let n = 0;
+    const registry = { get: (id: string) => ({ id }), listIds: () => ['claude'] } as unknown as EngineRegistry;
+    const client = new AgenticTurnBrainClient(registry);
+    (client as unknown as { adapter: EngineAdapter }).adapter = {
+      dispatch: async () => ({ exitCode: 0, stdout: `${MARK} {"name":"navigate","input":{"url":"https://site-${n++}.com"}}`, stderr: '', durationMs: 1, timedOut: false }),
+      isAvailable: async () => true,
+    } as unknown as EngineAdapter;
     await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
-    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
-    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true, output: 'p' }), approval: () => 'approve' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: { name: 'navigate', description: 'go', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true } });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true, output: 'ok' }), approval: () => 'approve-session' });
     expect(result.responded).toBe(false);
-    expect(result.reason).toMatch(/step limit/i);
-    expect(events.filter((e) => e.kind === 'capability-request').length).toBeGreaterThan(1);
+    expect(result.reason).toMatch(/backstop|step/i);
+    expect(events.filter((e) => e.kind === 'capability-request').length).toBeGreaterThan(8); // ran past the old 8-step cap
   });
 });
 

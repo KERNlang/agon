@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path';
 
 import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@kernlang/agon-core';
 
-import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiDispatchTools, apiDispatchToolsHistory, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, sessionContext, resolveWorkingDir, engineHealth, classifyDispatchFailure } from '@kernlang/agon-core';
+import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiDispatchTools, apiDispatchToolsHistory, attachVisionToMessages, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, sessionContext, resolveWorkingDir, engineHealth, classifyDispatchFailure } from '@kernlang/agon-core';
 
 import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth, shouldUseCompanionForAgent, shouldUseClaudePty, runClaudePtyDispatch, runClaudePtyStreamDispatch, resolveClaudePtyExtraArgs, computeEngineIsolation } from './adapter-helpers.js';
 
@@ -52,7 +52,12 @@ export class CliAdapter implements EngineAdapter {
           }
         }
         // NATIVE function-calling when the caller lent tool specs (the browser brain's ReAct loop). With a reconstructed conversation history (Phase 2) → apiDispatchToolsHistory (structured assistant/tool thread, prompt-cacheable); with tools but no history → apiDispatchTools (single prompt); otherwise plain text-only apiDispatch. Any structured call lands in result.parts. CLI/companion paths above never reach here, so they keep the in-prompt text-marker protocol untouched.
-        const result = (options.messages && options.tools && options.tools.length) ? (await apiDispatchToolsHistory(apiConfig, options.messages, options.timeout, options.signal, options.tools, sysPrompt)) : ((options.tools && options.tools.length) ? (await apiDispatchTools(apiConfig, options.prompt, options.timeout, options.signal, options.tools, sysPrompt)) : (await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt)));
+        // Base thread for the native tools path: the reconstructed history if the caller sent one, else a single user-prompt turn synthesised so a tools+images dispatch NEVER silently drops the image when no explicit thread was passed (the browser brain always sends a thread; this closes the trap for any future caller). NOTE: synth is its OWN let — an inline `messages ?? (cond ? x : null)` mis-compiles via KERN's ?? / ternary precedence into `(messages ?? cond) ? x : null`, which would DISCARD a real thread.
+        const synthMessages = (options.tools && options.tools.length && options.images && options.images.length) ? [{ role: 'user', content: options.prompt }] : null;
+        const baseMessages = options.messages ?? synthMessages;
+        // VISION: splice a browser screenshot into the thread's last user turn so a vision-capable API engine (kimi/minimax) actually SEES the page. attachVisionToMessages is a no-op when the engine lacks the 'vision' capability (e.g. zai-coding silently ignores images) or there are no images, so non-vision turns are byte-identical.
+        const apiMessages = (baseMessages && options.images && options.images.length) ? attachVisionToMessages(baseMessages, options.images.map((i) => i.path), options.engine.capabilities?.includes('vision') === true) : baseMessages;
+        const result = (apiMessages && options.tools && options.tools.length) ? (await apiDispatchToolsHistory(apiConfig, apiMessages, options.timeout, options.signal, options.tools, sysPrompt)) : ((options.tools && options.tools.length) ? (await apiDispatchTools(apiConfig, options.prompt, options.timeout, options.signal, options.tools, sysPrompt)) : (await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt)));
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
         writeFileSync(outputPath, result.stdout);
@@ -165,6 +170,10 @@ export class CliAdapter implements EngineAdapter {
       if (options.engine.api && process.env[options.engine.api.apiKeyEnv]) {
         const resolvedModel = resolveModel(options.engine, options.cwd);
         const apiConfig = { ...options.engine.api, ...(resolvedModel ? { model: resolvedModel } : {}), ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}) };
+        // NOTE: this STREAMING API fallback is prompt-only — it carries neither native tools nor
+        // vision images (no current caller streams those: the browser brain uses the non-stream
+        // dispatch() above, and image chat goes through session-resume). If a future caller needs
+        // streamed tools/vision, route it through apiStreamDispatchWithHistory like dispatch() does.
         const gen = apiStreamDispatch(apiConfig, options.prompt, options.timeout, options.signal, options.systemPrompt);
         let result: DispatchResult;
         while (true) {

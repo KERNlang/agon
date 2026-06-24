@@ -164,7 +164,7 @@ export type { ChatMessage as StoredChatMessage, ChatSession } from './chat-store
 export {
   isImagePath, mimeFromExt, resolveImagePath,
   buildImageAttachment, extractImagesFromInput, normalizeDroppedPath,
-  encodeImagesForDispatch, visionSupportNote,
+  encodeImagesForDispatch, attachVisionToMessages, visionSupportNote,
   decodeDataUrlToImageFile, sniffImageMime, MAX_DISPATCH_IMAGES, MAX_DISPATCH_IMAGE_BYTES,
 } from './image.js';
 export type { DataUrlImageResult } from './image.js';

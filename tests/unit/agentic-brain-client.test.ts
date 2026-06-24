@@ -4,8 +4,12 @@ import {
   AgenticTurnBrainClient,
   createAgenticTurnBrainClient,
   parseAgentToolCall,
+  extractNativeToolCall,
+  capsToNativeTools,
   buildAgentSystemPrompt,
   renderAgentTranscript,
+  renderAgentMessages,
+  AGENT_MSG_KEEP_FULL,
   describeAgentAction,
   looksLikeActionIntent,
   looksLikeDeferral,
@@ -521,5 +525,212 @@ describe('AgenticTurnBrainClient — control surface', () => {
     const h = await client.health();
     expect(h.alive).toBe(true);
     expect(h.activeTurnId).toBeNull();
+  });
+});
+
+// ── Native function-calling transport ────────────────────────────────────────
+// API-capable engines (the coding-plan models) emit a STRUCTURED tool_call part
+// instead of typing the __AGON_TOOL__ text marker — the durable fix for the
+// narrate-and-stop / marker-forgetting failure. The loop must be transport-agnostic.
+
+// A step is either scripted stdout (text-marker / CLI engines) or a native step
+// carrying DispatchResult.parts (API engines). The adapter echoes a <tool> marker
+// into stdout for a native call (matching apiStreamDispatchWithHistory), so the
+// empty-stdout guard never misfires. Captures every dispatch options object.
+type NativePart = { kind: string; toolName?: string; toolCallId?: string; args?: Record<string, unknown>; text?: string };
+type Step = string | { parts: NativePart[]; stdout?: string };
+type CapturedDispatch = {
+  tools?: Array<{ type: string; function: { name: string } }>;
+  messages?: Array<{ role: string; content: unknown; tool_calls?: Array<{ id: string }> }>;
+};
+function makeAgentSteps(steps: Step[]): { client: AgenticTurnBrainClient; dispatches: CapturedDispatch[] } {
+  let i = 0;
+  const dispatches: CapturedDispatch[] = [];
+  const registry = { get: (id: string) => ({ id }), listIds: () => ['claude', 'codex'] } as unknown as EngineRegistry;
+  const client = new AgenticTurnBrainClient(registry);
+  (client as unknown as { adapter: EngineAdapter }).adapter = {
+    dispatch: async (opts: CapturedDispatch) => {
+      dispatches.push(opts);
+      const step = steps[Math.min(i++, steps.length - 1)];
+      if (typeof step === 'string') return { exitCode: 0, stdout: step, stderr: '', durationMs: 1, timedOut: false };
+      const echo = step.stdout ?? (step.parts
+        .filter((p) => p.kind === 'tool_call')
+        .map((p) => `\n<tool name="${p.toolName}">${JSON.stringify(p.args ?? {})}</tool>\n`)
+        .join('') || 'ok');
+      return { exitCode: 0, stdout: echo, stderr: '', durationMs: 1, timedOut: false, parts: step.parts };
+    },
+    isAvailable: async () => true,
+  } as unknown as EngineAdapter;
+  return { client, dispatches };
+}
+
+describe('extractNativeToolCall — structured tool_call parts', () => {
+  it('returns the first tool_call part as {name,input}', () => {
+    expect(extractNativeToolCall([
+      { kind: 'reasoning', text: 'thinking' },
+      { kind: 'tool_call', toolName: 'click', toolCallId: 't1', args: { selector: '#buy' } },
+    ])).toEqual({ name: 'click', input: { selector: '#buy' } });
+  });
+  it('skips text/reasoning parts and finds a later tool_call', () => {
+    expect(extractNativeToolCall([
+      { kind: 'text', text: 'Let me click.' },
+      { kind: 'tool_call', toolName: 'readPage', toolCallId: 't2', args: {} },
+    ])).toEqual({ name: 'readPage', input: {} });
+  });
+  it('defaults a missing/non-object args to {}', () => {
+    expect(extractNativeToolCall([{ kind: 'tool_call', toolName: 'readPage', toolCallId: 't3' }]))
+      .toEqual({ name: 'readPage', input: {} });
+  });
+  it('returns null for prose-only parts (no tool_call) and for undefined/empty', () => {
+    expect(extractNativeToolCall([{ kind: 'text', text: 'final answer' }])).toBeNull();
+    expect(extractNativeToolCall(undefined)).toBeNull();
+    expect(extractNativeToolCall([])).toBeNull();
+  });
+});
+
+describe('capsToNativeTools — capability specs → OpenAI function shape', () => {
+  it('maps name/description and uses inputSchema as the function parameters', () => {
+    const tools = capsToNativeTools([readSpec(), actSpec()]);
+    expect(tools).toEqual([
+      { type: 'function', function: { name: 'readPage', description: 'read the page', parameters: {} } },
+      { type: 'function', function: { name: 'click', description: 'click an element', parameters: { selector: 'string' } } },
+    ]);
+  });
+  it('SKIPS a spec whose name violates the provider function-name constraint (no whole-array poison)', () => {
+    const bad: CapabilitySpec = { name: 'read page.v2', description: 'space + dot', inputSchema: {}, isReadOnly: true };
+    const tools = capsToNativeTools([readSpec(), bad, actSpec()]);
+    expect(tools.map((t) => t.function.name)).toEqual(['readPage', 'click']); // the malformed one is dropped, the rest survive
+  });
+});
+
+describe('renderAgentMessages — native message thread (Phase 2)', () => {
+  it('empty steps → goal + first-action user messages only', () => {
+    const m = renderAgentMessages('find jobs', []);
+    expect(m).toHaveLength(2);
+    expect(m.every((x) => x.role === 'user')).toBe(true);
+    expect(String(m[0].content)).toContain('find jobs');
+  });
+
+  it('a tool step becomes a contiguous assistant{tool_calls} + tool{result} pair', () => {
+    const m = renderAgentMessages('goal', [{ name: 'readPage', input: { x: 1 }, output: 'PAGE TEXT' }]);
+    const ai = m.findIndex((x) => x.role === 'assistant');
+    const asst = m[ai] as { tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }> };
+    expect(asst.tool_calls?.[0]).toMatchObject({ type: 'function', function: { name: 'readPage', arguments: JSON.stringify({ x: 1 }) } });
+    const id = asst.tool_calls?.[0].id;
+    expect(m[ai + 1]).toMatchObject({ role: 'tool', tool_call_id: id, content: 'PAGE TEXT' }); // contiguous + paired by id
+  });
+
+  it('does not throw when a tool input is circular/unserializable (safe-stringify guard)', () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(() => renderAgentMessages('goal', [{ name: 'click', input: circular, output: 'ok' }])).not.toThrow();
+    const m = renderAgentMessages('goal', [{ name: 'click', input: circular, output: 'ok' }]);
+    const asst = m.find((x) => x.role === 'assistant') as { tool_calls?: Array<{ function: { arguments: string } }> };
+    expect(asst.tool_calls?.[0].function.arguments).toBe('{}'); // degraded, not crashed
+  });
+
+  it('a reminder step renders as a user instruction, not a tool pair', () => {
+    const m = renderAgentMessages('goal', [{ name: 'reminder', input: {}, output: 'do something different' }]);
+    expect(m.some((x) => x.role === 'assistant')).toBe(false);
+    expect(m.some((x) => x.role === 'user' && x.content === 'do something different')).toBe(true);
+  });
+
+  it('bounds context: older tool results are trimmed, the last AGENT_MSG_KEEP_FULL stay verbatim', () => {
+    const steps = Array.from({ length: AGENT_MSG_KEEP_FULL + 2 }, (_, i) => ({ name: 'readPage', input: { i }, output: `r${i}:${'x'.repeat(400)}` }));
+    const toolMsgs = renderAgentMessages('goal', steps).filter((x) => x.role === 'tool');
+    expect(toolMsgs).toHaveLength(steps.length);
+    expect(String(toolMsgs[0].content)).toContain('[trimmed'); // oldest two trimmed
+    expect(String(toolMsgs[1].content)).toContain('[trimmed');
+    for (let k = 2; k < toolMsgs.length; k++) {
+      expect(String(toolMsgs[k].content)).not.toContain('[trimmed'); // last KEEP_FULL kept whole
+      expect(String(toolMsgs[k].content).length).toBeGreaterThan(400);
+    }
+  });
+});
+
+describe('AgenticTurnBrainClient — native function-calling drives the loop', () => {
+  it('passes a reconstructed message thread to the adapter; it grows the tool pair after a call', async () => {
+    const { client, dispatches } = makeAgentSteps([
+      { parts: [{ kind: 'tool_call', toolName: 'readPage', toolCallId: 't1', args: {} }] },
+      'Done.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true, output: 'PAGE' }), approval: () => 'approve' });
+    expect(Array.isArray(dispatches[0].messages)).toBe(true);
+    expect(dispatches[0].messages?.[0]).toMatchObject({ role: 'user' });
+    // second dispatch (after readPage ran): the thread now carries the assistant/tool pair
+    expect(dispatches[1].messages?.some((mm) => mm.role === 'assistant' && !!mm.tool_calls)).toBe(true);
+    expect(dispatches[1].messages?.some((mm) => mm.role === 'tool' && mm.content === 'PAGE')).toBe(true);
+  });
+
+  it('omits messages when no capability is registered (nothing to call natively)', async () => {
+    const { client, dispatches } = makeAgentSteps(['Just answering.']);
+    await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
+    await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true }), approval: () => 'approve' });
+    expect(dispatches[0].messages).toBeUndefined();
+  });
+
+  it('offers tools[] to the adapter on every dispatch (so API engines can call natively)', async () => {
+    const { client, dispatches } = makeAgentSteps(['Just answering directly.']);
+    await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true }), approval: () => 'approve' });
+    expect(dispatches[0].tools).toBeDefined();
+    expect((dispatches[0].tools ?? []).every((t) => t.type === 'function')).toBe(true);
+    expect((dispatches[0].tools ?? []).map((t) => t.function.name).sort()).toEqual(['click', 'readPage']);
+  });
+
+  it('a NATIVE tool_call part (no text marker) drives the capability-request', async () => {
+    const { client } = makeAgentSteps([
+      { parts: [{ kind: 'tool_call', toolName: 'readPage', toolCallId: 't1', args: {} }] }, // native, no __AGON_TOOL__
+      'The page is the Agon docs.',                                                          // prose final answer
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-coding-plan-minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: () => ({ ok: true, output: '<page text>' }),
+      approval: () => 'approve',
+    });
+    expect(events.find((e) => e.kind === 'capability-request')).toMatchObject({ capability: 'readPage' });
+    expect(events.find((e) => e.kind === 'engine')).toMatchObject({ content: 'The page is the Agon docs.' });
+    expect(result.responded).toBe(true);
+  });
+
+  it('a native tool_call with EMPTY stdout still drives the loop (not misread as no-answer)', async () => {
+    // Guards Fix A: the no-answer bail must not fire on a native tool-only turn whose stdout is
+    // empty — emptiness is only "no answer" when there is ALSO no structured call. No <tool> echo.
+    const { client } = makeAgentSteps([
+      { parts: [{ kind: 'tool_call', toolName: 'readPage', toolCallId: 't1', args: {} }], stdout: '' },
+      'Read it.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: () => ({ ok: true, output: '<page>' }),
+      approval: () => 'approve',
+    });
+    expect(events.find((e) => e.kind === 'capability-request')).toMatchObject({ capability: 'readPage' });
+    expect(events.some((e) => e.kind === 'notice' && /no answer/i.test((e as { message: string }).message))).toBe(false);
+    expect(result.responded).toBe(true);
+  });
+
+  it('a native tool_call part takes PRECEDENCE over a stray text marker in stdout', async () => {
+    // The dispatch carries a native click AND a readPage text-marker in stdout; the native one wins.
+    let requested: string | undefined;
+    const { client } = makeAgentSteps([
+      { parts: [{ kind: 'tool_call', toolName: 'click', toolCallId: 't1', args: { selector: '#native' } }], stdout: `${MARK} {"name":"readPage","input":{}}` },
+      'Done.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'kimi-for-coding-k2p7', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    const { result } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: (ev) => { requested = (ev as { capability: string }).capability; return { ok: true, output: 'clicked' }; },
+      approval: () => 'approve',
+    });
+    expect(requested).toBe('click');     // native part won, not the marker's readPage
+    expect(result.responded).toBe(true);
   });
 });

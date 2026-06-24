@@ -264,9 +264,42 @@ export function encodeImagesForDispatch(paths: string[], maxBytes?: number, maxI
 }
 
 /**
- * One-line attach-time warning when the given engine cannot see images, or null when it can. The 'vision' capability here means 'this engine ends up seeing the image SOMEHOW': via API image parts (session-resume), via an imageFlag on CLI dispatch (claude/codex), or — deliberately — via the adapter's path-label fallback when the binary is an agentic CLI that reads the file itself (agy, verified 2026-06-11). So capability-without-imageFlag on a CLI engine is NOT a false negative; do not require imageFlag here. Two warning tiers: an API-only engine without vision truly never receives the image (session-resume drops it), while a CLI engine without the capability gets the file path and MAY still read it. Shown at /img attach, on the composer image chip, and on drag-drop submit — so the user learns BEFORE the turn, not from a status line after.
+ * Splice screenshot/image parts into a NATIVE message thread for the API+tools path (the browser brain driving a page). Gated on hasVision — a non-vision engine is left untouched so it never receives an image its endpoint would ignore/reject (zai-coding silently drops images; kimi/minimax see them). Encodes the file paths via encodeImagesForDispatch and attaches the AI-SDK ImageParts to the LAST user message (turning its string content into a [text, ...images] array), exactly as session-resume splices a turn's images. Returns the messages unchanged when there is no vision, no path, or nothing encodes. Pure: clones rather than mutating the caller's array.
  */
 // @kern-source: image:239
+export function attachVisionToMessages(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, imagePaths: string[], hasVision: boolean): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
+  if (!hasVision || !imagePaths || imagePaths.length === 0) return messages;
+  const enc = encodeImagesForDispatch(imagePaths);
+  // Skipped images (oversize / unsupported / unreadable) are omitted SILENTLY here: this runs in
+  // CliAdapter.dispatch inside the Ink TUI, so a console.warn/stdout write would corrupt the
+  // rendered screen, and a pure helper has no event channel to yield a status. In practice the
+  // browser brain's screenshots are already size/MIME-validated upstream (decodeDataUrlToImageFile),
+  // so enc.skipped is empty on that path; a caller that must surface omissions should encode +
+  // report them itself (as session-resume does) rather than route through this helper.
+  if (enc.parts.length === 0) return messages;
+  const out = messages.slice();
+  // Attach to the LAST user message; if there is somehow no user turn, append one.
+  let idx = -1;
+  for (let i = out.length - 1; i >= 0; i--) { if (out[i].role === 'user') { idx = i; break; } }
+  if (idx >= 0) {
+    const existing = out[idx].content;
+    // Preserve content: an ARRAY already holds text/image parts — append, never strip (no data
+    // loss). A STRING wraps to [text, ...images] but OMITS an empty text part — some vision
+    // providers reject an empty text content item in a multimodal message (matches session-resume).
+    const content = Array.isArray(existing)
+      ? [...existing, ...enc.parts]
+      : (typeof existing === 'string' && existing.length > 0 ? [{ type: 'text', text: existing }, ...enc.parts] : [...enc.parts]);
+    out[idx] = { ...out[idx], content };
+  } else {
+    out.push({ role: 'user', content: enc.parts.slice() }); // image-only user turn (no empty text)
+  }
+  return out;
+}
+
+/**
+ * One-line attach-time warning when the given engine cannot see images, or null when it can. The 'vision' capability here means 'this engine ends up seeing the image SOMEHOW': via API image parts (session-resume), via an imageFlag on CLI dispatch (claude/codex), or — deliberately — via the adapter's path-label fallback when the binary is an agentic CLI that reads the file itself (agy, verified 2026-06-11). So capability-without-imageFlag on a CLI engine is NOT a false negative; do not require imageFlag here. Two warning tiers: an API-only engine without vision truly never receives the image (session-resume drops it), while a CLI engine without the capability gets the file path and MAY still read it. Shown at /img attach, on the composer image chip, and on drag-drop submit — so the user learns BEFORE the turn, not from a status line after.
+ */
+// @kern-source: image:270
 export function visionSupportNote(engine: any): string|null {
   if (!engine) return null;
   if (engine.capabilities?.includes('vision')) return null;

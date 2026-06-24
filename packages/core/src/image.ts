@@ -8,6 +8,7 @@ export {
   extractImagesFromInput,
   normalizeDroppedPath,
   encodeImagesForDispatch,
+  attachVisionToMessages,
   visionSupportNote,
   decodeDataUrlToImageFile,
   sniffImageMime,

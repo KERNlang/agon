@@ -890,11 +890,12 @@ screen name=BottomChromeSection target=ink memo=true
           {updateInfo && updateInfo.latestVersion && !questionState && (
             <UpdateBanner updateInfo={updateInfo} updateChecking={updateChecking} />
           )}
-          {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}{imageVisionNote ? (() => {
+          {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{'[Image #' + (i + 1) + '] ' + img.filename}{i < pendingImages.length - 1 ? '  ' : ''}</Text>))}{imageVisionNote ? (() => {
             // Keep the chip row a single line: the layout estimator budgets one
             // row for pending images, so clip the note to the remaining width
-            // instead of letting it wrap into unbudgeted rows.
-            const chipLen = 2 + pendingImages.reduce((n: number, img: any) => n + String(img.filename ?? '').length + 2, 0);
+            // instead of letting it wrap into unbudgeted rows. Each chip is now
+            // "[Image #N] filename" + a 2-space sep, so ~13 chars of overhead per image.
+            const chipLen = 2 + pendingImages.reduce((n: number, img: any) => n + String(img.filename ?? '').length + 13, 0);
             const avail = Math.max(0, (termWidth ?? 80) - chipLen - 6);
             if (avail < 12) return null;
             const text = '  ⚠ ' + imageVisionNote;

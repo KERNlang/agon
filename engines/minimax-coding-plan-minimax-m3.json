@@ -5,6 +5,7 @@
   "isLocal": false,
   "tier": "builtin",
   "timeout": 180,
+  "capabilities": ["vision"],
 
   "exec": {
     "args": []

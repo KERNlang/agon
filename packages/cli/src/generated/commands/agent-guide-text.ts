@@ -21,6 +21,7 @@ export function agentGuideMarkdown(): string {
     '- `agon think "<problem>" [--strategy linear|reflexion] [--steps N] [--branches N]` — sequential thinking: decompose a problem into structured thoughts (reflexion forces a self-critique+revision per step; --branches explores alternatives), surface open questions, and emit a refined spec to hand to `agon goal`. Use to think before acting, or for engines with weak built-in reasoning.',
     '- `agon nero "<decision>" [--reasoning "<why>"] [--focus "<concern>"] [--confidence N]` — adversarial self-challenge. The top-rated CRITIC (picked by tribunal-discipline rating, not the best builder) attacks your decision with concrete failure scenarios and returns a verdict (FLAWED | PROCEED WITH CAUTION | SOUND) plus its own confidence the original is correct. Use this INSTEAD of an internal evil-twin / devil\'s-advocate pass — it gives you a real second model, not your own reasoning mirrored.',
     '- `agon research "<question>" [--count N] [--engine <id>]` — keyless, web-grounded, CITED research. Agon (not the model) discovers sources via first-party endpoints that need NO API key — npm registry, GitHub repo search, MDN, IETF/RFC datatracker, Stack Overflow, Wikipedia — WebFetches them, an engine drafts an answer grounded ONLY in that content with inline [n] citations, and Agon then re-fetches and VERIFIES every citation (rejecting dead/redirected/mismatched URLs). Use it to look up a library/repo/spec/Q&A/encyclopedic fact and get an answer with sources you can trust. A truly-general web query (no keyless lane) reports that rather than guessing.',
+    '- `agon chrome "<task>"` (machine: `agon call chrome "<task>" [--auto-approve] [--engine <id>]`) — drive the USER\'s own browser to research or check a page design (navigate / read / screenshot / click / type). Reuses a running agon (serve/REPL) the side panel is attached to, else embeds a transient bridge just for the run. Read-only page tools need no approval; add `--auto-approve` so a non-interactive caller can perform page-changing actions (without it they\'re denied). Requires the Agon browser extension with its side panel open + attached; with no panel attached the brain answers in text only.',
     '- `agon review <uncommitted|branch:NAME|commit:SHA>` — non-interactive multi-engine code review.',
     '- `agon goal "<intent>" --queue <dir|.jsonl> --gate "<test cmd>"` — autonomous controller: drives a task queue to completion unattended, looping build -> witness -> gate -> review (panel + judge) -> fix -> commit per task on a goal/ branch. Bound it with `--max-hours`/`--budget`; `--push` pushes each task. Long-running (designed for 8-24h).',
     '- `agon conquer "<task>" --gate "<test cmd>"` — supervised-autonomous BUILD of an OPEN-ENDED task. Cesar drives a pluggable builder CLI (codex/claude/agy) in agent mode turn by turn; when the builder hits a fork it asks and Cesar convenes the cheapest sufficient consult (nero/tribunal/brainstorm/council) and feeds back a compact verdict; when it claims done, a layered done-oracle runs (the `--gate` command + diff acceptance-drift + a nero falsification round) and it STOPS at a HUMAN merge gate — it never auto-merges to main. The open-ended sibling to `goal`: use `conquer` when you CANNOT write a clean discriminating oracle up front (build a whole tool), `goal` when you can. `--push` needs a clean tree; bound it with `--max-turns`/`--max-hours`.',
@@ -67,6 +68,7 @@ export function agentGuideMarkdown(): string {
     '- explore, no decision needed         -> campfire',
     '- think before acting / decompose     -> think',
     '- pressure-test your own decision     -> nero',
+    '- check a live page / a design in your browser -> chrome',
     '- judge existing code                 -> review',
     '- drive a whole task queue to done    -> goal',
     '- build a whole open-ended thing       -> conquer',
@@ -80,7 +82,7 @@ export function agentGuideMarkdown(): string {
 /**
  * docs/modes.md content — the agent guide re-emitted as a docs-corpus page so RAG ('agon rag query', the ProjectContext MCP tool, --ground) answers mode questions like 'tribunal vs council' with citations. The guide stays the single source of truth; regenerate with npm run docs:modes.
  */
-// @kern-source: agent-guide-text:82
+// @kern-source: agent-guide-text:84
 export function modeDocsMarkdown(): string {
   return [
     '<!-- GENERATED — do not edit. Source: packages/cli/src/kern/commands/agent-guide-text.kern (agentGuideMarkdown). Regenerate: npm run docs:modes -->',
@@ -95,10 +97,10 @@ export function modeDocsMarkdown(): string {
 /**
  * Per-CLI /agon slash-command shim. format is one of agy | claude | markdown.
  */
-// @kern-source: agent-guide-text:95
+// @kern-source: agent-guide-text:97
 export function agonShim(format: string): string {
   const body = [
-    'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, research, review, goal, conquer).',
+    'You have access to Agon, a multi-AI orchestration CLI (forge, synthesis, brainstorm, tribunal, council, campfire, think, nero, research, chrome, review, goal, conquer).',
     'First run `agon agent-guide` in the shell to see exactly how to call it, then use the right Agon mode to handle the request.',
     'Call agon with your normal shell/Bash tool — there is no MCP and nothing is loaded until you invoke it.',
   ].join('\n');
@@ -143,7 +145,7 @@ export function agonShim(format: string): string {
 /**
  * Native Codex skill that exposes Agon as $agon.
  */
-// @kern-source: agent-guide-text:141
+// @kern-source: agent-guide-text:143
 export function codexSkillMarkdown(): string {
   return [
     '---',
@@ -172,6 +174,7 @@ export function codexSkillMarkdown(): string {
     '- `campfire`: open multi-engine discussion.',
     '- `think`: sequential thinking — decompose a problem (optionally branch) and surface open questions before acting.',
     '- `nero`: adversarial self-challenge — the top-rated critic attacks a decision and returns a verdict (FLAWED / PROCEED WITH CAUTION / SOUND).',
+    '- `chrome`: drive the user\'s own browser (navigate/read/screenshot/click) for research or checking a page design; needs the Agon browser extension. Machine form: `agon call chrome "<task>" [--auto-approve]`.',
     '- `review`: non-interactive AI review of a diff target.',
     '- `goal`: autonomous task-queue execution with stronger gates.',
     '',
@@ -181,7 +184,7 @@ export function codexSkillMarkdown(): string {
 /**
  * Codex UI metadata for the Agon skill.
  */
-// @kern-source: agent-guide-text:177
+// @kern-source: agent-guide-text:180
 export function codexSkillOpenAiYaml(): string {
   return [
     'interface:',

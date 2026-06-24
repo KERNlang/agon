@@ -112,6 +112,14 @@ fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string" ret
       'TOOL LINE NOW. One tool per step — you then get its result and may call another tool.',
       'Read the page before acting on it. Never fabricate a result or claim an action you',
       'did not take. Reply in prose ONLY when giving the user your FINAL answer (no tool line).',
+      '',
+      'BE PROACTIVE — take initiative. When the user asks you to DO something on the web —',
+      'search for / find / look up something, open or navigate to a site, fill a field, click —',
+      'ACT by calling tools; the user wants it DONE, not described, and does NOT want to spell',
+      'out each step. Drive it yourself across multiple steps (read → act → read → act) until',
+      'the goal is reached. Need a site you are not on? navigate there, then readPage, then act.',
+      'This holds in EVERY language: a request written in German/French/etc. STILL requires tool',
+      'lines — never answer a "do X" request with only a prose promise to do it.',
     );
     return lines.join('\n');
   >>>
@@ -134,13 +142,23 @@ fn name=renderAgentTranscript params="userInput:string, steps:Array<{ name: stri
   >>>
 
 fn name=looksLikeActionIntent params="text:string" returns="boolean" export=true
-  doc "True when an engine's reply DESCRIBES an action ('Let me navigate…', 'I'll click…') but emitted no tool call — a short intent preamble, not a final answer. Used to NUDGE the engine to actually emit the tool line instead of treating the narration as a final answer (the common weak-engine failure). Looks only at the head + caps length to avoid matching a real prose answer that happens to say 'review' or 'let me know'."
+  doc "True when an engine's reply DESCRIBES an action ('Let me navigate…', 'Ich suche…') but emitted no tool call — a short intent preamble, not a final answer — so the loop can NUDGE it to actually emit the tool line (the common weak-engine failure: the brain says it will act, then stops). Covers English + German narration, the panel's two languages; other languages degrade to no-nudge (the proactivity system prompt still pushes the model to act in any language — this is only the backstop). Bounded to short replies so a real prose answer that mentions 'review'/'search' isn't misread as narration."
   handler <<<
-    const head = text.trim().slice(0, 200).toLowerCase();
+    const s = text.trim();
+    if (s.length === 0 || s.length >= 500) return false; // a substantive reply is a real answer, not a preamble
+    const head = s.slice(0, 200).toLowerCase();
     if (/\blet me know\b/.test(head)) return false; // a sign-off, not an action
-    const intent = /\b(let me|i'?ll|i will|i'?m going to|i am going to|let's|first,? i|now i'?ll|going to)\b/.test(head);
-    const verb = /\b(navigat|click|type|go to|open|fill|select|read|review|look at|check|press|scroll|enter|search|find)\b/.test(head);
-    return intent && verb && text.trim().length < 500;
+    // English: a first-person "about to act" opener AND an action verb. Verb stems anchor at
+    // the word START only (no trailing \b), so a stem matches its inflections (navigat→navigate).
+    const enIntent = /\b(let me|i'?ll|i will|i'?m going to|i am going to|let's|now i'?ll|going to)\b/.test(head);
+    const enVerb = /\b(navigat|go to|open|fill|select|read|review|look at|check|press|scroll|click|type|search|find|brows)/.test(head);
+    // German: a first-person SELF-action ("ich suche/navigiere/öffne…", "starte ich"). Listed as
+    // explicit "ich <verb>" pairs (not a bare adverb or a stem) so opinion phrasing like
+    // "ich finde X gut" (I think X is good) and "jetzt sieht …" (now … looks) are NOT misread as
+    // intent. ASCII-anchored before "ich", which sidesteps the \b-vs-umlaut problem (\b fails
+    // before 'ö', so a bare "\böffne" never matched).
+    const deAction = /\b(ich\s+(werde|möchte|gehe|navigiere|klicke|tippe|öffne|lese|suche|scrolle|wähle|prüfe|fülle|drücke|starte|beginne|rufe|schaue)|starte ich|beginne ich|lass mich)\b/.test(head);
+    return (enIntent && enVerb) || deAction;
   >>>
 
 fn name=describeAgentAction params="name:string, input:Record<string, unknown>" returns="string" export=true

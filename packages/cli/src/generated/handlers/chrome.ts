@@ -8,6 +8,8 @@ import { ensureChromeBridge } from '../signals/chrome-bridge.js';
 
 import { parseSseChunk, approvalTargetsClient } from '../commands/drive.js';
 
+import { sessionResultStore } from '../models/session-results.js';
+
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import { recordRun } from '../../telemetry/index.js';
@@ -17,7 +19,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 /**
  * Drive one browser-agent turn for `/chrome <task>`: resolve/embed the bridge, render the turn inline via dispatch, approve page actions via the REPL permission-ask UI, and append the answer to the chat session for Cesar. Mirrors `agon drive`'s two-connection client (blocking /send + SSE tail) but with REPL-native render + approval. Returns true only when the turn produced an answer — the dispatch layer gates the Cesar continuation on it so a no-result turn never makes Cesar summarize stale context.
  */
-// @kern-source: chrome:21
+// @kern-source: chrome:22
 export async function handleChrome(task: string, dispatch: Dispatch, ctx: HandlerContext): Promise<boolean> {
   const chrAbort = new AbortController();
   try {
@@ -170,6 +172,17 @@ export async function handleChrome(task: string, dispatch: Dispatch, ctx: Handle
     const produced = answer.trim().length > 0;
     if (produced) {
       appendMessage(ctx.chatSession, { role: 'engine', engineId: answerEngine || 'agon', content: answer, timestamp: new Date().toISOString() });
+      // Record for the Ctrl+R results pager / `agon last` — the full browser-turn
+      // answer lives here so the transcript stays compact. pageActivity reflects whether
+      // the panel actually drove the page (vs a text-only answer with no panel attached).
+      sessionResultStore.add({
+        type: 'chrome',
+        timestamp: new Date().toISOString(),
+        question: task,
+        engines: answerEngine ? [answerEngine] : [],
+        winner: answerEngine || null,
+        data: { task, answer, engineId: answerEngine || 'agon', pageActivity: sawBrowserActivity },
+      });
     }
     const ok = produced && !failed && !streamFailed && !endedReason;
     recordRun({ mode: 'chrome', intent: task, winner: undefined, success: ok, durationMs: Date.now() - startTime, engineIds: answerEngine ? [answerEngine] : [], completionState: (failed || endedReason) ? 'aborted' : 'completed' });

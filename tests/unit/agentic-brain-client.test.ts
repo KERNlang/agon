@@ -113,6 +113,25 @@ describe('agent prompt + transcript helpers', () => {
     expect(looksLikeActionIntent('Done. Let me know if you want me to review a specific section.')).toBe(false);
     expect(looksLikeActionIntent('Here is my detailed review of the page. '.repeat(40))).toBe(false); // too long = a real answer
   });
+
+  it('looksLikeActionIntent catches German narration (the panel is multilingual)', () => {
+    // The exact failure from the field: glm-5.2 narrated a job search in German and stopped,
+    // never calling a tool — the English-only matcher accepted it as a final answer.
+    expect(looksLikeActionIntent(
+      'Ich suche auf LinkedIn Jobs nach passenden Stellen für dich. Basierend auf deinem Profil starte ich mit einer gezielten Suche.',
+    )).toBe(true);
+    expect(looksLikeActionIntent('Ich navigiere jetzt zu deinem Profil und lese die Seite.')).toBe(true);
+    expect(looksLikeActionIntent('Ich öffne die Stellenseite und tippe deine Suchbegriffe ein.')).toBe(true); // umlaut-initial verb must match
+  });
+
+  it('looksLikeActionIntent does NOT nudge a German/English FINAL answer (advice, not action)', () => {
+    expect(looksLikeActionIntent('Dein Profil sieht stark aus — klare Überschrift und ein gutes Foto.')).toBe(false);
+    // "ich finde X gut" = opinion, not self-action; bare "jetzt" must not trigger.
+    expect(looksLikeActionIntent('Jetzt sieht dein Profil besser aus und ich finde den Abschnitt hilfreich.')).toBe(false);
+    // "such"/"enter" as ordinary English words must not be read as verbs.
+    expect(looksLikeActionIntent('This is such a strong profile; no changes needed.')).toBe(false);
+    expect(looksLikeActionIntent('That headline is entertainment-industry specific and reads well.')).toBe(false);
+  });
 });
 
 describe('AgenticTurnBrainClient — the ReAct loop', () => {
@@ -223,6 +242,36 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     });
     expect(events.some((e) => e.kind === 'notice' && /tool call/.test((e as { message: string }).message))).toBe(true);
     expect(events.some((e) => e.kind === 'capability-request')).toBe(true);
+    expect(result.responded).toBe(true);
+  });
+
+  it('drives a multi-site browse from a GERMAN narration: nudge → navigate → read → navigate → read → answer', async () => {
+    // The field scenario: the brain narrates a job search in German, then (once nudged) actually
+    // switches sites and reads each. Proves the loop does autonomous multi-step browsing — open a
+    // site, check it, open another, check it — not just a single read.
+    const navSpec: CapabilitySpec = { name: 'navigate', description: 'navigate the tab to a url', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true };
+    const client = makeAgent([
+      'Ich öffne zuerst die LinkedIn-Jobs-Seite und suche passende Stellen für dich.', // German narration, no tool → nudge
+      `${MARK} {"name":"navigate","input":{"url":"https://www.linkedin.com/jobs/"}}`,   // switch to site 1
+      `${MARK} {"name":"readPage","input":{}}`,                                          // check site 1
+      `${MARK} {"name":"navigate","input":{"url":"https://www.linkedin.com/jobs/view/42"}}`, // switch to site 2
+      `${MARK} {"name":"readPage","input":{}}`,                                          // check site 2
+      'Ich habe zwei passende Stellen gefunden, die zu AI Tooling und React passen.',    // final answer
+    ]);
+    await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: navSpec });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+
+    let approvals = 0;
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'kannst du mir gute jobs suchen')), {
+      capability: () => ({ ok: true, output: 'PAGE CONTENT' }),
+      approval: () => { approvals++; return 'approve-session'; }, // approve navigate once, for the session
+    });
+
+    const caps = events.filter((e) => e.kind === 'capability-request');
+    expect(events.some((e) => e.kind === 'notice' && /tool call/.test((e as { message: string }).message))).toBe(true); // German narration WAS nudged
+    expect(caps.length).toBe(4);   // navigate, readPage, navigate, readPage — it switched sites twice and checked each
+    expect(approvals).toBe(1);     // the 2nd navigate isn't re-gated (approve-session)
     expect(result.responded).toBe(true);
   });
 

@@ -155,6 +155,44 @@ describe('formatSessionResults', () => {
     expect(output).toContain('found a blocker');
   });
 
+  it('formats a chrome result with the page-driving header and answer', () => {
+    const results: SessionResult[] = [{
+      type: 'chrome',
+      timestamp: '2026-04-07T22:40:00.000Z',
+      question: 'check the pricing page design',
+      engines: ['codex'],
+      winner: 'codex',
+      data: {
+        task: 'check the pricing page design',
+        answer: 'The hero is cluttered — three CTAs compete above the fold.',
+        engineId: 'codex',
+        pageActivity: true,
+      },
+    }];
+
+    const output = formatSessionResults(results);
+    expect(output).toContain('CHROME #1');
+    expect(output).toContain('check the pricing page design');
+    expect(output).toContain('codex');
+    expect(output).toContain('drove the page');
+    expect(output).toContain('The hero is cluttered');
+  });
+
+  it('marks a chrome result as text-only when no page tools ran', () => {
+    const results: SessionResult[] = [{
+      type: 'chrome',
+      timestamp: '2026-04-07T22:41:00.000Z',
+      question: 'what is the WHATWG URL spec',
+      engines: ['agon'],
+      winner: 'agon',
+      data: { task: 'what is the WHATWG URL spec', answer: 'A living standard…', engineId: 'agon', pageActivity: false },
+    }];
+
+    const output = formatSessionResults(results);
+    expect(output).toContain('CHROME #1');
+    expect(output).toContain('text only (no page tools ran)');
+  });
+
   it('numbers multiple results sequentially', () => {
     const results: SessionResult[] = [
       {

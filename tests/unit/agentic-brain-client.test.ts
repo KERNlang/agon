@@ -370,6 +370,50 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     expect(result.responded).toBe(true);
   });
 
+  it('re-view detector: an identical read-only result (after another tool) is flagged NO CHANGE', async () => {
+    // The flail: readPage, a different read-only tool, then readPage AGAIN returning the SAME view.
+    // The two readPages are not CONSECUTIVE (so the repeat detector stays quiet), but the second is
+    // identical content → it must carry the NO-CHANGE feedback that pushes a scroll/act. One re-view
+    // alone (noProgress 1 < budget) does NOT stop the turn — it reaches the final answer.
+    const client = makeAgent([
+      `${MARK} {"name":"readPage","input":{}}`,
+      `${MARK} {"name":"inspect","input":{}}`,
+      `${MARK} {"name":"readPage","input":{}}`,
+      'Final answer.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec('readPage') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec('inspect') });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: (ev) => ({ ok: true, output: (ev as unknown as { capability: string }).capability === 'readPage' ? 'SAME VIEW' : `fresh-${(ev as unknown as { requestId: string }).requestId}` }),
+      approval: () => 'approve',
+    });
+    const reads = events.filter((e) => e.kind === 'tool' && (e as unknown as { tool: string; status: string }).tool === 'readPage' && (e as unknown as { status: string }).status === 'done') as unknown as Array<{ output: string }>;
+    expect(reads.length).toBe(2);
+    expect(reads[0].output).not.toMatch(/NO CHANGE/);   // first read is fresh
+    expect(reads[1].output).toMatch(/NO CHANGE/);         // identical re-view is flagged
+    expect(result.responded).toBe(true);
+  });
+
+  it('re-view detector STOPS the turn when the agent keeps re-viewing the same screens (no progress)', async () => {
+    // Both read-only tools return CONSTANT output → every read after the first is a re-view. With
+    // nothing ever changing and no action taken, noProgress climbs past the budget and the turn
+    // stops as STUCK instead of spinning to the 30-step backstop (the screenshot↔readPage flail).
+    const r = (n: string) => `${MARK} {"name":"${n}","input":{}}`;
+    const client = makeAgent([r('readPage'), r('inspect'), r('readPage'), r('inspect'), r('readPage'), r('inspect'), r('readPage')]);
+    await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec('readPage') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec('inspect') });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: (ev) => ({ ok: true, output: (ev as unknown as { capability: string }).capability === 'readPage' ? 'PAGE' : 'INSP' }),
+      approval: () => 'approve',
+    });
+    expect(result.responded).toBe(false);
+    expect(result.reason).toMatch(/stuck|re-?view|same/i);
+    // It stopped WELL short of the 30-step backstop (a handful of re-views, not 30).
+    expect(events.filter((e) => e.kind === 'capability-request').length).toBeLessThan(10);
+  });
+
   it('an unknown tool is reported back and the loop recovers to an answer', async () => {
     const client = makeAgent([`${MARK} {"name":"teleport","input":{}}`, 'I cannot do that here.']);
     await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });

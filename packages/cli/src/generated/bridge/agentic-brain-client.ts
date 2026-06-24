@@ -121,6 +121,12 @@ export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string): 
     'COMPLETE, then give a final answer that contains the RESULT (e.g. the actual jobs you found,',
     'with why each fits). Stop to ask ONLY if you are truly blocked — a login, a captcha, or a',
     'genuinely ambiguous irreversible choice.',
+    '',
+    'WORKING A LONG PAGE — be an autopilot, not a flail: go TOP-TO-BOTTOM. Read the current',
+    'section, take any action it needs, then SCROLL DOWN one screenful and repeat until scroll',
+    'reports the BOTTOM. NEVER readPage or screenshot the SAME view twice in a row — it reveals',
+    'nothing new; SCROLL first. Do NOT re-click a control you already clicked (e.g. a toggle).',
+    'Keep a brief running tally of what you have handled so you know when the task is complete.',
   );
   return lines.join('\n');
 }
@@ -128,7 +134,7 @@ export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string): 
 /**
  * The growing ReAct transcript re-sent to the (stateless, exec-mode) engine each step. The user's request is framed as a standing GOAL (restated every step so a stateless engine never loses sight of it) plus the progress so far, ending with: you are NOT done until the goal is met — act, or give the RESULT.
  */
-// @kern-source: agentic-brain-client:140
+// @kern-source: agentic-brain-client:146
 export function renderAgentTranscript(userInput: string, steps: Array<{ name: string; input: Record<string, unknown>; output: string }>): string {
   // Frame the request as the GOAL the agent must ACHIEVE, not a one-off question. Re-sent every
   // step (the engine is stateless in exec mode), so it keeps pursuing the goal to completion
@@ -150,7 +156,7 @@ export function renderAgentTranscript(userInput: string, steps: Array<{ name: st
 /**
  * True when an engine's reply DESCRIBES an action ('Let me navigate…', 'Ich suche…') but emitted no tool call — a short intent preamble, not a final answer — so the loop can NUDGE it to actually emit the tool line (the common weak-engine failure: the brain says it will act, then stops). Covers English + German narration, the panel's two languages; other languages degrade to no-nudge (the proactivity system prompt still pushes the model to act in any language — this is only the backstop). Bounded to short replies so a real prose answer that mentions 'review'/'search' isn't misread as narration.
  */
-// @kern-source: agentic-brain-client:160
+// @kern-source: agentic-brain-client:166
 export function looksLikeActionIntent(text: string): boolean {
   const s = text.trim();
   if (s.length === 0 || s.length >= 500) return false; // a substantive reply is a real answer, not a preamble
@@ -172,7 +178,7 @@ export function looksLikeActionIntent(text: string): boolean {
 /**
  * True when the engine, instead of acting, ASKS the user how to proceed / for permission / to pick an option ('How would you like me to proceed?', 'Which option would you like?', 'Soll ich…?'). The classic non-agentic stall: it hands the wheel back to the user. The loop nudges it to decide and continue (the user still approves each page-changing action via the SEPARATE gate, so the agent never needs to ask in prose). Kept to strong, unambiguous phrases (EN + DE) so a completed answer that merely ends 'let me know if you want more' is NOT misread as a stall.
  */
-// @kern-source: agentic-brain-client:180
+// @kern-source: agentic-brain-client:186
 export function looksLikeDeferral(text: string): boolean {
   const t = text.toLowerCase();
   return /(how would you like me to proceed|how (should|shall|do) (i|we) proceed|which (one|option)( would you| do you want| should i)|would you like me to\b|do you want me to\b|let me know which|wie soll ich (fortfahren|vorgehen|weitermachen)|möchtest du, dass ich|soll ich\b.*\?|welche (option|möglichkeit))/.test(t);
@@ -181,7 +187,7 @@ export function looksLikeDeferral(text: string): boolean {
 /**
  * A compact, human-readable one-liner for the approval popup's `command` field — what the agent is about to do.
  */
-// @kern-source: agentic-brain-client:187
+// @kern-source: agentic-brain-client:193
 export function describeAgentAction(name: string, input: Record<string, unknown>): string {
   let arg = '';
   try { arg = JSON.stringify(input); } catch { arg = '{…}'; }
@@ -192,7 +198,7 @@ export function describeAgentAction(name: string, input: Record<string, unknown>
 /**
  * v2 BrainClient: a bounded ReAct tool-loop over one engine, with client-lent capabilities (registerCapability) the brain pulls mid-turn via capability-request, and a per-action approval gate for destructive tools. Construct with the daemon's EngineRegistry; open() binds engine/cwd; runTurn() drives the loop; provideCapabilityResult/provideApproval answer the *-request events by requestId.
  */
-// @kern-source: agentic-brain-client:198
+// @kern-source: agentic-brain-client:204
 export class AgenticTurnBrainClient implements BrainClient {
   private registry: EngineRegistry;
   private adapter: EngineAdapter;
@@ -313,6 +319,7 @@ export class AgenticTurnBrainClient implements BrainClient {
       let imgSeq = rawImages.length;
       let noProgress = 0;      // CONSECUTIVE replies that didn't advance (narration / deferral / identical-repeat); reset on real progress
       let lastCallKey = '';    // the previous executed tool call (name+input) — an identical repeat is a LOOP, not progress
+      const lastReadOutputs = new Map<string, string>(); // last text output per read-only tool CALL (keyed by name+input) — an identical repeat means the agent is re-viewing the SAME screen (the screenshot↔readPage flail the consecutive-repeat check misses)
 
       for (let step = 0; step < MAX_AGENT_STEPS; step++) {
         if (ctrl.signal.aborted) break;
@@ -383,7 +390,10 @@ export class AgenticTurnBrainClient implements BrainClient {
           steps.push({ name: 'reminder', input: {}, output: `You just requested the IDENTICAL action again (${call.name}); repeating it changes nothing. Do something DIFFERENT — a different tool, selector, or url — or, if the task is COMPLETE, give your final answer with the result.` });
           continue; // do NOT re-execute / re-prompt the user for the same approval
         }
-        noProgress = 0;        // distinct action = real progress → refresh the budget
+        // noProgress is reset by PROGRESS, decided AFTER execution below (a mutating action, or a
+        // read that reveals NEW content) — NOT merely by issuing a distinct call. Otherwise an
+        // agent alternating read-only tools over an UNCHANGING view resets the budget every step
+        // and spins to the step backstop (the exact screenshot↔readPage flail we saw).
         lastCallKey = callKey;
 
         const cap = this.caps.get(call.name);
@@ -467,9 +477,45 @@ export class AgenticTurnBrainClient implements BrainClient {
             transcriptOut = `(screenshot could not be read${decoded.reason ? `: ${decoded.reason}` : ''})`;
           }
         }
+        // Progress accounting — decide whether this executed call ADVANCED the task, so the turn
+        // stops when the agent is spinning instead of running to the step backstop:
+        //  - a MUTATING tool = an action = progress (and the page may have changed, so the prior
+        //    read snapshots are stale and must be dropped, else a later read that coincidentally
+        //    matches a PRE-mutation read is wrongly flagged);
+        //  - a read-only tool that returns NEW text = progress (it revealed something);
+        //  - a read-only tool that returns the IDENTICAL text as last time = a RE-VIEW: no
+        //    progress — tag it NO CHANGE and count it toward the stuck budget;
+        //  - an opaque 'data:' screenshot is progress-NEUTRAL (we can't compare images): it
+        //    neither advances nor resets, so a screenshot↔readPage flail still trips on the
+        //    readPage side (the readPage re-reads accumulate while screenshots don't reset them).
+        let noChange = false;
+        if (!cap.spec.isReadOnly && capRes.ok) {
+          noProgress = 0;            // a SUCCESSFUL action was taken (a FAILED click/type/navigate changed nothing → neutral, not progress)
+          lastReadOutputs.clear();   // the page may have changed — forget stale read snapshots
+        } else if (cap.spec.isReadOnly && capRes.ok && !rawOut.startsWith('data:')) {
+          // Key by tool+input (callKey), NOT name: the same read with the same input returning the
+          // same text is a genuine re-view; the SAME tool with a DIFFERENT input is a different
+          // read, not a stall (so it must not be misflagged as NO CHANGE).
+          if (lastReadOutputs.get(callKey) === rawOut) noChange = true;
+          else noProgress = 0;       // new content revealed = progress
+          lastReadOutputs.set(callKey, rawOut);
+        } // else: screenshot / failed read / failed action → leave noProgress unchanged (neutral)
+        if (noChange) {
+          noProgress++;
+          // PREPEND (not append) so the note survives the 4000-char transcript slice below.
+          transcriptOut = `[NO CHANGE: this ${call.name} returned the SAME content as before — you are NOT making progress. Do not ${call.name} or screenshot the same view again; SCROLL to new content (the scroll tool) or take an action that advances the goal.]\n\n${transcriptOut}`;
+          const reviewNote: BrainEvent = { kind: 'notice', level: 'warning', message: 'the engine re-viewed the same screen without scrolling/acting — nudging it to make progress' };
+          yield reviewNote;
+        }
         const done: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: capRes.ok ? 'done' : 'error', output: transcriptOut.slice(0, 400) };
         yield done;
         steps.push({ name: call.name, input: call.input, output: transcriptOut.slice(0, 4000) });
+        if (noChange && noProgress >= MAX_NO_PROGRESS_STEPS) {
+          const reason = 'stuck: the engine kept re-viewing the same screen without scrolling or acting';
+          const stuck: BrainEvent = { kind: 'notice', level: 'error', message: reason };
+          yield stuck;
+          return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
+        }
       }
 
       if (ctrl.signal.aborted) {
@@ -569,7 +615,7 @@ export class AgenticTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: agentic-brain-client:597
+// @kern-source: agentic-brain-client:643
 export function createAgenticTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new AgenticTurnBrainClient(registry);
 }

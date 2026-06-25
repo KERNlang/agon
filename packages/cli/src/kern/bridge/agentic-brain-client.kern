@@ -137,6 +137,20 @@ fn name=unwrapToolInputEnvelope params="call:{ name: string; input: Record<strin
 
 const name=TOOL_NAME_RE type="RegExp" value={{ /^[a-zA-Z0-9_-]{1,64}$/ }}
 
+fn name=sanitizeSchemaNode params="value:unknown, depth?:number" returns="unknown" export=true
+  doc "Deep-copy a per-property schema value, dropping prototype-pollution keys (__proto__/constructor/prototype) at EVERY level, so an object-valued inputSchema lent by a (future/third-party) capability can't smuggle a polluting key into the native function-calling tool definition. normalizeToolSchema's TOP-LEVEL guard only skips these at depth 0; this closes the nested case (kimi review 0.85). Depth-bounded (6) so a pathological deep/cyclic structure can't blow the stack. Non-objects pass through unchanged; arrays are mapped element-wise. Agon's own tools lend STRING-valued shorthand (this branch never fires for them), so this is purely defensive depth for object-valued schemas."
+  handler <<<
+    const d = depth ?? 0;
+    if (d > 6 || !value || typeof value !== 'object') return value;
+    if (Array.isArray(value)) return value.map((x) => sanitizeSchemaNode(x, d + 1));
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+      out[k] = sanitizeSchemaNode(v, d + 1);
+    }
+    return out;
+  >>>
+
 fn name=normalizeToolSchema params="raw:unknown" returns="Record<string, unknown>" export=true
   doc "Coerce a client-lent inputSchema into a VALID JSON Schema for native function-calling. Agon's page tools lend a SHORTHAND ({ url: 'string' }, { selector: 'string', text: 'string' }, {}), NOT a JSON Schema — passing that straight through as an OpenAI/Anthropic function `parameters` gives the provider no real arg contract: the model can't see that the arg is `url`, so it falls back to the prompt's {name,input} marker envelope and emits { input: '<url>' } → the handler reads input.url = undefined → 'invalid url', forever. (The marker-based CLI engines dodge this — they read the schema from the prose; only the NATIVE path needs a real schema.) So: pass through anything that ALREADY looks like a JSON Schema (declares `type` or `properties`); otherwise treat each key as a property whose value names its type ('string'|'number'|'boolean', default 'string'). `required` is left empty on purpose — the shorthand doesn't say which args are mandatory, and over-constraining would break optional-arg tools like scroll. Declaring typed properties is what fixes the flail; requiredness is a nicety we can't infer."
   handler <<<
@@ -155,7 +169,7 @@ fn name=normalizeToolSchema params="raw:unknown" returns="Record<string, unknown
     const properties: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) {
       if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue; // never assign a prototype-pollution vector
-      if (v && typeof v === 'object' && !Array.isArray(v)) { properties[k] = v; continue; } // a per-property schema object — keep verbatim (an ARRAY is neither a type-name nor a schema → falls through to string)
+      if (v && typeof v === 'object' && !Array.isArray(v)) { properties[k] = sanitizeSchemaNode(v); continue; } // a per-property schema object — kept (constraints survive), but deep-stripped of prototype-pollution keys (an ARRAY is neither a type-name nor a schema → falls through to string)
       properties[k] = { type: (typeof v === 'string' && VALID_TYPES.includes(v)) ? v : 'string' };
     }
     return { type: 'object', properties };
@@ -179,8 +193,8 @@ fn name=capsToNativeTools params="specs:CapabilitySpec[]" returns="Array<{type:s
     return tools;
   >>>
 
-fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string" returns="string" export=true
-  doc "The agent's system prompt: the ReAct tool protocol plus the catalog of client-lent capabilities. Read-only vs destructive is surfaced so the engine knows which actions trigger the user's approval gate."
+fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string, native?:boolean" returns="string" export=true
+  doc "The agent's system prompt: the act protocol plus the catalog of client-lent capabilities. Read-only vs destructive is surfaced so the engine knows which actions trigger the user's approval gate. TRANSPORT-AWARE via `native`: an API-only engine (no CLI binary — kimi/minimax/zai) is dispatched with REAL native function-calling tools, so it gets a NATIVE-call protocol ('CALL the tool') and must NOT be told to type the `__AGON_TOOL__` text marker — that competing text instruction is exactly why native calling stayed dormant (the model obeyed the louder marker prompt and emitted text, so it then narrated-and-stopped). A CLI/marker engine (claude/codex/agy, default native=false) keeps the strict one-line marker protocol. The proactive/autonomous/long-page guidance is transport-agnostic and shared."
   handler <<<
     const lines: string[] = [];
     if (base && base.trim().length > 0) { lines.push(base.trim(), ''); }
@@ -201,8 +215,21 @@ fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string" ret
         lines.push(`    input: ${JSON.stringify(t.inputSchema).slice(0, 800)}`);
       }
     }
-    lines.push(
+    // HOW TO ACT — transport-specific. A native (API) engine is given REAL function-calling tools by
+    // the adapter, so it must be told to CALL them, NOT to type the __AGON_TOOL__ text marker (telling
+    // it BOTH is why native calling was dormant: it obeyed the explicit text instruction, emitted a
+    // marker as prose, and then narrated-and-stopped). A marker engine keeps the strict one-line form.
+    const howToAct: string[] = native ? [
+      'HOW TO ACT: the tools above are available to you as REAL function-calling tools. To act, CALL',
+      'the appropriate tool directly through your function/tool-calling interface — do NOT write the',
+      'call as text, JSON, or a code block, and do NOT merely describe it. One tool call per step:',
+      'you receive its result, then call the next tool.',
       '',
+      'CRITICAL: Do NOT narrate ("Let me…", "I will…", "I\'m going to…") and then stop — narration',
+      'alone does NOTHING; only an actual tool CALL acts. If you intend to act, CALL THE TOOL NOW.',
+      'Read the page before acting on it. Never fabricate a result or claim an action you did not',
+      'take. Reply in prose ONLY when giving the user your FINAL answer (make no tool call that turn).',
+    ] : [
       'HOW TO ACT — this is strict. To use a tool, your reply MUST be EXACTLY one line,',
       'the tool call, and NOTHING ELSE (no preamble, no explanation):',
       `${AGENT_TOOL_MARKER} {"name":"<toolName>","input":{ ... }}`,
@@ -218,14 +245,16 @@ fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string" ret
       'TOOL LINE NOW. One tool per step — you then get its result and may call another tool.',
       'Read the page before acting on it. Never fabricate a result or claim an action you',
       'did not take. Reply in prose ONLY when giving the user your FINAL answer (no tool line).',
-      '',
+    ];
+    lines.push('', ...howToAct, '');
+    lines.push(
       'BE PROACTIVE — take initiative. When the user asks you to DO something on the web —',
       'search for / find / look up something, open or navigate to a site, fill a field, click —',
       'ACT by calling tools; the user wants it DONE, not described, and does NOT want to spell',
       'out each step. Drive it yourself across multiple steps (read → act → read → act) until',
       'the goal is reached. Need a site you are not on? navigate there, then readPage, then act.',
-      'This holds in EVERY language: a request written in German/French/etc. STILL requires tool',
-      'lines — never answer a "do X" request with only a prose promise to do it.',
+      'This holds in EVERY language: a request written in German/French/etc. STILL requires a tool',
+      'call — never answer a "do X" request with only a prose promise to do it.',
       '',
       'AUTONOMOUS — finish the job yourself. Do NOT ask the user how to proceed, for permission, or',
       'to choose between options, and do NOT end a turn with "How would you like me to proceed?" or a',
@@ -484,7 +513,30 @@ service name=AgenticTurnBrainClient implements=BrainClient
         // path — so claude/codex keep the text-marker protocol while API-only engines get reliable
         // structured tool calls. The system prompt still lists the marker format for the CLI case.
         const nativeTools = capsToNativeTools(tools);
-        const sysPrompt = buildAgentSystemPrompt(tools, this.systemPrompt);
+        // Will this turn's engine ACTUALLY dispatch via NATIVE function-calling? Two conditions:
+        //  1. the dispatch resolves to the adapter's API path. We mirror the adapter's REAL predicate
+        //     EXACTLY (adapter.kern dispatch): no USABLE binary — `engine.binary ? findBinary(engine) :
+        //     null` being null (none declared, OR declared-but-absent-from-PATH) — AND an api block with
+        //     its key present. Deriving native mode from the static `!engine.binary` alone misfired for a
+        //     binary-DECLARING engine whose binary isn't installed: the adapter dispatches it via native
+        //     API tools, yet we'd still send the marker prompt + marker nudges (codex review 0.92). Using
+        //     findBinary + key-present also fixes the empty-`api`-object case (no apiKeyEnv → no key → not
+        //     native), and claude/codex/agy with their binary installed resolve to a usable binary → CLI.
+        //  2. tools were actually offered — with zero registered tools the adapter sends none, so telling
+        //     the model to "CALL your function-calling tools" would point at nothing; fall back to the
+        //     (equally moot, but non-contradictory) marker/no-tools prompt instead.
+        // Drives BOTH the system prompt (native-call vs marker protocol) and the nudge phrasing below.
+        const binaryPath = engine.binary ? this.registry.findBinary(engine) : null;
+        const usesApiDispatch = !binaryPath && !!(engine.api && process.env[engine.api.apiKeyEnv]);
+        const usesNativeFc = usesApiDispatch && nativeTools.length > 0;
+        const sysPrompt = buildAgentSystemPrompt(tools, this.systemPrompt, usesNativeFc);
+        // How to tell the engine to ACT, in its own protocol — reused by every nudge/deferral reminder so
+        // a native engine is never told to type the (now-suppressed) __AGON_TOOL__ marker. (The nudges
+        // only fire when tools.length>0, so usesNativeFc there is equivalent to isApiEngine.)
+        const actInstruction = usesNativeFc
+          ? 'CALL the appropriate tool now through your function/tool-calling interface (an actual tool call — do not describe it in prose)'
+          : `make your NEXT reply EXACTLY one ${AGENT_TOOL_MARKER} {"name":...,"input":...} line and nothing else`;
+        const actNextStep = usesNativeFc ? 'call the next tool' : `a ${AGENT_TOOL_MARKER} tool line`;
         const steps: Array<{ name: string; input: Record<string, unknown>; output: string }> = [];
         let imgSeq = rawImages.length;
         let noProgress = 0;      // CONSECUTIVE replies that didn't advance (narration / deferral / identical-repeat); reset on real progress
@@ -561,7 +613,7 @@ service name=AgenticTurnBrainClient implements=BrainClient
               catch (err) { answered = false; }
               if (answered) {
                 noProgress = 0; // the user's answer is new information — real progress
-                steps.push({ name: 'reminder', input: {}, output: `You asked the user, and they answered: "${answer.slice(0, 600)}". Proceed using this answer — take the next action now (a ${AGENT_TOOL_MARKER} tool line), and do not ask again unless you are truly blocked.` });
+                steps.push({ name: 'reminder', input: {}, output: `You asked the user, and they answered: "${answer.slice(0, 600)}". Proceed using this answer — take the next action now (${actNextStep}), and do not ask again unless you are truly blocked.` });
                 continue;
               }
               // Not answered. Abort → cancel the turn. TIMEOUT (no client answered — e.g. a
@@ -583,8 +635,8 @@ service name=AgenticTurnBrainClient implements=BrainClient
               const nudge: BrainEvent = { kind: 'notice', level: 'warning', message: why };
               yield nudge;
               const reminder = isDeferral
-                ? `You asked the user how to proceed, but you are an AUTONOMOUS agent — do NOT ask for direction, permission, or which option to pick. DECIDE the most reasonable next step yourself and DO it: your NEXT reply must be EXACTLY one ${AGENT_TOOL_MARKER} {"name":...,"input":...} line. The user already approves each page-changing action through a SEPARATE prompt, so you never need to ask in prose. Give a final prose answer only once the task is actually COMPLETE, or if you are truly blocked (e.g. a login is required).`
-                : `You said: "${stdout.trim().slice(0, 160)}" — but you emitted NO tool call, so nothing happened. To act, your NEXT reply must be EXACTLY one ${AGENT_TOOL_MARKER} {"name":...,"input":...} line and nothing else. If you are truly finished, give your final prose answer.`;
+                ? `You asked the user how to proceed, but you are an AUTONOMOUS agent — do NOT ask for direction, permission, or which option to pick. DECIDE the most reasonable next step yourself and DO it: ${actInstruction}. The user already approves each page-changing action through a SEPARATE prompt, so you never need to ask in prose. Give a final prose answer only once the task is actually COMPLETE, or if you are truly blocked (e.g. a login is required).`
+                : `You said: "${stdout.trim().slice(0, 160)}" — but you took NO action, so nothing happened. To act, ${actInstruction}. If you are truly finished, give your final prose answer.`;
               steps.push({ name: 'reminder', input: {}, output: reminder });
               continue;
             }

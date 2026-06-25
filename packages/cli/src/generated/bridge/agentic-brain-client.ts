@@ -124,9 +124,25 @@ export function unwrapToolInputEnvelope(call: { name: string; input: Record<stri
 export const TOOL_NAME_RE: RegExp = /^[a-zA-Z0-9_-]{1,64}$/;
 
 /**
- * Coerce a client-lent inputSchema into a VALID JSON Schema for native function-calling. Agon's page tools lend a SHORTHAND ({ url: 'string' }, { selector: 'string', text: 'string' }, {}), NOT a JSON Schema — passing that straight through as an OpenAI/Anthropic function `parameters` gives the provider no real arg contract: the model can't see that the arg is `url`, so it falls back to the prompt's {name,input} marker envelope and emits { input: '<url>' } → the handler reads input.url = undefined → 'invalid url', forever. (The marker-based CLI engines dodge this — they read the schema from the prose; only the NATIVE path needs a real schema.) So: pass through anything that ALREADY looks like a JSON Schema (declares `type` or `properties`); otherwise treat each key as a property whose value names its type ('string'|'number'|'boolean', default 'string'). `required` is left empty on purpose — the shorthand doesn't say which args are mandatory, and over-constraining would break optional-arg tools like scroll. Declaring typed properties is what fixes the flail; requiredness is a nicety we can't infer.
+ * Deep-copy a per-property schema value, dropping prototype-pollution keys (__proto__/constructor/prototype) at EVERY level, so an object-valued inputSchema lent by a (future/third-party) capability can't smuggle a polluting key into the native function-calling tool definition. normalizeToolSchema's TOP-LEVEL guard only skips these at depth 0; this closes the nested case (kimi review 0.85). Depth-bounded (6) so a pathological deep/cyclic structure can't blow the stack. Non-objects pass through unchanged; arrays are mapped element-wise. Agon's own tools lend STRING-valued shorthand (this branch never fires for them), so this is purely defensive depth for object-valued schemas.
  */
 // @kern-source: agentic-brain-client:140
+export function sanitizeSchemaNode(value: unknown, depth?: number): unknown {
+  const d = depth ?? 0;
+  if (d > 6 || !value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map((x) => sanitizeSchemaNode(x, d + 1));
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+    out[k] = sanitizeSchemaNode(v, d + 1);
+  }
+  return out;
+}
+
+/**
+ * Coerce a client-lent inputSchema into a VALID JSON Schema for native function-calling. Agon's page tools lend a SHORTHAND ({ url: 'string' }, { selector: 'string', text: 'string' }, {}), NOT a JSON Schema — passing that straight through as an OpenAI/Anthropic function `parameters` gives the provider no real arg contract: the model can't see that the arg is `url`, so it falls back to the prompt's {name,input} marker envelope and emits { input: '<url>' } → the handler reads input.url = undefined → 'invalid url', forever. (The marker-based CLI engines dodge this — they read the schema from the prose; only the NATIVE path needs a real schema.) So: pass through anything that ALREADY looks like a JSON Schema (declares `type` or `properties`); otherwise treat each key as a property whose value names its type ('string'|'number'|'boolean', default 'string'). `required` is left empty on purpose — the shorthand doesn't say which args are mandatory, and over-constraining would break optional-arg tools like scroll. Declaring typed properties is what fixes the flail; requiredness is a nicety we can't infer.
+ */
+// @kern-source: agentic-brain-client:154
 export function normalizeToolSchema(raw: unknown): Record<string, unknown> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { type: 'object', properties: {} };
   const obj = raw as Record<string, unknown>;
@@ -143,7 +159,7 @@ export function normalizeToolSchema(raw: unknown): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) {
     if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue; // never assign a prototype-pollution vector
-    if (v && typeof v === 'object' && !Array.isArray(v)) { properties[k] = v; continue; } // a per-property schema object — keep verbatim (an ARRAY is neither a type-name nor a schema → falls through to string)
+    if (v && typeof v === 'object' && !Array.isArray(v)) { properties[k] = sanitizeSchemaNode(v); continue; } // a per-property schema object — kept (constraints survive), but deep-stripped of prototype-pollution keys (an ARRAY is neither a type-name nor a schema → falls through to string)
     properties[k] = { type: (typeof v === 'string' && VALID_TYPES.includes(v)) ? v : 'string' };
   }
   return { type: 'object', properties };
@@ -152,7 +168,7 @@ export function normalizeToolSchema(raw: unknown): Record<string, unknown> {
 /**
  * Convert client-lent capability specs to the OpenAI-function tool shape the API dispatch path expects, so an API-capable engine can call them via NATIVE function-calling. The spec.inputSchema is NORMALIZED into a valid JSON Schema (normalizeToolSchema) — the lent shorthand ({ url:'string' }) is NOT a JSON Schema, and passing it through verbatim left the model with no arg contract (it then emitted { input:<url> } and the navigate handler rejected it as 'invalid url'). SKIPS any spec whose name violates the providers' function-name constraint (^[a-zA-Z0-9_-]{1,64}$): a single malformed name would otherwise make the provider REJECT the entire tools[] array and break native calling for EVERY tool that turn. A skipped tool still works via the in-prompt marker path (the prompt lists it and parseAgentToolCall matches by name), so coverage degrades gracefully for that one tool instead of poisoning the whole request. Agon's own page tools (readPage/click/type/selectOption/scroll) all satisfy the constraint, so nothing is skipped in practice.
  */
-// @kern-source: agentic-brain-client:164
+// @kern-source: agentic-brain-client:178
 export function capsToNativeTools(specs: CapabilitySpec[]): Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}> {
   const tools: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}> = [];
   for (const s of specs) {
@@ -170,10 +186,10 @@ export function capsToNativeTools(specs: CapabilitySpec[]): Array<{type:string,f
 }
 
 /**
- * The agent's system prompt: the ReAct tool protocol plus the catalog of client-lent capabilities. Read-only vs destructive is surfaced so the engine knows which actions trigger the user's approval gate.
+ * The agent's system prompt: the act protocol plus the catalog of client-lent capabilities. Read-only vs destructive is surfaced so the engine knows which actions trigger the user's approval gate. TRANSPORT-AWARE via `native`: an API-only engine (no CLI binary — kimi/minimax/zai) is dispatched with REAL native function-calling tools, so it gets a NATIVE-call protocol ('CALL the tool') and must NOT be told to type the `__AGON_TOOL__` text marker — that competing text instruction is exactly why native calling stayed dormant (the model obeyed the louder marker prompt and emitted text, so it then narrated-and-stopped). A CLI/marker engine (claude/codex/agy, default native=false) keeps the strict one-line marker protocol. The proactive/autonomous/long-page guidance is transport-agnostic and shared.
  */
-// @kern-source: agentic-brain-client:182
-export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string): string {
+// @kern-source: agentic-brain-client:196
+export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string, native?: boolean): string {
   const lines: string[] = [];
   if (base && base.trim().length > 0) { lines.push(base.trim(), ''); }
   lines.push(
@@ -193,8 +209,21 @@ export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string): 
       lines.push(`    input: ${JSON.stringify(t.inputSchema).slice(0, 800)}`);
     }
   }
-  lines.push(
+  // HOW TO ACT — transport-specific. A native (API) engine is given REAL function-calling tools by
+  // the adapter, so it must be told to CALL them, NOT to type the __AGON_TOOL__ text marker (telling
+  // it BOTH is why native calling was dormant: it obeyed the explicit text instruction, emitted a
+  // marker as prose, and then narrated-and-stopped). A marker engine keeps the strict one-line form.
+  const howToAct: string[] = native ? [
+    'HOW TO ACT: the tools above are available to you as REAL function-calling tools. To act, CALL',
+    'the appropriate tool directly through your function/tool-calling interface — do NOT write the',
+    'call as text, JSON, or a code block, and do NOT merely describe it. One tool call per step:',
+    'you receive its result, then call the next tool.',
     '',
+    'CRITICAL: Do NOT narrate ("Let me…", "I will…", "I\'m going to…") and then stop — narration',
+    'alone does NOTHING; only an actual tool CALL acts. If you intend to act, CALL THE TOOL NOW.',
+    'Read the page before acting on it. Never fabricate a result or claim an action you did not',
+    'take. Reply in prose ONLY when giving the user your FINAL answer (make no tool call that turn).',
+  ] : [
     'HOW TO ACT — this is strict. To use a tool, your reply MUST be EXACTLY one line,',
     'the tool call, and NOTHING ELSE (no preamble, no explanation):',
     `${AGENT_TOOL_MARKER} {"name":"<toolName>","input":{ ... }}`,
@@ -210,14 +239,16 @@ export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string): 
     'TOOL LINE NOW. One tool per step — you then get its result and may call another tool.',
     'Read the page before acting on it. Never fabricate a result or claim an action you',
     'did not take. Reply in prose ONLY when giving the user your FINAL answer (no tool line).',
-    '',
+  ];
+  lines.push('', ...howToAct, '');
+  lines.push(
     'BE PROACTIVE — take initiative. When the user asks you to DO something on the web —',
     'search for / find / look up something, open or navigate to a site, fill a field, click —',
     'ACT by calling tools; the user wants it DONE, not described, and does NOT want to spell',
     'out each step. Drive it yourself across multiple steps (read → act → read → act) until',
     'the goal is reached. Need a site you are not on? navigate there, then readPage, then act.',
-    'This holds in EVERY language: a request written in German/French/etc. STILL requires tool',
-    'lines — never answer a "do X" request with only a prose promise to do it.',
+    'This holds in EVERY language: a request written in German/French/etc. STILL requires a tool',
+    'call — never answer a "do X" request with only a prose promise to do it.',
     '',
     'AUTONOMOUS — finish the job yourself. Do NOT ask the user how to proceed, for permission, or',
     'to choose between options, and do NOT end a turn with "How would you like me to proceed?" or a',
@@ -240,7 +271,7 @@ export function buildAgentSystemPrompt(tools: CapabilitySpec[], base?: string): 
 /**
  * The growing ReAct transcript re-sent to the (stateless, exec-mode) engine each step. The user's request is framed as a standing GOAL (restated every step so a stateless engine never loses sight of it) plus the progress so far, ending with: you are NOT done until the goal is met — act, or give the RESULT.
  */
-// @kern-source: agentic-brain-client:248
+// @kern-source: agentic-brain-client:277
 export function renderAgentTranscript(userInput: string, steps: Array<{ name: string; input: Record<string, unknown>; output: string }>): string {
   // Frame the request as the GOAL the agent must ACHIEVE, not a one-off question. Re-sent every
   // step (the engine is stateless in exec mode), so it keeps pursuing the goal to completion
@@ -259,16 +290,16 @@ export function renderAgentTranscript(userInput: string, steps: Array<{ name: st
   return lines.join('\n');
 }
 
-// @kern-source: agentic-brain-client:268
+// @kern-source: agentic-brain-client:297
 export const AGENT_MSG_KEEP_FULL: number = 4;
 
-// @kern-source: agentic-brain-client:269
+// @kern-source: agentic-brain-client:298
 export const AGENT_MSG_TRIM_HEAD: number = 240;
 
 /**
  * JSON.stringify a tool call's input, defaulting to {} on any throw — guards renderAgentMessages so one circular/unserializable input can never crash the whole message reconstruction (and thus the turn).
  */
-// @kern-source: agentic-brain-client:271
+// @kern-source: agentic-brain-client:300
 function safeStringifyArgs(input: unknown): string {
   try { return JSON.stringify(input ?? {}); } catch { return '{}'; }
 }
@@ -276,7 +307,7 @@ function safeStringifyArgs(input: unknown): string {
 /**
  * Phase 2: reconstruct the ReAct progress as a NATIVE OpenAI message thread for the API+tools path — user(goal), then per executed step an assistant{tool_calls} + tool{result} PAIR (a 'reminder' step becomes a user instruction). The model attends to a real tool conversation (vs the flat user-prompt transcript renderAgentTranscript builds for CLI engines), and the stable prefix is prompt-cacheable. BOUNDS context: only the last AGENT_MSG_KEEP_FULL tool results stay verbatim; older ones truncate to a short head — this is what keeps a long browse from bloating to the step backstop. Tool-call ids are synthetic+contiguous (call_<i>), all convertMessagesForSdk needs to pair each assistant call with its result. The system prompt is NOT included here — the adapter prepends the project-context one.
  */
-// @kern-source: agentic-brain-client:277
+// @kern-source: agentic-brain-client:306
 export function renderAgentMessages(userInput: string, steps: Array<{ name: string; input: Record<string, unknown>; output: string }>): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
   const messages: Array<{role:string, content:any, tool_calls?:any[], tool_call_id?:string}> = [];
   messages.push({ role: 'user', content: `YOUR GOAL — keep working until this is fully achieved, then report the result: ${userInput}` });
@@ -306,7 +337,7 @@ export function renderAgentMessages(userInput: string, steps: Array<{ name: stri
 /**
  * True when an engine's reply DESCRIBES an action ('Let me navigate…', 'Ich suche…') but emitted no tool call — a short intent preamble, not a final answer — so the loop can NUDGE it to actually emit the tool line (the common weak-engine failure: the brain says it will act, then stops). Covers English + German narration, the panel's two languages; other languages degrade to no-nudge (the proactivity system prompt still pushes the model to act in any language — this is only the backstop). Bounded to short replies so a real prose answer that mentions 'review'/'search' isn't misread as narration.
  */
-// @kern-source: agentic-brain-client:305
+// @kern-source: agentic-brain-client:334
 export function looksLikeActionIntent(text: string): boolean {
   const s = text.trim();
   if (s.length === 0 || s.length >= 500) return false; // a substantive reply is a real answer, not a preamble
@@ -328,7 +359,7 @@ export function looksLikeActionIntent(text: string): boolean {
 /**
  * True when the engine, instead of acting, ASKS the user how to proceed / for permission / to pick an option ('How would you like me to proceed?', 'Which option would you like?', 'Soll ich…?'). The classic non-agentic stall: it hands the wheel back to the user. The loop nudges it to decide and continue (the user still approves each page-changing action via the SEPARATE gate, so the agent never needs to ask in prose). Kept to strong, unambiguous phrases (EN + DE) so a completed answer that merely ends 'let me know if you want more' is NOT misread as a stall.
  */
-// @kern-source: agentic-brain-client:325
+// @kern-source: agentic-brain-client:354
 export function looksLikeDeferral(text: string): boolean {
   const t = text.toLowerCase();
   return /(how would you like me to proceed|how (should|shall|do) (i|we) proceed|which (one|option)( would you| do you want| should i)|would you like me to\b|do you want me to\b|let me know which|wie soll ich (fortfahren|vorgehen|weitermachen)|möchtest du, dass ich|soll ich\b.*\?|welche (option|möglichkeit))/.test(t);
@@ -337,7 +368,7 @@ export function looksLikeDeferral(text: string): boolean {
 /**
  * A compact, human-readable one-liner for the approval popup's `command` field — what the agent is about to do.
  */
-// @kern-source: agentic-brain-client:332
+// @kern-source: agentic-brain-client:361
 export function describeAgentAction(name: string, input: Record<string, unknown>): string {
   let arg = '';
   try { arg = JSON.stringify(input); } catch { arg = '{…}'; }
@@ -348,7 +379,7 @@ export function describeAgentAction(name: string, input: Record<string, unknown>
 /**
  * v2 BrainClient: a bounded ReAct tool-loop over one engine, with client-lent capabilities (registerCapability) the brain pulls mid-turn via capability-request, and a per-action approval gate for destructive tools. Construct with the daemon's EngineRegistry; open() binds engine/cwd; runTurn() drives the loop; provideCapabilityResult/provideApproval answer the *-request events by requestId.
  */
-// @kern-source: agentic-brain-client:343
+// @kern-source: agentic-brain-client:372
 export class AgenticTurnBrainClient implements BrainClient {
   private registry: EngineRegistry;
   private adapter: EngineAdapter;
@@ -482,7 +513,30 @@ export class AgenticTurnBrainClient implements BrainClient {
       // path — so claude/codex keep the text-marker protocol while API-only engines get reliable
       // structured tool calls. The system prompt still lists the marker format for the CLI case.
       const nativeTools = capsToNativeTools(tools);
-      const sysPrompt = buildAgentSystemPrompt(tools, this.systemPrompt);
+      // Will this turn's engine ACTUALLY dispatch via NATIVE function-calling? Two conditions:
+      //  1. the dispatch resolves to the adapter's API path. We mirror the adapter's REAL predicate
+      //     EXACTLY (adapter.kern dispatch): no USABLE binary — `engine.binary ? findBinary(engine) :
+      //     null` being null (none declared, OR declared-but-absent-from-PATH) — AND an api block with
+      //     its key present. Deriving native mode from the static `!engine.binary` alone misfired for a
+      //     binary-DECLARING engine whose binary isn't installed: the adapter dispatches it via native
+      //     API tools, yet we'd still send the marker prompt + marker nudges (codex review 0.92). Using
+      //     findBinary + key-present also fixes the empty-`api`-object case (no apiKeyEnv → no key → not
+      //     native), and claude/codex/agy with their binary installed resolve to a usable binary → CLI.
+      //  2. tools were actually offered — with zero registered tools the adapter sends none, so telling
+      //     the model to "CALL your function-calling tools" would point at nothing; fall back to the
+      //     (equally moot, but non-contradictory) marker/no-tools prompt instead.
+      // Drives BOTH the system prompt (native-call vs marker protocol) and the nudge phrasing below.
+      const binaryPath = engine.binary ? this.registry.findBinary(engine) : null;
+      const usesApiDispatch = !binaryPath && !!(engine.api && process.env[engine.api.apiKeyEnv]);
+      const usesNativeFc = usesApiDispatch && nativeTools.length > 0;
+      const sysPrompt = buildAgentSystemPrompt(tools, this.systemPrompt, usesNativeFc);
+      // How to tell the engine to ACT, in its own protocol — reused by every nudge/deferral reminder so
+      // a native engine is never told to type the (now-suppressed) __AGON_TOOL__ marker. (The nudges
+      // only fire when tools.length>0, so usesNativeFc there is equivalent to isApiEngine.)
+      const actInstruction = usesNativeFc
+        ? 'CALL the appropriate tool now through your function/tool-calling interface (an actual tool call — do not describe it in prose)'
+        : `make your NEXT reply EXACTLY one ${AGENT_TOOL_MARKER} {"name":...,"input":...} line and nothing else`;
+      const actNextStep = usesNativeFc ? 'call the next tool' : `a ${AGENT_TOOL_MARKER} tool line`;
       const steps: Array<{ name: string; input: Record<string, unknown>; output: string }> = [];
       let imgSeq = rawImages.length;
       let noProgress = 0;      // CONSECUTIVE replies that didn't advance (narration / deferral / identical-repeat); reset on real progress
@@ -559,7 +613,7 @@ export class AgenticTurnBrainClient implements BrainClient {
             catch (err) { answered = false; }
             if (answered) {
               noProgress = 0; // the user's answer is new information — real progress
-              steps.push({ name: 'reminder', input: {}, output: `You asked the user, and they answered: "${answer.slice(0, 600)}". Proceed using this answer — take the next action now (a ${AGENT_TOOL_MARKER} tool line), and do not ask again unless you are truly blocked.` });
+              steps.push({ name: 'reminder', input: {}, output: `You asked the user, and they answered: "${answer.slice(0, 600)}". Proceed using this answer — take the next action now (${actNextStep}), and do not ask again unless you are truly blocked.` });
               continue;
             }
             // Not answered. Abort → cancel the turn. TIMEOUT (no client answered — e.g. a
@@ -581,8 +635,8 @@ export class AgenticTurnBrainClient implements BrainClient {
             const nudge: BrainEvent = { kind: 'notice', level: 'warning', message: why };
             yield nudge;
             const reminder = isDeferral
-              ? `You asked the user how to proceed, but you are an AUTONOMOUS agent — do NOT ask for direction, permission, or which option to pick. DECIDE the most reasonable next step yourself and DO it: your NEXT reply must be EXACTLY one ${AGENT_TOOL_MARKER} {"name":...,"input":...} line. The user already approves each page-changing action through a SEPARATE prompt, so you never need to ask in prose. Give a final prose answer only once the task is actually COMPLETE, or if you are truly blocked (e.g. a login is required).`
-              : `You said: "${stdout.trim().slice(0, 160)}" — but you emitted NO tool call, so nothing happened. To act, your NEXT reply must be EXACTLY one ${AGENT_TOOL_MARKER} {"name":...,"input":...} line and nothing else. If you are truly finished, give your final prose answer.`;
+              ? `You asked the user how to proceed, but you are an AUTONOMOUS agent — do NOT ask for direction, permission, or which option to pick. DECIDE the most reasonable next step yourself and DO it: ${actInstruction}. The user already approves each page-changing action through a SEPARATE prompt, so you never need to ask in prose. Give a final prose answer only once the task is actually COMPLETE, or if you are truly blocked (e.g. a login is required).`
+              : `You said: "${stdout.trim().slice(0, 160)}" — but you took NO action, so nothing happened. To act, ${actInstruction}. If you are truly finished, give your final prose answer.`;
             steps.push({ name: 'reminder', input: {}, output: reminder });
             continue;
           }
@@ -875,7 +929,7 @@ export class AgenticTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: agentic-brain-client:895
+// @kern-source: agentic-brain-client:947
 export function createAgenticTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new AgenticTurnBrainClient(registry);
 }

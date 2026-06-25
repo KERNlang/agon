@@ -9,6 +9,7 @@ import {
   toolFieldNames,
   capsToNativeTools,
   normalizeToolSchema,
+  sanitizeSchemaNode,
   buildAgentSystemPrompt,
   renderAgentTranscript,
   renderAgentMessages,
@@ -661,11 +662,20 @@ type Step = string | { parts: NativePart[]; stdout?: string };
 type CapturedDispatch = {
   tools?: Array<{ type: string; function: { name: string } }>;
   messages?: Array<{ role: string; content: unknown; tool_calls?: Array<{ id: string }> }>;
+  systemPrompt?: string;
 };
-function makeAgentSteps(steps: Step[]): { client: AgenticTurnBrainClient; dispatches: CapturedDispatch[] } {
+// engineFor lets a test shape the resolved engine (e.g. give it an `api` block and no `binary` so the
+// brain treats it as a NATIVE function-calling engine, or a `binary` so it stays a text-marker engine).
+function makeAgentSteps(steps: Step[], engineFor?: (id: string) => Record<string, unknown>): { client: AgenticTurnBrainClient; dispatches: CapturedDispatch[] } {
   let i = 0;
   const dispatches: CapturedDispatch[] = [];
-  const registry = { get: (id: string) => ({ id }), listIds: () => ['claude', 'codex'] } as unknown as EngineRegistry;
+  const registry = {
+    get: (id: string) => (engineFor ? engineFor(id) : { id }),
+    listIds: () => ['claude', 'codex'],
+    // Mirror the adapter's binary resolution: a declared binary resolves to a usable path (→ CLI path),
+    // a missing/undeclared one is null (→ API path). Lets a test toggle native vs marker by engine shape.
+    findBinary: (e: { binary?: string }) => (e && e.binary ? `/usr/bin/${e.binary}` : null),
+  } as unknown as EngineRegistry;
   const client = new AgenticTurnBrainClient(registry);
   (client as unknown as { adapter: EngineAdapter }).adapter = {
     dispatch: async (opts: CapturedDispatch) => {
@@ -963,5 +973,109 @@ describe('AgenticTurnBrainClient — native function-calling drives the loop', (
     });
     expect(requested).toBe('click');     // native part won, not the marker's readPage
     expect(result.responded).toBe(true);
+  });
+});
+
+describe('transport-aware act protocol — native function-calling vs text marker', () => {
+  it('native=true drops the __AGON_TOOL__ marker and instructs function-calling (still lists tools + proactivity)', () => {
+    const p = buildAgentSystemPrompt([readSpec(), actSpec()], undefined, true);
+    expect(p).not.toContain(MARK);                 // the competing text-marker instruction is GONE
+    expect(p.toLowerCase()).toContain('function');  // it's told to CALL its function/tool interface
+    expect(p).toContain('CALL THE TOOL NOW');
+    expect(p).toContain('readPage');                // catalog still present
+    expect(p).toContain('ACTS on the page');
+    expect(p).toContain('BE PROACTIVE');            // shared guidance retained
+  });
+  it('default (marker) keeps the strict __AGON_TOOL__ protocol and the double-wrap warning', () => {
+    const p = buildAgentSystemPrompt([readSpec()]);
+    expect(p).toContain(MARK);
+    expect(p).toContain('SECOND "input"');          // the marker-only anti-double-wrap note
+  });
+  it('a binary-LESS engine with an api block + key (kimi/minimax/zai) is dispatched the NATIVE prompt', async () => {
+    process.env.AGON_FC_TEST_KEY = 'k'; // the predicate now matches the adapter: API path needs the key present
+    try {
+      const { client, dispatches } = makeAgentSteps(
+        ['Just answering.'],
+        () => ({ api: { baseUrl: 'https://api.x', apiKeyEnv: 'AGON_FC_TEST_KEY', model: 'm' } }), // no `binary` → API path
+      );
+      await client.open({ sessionId: 's', engineId: 'minimax-coding-plan-minimax-m3', cwd: '/tmp' });
+      await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+      await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true }), approval: () => 'approve' });
+      expect(dispatches[0].systemPrompt).toBeDefined();
+      expect(dispatches[0].systemPrompt).not.toContain(MARK);
+      expect((dispatches[0].systemPrompt ?? '').toLowerCase()).toContain('function');
+    } finally { delete process.env.AGON_FC_TEST_KEY; }
+  });
+  it('a binary-DECLARING engine whose binary IS installed keeps the text-marker prompt', async () => {
+    const { client, dispatches } = makeAgentSteps(
+      ['Just answering.'],
+      () => ({ binary: 'claude', api: { baseUrl: 'https://api.x', apiKeyEnv: 'AGON_FC_TEST_KEY', model: 'm' } }), // findBinary resolves → CLI path
+    );
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true }), approval: () => 'approve' });
+    expect(dispatches[0].systemPrompt).toContain(MARK);
+  });
+  it('a binary-DECLARING engine whose binary is MISSING (findBinary null) + key present gets the NATIVE prompt (matches adapter API fallback)', async () => {
+    // The codex-0.92 edge case: declared-but-uninstalled binary dispatches via native API tools, so it
+    // must NOT receive the marker prompt. Registry returns a binary but a findBinary that resolves null.
+    process.env.AGON_FC_TEST_KEY = 'k';
+    try {
+      const dispatches: CapturedDispatch[] = [];
+      const registry = {
+        get: () => ({ binary: 'claude', api: { baseUrl: 'https://api.x', apiKeyEnv: 'AGON_FC_TEST_KEY', model: 'm' } }),
+        listIds: () => ['claude'],
+        findBinary: () => null, // declared but NOT on PATH → adapter would use API fallback
+      } as unknown as EngineRegistry;
+      const client = new AgenticTurnBrainClient(registry);
+      (client as unknown as { adapter: EngineAdapter }).adapter = {
+        dispatch: async (opts: CapturedDispatch) => { dispatches.push(opts); return { exitCode: 0, stdout: 'Just answering.', stderr: '', durationMs: 1, timedOut: false }; },
+        isAvailable: async () => true,
+      } as unknown as EngineAdapter;
+      await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+      await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+      await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true }), approval: () => 'approve' });
+      expect(dispatches[0].systemPrompt).not.toContain(MARK); // native prompt, not marker — no competing protocol
+    } finally { delete process.env.AGON_FC_TEST_KEY; }
+  });
+  it('a native engine that NARRATES gets a nudge phrased for function-calling, not the marker', async () => {
+    process.env.AGON_FC_TEST_KEY = 'k';
+    try {
+      const { client, dispatches } = makeAgentSteps(
+        ['Let me read the page now.', 'Done.'], // step0 narration (no tool call) → nudge; step1 final answer
+        () => ({ api: { baseUrl: 'https://api.x', apiKeyEnv: 'AGON_FC_TEST_KEY', model: 'm' } }),
+      );
+      await client.open({ sessionId: 's', engineId: 'kimi-for-coding-k2p7', cwd: '/tmp' });
+      await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+      await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true }), approval: () => 'approve' });
+      // The reminder injected after the narration becomes a user message in the reconstructed thread.
+      const msgs = dispatches[1]?.messages ?? [];
+      const nudge = msgs.find((m) => m.role === 'user' && typeof m.content === 'string' && /function\/tool-calling/i.test(m.content as string));
+      expect(nudge).toBeDefined();                                                  // native phrasing present
+      expect(msgs.some((m) => typeof m.content === 'string' && (m.content as string).includes(MARK))).toBe(false); // no marker text
+    } finally { delete process.env.AGON_FC_TEST_KEY; }
+  });
+});
+
+describe('sanitizeSchemaNode — deep prototype-pollution strip for object-valued schemas', () => {
+  it('drops __proto__/constructor/prototype own-keys at every depth (kept constraints survive)', () => {
+    // JSON.parse (not an object literal) is what makes "__proto__" an OWN enumerable key — the real vector.
+    const dirty = JSON.parse('{"type":"string","format":"uri","__proto__":{"polluted":true},"meta":{"constructor":"x","keep":1}}');
+    const clean = sanitizeSchemaNode(dirty) as Record<string, any>;
+    expect(clean.type).toBe('string');
+    expect(clean.format).toBe('uri');
+    expect(clean.meta).toEqual({ keep: 1 });                                  // nested 'constructor' stripped, 'keep' survives
+    expect(Object.prototype.hasOwnProperty.call(clean, '__proto__')).toBe(false);
+  });
+  it('passes non-objects through and maps arrays element-wise', () => {
+    expect(sanitizeSchemaNode('string')).toBe('string');
+    expect(sanitizeSchemaNode(5)).toBe(5);
+    expect(sanitizeSchemaNode(null)).toBe(null);
+    expect(sanitizeSchemaNode(JSON.parse('[{"a":1,"__proto__":{"x":1}}]'))).toEqual([{ a: 1 }]);
+  });
+  it('normalizeToolSchema deep-strips a malicious object-valued property schema', () => {
+    const out = normalizeToolSchema(JSON.parse('{"q":{"type":"string","__proto__":{"polluted":true}}}')) as any;
+    expect(out.properties.q.type).toBe('string');
+    expect(Object.prototype.hasOwnProperty.call(out.properties.q, '__proto__')).toBe(false);
   });
 });

@@ -2,7 +2,7 @@
 
 import type { BrainClient, BrainClientConfig, BrainEvent, BrainTurnRequest, BrainTurnResult, ControlAck, ControlCapabilities, ClientRef, ApprovalResponse, AnswerResponse, SteerRequest, CancelRequest, CapabilityRegistration, CapabilityUnregister, CapabilityResult, CapabilitySpec, BrainHealth, EngineAdapter, EngineRegistry } from '@kernlang/agon-core';
 
-import { buildImageAttachment, decodeDataUrlToImageFile, MAX_DISPATCH_IMAGES } from '@kernlang/agon-core';
+import { buildImageAttachment, decodeDataUrlToImageFile, MAX_DISPATCH_IMAGES, authFailureHint } from '@kernlang/agon-core';
 
 import { createCliAdapter } from '@kernlang/agon-adapter-cli';
 
@@ -575,9 +575,16 @@ export class AgenticTurnBrainClient implements BrainClient {
         const knownFields = capForCall ? toolFieldNames(capForCall.spec.inputSchema) : undefined;
         const call = unwrapToolInputEnvelope(rawCall, knownFields);
         if (result.exitCode !== 0 || result.timedOut || (stdout.length === 0 && !call)) {
-          const reason = ctrl.signal.aborted ? 'cancelled by client'
+          // Auth-aware failure surfacing: a 401 (claude's isolated config dir is stale / never logged
+          // in, or an API engine's key is missing) must reach the panel as the EXACT fix command, not
+          // a bare "produced no answer". This is the browser-panel arm of the generic auth checker —
+          // it's why the user no longer sees an unexplained 1-minute "thinking" hang.
+          const authHint = ctrl.signal.aborted ? null
+            : authFailureHint(engine, { stderr: result.stderr, exitCode: result.exitCode, timedOut: result.timedOut });
+          const baseReason = ctrl.signal.aborted ? 'cancelled by client'
             : result.timedOut ? `${turnEngineId} timed out`
             : `${turnEngineId} produced no answer (exit ${result.exitCode})`;
+          const reason = authHint ? `${baseReason} — ${authHint}` : baseReason;
           const note: BrainEvent = { kind: 'notice', level: ctrl.signal.aborted ? 'warning' : 'error', message: reason };
           yield note;
           return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason };
@@ -929,7 +936,7 @@ export class AgenticTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: agentic-brain-client:947
+// @kern-source: agentic-brain-client:954
 export function createAgenticTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new AgenticTurnBrainClient(registry);
 }

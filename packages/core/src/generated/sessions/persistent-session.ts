@@ -14,17 +14,19 @@ import { createResumeSession } from './session-resume.js';
 
 import { createPtySession } from './session-pty.js';
 
+import { claudeBrainUsesPty } from './claude-backend.js';
+
 /**
  * A streamed unit from a PersistentSession.send() turn. 'text' is the authoritative answer; 'preview' is a SPECULATIVE, best-effort live draft (currently emitted only by the PTY brain while it waits for the DeliverAnswer channel). A 'preview' chunk may ONLY update the live/dynamic streaming pane — it must NEVER be committed to the transcript or accumulated into the final answer. Every consumer that does not understand 'preview' must ignore it (all current consumers accumulate only 'text' and break on 'done'/'error', so a new 'preview' falls through harmlessly).
  */
-// @kern-source: persistent-session:9
+// @kern-source: persistent-session:10
 export interface SessionChunk {
   type: 'text'|'preview'|'status'|'tool_call'|'error'|'done';
   content: string;
   metadata?: Record<string,unknown>;
 }
 
-// @kern-source: persistent-session:15
+// @kern-source: persistent-session:16
 export interface SessionSendOptions {
   message: string;
   images?: string[];
@@ -34,7 +36,7 @@ export interface SessionSendOptions {
   toolLoopMaxBudget?: number;
 }
 
-// @kern-source: persistent-session:23
+// @kern-source: persistent-session:24
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
@@ -53,7 +55,7 @@ export interface PersistentSessionConfig {
   diagnosticDeps?: DiagnosticDeps;
 }
 
-// @kern-source: persistent-session:41
+// @kern-source: persistent-session:42
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -72,21 +74,25 @@ export interface PersistentSession {
 /**
  * Factory: picks the right session implementation based on engine config.
  */
-// @kern-source: persistent-session:59
+// @kern-source: persistent-session:60
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   // API path: engine has API config and no binary path provided → use stateless resume session
   if (engine.api && !config.binaryPath) {
     return createResumeSession(config);
   }
-  // Claude: PTY subscription brain by default (hard rule — never --print).
-  // Escape hatch: AGON_CLAUDE_PRINT=1|true falls back to the stream-json (--print) path.
+  // Claude: `claude --print` (stream-json) brain by DEFAULT — Anthropic no longer meters -p under
+  // the subscription, and -p is far more reliable than the TUI scrape. Opt INTO the PTY subscription
+  // brain with AGON_CLAUDE_PTY=1 (claudeBrainUsesPty — the single switch all claude gates read).
   if ((engine.companion?.protocol === 'stream-json' || engine.id === 'claude' || engine.binary === 'claude') && config.binaryPath) {
-    const printOptOut = process.env.AGON_CLAUDE_PRINT;
-    if (printOptOut === '1' || printOptOut === 'true') {
-      return createStreamJsonSession(config);
+    // Only CLAUDE consults claudeBrainUsesPty — createPtySession drives the claude TUI specifically.
+    // A non-claude stream-json companion engine routes to the --print stream-json session, never the
+    // claude PTY, so it is not coupled to claude's AGON_CLAUDE_PTY / claudeBackend setting.
+    const isClaude = engine.id === 'claude' || engine.binary === 'claude';
+    if (isClaude && claudeBrainUsesPty(config.cwd)) {
+      return createPtySession(config);
     }
-    return createPtySession(config);
+    return createStreamJsonSession(config);
   }
   // Engines with ACP protocol (OpenCode, Gemini)
   if (engine.companion && engine.companion.protocol === 'acp') {

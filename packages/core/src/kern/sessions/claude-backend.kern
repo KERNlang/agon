@@ -1,0 +1,35 @@
+// ── Claude brain backend selector — ONE switch for PTY vs `claude --print` ────
+//
+// Single source of truth for whether the interactive/persistent `claude` brain AND
+// the adapter's claude dispatch drive the kern-engines PTY subscription TUI, or run
+// `claude --print` (-p). Every gate (adapter-helpers shouldUseClaudePty,
+// persistent-session factory, cesar/session DeliverAnswer wiring) reads THIS fn, so
+// the policy lives in exactly one place.
+//
+// DEFAULT = `--print` (-p). Anthropic no longer meters `claude -p` under the Max/Pro
+// subscription, so the billing reason the PTY brain existed is gone — and -p is far
+// more reliable than scraping the interactive TUI (the TUI scrape was 40-60% flaky
+// for short tool-answers). Two ways to switch back to the PTY subscription brain:
+//   • PERSISTENT setting:  `agon config claudeBackend pty`   (config.claudeBackend)
+//   • PER-RUN override:    AGON_CLAUDE_PTY=1   (env wins over the setting)
+//
+// NOTE: this is ONLY the brain/dispatch path. The `/model` live model probe always
+// uses the TUI (cli-models-registry `__pty:/model`) and does NOT read this — so the
+// live model list keeps working regardless of the backend choice.
+
+import from="../signals/config.js" names="loadConfig"
+
+fn name=claudeBrainUsesPty params="cwd?:string" returns=boolean export=true
+  doc "True iff the `claude` brain/dispatch should use the kern-engines PTY subscription TUI instead of `claude --print` (-p). Precedence: AGON_CLAUDE_PTY env (1/true → pty, 0/false → print) overrides the persisted `claudeBackend` setting ('pty'|'print', default 'print'). Pass `cwd` to honor a project-local `.agon.json`/`.agon.local.json` override (loadConfig reads local config only when given a cwd); omit it for the global-only setting. DEFAULT is print — Anthropic no longer meters -p and it's more reliable than the TUI scrape. The SINGLE switch every claude PTY/-print gate reads. Does NOT affect the /model live probe (always TUI)."
+  handler <<<
+    // 1) Env override — the quick per-run switch, highest precedence.
+    const env = process.env.AGON_CLAUDE_PTY;
+    if (env === '1' || env === 'true') return true;
+    if (env === '0' || env === 'false') return false;
+    // 2) Persisted setting — `agon config claudeBackend pty|print` (project-local when cwd given).
+    try {
+      if (loadConfig(cwd).claudeBackend === 'pty') return true;
+    } catch { /* unreadable config → fall through to the default */ }
+    // 3) Default: `claude --print` (-p).
+    return false;
+  >>>

@@ -80,7 +80,7 @@ export class CliAdapter implements EngineAdapter {
     const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
     // Subscription path: drive interactive `claude` TUI via pty when opted-in (AGON_CLAUDE_PTY=1).
     // Avoids `claude -p` (SDK credits). If kern-engines peer deps are missing, falls through.
-    if (shouldUseClaudePty(options.engine)) {
+    if (shouldUseClaudePty(options.engine, options.cwd)) {
       const ptyResult = await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
       if (!ptyResult.unavailable) {
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
@@ -141,7 +141,7 @@ export class CliAdapter implements EngineAdapter {
     const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
     // Subscription pty path for claude — yields response deltas, returns final result.
     // Falls through if peer deps missing (unavailable:true).
-    if (shouldUseClaudePty(options.engine)) {
+    if (shouldUseClaudePty(options.engine, options.cwd)) {
       const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'exec', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
       let last: DispatchResult | undefined;
       while (true) {
@@ -244,7 +244,7 @@ export class CliAdapter implements EngineAdapter {
     const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
     // Subscription pty path for claude (agent mode: tools + bypassed perms).
     // We still diff the cwd before/after so callers get filesChanged/diffLines.
-    if (shouldUseClaudePty(options.engine)) {
+    if (shouldUseClaudePty(options.engine, options.cwd)) {
       const ptyStart = Date.now();
       const ptyBaseline = readOnlyDiff(options.cwd);
       const ptyResult = await runClaudePtyDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
@@ -401,7 +401,7 @@ export class CliAdapter implements EngineAdapter {
     // workspace-pure isolation, resolved once for every agent-stream path below.
     const iso = computeEngineIsolation(options.engine, { isolation: options.isolation, cwd: options.cwd });
     // Subscription pty path for claude (agent mode). Same diff capture as dispatchAgent.
-    if (shouldUseClaudePty(options.engine)) {
+    if (shouldUseClaudePty(options.engine, options.cwd)) {
       const baselineDiff = readOnlyDiff(options.cwd);
       const gen = runClaudePtyStreamDispatch(options.prompt, options.timeout, options.signal, 'agent', options.cwd, options.systemPrompt, iso.env, resolveClaudePtyExtraArgs(options.engine, options.cwd));
       let last: DispatchResult & { unavailable?: boolean } | undefined;

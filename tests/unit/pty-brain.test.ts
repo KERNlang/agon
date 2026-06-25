@@ -69,10 +69,12 @@ beforeEach(() => {
   ptyState.closed = false;
   ptyState.onAsk = null;
   spawnMock.mockReset();
+  delete process.env.AGON_CLAUDE_PTY;
   delete process.env.AGON_CLAUDE_PRINT;
 });
 afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
+  delete process.env.AGON_CLAUDE_PTY;
   delete process.env.AGON_CLAUDE_PRINT;
   delete process.env.AGON_NO_PREVIEW;
 });
@@ -570,7 +572,19 @@ describe('createPtySession — speculative preview chunks', () => {
 });
 
 describe('createPersistentSession — claude routing', () => {
-  it('routes claude to the PTY brain by default', async () => {
+  it('routes claude to --print (stream-json) by DEFAULT (Anthropic no longer meters -p)', async () => {
+    spawnMock.mockImplementation(() => fakePrintProc());
+    const { createPersistentSession } = await import('../../packages/core/src/persistent-session.js');
+    const session = createPersistentSession(claudeConfig() as any);
+    await session.start();
+    expect(ptyState.spawnOpts).toBeNull();         // PTY NOT used
+    expect(spawnMock).toHaveBeenCalled();           // stream-json spawned claude --print
+    const args = spawnMock.mock.calls[0][1] as string[];
+    expect(args).toContain('--print');
+  });
+
+  it('opts back INTO the PTY brain when AGON_CLAUDE_PTY=1', async () => {
+    process.env.AGON_CLAUDE_PTY = '1';
     const { createPersistentSession } = await import('../../packages/core/src/persistent-session.js');
     const session = createPersistentSession(claudeConfig({ answerChannelPath: join(tmp, 'cesar-1-answer.json') }) as any);
     await session.start();
@@ -578,20 +592,7 @@ describe('createPersistentSession — claude routing', () => {
     expect(spawnMock).not.toHaveBeenCalled();     // no `claude --print`
   });
 
-  it('falls back to --print (stream-json) when AGON_CLAUDE_PRINT=1', async () => {
-    process.env.AGON_CLAUDE_PRINT = '1';
-    spawnMock.mockImplementation(() => fakePrintProc());
-    const { createPersistentSession } = await import('../../packages/core/src/persistent-session.js');
-    const session = createPersistentSession(claudeConfig() as any);
-    await session.start();
-    expect(ptyState.spawnOpts).toBeNull();         // PTY NOT used
-    expect(spawnMock).toHaveBeenCalled();           // stream-json spawned claude
-    const args = spawnMock.mock.calls[0][1] as string[];
-    expect(args).toContain('--print');
-  });
-
-  it('B5: the --print (stream-json) path ALSO yields an honest "image(s) not sent" status', async () => {
-    process.env.AGON_CLAUDE_PRINT = '1';
+  it('B5: the default --print (stream-json) path yields an honest "image(s) not sent" status', async () => {
     spawnMock.mockImplementation(() => fakePrintProc());
     const { createPersistentSession } = await import('../../packages/core/src/persistent-session.js');
     const session = createPersistentSession(claudeConfig() as any);
@@ -607,5 +608,62 @@ describe('createPersistentSession — claude routing', () => {
     // The image path is never written to the claude stdin envelope.
     const proc = spawnMock.mock.results[0]?.value;
     expect(proc).toBeTruthy();
+  });
+});
+
+describe('claudeBrainUsesPty — the single PTY-vs--print switch', () => {
+  it('env AGON_CLAUDE_PTY overrides everything (1/true → pty, 0/false → print)', async () => {
+    const { claudeBrainUsesPty } = await import('../../packages/core/src/generated/sessions/claude-backend.js');
+    process.env.AGON_CLAUDE_PTY = '1';    expect(claudeBrainUsesPty()).toBe(true);
+    process.env.AGON_CLAUDE_PTY = 'true'; expect(claudeBrainUsesPty()).toBe(true);
+    process.env.AGON_CLAUDE_PTY = '0';    expect(claudeBrainUsesPty()).toBe(false);
+    process.env.AGON_CLAUDE_PTY = 'false';expect(claudeBrainUsesPty()).toBe(false);
+    delete process.env.AGON_CLAUDE_PTY;
+    // The retired AGON_CLAUDE_PRINT opt-out no longer flips anything (print is the default now).
+    process.env.AGON_CLAUDE_PRINT = '1';
+    process.env.AGON_HOME = tmp; // empty config → default
+    delete process.env.AGON_CLAUDE_PTY;
+    expect(claudeBrainUsesPty()).toBe(false);
+    delete process.env.AGON_CLAUDE_PRINT;
+    delete process.env.AGON_HOME;
+  });
+  it('reads the persisted claudeBackend setting; default is print; env overrides the setting', async () => {
+    const { claudeBrainUsesPty } = await import('../../packages/core/src/generated/sessions/claude-backend.js');
+    const prevHome = process.env.AGON_HOME;
+    process.env.AGON_HOME = tmp; // isolate from the user's real ~/.agon
+    delete process.env.AGON_CLAUDE_PTY;
+    try {
+      expect(claudeBrainUsesPty()).toBe(false);                                              // no setting → default print
+      writeFileSync(join(tmp, 'config.json'), JSON.stringify({ claudeBackend: 'pty' }));
+      expect(claudeBrainUsesPty()).toBe(true);                                               // `agon config claudeBackend pty`
+      writeFileSync(join(tmp, 'config.json'), JSON.stringify({ claudeBackend: 'print' }));
+      expect(claudeBrainUsesPty()).toBe(false);                                              // `agon config claudeBackend print`
+      process.env.AGON_CLAUDE_PTY = '0';                                                     // env wins over the setting
+      writeFileSync(join(tmp, 'config.json'), JSON.stringify({ claudeBackend: 'pty' }));
+      expect(claudeBrainUsesPty()).toBe(false);
+    } finally {
+      delete process.env.AGON_CLAUDE_PTY;
+      if (prevHome === undefined) delete process.env.AGON_HOME; else process.env.AGON_HOME = prevHome;
+    }
+  });
+});
+
+describe('shouldUseClaudePty — claude identified by id OR binary (agrees with the other gates)', () => {
+  it('matches id="claude" or binary="claude"; never other engines; reads the same switch', async () => {
+    const { shouldUseClaudePty } = await import('../../packages/adapter-cli/src/generated/adapter-helpers.js');
+    const prevHome = process.env.AGON_HOME;
+    process.env.AGON_HOME = tmp; // empty config → default print
+    delete process.env.AGON_CLAUDE_PTY;
+    try {
+      expect(shouldUseClaudePty({ id: 'claude', binary: 'claude' } as any)).toBe(false);        // default -p
+      expect(shouldUseClaudePty({ id: 'codex', binary: 'codex' } as any)).toBe(false);           // not claude
+      process.env.AGON_CLAUDE_PTY = '1';
+      expect(shouldUseClaudePty({ id: 'claude', binary: 'claude' } as any)).toBe(true);           // opt-in
+      expect(shouldUseClaudePty({ id: 'claude-custom', binary: 'claude' } as any)).toBe(true);    // binary match (kimi 0.85)
+      expect(shouldUseClaudePty({ id: 'codex', binary: 'codex' } as any)).toBe(false);            // still not claude
+    } finally {
+      delete process.env.AGON_CLAUDE_PTY;
+      if (prevHome === undefined) delete process.env.AGON_HOME; else process.env.AGON_HOME = prevHome;
+    }
   });
 });

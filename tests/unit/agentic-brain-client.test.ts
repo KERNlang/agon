@@ -5,7 +5,10 @@ import {
   createAgenticTurnBrainClient,
   parseAgentToolCall,
   extractNativeToolCall,
+  unwrapToolInputEnvelope,
+  toolFieldNames,
   capsToNativeTools,
+  normalizeToolSchema,
   buildAgentSystemPrompt,
   renderAgentTranscript,
   renderAgentMessages,
@@ -41,7 +44,7 @@ const req = (turnId: string, input = 'do something') => ({ sessionId: 's', turnI
 async function driveAgent(
   client: AgenticTurnBrainClient,
   gen: AsyncGenerator<BrainEvent, BrainTurnResult, void>,
-  responders: { capability: (ev: BrainEvent) => { ok: boolean; output?: string; error?: string }; approval: (ev: BrainEvent) => string },
+  responders: { capability: (ev: BrainEvent) => { ok: boolean; output?: string; error?: string }; approval: (ev: BrainEvent) => string; question?: (ev: BrainEvent) => string },
 ): Promise<{ events: BrainEvent[]; result: BrainTurnResult }> {
   const events: BrainEvent[] = [];
   let r = await gen.next();
@@ -56,6 +59,10 @@ async function driveAgent(
       const reqId = (ev as { requestId: string }).requestId;
       const decision = responders.approval(ev) as 'approve' | 'approve-session' | 'deny' | 'deny-session' | 'abort';
       queueMicrotask(() => { void client.provideApproval({ sessionId: 's', requestId: reqId, clientId: 'c', decision }); });
+    } else if (ev.kind === 'question-request') {
+      const reqId = (ev as { requestId: string }).requestId;
+      const answer = responders.question ? responders.question(ev) : 'yes, go ahead';
+      queueMicrotask(() => { void client.provideAnswer({ sessionId: 's', requestId: reqId, clientId: 'c', answer }); });
     }
     r = await gen.next();
   }
@@ -326,20 +333,37 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     expect(events.find((e) => e.kind === 'engine')).toMatchObject({ content: 'Here is my final summary.' }); // completed, NOT killed on a narration
   });
 
-  it('nudges a DEFERRAL ("how would you like me to proceed?") into deciding and acting', async () => {
+  it('a DEFERRAL ("how would you like me to proceed?") now ASKS the user, then continues with their answer', async () => {
     // The "not agentic at all" failure (Image #7): it read the page then asked the user to drive.
+    // New behavior: that question is surfaced to the user (question-request), answered, and the turn
+    // continues — the human-in-the-loop "ask + approve" flow, instead of a force-nudge.
     const client = makeAgent([
-      'I can see the LinkedIn jobs page. How would you like me to proceed? 1. Open a job 2. Refine 3. Try another query.', // deferral, no tool → nudge
-      `${MARK} {"name":"readPage","input":{}}`,        // now it decides and acts
+      'I can see the LinkedIn jobs page. How would you like me to proceed? 1. Open a job 2. Refine 3. Try another query.', // deferral → ask
+      `${MARK} {"name":"readPage","input":{}}`,        // acts on the answer
       'I found 3 roles that fit your AI-tooling + frontend-lead profile: …',  // final RESULT
     ]);
     await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
     await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
-    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'find me cool jobs')), { capability: () => ({ ok: true, output: 'JOBS' }), approval: () => 'approve' });
-    expect(events.some((e) => e.kind === 'notice' && /decide and continue/.test((e as { message: string }).message))).toBe(true); // deferral was caught
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1', 'find me cool jobs')), { capability: () => ({ ok: true, output: 'JOBS' }), approval: () => 'approve', question: () => 'option 1 — open the best-fit job' });
+    expect(events.some((e) => e.kind === 'question-request')).toBe(true); // the deferral was surfaced to the user
     expect(events.some((e) => e.kind === 'capability-request')).toBe(true); // it then actually acted
     expect(result.responded).toBe(true);
     expect(events.find((e) => e.kind === 'engine')).toMatchObject({ content: expect.stringContaining('3 roles that fit') });
+  });
+
+  it('still NUDGES pure NARRATION (described an action, no question) to actually emit the tool line', async () => {
+    // Narration ≠ a question — there is nothing to ask the user, so it keeps the autonomous nudge.
+    const client = makeAgent([
+      'Let me read the page to find the jobs.',          // narration (action intent), no tool → nudge
+      `${MARK} {"name":"readPage","input":{}}`,           // then it acts
+      'Here are the roles I found.',                      // final answer
+    ]);
+    await client.open({ sessionId: 's', engineId: 'zai-coding-plan-glm-5.2', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), { capability: () => ({ ok: true, output: 'JOBS' }), approval: () => 'approve' });
+    expect(events.some((e) => e.kind === 'question-request')).toBe(false); // narration is NOT a question
+    expect(events.some((e) => e.kind === 'notice' && /actually act/.test((e as { message: string }).message))).toBe(true); // it was nudged
+    expect(result.responded).toBe(true);
   });
 
   it('detects an identical-action LOOP: blocks the repeat (no re-approval) and stops if it persists', async () => {
@@ -418,6 +442,101 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     expect(events.filter((e) => e.kind === 'capability-request').length).toBeLessThan(10);
   });
 
+  it('STOPS the turn after consecutive FAILING tool calls (the varying-bad-args flail the loop guard misses)', async () => {
+    // The model navigates with a DIFFERENT bad input each step, so every callKey differs → the
+    // identical-repeat guard never trips, and a failed action is progress-NEUTRAL → the no-progress
+    // guard never trips either. Without the failure guard this would flail to the 30-step backstop
+    // (the real navigate→"invalid url" loop). The consecutive-failure cap ends it early.
+    const nav = (u: string) => `${MARK} {"name":"navigate","input":{"url":"${u}"}}`;
+    const navSpec: CapabilitySpec = { name: 'navigate', description: 'go to a url', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true };
+    const client = makeAgent([nav('bad1'), nav('bad2'), nav('bad3'), nav('bad4'), nav('bad5'), nav('bad6')]);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: navSpec });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: () => ({ ok: false, error: 'invalid url' }),
+      approval: () => 'approve-session', // approve once so later navigates skip the gate and we exercise pure failures
+    });
+    expect(result.responded).toBe(false);
+    expect(result.reason).toMatch(/in a row failed|malformed/i);
+    expect(result.reason).toContain('invalid url'); // the last error is surfaced
+    // Stopped at the failure cap (MAX_CONSECUTIVE_TOOL_FAILURES=4), nowhere near the 30-step backstop.
+    expect(events.filter((e) => e.kind === 'capability-request').length).toBe(4);
+  });
+
+  it('DEFERRAL → asks the user mid-turn, then CONTINUES the same turn with their answer', async () => {
+    // The engine poses a question instead of acting. Instead of dead-ending or being force-nudged,
+    // the brain surfaces a question-request, pauses for the user's answer, injects it, and continues
+    // — so the click runs AFTER the answer and the turn finishes (the user's "ask + approve" flow).
+    const client = makeAgent([
+      'Would you like me to proceed with posting /kern wrong on all 18 comments?', // deferral → ask
+      `${MARK} {"name":"click","input":{"selector":"#reply"}}`,                      // acts after the answer
+      'Posted /kern wrong on every kern-guard thread.',                              // final answer
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-coding-plan-minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: () => ({ ok: true }),
+      approval: () => 'approve',
+      question: () => 'yes, post /kern wrong on all of them',
+    });
+    const q = events.find((e) => e.kind === 'question-request') as { prompt?: string } | undefined;
+    expect(q).toBeTruthy();
+    expect(q?.prompt).toContain('/kern wrong'); // the engine's question is surfaced verbatim
+    expect(events.some((e) => e.kind === 'capability-request' && (e as unknown as { capability: string }).capability === 'click')).toBe(true); // acted AFTER answering
+    expect(result.responded).toBe(true); // continued to a real answer, not a dead-end
+  });
+
+  it('an unanswered/timed-out-equivalent abort during a question ends the turn cleanly (no hang)', async () => {
+    // Drive the turn but ABORT instead of answering the question → the turn returns cancelled.
+    const client = makeAgent(['Do you want me to proceed?', 'unused']);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec() });
+    const gen = client.runTurn(req('t1'));
+    const events: BrainEvent[] = [];
+    let r = await gen.next();
+    while (!r.done) {
+      events.push(r.value);
+      if (r.value.kind === 'question-request') { void client.cancel({ sessionId: 's', turnId: 't1', clientId: 'c' }); }
+      r = await gen.next();
+    }
+    expect(events.some((e) => e.kind === 'question-request')).toBe(true);
+    expect(r.value.responded).toBe(false);
+    expect(r.value.reason).toMatch(/cancel/i);
+  });
+
+  it('provideAnswer rejects a stale requestId; questionArbitration is host-only', async () => {
+    const client = makeAgent(['x']);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    expect((await client.provideAnswer({ sessionId: 's', requestId: 'nope', clientId: 'c', answer: 'hi' })).status).toBe('rejected');
+    expect((client as unknown as { controlCapabilities: { questionArbitration: string } }).controlCapabilities.questionArbitration).toBe('host-only');
+  });
+
+  it('provideAnswer enforces HOST-ONLY: a wrong-client answer to a LIVE question is rejected; the submitter is accepted', async () => {
+    // Set up a real pending question (a deferred turn), then prove a non-submitter cannot answer it
+    // (the fail-safe clientId check) while the turn's submitter ('c') can — and the turn continues.
+    const client = makeAgent(['Would you like me to proceed?', `${MARK} {"name":"readPage","input":{}}`, 'done']);
+    await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec() });
+    const gen = client.runTurn(req('t1')); // req() submits with clientId 'c'
+    let qid = '';
+    let r = await gen.next();
+    while (!r.done) {
+      if (r.value.kind === 'question-request') {
+        qid = (r.value as { requestId: string }).requestId;
+        // a DIFFERENT client must NOT be able to answer (no falsy short-circuit accepting it)
+        expect((await client.provideAnswer({ sessionId: 's', requestId: qid, clientId: 'intruder', answer: 'no' })).status).toBe('rejected');
+        // the submitter answers → accepted, un-pausing the turn
+        queueMicrotask(() => { void client.provideAnswer({ sessionId: 's', requestId: qid, clientId: 'c', answer: 'yes, proceed' }); });
+      } else if (r.value.kind === 'capability-request') {
+        const reqId = (r.value as { requestId: string }).requestId;
+        queueMicrotask(() => { void client.provideCapabilityResult({ sessionId: 's', requestId: reqId, clientId: 'c', ok: true, output: 'PAGE' }); });
+      }
+      r = await gen.next();
+    }
+    expect(qid).toBeTruthy();
+    expect(r.value.responded).toBe(true); // the submitter's answer let it continue to a real result
+  });
+
   it('an unknown tool is reported back and the loop recovers to an answer', async () => {
     const client = makeAgent([`${MARK} {"name":"teleport","input":{}}`, 'I cannot do that here.']);
     await client.open({ sessionId: 's', engineId: 'claude', cwd: '/tmp' });
@@ -448,13 +567,13 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
 });
 
 describe('AgenticTurnBrainClient — control surface', () => {
-  it('declares clientCapabilities supported + host-only approvals + per-turn cancel', () => {
+  it('declares clientCapabilities supported + host-only approvals + host-only questions + per-turn cancel', () => {
     const client = makeAgent(['x']);
     expect(client.controlCapabilities).toEqual({
       concurrentTurns: 'per-session-serialized',
       concurrentSteering: 'unsupported',
       approvalArbitration: 'host-only',
-      questionArbitration: 'unsupported',
+      questionArbitration: 'host-only', // mid-turn ask-the-user channel is now implemented
       clientCapabilities: 'supported',
       cancellation: 'per-turn',
     });
@@ -588,13 +707,125 @@ describe('extractNativeToolCall — structured tool_call parts', () => {
   });
 });
 
+describe('unwrapToolInputEnvelope — strips a redundant {input:…} envelope the model double-wraps', () => {
+  it('unwraps navigate({input:{url}}) → navigate({url}) (the live "invalid url" flail)', () => {
+    expect(unwrapToolInputEnvelope({ name: 'navigate', input: { input: { url: 'https://example.com' } } }))
+      .toEqual({ name: 'navigate', input: { url: 'https://example.com' } });
+  });
+  it('unwraps click({input:{selector}}) → click({selector}) (the live "needs a string selector" flail)', () => {
+    expect(unwrapToolInputEnvelope({ name: 'click', input: { input: { selector: 'a[href="/x"]' } } }))
+      .toEqual({ name: 'click', input: { selector: 'a[href="/x"]' } });
+  });
+  it('leaves a normal call untouched (sole/other key is a real field, not "input")', () => {
+    expect(unwrapToolInputEnvelope({ name: 'navigate', input: { url: 'https://example.com' } }))
+      .toEqual({ name: 'navigate', input: { url: 'https://example.com' } });
+    expect(unwrapToolInputEnvelope({ name: 'type', input: { selector: '#a', text: 'hi' } }))
+      .toEqual({ name: 'type', input: { selector: '#a', text: 'hi' } });
+    expect(unwrapToolInputEnvelope({ name: 'readPage', input: {} }))
+      .toEqual({ name: 'readPage', input: {} });
+  });
+  it('does NOT unwrap when "input" is not the sole key (a real multi-field call is preserved)', () => {
+    // selector + input both present → not a pure envelope; keep as-is so no real field is dropped.
+    expect(unwrapToolInputEnvelope({ name: 'type', input: { selector: '#a', input: 'x' } }))
+      .toEqual({ name: 'type', input: { selector: '#a', input: 'x' } });
+  });
+  it('does NOT unwrap a string-valued input key (would break the object contract)', () => {
+    expect(unwrapToolInputEnvelope({ name: 'navigate', input: { input: 'https://example.com' } }))
+      .toEqual({ name: 'navigate', input: { input: 'https://example.com' } });
+  });
+  it('resolves a deeper (bounded) multi-wrap and passes null through', () => {
+    expect(unwrapToolInputEnvelope({ name: 'navigate', input: { input: { input: { url: 'u' } } } }))
+      .toEqual({ name: 'navigate', input: { url: 'u' } });
+    expect(unwrapToolInputEnvelope(null)).toBeNull();
+  });
+  it('does NOT strip a tool that LEGITIMATELY declares an `input` arg (knownFields guard)', () => {
+    // A hypothetical future tool whose real sole arg is named `input` must survive verbatim.
+    const call = { name: 'runQuery', input: { input: { sql: 'select 1' } } };
+    expect(unwrapToolInputEnvelope(call, ['input'])).toEqual(call); // protected
+    expect(unwrapToolInputEnvelope(call, ['url'])) // a tool that does NOT take `input` → still unwrapped
+      .toEqual({ name: 'runQuery', input: { sql: 'select 1' } });
+  });
+});
+
+describe('toolFieldNames — declared arg names (protects a real `input` arg)', () => {
+  it('reads shorthand keys as field names', () => {
+    expect(toolFieldNames({ url: 'string' })).toEqual(['url']);
+    expect(toolFieldNames({ selector: 'string', text: 'string' })).toEqual(['selector', 'text']);
+  });
+  it('reads a real JSON Schema\'s properties keys', () => {
+    expect(toolFieldNames({ type: 'object', properties: { input: { type: 'string' } }, required: ['input'] })).toEqual(['input']);
+  });
+  it('empty for a missing/empty/non-object schema', () => {
+    expect(toolFieldNames({})).toEqual([]);
+    expect(toolFieldNames(null)).toEqual([]);
+    expect(toolFieldNames(['a'])).toEqual([]);
+  });
+});
+
+describe('normalizeToolSchema — shorthand → valid JSON Schema (native-calling arg contract)', () => {
+  it('coerces a shorthand { field: type } into { type:object, properties:{ field:{type} } }', () => {
+    expect(normalizeToolSchema({ url: 'string' }))
+      .toEqual({ type: 'object', properties: { url: { type: 'string' } } });
+    expect(normalizeToolSchema({ selector: 'string', amount: 'number' }))
+      .toEqual({ type: 'object', properties: { selector: { type: 'string' }, amount: { type: 'number' } } });
+  });
+  it('an empty shorthand {} becomes an empty object schema (not a bare {})', () => {
+    expect(normalizeToolSchema({})).toEqual({ type: 'object', properties: {} });
+  });
+  it('defaults an unrecognized value type to string', () => {
+    expect(normalizeToolSchema({ x: 'weird' })).toEqual({ type: 'object', properties: { x: { type: 'string' } } });
+  });
+  it('passes through a real JSON Schema (type==="object") verbatim', () => {
+    const real = { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] };
+    expect(normalizeToolSchema(real)).toBe(real); // trusted as-is, not re-wrapped
+  });
+  it('does NOT false-positive a shorthand whose field is literally named "type" or "properties" (require type==="object")', () => {
+    // { type:'string', value:'string' } is a tool taking a `type` arg, NOT a schema declaring type=string.
+    expect(normalizeToolSchema({ type: 'string', value: 'string' }))
+      .toEqual({ type: 'object', properties: { type: { type: 'string' }, value: { type: 'string' } } });
+    // a typeless { properties:{…} } is treated as a shorthand field named `properties`, not a schema.
+    expect(normalizeToolSchema({ properties: { a: { type: 'number' } } }))
+      .toEqual({ type: 'object', properties: { properties: { a: { type: 'number' } } } });
+  });
+  it('skips prototype-pollution keys (__proto__/constructor/prototype) instead of assigning them', () => {
+    const out = normalizeToolSchema({ ['__proto__']: 'string', url: 'string' }) as Record<string, unknown>;
+    expect(out).toEqual({ type: 'object', properties: { url: { type: 'string' } } });
+    expect(Object.getPrototypeOf(out.properties)).toBe(Object.prototype); // not polluted
+  });
+  it('keeps an object-valued per-property schema verbatim (constraints survive to native calling)', () => {
+    expect(normalizeToolSchema({ url: { type: 'string', format: 'uri' }, mode: { enum: ['fast', 'safe'] } }))
+      .toEqual({ type: 'object', properties: { url: { type: 'string', format: 'uri' }, mode: { enum: ['fast', 'safe'] } } });
+  });
+  it('honors real JSON-type names (integer/array/object/null), not just string/number/boolean', () => {
+    expect(normalizeToolSchema({ count: 'integer', tags: 'array' }))
+      .toEqual({ type: 'object', properties: { count: { type: 'integer' }, tags: { type: 'array' } } });
+  });
+  it('rejects an array (typeof []==="object") → empty object schema, not numeric-keyed garbage', () => {
+    expect(normalizeToolSchema(['a', 'b'])).toEqual({ type: 'object', properties: {} });
+  });
+  it('an ARRAY-valued shorthand field does not become an (invalid) array property schema → defaults to string', () => {
+    expect(normalizeToolSchema({ tags: ['a', 'b'], url: 'string' }))
+      .toEqual({ type: 'object', properties: { tags: { type: 'string' }, url: { type: 'string' } } });
+  });
+  it('null/non-object degrades to an empty object schema', () => {
+    expect(normalizeToolSchema(null)).toEqual({ type: 'object', properties: {} });
+    expect(normalizeToolSchema('nope')).toEqual({ type: 'object', properties: {} });
+  });
+});
+
 describe('capsToNativeTools — capability specs → OpenAI function shape', () => {
-  it('maps name/description and uses inputSchema as the function parameters', () => {
+  it('maps name/description and NORMALIZES inputSchema into a valid JSON Schema for the function parameters', () => {
     const tools = capsToNativeTools([readSpec(), actSpec()]);
     expect(tools).toEqual([
-      { type: 'function', function: { name: 'readPage', description: 'read the page', parameters: {} } },
-      { type: 'function', function: { name: 'click', description: 'click an element', parameters: { selector: 'string' } } },
+      { type: 'function', function: { name: 'readPage', description: 'read the page', parameters: { type: 'object', properties: {} } } },
+      // the lent shorthand { selector:'string' } becomes a real schema so the model fills `selector`, not the {name,input} envelope
+      { type: 'function', function: { name: 'click', description: 'click an element', parameters: { type: 'object', properties: { selector: { type: 'string' } } } } },
     ]);
+  });
+  it('a navigate-style { url:string } shorthand yields a url property (the flail fix)', () => {
+    const nav: CapabilitySpec = { name: 'navigate', description: 'go to a url', inputSchema: { url: 'string' }, isReadOnly: false, isDestructive: true };
+    expect(capsToNativeTools([nav])[0].function.parameters)
+      .toEqual({ type: 'object', properties: { url: { type: 'string' } } });
   });
   it('SKIPS a spec whose name violates the provider function-name constraint (no whole-array poison)', () => {
     const bad: CapabilitySpec = { name: 'read page.v2', description: 'space + dot', inputSchema: {}, isReadOnly: true };

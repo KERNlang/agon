@@ -263,6 +263,8 @@ config name=AgonConfig
   field name=cesarPipelineThreshold type=number default=93
   field name=cesarEngine type=string default=claude
   field name=cesarBackend type="'cli'|'api'|'auto'" default=auto
+  field name=claudeBackend type="'print'|'pty'" default=print
+    doc "How the `claude` CLI brain dispatches (chat / forge / orchestration / Cesar — NOT the /model live probe, which always uses the TUI). 'print' (default) = `claude --print` (-p): Anthropic no longer meters -p under the subscription and it's far more reliable than scraping the interactive TUI. 'pty' = the interactive kern-engines subscription-TUI brain. The AGON_CLAUDE_PTY env var (1/true → pty, 0/false → print) overrides this setting per-run. Read everywhere via claudeBrainUsesPty(). Set it with `agon config claudeBackend pty|print`."
   field name=cesarActingFallback type="'ask'|'auto'|'off'" default=auto
     doc "Controls whether Agon may switch to another engine as acting Cesar when the configured Cesar engine returns no response. 'auto'=swap silently and attribute output as Cesar (no chrome — the user perceives a single Cesar persona), 'ask'=prompt and show recovery messages, 'off'=never switch engines."
   field name=cesarMcpEnabled type=boolean default=false

@@ -58,6 +58,18 @@ describe('dispatchSeatWithRetry', () => {
     expect(seat.note).toBe('codex error → retry empty, dropped');
   });
 
+  it('does NOT retry an auth failure (401) — surfaces the credential fix on the first attempt', async () => {
+    const auth401 = () => ({ exitCode: 1, stdout: '', stderr: 'API Error: 401 Unauthorized', durationMs: 1, timedOut: false });
+    const { adapter, calls } = fakeAdapter([() => auth401(), () => ok('should never be reached')]);
+    const codexEngine = { id: 'codex', isolationHints: { configEnv: 'CODEX_HOME', loginArgs: ['login'] } };
+    const seat = await dispatchSeatWithRetry(adapter, { ...seatOpts(), engine: codexEngine });
+    expect(seat.ok).toBe(false);
+    expect(seat.attempts).toBe(1);          // no second, doomed dispatch
+    expect(calls).toHaveLength(1);          // only ONE dispatch happened
+    expect(seat.detail).toContain('agon login codex --force');
+    expect(seat.note).toContain('auth failed');
+  });
+
   it('treats a dispatch exception as a retryable error', async () => {
     const { adapter } = fakeAdapter([() => { throw new Error('spawn failed'); }, () => ok('recovered')]);
     const seat = await dispatchSeatWithRetry(adapter, seatOpts());

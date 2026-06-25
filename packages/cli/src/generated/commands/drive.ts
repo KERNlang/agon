@@ -265,6 +265,18 @@ export async function runDrive(opts: { prompt: string; sessionArg?: string; url?
       return;
     }
     const kind = typeof event.kind === 'string' ? event.kind : '';
+    if (kind === 'question-request') {
+      // This terminal driver has no free-text answer UI, so it must NOT leave the turn paused for
+      // QUESTION_TIMEOUT_MS (180s) — immediately reply with the autonomous-proceed guidance (the
+      // same push the old nudge gave) so the engine continues on its own. A future interactive
+      // drive could prompt the terminal user here instead.
+      const q = typeof event.prompt === 'string' ? event.prompt : '';
+      if (q) console.log(dim(`  · agent asked: ${q.slice(0, 200)} — proceeding autonomously`));
+      try {
+        await fetch(`${base}/answer`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ requestId: typeof event.requestId === 'string' ? event.requestId : '', clientId, answer: 'Proceed autonomously: decide the most reasonable next step and do it now — do not wait for further input from me.' }) });
+      } catch { warn('    could not answer the agent question — the turn may stall until it times out.'); }
+      return;
+    }
     if (kind === 'capability-request') sawBrowserActivity = true;
     if (kind === 'engine' || kind === 'text') gotAnswer = true;
     const line = renderDriveEvent(event);
@@ -330,7 +342,7 @@ export async function runDrive(opts: { prompt: string; sessionArg?: string; url?
   }
 }
 
-// @kern-source: drive:345
+// @kern-source: drive:357
 export const driveCommand: any = defineCommand({
   meta: {
     name: 'drive',

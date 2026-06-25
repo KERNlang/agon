@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@kernlang/agon-core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, hasProjectBrief, discoverGate, bashRanGate, isGateSkipSignal, parsePermissionRuleSet, parseToolHooks, evaluatePermissionRules, evaluateToolRules } from '@kernlang/agon-core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth, authLoginHint, hasProjectBrief, discoverGate, bashRanGate, isGateSkipSignal, parsePermissionRuleSet, parseToolHooks, evaluatePermissionRules, evaluateToolRules } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -595,7 +595,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // needs to see why retries won't help so they can /cesar to a working engine.
             const health = engineHealth.get(cesarEngineId);
             if (health && (health.status === 'auth-failed' || health.status === 'unreachable' || health.status === 'binary-missing')) {
-              dispatch({ type: 'warning', message: `Engine ${cesarEngineId} marked ${health.status} — run /cesar to switch to a healthy engine, or /engines to fix credentials.` });
+              // Reuse the already-resolved `engine` (set above) rather than a fresh registry.get —
+              // registry.get THROWS EngineNotFoundError on a miss, which the surrounding catch would
+              // swallow, eating this warning. `engine` is in scope and non-null on this post-dispatch path.
+              const fix = health.status === 'auth-failed' && engine
+                ? `${authLoginHint(engine)}, or /cesar to switch engine.`
+                : 'run /cesar to switch to a healthy engine, or /engines to fix credentials.';
+              dispatch({ type: 'warning', message: `Engine ${cesarEngineId} marked ${health.status} — ${fix}` });
             }
             return { delegated: false, responded: false };
           } catch { /* truly failed */ }

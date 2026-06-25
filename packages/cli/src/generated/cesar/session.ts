@@ -14,7 +14,7 @@ import { createRequire } from 'node:module';
 
 import type { PersistentSession, PersistentSessionConfig } from '@kernlang/agon-core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, buildProjectMemoryBlock, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, parsePermissionRuleSet, parseToolHooks, evaluatePermissionRules, evaluateToolRules, PERMISSION_DENIED_MESSAGE } from '@kernlang/agon-core';
+import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, buildCodebaseMap, buildProjectMemoryBlock, createPersistentSession, ToolRegistry, getProjectFileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt, isReadOnlyCommand, AGON_MODE_NAMES, parsePermissionRuleSet, parseToolHooks, evaluatePermissionRules, evaluateToolRules, PERMISSION_DENIED_MESSAGE, claudeBrainUsesPty } from '@kernlang/agon-core';
 
 import type { ToolContext, ToolCallResult } from '@kernlang/agon-core';
 
@@ -1398,15 +1398,14 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   // has neither native nor MCP write tools and reports "I can't execute/write".
   // This gate mirrors createStreamJsonSession's gate in persistent-session.kern.
   const isCompanion = !!binaryPath && (engine.companion?.protocol === 'jsonrpc' || engine.companion?.protocol === 'acp' || engine.companion?.protocol === 'stream-json' || engine.id === 'claude' || engine.binary === 'claude');
-  // Claude PTY brain = interactive claude over the kern-engines subscription
-  // daemon (default; --print only when AGON_CLAUDE_PRINT=1|true). It delivers
-  // its answer via the DeliverAnswer MCP tool → answer-channel file, since the
-  // TUI text scrape is unreliable for short tool-answers. This must be gated to
-  // ONLY claude-PTY: telling codex/agy to call DeliverAnswer would break their
+  // Claude PTY brain = interactive claude over the kern-engines subscription daemon.
+  // It is now OPT-IN (AGON_CLAUDE_PTY=1, via claudeBrainUsesPty); the default is
+  // `claude --print`. Only the PTY brain delivers its answer via the DeliverAnswer
+  // MCP tool → answer-channel file (the TUI scrape is unreliable for short
+  // tool-answers); the --print path captures the answer natively. This must be gated
+  // to ONLY claude-PTY: telling codex/agy to call DeliverAnswer would break their
   // (reliable) native text capture.
-  const printOptOut = process.env.AGON_CLAUDE_PRINT;
-  const usingPrint = printOptOut === '1' || printOptOut === 'true';
-  const isClaudePtyBrain = !!binaryPath && (engine.id === 'claude' || engine.binary === 'claude') && !usingPrint;
+  const isClaudePtyBrain = !!binaryPath && (engine.id === 'claude' || engine.binary === 'claude') && claudeBrainUsesPty(cwd);
   let answerChannelPath: string | undefined;
   if (isCompanion) {
     ensureAgonHome();

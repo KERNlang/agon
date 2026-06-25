@@ -226,6 +226,7 @@ export {
 export type {
   PersistentSession, PersistentSessionConfig, SessionChunk, SessionSendOptions,
 } from './persistent-session.js';
+export { claudeBrainUsesPty } from './generated/sessions/claude-backend.js';
 export { StreamBridge, createStreamBridge } from './generated/cesar/stream-bridge.js';
 export type { EngineSwitch } from './generated/cesar/stream-bridge.js';
 export {
@@ -327,7 +328,7 @@ export { initExtensions, loadExtensions, discoverExtensionDirs, buildExtensionCo
 export { registerBuiltinCommands } from './builtin-commands.js';
 export { EventBus, bridgeShellHooks } from './event-bus.js';
 export type { EventPayload, EventListener } from './event-bus.js';
-export { EngineHealth, engineHealth, classifyDispatchFailure } from './engine-health.js';
+export { EngineHealth, engineHealth, classifyDispatchFailure, authFailureHint, authLoginHint } from './engine-health.js';
 export type { EngineHealthRecord } from './engine-health.js';
 export type { ValidatedEngineDefinition } from './schemas/engine-schema.js';
 export { sessionContext } from './session-context.js';

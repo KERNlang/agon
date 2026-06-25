@@ -14,7 +14,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 export const MAX_SEND_BODY_BYTES: number = Math.ceil((MAX_DISPATCH_IMAGES * MAX_DISPATCH_IMAGE_BYTES * 4) / 3) + 1024 * 1024;
 
 /**
- * Loopback HTTP bridge fronting ONE Agon session. start() binds 127.0.0.1 and returns { url, token }; clients pass `Authorization: Bearer <token>`. Routes: OPTIONS (CORS preflight); POST /attach → { sessionId, lastSeq }; POST /send → drive a BrainClient turn, append events to the ledger, return the BrainTurnResult; GET /events?from=N → SSE tail of the ledger (multi-client fan-out); POST /cancel → BrainClient.cancel.
+ * Loopback HTTP bridge fronting ONE Agon session. start() binds 127.0.0.1 and returns { url, token }; clients pass `Authorization: Bearer <token>`. Routes: OPTIONS (CORS preflight); POST /attach → { sessionId, lastSeq }; POST /send → drive a BrainClient turn, append events to the ledger, return the BrainTurnResult; GET /events?from=N → SSE tail of the ledger (multi-client fan-out); POST /cancel → BrainClient.cancel; POST /approval → BrainClient.provideApproval; POST /answer → BrainClient.provideAnswer (the user's reply to a mid-turn question-request).
  */
 // @kern-source: agon-serve:41
 export class AgonServe {
@@ -131,6 +131,7 @@ export class AgonServe {
       if (method === 'POST' && path === '/unregister-capability') { await this.handleUnregisterCapability(req, res, origin); return; }
       if (method === 'POST' && path === '/capability-result') { await this.handleCapabilityResult(req, res, origin); return; }
       if (method === 'POST' && path === '/approval') { await this.handleApproval(req, res, origin); return; }
+      if (method === 'POST' && path === '/answer') { await this.handleAnswer(req, res, origin); return; }
       this.sendJson(res, 404, { error: 'not found' }, origin);
     } catch (err) {
       // Never double-write: if the response already started (e.g. an SSE replay
@@ -197,7 +198,7 @@ export class AgonServe {
         // to block awaiting the reply, so flush past the ~50ms coalesce window instead
         // of letting the round-trip stall on the timer.
         const k = (r.value as { kind?: string }).kind;
-        if (k === 'capability-request' || k === 'approval-request') eventLogFlush(this.sessionId);
+        if (k === 'capability-request' || k === 'approval-request' || k === 'question-request') eventLogFlush(this.sessionId);
         r = await gen.next();
       }
       eventLogFlush(this.sessionId);
@@ -274,6 +275,16 @@ export class AgonServe {
     this.sendJson(res, 200, ack, origin);
   }
 
+  private async handleAnswer(req: IncomingMessage, res: ServerResponse, origin: string): Promise<void> {
+    const body = await this.readJson(req);
+    const requestId = typeof body.requestId === 'string' ? body.requestId : '';
+    if (!requestId) { this.sendJson(res, 400, { error: 'missing requestId' }, origin); return; }
+    const answer = typeof body.answer === 'string' ? body.answer : '';
+    const clientId = typeof body.clientId === 'string' ? body.clientId : 'http';
+    const ack = await this.brain.provideAnswer({ sessionId: this.sessionId, requestId, clientId, answer });
+    this.sendJson(res, 200, ack, origin);
+  }
+
   private async readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -302,7 +313,7 @@ export class AgonServe {
 /**
  * Factory: build the loopback bridge for a session given an opened BrainClient and the session id.
  */
-// @kern-source: agon-serve:346
+// @kern-source: agon-serve:359
 export function createAgonServe(opts: { brain: BrainClient, sessionId: string, allowedOrigins?: string[], engines?: string[], engineId?: string }): AgonServe {
   return new AgonServe(opts);
 }

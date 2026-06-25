@@ -120,6 +120,17 @@ export async function handleChrome(task: string, dispatch: Dispatch, ctx: Handle
       } else if (kind === 'notice') {
         const msg = oneLine(event.message);
         if (msg) dispatch({ type: oneLine(event.level) === 'error' ? 'error' : 'info', message: msg });
+      } else if (kind === 'question-request') {
+        // The REPL /chrome turn has no mid-dispatch free-text prompt, so it must NOT leave the turn
+        // paused for QUESTION_TIMEOUT_MS (180s) — auto-reply with the autonomous-proceed guidance so
+        // the engine continues on its own (the same push the old nudge gave).
+        const q = oneLine(event.prompt);
+        if (q) dispatch({ type: 'info', message: `  · agent asked: ${q.slice(0, 200)} — proceeding autonomously` });
+        if (!ctrl.signal.aborted) {
+          try {
+            await fetch(`${base}/answer`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ requestId: typeof event.requestId === 'string' ? event.requestId : '', clientId, answer: 'Proceed autonomously: decide the most reasonable next step and do it now — do not wait for further input from me.' }), signal: ctrl.signal });
+          } catch { if (!ctrl.signal.aborted) dispatch({ type: 'warning', message: 'couldn’t answer the agent question — the turn may stall.' }); }
+        }
       }
     };
 

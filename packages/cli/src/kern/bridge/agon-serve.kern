@@ -39,7 +39,7 @@ comment raw="// per-image caps in decodeDataUrlToImageFile run, while still boun
 const name=MAX_SEND_BODY_BYTES type=number value={{ Math.ceil((MAX_DISPATCH_IMAGES * MAX_DISPATCH_IMAGE_BYTES * 4) / 3) + 1024 * 1024 }} export=true
 
 service name=AgonServe
-  doc "Loopback HTTP bridge fronting ONE Agon session. start() binds 127.0.0.1 and returns { url, token }; clients pass `Authorization: Bearer <token>`. Routes: OPTIONS (CORS preflight); POST /attach → { sessionId, lastSeq }; POST /send → drive a BrainClient turn, append events to the ledger, return the BrainTurnResult; GET /events?from=N → SSE tail of the ledger (multi-client fan-out); POST /cancel → BrainClient.cancel."
+  doc "Loopback HTTP bridge fronting ONE Agon session. start() binds 127.0.0.1 and returns { url, token }; clients pass `Authorization: Bearer <token>`. Routes: OPTIONS (CORS preflight); POST /attach → { sessionId, lastSeq }; POST /send → drive a BrainClient turn, append events to the ledger, return the BrainTurnResult; GET /events?from=N → SSE tail of the ledger (multi-client fan-out); POST /cancel → BrainClient.cancel; POST /approval → BrainClient.provideApproval; POST /answer → BrainClient.provideAnswer (the user's reply to a mid-turn question-request)."
   field name=brain type=BrainClient private=true
   field name=sessionId type=string private=true
   field name=token type=string private=true
@@ -161,6 +161,7 @@ service name=AgonServe
         if (method === 'POST' && path === '/unregister-capability') { await this.handleUnregisterCapability(req, res, origin); return; }
         if (method === 'POST' && path === '/capability-result') { await this.handleCapabilityResult(req, res, origin); return; }
         if (method === 'POST' && path === '/approval') { await this.handleApproval(req, res, origin); return; }
+        if (method === 'POST' && path === '/answer') { await this.handleAnswer(req, res, origin); return; }
         this.sendJson(res, 404, { error: 'not found' }, origin);
       } catch (err) {
         // Never double-write: if the response already started (e.g. an SSE replay
@@ -231,7 +232,7 @@ service name=AgonServe
           // to block awaiting the reply, so flush past the ~50ms coalesce window instead
           // of letting the round-trip stall on the timer.
           const k = (r.value as { kind?: string }).kind;
-          if (k === 'capability-request' || k === 'approval-request') eventLogFlush(this.sessionId);
+          if (k === 'capability-request' || k === 'approval-request' || k === 'question-request') eventLogFlush(this.sessionId);
           r = await gen.next();
         }
         eventLogFlush(this.sessionId);
@@ -313,6 +314,18 @@ service name=AgonServe
       if (!requestId || !allowed.includes(decision)) { this.sendJson(res, 400, { error: 'missing requestId or invalid decision' }, origin); return; }
       const clientId = typeof body.clientId === 'string' ? body.clientId : 'http';
       const ack = await this.brain.provideApproval({ sessionId: this.sessionId, requestId, clientId, decision: decision as 'approve' | 'approve-session' | 'deny' | 'deny-session' | 'abort' });
+      this.sendJson(res, 200, ack, origin);
+    >>>
+
+  method name=handleAnswer params="req:IncomingMessage, res:ServerResponse, origin:string" returns="Promise<void>" async=true private=true
+    doc "The user's answer to a mid-turn question-request: { requestId, answer }. Resolves the paused turn by requestId via BrainClient.provideAnswer (host-only arbitration enforced in the brain). A missing requestId is a 400; a non-string answer is coerced to '' so the turn always un-pauses rather than hangs."
+    handler <<<
+      const body = await this.readJson(req);
+      const requestId = typeof body.requestId === 'string' ? body.requestId : '';
+      if (!requestId) { this.sendJson(res, 400, { error: 'missing requestId' }, origin); return; }
+      const answer = typeof body.answer === 'string' ? body.answer : '';
+      const clientId = typeof body.clientId === 'string' ? body.clientId : 'http';
+      const ack = await this.brain.provideAnswer({ sessionId: this.sessionId, requestId, clientId, answer });
       this.sendJson(res, 200, ack, origin);
     >>>
 

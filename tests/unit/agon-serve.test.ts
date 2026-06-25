@@ -10,7 +10,7 @@ process.env.AGON_HOME = mkdtempSync(join(tmpdir(), 'agon-serve-test-'));
 import { createAgonServe } from '../../packages/cli/src/generated/bridge/agon-serve.js';
 import type { BrainClient } from '@kernlang/agon-core';
 
-// Minimal fake brain — agon-serve only calls runTurn + cancel.
+// Minimal fake brain — agon-serve only calls runTurn + cancel + (now) provideAnswer.
 function fakeBrain(): BrainClient {
   return {
     async *runTurn(req: { turnId: string; input: string }) {
@@ -19,6 +19,9 @@ function fakeBrain(): BrainClient {
       return { turnId: req.turnId, delegated: false, responded: true, engineId: 'claude' };
     },
     async cancel() { return { status: 'accepted' as const }; },
+    async provideAnswer(res: { requestId: string; answer: string }) {
+      return res.requestId ? { status: 'accepted' as const } : { status: 'rejected' as const, reason: 'no requestId' };
+    },
   } as unknown as BrainClient;
 }
 
@@ -114,6 +117,25 @@ describe('AgonServe — loopback HTTP bridge', () => {
     });
     expect(r.status).toBe(200);
     expect((await r.json()).status).toBe('accepted');
+  });
+
+  it('POST /answer forwards the user reply to BrainClient.provideAnswer (returns the ack)', async () => {
+    const r = await fetch(`${url}/answer`, {
+      method: 'POST',
+      headers: authed({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ requestId: 'q1', answer: 'yes, do it' }),
+    });
+    expect(r.status).toBe(200);
+    expect((await r.json()).status).toBe('accepted');
+  });
+
+  it('POST /answer with no requestId is a 400', async () => {
+    const r = await fetch(`${url}/answer`, {
+      method: 'POST',
+      headers: authed({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ answer: 'orphan' }),
+    });
+    expect(r.status).toBe(400);
   });
 
   it('GET /events streams the ledger as SSE — a sent turn is visible to a later subscriber (fan-out)', async () => {

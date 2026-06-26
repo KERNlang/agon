@@ -543,6 +543,7 @@ export class AgenticTurnBrainClient implements BrainClient {
       let consecutiveFailures = 0; // CONSECUTIVE tool calls that ERRORED (malformed input, bad selector, invalid url) — caps a varying-bad-args flail the identical-repeat guard misses
       let questionsAsked = 0;  // mid-turn questions surfaced to the user this turn (bounded by MAX_USER_QUESTIONS)
       let lastCallKey = '';    // the previous executed tool call (name+input) — an identical repeat is a LOOP, not progress
+      let selectionRegrounded = false; // one-shot guard: after a click/type/selectOption couldn't find its target we re-ground ONCE (read the page, hand the engine the real `sel=` selectors); reset on any successful action so each fresh miss earns one re-ground
       const lastReadOutputs = new Map<string, string>(); // last text output per read-only tool CALL (keyed by name+input) — an identical repeat means the agent is re-viewing the SAME screen (the screenshot↔readPage flail the consecutive-repeat check misses)
 
       for (let step = 0; step < MAX_AGENT_STEPS; step++) {
@@ -784,6 +785,7 @@ export class AgenticTurnBrainClient implements BrainClient {
         if (!cap.spec.isReadOnly && capRes.ok) {
           noProgress = 0;            // a SUCCESSFUL action was taken (a FAILED click/type/navigate changed nothing → neutral, not progress)
           lastReadOutputs.clear();   // the page may have changed — forget stale read snapshots
+          selectionRegrounded = false; // a successful action clears the one-shot re-ground guard — the next fresh miss earns its own
         } else if (cap.spec.isReadOnly && capRes.ok && !rawOut.startsWith('data:')) {
           // Key by tool+input (callKey), NOT name: the same read with the same input returning the
           // same text is a genuine re-view; the SAME tool with a DIFFERENT input is a different
@@ -819,6 +821,49 @@ export class AgenticTurnBrainClient implements BrainClient {
         const done: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: call.name, status: capRes.ok ? 'done' : 'error', output: transcriptOut.slice(0, 400) };
         yield done;
         steps.push({ name: call.name, input: call.input, output: transcriptOut.slice(0, 4000) });
+        // B — agon-guided selection recovery: when a click/type/selectOption couldn't FIND its
+        // target (a weaker engine emitting a Playwright `:has-text()` / a stale selector), don't
+        // leave it to blind-retry. Re-ground ONCE per miss: read the page OURSELVES and hand the
+        // engine the page's real interactive elements — each with its exact `sel=` selector — so its
+        // retry uses a valid selector instead of guessing. (The in-extension resolver already handles
+        // the common `:has-text` case in-page; this catches the harder misses — wrong/absent element,
+        // needs scroll — and is bounded to one read per miss, reset on the next successful action.)
+        const isSelectMiss = !capRes.ok
+          && (call.name === 'click' || call.name === 'type' || call.name === 'selectOption')
+          && /no element matches|no result from the page|not found|could not find/i.test(capRes.error ?? '');
+        if (isSelectMiss && !selectionRegrounded && this.caps.has('readPage')) {
+          // Burn the one-shot UP FRONT: even if this read fails we still inject text guidance below
+          // (a real benefit), and burning early stops a slow/unresponsive readPage from being retried
+          // on every subsequent miss — each wait is bounded, and the failure streak still ends the turn.
+          selectionRegrounded = true;
+          const readCap = this.caps.get('readPage')!;
+          const rgId = randomUUID();
+          // Surface the auto-read as a normal tool (running → done) so the panel's step counter / toasts
+          // see a complete tool lifecycle, not an orphan capability-request with no completion marker.
+          const rgRunning: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: 'readPage', status: 'running', input: 'recovering the right selector — re-reading the page' };
+          yield rgRunning;
+          const rgReq: BrainEvent = { kind: 'capability-request', requestId: rgId, capability: 'readPage', input: {}, targetClientId: readCap.clientId };
+          yield rgReq;
+          let rg: CapabilityResult | null = null;
+          try { rg = await this.waitForCapabilityResult(rgId, readCap.clientId, ctrl.signal); }
+          catch {
+            if (ctrl.signal.aborted) {
+              const cancelled: BrainEvent = { kind: 'notice', level: 'warning', message: 'cancelled by client' };
+              yield cancelled;
+              return { turnId: req.turnId, delegated: false, responded: false, engineId: turnEngineId, reason: 'cancelled by client' };
+            }
+            // Non-abort (timeout / internal error): rg stays null → the text-only reminder below still guides the engine.
+          }
+          const ground = rg && rg.ok && rg.output ? rg.output.slice(0, 3000) : '';
+          const rgDone: BrainEvent = { kind: 'tool', engineId: turnEngineId, tool: 'readPage', status: ground ? 'done' : 'error', output: ground ? 're-grounded — handed the engine the page\'s real selectors' : 're-ground read failed; sent text guidance instead' };
+          yield rgDone;
+          // ALWAYS inject a reminder (never silently fall through, even on a read timeout): the real
+          // `sel=` list when the read succeeded, else text-only guidance to readPage + drop Playwright selectors.
+          steps.push({ name: 'reminder', input: {}, output: ground
+            ? `Your ${call.name} target was not found. This tool takes a PLAIN CSS selector or one of the exact \`sel=\` selectors below — NOT Playwright/jQuery selectors (:has-text(), :contains(), text=). Here is the page RIGHT NOW; pick the \`sel=\` whose label matches your intent and retry the ${call.name}. If nothing here matches, the element may be off-screen — scroll, then readPage again.\n\n${ground}`
+            : `Your ${call.name} target was not found, and the page could not be re-read just now. This tool takes a PLAIN CSS selector or an exact \`sel=\` selector from readPage — NOT Playwright/jQuery selectors (:has-text(), :contains(), text=). Call readPage to get the exact selectors, then retry the ${call.name}.` });
+          continue;
+        }
         if (noChange && noProgress >= MAX_NO_PROGRESS_STEPS) {
           const reason = 'stuck: the engine kept re-viewing the same screen without scrolling or acting';
           const stuck: BrainEvent = { kind: 'notice', level: 'error', message: reason };
@@ -936,7 +981,7 @@ export class AgenticTurnBrainClient implements BrainClient {
 /**
  * Factory mirroring createHeadlessTurnBrainClient: build the v2 agentic tool-loop BrainClient from the daemon's EngineRegistry.
  */
-// @kern-source: agentic-brain-client:954
+// @kern-source: agentic-brain-client:999
 export function createAgenticTurnBrainClient(registry: EngineRegistry): BrainClient {
   return new AgenticTurnBrainClient(registry);
 }

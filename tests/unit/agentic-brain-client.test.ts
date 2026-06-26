@@ -424,6 +424,57 @@ describe('AgenticTurnBrainClient — the ReAct loop', () => {
     expect(result.responded).toBe(true);
   });
 
+  it('B (selection recovery): a click that MISSES re-grounds once — the brain auto-readPages, then the retry lands', async () => {
+    // A weaker engine emits a Playwright `:has-text()` selector the page can't resolve. Instead of
+    // leaving it to blind-retry, the brain reads the page ITSELF (a readPage the engine never asked
+    // for) and hands back the real `sel=` selectors, so the next click succeeds.
+    const client = makeAgent([
+      `${MARK} {"name":"click","input":{"selector":"button:has-text(\\"Comment\\")"}}`, // miss
+      `${MARK} {"name":"click","input":{"selector":"#real-comment-btn"}}`,              // retry with a valid selector
+      'Posted the comment.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'minimax-coding-plan-minimax-m3', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec('readPage') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec('click') });
+    const { events, result } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: (ev) => {
+        const e = ev as unknown as { capability: string; input?: { selector?: string } };
+        if (e.capability === 'readPage') return { ok: true, output: 'INTERACTIVE: [button] "Comment" sel=#real-comment-btn' };
+        const selector = e.input?.selector ?? '';
+        if (selector.indexOf('has-text') !== -1) return { ok: false, error: `no element matches "${selector}"` };
+        return { ok: true, output: 'clicked' };
+      },
+      approval: () => 'approve-session', // approve the click for the session so the retry isn't gated again
+    });
+    const caps = events.filter((e) => e.kind === 'capability-request').map((e) => (e as unknown as { capability: string }).capability);
+    expect(caps).toEqual(['click', 'readPage', 'click']); // the engine asked for 2 clicks; the brain INSERTED a readPage between them
+    expect(result.responded).toBe(true);
+  });
+
+  it('B (selection recovery): the re-ground is ONE-SHOT — repeated misses do not re-read every time', async () => {
+    // If the engine keeps missing even after being handed the real selectors, we must NOT readPage on
+    // every failure (that would spam the page). One re-ground per miss; the failure streak caps the rest.
+    const client = makeAgent([
+      `${MARK} {"name":"click","input":{"selector":"button:has-text(\\"A\\")"}}`,
+      `${MARK} {"name":"click","input":{"selector":"button:has-text(\\"B\\")"}}`,
+      `${MARK} {"name":"click","input":{"selector":"button:has-text(\\"C\\")"}}`,
+      'I could not find it.',
+    ]);
+    await client.open({ sessionId: 's', engineId: 'codex', cwd: '/tmp' });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: readSpec('readPage') });
+    await client.registerCapability({ sessionId: 's', clientId: 'c', spec: actSpec('click') });
+    const { events } = await driveAgent(client, client.runTurn(req('t1')), {
+      capability: (ev) => {
+        const e = ev as unknown as { capability: string };
+        if (e.capability === 'readPage') return { ok: true, output: 'INTERACTIVE: (no matching buttons)' };
+        return { ok: false, error: 'no element matches' };
+      },
+      approval: () => 'approve-session',
+    });
+    const reads = events.filter((e) => e.kind === 'capability-request' && (e as unknown as { capability: string }).capability === 'readPage');
+    expect(reads.length).toBe(1); // re-grounded ONCE on the first miss, not after every consecutive miss
+  });
+
   it('re-view detector STOPS the turn when the agent keeps re-viewing the same screens (no progress)', async () => {
     // Both read-only tools return CONSTANT output → every read after the first is a re-view. With
     // nothing ever changing and no action taken, noProgress climbs past the budget and the turn

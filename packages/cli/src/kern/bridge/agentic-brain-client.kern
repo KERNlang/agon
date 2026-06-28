@@ -271,6 +271,20 @@ fn name=buildAgentSystemPrompt params="tools:CapabilitySpec[], base?:string, nat
       'nothing new; SCROLL first. Do NOT re-click a control you already clicked (e.g. a toggle).',
       'Keep a brief running tally of what you have handled so you know when the task is complete.',
     );
+    // MULTI-TAB — only when the client lent the workspace tools (an older extension hasn't). Frames the
+    // mental model so the engine actually USES the tabs instead of cramming everything into one page.
+    const hasMultiTab = tools.some((t) => t.name === 'openTab' || t.name === 'switchTab');
+    if (hasMultiTab) {
+      lines.push(
+        '',
+        'MULTI-TAB WORKSPACE — you have your OWN set of tabs (an "Agon" group), SEPARATE from the',
+        "user's tabs. readPage/click/type/navigate/scroll always act on your FOCUSED tab. To work",
+        'several pages at once — compare results, keep a reference open, research across sources —',
+        'openTab to open another page (it becomes focused), switchTab(tabId) to move between them, and',
+        'listTabs to see what you have open; closeTab when done. navigate changes the CURRENT tab;',
+        'openTab makes a NEW one. Prefer real tabs over losing context by navigating away and back.',
+      );
+    }
     return lines.join('\n');
   >>>
 
